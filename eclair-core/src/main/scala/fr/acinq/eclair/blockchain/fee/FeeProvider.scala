@@ -29,17 +29,8 @@ trait FeeProvider {
 
 }
 
-case class FeeratesPerByte(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long)
-
-object FeeratesPerByte {
-  def enforceMinimumFeerate(feeratesPerByte: FeeratesPerByte, minFeerate: Long) : FeeratesPerByte = feeratesPerByte.copy(
-    block_1 = Math.max(feeratesPerByte.block_1, minFeerate),
-    blocks_2 = Math.max(feeratesPerByte.blocks_2, minFeerate),
-    blocks_6 = Math.max(feeratesPerByte.blocks_6, minFeerate),
-    blocks_12 = Math.max(feeratesPerByte.blocks_12, minFeerate),
-    blocks_36 = Math.max(feeratesPerByte.blocks_36, minFeerate),
-    blocks_72 = Math.max(feeratesPerByte.blocks_72, minFeerate)
-  )
+case class FeeratesPerByte(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long) {
+  require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0, "all fee rates must be strictly greater than 0")
 }
 
 case class FeeratesPerKw(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long) {

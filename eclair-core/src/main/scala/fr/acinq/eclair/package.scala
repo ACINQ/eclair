@@ -51,6 +51,8 @@ package object eclair {
     case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
   }
 
+  def feerateKbToByte(feeratePerKb: Long): Long = Math.max(feeratePerKb / 1024, 1)
+
   /**
     * Converts feerate in satoshi-per-bytes to feerate in satoshi-per-kw
     *
