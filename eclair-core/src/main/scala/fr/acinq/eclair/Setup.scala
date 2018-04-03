@@ -129,7 +129,19 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val zmqConnected = Promise[Boolean]()
     val tcpBound = Promise[Unit]()
 
-    val defaultFeerates = FeeratesPerByte(block_1 = config.getLong("default-feerates.delay-blocks.1"), blocks_2 = config.getLong("default-feerates.delay-blocks.2"), blocks_6 = config.getLong("default-feerates.delay-blocks.6"), blocks_12 = config.getLong("default-feerates.delay-blocks.12"), blocks_36 = config.getLong("default-feerates.delay-blocks.36"), blocks_72 = config.getLong("default-feerates.delay-blocks.72"))
+    val minFeerate = config.getLong("min-feerate")
+    assert(minFeerate > 0, s"minimum fee rate must be strictly greater than 0")
+    val defaultFeerates = FeeratesPerByte.enforceMinimumFeerate(
+      FeeratesPerByte(
+        block_1 = config.getLong("default-feerates.delay-blocks.1"),
+        blocks_2 = config.getLong("default-feerates.delay-blocks.2"),
+        blocks_6 = config.getLong("default-feerates.delay-blocks.6"),
+        blocks_12 = config.getLong("default-feerates.delay-blocks.12"),
+        blocks_36 = config.getLong("default-feerates.delay-blocks.36"),
+        blocks_72 = config.getLong("default-feerates.delay-blocks.72")
+      ),
+      minFeerate)
+
     Globals.feeratesPerByte.set(defaultFeerates)
     Globals.feeratesPerKw.set(FeeratesPerKw(defaultFeerates))
     logger.info(s"initial feeratesPerByte=${Globals.feeratesPerByte.get()}")
@@ -140,8 +152,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     }
     system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
       case feerates: FeeratesPerByte =>
-        Globals.feeratesPerByte.set(feerates)
-        Globals.feeratesPerKw.set(FeeratesPerKw(feerates))
+        val feerates1 = FeeratesPerByte.enforceMinimumFeerate(feerates, minFeerate)
+        Globals.feeratesPerByte.set(feerates1)
+        Globals.feeratesPerKw.set(FeeratesPerKw(feerates1))
         system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
         logger.info(s"current feeratesPerByte=${Globals.feeratesPerByte.get()}")
     })
