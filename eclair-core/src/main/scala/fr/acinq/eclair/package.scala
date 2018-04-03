@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.{BinaryData, _}
 import scodec.Attempt
 import scodec.bits.BitVector
 
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 
 package object eclair {
 
@@ -106,5 +106,24 @@ package object eclair {
     * @param chainHash hash of the chain we're on, which will be checked against the input address
     * @return the public key script that matches the input address.
     */
-  def addressToPublicKeyScript(address: String, chainHash: BinaryData): Try[Seq[ScriptElt]] = Try(base58ToPublicKeyScript(address, chainHash)).orElse(Try(bech32ToPublicKeyScript(address, chainHash)))
+
+  def addressToPublicKeyScript(address: String, chainHash: BinaryData): Seq[ScriptElt] = {
+    Try(Base58Check.decode(address)) match {
+      case Success((Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)) if chainHash == Block.TestnetGenesisBlock.hash || chainHash == Block.RegtestGenesisBlock.hash => Script.pay2pkh(pubKeyHash)
+      case Success((Base58.Prefix.PubkeyAddress, pubKeyHash)) if chainHash == Block.LivenetGenesisBlock.hash => Script.pay2pkh(pubKeyHash)
+      case Success((Base58.Prefix.ScriptAddressTestnet, scriptHash)) if chainHash == Block.TestnetGenesisBlock.hash || chainHash == Block.RegtestGenesisBlock.hash => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
+      case Success((Base58.Prefix.ScriptAddress, scriptHash)) if chainHash == Block.LivenetGenesisBlock.hash => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
+      case Success(_) => throw new IllegalArgumentException("base58 address does not match our blockchain")
+      case Failure(base58error) =>
+        Try(Bech32.decodeWitnessAddress(address)) match {
+          case Success((_, version, _)) if version != 0.toByte => throw new IllegalArgumentException(s"invalid version $version in bech32 address")
+          case Success((_, _, bin)) if bin.length != 20 && bin.length != 32 => throw new IllegalArgumentException("hash length in bech32 address must be either 20 or 32 bytes")
+          case Success(("bc", _, bin)) if chainHash == Block.LivenetGenesisBlock.hash => OP_0 :: OP_PUSHDATA(bin) :: Nil
+          case Success(("tb", _, bin)) if chainHash == Block.TestnetGenesisBlock.hash => OP_0 :: OP_PUSHDATA(bin) :: Nil
+          case Success(("bcrt", _, bin)) if chainHash == Block.RegtestGenesisBlock.hash => OP_0 :: OP_PUSHDATA(bin) :: Nil
+          case Success(_) => throw new IllegalArgumentException("bech32 address does not match our blockchain")
+          case Failure(bech32error) => throw new IllegalArgumentException(s"$address is neither a valid Base58 address ($base58error) nor a valid Bech32 address ($bech32error)")
+        }
+    }
+  }
 }

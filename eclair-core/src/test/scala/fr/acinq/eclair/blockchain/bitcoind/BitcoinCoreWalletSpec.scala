@@ -39,6 +39,7 @@ import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.sys.process.{Process, _}
+import scala.util.Try
 
 @RunWith(classOf[JUnitRunner])
 class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll with Logging {
@@ -111,7 +112,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
 
     wallet.getFinalAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
-    assert(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash).isSuccess)
+    assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
     val fundingTxes = for (i <- 0 to 3) yield {
       val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))

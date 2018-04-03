@@ -63,7 +63,7 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: BinaryData)(implicit
     }
 
   def sendPayment(amount: Satoshi, address: String, feeRatePerKw: Long): Future[String] = {
-    val publicKeyScript = Script.write(addressToPublicKeyScript(address, chainHash).get)
+    val publicKeyScript = Script.write(addressToPublicKeyScript(address, chainHash))
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, publicKeyScript) :: Nil, lockTime = 0)
 
     (wallet ? CompleteTransaction(tx, feeRatePerKw))
@@ -78,7 +78,7 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: BinaryData)(implicit
   }
 
   def sendAll(address: String, feeRatePerKw: Long): Future[(Transaction, Satoshi)] = {
-    val publicKeyScript = Script.write(addressToPublicKeyScript(address, chainHash).get)
+    val publicKeyScript = Script.write(addressToPublicKeyScript(address, chainHash))
     (wallet ? SendAll(publicKeyScript, feeRatePerKw))
       .mapTo[SendAllResponse]
       .map {

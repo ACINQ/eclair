@@ -122,7 +122,7 @@ object Helpers {
     import scala.concurrent.duration._
     val finalAddress = Await.result(wallet.getFinalAddress, 40 seconds)
 
-    Script.write(addressToPublicKeyScript(finalAddress, chainHash).get)
+    Script.write(addressToPublicKeyScript(finalAddress, chainHash))
   }
 
   object Funding {
