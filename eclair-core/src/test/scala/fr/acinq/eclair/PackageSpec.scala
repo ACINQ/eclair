@@ -94,4 +94,11 @@ class PackageSpec extends FunSuite {
     assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("tb", 0, Crypto.sha256(script)), Block.TestnetGenesisBlock.hash) == Script.pay2wsh(script))
     assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("bcrt", 0, Crypto.sha256(script)), Block.RegtestGenesisBlock.hash) == Script.pay2wsh(script))
   }
+
+  test("fail to decode invalid addresses") {
+    val e = intercept[RuntimeException] {
+      addressToPublicKeyScript("1Qbbbbb", Block.LivenetGenesisBlock.hash)
+    }
+    assert(e.getMessage.contains("is neither a valid Base58 address") && e.getMessage.contains("nor a valid Bech32 address"))
+  }
 }
