@@ -24,11 +24,11 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{MilliBtc, Satoshi, Script}
+import fr.acinq.bitcoin.{Block, MilliBtc, Satoshi, Script}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
-import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.{addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
@@ -110,7 +110,8 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
     assert(sender.expectMsgType[Satoshi] > Satoshi(0))
 
     wallet.getFinalAddress.pipeTo(sender.ref)
-    assert(sender.expectMsgType[String].startsWith("2"))
+    val address = sender.expectMsgType[String]
+    assert(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash).isSuccess)
 
     val fundingTxes = for (i <- 0 to 3) yield {
       val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))

@@ -16,10 +16,13 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, BinaryData, Block, Crypto, Script}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
+
+import scala.util.Success
 
 /**
   * Created by PM on 27/01/2017.
@@ -36,4 +39,57 @@ class PackageSpec extends FunSuite {
     data.foreach(x => assert(toLongId(x._1, x._2) === x._3))
   }
 
+  test("decode base58 addresses") {
+    val priv = PrivateKey(BinaryData("01" * 32), compressed = true)
+    val pub = priv.publicKey
+
+    // p2pkh
+    // valid chain
+    assert(addressToPublicKeyScript(Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pub.hash160), Block.TestnetGenesisBlock.hash) == Success(Script.pay2pkh(pub)))
+    assert(addressToPublicKeyScript(Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pub.hash160), Block.RegtestGenesisBlock.hash) == Success(Script.pay2pkh(pub)))
+    assert(addressToPublicKeyScript(Base58Check.encode(Base58.Prefix.PubkeyAddress, pub.hash160), Block.LivenetGenesisBlock.hash) == Success(Script.pay2pkh(pub)))
+
+    // wrong chain
+    assert(addressToPublicKeyScript(Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pub.hash160), Block.LivenetGenesisBlock.hash).isFailure)
+    assert(addressToPublicKeyScript(Base58Check.encode(Base58.Prefix.PubkeyAddress, pub.hash160), Block.TestnetGenesisBlock.hash).isFailure)
+    assert(addressToPublicKeyScript(Base58Check.encode(Base58.Prefix.PubkeyAddress, pub.hash160), Block.RegtestGenesisBlock.hash).isFailure)
+
+    // p2sh
+    val script = Script.write(Script.pay2wpkh(pub))
+
+    // valid chain
+    assert(addressToPublicKeyScript(Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, Crypto.hash160(script)), Block.TestnetGenesisBlock.hash) == Success(Script.pay2sh(script)))
+    assert(addressToPublicKeyScript(Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, Crypto.hash160(script)), Block.RegtestGenesisBlock.hash) == Success(Script.pay2sh(script)))
+    assert(addressToPublicKeyScript(Base58Check.encode(Base58.Prefix.ScriptAddress, Crypto.hash160(script)), Block.LivenetGenesisBlock.hash) == Success(Script.pay2sh(script)))
+
+    // wrong chain
+    assert(addressToPublicKeyScript(Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, Crypto.hash160(script)), Block.LivenetGenesisBlock.hash).isFailure)
+    assert(addressToPublicKeyScript(Base58Check.encode(Base58.Prefix.ScriptAddress, Crypto.hash160(script)), Block.TestnetGenesisBlock.hash).isFailure)
+    assert(addressToPublicKeyScript(Base58Check.encode(Base58.Prefix.ScriptAddress, Crypto.hash160(script)), Block.RegtestGenesisBlock.hash).isFailure)
+  }
+
+  test("decode bech32 addresses") {
+    val priv = PrivateKey(BinaryData("01" * 32), compressed = true)
+    val pub = priv.publicKey
+
+    // p2wpkh
+    assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("bc", 0, pub.hash160), Block.LivenetGenesisBlock.hash) == Success(Script.pay2wpkh(pub)))
+    assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("tb", 0, pub.hash160), Block.TestnetGenesisBlock.hash) == Success(Script.pay2wpkh(pub)))
+    assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("bcrt", 0, pub.hash160), Block.RegtestGenesisBlock.hash) == Success(Script.pay2wpkh(pub)))
+
+    // wrong version
+    assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("bc", 1, pub.hash160), Block.LivenetGenesisBlock.hash).isFailure)
+    assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("tb", 1, pub.hash160), Block.TestnetGenesisBlock.hash).isFailure)
+    assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("bcrt", 1, pub.hash160), Block.LivenetGenesisBlock.hash).isFailure)
+
+    // wrong chain
+    assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("bc", 0, pub.hash160), Block.TestnetGenesisBlock.hash).isFailure)
+    assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("tb", 0, pub.hash160), Block.LivenetGenesisBlock.hash).isFailure)
+    assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("bcrt", 0, pub.hash160), Block.LivenetGenesisBlock.hash).isFailure)
+
+    val script = Script.write(Script.pay2wpkh(pub))
+    assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("bc", 0, Crypto.sha256(script)), Block.LivenetGenesisBlock.hash) == Success(Script.pay2wsh(script)))
+    assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("tb", 0, Crypto.sha256(script)), Block.TestnetGenesisBlock.hash) == Success(Script.pay2wsh(script)))
+    assert(addressToPublicKeyScript(Bech32.encodeWitnessAddress("bcrt", 0, Crypto.sha256(script)), Block.RegtestGenesisBlock.hash) == Success(Script.pay2wsh(script)))
+  }
 }
