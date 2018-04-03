@@ -44,7 +44,7 @@ abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixtur
 
   override def afterAll {
     TestKit.shutdownActorSystem(system)
-    Globals.feeratesPerKw.set(FeeratesPerKw.single(0))
+    Globals.feeratesPerKw.set(FeeratesPerKw.single(1))
   }
 
 }

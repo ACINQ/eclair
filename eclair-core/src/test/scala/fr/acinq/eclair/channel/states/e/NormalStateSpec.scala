@@ -1576,16 +1576,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CurrentFeerate (ignore negative feerate)") { case (alice, _, alice2bob, _, _, _, _) =>
-    within(30 seconds) {
-      val sender = TestProbe()
-      // this happens when in regtest mode
-      val event = CurrentFeerates(FeeratesPerKw.single(-1))
-      sender.send(alice, event)
-      alice2bob.expectNoMsg(500 millis)
-    }
-  }
-
   test("recv BITCOIN_FUNDING_SPENT (their commit w/ htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()

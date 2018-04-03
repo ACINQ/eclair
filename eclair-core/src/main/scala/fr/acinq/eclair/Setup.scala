@@ -34,7 +34,7 @@ import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
 
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future, Promise}
 
 
 /**
@@ -67,82 +67,89 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
 
-  def bootstrap: Future[Kit] = Future {
+  def bootstrap: Future[Kit] =
+    for {
+      _ <- Future.successful(true)
+      feeratesRetrieved = Promise[Boolean]()
 
-    val bitcoin = nodeParams.watcherType match {
-      case ELECTRUM =>
-        logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
-        val addressesFile = nodeParams.chainHash match {
-          case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
-          case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
-          case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
-        }
-        val stream = classOf[Setup].getResourceAsStream(addressesFile)
-        val addresses = ElectrumClientPool.readServerAddresses(stream)
-        val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(addresses)), "electrum-client", SupervisorStrategy.Resume))
-        Electrum(electrumClient)
-      case _ => ???
-    }
+      bitcoin = nodeParams.watcherType match {
+        case ELECTRUM =>
+          logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
+          val addressesFile = nodeParams.chainHash match {
+            case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
+            case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
+            case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
+          }
+          val stream = classOf[Setup].getResourceAsStream(addressesFile)
+          val addresses = ElectrumClientPool.readServerAddresses(stream)
+          val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(addresses)), "electrum-client", SupervisorStrategy.Resume))
+          Electrum(electrumClient)
+        case _ => ???
+      }
 
-    val defaultFeerates = FeeratesPerByte(block_1 = config.getLong("default-feerates.delay-blocks.1"), blocks_2 = config.getLong("default-feerates.delay-blocks.2"), blocks_6 = config.getLong("default-feerates.delay-blocks.6"), blocks_12 = config.getLong("default-feerates.delay-blocks.12"), blocks_36 = config.getLong("default-feerates.delay-blocks.36"), blocks_72 = config.getLong("default-feerates.delay-blocks.72"))
-    Globals.feeratesPerByte.set(defaultFeerates)
-    Globals.feeratesPerKw.set(FeeratesPerKw(defaultFeerates))
-    logger.info(s"initial feeratesPerByte=${Globals.feeratesPerByte.get()}")
-    val feeProvider = (nodeParams.chainHash, bitcoin) match {
-      case (Block.RegtestGenesisBlock.hash, _) => new ConstantFeeProvider(defaultFeerates)
-      case _ => new FallbackFeeProvider(new BitgoFeeProvider(nodeParams.chainHash) :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
-    }
-    system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
-      case feerates: FeeratesPerByte =>
-        Globals.feeratesPerByte.set(feerates)
-        Globals.feeratesPerKw.set(FeeratesPerKw(feerates))
-        system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
-        logger.info(s"current feeratesPerByte=${Globals.feeratesPerByte.get()}")
-    })
+      defaultFeerates = FeeratesPerByte(
+        block_1 = config.getLong("default-feerates.delay-blocks.1"),
+        blocks_2 = config.getLong("default-feerates.delay-blocks.2"),
+        blocks_6 = config.getLong("default-feerates.delay-blocks.6"),
+        blocks_12 = config.getLong("default-feerates.delay-blocks.12"),
+        blocks_36 = config.getLong("default-feerates.delay-blocks.36"),
+        blocks_72 = config.getLong("default-feerates.delay-blocks.72")
+      )
+      minFeeratePerByte = config.getLong("min-feerate")
+      feeProvider = (nodeParams.chainHash, bitcoin) match {
+        case (Block.RegtestGenesisBlock.hash, _) => new ConstantFeeProvider(defaultFeerates)
+        case _ => new FallbackFeeProvider(new BitgoFeeProvider(nodeParams.chainHash) :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+      }
+      _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
+        case feerates: FeeratesPerByte =>
+          Globals.feeratesPerByte.set(feerates)
+          Globals.feeratesPerKw.set(FeeratesPerKw(feerates))
+          system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
+          logger.info(s"current feeratesPerByte=${Globals.feeratesPerByte.get()}")
+          feeratesRetrieved.trySuccess(true)
+      })
+      _ <- feeratesRetrieved.future
 
-    val watcher = bitcoin match {
-      case Electrum(electrumClient) =>
-        system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
-      case _ => ???
-    }
+      watcher = bitcoin match {
+        case Electrum(electrumClient) =>
+          system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
+        case _ => ???
+      }
 
-    val wallet = bitcoin match {
-      case _ if wallet_opt.isDefined => wallet_opt.get
-      case Electrum(electrumClient) =>
-        val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash)), "electrum-wallet")
-        new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
-      case _ => ???
-    }
+      wallet = bitcoin match {
+        case _ if wallet_opt.isDefined => wallet_opt.get
+        case Electrum(electrumClient) =>
+          val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash)), "electrum-wallet")
+          new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
+        case _ => ???
+      }
+      _ = wallet.getFinalAddress.map {
+        case address => logger.info(s"initial wallet address=$address")
+      }
 
-    wallet.getFinalAddress.map {
-      case address => logger.info(s"initial wallet address=$address")
-    }
+      paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
+        case "local" => LocalPaymentHandler.props(nodeParams)
+        case "noop" => Props[NoopPaymentHandler]
+      }, "payment-handler", SupervisorStrategy.Resume))
+      register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
+      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
+      router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
+      authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
+      switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
+      paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator", SupervisorStrategy.Restart))
 
-    val paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
-      case "local" => LocalPaymentHandler.props(nodeParams)
-      case "noop" => Props[NoopPaymentHandler]
-    }, "payment-handler", SupervisorStrategy.Resume))
-    val register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
-    val relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
-    val router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
-    val authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
-    val switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
-    val paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator", SupervisorStrategy.Restart))
-
-    val kit = Kit(
-      nodeParams = nodeParams,
-      system = system,
-      watcher = watcher,
-      paymentHandler = paymentHandler,
-      register = register,
-      relayer = relayer,
-      router = router,
-      switchboard = switchboard,
-      paymentInitiator = paymentInitiator,
-      wallet = wallet)
-
-    kit
-  }
+      kit = Kit(
+        nodeParams = nodeParams,
+        system = system,
+        watcher = watcher,
+        paymentHandler = paymentHandler,
+        register = register,
+        relayer = relayer,
+        router = router,
+        switchboard = switchboard,
+        paymentInitiator = paymentInitiator,
+        wallet = wallet)
+    } yield kit
 
 }
 

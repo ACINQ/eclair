@@ -56,7 +56,7 @@ class FallbackFeeProviderSpec extends FunSuite {
     val provider5 = new FailingFeeProvider(5, dummyFeerates) // fails after 5 tries
     val provider7 = new FailingFeeProvider(Int.MaxValue, dummyFeerates) // "never" fails
 
-    val fallbackFeeProvider = new FallbackFeeProvider(provider0 :: provider1 :: provider3 :: provider5 :: provider7 :: Nil)
+    val fallbackFeeProvider = new FallbackFeeProvider(provider0 :: provider1 :: provider3 :: provider5 :: provider7 :: Nil, 1)
 
     assert(await(fallbackFeeProvider.getFeerates) === provider1.feeratesPerByte)
 
@@ -72,6 +72,12 @@ class FallbackFeeProviderSpec extends FunSuite {
 
     assert(await(fallbackFeeProvider.getFeerates) === provider7.feeratesPerByte)
 
+  }
+
+  test("ensure minimum feerate") {
+    val constantFeeProvider = new ConstantFeeProvider(FeeratesPerByte(1, 1, 1, 1, 1, 1))
+    val fallbackFeeProvider = new FallbackFeeProvider(constantFeeProvider :: Nil, 2)
+    assert(await(fallbackFeeProvider.getFeerates) === FeeratesPerByte(2, 2, 2, 2, 2, 2))
   }
 
 

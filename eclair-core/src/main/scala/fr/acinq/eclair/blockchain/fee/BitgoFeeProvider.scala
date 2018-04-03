@@ -19,6 +19,7 @@ package fr.acinq.eclair.blockchain.fee
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.HttpHelper.get
+import fr.acinq.eclair.feerateKbToByte
 import org.json4s.JsonAST.{JInt, JValue}
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -47,7 +48,7 @@ object BitgoFeeProvider {
     val blockTargets = json \ "feeByBlockTarget"
     blockTargets.foldField(Seq.empty[BlockTarget]) {
       // we divide by 1024 because bitgo returns estimates in Satoshi/Kb and we use estimates in Satoshi/Byte
-      case (list, (strBlockTarget, JInt(feePerKb))) => list :+ BlockTarget(strBlockTarget.toInt, feePerKb.longValue() / 1024)
+      case (list, (strBlockTarget, JInt(feePerKb))) => list :+ BlockTarget(strBlockTarget.toInt, feerateKbToByte(feePerKb.longValue()))
     }
   }
 
