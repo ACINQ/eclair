@@ -66,8 +66,8 @@ object EarnDotComFeeProvider {
   def extractFeerate(feeRanges: Seq[FeeRange], maxBlockDelay: Int): Long = {
     // first we keep only fee ranges with a max block delay below the limit
     val belowLimit = feeRanges.filter(_.maxDelay <= maxBlockDelay)
-    // out of all the remaining fee ranges, we select the one with the minimum higher bound
-    belowLimit.minBy(_.maxFee).maxFee
+    // out of all the remaining fee ranges, we select the one with the minimum higher bound and make sure it is > 0
+    Math.max(belowLimit.minBy(_.maxFee).maxFee, 1)
   }
 
   def extractFeerates(feeRanges: Seq[FeeRange]): FeeratesPerByte =

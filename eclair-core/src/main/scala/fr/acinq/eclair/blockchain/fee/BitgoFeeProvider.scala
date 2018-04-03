@@ -23,6 +23,7 @@ import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.ActorMaterializer
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport._
 import fr.acinq.bitcoin.{BinaryData, Block}
+import fr.acinq.eclair.feerateKbToByte
 import org.json4s.JsonAST.{JInt, JValue}
 import org.json4s.{DefaultFormats, jackson}
 
@@ -58,7 +59,7 @@ object BitgoFeeProvider {
     val blockTargets = json \ "feeByBlockTarget"
     blockTargets.foldField(Seq.empty[BlockTarget]) {
       // we divide by 1024 because bitgo returns estimates in Satoshi/Kb and we use estimates in Satoshi/Byte
-      case (list, (strBlockTarget, JInt(feePerKb))) => list :+ BlockTarget(strBlockTarget.toInt, feePerKb.longValue() / 1024)
+      case (list, (strBlockTarget, JInt(feePerKb))) => list :+ BlockTarget(strBlockTarget.toInt, feerateKbToByte(feePerKb.longValue()))
     }
   }
 

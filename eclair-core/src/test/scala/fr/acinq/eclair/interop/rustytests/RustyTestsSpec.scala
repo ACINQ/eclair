@@ -83,7 +83,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
   }
 
   override def afterAll {
-    Globals.feeratesPerKw.set(FeeratesPerKw.single(0))
+    Globals.feeratesPerKw.set(FeeratesPerKw.single(1))
     TestKit.shutdownActorSystem(system)
   }
 
