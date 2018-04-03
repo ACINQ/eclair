@@ -39,12 +39,12 @@ case class FeeratesPerKw(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_1
 
 object FeeratesPerKw {
   def apply(feerates: FeeratesPerByte): FeeratesPerKw = FeeratesPerKw(
-      block_1 = feerateByte2Kw(feerates.block_1),
-      blocks_2 = feerateByte2Kw(feerates.blocks_2),
-      blocks_6 = feerateByte2Kw(feerates.blocks_6),
-      blocks_12 = feerateByte2Kw(feerates.blocks_12),
-      blocks_36 = feerateByte2Kw(feerates.blocks_36),
-      blocks_72 = feerateByte2Kw(feerates.blocks_72))
+    block_1 = feerateByte2Kw(feerates.block_1),
+    blocks_2 = feerateByte2Kw(feerates.blocks_2),
+    blocks_6 = feerateByte2Kw(feerates.blocks_6),
+    blocks_12 = feerateByte2Kw(feerates.blocks_12),
+    blocks_36 = feerateByte2Kw(feerates.blocks_36),
+    blocks_72 = feerateByte2Kw(feerates.blocks_72))
 
   /**
     * Used in tests
