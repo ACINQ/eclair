@@ -27,7 +27,7 @@ import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, NodeParams, ShortChannelId}
+import fr.acinq.eclair.{Globals, NodeParams, ShortChannelId, addressToPublicKeyScript}
 
 import scala.concurrent.Await
 import scala.util.{Failure, Success, Try}
@@ -115,16 +115,11 @@ object Helpers {
     AnnouncementSignatures(commitments.channelId, shortChannelId, localNodeSig, localBitcoinSig)
   }
 
-  def getFinalScriptPubKey(wallet: EclairWallet): BinaryData = {
+  def getFinalScriptPubKey(wallet: EclairWallet, chainHash: BinaryData): BinaryData = {
     import scala.concurrent.duration._
     val finalAddress = Await.result(wallet.getFinalAddress, 40 seconds)
-    val finalScriptPubKey = Base58Check.decode(finalAddress) match {
-      case (Base58.Prefix.PubkeyAddress, hash) => Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(hash) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
-      case (Base58.Prefix.PubkeyAddressTestnet, hash) => Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(hash) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
-      case (Base58.Prefix.ScriptAddress, hash) => Script.write(OP_HASH160 :: OP_PUSHDATA(hash) :: OP_EQUAL :: Nil)
-      case (Base58.Prefix.ScriptAddressTestnet, hash) => Script.write(OP_HASH160 :: OP_PUSHDATA(hash) :: OP_EQUAL :: Nil)
-    }
-    finalScriptPubKey
+
+    Script.write(addressToPublicKeyScript(finalAddress, chainHash))
   }
 
   object Funding {
