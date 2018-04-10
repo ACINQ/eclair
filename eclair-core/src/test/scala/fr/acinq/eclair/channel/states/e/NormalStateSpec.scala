@@ -16,11 +16,10 @@
 
 package fr.acinq.eclair.channel.states.e
 
-import akka.actor.ActorRef
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, Block, Crypto, Satoshi, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.Crypto.Scalar
+import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
@@ -30,7 +29,7 @@ import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.{IN, OUT}
-import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, LightningMessageCodecsSpec, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.Tag
@@ -514,6 +513,38 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val commitSig = alice2bob.expectMsgType[CommitSig]
       assert(commitSig.htlcSignatures.size == 1)
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isLeft)
+    }
+  }
+
+  test("recv CMD_SIGN (two identical htlcs in each direction)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val add = CMD_ADD_HTLC(10000000, "11" * 32, 400144)
+      sender.send(alice, add)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[UpdateAddHtlc]
+      alice2bob.forward(bob)
+      sender.send(alice, add)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[UpdateAddHtlc]
+      alice2bob.forward(bob)
+
+      crossSign(alice, bob, alice2bob, bob2alice)
+
+      sender.send(bob, add)
+      sender.expectMsg("ok")
+      bob2alice.expectMsgType[UpdateAddHtlc]
+      bob2alice.forward(alice)
+      sender.send(bob, add)
+      sender.expectMsg("ok")
+      bob2alice.expectMsgType[UpdateAddHtlc]
+      bob2alice.forward(alice)
+
+      // actual test starts here
+      sender.send(bob, CMD_SIGN)
+      sender.expectMsg("ok")
+      val commitSig = bob2alice.expectMsgType[CommitSig]
+      assert(commitSig.htlcSignatures.toSet.size == 4)
     }
   }
 
@@ -1879,8 +1910,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
       sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
       val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
-      import initialState.commitments.localParams
-      import initialState.commitments.remoteParams
+      import initialState.commitments.{localParams, remoteParams}
       val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
       // actual test starts here
       bob2alice.forward(alice)
@@ -1900,8 +1930,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
       sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10))
       val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
-      import initialState.commitments.localParams
-      import initialState.commitments.remoteParams
+      import initialState.commitments.{localParams, remoteParams}
       val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
       bob2alice.forward(alice)
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement === Some(channelAnn))

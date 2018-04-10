@@ -339,11 +339,13 @@ object Helpers {
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
 
       // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
+      var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
       val txes = remoteCommit.spec.htlcs.collect {
         // incoming htlc for which we have the preimage: we spend it directly
         case DirectedHtlc(OUT, add: UpdateAddHtlc) if preimages.exists(r => sha256(r) == add.paymentHash) => generateTx("claim-htlc-success")(Try {
           val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
-          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
+          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, outputsAlreadyUsed, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
+          outputsAlreadyUsed = outputsAlreadyUsed + tx.input.outPoint.index.toInt
           val sig = keyManager.sign(tx, keyManager.htlcPoint(localParams.channelKeyPath), remoteCommit.remotePerCommitmentPoint)
           Transactions.addSigs(tx, sig, preimage)
         })
@@ -352,7 +354,8 @@ object Helpers {
 
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case DirectedHtlc(IN, add: UpdateAddHtlc) => generateTx("claim-htlc-timeout")(Try {
-          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
+          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, outputsAlreadyUsed, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
+          outputsAlreadyUsed = outputsAlreadyUsed + tx.input.outPoint.index.toInt
           val sig = keyManager.sign(tx, keyManager.htlcPoint(localParams.channelKeyPath), remoteCommit.remotePerCommitmentPoint)
           Transactions.addSigs(tx, sig)
         })
