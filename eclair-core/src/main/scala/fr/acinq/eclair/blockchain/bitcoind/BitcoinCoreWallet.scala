@@ -82,7 +82,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
       // now let's sign the funding tx
       SignTransactionResponse(fundingTx, _) <- signTransaction(unsignedFundingTx)
       // there will probably be a change output, so we need to find which output is ours
-      outputIndex = Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript, outputsAlreadyUsed = Set.empty)
+      outputIndex = Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
       _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=$fee")
     } yield MakeFundingTxResponse(fundingTx, outputIndex)
   }
