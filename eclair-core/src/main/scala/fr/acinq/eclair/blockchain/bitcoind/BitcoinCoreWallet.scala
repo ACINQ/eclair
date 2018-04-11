@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain.bitcoind
 
 import akka.actor.ActorSystem
-import fr.acinq.bitcoin.{BinaryData, OutPoint, Satoshi, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Transactions
@@ -82,7 +82,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
       // now let's sign the funding tx
       SignTransactionResponse(fundingTx, _) <- signTransaction(unsignedFundingTx)
       // there will probably be a change output, so we need to find which output is ours
-      outputIndex = Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript)
+      outputIndex = Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
       _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=$fee")
     } yield MakeFundingTxResponse(fundingTx, outputIndex)
   }
