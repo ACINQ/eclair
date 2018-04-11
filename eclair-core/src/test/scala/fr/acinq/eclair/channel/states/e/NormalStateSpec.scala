@@ -1787,6 +1787,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(revokedTx))
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(mainTx))
       assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
+      // let's make sure that htlc-penalty txs each spend a different output
+      assert(htlcPenaltyTxs.map(_.txIn.head.outPoint.index).toSet.size === htlcPenaltyTxs.size)
       htlcPenaltyTxs.foreach(htlcPenaltyTx => assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT))
       alice2blockchain.expectNoMsg(1 second)
 
@@ -1805,6 +1807,61 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
 
+    }
+  }
+
+  test("recv BITCOIN_FUNDING_SPENT (revoked commit with identical htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+
+      // initially we have :
+      // alice = 800 000
+      //   bob = 200 000
+
+      val add = CMD_ADD_HTLC(10000000, "11" * 32, 400144)
+      sender.send(alice, add)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[UpdateAddHtlc]
+      alice2bob.forward(bob)
+      sender.send(alice, add)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[UpdateAddHtlc]
+      alice2bob.forward(bob)
+
+      crossSign(alice, bob, alice2bob, bob2alice)
+      // bob will publish this tx after it is revoked
+      val revokedTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+
+      sender.send(alice, add)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[UpdateAddHtlc]
+      alice2bob.forward(bob)
+
+      crossSign(alice, bob, alice2bob, bob2alice)
+
+      // channel state for this revoked tx is as follows:
+      // alice = 780 000
+      //   bob = 200 000
+      //  a->b =  10 000
+      //  a->b =  10 000
+      assert(revokedTx.txOut.size == 4)
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, revokedTx)
+      alice2bob.expectMsgType[Error]
+
+      val mainTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      val mainPenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      val htlcPenaltyTxs = for (i <- 0 until 2) yield alice2blockchain.expectMsgType[PublishAsap].tx
+      // let's make sure that htlc-penalty txs each spend a different output
+      assert(htlcPenaltyTxs.map(_.txIn.head.outPoint.index).toSet.size === htlcPenaltyTxs.size)
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(revokedTx))
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(mainTx))
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
+      htlcPenaltyTxs.foreach(htlcPenaltyTx => assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT))
+      alice2blockchain.expectNoMsg(1 second)
+
+      Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(mainPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      htlcPenaltyTxs.foreach(htlcPenaltyTx => Transaction.correctlySpends(htlcPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     }
   }
 
