@@ -56,10 +56,10 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
   client ! ElectrumClient.AddStatusListener(self)
 
-  // disconnected --> waitingForTip --> running --
+  // disconnected --> waitingForTip --> running --+
   // ^                                            |
   // |                                            |
-  //  --------------------------------------------
+  // +--------------------------------------------+
 
   /**
     * Send a notification if the wallet is ready and its ready message has not
@@ -97,7 +97,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
   })
 
   when(DISCONNECTED) {
-    case Event(ElectrumClient.ElectrumReady(_), data) =>
+    case Event(ElectrumClient.ElectrumReady(_, _), data) =>
       client ! ElectrumClient.HeaderSubscription(self)
       goto(WAITING_FOR_TIP) using data
   }

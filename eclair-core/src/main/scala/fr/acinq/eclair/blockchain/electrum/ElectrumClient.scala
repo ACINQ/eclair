@@ -154,7 +154,7 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
       val response = parseResponse(new String(data.toArray)).right.get
       val header = parseHeader(response.result)
       log.debug(s"connected, tip = ${header.block_hash} $header")
-      statusListeners.map(_ ! ElectrumReady(header))
+      statusListeners.map(_ ! ElectrumReady(header, remote))
       context become connected(connection, remote, header, "", Map())
 
     case AddStatusListener(actor) => statusListeners += actor
@@ -163,7 +163,7 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
   def connected(connection: ActorRef, remoteAddress: InetSocketAddress, tip: Header, buffer: String, requests: Map[String, (Request, ActorRef)]): Receive = {
     case AddStatusListener(actor) =>
       statusListeners += actor
-      actor ! ElectrumReady(tip)
+      actor ! ElectrumReady(tip, remoteAddress)
 
     case HeaderSubscription(actor) =>
       headerSubscriptions += actor
@@ -304,7 +304,7 @@ object ElectrumClient {
   case class ServerError(request: Request, error: Error) extends Response
 
   sealed trait ElectrumEvent
-  case class ElectrumReady(tip: Header) extends ElectrumEvent
+  case class ElectrumReady(tip: Header, serverAddress: InetSocketAddress) extends ElectrumEvent
   case object ElectrumDisconnected extends ElectrumEvent
 
   // @formatter:on
