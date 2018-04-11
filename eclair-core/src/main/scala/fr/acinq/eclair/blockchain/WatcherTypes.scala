@@ -47,7 +47,7 @@ object WatchConfirmed {
       Script.write(Script.pay2wpkh(pubKey))
     case Failure(_) =>
       // otherwise this is a p2wsh
-      witness.stack.last
+      Script.write(Script.pay2wsh(witness.stack.last))
   }
 }
 
