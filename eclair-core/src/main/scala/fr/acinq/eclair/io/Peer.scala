@@ -28,8 +28,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.Listener
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.{wire, _}
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{wire, _}
 
 import scala.concurrent.duration._
 import scala.util.Random
@@ -341,7 +341,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingSatoshis: Long, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
-    val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet)
+    val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
     val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, funder, fundingSatoshis)
     val channel = spawnChannel(nodeParams, origin_opt)
     (channel, localParams)

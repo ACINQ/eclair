@@ -22,7 +22,6 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorRef, FSM, Props, Terminated}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.CurrentBlockCount
-import org.json4s
 import org.json4s.JsonAST.{JObject, JString}
 import org.json4s.jackson.JsonMethods
 
@@ -98,7 +97,8 @@ class ElectrumClientPool(serverAddresses: Set[InetSocketAddress])(implicit val e
     case Event(Connect, _) =>
       Random.shuffle(serverAddresses.toSeq diff addresses.values.toSeq).headOption match {
         case Some(address) =>
-          val client = context.actorOf(Props(new ElectrumClient(address)))
+          val resolved = new InetSocketAddress(address.getHostName, address.getPort)
+          val client = context.actorOf(Props(new ElectrumClient(resolved)))
           client ! ElectrumClient.AddStatusListener(self)
           // we watch each electrum client, they will stop on disconnection
           context watch client
@@ -165,7 +165,7 @@ object ElectrumClientPool {
     val addresses = values.flatMap {
       case (name, fields) =>
         fields \ "t" match {
-          case JString(port) => Some(new InetSocketAddress(name, port.toInt))
+          case JString(port) => Some(InetSocketAddress.createUnresolved(name, port.toInt))
           case _ => None // we only support raw TCP (not SSL) connection to electrum servers for now
         }
     }
