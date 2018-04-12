@@ -29,19 +29,19 @@ class FallbackFeeProvider(providers: Seq[FeeProvider], minFeeratePerByte: Long)(
   require(providers.size >= 1, "need at least one fee provider")
   require(minFeeratePerByte > 0, "minimum fee rate must be strictly greater than 0")
 
-  def getFeerates(fallbacks: Seq[FeeProvider]): Future[FeeratesPerByte] =
+  def getFeerates(fallbacks: Seq[FeeProvider]): Future[FeeratesPerKb] =
     fallbacks match {
       case last +: Nil => last.getFeerates
       case head +: remaining => head.getFeerates.recoverWith { case _ => getFeerates(remaining) }
     }
 
-  override def getFeerates: Future[FeeratesPerByte] = getFeerates(providers).map(FallbackFeeProvider.enforceMinimumFeerate(_, minFeeratePerByte))
+  override def getFeerates: Future[FeeratesPerKb] = getFeerates(providers).map(FallbackFeeProvider.enforceMinimumFeerate(_, minFeeratePerByte))
 
 }
 
 object FallbackFeeProvider {
 
-  def enforceMinimumFeerate(feeratesPerByte: FeeratesPerByte, minFeeratePerByte: Long) : FeeratesPerByte = feeratesPerByte.copy(
+  def enforceMinimumFeerate(feeratesPerByte: FeeratesPerKb, minFeeratePerByte: Long) : FeeratesPerKb = feeratesPerByte.copy(
     block_1 = Math.max(feeratesPerByte.block_1, minFeeratePerByte),
     blocks_2 = Math.max(feeratesPerByte.blocks_2, minFeeratePerByte),
     blocks_6 = Math.max(feeratesPerByte.blocks_6, minFeeratePerByte),

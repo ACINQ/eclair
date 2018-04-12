@@ -52,20 +52,20 @@ class BitgoFeeProviderSpec extends FunSuite {
     val json = parse(sample_response)
     val feeRanges = parseFeeRanges(json)
     val fee = extractFeerate(feeRanges, 6)
-    assert(fee === 103)
+    assert(fee === 105566)
   }
 
   test("extract all fees") {
     val json = parse(sample_response)
     val feeRanges = parseFeeRanges(json)
     val feerates = extractFeerates(feeRanges)
-    val ref = FeeratesPerByte(
-      block_1 = 145,
-      blocks_2 = 133,
-      blocks_6 = 103,
-      blocks_12 = 93,
-      blocks_36 = 69,
-      blocks_72 = 66)
+    val ref = FeeratesPerKb(
+      block_1 = 149453,
+      blocks_2 = 136797,
+      blocks_6 = 105566,
+      blocks_12 = 96254,
+      blocks_36 = 71098,
+      blocks_72 = 68182)
     assert(feerates === ref)
   }
 
@@ -74,8 +74,8 @@ class BitgoFeeProviderSpec extends FunSuite {
     import scala.concurrent.duration._
     implicit val system = ActorSystem()
     implicit val timeout = Timeout(30 seconds)
-    Await.result(new BitgoFeeProvider(Block.LivenetGenesisBlock.hash).getFeerates, 10 seconds)
-    Await.result(new BitgoFeeProvider(Block.TestnetGenesisBlock.hash).getFeerates, 10 seconds)
+    println("BitGo livenet fees: " + Await.result(new BitgoFeeProvider(Block.LivenetGenesisBlock.hash).getFeerates, 10 seconds))
+    println("BitGo testnet fees: " + Await.result(new BitgoFeeProvider(Block.TestnetGenesisBlock.hash).getFeerates, 10 seconds))
   }
 
 }

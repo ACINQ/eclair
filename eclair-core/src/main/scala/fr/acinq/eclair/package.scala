@@ -53,15 +53,21 @@ package object eclair {
     case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
   }
 
-  def feerateKbToByte(feeratePerKb: Long): Long = Math.max(feeratePerKb / 1024, 1)
-
   /**
     * Converts feerate in satoshi-per-bytes to feerate in satoshi-per-kw
     *
     * @param feeratePerByte feerate in satoshi-per-bytes
     * @return feerate in satoshi-per-kw
     */
-  def feerateByte2Kw(feeratePerByte: Long): Long = feeratePerByte * 1024 / 4
+  def feerateByte2Kw(feeratePerByte: Long): Long = feerateKb2Kw(feeratePerByte * 1024)
+
+  /**
+    * Converts feerate in satoshi-per-kilobytes to feerate in satoshi-per-kw
+    *
+    * @param feeratePerKb feerate in satoshi-per-kilobytes
+    * @return feerate in satoshi-per-kw
+    */
+  def feerateKb2Kw(feeratePerKb: Long): Long = feeratePerKb / 4
 
 
   def isPay2PubkeyHash(address: String): Boolean = address.startsWith("1") || address.startsWith("m") || address.startsWith("n")
@@ -84,7 +90,7 @@ package object eclair {
 
   /**
     *
-    * @param address base58 of bech32 address
+    * @param address   base58 of bech32 address
     * @param chainHash hash of the chain we're on, which will be checked against the input address
     * @return the public key script that matches the input address.
     */

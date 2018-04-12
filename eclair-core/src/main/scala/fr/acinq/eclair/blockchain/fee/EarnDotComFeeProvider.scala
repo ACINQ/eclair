@@ -39,7 +39,7 @@ class EarnDotComFeeProvider(implicit system: ActorSystem, ec: ExecutionContext) 
   implicit val serialization = jackson.Serialization
   implicit val formats = DefaultFormats
 
-  override def getFeerates: Future[FeeratesPerByte] =
+  override def getFeerates: Future[FeeratesPerKb] =
     for {
       httpRes <- httpClient.singleRequest(HttpRequest(uri = Uri("https://bitcoinfees.earn.com/api/v1/fees/list"), method = HttpMethods.GET))
       json <- Unmarshal(httpRes).to[JValue]
@@ -59,7 +59,8 @@ object EarnDotComFeeProvider {
       val JInt(memCount) = item \ "memCount"
       val JInt(minDelay) = item \ "minDelay"
       val JInt(maxDelay) = item \ "maxDelay"
-      FeeRange(minFee = minFee.toLong, maxFee = maxFee.toLong, memCount = memCount.toLong, minDelay = minDelay.toLong, maxDelay = maxDelay.toLong)
+      // earn.com returns fees in Satoshi/byte and we want Satoshi/kilobyte
+      FeeRange(minFee = 1024 * minFee.toLong, maxFee = 1024 * maxFee.toLong, memCount = memCount.toLong, minDelay = minDelay.toLong, maxDelay = maxDelay.toLong)
     })
   }
 
@@ -70,8 +71,8 @@ object EarnDotComFeeProvider {
     Math.max(belowLimit.minBy(_.maxFee).maxFee, 1)
   }
 
-  def extractFeerates(feeRanges: Seq[FeeRange]): FeeratesPerByte =
-    FeeratesPerByte(
+  def extractFeerates(feeRanges: Seq[FeeRange]): FeeratesPerKb =
+    FeeratesPerKb(
       block_1 = extractFeerate(feeRanges, 1),
       blocks_2 = extractFeerate(feeRanges, 2),
       blocks_6 = extractFeerate(feeRanges, 6),
