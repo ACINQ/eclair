@@ -55,7 +55,7 @@ object LightningMessageCodecs {
 
   def ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))
 
-  def ipv6address: Codec[Inet6Address] = bytes(16).exmap(b => attemptFromTry(InetAddress.getByAddress(b.toArray).asInstanceOf[Inet6Address]), a => attemptFromTry(ByteVector(a.getAddress)))
+  def ipv6address: Codec[Inet6Address] = bytes(16).exmap(b => attemptFromTry(Inet6Address.getByAddress(null, b.toArray, null)), a => attemptFromTry(ByteVector(a.getAddress)))
 
   def socketaddress: Codec[InetSocketAddress] =
     (discriminated[InetAddress].by(uint8)

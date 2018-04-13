@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.wire
 
-import java.net.{InetAddress, InetSocketAddress}
+import java.net.{Inet6Address, InetAddress, InetSocketAddress}
 
+import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
@@ -65,6 +66,24 @@ class LightningMessageCodecsSpec extends FunSuite {
     assert(color === color2)
   }
 
+  test("encode/decode all kind of IPv6 addresses with ipv6address codec") {
+    {
+      // IPv4 mapped
+      val bin = hex"00000000000000000000ffffae8a0b08".toBitVector
+      val ipv6 = Inet6Address.getByAddress(null, bin.toByteArray, null)
+      val bin2 = ipv6address.encode(ipv6).require
+      assert(bin === bin2)
+    }
+
+    {
+      // regular IPv6 address
+      val ipv6 = InetAddresses.forString("1080:0:0:0:8:800:200C:417A").asInstanceOf[Inet6Address]
+      val bin = ipv6address.encode(ipv6).require
+      val ipv62 = ipv6address.decode(bin).require.value
+      assert(ipv6 === ipv62)
+    }
+  }
+
   test("encode/decode with socketaddress codec") {
     {
       val ipv4addr = InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte))
@@ -82,12 +101,6 @@ class LightningMessageCodecsSpec extends FunSuite {
       val isa2 = socketaddress.decode(bin).require.value
       assert(isa === isa2)
     }
-    {
-      // decoding ipv4 addressed mapped as ipv6
-      val bad = hex"02 0000 0000 0000 0000 0000 ffff A8 01 2A 10 87".toBitVector
-      val isa = socketaddress.decode(bad).require.value
-    }
-
   }
 
   test("encode/decode with signature codec") {
