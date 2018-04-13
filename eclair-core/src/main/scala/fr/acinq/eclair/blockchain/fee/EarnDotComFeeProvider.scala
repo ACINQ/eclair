@@ -22,6 +22,7 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.ActorMaterializer
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport._
+import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JArray, JInt, JValue}
 import org.json4s.{DefaultFormats, jackson}
 
@@ -30,7 +31,7 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
   * Created by PM on 16/11/2017.
   */
-class EarnDotComFeeProvider(implicit system: ActorSystem, ec: ExecutionContext) extends FeeProvider {
+class EarnDotComFeeProvider(implicit system: ActorSystem, ec: ExecutionContext) extends FeeProvider with Logging {
 
   import EarnDotComFeeProvider._
 
@@ -44,7 +45,11 @@ class EarnDotComFeeProvider(implicit system: ActorSystem, ec: ExecutionContext) 
       httpRes <- httpClient.singleRequest(HttpRequest(uri = Uri("https://bitcoinfees.earn.com/api/v1/fees/list"), method = HttpMethods.GET))
       json <- Unmarshal(httpRes).to[JValue]
       feeRanges = parseFeeRanges(json)
-    } yield extractFeerates(feeRanges)
+    } yield {
+      val feerates = extractFeerates(feeRanges)
+      logger.info(s"earn.com feerates=$feerates")
+      feerates
+    }
 }
 
 object EarnDotComFeeProvider {
