@@ -443,9 +443,9 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     copyURI.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent): Unit = Option(row.getItem) match {
         case Some(pn) => ContextMenuUtils.copyToClipboard(
-          pn.socketAddresses match {
-            case firstAddress +: _ => s"${pn.nodeId.toString}@${HostAndPort.fromParts(firstAddress.getHostString, firstAddress.getPort)}"
-            case _ => "no URI Known"
+          pn.socketAddresses.headOption match {
+            case Some(firstAddress) => s"${pn.nodeId.toString}@${HostAndPort.fromParts(firstAddress.getHostString, firstAddress.getPort)}"
+            case None => "no URI Known"
           })
         case None =>
       }
