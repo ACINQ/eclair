@@ -57,16 +57,18 @@ object LightningMessageCodecs {
 
   def ipv6address: Codec[Inet6Address] = bytes(16).exmap(b => attemptFromTry(Inet6Address.getByAddress(null, b.toArray, null)), a => attemptFromTry(ByteVector(a.getAddress)))
 
-  def socketaddress: Codec[InetSocketAddress] =
-    (discriminated[InetAddress].by(uint8)
-      .typecase(1, ipv4address)
-      .typecase(2, ipv6address) ~ uint16)
-      .xmap(x => new InetSocketAddress(x._1, x._2), x => (x.getAddress, x.getPort))
+  def nodeaddress: Codec[NodeAddress] =
+    discriminated[NodeAddress].by(uint8)
+      .typecase(0, provide(Padding))
+      .typecase(1, (ipv4address ~ uint16).xmap[IPv4](x => new IPv4(x._1, x._2), x => (x.ipv4, x.port)))
+      .typecase(2, (ipv6address ~ uint16).xmap[IPv6](x => new IPv6(x._1, x._2), x => (x.ipv6, x.port)))
+      .typecase(3, (binarydata(10) ~ uint16).xmap[Tor2](x => new Tor2(x._1, x._2), x => (x.tor2, x.port)))
+      .typecase(4, (binarydata(35) ~ uint16).xmap[Tor3](x => new Tor3(x._1, x._2), x => (x.tor3, x.port)))
 
   // this one is a bit different from most other codecs: the first 'len' element is * not * the number of items
   // in the list but rather the  number of bytes of the encoded list. The rationale is once we've read this
   // number of bytes we can just skip to the next field
-  def listofsocketaddresses: Codec[List[InetSocketAddress]] = variableSizeBytes(uint16, list(socketaddress))
+  def listofnodeaddresses: Codec[List[NodeAddress]] = variableSizeBytes(uint16, list(nodeaddress))
 
   def shortchannelid: Codec[ShortChannelId] = int64.xmap(l => ShortChannelId(l), s => s.toLong)
 
@@ -271,7 +273,7 @@ object LightningMessageCodecs {
       ("nodeId" | publicKey) ::
       ("rgbColor" | rgb) ::
       ("alias" | zeropaddedstring(32)) ::
-      ("addresses" | listofsocketaddresses))
+      ("addresses" | listofnodeaddresses))
 
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
     ("signature" | signature) ::
