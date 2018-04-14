@@ -324,11 +324,9 @@ object Transactions {
                         localFinalScriptPubKey: BinaryData, feeratePerKw: Long): HtlcPenaltyTx = {
 
     val pubkeyScript = write(pay2wsh(redeemScript))
-    val (input, tx) = makeClaimTx(feeratePerKw, htlcPenaltyWeight, redeemScript,
+    HtlcPenaltyTx tupled makeClaimTx(feeratePerKw, htlcPenaltyWeight, redeemScript,
       finder.tx, outputIndex = finder.findPubKeyScriptIndex(pubkeyScript, None),
       localDustLimit, localFinalScriptPubKey, sequence = 0xffffffffL, lockTime = 0L)
-
-    HtlcPenaltyTx(input, tx)
   }
 
   def makeClosingTx(commitTxInput: InputInfo, localScriptPubKey: BinaryData, remoteScriptPubKey: BinaryData, localIsFunder: Boolean, dustLimit: Satoshi, closingFee: Satoshi, spec: CommitmentSpec): ClosingTx = {
