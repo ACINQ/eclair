@@ -125,6 +125,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
       watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
     }
+
+    // on restart we update our node announcement
+    // note that if we don't currently have public channels, this will be ignored
+    val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
+    self ! nodeAnn
+
     log.info(s"initialization completed, ready to process messages")
     startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, graph))
   }
@@ -236,8 +242,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
             db.addChannel(c, tx.txid, capacity)
 
             // in case we just validated our first local channel, we announce the local node
-            // note that this will also make sure we always update our node announcement on restart (eg: alias, color), because
-            // even if we had stored a previous announcement, it would be overridden by this more recent one
             if (!d0.nodes.contains(nodeParams.nodeId) && isRelatedTo(c, nodeParams.nodeId)) {
               log.info("first local channel validated, announcing local node")
               val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
