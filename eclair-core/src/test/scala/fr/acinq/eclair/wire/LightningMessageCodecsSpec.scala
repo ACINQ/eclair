@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.wire
 
-import java.net.{InetAddress, InetSocketAddress}
+import java.net.{Inet4Address, Inet6Address, InetAddress}
 
+import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
@@ -26,13 +27,14 @@ import fr.acinq.eclair.{ShortChannelId, UInt64, randomBytes, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
-import scodec.bits.{BitVector, HexStringSyntax}
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 
 /**
   * Created by PM on 31/05/2016.
   */
 @RunWith(classOf[JUnitRunner])
 class LightningMessageCodecsSpec extends FunSuite {
+
   import LightningMessageCodecsSpec._
 
   def bin(size: Int, fill: Byte): BinaryData = Array.fill[Byte](size)(fill)
@@ -65,22 +67,40 @@ class LightningMessageCodecsSpec extends FunSuite {
     assert(color === color2)
   }
 
-  test("encode/decode with socketaddress codec") {
+  test("encode/decode all kind of IPv6 addresses with ipv6address codec") {
     {
-      val ipv4addr = InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte))
-      val isa = new InetSocketAddress(ipv4addr, 4231)
-      val bin = socketaddress.encode(isa).require
+      // IPv4 mapped
+      val bin = hex"00000000000000000000ffffae8a0b08".toBitVector
+      val ipv6 = Inet6Address.getByAddress(null, bin.toByteArray, null)
+      val bin2 = ipv6address.encode(ipv6).require
+      assert(bin === bin2)
+    }
+
+    {
+      // regular IPv6 address
+      val ipv6 = InetAddresses.forString("1080:0:0:0:8:800:200C:417A").asInstanceOf[Inet6Address]
+      val bin = ipv6address.encode(ipv6).require
+      val ipv62 = ipv6address.decode(bin).require.value
+      assert(ipv6 === ipv62)
+    }
+  }
+
+  test("encode/decode with nodeaddress codec") {
+    {
+      val ipv4addr = InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)).asInstanceOf[Inet4Address]
+      val nodeaddr = IPv4(ipv4addr, 4231)
+      val bin = nodeaddress.encode(nodeaddr).require
       assert(bin === hex"01 C0 A8 01 2A 10 87".toBitVector)
-      val isa2 = socketaddress.decode(bin).require.value
-      assert(isa === isa2)
+      val nodeaddr2 = nodeaddress.decode(bin).require.value
+      assert(nodeaddr === nodeaddr2)
     }
     {
-      val ipv6addr = InetAddress.getByAddress(hex"2001 0db8 0000 85a3 0000 0000 ac1f 8001".toArray)
-      val isa = new InetSocketAddress(ipv6addr, 4231)
-      val bin = socketaddress.encode(isa).require
+      val ipv6addr = InetAddress.getByAddress(hex"2001 0db8 0000 85a3 0000 0000 ac1f 8001".toArray).asInstanceOf[Inet6Address]
+      val nodeaddr = IPv6(ipv6addr, 4231)
+      val bin = nodeaddress.encode(nodeaddr).require
       assert(bin === hex"02 2001 0db8 0000 85a3 0000 0000 ac1f 8001 1087".toBitVector)
-      val isa2 = socketaddress.decode(bin).require.value
-      assert(isa === isa2)
+      val nodeaddr2 = nodeaddress.decode(bin).require.value
+      assert(nodeaddr === nodeaddr2)
     }
   }
 
@@ -165,6 +185,24 @@ class LightningMessageCodecsSpec extends FunSuite {
     })
   }
 
+  test("encode/decode live node_announcements") {
+    val anns = List(
+      BinaryData("a58338c9660d135fd7d087eb62afd24a33562c54507a9334e79f0dc4f17d407e6d7c61f0e2f3d0d38599502f61704cf1ae93608df027014ade7ff592f27ce26900005acdf50702d2eabbbacc7c25bbd73b39e65d28237705f7bde76f557e94fb41cb18a9ec00841122116c6e302e646563656e7465722e776f726c64000000000000000000000000000000130200000000000000000000ffffae8a0b082607")
+      //BinaryData("d5bfb0be26412eed9bbab186772bd3885610e289ed305e729869a5bcbd97ea431863b6fa884b021162ed5e66264c4087630e4403669bab29f3c533c4089e508c00005ab521eb030e9226f19cd3ba8a58fb280d00f5f94f3c10f1b4618a5f9bffd43534c966ebd4030e9256495247494e41574f4c465f3200000000000000000000000000000000000000000f03cec0cb03c68094bbb48792002608")
+      //BinaryData("9746cd4d25a5cf2b04f3d986a073973b0318282e32e2758939b6650cd13cf65e4225ceaa98b02f070614e907661278a1479542afb12b9867511e0d31d995209800005ab646a302dc523b9db431de52d7adb79cf81dd3d780002f4ce952706053edc9da30d9b9f702dc5256495247494e41574f4c460000000000000000000000000000000000000000000016031bb5481aa82769f4446e1002260701584473f82607"),
+      //BinaryData("a483677744b63d892a85fb7460fd6cb0504f802600956eb18cfaad05fbbe775328e4a7060476d2c0f3b7a6d505bb4de9377a55b27d1477baf14c367287c3de7900005abb440002dc523b9db431de52d7adb79cf81dd3d780002f4ce952706053edc9da30d9b9f702dc5256495247494e41574f4c460000000000000000000000000000000000000000000016031bb5481aa82769f4446e1002260701584473f82607"),
+      //BinaryData("3ecfd85bcb3bafb5bad14ab7f6323a2df33e161c37c2897e576762fa90ffe46078d231ebbf7dce3eff4b440d091a10ea9d092e698a321bb9c6b30869e2782c9900005abbebe202dc523b9db431de52d7adb79cf81dd3d780002f4ce952706053edc9da30d9b9f702dc5256495247494e41574f4c460000000000000000000000000000000000000000000016031bb5481aa82769f4446e1002260701584473f82607"),
+      //BinaryData("ad40baf5c7151777cc8896bc70ad2d0fd2afff47f4befb3883a78911b781a829441382d82625b77a47b9c2c71d201aab7187a6dc80e7d2d036dcb1186bac273c00005abffc330341f5ff2992997613aff5675d6796232a63ab7f30136219774da8aba431df37c80341f563377a6763723364776d777a7a3261652e6f6e696f6e00000000000000000000000f0317f2614763b32d9ce804fc002607")
+      )
+
+    anns.foreach { ann =>
+      val bin = ByteVector(ann.data.toArray).toBitVector
+      val node = nodeAnnouncementCodec.decode(bin).require.value
+      val bin2 = nodeAnnouncementCodec.encode(node).require
+      assert(bin === bin2)
+    }
+  }
+
   test("encode/decode all channel messages") {
 
     val open = OpenChannel(randomBytes(32), randomBytes(32), 3, 4, 5, UInt64(6), 7, 8, 9, 10, 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
@@ -182,7 +220,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     val commit_sig = CommitSig(randomBytes(32), randomSignature, randomSignature :: randomSignature :: randomSignature :: Nil)
     val revoke_and_ack = RevokeAndAck(randomBytes(32), scalar(0), point(1))
     val channel_announcement = ChannelAnnouncement(randomSignature, randomSignature, randomSignature, randomSignature, bin(7, 9), Block.RegtestGenesisBlock.hash, ShortChannelId(1), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
-    val node_announcement = NodeAnnouncement(randomSignature, bin(0, 0), 1, randomKey.publicKey, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
+    val node_announcement = NodeAnnouncement(randomSignature, bin(0, 0), 1, randomKey.publicKey, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", IPv4(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)).asInstanceOf[Inet4Address], 42000) :: Nil)
     val channel_update = ChannelUpdate(randomSignature, Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2, bin(2, 2), 3, 4, 5, 6)
     val announcement_signatures = AnnouncementSignatures(randomBytes(32), ShortChannelId(42), randomSignature, randomSignature)
     val query_short_channel_id = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, randomBytes(7515))
