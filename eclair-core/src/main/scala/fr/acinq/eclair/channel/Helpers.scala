@@ -339,13 +339,13 @@ object Helpers {
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
 
       // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
-      var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
+      val finder = new PubKeyScriptIndexFinder(remoteCommitTx.tx)
+
       val txes = remoteCommit.spec.htlcs.collect {
         // incoming htlc for which we have the preimage: we spend it directly
         case DirectedHtlc(OUT, add: UpdateAddHtlc) if preimages.exists(r => sha256(r) == add.paymentHash) => generateTx("claim-htlc-success")(Try {
           val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
-          val txinfo = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, outputsAlreadyUsed, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
-          outputsAlreadyUsed = outputsAlreadyUsed + txinfo.input.outPoint.index.toInt
+          val txinfo = Transactions.makeClaimHtlcSuccessTx(finder, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
           val sig = keyManager.sign(txinfo, keyManager.htlcPoint(localParams.channelKeyPath), remoteCommit.remotePerCommitmentPoint)
           Transactions.addSigs(txinfo, sig, preimage)
         })
@@ -354,8 +354,7 @@ object Helpers {
 
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case DirectedHtlc(IN, add: UpdateAddHtlc) => generateTx("claim-htlc-timeout")(Try {
-          val txinfo = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, outputsAlreadyUsed, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
-          outputsAlreadyUsed = outputsAlreadyUsed + txinfo.input.outPoint.index.toInt
+          val txinfo = Transactions.makeClaimHtlcTimeoutTx(finder, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
           val sig = keyManager.sign(txinfo, keyManager.htlcPoint(localParams.channelKeyPath), remoteCommit.remotePerCommitmentPoint)
           Transactions.addSigs(txinfo, sig)
         })
@@ -458,12 +457,12 @@ object Helpers {
             .toMap
 
           // and finally we steal the htlc outputs
-          var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
+          val finder = new PubKeyScriptIndexFinder(tx)
+
           val htlcPenaltyTxs = tx.txOut.collect { case txOut if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
             val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
             generateTx("htlc-penalty")(Try {
-              val htlcPenalty = Transactions.makeHtlcPenaltyTx(tx, outputsAlreadyUsed, htlcRedeemScript, Satoshi(localParams.dustLimitSatoshis), localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
-              outputsAlreadyUsed = outputsAlreadyUsed + htlcPenalty.input.outPoint.index.toInt
+              val htlcPenalty = Transactions.makeHtlcPenaltyTx(finder, htlcRedeemScript, Satoshi(localParams.dustLimitSatoshis), localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
               val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret)
               Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
             })
