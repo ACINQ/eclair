@@ -17,16 +17,22 @@
 package fr.acinq.eclair.api
 
 import fr.acinq.bitcoin.{BinaryData, OutPoint}
-import org.json4s.Formats
 import org.json4s.jackson.Serialization
+import org.junit.runner.RunWith
 import org.scalatest.FunSuite
+import org.scalatest.junit.JUnitRunner
 
+@RunWith(classOf[JUnitRunner])
 class JsonSerializersSpec extends FunSuite {
 
   test("deserialize Map[OutPoint, BinaryData]") {
+    val output1 = OutPoint("11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1", 0)
+    val output2 = OutPoint("3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33", 1)
+
+
     val map = Map(
-      OutPoint("11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1", 0) -> BinaryData("dead"),
-      OutPoint("3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33", 1) -> BinaryData("beef")
+      output1 -> BinaryData("dead"),
+      output2 -> BinaryData("beef")
     )
 
     // it won't work with the default key serializer
@@ -37,6 +43,6 @@ class JsonSerializersSpec extends FunSuite {
 
     // but it works with our custom key serializer
     val json = Serialization.write(map)(org.json4s.DefaultFormats + new BinaryDataSerializer + new OutPointKeySerializer)
-    assert(json === """{"11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1:0":"dead","3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33:1":"beef"}""")
+    assert(json === s"""{"${output1.txid}:0":"dead","${output2.txid}:1":"beef"}""")
   }
 }
