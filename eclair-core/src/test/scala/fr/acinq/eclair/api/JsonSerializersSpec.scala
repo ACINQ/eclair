@@ -16,14 +16,17 @@
 
 package fr.acinq.eclair.api
 
+import java.net.{InetAddress, InetSocketAddress}
+
 import fr.acinq.bitcoin.{BinaryData, OutPoint}
+import fr.acinq.eclair.wire.NodeAddress
 import org.json4s.jackson.Serialization
 import org.junit.runner.RunWith
-import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
+import org.scalatest.{FunSuite, Matchers}
 
 @RunWith(classOf[JUnitRunner])
-class JsonSerializersSpec extends FunSuite {
+class JsonSerializersSpec extends FunSuite with Matchers {
 
   test("deserialize Map[OutPoint, BinaryData]") {
     val output1 = OutPoint("11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1", 0)
@@ -44,5 +47,13 @@ class JsonSerializersSpec extends FunSuite {
     // but it works with our custom key serializer
     val json = Serialization.write(map)(org.json4s.DefaultFormats + new BinaryDataSerializer + new OutPointKeySerializer)
     assert(json === s"""{"${output1.txid}:0":"dead","${output2.txid}:1":"beef"}""")
+  }
+
+  test("NodeAddress serialization") {
+    val ipv4 = NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array(10, 0, 0, 1)), 8888))
+    val ipv6LocalHost = NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)), 9735))
+
+    Serialization.write(ipv4)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""10.0.0.1:8888""""
+    Serialization.write(ipv6LocalHost)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""[0:0:0:0:0:0:0:1]:9735""""
   }
 }
