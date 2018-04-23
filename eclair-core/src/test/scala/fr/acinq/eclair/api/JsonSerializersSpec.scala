@@ -19,6 +19,7 @@ package fr.acinq.eclair.api
 import java.net.{InetAddress, InetSocketAddress}
 
 import fr.acinq.bitcoin.{BinaryData, OutPoint}
+import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.NodeAddress
 import org.json4s.jackson.Serialization
 import org.junit.runner.RunWith
@@ -56,4 +57,10 @@ class JsonSerializersSpec extends FunSuite with Matchers {
     Serialization.write(ipv4)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""10.0.0.1:8888""""
     Serialization.write(ipv6LocalHost)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""[0:0:0:0:0:0:0:1]:9735""""
   }
+
+  test("Direction serialization") {
+    Serialization.write(IN)(org.json4s.DefaultFormats + new DirectionSerializer) shouldBe s""""IN""""
+    Serialization.write(OUT)(org.json4s.DefaultFormats + new DirectionSerializer) shouldBe s""""OUT""""
+  }
+
 }

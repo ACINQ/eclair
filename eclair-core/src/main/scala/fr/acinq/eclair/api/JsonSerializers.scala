@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.router.RouteResponse
+import fr.acinq.eclair.transactions.Direction
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, UInt64}
@@ -122,3 +123,8 @@ class NodeAddressSerializer extends CustomSerializer[NodeAddress](format => ({ n
   case Tor2(b, p) => JString(s"${b.toString}:$p")
   case Tor3(b, p) => JString(s"${b.toString}:$p")
 }))
+
+class DirectionSerializer extends CustomSerializer[Direction](format => ({ null },{
+  case d: Direction => JString(d.toString)
+}))
+
