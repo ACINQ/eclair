@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar, ripemd160,
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.blockchain.EclairWallet
+import fr.acinq.eclair.blockchain.fee.SatoshiPerKw
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.transactions.Scripts._
@@ -61,7 +62,7 @@ object Helpers {
     if (nodeParams.chainHash != open.chainHash) throw InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash)
     if (open.fundingSatoshis < Channel.MIN_FUNDING_SATOSHIS || open.fundingSatoshis >= Channel.MAX_FUNDING_SATOSHIS) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, Channel.MIN_FUNDING_SATOSHIS, Channel.MAX_FUNDING_SATOSHIS)
     if (open.pushMsat > 1000 * open.fundingSatoshis) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat, 1000 * open.fundingSatoshis)
-    val localFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
+    val localFeeratePerKw = Globals.getFeerate(SatoshiPerKw, 2)
     if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.maxFeerateMismatch)) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
     // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
@@ -189,7 +190,7 @@ object Helpers {
       val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
       val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, remoteParams.fundingPubKey, "aa" * 71, "bb" * 71).tx)
       // no need to use a very high fee here, so we target 6 blocks; also, we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
-      val feeratePerKw = Math.min(Globals.feeratesPerKw.get.blocks_6, commitments.localCommit.spec.feeratePerKw)
+      val feeratePerKw = Math.min(Globals.getFeerate(SatoshiPerKw, 6), commitments.localCommit.spec.feeratePerKw)
       log.info(s"using feeratePerKw=$feeratePerKw for initial closing tx")
       Transactions.weight2fee(feeratePerKw, closingWeight)
     }
@@ -259,7 +260,7 @@ object Helpers {
       val localDelayedPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(localParams.channelKeyPath).publicKey, localPerCommitmentPoint)
 
       // no need to use a high fee rate for delayed transactions (we are the only one who can spend them)
-      val feeratePerKwDelayed = Globals.feeratesPerKw.get.blocks_6
+      val feeratePerKwDelayed = Globals.getFeerate(SatoshiPerKw, 6)
 
       // first we will claim our main output as soon as the delay is over
       val mainDelayedTx = generateTx("main-delayed-output")(Try {
@@ -333,7 +334,7 @@ object Helpers {
       val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
 
       // we need to use a rather high fee for htlc-claim because we compete with the counterparty
-      val feeratePerKwHtlc = Globals.feeratesPerKw.get.blocks_2
+      val feeratePerKwHtlc = Globals.getFeerate(SatoshiPerKw, 2)
 
       // those are the preimages to existing received htlcs
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
@@ -382,7 +383,7 @@ object Helpers {
       val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(commitments.localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
 
       // no need to use a high fee rate for our main output (we are the only one who can spend it)
-      val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
+      val feeratePerKwMain = Globals.getFeerate(SatoshiPerKw, 6)
 
       val mainTx = generateTx("claim-p2wpkh-output")(Try {
         val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(commitments.localParams.dustLimitSatoshis),
@@ -429,9 +430,9 @@ object Helpers {
           val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
 
           // no need to use a high fee rate for our main output (we are the only one who can spend it)
-          val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
+          val feeratePerKwMain = Globals.getFeerate(SatoshiPerKw, 6)
           // we need to use a high fee here for punishment txes because after a delay they can be spent by the counterparty
-          val feeratePerKwPenalty = Globals.feeratesPerKw.get.blocks_2
+          val feeratePerKwPenalty = Globals.getFeerate(SatoshiPerKw, 2)
 
           // first we will claim our main output right away
           val mainTx = generateTx("claim-p2wpkh-output")(Try {
@@ -515,7 +516,7 @@ object Helpers {
             val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
 
             // we need to use a high fee here for punishment txes because after a delay they can be spent by the counterparty
-            val feeratePerKwPenalty = Globals.feeratesPerKw.get.block_1
+            val feeratePerKwPenalty = Globals.getFeerate(SatoshiPerKw, 1)
 
             generateTx("claim-htlc-delayed-penalty")(Try {
               val htlcDelayedPenalty = Transactions.makeClaimDelayedOutputPenaltyTx(htlcTx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)

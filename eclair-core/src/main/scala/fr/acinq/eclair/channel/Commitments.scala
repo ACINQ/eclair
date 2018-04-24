@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
+import fr.acinq.eclair.blockchain.fee.SatoshiPerKw
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.Transactions._
@@ -326,7 +327,7 @@ object Commitments {
       throw FundeeCannotSendUpdateFee(commitments.channelId)
     }
 
-    val localFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
+    val localFeeratePerKw = Globals.getFeerate(SatoshiPerKw, 2)
     if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, maxFeerateMismatch)) {
       throw FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw)
     }

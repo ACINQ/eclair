@@ -35,6 +35,8 @@ case class FeeratesPerKb(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_1
 
 case class FeeratesPerKw(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long) {
   require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0, "all feerates must be strictly greater than 0")
+
+  def getFeerate(unit: FeerateUnit, target: Int) = FeeratesPerKw.getFeerate(this, unit, target)
 }
 
 object FeeratesPerKw {
@@ -59,4 +61,28 @@ object FeeratesPerKw {
     blocks_12 = feeratePerKw,
     blocks_36 = feeratePerKw,
     blocks_72 = feeratePerKw)
+
+  def getFeerate(feerates: FeeratesPerKw, unit: FeerateUnit, target: Int) : Long = {
+    val feeratesPerKw = target match {
+      case value if value < 2 => feerates.block_1
+      case value if value < 6 => feerates.blocks_2
+      case value if value < 12 => feerates.blocks_6
+      case value if value < 36 => feerates.blocks_12
+      case value if value < 72 => feerates.blocks_36
+      case _ => feerates.blocks_72
+    }
+    val result = unit match {
+      case SatoshiPerByte => feeratesPerKw / 256
+      case SatoshiPerKb => feeratesPerKw * 4
+      case SatoshiPerKw => feeratesPerKw
+    }
+    result
+  }
 }
+
+// @formatter:off
+sealed trait FeerateUnit
+case object SatoshiPerByte extends FeerateUnit
+case object SatoshiPerKb extends FeerateUnit
+case object SatoshiPerKw extends FeerateUnit
+// @formatter:on

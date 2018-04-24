@@ -151,7 +151,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
           Globals.feeratesPerKb.set(feerates)
           Globals.feeratesPerKw.set(FeeratesPerKw(feerates))
           system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
-          logger.info(s"current feeratesPerByte=${Globals.feeratesPerKb.get()} feeratesPerKw=${Globals.feeratesPerKw.get()}")
+          logger.info(s"current feeratesPerKb=${Globals.feeratesPerKb.get()} feeratesPerKw=${Globals.feeratesPerKw.get()}")
           feeratesRetrieved.trySuccess(true)
       })
       _ <- feeratesRetrieved.future
