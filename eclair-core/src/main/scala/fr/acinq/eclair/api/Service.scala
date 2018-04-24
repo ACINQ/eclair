@@ -38,7 +38,7 @@ import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentRequest}
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
-import fr.acinq.eclair.{Kit, ShortChannelId, feerateKb2Kw}
+import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JBool, JInt, JString}
 import org.json4s.{JValue, jackson}
@@ -155,9 +155,9 @@ trait Service extends Logging {
                           case JString(nodeId) :: JInt(fundingSatoshis) :: JInt(pushMsat) :: Nil =>
                             completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = None, fundingTxFeeratePerKw_opt = None)).mapTo[String])
                           case JString(nodeId) :: JInt(fundingSatoshis) :: JInt(pushMsat) :: JInt(fundingFeerateSatPerByte) :: Nil =>
-                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateKb2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = None)).mapTo[String])
+                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = None)).mapTo[String])
                           case JString(nodeId) :: JInt(fundingSatoshis) :: JInt(pushMsat) :: JInt(fundingFeerateSatPerByte) :: JInt(flags) :: Nil =>
-                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateKb2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = Some(flags.toByte))).mapTo[String])
+                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = Some(flags.toByte))).mapTo[String])
                           case _ => reject(UnknownParamsRejection(req.id, s"[nodeId, fundingSatoshis], [nodeId, fundingSatoshis, pushMsat], [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte] or [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte, flag]"))
                         }
                         case "close" => req.params match {
