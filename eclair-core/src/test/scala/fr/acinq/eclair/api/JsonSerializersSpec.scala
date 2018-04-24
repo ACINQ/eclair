@@ -16,17 +16,27 @@
 
 package fr.acinq.eclair.api
 
-import fr.acinq.bitcoin.{BinaryData, OutPoint}
-import org.json4s.Formats
-import org.json4s.jackson.Serialization
-import org.scalatest.FunSuite
+import java.net.{InetAddress, InetSocketAddress}
 
-class JsonSerializersSpec extends FunSuite {
+import fr.acinq.bitcoin.{BinaryData, OutPoint}
+import fr.acinq.eclair.transactions.{IN, OUT}
+import fr.acinq.eclair.wire.NodeAddress
+import org.json4s.jackson.Serialization
+import org.junit.runner.RunWith
+import org.scalatest.junit.JUnitRunner
+import org.scalatest.{FunSuite, Matchers}
+
+@RunWith(classOf[JUnitRunner])
+class JsonSerializersSpec extends FunSuite with Matchers {
 
   test("deserialize Map[OutPoint, BinaryData]") {
+    val output1 = OutPoint("11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1", 0)
+    val output2 = OutPoint("3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33", 1)
+
+
     val map = Map(
-      OutPoint("11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1", 0) -> BinaryData("dead"),
-      OutPoint("3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33", 1) -> BinaryData("beef")
+      output1 -> BinaryData("dead"),
+      output2 -> BinaryData("beef")
     )
 
     // it won't work with the default key serializer
@@ -37,6 +47,20 @@ class JsonSerializersSpec extends FunSuite {
 
     // but it works with our custom key serializer
     val json = Serialization.write(map)(org.json4s.DefaultFormats + new BinaryDataSerializer + new OutPointKeySerializer)
-    assert(json === """{"11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1:0":"dead","3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33:1":"beef"}""")
+    assert(json === s"""{"${output1.txid}:0":"dead","${output2.txid}:1":"beef"}""")
   }
+
+  test("NodeAddress serialization") {
+    val ipv4 = NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array(10, 0, 0, 1)), 8888))
+    val ipv6LocalHost = NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)), 9735))
+
+    Serialization.write(ipv4)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""10.0.0.1:8888""""
+    Serialization.write(ipv6LocalHost)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""[0:0:0:0:0:0:0:1]:9735""""
+  }
+
+  test("Direction serialization") {
+    Serialization.write(IN)(org.json4s.DefaultFormats + new DirectionSerializer) shouldBe s""""IN""""
+    Serialization.write(OUT)(org.json4s.DefaultFormats + new DirectionSerializer) shouldBe s""""OUT""""
+  }
+
 }
