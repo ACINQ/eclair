@@ -24,12 +24,13 @@ import akka.stream.ActorMaterializer
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport._
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.feerateKbToByte
+import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JInt, JValue}
 import org.json4s.{DefaultFormats, jackson}
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class BitgoFeeProvider(chainHash: BinaryData)(implicit system: ActorSystem, ec: ExecutionContext) extends FeeProvider {
+class BitgoFeeProvider(chainHash: BinaryData)(implicit system: ActorSystem, ec: ExecutionContext) extends FeeProvider with Logging {
 
   import BitgoFeeProvider._
 
@@ -48,7 +49,11 @@ class BitgoFeeProvider(chainHash: BinaryData)(implicit system: ActorSystem, ec: 
       httpRes <- httpClient.singleRequest(HttpRequest(uri = uri, method = HttpMethods.GET))
       json <- Unmarshal(httpRes).to[JValue]
       feeRanges = parseFeeRanges(json)
-    } yield extractFeerates(feeRanges)
+    } yield {
+      val feerates = extractFeerates(feeRanges)
+      logger.info(s"BitGo feerates=$feerates")
+      feerates
+    }
 }
 
 object BitgoFeeProvider {

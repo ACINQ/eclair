@@ -16,13 +16,17 @@
 
 package fr.acinq.eclair.blockchain.fee
 
+import grizzled.slf4j.Logging
+
 import scala.concurrent.Future
 
 /**
   * Created by PM on 09/07/2017.
   */
-class ConstantFeeProvider(feerates: FeeratesPerByte) extends FeeProvider {
+class ConstantFeeProvider(feerates: FeeratesPerByte) extends FeeProvider with Logging {
 
-  override def getFeerates: Future[FeeratesPerByte] = Future.successful(feerates)
-
+  override def getFeerates: Future[FeeratesPerByte] = {
+    logger.info(s"Constant feerates=$feerates")
+    Future.successful(feerates)
+  }
 }

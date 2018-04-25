@@ -87,6 +87,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>
+      logger.info("using bitcoind")
       val bitcoinClient = new BasicBitcoinJsonRPCClient(
         user = config.getString("bitcoind.rpcuser"),
         password = config.getString("bitcoind.rpcpassword"),
