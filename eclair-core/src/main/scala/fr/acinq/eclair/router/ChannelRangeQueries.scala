@@ -18,9 +18,18 @@ object ChannelRangeQueries {
     * Compressed a sequence of *sorted* short channel id.
     *
     * @param shortChannelIds must be sorted beforehand
-    * @return
+    * @return a sequence of encoded short channel ids
     */
-  def encodeShortChannelIds(format: Byte, shortChannelIds: Iterable[ShortChannelId]): BinaryData = {
+  def encodeShortChannelIds(format: Byte, shortChannelIds: Iterable[ShortChannelId]): List[BinaryData] = {
+    // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
+    val count = format match {
+      case UNCOMPRESSED_FORMAT => 7000
+      case GZIP_FORMAT => 12000 // TODO: do something less simplistic...
+    }
+    shortChannelIds.grouped(count).map(encodeShortChannelIdsSingle(format, _)).toList
+  }
+
+  def encodeShortChannelIdsSingle(format: Byte, shortChannelIds: Iterable[ShortChannelId]): BinaryData = {
     val bos = new ByteArrayOutputStream()
     bos.write(format)
     format match {
@@ -35,9 +44,9 @@ object ChannelRangeQueries {
   }
 
   /**
-    * Uncompresses a zipped sequence of sorted short channel ids.
+    * Decompress a zipped sequence of sorted short channel ids.
     *
-    * Does *not* preserve the order, we dontt need it and a Set is better suited to our access patterns
+    * Does *not* preserve the order, we don't need it and a Set is better suited to our access patterns
     *
     * @param data
     * @return

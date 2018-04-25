@@ -439,9 +439,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       } else {
         // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
         val shortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
-        val reply = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.GZIP_FORMAT, shortChannelIds))
+        val blobs = ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.GZIP_FORMAT, shortChannelIds)
         log.info("sending back reply_channel_range({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.size)
-        sender ! reply
+        val replies = blobs.map(blob => ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, blob))
+        replies.foreach(reply => sender ! reply)
       }
       stay
 
@@ -454,7 +455,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         val ourShortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
         val missing = theirShortChannelIds -- ourShortChannelIds
         log.info("we received their reply, we're missing {} channel announcements/updates", missing.size)
-        sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.GZIP_FORMAT, missing))
+        val blobs = ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.GZIP_FORMAT, missing)
+        blobs.foreach(blob => sender ! QueryShortChannelIds(chainHash, blob))
       }
       stay
 
