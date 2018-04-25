@@ -56,18 +56,32 @@ package object eclair {
   /**
     * Converts feerate in satoshi-per-bytes to feerate in satoshi-per-kw
     *
-    * @param feeratePerByte feerate in satoshi-per-bytes
+    * @param feeratePerByte fee rate in satoshi-per-bytes
     * @return feerate in satoshi-per-kw
     */
-  def feerateByte2Kw(feeratePerByte: Long): Long = feerateKb2Kw(feeratePerByte * 1024)
+  def feerateByte2Kw(feeratePerByte: Long): Long = feerateKb2Kw(feeratePerByte * 1000)
 
   /**
     * Converts feerate in satoshi-per-kilobytes to feerate in satoshi-per-kw
     *
-    * @param feeratePerKb feerate in satoshi-per-kilobytes
+    * @param feeratePerKb fee rate in satoshi-per-kilobytes
     * @return feerate in satoshi-per-kw
     */
   def feerateKb2Kw(feeratePerKb: Long): Long = feeratePerKb / 4
+
+  /**
+    *
+    * @param feeratesPerKw fee rate in satoshiper-kw
+    * @return fee rate in satoshi-per-kilobyte
+    */
+  def feerateKw2Kb(feeratesPerKw: Long): Long = feeratesPerKw * 4
+
+  /**
+    *
+    * @param feeratesPerKw fee rate in satoshiper-kw
+    * @return fee rate in satoshi-per-byte
+    */
+  def feerateKw2Byte(feeratesPerKw: Long): Long = feeratesPerKw / 250
 
 
   def isPay2PubkeyHash(address: String): Boolean = address.startsWith("1") || address.startsWith("m") || address.startsWith("n")

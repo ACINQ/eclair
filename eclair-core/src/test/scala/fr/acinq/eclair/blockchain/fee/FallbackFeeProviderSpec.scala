@@ -45,7 +45,7 @@ class FallbackFeeProviderSpec extends FunSuite {
       } else Future.failed(new RuntimeException())
   }
 
-  def dummyFeerates = FeeratesPerKb(1024 + Random.nextInt(10000), 1024 + Random.nextInt(10000), 1024 + Random.nextInt(10000), 1024 + Random.nextInt(10000), 1024 + Random.nextInt(10000), 1024 + Random.nextInt(10000))
+  def dummyFeerates = FeeratesPerKb(1000 + Random.nextInt(10000), 1000 + Random.nextInt(10000), 1000 + Random.nextInt(10000), 1000 + Random.nextInt(10000), 1000 + Random.nextInt(10000), 1000 + Random.nextInt(10000))
 
   def await[T](f: Future[T]): T = Await.result(f, 3 seconds)
 
@@ -75,9 +75,9 @@ class FallbackFeeProviderSpec extends FunSuite {
   }
 
   test("ensure minimum feerate") {
-    val constantFeeProvider = new ConstantFeeProvider(FeeratesPerKb(1024, 1024, 1024, 1024, 1024, 1024))
+    val constantFeeProvider = new ConstantFeeProvider(FeeratesPerKb(1000, 1000, 1000, 1000, 1000, 1000))
     val fallbackFeeProvider = new FallbackFeeProvider(constantFeeProvider :: Nil, 2)
-    assert(await(fallbackFeeProvider.getFeerates) === FeeratesPerKb(2048, 2048, 2048, 2048, 2048, 2048))
+    assert(await(fallbackFeeProvider.getFeerates) === FeeratesPerKb(2000, 2000, 2000, 2000, 2000, 2000))
   }
 
 

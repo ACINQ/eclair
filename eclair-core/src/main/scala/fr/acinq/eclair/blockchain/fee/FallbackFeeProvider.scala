@@ -42,12 +42,12 @@ class FallbackFeeProvider(providers: Seq[FeeProvider], minFeeratePerByte: Long)(
 object FallbackFeeProvider {
 
   def enforceMinimumFeerate(feeratesPerByte: FeeratesPerKb, minFeeratePerByte: Long) : FeeratesPerKb = feeratesPerByte.copy(
-    block_1 = Math.max(feeratesPerByte.block_1, minFeeratePerByte * 1024),
-    blocks_2 = Math.max(feeratesPerByte.blocks_2, minFeeratePerByte * 1024),
-    blocks_6 = Math.max(feeratesPerByte.blocks_6, minFeeratePerByte * 1024),
-    blocks_12 = Math.max(feeratesPerByte.blocks_12, minFeeratePerByte * 1024),
-    blocks_36 = Math.max(feeratesPerByte.blocks_36, minFeeratePerByte * 1024),
-    blocks_72 = Math.max(feeratesPerByte.blocks_72, minFeeratePerByte * 1024)
+    block_1 = Math.max(feeratesPerByte.block_1, minFeeratePerByte * 1000),
+    blocks_2 = Math.max(feeratesPerByte.blocks_2, minFeeratePerByte * 1000),
+    blocks_6 = Math.max(feeratesPerByte.blocks_6, minFeeratePerByte * 1000),
+    blocks_12 = Math.max(feeratesPerByte.blocks_12, minFeeratePerByte * 1000),
+    blocks_36 = Math.max(feeratesPerByte.blocks_36, minFeeratePerByte * 1000),
+    blocks_72 = Math.max(feeratesPerByte.blocks_72, minFeeratePerByte * 1000)
   )
 
 }

@@ -34,7 +34,7 @@ class ConversionSpec extends FunSuite {
       val feeratePerKw = FeeratesPerKw.getFeerate(feeratesPerKw, SatoshiPerKw, target)
       assert(feeratePerKw == feeratePerKb / 4)
       val feeratePerByte = FeeratesPerKw.getFeerate(feeratesPerKw, SatoshiPerByte, target)
-      assert(feeratePerByte == feeratePerKb / 1024)
+      assert(feeratePerByte == feeratePerKb / 1000)
 
       if (target >= 2) {
         assert(FeeratesPerKw.getFeerate(feeratesPerKw, SatoshiPerKb, target + 1) == FeeratesPerKw.getFeerate(feeratesPerKw, SatoshiPerKb, target))

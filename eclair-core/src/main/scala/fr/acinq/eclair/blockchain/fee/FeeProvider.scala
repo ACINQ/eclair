@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import fr.acinq.eclair.feerateKb2Kw
+import fr.acinq.eclair._
 
 import scala.concurrent.Future
 
@@ -29,10 +29,12 @@ trait FeeProvider {
 
 }
 
+// stores fee rate in satoshi/kb (1 kb = 1000 bytes)
 case class FeeratesPerKb(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long) {
   require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0, "all feerates must be strictly greater than 0")
 }
 
+// stores fee rate in satoshi/kw (1 kw = 1000 weight units)
 case class FeeratesPerKw(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long) {
   require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0, "all feerates must be strictly greater than 0")
 
@@ -72,8 +74,8 @@ object FeeratesPerKw {
       case _ => feerates.blocks_72
     }
     val result = unit match {
-      case SatoshiPerByte => feeratesPerKw / 256
-      case SatoshiPerKb => feeratesPerKw * 4
+      case SatoshiPerByte => feerateKw2Byte(feeratesPerKw)
+      case SatoshiPerKb => feerateKw2Kb(feeratesPerKw)
       case SatoshiPerKw => feeratesPerKw
     }
     result
