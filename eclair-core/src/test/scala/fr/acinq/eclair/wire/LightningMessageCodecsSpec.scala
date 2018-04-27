@@ -193,7 +193,7 @@ class LightningMessageCodecsSpec extends FunSuite {
       //BinaryData("a483677744b63d892a85fb7460fd6cb0504f802600956eb18cfaad05fbbe775328e4a7060476d2c0f3b7a6d505bb4de9377a55b27d1477baf14c367287c3de7900005abb440002dc523b9db431de52d7adb79cf81dd3d780002f4ce952706053edc9da30d9b9f702dc5256495247494e41574f4c460000000000000000000000000000000000000000000016031bb5481aa82769f4446e1002260701584473f82607"),
       //BinaryData("3ecfd85bcb3bafb5bad14ab7f6323a2df33e161c37c2897e576762fa90ffe46078d231ebbf7dce3eff4b440d091a10ea9d092e698a321bb9c6b30869e2782c9900005abbebe202dc523b9db431de52d7adb79cf81dd3d780002f4ce952706053edc9da30d9b9f702dc5256495247494e41574f4c460000000000000000000000000000000000000000000016031bb5481aa82769f4446e1002260701584473f82607"),
       //BinaryData("ad40baf5c7151777cc8896bc70ad2d0fd2afff47f4befb3883a78911b781a829441382d82625b77a47b9c2c71d201aab7187a6dc80e7d2d036dcb1186bac273c00005abffc330341f5ff2992997613aff5675d6796232a63ab7f30136219774da8aba431df37c80341f563377a6763723364776d777a7a3261652e6f6e696f6e00000000000000000000000f0317f2614763b32d9ce804fc002607")
-      )
+    )
 
     anns.foreach { ann =>
       val bin = ByteVector(ann.data.toArray).toBitVector
@@ -242,9 +242,10 @@ class LightningMessageCodecsSpec extends FunSuite {
   }
 
   test("encode/decode per-hop payload") {
-    val payload = PerHopPayload(channel_id = ShortChannelId(42), amtToForward = 142000, outgoingCltvValue = 500000)
+    val payload = PerHopPayload(channel_id = ShortChannelId(42), fee = 1000L, amtToForward = 142000, outgoingCltvValue = 500000)
     val bin = LightningMessageCodecs.perHopPayloadCodec.encode(payload).require
-    assert(bin.toByteVector.size === 33)
+
+    assert(bin.toByteVector.size === 41)
     val payload1 = LightningMessageCodecs.perHopPayloadCodec.decode(bin).require.value
     assert(payload === payload1)
 

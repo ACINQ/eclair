@@ -322,6 +322,7 @@ object LightningMessageCodecs {
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::
       ("short_channel_id" | shortchannelid) ::
+      ("fee" | uint64) ::
       ("amt_to_forward" | uint64) ::
       ("outgoing_cltv_value" | uint32) ::
       ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[PerHopPayload]

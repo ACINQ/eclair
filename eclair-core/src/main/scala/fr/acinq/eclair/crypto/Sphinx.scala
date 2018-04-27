@@ -41,8 +41,8 @@ object Sphinx extends Logging {
   // length of a MAC
   val MacLength = 32
 
-  // length of a payload: 33 bytes (1 bytes for realm, 32 bytes for a realm-specific packet)
-  val PayloadLength = 33
+  // length of a payload: 41 bytes (1 bytes for realm, 40 bytes for a realm-specific packet)
+  val PayloadLength = 41
 
   // max number of hops
   val MaxHops = 20
@@ -373,4 +373,3 @@ object Sphinx extends Logging {
     loop(packet, sharedSecrets)
   }
 }
-
