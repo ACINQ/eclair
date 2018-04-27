@@ -265,8 +265,6 @@ object PaymentLifecycle {
     CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, Packet.write(onion.packet), upstream_opt = None, commit = true) -> onion.sharedSecrets
   }
 
-
-
   /**
     * Rewrites a list of failures to retrieve the meaningful part.
     * <p>

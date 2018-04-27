@@ -373,3 +373,4 @@ object Sphinx extends Logging {
     loop(packet, sharedSecrets)
   }
 }
+
