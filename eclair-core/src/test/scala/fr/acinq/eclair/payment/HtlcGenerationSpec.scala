@@ -52,15 +52,15 @@ class HtlcGenerationSpec extends FunSuite {
 
   test("compute payloads with fees and expiry delta") {
 
-    val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
+    val (firstAmountMsat, firstExpiry, payloads) = buildPayloadsWithFees(finalAmountMsat, finalExpiry, hops.drop(1))
 
     assert(firstAmountMsat === amount_ab)
     assert(firstExpiry === expiry_ab)
     assert(payloads ===
-      PerHopPayload(channelUpdate_bc.shortChannelId, fee_b, amount_bc, expiry_bc) ::
-        PerHopPayload(channelUpdate_cd.shortChannelId, fee_c, amount_cd, expiry_cd) ::
-        PerHopPayload(channelUpdate_de.shortChannelId, fee_d, amount_de, expiry_de) ::
-        PerHopPayload(ShortChannelId(0L), 0L, finalAmountMsat, finalExpiry) :: Nil)
+      (PerHopPayload(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc), fee_b) ::
+        (PerHopPayload(channelUpdate_cd.shortChannelId, amount_cd, expiry_cd), fee_c) ::
+        (PerHopPayload(channelUpdate_de.shortChannelId, amount_de, expiry_de), fee_d) ::
+          (PerHopPayload(ShortChannelId(0L), finalAmountMsat, finalExpiry), 0L) :: Nil)
   }
 
   test("build onion") {

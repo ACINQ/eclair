@@ -77,9 +77,9 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         } match {
         case Success((perHopPayload, nextPacket, _)) if nextPacket.isLastPacket =>
           val cmd = perHopPayload match {
-            case PerHopPayload(_, _, finalAmountToForward, _) if finalAmountToForward > add.amountMsat =>
+            case PerHopPayload(_, finalAmountToForward, _) if finalAmountToForward > add.amountMsat =>
               Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectHtlcAmount(add.amountMsat)), commit = true))
-            case PerHopPayload(_, _, _, finalOutgoingCltvValue) if finalOutgoingCltvValue != add.expiry =>
+            case PerHopPayload(_, _, finalOutgoingCltvValue) if finalOutgoingCltvValue != add.expiry =>
               Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectCltvExpiry(add.expiry)), commit = true))
             case _ =>
               Right(add)
