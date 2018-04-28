@@ -80,7 +80,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
       FundTransactionResponse(unsignedFundingTx, changepos, fee) <- fundTransaction(partialFundingTx, lockUnspents = true)
       // now let's sign the funding tx
-      SignTransactionResponse(fundingTx, _) <- signTransaction(unsignedFundingTx)
+      SignTransactionResponse(fundingTx, _) <- signTransactionOrRollback(unsignedFundingTx)
       // there will probably be a change output, so we need to find which output is ours
       outputIndex = Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
       _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=$fee")
@@ -97,6 +97,18 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
 
   override def rollback(tx: Transaction): Future[Boolean] = unlockOutpoint(tx.txIn.map(_.outPoint).toList) // we unlock all utxos used by the tx
 
+  private def signTransactionOrRollback(tx: Transaction): Future[SignTransactionResponse] = {
+    val f = signTransaction(tx)
+    f.recoverWith {
+      case e: Throwable =>
+        logger.error(s"Error signing transaction txid=${tx.txid}", e)
+        rollback(tx).recover {
+          case ee: Throwable =>
+            logger.warn(s"Cannot rollback transaction txid=${tx.txid}", ee)
+        }
+        f
+    }
+  }
 }
 
 object BitcoinCoreWallet {
