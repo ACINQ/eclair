@@ -54,7 +54,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
   @FXML def initialize() = {
     fundingUnit.setItems(Constants.FX_UNITS_ARRAY_NO_MSAT)
     fundingUnit.setValue(FxApp.getUnit.label)
-    feerateField.setText((Globals.feeratesPerKb.get().blocks_6 / 1000).toString)
+    feerateField.setText((Globals.feeratesPerKB.get().blocks_6 / 1000).toString)
 
     simpleConnection.selectedProperty.addListener(new ChangeListener[Boolean] {
       override def changed(observable: ObservableValue[_ <: Boolean], oldValue: Boolean, newValue: Boolean) = {

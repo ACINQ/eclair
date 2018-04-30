@@ -58,7 +58,7 @@ class EarnDotComFeeProviderSpec extends FunSuite {
     val json = parse(sample_response)
     val feeRanges = parseFeeRanges(json)
     val feerates = extractFeerates(feeRanges)
-    val ref = FeeratesPerKb(
+    val ref = FeeratesPerKB(
       block_1 = 400 * 1000,
       blocks_2 = 350 * 1000,
       blocks_6 = 230 * 1000,

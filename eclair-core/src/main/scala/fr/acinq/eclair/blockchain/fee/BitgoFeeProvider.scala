@@ -42,7 +42,7 @@ class BitgoFeeProvider(chainHash: BinaryData)(implicit system: ActorSystem, ec: 
     case _ => Uri("https://test.bitgo.com/api/v2/tbtc/tx/fee")
   }
 
-  override def getFeerates: Future[FeeratesPerKb] =
+  override def getFeerates: Future[FeeratesPerKB] =
     for {
       httpRes <- httpClient.singleRequest(HttpRequest(uri = uri, method = HttpMethods.GET))
       json <- Unmarshal(httpRes).to[JValue]
@@ -57,8 +57,8 @@ object BitgoFeeProvider {
   def parseFeeRanges(json: JValue): Seq[BlockTarget] = {
     val blockTargets = json \ "feeByBlockTarget"
     blockTargets.foldField(Seq.empty[BlockTarget]) {
-      // BitGo returns estimates in Satoshi/Kb, which is what we want
-      case (list, (strBlockTarget, JInt(feePerKb))) => list :+ BlockTarget(strBlockTarget.toInt, feePerKb.longValue())
+      // BitGo returns estimates in Satoshi/KB, which is what we want
+      case (list, (strBlockTarget, JInt(feePerKB))) => list :+ BlockTarget(strBlockTarget.toInt, feePerKB.longValue())
     }
   }
 
@@ -69,8 +69,8 @@ object BitgoFeeProvider {
     belowLimit.map(_.fee).min
   }
 
-  def extractFeerates(feeRanges: Seq[BlockTarget]): FeeratesPerKb =
-    FeeratesPerKb(
+  def extractFeerates(feeRanges: Seq[BlockTarget]): FeeratesPerKB =
+    FeeratesPerKB(
       block_1 = extractFeerate(feeRanges, 1),
       blocks_2 = extractFeerate(feeRanges, 2),
       blocks_6 = extractFeerate(feeRanges, 6),

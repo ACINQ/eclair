@@ -56,7 +56,7 @@ class BitgoFeeProviderSpec extends FunSuite {
     val json = parse(sample_response)
     val feeRanges = parseFeeRanges(json)
     val feerates = extractFeerates(feeRanges)
-    val ref = FeeratesPerKb(
+    val ref = FeeratesPerKB(
       block_1 = 149453,
       blocks_2 = 136797,
       blocks_6 = 105566,
