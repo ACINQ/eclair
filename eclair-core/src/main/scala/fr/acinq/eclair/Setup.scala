@@ -132,7 +132,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       zmqConnected = Promise[Boolean]()
       tcpBound = Promise[Unit]()
 
-      defaultFeerates = FeeratesPerByte(
+      defaultFeerates = FeeratesPerKB(
         block_1 = config.getLong("default-feerates.delay-blocks.1"),
         blocks_2 = config.getLong("default-feerates.delay-blocks.2"),
         blocks_6 = config.getLong("default-feerates.delay-blocks.6"),
@@ -147,11 +147,11 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         case _ => new FallbackFeeProvider(new BitgoFeeProvider(nodeParams.chainHash) :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
       }
       _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
-        case feerates: FeeratesPerByte =>
-          Globals.feeratesPerByte.set(feerates)
+        case feerates: FeeratesPerKB =>
+          Globals.feeratesPerKB.set(feerates)
           Globals.feeratesPerKw.set(FeeratesPerKw(feerates))
           system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
-          logger.info(s"current feeratesPerByte=${Globals.feeratesPerByte.get()}")
+          logger.info(s"current feeratesPerKB=${Globals.feeratesPerKB.get()} feeratesPerKw=${Globals.feeratesPerKw.get()}")
           feeratesRetrieved.trySuccess(true)
       })
       _ <- feeratesRetrieved.future

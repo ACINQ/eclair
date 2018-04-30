@@ -23,7 +23,6 @@ import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.ActorMaterializer
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport._
 import fr.acinq.bitcoin.{BinaryData, Block}
-import fr.acinq.eclair.feerateKbToByte
 import org.json4s.JsonAST.{JInt, JValue}
 import org.json4s.{DefaultFormats, jackson}
 
@@ -43,7 +42,7 @@ class BitgoFeeProvider(chainHash: BinaryData)(implicit system: ActorSystem, ec: 
     case _ => Uri("https://test.bitgo.com/api/v2/tbtc/tx/fee")
   }
 
-  override def getFeerates: Future[FeeratesPerByte] =
+  override def getFeerates: Future[FeeratesPerKB] =
     for {
       httpRes <- httpClient.singleRequest(HttpRequest(uri = uri, method = HttpMethods.GET))
       json <- Unmarshal(httpRes).to[JValue]
@@ -58,8 +57,8 @@ object BitgoFeeProvider {
   def parseFeeRanges(json: JValue): Seq[BlockTarget] = {
     val blockTargets = json \ "feeByBlockTarget"
     blockTargets.foldField(Seq.empty[BlockTarget]) {
-      // we divide by 1024 because bitgo returns estimates in Satoshi/Kb and we use estimates in Satoshi/Byte
-      case (list, (strBlockTarget, JInt(feePerKb))) => list :+ BlockTarget(strBlockTarget.toInt, feerateKbToByte(feePerKb.longValue()))
+      // BitGo returns estimates in Satoshi/KB, which is what we want
+      case (list, (strBlockTarget, JInt(feePerKB))) => list :+ BlockTarget(strBlockTarget.toInt, feePerKB.longValue())
     }
   }
 
@@ -70,8 +69,8 @@ object BitgoFeeProvider {
     belowLimit.map(_.fee).min
   }
 
-  def extractFeerates(feeRanges: Seq[BlockTarget]): FeeratesPerByte =
-    FeeratesPerByte(
+  def extractFeerates(feeRanges: Seq[BlockTarget]): FeeratesPerKB =
+    FeeratesPerKB(
       block_1 = extractFeerate(feeRanges, 1),
       blocks_2 = extractFeerate(feeRanges, 2),
       blocks_6 = extractFeerate(feeRanges, 6),
