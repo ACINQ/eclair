@@ -51,7 +51,7 @@ class EarnDotComFeeProviderSpec extends FunSuite {
     val json = parse(sample_response)
     val feeRanges = parseFeeRanges(json)
     val fee = extractFeerate(feeRanges, 6)
-    assert(fee === 230 * 1024)
+    assert(fee === 230 * 1000)
   }
 
   test("extract all fees") {
@@ -59,12 +59,12 @@ class EarnDotComFeeProviderSpec extends FunSuite {
     val feeRanges = parseFeeRanges(json)
     val feerates = extractFeerates(feeRanges)
     val ref = FeeratesPerKb(
-      block_1 = 400 * 1024,
-      blocks_2 = 350 * 1024,
-      blocks_6 = 230 * 1024,
-      blocks_12 = 140 * 1024,
-      blocks_36 = 60 * 1024,
-      blocks_72 = 40 * 1024)
+      block_1 = 400 * 1000,
+      blocks_2 = 350 * 1000,
+      blocks_6 = 230 * 1000,
+      blocks_12 = 140 * 1000,
+      blocks_36 = 60 * 1000,
+      blocks_72 = 40 * 1000)
     assert(feerates === ref)
   }
 

@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
-import fr.acinq.eclair.blockchain.fee.{FeerateUnit, FeeratesPerKb, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.fee.{FeeratesPerKb, FeeratesPerKw}
 
 /**
   * Created by PM on 25/01/2016.
@@ -43,8 +43,6 @@ object Globals {
     * The value is read by all actors, hence it needs to be thread-safe.
     */
   val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
-
-  def getFeerate(unit: FeerateUnit, target: Int): Long = feeratesPerKw.get().getFeerate(unit, target)
 }
 
 

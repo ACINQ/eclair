@@ -60,7 +60,7 @@ object EarnDotComFeeProvider {
       val JInt(minDelay) = item \ "minDelay"
       val JInt(maxDelay) = item \ "maxDelay"
       // earn.com returns fees in Satoshi/byte and we want Satoshi/kilobyte
-      FeeRange(minFee = 1024 * minFee.toLong, maxFee = 1024 * maxFee.toLong, memCount = memCount.toLong, minDelay = minDelay.toLong, maxDelay = maxDelay.toLong)
+      FeeRange(minFee = 1000 * minFee.toLong, maxFee = 1000 * maxFee.toLong, memCount = memCount.toLong, minDelay = minDelay.toLong, maxDelay = maxDelay.toLong)
     })
   }
 

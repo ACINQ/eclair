@@ -18,13 +18,10 @@ package fr.acinq.eclair.blockchain.fee
 
 import akka.actor.ActorSystem
 import akka.util.Timeout
-import fr.acinq.bitcoin.Block
 import org.json4s.DefaultFormats
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
-
-import scala.concurrent.Await
 
 /**
   * Created by PM on 27/01/2017.
@@ -70,12 +67,9 @@ class BitgoFeeProviderSpec extends FunSuite {
   }
 
   test("make sure API hasn't changed") {
-    import scala.concurrent.ExecutionContext.Implicits.global
     import scala.concurrent.duration._
     implicit val system = ActorSystem()
     implicit val timeout = Timeout(30 seconds)
-    println("BitGo livenet fees: " + Await.result(new BitgoFeeProvider(Block.LivenetGenesisBlock.hash).getFeerates, 10 seconds))
-    println("BitGo testnet fees: " + Await.result(new BitgoFeeProvider(Block.TestnetGenesisBlock.hash).getFeerates, 10 seconds))
   }
 
 }
