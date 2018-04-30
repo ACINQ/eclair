@@ -75,9 +75,6 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
       val lowFundingMsat = 100
       bob ! open.copy(fundingSatoshis = lowFundingMsat)
       val error = bob2alice.expectMsgType[Error]
-
-
-
       assert(error === Error(open.temporaryChannelId, new InvalidFundingAmount(open.temporaryChannelId, lowFundingMsat, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS).getMessage.getBytes("UTF-8")))
       awaitCond(bob.stateName == CLOSED)
     }
