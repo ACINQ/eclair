@@ -60,7 +60,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
 
   def publishTransaction(hex: String)(implicit ec: ExecutionContext): Future[String] = rpcClient.invoke("sendrawtransaction", hex) collect { case JString(txid) => txid }
 
-  def unlockOutpoint(outPoints: List[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("lockunspent", true, outPoints.map(outPoint => Utxo(outPoint.txid.toString, outPoint.index))) collect { case JBool(result) => result }
+  def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("lockunspent", true, outPoints.toList.map(outPoint => Utxo(outPoint.txid.toString, outPoint.index))) collect { case JBool(result) => result }
 
 
   override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDouble(balance) => Satoshi((balance * 10e8).toLong) }
@@ -95,16 +95,15 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
   }
     .recover { case _ => true } // in all other cases we consider that the tx has been published
 
-  override def rollback(tx: Transaction): Future[Boolean] = unlockOutpoint(tx.txIn.map(_.outPoint).toList) // we unlock all utxos used by the tx
+  override def rollback(tx: Transaction): Future[Boolean] = unlockOutpoints(tx.txIn.map(_.outPoint)) // we unlock all utxos used by the tx
 
   private def signTransactionOrRollback(tx: Transaction): Future[SignTransactionResponse] = {
     val f = signTransaction(tx)
     f.recoverWith {
       case e: Throwable =>
-        logger.error(s"Error signing transaction txid=${tx.txid}", e)
-        rollback(tx).recover {
+        unlockOutpoints(tx.txIn.map(_.outPoint)).recover {
           case ee: Throwable =>
-            logger.warn(s"Cannot rollback transaction txid=${tx.txid}", ee)
+            logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${tx.txid}", ee)
         }
         f
     }
