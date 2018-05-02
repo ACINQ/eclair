@@ -439,7 +439,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       } else {
         // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
         val shortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
-        val blobs = ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.GZIP_FORMAT, shortChannelIds)
+        val blobs = ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.UNCOMPRESSED_FORMAT, shortChannelIds)
         log.info("sending back reply_channel_range({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.size)
         val replies = blobs.map(blob => ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, blob))
         replies.foreach(reply => sender ! reply)
@@ -451,11 +451,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       if (chainHash != nodeParams.chainHash) {
         log.warning("received reply_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
-        val (_, theirShortChannelIds) = ChannelRangeQueries.decodeShortChannelIds(data)
+        val (_, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
         val ourShortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
         val missing = theirShortChannelIds -- ourShortChannelIds
         log.info("we received their reply, we're missing {} channel announcements/updates", missing.size)
-        val blobs = ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.GZIP_FORMAT, missing)
+        val blobs = ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.ZLIB_FORMAT, missing, useGzip)
         blobs.foreach(blob => sender ! QueryShortChannelIds(chainHash, blob))
       }
       stay
@@ -465,7 +465,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       if (chainHash != nodeParams.chainHash) {
         log.warning("received query_short_channel_id message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
-        val (_, shortChannelIds) = ChannelRangeQueries.decodeShortChannelIds(data)
+        val (_, shortChannelIds, _) = ChannelRangeQueries.decodeShortChannelIds(data)
         shortChannelIds.foreach(shortChannelId => {
           d.channels.get(shortChannelId) match {
             case None => log.warning("peer asked for a channel announcement {} that we don't have", shortChannelId)

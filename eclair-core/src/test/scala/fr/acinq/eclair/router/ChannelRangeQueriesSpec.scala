@@ -19,11 +19,25 @@ class ChannelRangeQueriesSpec extends FunSuite {
     assert(decoded == shortChannelIds.toSet)
   }
 
-  test("create `reply_channel_range` messages (GZIP format)") {
-    val blobs = ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.GZIP_FORMAT, shortChannelIds)
+  test("create `reply_channel_range` messages (ZLIB format)") {
+    val blobs = ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.ZLIB_FORMAT, shortChannelIds, useGzip = false)
     val replies = blobs.map(blob  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 0, 2000000, 1, blob))
     var decoded = Set.empty[ShortChannelId]
-    replies.foreach(reply => decoded = decoded ++ ChannelRangeQueries.decodeShortChannelIds(reply.data)._2)
+    replies.foreach(reply => decoded = decoded ++ {
+      val (ChannelRangeQueries.ZLIB_FORMAT, ids, false) = ChannelRangeQueries.decodeShortChannelIds(reply.data)
+      ids
+    })
+    assert(decoded == shortChannelIds.toSet)
+  }
+
+  test("create `reply_channel_range` messages (GZIP format)") {
+    val blobs = ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.ZLIB_FORMAT, shortChannelIds, useGzip = true)
+    val replies = blobs.map(blob  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 0, 2000000, 1, blob))
+    var decoded = Set.empty[ShortChannelId]
+    replies.foreach(reply => decoded = decoded ++ {
+      val (ChannelRangeQueries.ZLIB_FORMAT, ids, true) = ChannelRangeQueries.decodeShortChannelIds(reply.data)
+      ids
+    })
     assert(decoded == shortChannelIds.toSet)
   }
 }
