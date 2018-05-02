@@ -53,15 +53,35 @@ package object eclair {
     case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
   }
 
-  def feerateKbToByte(feeratePerKb: Long): Long = Math.max(feeratePerKb / 1024, 1)
-
   /**
     * Converts feerate in satoshi-per-bytes to feerate in satoshi-per-kw
     *
-    * @param feeratePerByte feerate in satoshi-per-bytes
+    * @param feeratePerByte fee rate in satoshi-per-bytes
     * @return feerate in satoshi-per-kw
     */
-  def feerateByte2Kw(feeratePerByte: Long): Long = feeratePerByte * 1024 / 4
+  def feerateByte2Kw(feeratePerByte: Long): Long = feerateKB2Kw(feeratePerByte * 1000)
+
+  /**
+    *
+    * @param feeratesPerKw fee rate in satoshiper-kw
+    * @return fee rate in satoshi-per-byte
+    */
+  def feerateKw2Byte(feeratesPerKw: Long): Long = feeratesPerKw / 250
+
+  /**
+    * Converts feerate in satoshi-per-kilobytes to feerate in satoshi-per-kw
+    *
+    * @param feeratePerKB fee rate in satoshi-per-kilobytes
+    * @return feerate in satoshi-per-kw
+    */
+  def feerateKB2Kw(feeratePerKB: Long): Long = feeratePerKB / 4
+
+  /**
+    *
+    * @param feeratesPerKw fee rate in satoshi-per-kw
+    * @return fee rate in satoshi-per-kilobyte
+    */
+  def feerateKw2KB(feeratesPerKw: Long): Long = feeratesPerKw * 4
 
 
   def isPay2PubkeyHash(address: String): Boolean = address.startsWith("1") || address.startsWith("m") || address.startsWith("n")
@@ -84,7 +104,7 @@ package object eclair {
 
   /**
     *
-    * @param address base58 of bech32 address
+    * @param address   base58 of bech32 address
     * @param chainHash hash of the chain we're on, which will be checked against the input address
     * @return the public key script that matches the input address.
     */
