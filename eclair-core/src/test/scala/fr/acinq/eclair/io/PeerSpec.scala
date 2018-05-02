@@ -19,14 +19,14 @@ package fr.acinq.eclair.io
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Block
-import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass}
+import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueriesSpec, Rebroadcast}
 import fr.acinq.eclair.wire.GossipTimeRange
 import org.scalatest.Outcome
 
 class PeerSpec extends TestkitBaseClass {
-  val shortChannelIds = ChannelRangeQueriesSpec.readShortChannelIds().take(100).map(id => ShortChannelId(id))
+  val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(100)
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
   val channels = fakeRoutingInfo.map(_._1)
   val updates = fakeRoutingInfo.map(_._2) ++ fakeRoutingInfo.map(_._3)

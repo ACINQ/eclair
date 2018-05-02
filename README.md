@@ -152,7 +152,7 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
 
 ## Docker
 
-A [Dockerfile](Dockerfile) image is built on each commit on [docker hub](https://hub.docker.com/r/ACINQ/eclair) for running a dockerized eclair-node.
+A [Dockerfile](Dockerfile) image is built on each commit on [docker hub](https://hub.docker.com/r/acinq/eclair) for running a dockerized eclair-node.
 
 You can use the `JAVA_OPTS` environment variable to set arguments to `eclair-node`.
 
