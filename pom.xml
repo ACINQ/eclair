@@ -20,7 +20,7 @@
 
     <groupId>fr.acinq.eclair</groupId>
     <artifactId>eclair_2.11</artifactId>
-    <version>0.2-android-beta2</version>
+    <version>0.2-android-beta3-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -65,7 +65,7 @@
         <scala.version>2.11.11</scala.version>
         <scala.version.short>2.11</scala.version.short>
         <akka.version>2.3.14</akka.version>
-        <bitcoinlib.version>0.9.16</bitcoinlib.version>
+        <bitcoinlib.version>0.9.17</bitcoinlib.version>
         <guava.version>24.0-android</guava.version>
     </properties>
 

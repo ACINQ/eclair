@@ -43,7 +43,7 @@ class ChannelCodecsSpec extends FunSuite {
   }
 
   test("encode/decode key paths (all 0s)") {
-    val keyPath = KeyPath(Seq(0, 0, 0, 0))
+    val keyPath = KeyPath(Seq(0L, 0L, 0L, 0L))
     val encoded = keyPathCodec.encode(keyPath).require
     val decoded = keyPathCodec.decode(encoded).require
     assert(keyPath === decoded.value)
@@ -59,7 +59,7 @@ class ChannelCodecsSpec extends FunSuite {
   test("encode/decode localparams") {
     val o = LocalParams(
       nodeId = randomKey.publicKey,
-      channelKeyPath = DeterministicWallet.KeyPath(Seq(42)),
+      channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
       dustLimitSatoshis = Random.nextInt(Int.MaxValue),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserveSatoshis = Random.nextInt(Int.MaxValue),

@@ -25,37 +25,37 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
   * Created by PM on 09/07/2017.
   */
-class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: FeeratesPerByte)(implicit ec: ExecutionContext) extends FeeProvider {
+class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: FeeratesPerKB)(implicit ec: ExecutionContext) extends FeeProvider {
 
   /**
     * We need this to keep commitment tx fees in sync with the state of the network
     *
     * @param nBlocks number of blocks until tx is confirmed
-    * @return the current fee estimate in Satoshi/Byte
+    * @return the current fee estimate in Satoshi/KB
     */
   def estimateSmartFee(nBlocks: Int): Future[Long] =
     rpcClient.invoke("estimatesmartfee", nBlocks).map(json => {
       json \ "feerate" match {
         case JDouble(feerate) =>
-          // estimatesmartfee returns a fee rate in Btc/Kb
-          btc2satoshi(Btc(feerate)).amount / 1024
+          // estimatesmartfee returns a fee rate in Btc/KB
+          btc2satoshi(Btc(feerate)).amount
         case JInt(feerate) if feerate.toLong < 0 =>
           // negative value means failure
           feerate.toLong
         case JInt(feerate) =>
           // should (hopefully) never happen
-          btc2satoshi(Btc(feerate.toLong)).amount / 1024
+          btc2satoshi(Btc(feerate.toLong)).amount
       }
     })
 
-  override def getFeerates: Future[FeeratesPerByte] = for {
+  override def getFeerates: Future[FeeratesPerKB] = for {
     block_1 <- estimateSmartFee(1)
     blocks_2 <- estimateSmartFee(2)
     blocks_6 <- estimateSmartFee(6)
     blocks_12 <- estimateSmartFee(12)
     blocks_36 <- estimateSmartFee(36)
     blocks_72 <- estimateSmartFee(72)
-  } yield FeeratesPerByte(
+  } yield FeeratesPerKB(
     block_1 = if (block_1 > 0) block_1 else defaultFeerates.block_1,
     blocks_2 = if (blocks_2 > 0) blocks_2 else defaultFeerates.blocks_2,
     blocks_6 = if (blocks_6 > 0) blocks_6 else defaultFeerates.blocks_6,
