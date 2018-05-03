@@ -72,7 +72,8 @@ case class NodeParams(keyManager: KeyManager,
                       watcherType: WatcherType,
                       paymentRequestExpiry: FiniteDuration,
                       maxPendingPaymentRequests: Int,
-                      maxPaymentFee: Double) {
+                      maxPaymentFee: Double,
+                      minFundingSatoshis: Long) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
 }
@@ -190,7 +191,8 @@ object NodeParams {
       watcherType = watcherType,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"),
-      maxPaymentFee = config.getDouble("max-payment-fee")
+      maxPaymentFee = config.getDouble("max-payment-fee"),
+      minFundingSatoshis = config.getLong("min-funding-satoshis")
     )
   }
 }
