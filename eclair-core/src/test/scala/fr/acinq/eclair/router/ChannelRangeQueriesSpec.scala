@@ -28,16 +28,16 @@ class ChannelRangeQueriesSpec extends FunSuite {
   import ChannelRangeQueriesSpec._
 
   test("create `reply_channel_range` messages (uncompressed format)") {
-    val blobs = ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.UNCOMPRESSED_FORMAT, shortChannelIds)
-    val replies = blobs.map(blob  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 0, 2000000, 1, blob))
+    val blocks = ChannelRangeQueries.encodeShortChannelIds(400000, 20000, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+    val replies = blocks.map(block  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
     var decoded = Set.empty[ShortChannelId]
     replies.foreach(reply => decoded = decoded ++ ChannelRangeQueries.decodeShortChannelIds(reply.data)._2)
     assert(decoded == shortChannelIds.toSet)
   }
 
   test("create `reply_channel_range` messages (ZLIB format)") {
-    val blobs = ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.ZLIB_FORMAT, shortChannelIds, useGzip = false)
-    val replies = blobs.map(blob  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 0, 2000000, 1, blob))
+    val blocks = ChannelRangeQueries.encodeShortChannelIds(400000, 20000, shortChannelIds, ChannelRangeQueries.ZLIB_FORMAT, useGzip = false)
+    val replies = blocks.map(block  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
     var decoded = Set.empty[ShortChannelId]
     replies.foreach(reply => decoded = decoded ++ {
       val (ChannelRangeQueries.ZLIB_FORMAT, ids, false) = ChannelRangeQueries.decodeShortChannelIds(reply.data)
@@ -47,8 +47,8 @@ class ChannelRangeQueriesSpec extends FunSuite {
   }
 
   test("create `reply_channel_range` messages (GZIP format)") {
-    val blobs = ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.ZLIB_FORMAT, shortChannelIds, useGzip = true)
-    val replies = blobs.map(blob  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 0, 2000000, 1, blob))
+    val blocks = ChannelRangeQueries.encodeShortChannelIds(400000, 20000, shortChannelIds, ChannelRangeQueries.ZLIB_FORMAT, useGzip = true)
+    val replies = blocks.map(block  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
     var decoded = Set.empty[ShortChannelId]
     replies.foreach(reply => decoded = decoded ++ {
       val (ChannelRangeQueries.ZLIB_FORMAT, ids, true) = ChannelRangeQueries.decodeShortChannelIds(reply.data)
