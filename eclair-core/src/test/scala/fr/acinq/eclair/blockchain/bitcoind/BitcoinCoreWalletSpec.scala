@@ -20,13 +20,14 @@ import java.io.File
 import java.nio.file.Files
 import java.util.UUID
 
+import akka.actor.Status.Failure
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{Block, MilliBtc, Satoshi, Script}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
@@ -39,7 +40,8 @@ import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.sys.process.{Process, _}
-import scala.util.Try
+import scala.util.{Random, Try}
+import collection.JavaConversions._
 
 @RunWith(classOf[JUnitRunner])
 class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll with Logging {
@@ -54,6 +56,8 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
   var bitcoinrpcclient: BasicBitcoinJsonRPCClient = null
   var bitcoincli: ActorRef = null
 
+  val walletPassword = Random.alphanumeric.take(8).mkString
+
   implicit val formats = DefaultFormats
 
   case class BitcoinReq(method: String, params: Any*)
@@ -62,40 +66,18 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
     Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
     Files.copy(classOf[BitcoinCoreWalletSpec].getResourceAsStream("/integration/bitcoin.conf"), new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)
 
-    bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
-    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 28332)
-    bitcoincli = system.actorOf(Props(new Actor {
-      override def receive: Receive = {
-        case BitcoinReq(method) => bitcoinrpcclient.invoke(method) pipeTo sender
-        case BitcoinReq(method, params) => bitcoinrpcclient.invoke(method, params) pipeTo sender
-        case BitcoinReq(method, param1, param2) => bitcoinrpcclient.invoke(method, param1, param2) pipeTo sender
-      }
-    }))
+    startBitcoind()
   }
 
   override def afterAll(): Unit = {
-    // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging
-    logger.info(s"stopping bitcoind")
-    val sender = TestProbe()
-    sender.send(bitcoincli, BitcoinReq("stop"))
-    sender.expectMsgType[JValue]
-    bitcoind.exitValue()
+    stopBitcoind()
   }
 
   test("wait bitcoind ready") {
-    val sender = TestProbe()
-    logger.info(s"waiting for bitcoind to initialize...")
-    awaitCond({
-      sender.send(bitcoincli, BitcoinReq("getnetworkinfo"))
-      sender.receiveOne(5 second).isInstanceOf[JValue]
-    }, max = 30 seconds, interval = 500 millis)
-    logger.info(s"generating initial blocks...")
-    sender.send(bitcoincli, BitcoinReq("generate", 500))
-    sender.expectMsgType[JValue](30 seconds)
+    waitForBitcoindReady()
   }
 
   test("create/commit/rollback funding txes") {
-    import collection.JavaConversions._
     val commonConfig = ConfigFactory.parseMap(Map("eclair.chain" -> "regtest", "eclair.spv" -> false, "eclair.server.public-ips.1" -> "localhost", "eclair.bitcoind.port" -> 28333, "eclair.bitcoind.rpcport" -> 28332, "eclair.bitcoind.zmq" -> "tcp://127.0.0.1:28334", "eclair.router-broadcast-interval" -> "2 second", "eclair.auto-reconnect" -> false))
     val config = ConfigFactory.load(commonConfig).getConfig("eclair")
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
@@ -146,6 +128,90 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
     sender.send(bitcoincli, BitcoinReq("listlockunspent"))
     assert(sender.expectMsgType[JValue](10 seconds).children.size === 2)
 
+  }
+
+  test("encrypt wallet") {
+    val sender = TestProbe()
+    sender.send(bitcoincli, BitcoinReq("encryptwallet", walletPassword))
+    stopBitcoind()
+    startBitcoind()
+    waitForBitcoindReady()
+  }
+
+  test("unlock failed funding txes") {
+    val commonConfig = ConfigFactory.parseMap(Map("eclair.chain" -> "regtest", "eclair.spv" -> false, "eclair.server.public-ips.1" -> "localhost", "eclair.bitcoind.port" -> 28333, "eclair.bitcoind.rpcport" -> 28332, "eclair.bitcoind.zmq" -> "tcp://127.0.0.1:28334", "eclair.router-broadcast-interval" -> "2 second", "eclair.auto-reconnect" -> false))
+    val config = ConfigFactory.load(commonConfig).getConfig("eclair")
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+    val wallet = new BitcoinCoreWallet(bitcoinClient)
+
+    val sender = TestProbe()
+
+    wallet.getBalance.pipeTo(sender.ref)
+    assert(sender.expectMsgType[Satoshi] > Satoshi(0))
+
+    wallet.getFinalAddress.pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+    assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
+
+    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
+    assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
+
+    val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
+    wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("Please enter the wallet passphrase with walletpassphrase first."))
+
+    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
+    assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
+
+    sender.send(bitcoincli, BitcoinReq("walletpassphrase", walletPassword, 10))
+    sender.expectMsgType[JValue]
+
+    wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
+    val MakeFundingTxResponse(fundingTx, _) = sender.expectMsgType[MakeFundingTxResponse]
+
+    wallet.commit(fundingTx).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Boolean])
+
+    wallet.getBalance.pipeTo(sender.ref)
+    assert(sender.expectMsgType[Satoshi] > Satoshi(0))
+
+  }
+
+  private def startBitcoind(): Unit = {
+    bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
+    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 28332)
+    bitcoincli = system.actorOf(Props(new Actor {
+      override def receive: Receive = {
+        case BitcoinReq(method) => bitcoinrpcclient.invoke(method) pipeTo sender
+        case BitcoinReq(method, params) => bitcoinrpcclient.invoke(method, params) pipeTo sender
+        case BitcoinReq(method, param1, param2) => bitcoinrpcclient.invoke(method, param1, param2) pipeTo sender
+      }
+    }))
+  }
+
+  private def stopBitcoind(): Int = {
+    // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging
+    logger.info(s"stopping bitcoind")
+    val sender = TestProbe()
+    sender.send(bitcoincli, BitcoinReq("stop"))
+    sender.expectMsgType[JValue]
+    bitcoind.exitValue()
+  }
+
+  private def waitForBitcoindReady(): Unit = {
+    val sender = TestProbe()
+    logger.info(s"waiting for bitcoind to initialize...")
+    awaitCond({
+      sender.send(bitcoincli, BitcoinReq("getnetworkinfo"))
+      sender.receiveOne(5 second).isInstanceOf[JValue]
+    }, max = 30 seconds, interval = 500 millis)
+    logger.info(s"generating initial blocks...")
+    sender.send(bitcoincli, BitcoinReq("generate", 500))
+    sender.expectMsgType[JValue](30 seconds)
   }
 
 }
