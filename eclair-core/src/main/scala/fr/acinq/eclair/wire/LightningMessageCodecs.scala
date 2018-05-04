@@ -19,6 +19,7 @@ package fr.acinq.eclair.wire
 import java.math.BigInteger
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 
+import com.google.common.cache.{CacheBuilder, CacheLoader}
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.{Generators, Sphinx}
@@ -26,7 +27,7 @@ import fr.acinq.eclair.wire.FixedSizeStrictCodec.bytesStrict
 import fr.acinq.eclair.{ShortChannelId, UInt64, wire}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec, Err}
+import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
 
 import scala.util.{Failure, Success, Try}
 
@@ -318,6 +319,31 @@ object LightningMessageCodecs {
     .typecase(257, nodeAnnouncementCodec)
     .typecase(258, channelUpdateCodec)
     .typecase(259, announcementSignaturesCodec)
+
+
+  /**
+    * A codec that caches serialized routing messages
+    */
+  val cachedLightningMessageCodec = new Codec[LightningMessage] {
+
+    override def sizeBound: SizeBound = lightningMessageCodec.sizeBound
+
+    val cache = CacheBuilder
+      .newBuilder
+      .weakKeys() // will cleanup values when keys are garbage collected
+      .build(new CacheLoader[LightningMessage, Attempt[BitVector]] {
+      override def load(key: LightningMessage): Attempt[BitVector] = lightningMessageCodec.encode(key)
+    })
+
+    override def encode(value: LightningMessage): Attempt[BitVector] = value match {
+      case _: ChannelAnnouncement => cache.get(value) // we only cache serialized routing messages
+      case _: NodeAnnouncement => cache.get(value) // we only cache serialized routing messages
+      case _: ChannelUpdate => cache.get(value) // we only cache serialized routing messages
+      case _ => lightningMessageCodec.encode(value)
+    }
+
+    override def decode(bits: BitVector): Attempt[DecodeResult[LightningMessage]] = lightningMessageCodec.decode(bits)
+  }
 
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::

@@ -46,7 +46,7 @@ class Authenticator(nodeParams: NodeParams) extends Actor with ActorLogging {
         KeyPair(nodeParams.nodeId.toBin, nodeParams.privateKey.toBin),
         remoteNodeId_opt.map(_.toBin),
         connection = connection,
-        codec = LightningMessageCodecs.lightningMessageCodec))
+        codec = LightningMessageCodecs.cachedLightningMessageCodec))
       context watch transport
       context become (ready(switchboard, authenticating + (transport -> pending)))
 

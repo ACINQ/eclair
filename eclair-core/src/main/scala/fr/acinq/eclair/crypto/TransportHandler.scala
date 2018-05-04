@@ -21,11 +21,10 @@ import java.nio.ByteOrder
 import akka.actor.{Actor, ActorRef, FSM, PoisonPill, Props, Terminated}
 import akka.io.Tcp
 import akka.util.ByteString
-import com.google.common.cache.{CacheBuilder, CacheLoader}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.crypto.Noise._
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec, DecodeResult}
 
@@ -47,7 +46,7 @@ import scala.util.{Failure, Success, Try}
   * @param rs         remote node static public key (which must be known before we initiate communication)
   * @param connection actor that represents the other node's
   */
-class TransportHandler[T <: AnyRef : ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, codec: Codec[T]) extends Actor with FSM[TransportHandler.State, TransportHandler.Data] {
+class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, codec: Codec[T]) extends Actor with FSM[TransportHandler.State, TransportHandler.Data] {
 
   import TransportHandler._
 
@@ -184,7 +183,7 @@ class TransportHandler[T <: AnyRef : ClassTag](keyPair: KeyPair, rs: Option[Bina
         }
         stay using d.copy(sendBuffer = sendBuffer1)
       } else {
-        val blob = cacheEncode(t)
+        val blob = codec.encode(t).require.toByteArray
         val (enc1, ciphertext) = d.encryptor.encrypt(blob)
         connection ! Tcp.Write(buf(ciphertext), WriteAck)
         stay using d.copy(encryptor = enc1, unackedSent = Some(t))
@@ -192,12 +191,11 @@ class TransportHandler[T <: AnyRef : ClassTag](keyPair: KeyPair, rs: Option[Bina
 
     case Event(WriteAck, d: NormalData[T]) =>
       def send(t: T) = {
-        val blob = cacheEncode(t)
+        val blob = codec.encode(t).require.toByteArray
         val (enc1, ciphertext) = d.encryptor.encrypt(blob)
         connection ! Tcp.Write(buf(ciphertext), WriteAck)
         enc1
       }
-
       d.sendBuffer.normalPriority.dequeueOption match {
         case Some((t, normalPriority1)) =>
           val enc1 = send(t)
@@ -211,20 +209,6 @@ class TransportHandler[T <: AnyRef : ClassTag](keyPair: KeyPair, rs: Option[Bina
               stay using d.copy(unackedSent = None)
           }
       }
-  }
-
-  val cache = CacheBuilder
-    .newBuilder
-    .weakKeys() // will cleanup values when keys are garbage collected
-    .build(new CacheLoader[T, Array[Byte]] {
-    override def load(key: T): Array[Byte] = codec.encode(key).require.toByteArray
-  })
-
-  def cacheEncode(t: T): Array[Byte] = t match {
-    case _: ChannelAnnouncement => cache.get(t) // we only cache serialized routing messages
-    case _: NodeAnnouncement => cache.get(t) // we only cache serialized routing messages
-    case _: ChannelUpdate => cache.get(t) // we only cache serialized routing messages
-    case _ => codec.encode(t).require.toByteArray
   }
 
   whenUnhandled {
@@ -246,7 +230,7 @@ class TransportHandler[T <: AnyRef : ClassTag](keyPair: KeyPair, rs: Option[Bina
 
 object TransportHandler {
 
-  def props[T <: AnyRef : ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, codec: Codec[T]): Props = Props(new TransportHandler(keyPair, rs, connection, codec))
+  def props[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, codec: Codec[T]): Props = Props(new TransportHandler(keyPair, rs, connection, codec))
 
   val MAX_BUFFERED = 100000L
 
