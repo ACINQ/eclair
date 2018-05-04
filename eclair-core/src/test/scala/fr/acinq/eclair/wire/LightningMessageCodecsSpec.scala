@@ -255,6 +255,38 @@ class LightningMessageCodecsSpec extends FunSuite {
       assert(payload2 === payload1)
     }
   }
+
+  test("encode/decode using cached codec") {
+    val codec = cachedLightningMessageCodec
+
+    val commit_sig = CommitSig(randomBytes(32), randomSignature, randomSignature :: randomSignature :: randomSignature :: Nil)
+    val revoke_and_ack = RevokeAndAck(randomBytes(32), scalar(0), point(1))
+    val channel_announcement = ChannelAnnouncement(randomSignature, randomSignature, randomSignature, randomSignature, bin(7, 9), Block.RegtestGenesisBlock.hash, ShortChannelId(1), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+    val node_announcement = NodeAnnouncement(randomSignature, bin(0, 0), 1, randomKey.publicKey, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", IPv4(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)).asInstanceOf[Inet4Address], 42000) :: Nil)
+    val channel_update = ChannelUpdate(randomSignature, Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2, bin(2, 2), 3, 4, 5, 6)
+    val announcement_signatures = AnnouncementSignatures(randomBytes(32), ShortChannelId(42), randomSignature, randomSignature)
+    val ping = Ping(100, BinaryData("01" * 10))
+    val pong = Pong(BinaryData("01" * 10))
+
+    val cached = channel_announcement :: node_announcement :: channel_update :: Nil
+    val nonCached = commit_sig :: revoke_and_ack :: announcement_signatures :: ping :: pong :: Nil
+    val msgs: List[LightningMessage] = cached ::: nonCached
+
+    msgs.foreach {
+      case msg => {
+        val encoded = codec.encode(msg).require
+        val decoded = codec.decode(encoded).require
+        assert(msg === decoded.value)
+      }
+    }
+
+    import scala.language.reflectiveCalls
+    val cachedKeys = codec.cache.asMap().keySet()
+    assert(cached.forall(msg => cachedKeys.contains(msg)))
+    assert(nonCached.forall(msg => !cachedKeys.contains(msg)))
+
+  }
+
 }
 
 object LightningMessageCodecsSpec {
