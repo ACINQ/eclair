@@ -20,7 +20,7 @@ import akka.actor.{Actor, ActorSystem, Props}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Block, MnemonicCode, Satoshi}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ScriptHashSubscription, ScriptHashSubscriptionResponse}
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{NewWalletReceiveAddress, WalletEvent, WalletParameters, WalletReady}
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuiteLike
 import org.scalatest.junit.JUnitRunner
@@ -63,12 +63,17 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     awaitCond(wallet.stateName == ElectrumWallet.RUNNING)
     assert(listener.expectMsgType[WalletReady].timestamp == header1.timestamp)
     listener.expectMsgType[NewWalletReceiveAddress]
+    listener.send(wallet, GetXpub)
+    val GetXpubResponse(xpub, path) = listener.expectMsgType[GetXpubResponse]
+    assert(xpub == "tpubDCY62b4okoTERzMurvrtoCMgkswfLufejmhwfShqAKDBN2PPNUWpwx72cvyt4R8enGstorHvXNGS8StbkAsPb7XSbYFER8Wo6zPf1Z6m9w4")
+    assert(path == "m/49'/1'/0'")
   }
 
   test("tell wallet is ready when a new block comes in, even if nothing else has changed") {
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(header2))
     assert(listener.expectMsgType[WalletReady].timestamp == header2.timestamp)
-    listener.expectMsgType[NewWalletReceiveAddress]
+    val NewWalletReceiveAddress(address) = listener.expectMsgType[NewWalletReceiveAddress]
+    assert(address == "2NDjBqJugL3gCtjWTToDgaWWogq9nYuYw31")
   }
 
   test("tell wallet is ready when it is reconnected, even if nothing has changed") {
