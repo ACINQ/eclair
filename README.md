@@ -157,13 +157,13 @@ A [Dockerfile](Dockerfile) image is built on each commit on [docker hub](https:/
 You can use the `JAVA_OPTS` environment variable to set arguments to `eclair-node`.
 
 ```
-docker run -ti --rm -e "JAVA_OPTS=-Xmx512m -Declair.api.binding-ip=0.0.0.0 -Declair.node-alias=node-pm -Declair.printToConsole" acinq\eclair
+docker run -ti --rm -e "JAVA_OPTS=-Xmx512m -Declair.api.binding-ip=0.0.0.0 -Declair.node-alias=node-pm -Declair.printToConsole" acinq/eclair
 ```
 
 If you want to persist the data directory, you can make the volume to your host with the `-v` argument, as the following example:
 
 ```
-docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConsole" acinq\eclair
+docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConsole" acinq/eclair
 ```
 
 ## Mainnet usage
