@@ -132,13 +132,9 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
 
   test("encrypt wallet") {
     val sender = TestProbe()
-
     sender.send(bitcoincli, BitcoinReq("encryptwallet", walletPassword))
-
     stopBitcoind()
-
     startBitcoind()
-
     waitForBitcoindReady()
   }
 

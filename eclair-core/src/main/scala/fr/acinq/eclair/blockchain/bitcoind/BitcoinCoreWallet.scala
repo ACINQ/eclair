@@ -69,6 +69,14 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
     JString(address) <- rpcClient.invoke("getnewaddress")
   } yield address
 
+  private def signTransactionOrUnlock(tx: Transaction): Future[SignTransactionResponse] = {
+    val f = signTransaction(tx)
+    f.onFailure { case _: Throwable => unlockOutpoints(tx.txIn.map(_.outPoint))
+      .onFailure { case e: Throwable => logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${tx.txid}", e) }
+    }
+    f
+  }
+
   override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = {
     // partial funding tx
     val partialFundingTx = Transaction(
@@ -80,7 +88,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
       FundTransactionResponse(unsignedFundingTx, changepos, fee) <- fundTransaction(partialFundingTx, lockUnspents = true)
       // now let's sign the funding tx
-      SignTransactionResponse(fundingTx, _) <- signTransactionOrRollback(unsignedFundingTx)
+      SignTransactionResponse(fundingTx, _) <- signTransactionOrUnlock(unsignedFundingTx)
       // there will probably be a change output, so we need to find which output is ours
       outputIndex = Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
       _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=$fee")
@@ -96,18 +104,6 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
     .recover { case _ => true } // in all other cases we consider that the tx has been published
 
   override def rollback(tx: Transaction): Future[Boolean] = unlockOutpoints(tx.txIn.map(_.outPoint)) // we unlock all utxos used by the tx
-
-  private def signTransactionOrRollback(tx: Transaction): Future[SignTransactionResponse] = {
-    val f = signTransaction(tx)
-    f.recoverWith {
-      case e: Throwable =>
-        unlockOutpoints(tx.txIn.map(_.outPoint)).recover {
-          case ee: Throwable =>
-            logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${tx.txid}", ee)
-        }
-        f
-    }
-  }
 }
 
 object BitcoinCoreWallet {
