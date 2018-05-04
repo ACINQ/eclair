@@ -1096,11 +1096,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_CLOSING) =>
-      if (d.mutualCloseProposed.map(_.txid).contains(tx.txid)) {
+      if (d.mutualClosePublished.map(_.txid).contains(tx.txid)) {
+        // we already know about this tx, probably because we have published it ourselves after successful negotiation
+        stay
+      } else if (d.mutualCloseProposed.map(_.txid).contains(tx.txid)) {
         // at any time they can publish a closing tx with any sig we sent them
-        handleMutualClose(tx, Right(d))
-      } else if (d.mutualClosePublished.map(_.txid).contains(tx.txid)) {
-        // we have published a closing tx which isn't one that we proposed, and used it instead of our last commitment when an error happened
         handleMutualClose(tx, Right(d))
       } else if (Some(tx.txid) == d.localCommitPublished.map(_.commitTx.txid)) {
         // this is because WatchSpent watches never expire and we are notified multiple times
