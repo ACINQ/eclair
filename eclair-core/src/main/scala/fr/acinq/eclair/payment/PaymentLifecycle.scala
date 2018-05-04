@@ -49,16 +49,22 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(hops, ignoreNodes, ignoreChannels), WaitingForRoute(s, c, failures)) =>
-      log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")} channels=${hops.map(_.lastUpdate.shortChannelId).mkString("->")}")
-      val firstHop = hops.head
       val finalExpiry = Globals.blockCount.get().toInt + c.finalCltvExpiry.toInt
+      val (_, _, payloads) = buildPayloadsWithFees(c.amountMsat, finalExpiry, hops)
+      val totalFee = payloads.map(_._2).sum
+      val totalTimeLock = payloads.map(_._1).map(_.outgoingCltvValue).sum
+
+      log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")} totalFee=$totalFee totalTimeLock=$totalTimeLock channels=[${payloads.map { case (p, fee) => s"(id: ${p.channel_id}, fee: ${fee}, cltv: ${p.outgoingCltvValue}, amtToForward: ${p.amtToForward})"}.mkString("->")}]")
+
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
       val feePct = (cmd.amountMsat - c.amountMsat) / c.amountMsat.toDouble // c.amountMsat is required to be > 0, have to convert to double, otherwise will be rounded
+
       if (feePct > c.maxFeePct) {
         log.info(s"cheapest route found is too expensive: feePct=$feePct maxFeePct=${c.maxFeePct}")
         reply(s, PaymentFailed(c.paymentHash, failures = failures :+ LocalFailure(RouteTooExpensive(feePct, c.maxFeePct))))
         stop(FSM.Normal)
       } else {
+        val firstHop = hops.head
         register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
         goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
       }
@@ -236,14 +242,20 @@ object PaymentLifecycle {
     * @return a (firstAmountMsat, firstExpiry, payloads) tuple where:
     *         - firstAmountMsat is the amount for the first htlc in the route
     *         - firstExpiry is the cltv expiry for the first htlc in the route
-    *         - a sequence of payloads that will be used to build the onion
+    *         - a sequence of payloads with fees information that will be used to build the onion
     */
-  def buildPayloads(finalAmountMsat: Long, finalExpiry: Long, hops: Seq[Hop]): (Long, Long, Seq[PerHopPayload]) =
-    hops.reverse.foldLeft((finalAmountMsat, finalExpiry, PerHopPayload(ShortChannelId(0L), finalAmountMsat, finalExpiry) :: Nil)) {
+  def buildPayloadsWithFees(finalAmountMsat: Long, finalExpiry: Long, hops: Seq[Hop]): (Long, Long, Seq[(PerHopPayload, Long)]) = {
+    hops.reverse.foldLeft((finalAmountMsat, finalExpiry, (PerHopPayload(ShortChannelId(0L), finalAmountMsat, finalExpiry), 0L) :: Nil)) {
       case ((msat, expiry, payloads), hop) =>
         val nextFee = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, msat)
-        (msat + nextFee, expiry + hop.lastUpdate.cltvExpiryDelta, PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
+        (msat + nextFee, expiry + hop.lastUpdate.cltvExpiryDelta, (PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry), nextFee) +: payloads)
     }
+  }
+
+  def buildPayloads(finalAmountMsat: Long, finalExpiry: Long, hops: Seq[Hop]): (Long, Long, Seq[PerHopPayload]) = {
+    val (m, e, payloads) = buildPayloadsWithFees(finalAmountMsat, finalExpiry, hops)
+    (m, e, payloads.map(_._1))
+  }
 
   def buildCommand(finalAmountMsat: Long, finalExpiry: Long, paymentHash: BinaryData, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(BinaryData, PublicKey)]) = {
     val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
