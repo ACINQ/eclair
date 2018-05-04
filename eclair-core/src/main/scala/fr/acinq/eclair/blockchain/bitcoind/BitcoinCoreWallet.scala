@@ -71,10 +71,13 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
 
   private def signTransactionOrUnlock(tx: Transaction): Future[SignTransactionResponse] = {
     val f = signTransaction(tx)
-    f.onFailure { case _: Throwable => unlockOutpoints(tx.txIn.map(_.outPoint))
-      .onFailure { case e: Throwable => logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${tx.txid}", e) }
+    // if signature fails (e.g. because wallet is uncrypted) we need to unlock the utxos
+    f.recoverWith { case _ =>
+      unlockOutpoints(tx.txIn.map(_.outPoint))
+        .recover { case t: Throwable => logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${tx.txid}", t); t } // no-op, just add a log in case of failure
+        .flatMap { case _ => f } // return signTransaction error
+        .recoverWith { case _ => f } // return signTransaction error
     }
-    f
   }
 
   override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = {

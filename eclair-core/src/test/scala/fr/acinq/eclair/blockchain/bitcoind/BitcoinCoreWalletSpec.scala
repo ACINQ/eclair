@@ -162,7 +162,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
 
     val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
     wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
-    assert(sender.expectMsgType[Failure].cause.isInstanceOf[JsonRPCError])
+    assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("Please enter the wallet passphrase with walletpassphrase first."))
 
     sender.send(bitcoincli, BitcoinReq("listlockunspent"))
     assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
