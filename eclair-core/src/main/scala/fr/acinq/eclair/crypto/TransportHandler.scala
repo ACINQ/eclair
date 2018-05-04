@@ -25,7 +25,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.crypto.Noise._
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
-import scodec.Attempt.Successful
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec, DecodeResult}
 

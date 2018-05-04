@@ -18,13 +18,10 @@ package fr.acinq.eclair.blockchain.fee
 
 import akka.actor.ActorSystem
 import akka.util.Timeout
-import fr.acinq.bitcoin.Block
 import org.json4s.DefaultFormats
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
-
-import scala.concurrent.Await
 
 /**
   * Created by PM on 27/01/2017.
@@ -52,30 +49,27 @@ class BitgoFeeProviderSpec extends FunSuite {
     val json = parse(sample_response)
     val feeRanges = parseFeeRanges(json)
     val fee = extractFeerate(feeRanges, 6)
-    assert(fee === 103)
+    assert(fee === 105566)
   }
 
   test("extract all fees") {
     val json = parse(sample_response)
     val feeRanges = parseFeeRanges(json)
     val feerates = extractFeerates(feeRanges)
-    val ref = FeeratesPerByte(
-      block_1 = 145,
-      blocks_2 = 133,
-      blocks_6 = 103,
-      blocks_12 = 93,
-      blocks_36 = 69,
-      blocks_72 = 66)
+    val ref = FeeratesPerKB(
+      block_1 = 149453,
+      blocks_2 = 136797,
+      blocks_6 = 105566,
+      blocks_12 = 96254,
+      blocks_36 = 71098,
+      blocks_72 = 68182)
     assert(feerates === ref)
   }
 
   test("make sure API hasn't changed") {
-    import scala.concurrent.ExecutionContext.Implicits.global
     import scala.concurrent.duration._
     implicit val system = ActorSystem()
     implicit val timeout = Timeout(30 seconds)
-    Await.result(new BitgoFeeProvider(Block.LivenetGenesisBlock.hash).getFeerates, 10 seconds)
-    Await.result(new BitgoFeeProvider(Block.TestnetGenesisBlock.hash).getFeerates, 10 seconds)
   }
 
 }

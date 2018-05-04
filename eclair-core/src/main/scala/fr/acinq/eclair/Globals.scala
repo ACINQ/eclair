@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
-import fr.acinq.eclair.blockchain.fee.{FeeratesPerByte, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.fee.{FeeratesPerKB, FeeratesPerKw}
 
 /**
   * Created by PM on 25/01/2016.
@@ -33,10 +33,10 @@ object Globals {
   val blockCount = new AtomicLong(0)
 
   /**
-    * This holds the current feerates, in satoshi-per-bytes.
+    * This holds the current feerates, in satoshi-per-kilobytes.
     * The value is read by all actors, hence it needs to be thread-safe.
     */
-  val feeratesPerByte = new AtomicReference[FeeratesPerByte](null)
+  val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
 
   /**
     * This holds the current feerates, in satoshi-per-kw.

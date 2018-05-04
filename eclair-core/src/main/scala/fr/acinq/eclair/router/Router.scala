@@ -322,11 +322,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       if (chainHash != nodeParams.chainHash) {
         log.warning("received reply_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
-        val (_, theirShortChannelIds) = ChannelRangeQueries.decodeShortChannelIds(data)
+        val (_, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
         val ourShortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
         val missing = theirShortChannelIds -- ourShortChannelIds
-        log.info("we received their reply, we're missing {} channel announcements/updates", missing.size)
-        sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.GZIP_FORMAT, missing))
+        log.info("we received their reply, we're missing {} channel announcements/updates, useGzip={}", missing.size, useGzip)
+        val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, missing, ChannelRangeQueries.ZLIB_FORMAT, useGzip)
+        blocks.foreach(block => sender ! QueryShortChannelIds(chainHash, block.shortChannelIds))
       }
       stay
 
@@ -340,7 +341,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       if (chainHash != nodeParams.chainHash) {
         log.warning("received reply_short_channel_ids_end message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
-        // TODO: how do we use this message ?
+        log.debug("we've received {}", end)
       }
       stay
   }

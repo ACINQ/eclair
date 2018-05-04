@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import fr.acinq.eclair.feerateByte2Kw
+import fr.acinq.eclair._
 
 import scala.concurrent.Future
 
@@ -25,26 +25,28 @@ import scala.concurrent.Future
   */
 trait FeeProvider {
 
-  def getFeerates: Future[FeeratesPerByte]
+  def getFeerates: Future[FeeratesPerKB]
 
 }
 
-case class FeeratesPerByte(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long) {
+// stores fee rate in satoshi/kb (1 kb = 1000 bytes)
+case class FeeratesPerKB(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long) {
   require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0, "all feerates must be strictly greater than 0")
 }
 
+// stores fee rate in satoshi/kw (1 kw = 1000 weight units)
 case class FeeratesPerKw(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long) {
   require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0, "all feerates must be strictly greater than 0")
 }
 
 object FeeratesPerKw {
-  def apply(feerates: FeeratesPerByte): FeeratesPerKw = FeeratesPerKw(
-    block_1 = feerateByte2Kw(feerates.block_1),
-    blocks_2 = feerateByte2Kw(feerates.blocks_2),
-    blocks_6 = feerateByte2Kw(feerates.blocks_6),
-    blocks_12 = feerateByte2Kw(feerates.blocks_12),
-    blocks_36 = feerateByte2Kw(feerates.blocks_36),
-    blocks_72 = feerateByte2Kw(feerates.blocks_72))
+  def apply(feerates: FeeratesPerKB): FeeratesPerKw = FeeratesPerKw(
+    block_1 = feerateKB2Kw(feerates.block_1),
+    blocks_2 = feerateKB2Kw(feerates.blocks_2),
+    blocks_6 = feerateKB2Kw(feerates.blocks_6),
+    blocks_12 = feerateKB2Kw(feerates.blocks_12),
+    blocks_36 = feerateKB2Kw(feerates.blocks_36),
+    blocks_72 = feerateKB2Kw(feerates.blocks_72))
 
   /**
     * Used in tests
@@ -60,3 +62,4 @@ object FeeratesPerKw {
     blocks_36 = feeratePerKw,
     blocks_72 = feeratePerKw)
 }
+

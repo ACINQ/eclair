@@ -20,12 +20,12 @@ import akka.actor.{Actor, ActorRef, Props}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
-import fr.acinq.eclair._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -40,13 +40,13 @@ class RoutingSyncSpec extends TestkitBaseClass {
 
   type FixtureParam = Tuple2[ActorRef, ActorRef]
 
-  val shortChannelIds = ChannelRangeQueriesSpec.readShortChannelIds().take(100).map(id => ShortChannelId(id))
+  val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(500)
 
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
-  // A will be missing the last 20 items
-  val routingInfoA = fakeRoutingInfo.dropRight(20)
-  // and B will be missing the first 20 items
-  val routingInfoB = fakeRoutingInfo.drop(20)
+  // A will be missing the last 1000 items
+  val routingInfoA = fakeRoutingInfo.dropRight(100)
+  // and B will be missing the first 1000 items
+  val routingInfoB = fakeRoutingInfo.drop(100)
 
   class FakeWatcher extends Actor {
     def receive = {

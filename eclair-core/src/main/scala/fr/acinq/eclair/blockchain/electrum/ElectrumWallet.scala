@@ -266,6 +266,11 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(GetData, data) => stay replying GetDataResponse(data)
 
+    case Event(GetXpub ,_) => {
+      val (xpub, path) = computeXpub(master, chainHash)
+      stay replying GetXpubResponse(xpub, path)
+    }
+
     case Event(ElectrumClient.BroadcastTransaction(tx), _) => stay replying ElectrumClient.BroadcastTransactionResponse(tx, Some(Error(-1, "wallet is not connected")))
   }
 
@@ -293,6 +298,9 @@ object ElectrumWallet {
 
   case object GetBalance extends Request
   case class GetBalanceResponse(confirmed: Satoshi, unconfirmed: Satoshi) extends Response
+
+  case object GetXpub extends Request
+  case class GetXpubResponse(xpub: String, path: String) extends Response
 
   case object GetCurrentReceiveAddress extends Request
   case class GetCurrentReceiveAddressResponse(address: String) extends Response
@@ -369,19 +377,35 @@ object ElectrumWallet {
     */
   def computeScriptHashFromPublicKey(key: PublicKey): BinaryData = Crypto.sha256(Script.write(computePublicKeyScript(key))).reverse
 
+  def accountPath(chainHash: BinaryData) : List[Long] = chainHash match {
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(49) :: hardened(1) :: hardened(0) :: Nil
+    case Block.LivenetGenesisBlock.hash => hardened(49) :: hardened(0) :: hardened(0) :: Nil
+  }
+
   /**
     * use BIP49 (and not BIP44) since we use p2sh-of-p2wpkh
     *
     * @param master master key
     * @return the BIP49 account key for this master key: m/49'/1'/0'/0 on testnet/regtest, m/49'/0'/0'/0 on mainnet
     */
-  def accountKey(master: ExtendedPrivateKey, chainHash: BinaryData) = chainHash match {
-    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash =>
-      DeterministicWallet.derivePrivateKey(master, hardened(49) :: hardened(1) :: hardened(0) :: 0L :: Nil)
-    case Block.LivenetGenesisBlock.hash =>
-      DeterministicWallet.derivePrivateKey(master, hardened(49) :: hardened(0) :: hardened(0) :: 0L :: Nil)
-  }
+  def accountKey(master: ExtendedPrivateKey, chainHash: BinaryData) = DeterministicWallet.derivePrivateKey(master, accountPath(chainHash) ::: 0L :: Nil)
 
+
+  /**
+    * Compute the wallet's xpub
+    * @param master master key
+    * @param chainHash chain hash
+    * @return a (xpub, path) tuple where xpub is the encoded account public key, and path is the derivation path for the account key
+    */
+  def computeXpub(master: ExtendedPrivateKey, chainHash: BinaryData) : (String, String) = {
+    val xpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, accountPath(chainHash)))
+    // we use the tpub/xpub prefix instead of upub/ypub because it is more widely understood
+    val prefix = chainHash match {
+      case Block.LivenetGenesisBlock.hash => DeterministicWallet.xpub
+      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.tpub
+    }
+    (DeterministicWallet.encode(xpub, prefix), xpub.path.toString())
+  }
 
   /**
     * use BIP49 (and not BIP44) since we use p2sh-of-p2wpkh
@@ -389,12 +413,7 @@ object ElectrumWallet {
     * @param master master key
     * @return the BIP49 change key for this master key: m/49'/1'/0'/1 on testnet/regtest, m/49'/0'/0'/1 on mainnet
     */
-  def changeKey(master: ExtendedPrivateKey, chainHash: BinaryData) = chainHash match {
-    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash =>
-      DeterministicWallet.derivePrivateKey(master, hardened(49) :: hardened(1) :: hardened(0) :: 1L :: Nil)
-    case Block.LivenetGenesisBlock.hash =>
-      DeterministicWallet.derivePrivateKey(master, hardened(49) :: hardened(0) :: hardened(0) :: 1L :: Nil)
-  }
+  def changeKey(master: ExtendedPrivateKey, chainHash: BinaryData) = DeterministicWallet.derivePrivateKey(master, accountPath(chainHash) ::: 1L :: Nil)
 
   def totalAmount(utxos: Seq[Utxo]): Satoshi = Satoshi(utxos.map(_.item.value).sum)
 
