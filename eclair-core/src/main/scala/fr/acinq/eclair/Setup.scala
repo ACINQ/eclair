@@ -102,7 +102,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) => values.map(value => (value \ "address").extract[String]) }
       } yield (progress, chainHash, bitcoinVersion, unspentAddresses)
       // blocking sanity checks
-      val (progress, chainHash, bitcoinVersion, unspentAddresses) = Await.result(future, 10 seconds)
+      val (progress, chainHash, bitcoinVersion, unspentAddresses) = Await.result(future, 30 seconds)
       assert(bitcoinVersion.startsWith("16"), "Eclair requires Bitcoin Core 0.16.0 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
