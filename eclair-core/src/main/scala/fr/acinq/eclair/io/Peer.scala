@@ -208,7 +208,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay
 
-    case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId), d@ConnectedData(_, _, _, channels)) if channels.contains(TemporaryChannelId(temporaryChannelId)) =>
+    case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId,_), d@ConnectedData(_, _, _, channels)) if channels.contains(TemporaryChannelId(temporaryChannelId)) =>
       log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
       // NB: we keep the temporary channel id because the switch is not always acknowledged at this point (see https://github.com/lightningnetwork/lightning-rfc/pull/151)
       // we won't clean it up, but we won't remember the temporary id on channel termination

@@ -88,7 +88,8 @@ class LocalPaymentHandler(nodeParams: NodeParams)(implicit ec: ExecutionContext 
               // amount is correct or was not specified in the payment request
               nodeParams.paymentsDb.addPayment(Payment(htlc.paymentHash, htlc.amountMsat, Platform.currentTime / 1000))
               sender ! CMD_FULFILL_HTLC(htlc.id, paymentPreimage, commit = true)
-              context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash))
+              context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash,
+                  htlc.channelId,htlc.id))
               context.become(run(hash2preimage - htlc.paymentHash))
           }
         case None =>

@@ -222,6 +222,8 @@ object Transactions {
     if (amount < localDustLimit) {
       throw AmountBelowDustLimit
     }
+    val rounding=MilliSatoshi((htlc.amountMsat/1000)*1000-htlc.amountMsat)
+    
     val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
     HtlcTimeoutTx(input, Transaction(
       version = 2,
@@ -239,6 +241,7 @@ object Transactions {
     if (amount < localDustLimit) {
       throw AmountBelowDustLimit
     }
+    val rounding=MilliSatoshi((htlc.amountMsat/1000)*1000-htlc.amountMsat)
     val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
     HtlcSuccessTx(input, Transaction(
       version = 2,

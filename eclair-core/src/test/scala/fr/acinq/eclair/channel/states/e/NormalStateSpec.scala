@@ -37,27 +37,31 @@ import org.scalatest.Tag
 import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
-
+import fr.acinq.bitcoin.{Transaction,MilliSatoshi}
 /**
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
 class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  type FixtureParam = Tuple7[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe, TestProbe]
+  type FixtureParam = Tuple8[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe, TestProbe, TestProbe]
 
   override def withFixture(test: OneArgTest) = {
     val setup = init()
     import setup._
+    val eventStream=TestProbe()
+    system.eventStream.subscribe(eventStream.ref,classOf[PaymentHTLCSent])
+    system.eventStream.subscribe(eventStream.ref,classOf[PaymentHTLCErrored])
+
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer, test.tags)
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
     }
-    test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer))
+    test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer,eventStream))
   }
 
-  test("recv CMD_ADD_HTLC (empty origin)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (empty origin)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val sender = TestProbe()
@@ -75,7 +79,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (incrementing ids)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (incrementing ids)") { case (alice, _, alice2bob, _, _, _, _, eventStream) =>
     within(30 seconds) {
       val sender = TestProbe()
       val h = BinaryData("42" * 32)
@@ -88,7 +92,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (relayed htlc)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (relayed htlc)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val sender = TestProbe()
@@ -108,7 +112,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (invalid payment hash)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (invalid payment hash)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val sender = TestProbe()
@@ -120,7 +124,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (expiry in the past)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (expiry in the past)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -133,7 +137,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (expiry too big)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (expiry too big)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -147,7 +151,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (value too small)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (value too small)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -159,7 +163,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (insufficient funds)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (insufficient funds)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -171,7 +175,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs and 0 balance)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs and 0 balance)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -192,7 +196,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs 2/2)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs 2/2)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -210,7 +214,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (over max inflight htlc value)") { case (_, bob, _, bob2alice, _, _, _) =>
+  test("recv CMD_ADD_HTLC (over max inflight htlc value)") { case (_, bob, _, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
@@ -222,7 +226,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (over max accepted htlcs)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (over max accepted htlcs)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -240,7 +244,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (over capacity)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (over capacity)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -260,7 +264,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (after having sent Shutdown)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (after having sent Shutdown)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -278,7 +282,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (after having received Shutdown)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_ADD_HTLC (after having received Shutdown)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -302,7 +306,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc") { case (_, bob, _, _, _, _, _) =>
+  test("recv UpdateAddHtlc") { case (_, bob, _, _, _, _, _, _) =>
     within(30 seconds) {
       val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
       val htlc = UpdateAddHtlc("00" * 32, 0, 150000, BinaryData("42" * 32), 400144, defaultOnion)
@@ -311,7 +315,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc (unexpected id)") { case (_, bob, _, bob2alice, _, bob2blockchain, _) =>
+  test("recv UpdateAddHtlc (unexpected id)") { case (_, bob, _, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val htlc = UpdateAddHtlc("00" * 32, 42, 150000, BinaryData("42" * 32), 400144, defaultOnion)
@@ -329,7 +333,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc (invalid payment hash)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv UpdateAddHtlc (invalid payment hash)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val htlc = UpdateAddHtlc("00" * 32, 0, 150000, "11" * 42, 400144, defaultOnion)
@@ -343,7 +347,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc (expiry in the past)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv UpdateAddHtlc (expiry in the past)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val currentBlockCount = Globals.blockCount.get
@@ -358,7 +362,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc (expiry too small)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv UpdateAddHtlc (expiry too small)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val currentBlockCount = Globals.blockCount.get
@@ -374,7 +378,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc (expiry too big)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv UpdateAddHtlc (expiry too big)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val currentBlockCount = Globals.blockCount.get
@@ -390,7 +394,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc (value too small)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, relayer) =>
+  test("recv UpdateAddHtlc (value too small)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, relayer, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val htlc = UpdateAddHtlc("00" * 32, 0, 150, BinaryData("42" * 32), expiry = 400144, defaultOnion)
@@ -406,7 +410,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc (insufficient funds)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, relayer) =>
+  test("recv UpdateAddHtlc (insufficient funds)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, relayer, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val htlc = UpdateAddHtlc("00" * 32, 0, Long.MaxValue, BinaryData("42" * 32), 400144, defaultOnion)
@@ -422,7 +426,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc (insufficient funds w/ pending htlcs 1/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, relayer) =>
+  test("recv UpdateAddHtlc (insufficient funds w/ pending htlcs 1/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, relayer, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 0, 400000000, "11" * 32, 400144, defaultOnion))
@@ -440,7 +444,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc (insufficient funds w/ pending htlcs 2/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, relayer) =>
+  test("recv UpdateAddHtlc (insufficient funds w/ pending htlcs 2/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, relayer, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 0, 300000000, "11" * 32, 400144, defaultOnion))
@@ -457,7 +461,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc (over max inflight htlc value)") { case (alice, _, alice2bob, _, alice2blockchain, _, relayer) =>
+  test("recv UpdateAddHtlc (over max inflight htlc value)") { case (alice, _, alice2bob, _, alice2blockchain, _, relayer, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice2bob.forward(alice, UpdateAddHtlc("00" * 32, 0, 151000000, "11" * 32, 400144, defaultOnion))
@@ -472,7 +476,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc (over max accepted htlcs)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, relayer) =>
+  test("recv UpdateAddHtlc (over max accepted htlcs)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, relayer, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       // Bob accepts a maximum of 30 htlcs
@@ -491,7 +495,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_SIGN") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_SIGN") { case (alice, bob, alice2bob, bob2alice, _, _, _, eventStream) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -500,10 +504,13 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val commitSig = alice2bob.expectMsgType[CommitSig]
       assert(commitSig.htlcSignatures.size == 1)
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isLeft)
+      assert(eventStream.expectMsgType[PaymentHTLCSent]==
+          PaymentHTLCSent(MilliSatoshi(50000000),htlc.paymentHash,
+              alice.stateData.asInstanceOf[HasCommitments].channelId,htlc.id))
     }
   }
 
-  test("recv CMD_SIGN (two identical htlcs in each direction)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_SIGN (two identical htlcs in each direction)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val add = CMD_ADD_HTLC(10000000, "11" * 32, 400144)
@@ -535,7 +542,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_SIGN (htlcs with same pubkeyScript but different amounts)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_SIGN (htlcs with same pubkeyScript but different amounts)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val add = CMD_ADD_HTLC(10000000, "11" * 32, 400144)
@@ -560,7 +567,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_SIGN (no changes)") { case (alice, _, _, _, _, _, _) =>
+  test("recv CMD_SIGN (no changes)") { case (alice, _, _, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_SIGN)
@@ -569,7 +576,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_SIGN (while waiting for RevokeAndAck (no pending changes)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_SIGN (while waiting for RevokeAndAck (no pending changes)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -588,7 +595,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_SIGN (while waiting for RevokeAndAck (with pending changes)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_SIGN (while waiting for RevokeAndAck (with pending changes)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -608,7 +615,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CommitSig (one htlc received)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CommitSig (one htlc received)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
 
@@ -634,7 +641,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CommitSig (one htlc sent)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CommitSig (one htlc sent)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
 
@@ -658,7 +665,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CommitSig (multiple htlcs in both directions)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CommitSig (multiple htlcs in both directions)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
 
@@ -692,7 +699,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CommitSig (only fee update)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CommitSig (only fee update)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
 
@@ -711,7 +718,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CommitSig (two htlcs received with same r)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CommitSig (two htlcs received with same r)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val r = BinaryData("42" * 32)
@@ -738,7 +745,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CommitSig (no changes)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, relayer) =>
+  test("recv CommitSig (no changes)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, relayer, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
@@ -754,7 +761,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CommitSig (invalid signature)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv CommitSig (invalid signature)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -770,7 +777,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CommitSig (bad htlc sig count)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv CommitSig (bad htlc sig count)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
 
@@ -792,7 +799,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CommitSig (invalid htlc sig)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv CommitSig (invalid htlc sig)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
 
@@ -815,7 +822,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   }
 
 
-  test("recv RevokeAndAck (one htlc sent)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv RevokeAndAck (one htlc sent)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -834,7 +841,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv RevokeAndAck (one htlc received)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv RevokeAndAck (one htlc received)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -857,7 +864,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv RevokeAndAck (multiple htlcs in both directions)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv RevokeAndAck (multiple htlcs in both directions)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice) // a->b (regular)
@@ -895,7 +902,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv RevokeAndAck (with reSignAsap=true)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+  test("recv RevokeAndAck (with reSignAsap=true)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -916,7 +923,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv RevokeAndAck (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer) =>
+  test("recv RevokeAndAck (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
@@ -940,7 +947,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv RevokeAndAck (unexpectedly)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer) =>
+  test("recv RevokeAndAck (unexpectedly)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
@@ -956,7 +963,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_FULFILL_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_FULFILL_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -973,7 +980,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_FULFILL_HTLC (unknown htlc id)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_FULFILL_HTLC (unknown htlc id)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val r: BinaryData = "11" * 32
@@ -985,7 +992,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_FULFILL_HTLC (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_FULFILL_HTLC (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -999,7 +1006,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFulfillHtlc") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv UpdateFulfillHtlc") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1016,7 +1023,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFulfillHtlc (sender has not signed htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer) =>
+  test("recv UpdateFulfillHtlc (sender has not signed htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1037,7 +1044,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFulfillHtlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _, relayer) =>
+  test("recv UpdateFulfillHtlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _, relayer, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
@@ -1052,7 +1059,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFulfillHtlc (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer) =>
+  test("recv UpdateFulfillHtlc (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1074,12 +1081,14 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_FAIL_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_FAIL_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _, _, eventStream) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       crossSign(alice, bob, alice2bob, bob2alice)
-
+      assert(eventStream.expectMsgType[PaymentHTLCSent]==
+          PaymentHTLCSent(MilliSatoshi(50000000),htlc.paymentHash,
+              alice.stateData.asInstanceOf[HasCommitments].channelId,htlc.id))
       // actual test begins
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
       sender.send(bob, CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure)))
@@ -1088,10 +1097,13 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
           localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+
+      assert(eventStream.expectMsgType[PaymentHTLCErrored]==
+         PaymentHTLCErrored(alice.stateData.asInstanceOf[HasCommitments].channelId,htlc.id,BinaryData.empty))
     }
   }
 
-  test("recv CMD_FAIL_HTLC (unknown htlc id)") { case (_, bob, _, _, _, _, _) =>
+  test("recv CMD_FAIL_HTLC (unknown htlc id)") { case (alice, bob, _, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val r: BinaryData = "11" * 32
@@ -1103,12 +1115,14 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_FAIL_MALFORMED_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_FAIL_MALFORMED_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _, _, eventStream) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       crossSign(alice, bob, alice2bob, bob2alice)
-
+      assert(eventStream.expectMsgType[PaymentHTLCSent]==
+          PaymentHTLCSent(MilliSatoshi(50000000),htlc.paymentHash,
+              alice.stateData.asInstanceOf[HasCommitments].channelId,htlc.id))
       // actual test begins
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
       sender.send(bob, CMD_FAIL_MALFORMED_HTLC(htlc.id, Crypto.sha256(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION))
@@ -1117,10 +1131,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
           localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+      assert(eventStream.expectMsgType[PaymentHTLCErrored]==
+         PaymentHTLCErrored(alice.stateData.asInstanceOf[HasCommitments].channelId,htlc.id,BinaryData.empty))
     }
   }
 
-  test("recv CMD_FAIL_MALFORMED_HTLC (unknown htlc id)") { case (_, bob, _, _, _, _, _) =>
+  test("recv CMD_FAIL_MALFORMED_HTLC (unknown htlc id)") { case (_, bob, _, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
@@ -1130,7 +1146,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_FAIL_HTLC (invalid failure_code)") { case (_, bob, _, _, _, _, _) =>
+  test("recv CMD_FAIL_HTLC (invalid failure_code)") { case (_, bob, _, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
@@ -1140,7 +1156,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFailHtlc") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv UpdateFailHtlc") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1158,7 +1174,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFailMalformedHtlc") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv UpdateFailMalformedHtlc") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
 
@@ -1187,7 +1203,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFailMalformedHtlc (invalid failure_code)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+  test("recv UpdateFailMalformedHtlc (invalid failure_code)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1208,7 +1224,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFailHtlc (sender has not signed htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer) =>
+  test("recv UpdateFailHtlc (sender has not signed htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1229,7 +1245,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFailHtlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _, relayer) =>
+  test("recv UpdateFailHtlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _, relayer, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
@@ -1244,7 +1260,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_UPDATE_FEE") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_UPDATE_FEE") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -1257,7 +1273,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_UPDATE_FEE (when fundee)") { case (_, bob, _, _, _, _, _) =>
+  test("recv CMD_UPDATE_FEE (when fundee)") { case (_, bob, _, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
@@ -1267,7 +1283,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFee") { case (_, bob, _, _, _, _, _) =>
+  test("recv UpdateFee") { case (_, bob, _, _, _, _, _, _) =>
     within(30 seconds) {
       val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
       val fee = UpdateFee("00" * 32, 12000)
@@ -1276,7 +1292,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFee (when sender is not funder)") { case (alice, _, alice2bob, _, alice2blockchain, _, relayer) =>
+  test("recv UpdateFee (when sender is not funder)") { case (alice, _, alice2bob, _, alice2blockchain, _, relayer, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
@@ -1291,7 +1307,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFee (sender can't afford it)") { case (_, bob, _, bob2alice, _, bob2blockchain, relayer) =>
+  test("recv UpdateFee (sender can't afford it)") { case (_, bob, _, bob2alice, _, bob2blockchain, relayer, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
@@ -1310,7 +1326,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFee (local/remote feerates are too different)") { case (_, bob, _, bob2alice, _, bob2blockchain, relayer) =>
+  test("recv UpdateFee (local/remote feerates are too different)") { case (_, bob, _, bob2alice, _, bob2blockchain, relayer, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
@@ -1326,7 +1342,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFee (remote feerate is too small)") { case (_, bob, _, bob2alice, _, bob2blockchain, relayer) =>
+  test("recv UpdateFee (remote feerate is too small)") { case (_, bob, _, bob2alice, _, bob2blockchain, relayer, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
@@ -1342,7 +1358,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_UPDATE_RELAY_FEE ") { case (alice, bob, alice2bob, bob2alice, _, _, relayer) =>
+  test("recv CMD_UPDATE_RELAY_FEE ") { case (alice, bob, alice2bob, bob2alice, _, _, relayer, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val newFeeBaseMsat = TestConstants.Alice.nodeParams.feeBaseMsat * 2
@@ -1357,7 +1373,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_CLOSE (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
+  test("recv CMD_CLOSE (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
@@ -1369,7 +1385,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_CLOSE (with unacked sent htlcs)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_CLOSE (with unacked sent htlcs)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1378,7 +1394,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_CLOSE (with invalid final script)") { case (alice, _, _, _, _, _, _) =>
+  test("recv CMD_CLOSE (with invalid final script)") { case (alice, _, _, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_CLOSE(Some(BinaryData("00112233445566778899"))))
@@ -1386,7 +1402,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_CLOSE (with signed sent htlcs)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_CLOSE (with signed sent htlcs)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1399,7 +1415,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_CLOSE (two in a row)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_CLOSE (two in a row)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
@@ -1413,7 +1429,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_CLOSE (while waiting for a RevokeAndAck)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_CLOSE (while waiting for a RevokeAndAck)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1428,7 +1444,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv Shutdown (no pending htlcs)") { case (alice, _, alice2bob, _, _, _, relayer) =>
+  test("recv Shutdown (no pending htlcs)") { case (alice, _, alice2bob, _, _, _, relayer, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, Shutdown("00" * 32, Bob.channelParams.defaultFinalScriptPubKey))
@@ -1440,7 +1456,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv Shutdown (with unacked sent htlcs)") { case (alice, bob, alice2bob, bob2alice, _, _, relayer) =>
+  test("recv Shutdown (with unacked sent htlcs)") { case (alice, bob, alice2bob, bob2alice, _, _, relayer, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1462,7 +1478,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv Shutdown (with unacked received htlcs)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv Shutdown (with unacked received htlcs)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1476,7 +1492,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv Shutdown (with invalid final script)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv Shutdown (with invalid final script)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(bob, Shutdown("00" * 32, BinaryData("00112233445566778899")))
@@ -1488,7 +1504,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv Shutdown (with invalid final script and signed htlcs, in response to a Shutdown)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv Shutdown (with invalid final script and signed htlcs, in response to a Shutdown)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1505,7 +1521,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv Shutdown (with signed htlcs)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv Shutdown (with signed htlcs)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1518,7 +1534,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv Shutdown (while waiting for a RevokeAndAck)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv Shutdown (while waiting for a RevokeAndAck)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1534,7 +1550,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv Shutdown (while waiting for a RevokeAndAck with pending outgoing htlc)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv Shutdown (while waiting for a RevokeAndAck with pending outgoing htlc)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       // let's make bob send a Shutdown message
@@ -1576,7 +1592,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CurrentBlockCount (no htlc timed out)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CurrentBlockCount (no htlc timed out)") { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1589,7 +1605,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CurrentBlockCount (an htlc timed out)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+  test("recv CurrentBlockCount (an htlc timed out)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1609,7 +1625,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CurrentFeerate (when funder, triggers an UpdateFee)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CurrentFeerate (when funder, triggers an UpdateFee)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -1619,7 +1635,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { case (alice, _, alice2bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val event = CurrentFeerates(FeeratesPerKw.single(10010))
@@ -1628,7 +1644,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CurrentFeerate (when fundee, commit-fee/network-fee are close)") { case (_, bob, _, bob2alice, _, _, _) =>
+  test("recv CurrentFeerate (when fundee, commit-fee/network-fee are close)") { case (_, bob, _, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val event = CurrentFeerates(FeeratesPerKw.single(11000))
@@ -1637,7 +1653,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different)") { case (_, bob, _, bob2alice, _, bob2blockchain, _) =>
+  test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different)") { case (_, bob, _, bob2alice, _, bob2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val event = CurrentFeerates(FeeratesPerKw.single(100))
@@ -1650,7 +1666,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (their commit w/ htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _) =>
+  test("recv BITCOIN_FUNDING_SPENT (their commit w/ htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
 
@@ -1705,7 +1721,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (their *next* commit w/ htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _) =>
+  test("recv BITCOIN_FUNDING_SPENT (their *next* commit w/ htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
 
@@ -1767,7 +1783,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (revoked commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+  test("recv BITCOIN_FUNDING_SPENT (revoked commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
 
@@ -1828,7 +1844,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (revoked commit with identical htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+  test("recv BITCOIN_FUNDING_SPENT (revoked commit with identical htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
 
@@ -1883,7 +1899,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv Error") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+  test("recv Error") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _, _) =>
     within(30 seconds) {
       val (ra1, htlca1) = addHtlc(250000000, alice, bob, alice2bob, bob2alice)
       val (ra2, htlca2) = addHtlc(100000000, alice, bob, alice2bob, bob2alice)
@@ -1951,7 +1967,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_DEEPLYBURIED", Tag("channels_public")) { case (alice, _, alice2bob, _, _, _, relayer) =>
+  test("recv BITCOIN_FUNDING_DEEPLYBURIED", Tag("channels_public")) { case (alice, _, alice2bob, _, _, _, relayer, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
@@ -1964,7 +1980,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_DEEPLYBURIED (short channel id changed)", Tag("channels_public")) { case (alice, _, alice2bob, _, _, _, relayer) =>
+  test("recv BITCOIN_FUNDING_DEEPLYBURIED (short channel id changed)", Tag("channels_public")) { case (alice, _, alice2bob, _, _, _, relayer, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400001, 22))
@@ -1977,7 +1993,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_DEEPLYBURIED (private channel)") { case (alice, _, alice2bob, _, _, _, relayer) =>
+  test("recv BITCOIN_FUNDING_DEEPLYBURIED (private channel)") { case (alice, _, alice2bob, _, _, _, relayer, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
@@ -1989,7 +2005,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_DEEPLYBURIED (private channel, short channel id changed)") { case (alice, _, alice2bob, _, _, _, relayer) =>
+  test("recv BITCOIN_FUNDING_DEEPLYBURIED (private channel, short channel id changed)") { case (alice, _, alice2bob, _, _, _, relayer, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400001, 22))
@@ -2002,7 +2018,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv AnnouncementSignatures", Tag("channels_public")) { case (alice, bob, alice2bob, bob2alice, _, _, relayer) =>
+  test("recv AnnouncementSignatures", Tag("channels_public")) { case (alice, bob, alice2bob, bob2alice, _, _, relayer, _) =>
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val sender = TestProbe()
@@ -2022,7 +2038,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv AnnouncementSignatures (re-send)", Tag("channels_public")) { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv AnnouncementSignatures (re-send)", Tag("channels_public")) { case (alice, bob, alice2bob, bob2alice, _, _, _, _) =>
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val sender = TestProbe()
@@ -2043,7 +2059,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv TickRefreshChannelUpdate", Tag("channels_public")) { case (alice, bob, alice2bob, bob2alice, _, _, relayer) =>
+  test("recv TickRefreshChannelUpdate", Tag("channels_public")) { case (alice, bob, alice2bob, bob2alice, _, _, relayer, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))

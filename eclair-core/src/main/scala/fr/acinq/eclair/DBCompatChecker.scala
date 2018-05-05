@@ -43,4 +43,14 @@ object DBCompatChecker extends Logging {
       case Success(_) => {}
       case Failure(_) => throw IncompatibleNetworkDBException
     }
+    /**
+    * Tests if the audit database is readable.
+    *
+    * @param nodeParams
+    */
+  def checkAuditDBCompatibility(nodeParams: NodeParams): Unit =
+    Try(nodeParams.auditDb.channelBalances("42")) match {
+      case Success(_) => {}
+      case Failure(_) => throw IncompatibleAuditDBException
+    }
 }

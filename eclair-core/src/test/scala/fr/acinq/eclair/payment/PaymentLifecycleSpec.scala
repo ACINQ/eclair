@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+import fr.acinq.bitcoin.{BinaryData,MilliSatoshi}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelUnavailable}
 import fr.acinq.eclair.channel.Register.ForwardShortId
@@ -252,7 +252,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val paymentOK = sender.expectMsgType[PaymentSucceeded]
     assert(paymentOK.amountMsat > request.amountMsat)
-    val PaymentSent(MilliSatoshi(request.amountMsat), feesPaid, request.paymentHash, paymentOK.paymentPreimage) = eventListener.expectMsgType[PaymentSent]
+
+    val PaymentSent(MilliSatoshi(request.amountMsat), feesPaid, request.paymentHash, paymentOK.paymentPreimage, channelId, id, targetNode) = eventListener.expectMsgType[PaymentSent]
+    
+    val t: BinaryData="00"*32
+    assert(channelId==t)
+    assert(id==0)
+    assert(targetNode==d.toBin)
     assert(feesPaid.amount > 0)
   }
 

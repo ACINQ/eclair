@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
+import akka.actor.ActorContext
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
@@ -28,7 +29,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, ShortChannelId, addressToPublicKeyScript}
-
+import fr.acinq.eclair.payment._
 import scala.concurrent.Await
 import scala.util.{Failure, Success, Try}
 
@@ -301,7 +302,7 @@ object Helpers {
       * @param commitments our commitment data, which include payment preimages
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction)(implicit log: LoggingAdapter): LocalCommitPublished = {
+    def claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction)(implicit log: LoggingAdapter, context: ActorContext): LocalCommitPublished = {
       import commitments._
       require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
 
@@ -527,7 +528,8 @@ object Helpers {
             mainPenaltyTx = mainPenaltyTx.map(_.tx),
             htlcPenaltyTxs = htlcPenaltyTxs.map(_.tx),
             claimHtlcDelayedPenaltyTxs = Nil, // we will generate and spend those if they publish their HtlcSuccessTx or HtlcTimeoutTx
-            irrevocablySpent = Map.empty
+            irrevocablySpent = Map.empty,
+            remoteSuccessTimeoutHtlcTxs = List.empty
           )
         }
     }
@@ -579,7 +581,8 @@ object Helpers {
             })
           } match {
           case Some(tx) =>
-            val revokedCommitPublished1 = revokedCommitPublished.copy(claimHtlcDelayedPenaltyTxs = revokedCommitPublished.claimHtlcDelayedPenaltyTxs :+ tx.tx)
+            val revokedCommitPublished1 = revokedCommitPublished.copy(claimHtlcDelayedPenaltyTxs = revokedCommitPublished.claimHtlcDelayedPenaltyTxs :+ tx.tx, 
+                remoteSuccessTimeoutHtlcTxs = revokedCommitPublished.remoteSuccessTimeoutHtlcTxs :+ htlcTx)
             (revokedCommitPublished1, Some(tx.tx))
           case None =>
             (revokedCommitPublished, None)
@@ -833,6 +836,152 @@ object Helpers {
       irrevocablySpent.contains(outPoint)
     }
 
-  }
+    /**
+     * This helper is to publish details of confirmed tx's so that Audit Logger can track what BTC we have spent/received
+     * and track fees so we know how profitable channel really was.
+     */
+    def publishToEventStreamLocalCommits(localCommitPublished1: LocalCommitPublished, c: Commitments)(implicit context: ActorContext, log: LoggingAdapter) : Unit = {
+            // output commit Tx Details
+      // localcommit must exist if we got here - so get safe.
+      val commitMainOutputAmount = localCommitPublished1.claimMainDelayedOutputTx.map { tx=>
+          val index=tx.txIn.head.outPoint.index.toInt
+          localCommitPublished1.commitTx.txOut(index).amount.amount
+      }
+      
+      //but may be no output if dust - assign dust to fees - makes sense - also rounding and dust from other trimmed htlc pushed to fees here too.
+      val fee=c.localCommit.spec.toLocalMsat/1000-commitMainOutputAmount.getOrElse(0L)
+      context.system.eventStream.publish(CHANNEL_COMMIT_CLOSE(c.channelId, MilliSatoshi(c.localCommit.spec.toLocalMsat), MilliSatoshi(c.localCommit.spec.toRemoteMsat),
+          localCommitPublished1.commitTx.txid,fee))
+      
+      // output delayed claim details
+      localCommitPublished1.claimMainDelayedOutputTx.foreach{ tx =>
+        if(localCommitPublished1.irrevocablySpent.values.toSet.contains(tx.txid)){
+          val index=tx.txIn.head.outPoint.index.toInt
+          val fee=localCommitPublished1.commitTx.txOut(index).amount.amount - tx.txOut.head.amount.amount
+          context.system.eventStream.publish(CHANNEL_CLOSE(CLOSE_DELAYED_MAIN,c.channelId, tx.txOut.head.amount.amount, tx.txid,fee))
+        }
+      }
+      
+      localCommitPublished1.htlcSuccessTxs.foreach{ tx =>
+        if(localCommitPublished1.irrevocablySpent.values.toSet.contains(tx.txid)){
+          val inIndex=tx.txIn.head.outPoint.index.toInt
+          val fee=localCommitPublished1.commitTx.txOut(inIndex).amount.amount - tx.txOut.head.amount.amount
+          context.system.eventStream.publish(CHANNEL_CLOSE(CLOSE_HTLC_SUCCESS_DELAYED, c.channelId, tx.txOut.head.amount.amount, tx.txid,fee))
+        }
+      }
+      
+      localCommitPublished1.htlcTimeoutTxs.foreach{ tx =>
+        if(localCommitPublished1.irrevocablySpent.values.toSet.contains(tx.txid)){
+          val inIndex=tx.txIn.head.outPoint.index.toInt
+          val fee=localCommitPublished1.commitTx.txOut(inIndex).amount.amount - tx.txOut.head.amount.amount
+          context.system.eventStream.publish(CHANNEL_CLOSE(CLOSE_HTLC_TIMEOUT_DELAYED, c.channelId, tx.txOut.head.amount.amount, tx.txid,fee))
+        }
+      }
+      val allhtlc=localCommitPublished1.htlcSuccessTxs ::: localCommitPublished1.htlcTimeoutTxs
+      localCommitPublished1.claimHtlcDelayedTxs.foreach{ tx =>
+        if(localCommitPublished1.irrevocablySpent.values.toSet.contains(tx.txid)){
+          val inIndex=tx.txIn.head.outPoint.index.toInt
+          val fee=allhtlc.filter(_.txid==tx.txIn.head.outPoint.txid).head.txOut(inIndex).amount.amount - tx.txOut.head.amount.amount
+          context.system.eventStream.publish(CHANNEL_CLOSE(CLOSE_HTLC_DELAYED,c.channelId, tx.txOut.head.amount.amount, tx.txid,fee))
+        }
+      }
+      context.system.eventStream.publish(CHANNEL_CLOSE_ROUNDING(c.channelId))
+    }
+    /**
+     * This helper is to publish details of confirmed tx's so that Audit Logger can track what BTC we have spent/received
+     * and track fees so we know how profitable channel really was.
+     */
+    def publishToEventStreamRemoteCommits(remoteCommitPublished1: RemoteCommitPublished, c: Commitments)(implicit context: ActorContext, log: LoggingAdapter) : Unit = {
 
+      val mainOutput = remoteCommitPublished1.claimMainOutputTx.map { tx=>
+          val index=tx.txIn.head.outPoint.index.toInt
+          remoteCommitPublished1.commitTx.txOut(index).amount.amount
+      }.getOrElse(0L)
+
+      val fee=c.remoteCommit.spec.toRemoteMsat/1000-mainOutput
+      context.system.eventStream.publish(CHANNEL_COMMIT_CLOSE(c.channelId,MilliSatoshi(c.remoteCommit.spec.toRemoteMsat), MilliSatoshi(c.remoteCommit.spec.toLocalMsat),
+          remoteCommitPublished1.commitTx.txid,fee))
+
+      remoteCommitPublished1.claimMainOutputTx.foreach{ tx =>
+        if(remoteCommitPublished1.irrevocablySpent.values.toSet.contains(tx.txid)){
+          val inIndex=tx.txIn.head.outPoint.index.toInt
+          val fee=remoteCommitPublished1.commitTx.txOut(inIndex).amount.amount - tx.txOut.head.amount.amount
+          context.system.eventStream.publish(CHANNEL_CLOSE(CLOSE_MAIN,c.channelId, tx.txOut.head.amount.amount, tx.txid,fee))
+        }
+      }
+      remoteCommitPublished1.claimHtlcSuccessTxs.foreach{ tx =>
+        if(remoteCommitPublished1.irrevocablySpent.values.toSet.contains(tx.txid)){
+          val inIndex=tx.txIn.head.outPoint.index.toInt
+          val fee=remoteCommitPublished1.commitTx.txOut(inIndex).amount.amount - tx.txOut.head.amount.amount
+          context.system.eventStream.publish(CHANNEL_CLOSE(CLOSE_HTLC_SUCCESS,c.channelId, tx.txOut.head.amount.amount, tx.txid,fee))
+        }
+      }
+
+      remoteCommitPublished1.claimHtlcTimeoutTxs.foreach{ tx =>
+        if(remoteCommitPublished1.irrevocablySpent.values.toSet.contains(tx.txid)){
+          val inIndex=tx.txIn.head.outPoint.index.toInt
+          val fee=remoteCommitPublished1.commitTx.txOut(inIndex).amount.amount - tx.txOut.head.amount.amount
+          context.system.eventStream.publish(CHANNEL_CLOSE(CLOSE_HTLC_TIMEOUT,c.channelId, tx.txOut.head.amount.amount, tx.txid,fee))
+        }
+      }
+      context.system.eventStream.publish(CHANNEL_CLOSE_ROUNDING(c.channelId))
+      
+    }
+
+
+    /**
+     * This helper is to publish details of confirmed tx's so that Audit Logger can track what BTC we have spent/received
+     * and track fees so we know how profitable channel really was.
+     */
+    def publishToEventStreamRevokedCommits(revokedCommitPublished1: RevokedCommitPublished, c: Commitments)(implicit context: ActorContext, log: LoggingAdapter) : Unit = {
+
+      val commitMainOutputAmount = revokedCommitPublished1.claimMainOutputTx.map { tx=>
+          val index=tx.txIn.head.outPoint.index.toInt
+          revokedCommitPublished1.commitTx.txOut(index).amount.amount
+      }
+
+      val fee=c.commitInput.txOut.amount.amount - revokedCommitPublished1.commitTx.txOut.map{_.amount.amount}.sum
+      context.system.eventStream.publish(CHANNEL_CLOSE(CLOSE_REVOKED_COMMIT,c.channelId, 0, revokedCommitPublished1.commitTx.txid,fee))
+      revokedCommitPublished1.claimMainOutputTx.foreach{ tx =>
+         if(revokedCommitPublished1.irrevocablySpent.values.toSet.contains(tx.txid)){
+          context.system.eventStream.publish(CHANNEL_CLOSE(CLOSE_REVOKED_MAIN,c.channelId, tx.txOut.head.amount.amount, tx.txid,commitMainOutputAmount.getOrElse(0L)-tx.txOut.head.amount.amount))
+         }
+      }
+
+      revokedCommitPublished1.mainPenaltyTx.foreach{ tx =>
+        if(revokedCommitPublished1.irrevocablySpent.values.toSet.contains(tx.txid)){
+          val inIndex=tx.txIn.head.outPoint.index.toInt
+          val fee=revokedCommitPublished1.commitTx.txOut(inIndex).amount.amount - tx.txOut.head.amount.amount
+          context.system.eventStream.publish(CHANNEL_CLOSE(CLOSE_REVOKED_MAIN_PENALTY,c.channelId, tx.txOut.head.amount.amount, tx.txid,fee))
+        }
+      }
+
+      revokedCommitPublished1.htlcPenaltyTxs.foreach{ tx =>
+        if(revokedCommitPublished1.irrevocablySpent.values.toSet.contains(tx.txid)){
+          val inIndex=tx.txIn.head.outPoint.index.toInt
+          val fee=revokedCommitPublished1.commitTx.txOut(inIndex).amount.amount - tx.txOut.head.amount.amount
+          context.system.eventStream.publish(CHANNEL_CLOSE(CLOSE_REVOKED_HTLC_PENALTY,c.channelId, tx.txOut.head.amount.amount, tx.txid,fee))
+        }
+      }
+
+      revokedCommitPublished1.remoteSuccessTimeoutHtlcTxs.foreach{ tx =>
+        if(revokedCommitPublished1.irrevocablySpent.values.toSet.contains(tx.txid)){
+          val inIndex=tx.txIn.head.outPoint.index.toInt
+          val fee=revokedCommitPublished1.commitTx.txOut(inIndex).amount.amount - tx.txOut.head.amount.amount
+          context.system.eventStream.publish(CHANNEL_CLOSE(CLOSE_REVOKED_HTLC_REMOTE,c.channelId, 0, tx.txid,fee))
+        }
+      }
+
+      revokedCommitPublished1.claimHtlcDelayedPenaltyTxs.foreach{ tx =>
+        if(revokedCommitPublished1.irrevocablySpent.values.toSet.contains(tx.txid)){
+          val inIndex=tx.txIn.head.outPoint.index.toInt
+          // take head after filter as can be multiple results.
+          val inputAmount=revokedCommitPublished1.remoteSuccessTimeoutHtlcTxs.filter(_.txid==tx.txIn.head.outPoint.txid).head.txOut.head.amount.amount
+          val fee=inputAmount - tx.txOut.head.amount.amount
+          context.system.eventStream.publish(CHANNEL_CLOSE(CLOSE_REVOKED_HTLC_DELAYED_PENALTY,c.channelId, tx.txOut.head.amount.amount, tx.txid,fee))
+        }
+      }
+      context.system.eventStream.publish(CHANNEL_CLOSE_ROUNDING(c.channelId))
+    }
+  }
 }

@@ -139,8 +139,14 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
     case Status.Failure(AddHtlcFailed(_, paymentHash, error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt)) =>
       val failure = (error, channelUpdate_opt) match {
-        case (_: ExpiryTooSmall, Some(channelUpdate)) => ExpiryTooSoon(channelUpdate)
-        case (_: ExpiryTooBig, _) => ExpiryTooFar
+        case (e: ExpiryTooSmall, Some(channelUpdate)) => {
+          log.debug("Expiry to soon:"+e.toString()) //lose detail if not logged
+          ExpiryTooSoon(channelUpdate)
+        }
+        case (e: ExpiryTooBig, _) => {
+          log.debug("Expiry to long:"+e.toString())
+          ExpiryTooFar
+        }
         case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
         case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
         case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.flags) => ChannelDisabled(channelUpdate.flags, channelUpdate)
@@ -162,7 +168,8 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardFulfill(fulfill, Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut), _) =>
       val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
       commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
-      context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), Crypto.sha256(fulfill.paymentPreimage)))
+      context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), Crypto.sha256(fulfill.paymentPreimage),
+          originChannelId,originHtlcId,fulfill.channelId,fulfill.id))
 
     case ForwardFail(_, Local(None), add) =>
       // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
