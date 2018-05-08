@@ -17,13 +17,10 @@
 package fr.acinq.eclair.blockchain.fee
 
 import akka.actor.ActorSystem
-import akka.http.scaladsl.Http
-import akka.http.scaladsl.model._
-import akka.http.scaladsl.unmarshalling.Unmarshal
-import akka.stream.ActorMaterializer
-import de.heikoseeberger.akkahttpjson4s.Json4sSupport._
+import gigahorse.support.okhttp.Gigahorse
+import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JArray, JInt, JValue}
-import org.json4s.{DefaultFormats, jackson}
+import org.json4s.jackson.JsonMethods
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -34,15 +31,16 @@ class EarnDotComFeeProvider(implicit system: ActorSystem, ec: ExecutionContext) 
 
   import EarnDotComFeeProvider._
 
-  implicit val materializer = ActorMaterializer()
-  val httpClient = Http(system)
-  implicit val serialization = jackson.Serialization
   implicit val formats = DefaultFormats
+
+  val uri = "https://bitcoinfees.earn.com/api/v1/fees/list"
 
   override def getFeerates: Future[FeeratesPerKB] =
     for {
-      httpRes <- httpClient.singleRequest(HttpRequest(uri = Uri("https://bitcoinfees.earn.com/api/v1/fees/list"), method = HttpMethods.GET))
-      json <- Unmarshal(httpRes).to[JValue]
+      res <- Gigahorse.withHttp(Gigahorse.config) { http =>
+        http.run(Gigahorse.url(uri).get, Gigahorse.asString)
+      }
+      json = JsonMethods.parse(res).extract[JValue]
       feeRanges = parseFeeRanges(json)
     } yield extractFeerates(feeRanges)
 }

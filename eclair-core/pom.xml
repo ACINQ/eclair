@@ -131,6 +131,12 @@
             <artifactId>akka-http-core_${scala.version.short}</artifactId>
             <version>10.0.11</version>
         </dependency>
+        <!-- HTTP -->
+        <dependency>
+            <groupId>com.eed3si9n</groupId>
+            <artifactId>gigahorse-okhttp_${scala.version.short}</artifactId>
+            <version>0.3.1</version>
+        </dependency>
         <!-- JSON -->
         <dependency>
             <groupId>org.json4s</groupId>
