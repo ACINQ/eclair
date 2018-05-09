@@ -18,15 +18,15 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import java.nio.charset.Charset
 
+import gigahorse.HttpClient
 import gigahorse.support.okhttp.Gigahorse
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.JValue
 import org.json4s.jackson.{JsonMethods, Serialization}
 
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ExecutionContext, Future}
 
-class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false) extends BitcoinJsonRPCClient {
+class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false)(implicit http: HttpClient) extends BitcoinJsonRPCClient {
 
   val scheme = if (ssl) "https" else "http"
   implicit val formats = DefaultFormats
@@ -41,14 +41,13 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
 
   def invoke(requests: Seq[JsonRPCRequest])(implicit ec: ExecutionContext): Future[Seq[JsonRPCResponse]] =
     for {
-      res <- Gigahorse.withHttp(Gigahorse.config) { http =>
-        val json = Serialization.write(requests)
-        val r = Gigahorse.url(s"$scheme://$host:$port")
-          .post(json, Charset.defaultCharset())
-          .withHeaders(("content-type" -> "application/json"))
-          .withAuth(user, password)
-        http.run(r, Gigahorse.asString)
-      }
+      _ <- Future.successful(0)
+      json = Serialization.write(requests)
+      r = Gigahorse.url(s"$scheme://$host:$port")
+        .post(json, Charset.defaultCharset())
+        .withHeaders(("content-type" -> "application/json"))
+        .withAuth(user, password)
+      res <- http.run(r, Gigahorse.asString)
       jsonRpcRes = JsonMethods.parse(res).extract[Seq[JsonRPCResponse]]
     } yield jsonRpcRes
 

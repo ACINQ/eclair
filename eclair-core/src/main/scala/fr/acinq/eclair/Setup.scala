@@ -39,6 +39,7 @@ import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
+import gigahorse.support.okhttp.Gigahorse
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 
@@ -85,6 +86,7 @@ class Setup(datadir: File,
   implicit val timeout = Timeout(30 seconds)
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
+  implicit val httpClient = Gigahorse.http(Gigahorse.config)
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>

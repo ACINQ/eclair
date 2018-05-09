@@ -27,6 +27,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, Exten
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{ShortChannelId, randomKey}
+import gigahorse.support.okhttp.Gigahorse
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -46,6 +47,7 @@ class AnnouncementsBatchValidationSpec extends FunSuite {
     import scala.concurrent.ExecutionContext.Implicits.global
 
     implicit val system = ActorSystem()
+    implicit val httpClient = Gigahorse.http(Gigahorse.config)
     implicit val extendedBitcoinClient = new ExtendedBitcoinClient(new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332))
 
     val channels = for (i <- 0 until 50) yield {
@@ -78,7 +80,7 @@ object AnnouncementsBatchValidationSpec {
   def generateBlocks(numBlocks: Int)(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext) =
     Await.result(extendedBitcoinClient.rpcClient.invoke("generate", numBlocks), 10 seconds)
 
-  def simulateChannel()(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext, system: ActorSystem): SimulatedChannel = {
+  def simulateChannel()(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext): SimulatedChannel = {
     val node1Key = randomKey
     val node2Key = randomKey
     val node1BitcoinKey = randomKey

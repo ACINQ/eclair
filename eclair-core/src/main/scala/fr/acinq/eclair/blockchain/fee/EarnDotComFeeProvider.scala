@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import akka.actor.ActorSystem
+import gigahorse.HttpClient
 import gigahorse.support.okhttp.Gigahorse
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JArray, JInt, JValue}
@@ -27,7 +27,7 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
   * Created by PM on 16/11/2017.
   */
-class EarnDotComFeeProvider(implicit system: ActorSystem, ec: ExecutionContext) extends FeeProvider {
+class EarnDotComFeeProvider(implicit http: HttpClient, ec: ExecutionContext) extends FeeProvider {
 
   import EarnDotComFeeProvider._
 
@@ -37,9 +37,7 @@ class EarnDotComFeeProvider(implicit system: ActorSystem, ec: ExecutionContext) 
 
   override def getFeerates: Future[FeeratesPerKB] =
     for {
-      res <- Gigahorse.withHttp(Gigahorse.config) { http =>
-        http.run(Gigahorse.url(uri).get, Gigahorse.asString)
-      }
+      res <- http.run(Gigahorse.url(uri).get, Gigahorse.asString)
       json = JsonMethods.parse(res).extract[JValue]
       feeRanges = parseFeeRanges(json)
     } yield extractFeerates(feeRanges)

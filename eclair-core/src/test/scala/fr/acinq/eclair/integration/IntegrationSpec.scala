@@ -41,6 +41,7 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, Kit, Setup}
+import gigahorse.support.okhttp.Gigahorse
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
@@ -61,6 +62,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   var nodes: Map[String, Kit] = Map()
 
   implicit val formats = DefaultFormats
+  implicit val httpClient = Gigahorse.http(Gigahorse.config)
 
   override def beforeAll(): Unit = {
     startBitcoind()

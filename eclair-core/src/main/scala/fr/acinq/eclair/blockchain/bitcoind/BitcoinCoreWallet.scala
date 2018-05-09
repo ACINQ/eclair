@@ -30,7 +30,7 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
   * Created by PM on 06/07/2017.
   */
-class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorSystem, ec: ExecutionContext) extends EclairWallet with Logging {
+class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext) extends EclairWallet with Logging {
 
   import BitcoinCoreWallet._
 

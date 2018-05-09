@@ -17,6 +17,7 @@
 package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.{BinaryData, Block}
+import gigahorse.HttpClient
 import gigahorse.support.okhttp.Gigahorse
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JInt, JValue}
@@ -24,7 +25,7 @@ import org.json4s.jackson.JsonMethods
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class BitgoFeeProvider(chainHash: BinaryData)(implicit ec: ExecutionContext) extends FeeProvider {
+class BitgoFeeProvider(chainHash: BinaryData)(implicit http: HttpClient, ec: ExecutionContext) extends FeeProvider {
 
   import BitgoFeeProvider._
 
@@ -37,9 +38,7 @@ class BitgoFeeProvider(chainHash: BinaryData)(implicit ec: ExecutionContext) ext
 
   override def getFeerates: Future[FeeratesPerKB] =
     for {
-      res <- Gigahorse.withHttp(Gigahorse.config) { http =>
-        http.run(Gigahorse.url(uri).get, Gigahorse.asString)
-      }
+      res <- http.run(Gigahorse.url(uri).get, Gigahorse.asString)
       json = JsonMethods.parse(res).extract[JValue]
       feeRanges = parseFeeRanges(json)
     } yield extractFeerates(feeRanges)
