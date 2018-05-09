@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain.fee
 
 import gigahorse.HttpClient
-import gigahorse.support.okhttp.Gigahorse
+import gigahorse.support.asynchttpclient.Gigahorse
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JArray, JInt, JValue}
 import org.json4s.jackson.JsonMethods
