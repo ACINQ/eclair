@@ -17,83 +17,29 @@
 package fr.acinq.eclair.blockchain.electrum
 
 
-import java.io.File
 import java.net.InetSocketAddress
-import java.nio.file.Files
-import java.util.UUID
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
-import akka.pattern.pipe
+import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
-import com.spotify.docker.client.{DefaultDockerClient, DockerClient}
-import com.whisk.docker.impl.spotify.SpotifyDockerFactory
-import com.whisk.docker.scalatest.DockerTestKit
-import com.whisk.docker.{DockerContainer, DockerFactory, DockerReadyChecker, LogLineReceiver}
-import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet, MnemonicCode, Satoshi}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient}
+import com.whisk.docker.DockerReadyChecker
+import fr.acinq.bitcoin.{BinaryData, Block, Btc, DeterministicWallet, MnemonicCode, Satoshi, Transaction, TxOut}
+import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.JValue
+import org.json4s.JsonAST.{JDouble, JString, JValue}
+import org.junit.experimental.categories.Category
 import org.junit.runner.RunWith
-import org.scalatest.FunSuiteLike
 import org.scalatest.junit.JUnitRunner
+import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-trait BitcoindService extends Logging {
-  implicit val system: ActorSystem
-
-  import scala.sys.process._
-
-  val INTEGRATION_TMP_DIR = s"${System.getProperty("buildDirectory")}/integration-${UUID.randomUUID().toString}"
-  logger.info(s"using tmp dir: $INTEGRATION_TMP_DIR")
-
-  val PATH_BITCOIND = new File(System.getProperty("buildDirectory"), "bitcoin-0.16.0/bin/bitcoind")
-  val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
-
-  var bitcoind: Process = null
-  var bitcoinrpcclient: BitcoinJsonRPCClient = null
-  var bitcoincli: ActorRef = null
-
-  case class BitcoinReq(method: String, params: Seq[Any] = Nil)
-
-  def startBitcoind(): Unit = {
-    Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
-    Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf"), new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)
-
-    bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
-    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 28332)
-    bitcoincli = system.actorOf(Props(new Actor {
-      override def receive: Receive = {
-          case BitcoinReq(method, Nil) =>
-            bitcoinrpcclient.invoke(method) pipeTo sender
-          case BitcoinReq(method, params) =>
-            bitcoinrpcclient.invoke(method, params: _*) pipeTo sender
-      }
-    }))
-  }
-
-  def stopBitcoind(): Unit = {
-    // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging
-    val sender = TestProbe()
-    sender.send(bitcoincli, BitcoinReq("stop"))
-    sender.expectMsgType[JValue]
-    bitcoind.exitValue()
-  }
-}
+trait DockerTest {}
 
 @RunWith(classOf[JUnitRunner])
-class ElectrumDockerSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with DockerTestKit with Logging {
-  require(System.getProperty("buildDirectory") != null, "please define system property buildDirectory")
-
-  val electrumxContainer = DockerContainer("lukechilds/electrumx")
-    .withNetworkMode("host")
-    //.withPorts(50001 -> Some(50001))
-    .withEnv("DAEMON_URL=http://foo:bar@localhost:28332", "COIN=BitcoinSegwit", "NET=regtest")
-//    .withReadyChecker(
-//      DockerReadyChecker.LogLineContains("INFO:Controller:TCP server listening on :50001").looped(15, 1 second)
-//    )
-    .withLogLineReceiver(LogLineReceiver(true, println))
+@Category(Array(classOf[DockerTest]))
+class ElectrumDockerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService  with BeforeAndAfterAll with Logging {
 
   import ElectrumWallet._
 
@@ -104,12 +50,6 @@ class ElectrumDockerSpec extends TestKit(ActorSystem("test")) with BitcoindServi
   val master = DeterministicWallet.generate(seed)
   var wallet: ActorRef = _
   var electrumClient: ActorRef = _
-
-  override def dockerContainers: List[DockerContainer] = electrumxContainer :: super.dockerContainers
-
-  private val client: DockerClient = DefaultDockerClient.fromEnv().build()
-
-  override implicit val dockerFactory: DockerFactory = new SpotifyDockerFactory(client)
 
   override def beforeAll(): Unit = {
     logger.info("starting bitcoind")
@@ -123,6 +63,16 @@ class ElectrumDockerSpec extends TestKit(ActorSystem("test")) with BitcoindServi
     super.afterAll()
   }
 
+  def getCurrentAddress(probe: TestProbe) = {
+    probe.send(wallet, GetCurrentReceiveAddress)
+    probe.expectMsgType[GetCurrentReceiveAddressResponse]
+  }
+
+  def getBalance(probe: TestProbe) = {
+    probe.send(wallet, GetBalance)
+    probe.expectMsgType[GetBalanceResponse]
+  }
+
   test("generate 500 blocks") {
     val sender = TestProbe()
     logger.info(s"waiting for bitcoind to initialize...")
@@ -131,7 +81,7 @@ class ElectrumDockerSpec extends TestKit(ActorSystem("test")) with BitcoindServi
       sender.receiveOne(5 second).isInstanceOf[JValue]
     }, max = 30 seconds, interval = 500 millis)
     logger.info(s"generating initial blocks...")
-    sender.send(bitcoincli, BitcoinReq("generate", 500 :: Nil))
+    sender.send(bitcoincli, BitcoinReq("generate", 500))
     sender.expectMsgType[JValue](30 seconds)
     DockerReadyChecker.LogLineContains("INFO:BlockProcessor:height: 501").looped(attempts = 15, delay = 1 second)
   }
@@ -150,51 +100,141 @@ class ElectrumDockerSpec extends TestKit(ActorSystem("test")) with BitcoindServi
 
   test("receive funds") {
     val probe = TestProbe()
-    probe.send(wallet, GetBalance)
-    logger.info(s"initial balance: ${probe.expectMsgType[GetBalanceResponse]}")
+    val GetBalanceResponse(confirmed, unconfirmed) = getBalance(probe)
+    logger.info(s"initial balance: $confirmed $unconfirmed")
 
     // send money to our wallet
-    probe.send(wallet, GetCurrentReceiveAddress)
-    val GetCurrentReceiveAddressResponse(address) = probe.expectMsgType[GetCurrentReceiveAddressResponse]
+    val GetCurrentReceiveAddressResponse(address) = getCurrentAddress(probe)
 
     logger.info(s"sending 1 btc to $address")
-    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address :: 1.0 :: Nil))
-    val foo = probe.expectMsgType[JValue]
+    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
+    probe.expectMsgType[JValue]
 
     awaitCond({
-      probe.send(wallet, GetBalance)
-      val GetBalanceResponse(confirmed, unconfirmed) = probe.expectMsgType[GetBalanceResponse]
-      unconfirmed == Satoshi(100000000L)
+      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      unconfirmed1 == unconfirmed + Satoshi(100000000L)
     }, max = 30 seconds, interval = 1 second)
 
     // confirm our tx
-    probe.send(bitcoincli, BitcoinReq("generate", 1 :: Nil))
+    probe.send(bitcoincli, BitcoinReq("generate", 1))
     probe.expectMsgType[JValue]
 
     awaitCond({
-      probe.send(wallet, GetBalance)
-      val GetBalanceResponse(confirmed, unconfirmed) = probe.expectMsgType[GetBalanceResponse]
-      confirmed == Satoshi(100000000L)
+      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      confirmed1 == confirmed + Satoshi(100000000L)
     }, max = 30 seconds, interval = 1 second)
 
-    probe.send(wallet, GetCurrentReceiveAddress)
-    val GetCurrentReceiveAddressResponse(address1) = probe.expectMsgType[GetCurrentReceiveAddressResponse]
+    val GetCurrentReceiveAddressResponse(address1) = getCurrentAddress(probe)
 
     logger.info(s"sending 1 btc to $address1")
-    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address1 :: 1.0 :: Nil))
+    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address1, 1.0))
     probe.expectMsgType[JValue]
     logger.info(s"sending 0.5 btc to $address1")
-    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address1 :: 0.5 :: Nil))
+    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address1, 0.5))
     probe.expectMsgType[JValue]
 
-    probe.send(bitcoincli, BitcoinReq("generate", 1 :: Nil))
+    probe.send(bitcoincli, BitcoinReq("generate", 1))
     probe.expectMsgType[JValue]
 
     awaitCond({
-      probe.send(wallet, GetBalance)
-      val GetBalanceResponse(confirmed, unconfirmed) = probe.expectMsgType[GetBalanceResponse]
-      confirmed == Satoshi(250000000L)
+      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      confirmed1 == confirmed + Satoshi(250000000L)
     }, max = 30 seconds, interval = 1 second)
   }
 
+  test("receive 'confidence changed' notification") {
+    val probe = TestProbe()
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[WalletEvent])
+
+    val GetCurrentReceiveAddressResponse(address) = getCurrentAddress(probe)
+    val GetBalanceResponse(confirmed, unconfirmed) = getBalance(probe)
+    logger.info(s"initial balance $confirmed $unconfirmed")
+
+    logger.info(s"sending 1 btc to $address")
+    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
+    val JString(txid) = probe.expectMsgType[JValue]
+    logger.info(s"$txid sent 1 btc to us at $address")
+    awaitCond({
+      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      unconfirmed1 - unconfirmed == Satoshi(100000000L)
+    }, max = 30 seconds, interval = 1 second)
+
+    val TransactionReceived(tx, 0, received, sent, _) = listener.receiveOne(5 seconds)
+    assert(tx.txid === BinaryData(txid))
+    assert(received === Satoshi(100000000))
+
+    logger.info("generating a new block")
+    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    probe.expectMsgType[JValue]
+
+    awaitCond({
+      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      confirmed1 - confirmed == Satoshi(100000000L)
+    }, max = 30 seconds, interval = 1 second)
+
+    awaitCond({
+      val msg = listener.receiveOne(5 seconds)
+      msg == TransactionConfidenceChanged(BinaryData(txid), 1)
+    }, max = 30 seconds, interval = 1 second)
+  }
+
+  test("send money to someone else (we broadcast)") {
+    val probe = TestProbe()
+    val GetBalanceResponse(confirmed, unconfirmed) = getBalance(probe)
+
+    // create a tx that sends money to Bitcoin Core's address
+    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(address) = probe.expectMsgType[JValue]
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
+    probe.send(wallet, CompleteTransaction(tx, 20000))
+    val CompleteTransactionResponse(tx1, None) = probe.expectMsgType[CompleteTransactionResponse]
+
+    // send it ourselves
+    logger.info(s"sending 1 btc to $address with tx ${tx1.txid}")
+    probe.send(wallet, BroadcastTransaction(tx1))
+    val BroadcastTransactionResponse(_, None) = probe.expectMsgType[BroadcastTransactionResponse]
+
+    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    probe.expectMsgType[JValue]
+
+    awaitCond({
+      probe.send(bitcoincli, BitcoinReq("getreceivedbyaddress", address))
+      val JDouble(value) = probe.expectMsgType[JValue]
+      value == 1.0
+    }, max = 30 seconds, interval = 1 second)
+
+    awaitCond({
+      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      logger.debug(s"current balance is $confirmed1")
+      confirmed1 < confirmed - Btc(1) && confirmed1 > confirmed - Btc(1) - Satoshi(50000)
+    }, max = 30 seconds, interval = 1 second)
+  }
+
+  test("send money to ourselves (we broadcast)") {
+    val probe = TestProbe()
+    val GetBalanceResponse(confirmed, unconfirmed) = getBalance(probe)
+    logger.info(s"current balance is $confirmed $unconfirmed")
+
+    // create a tx that sends money to Bitcoin Core's address
+    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(address) = probe.expectMsgType[JValue]
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
+    probe.send(wallet, CompleteTransaction(tx, 20000))
+    val CompleteTransactionResponse(tx1, None) = probe.expectMsgType[CompleteTransactionResponse]
+
+    // send it ourselves
+    logger.info(s"sending 1 btc to $address with tx ${tx1.txid}")
+    probe.send(wallet, BroadcastTransaction(tx1))
+    val BroadcastTransactionResponse(_, None) = probe.expectMsgType[BroadcastTransactionResponse]
+
+    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    probe.expectMsgType[JValue]
+
+    awaitCond({
+      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      logger.info(s"current balance is $confirmed $unconfirmed")
+      confirmed1 < confirmed - Btc(1) && confirmed1 > confirmed - Btc(1) - Satoshi(50000)
+    }, max = 30 seconds, interval = 1 second)
+  }
 }
