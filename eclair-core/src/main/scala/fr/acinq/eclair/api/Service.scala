@@ -16,16 +16,20 @@
 
 package fr.acinq.eclair.api
 
-import akka.actor.{ActorRef, Scheduler}
+import akka.NotUsed
+import akka.actor.{Actor, ActorRef, ActorSystem, Props, Scheduler}
 import akka.http.scaladsl.model.HttpMethods._
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
 import akka.http.scaladsl.model.headers._
+import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server._
 import akka.http.scaladsl.server.directives.Credentials
 import akka.http.scaladsl.server.directives.RouteDirectives.reject
 import akka.pattern.ask
+import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
@@ -35,7 +39,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
-import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentRequest}
+import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
@@ -79,6 +83,8 @@ trait Service extends Logging {
   def password: String
 
   def appKit: Kit
+
+  val socketHandler: Flow[Message, TextMessage.Strict, NotUsed]
 
   def userPassAuthenticator(credentials: Credentials): Future[Option[String]] = credentials match {
     case p@Credentials.Provided(id) if p.verify(password) => Future.successful(Some(id))
@@ -124,6 +130,9 @@ trait Service extends Logging {
     .result()
 
   val route: Route =
+    path("ws") {
+      handleWebSocketMessages(socketHandler)
+    } ~
     respondWithDefaultHeaders(customHeaders) {
       withRequestTimeoutResponse(r => HttpResponse(StatusCodes.RequestTimeout).withEntity(ContentTypes.`application/json`, """{ "result": null, "error": { "code": 408, "message": "request timed out"} } """)) {
         handleExceptions(myExceptionHandler) {
@@ -305,6 +314,21 @@ trait Service extends Logging {
         }
       }
     }
+
+  def makeSocketHandler(system: ActorSystem)(implicit materializer: ActorMaterializer): Flow[Message, TextMessage.Strict, NotUsed] = {
+    val (client, source) = Source.actorRef[String](10, OverflowStrategy.dropTail).toMat(BroadcastHub.sink[String])(Keep.both).run()
+    val producer = source.toMat(BroadcastHub.sink(bufferSize = 256))(Keep.right).run()
+
+    system actorOf Props(new Actor {
+      override def preStart: Unit = context.system.eventStream.subscribe(self, classOf[PaymentReceived])
+      def receive: Receive = { case received: PaymentReceived => client ! received.paymentHash.toString }
+    })
+
+    Flow[Message]
+      .mapConcat(_ => Nil) // Ignore heartbeats and other data from the client
+      .merge(producer)  // Stream the data we want to the client
+      .map(TextMessage.apply)
+  }
 
   def getInfoResponse: Future[GetInfoResponse]
 
