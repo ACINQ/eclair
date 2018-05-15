@@ -39,7 +39,7 @@ trait DockerTest {}
 
 @RunWith(classOf[JUnitRunner])
 @Category(Array(classOf[DockerTest]))
-class ElectrumDockerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService  with BeforeAndAfterAll with Logging {
+class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService  with BeforeAndAfterAll with Logging {
 
   import ElectrumWallet._
 
