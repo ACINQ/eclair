@@ -23,7 +23,8 @@ import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import com.whisk.docker.DockerReadyChecker
 import fr.acinq.bitcoin.{BinaryData, Block, Btc, DeterministicWallet, MnemonicCode, Satoshi, Transaction, TxOut}
-import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
+import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse}
+import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JDouble, JString, JValue}
@@ -32,6 +33,7 @@ import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
+import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
@@ -139,6 +141,42 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     awaitCond({
       val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
       confirmed1 == confirmed + Satoshi(250000000L)
+    }, max = 30 seconds, interval = 1 second)
+  }
+
+  test("handle transactions with identical outputs to us") {
+    val probe = TestProbe()
+    val GetBalanceResponse(confirmed, unconfirmed) = getBalance(probe)
+    logger.info(s"initial balance: $confirmed $unconfirmed")
+
+    // send money to our wallet
+    val amount = Satoshi(750000)
+    val GetCurrentReceiveAddressResponse(address) = getCurrentAddress(probe)
+    val tx = Transaction(version = 2,
+      txIn = Nil,
+      txOut = Seq(
+        TxOut(amount, fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)),
+        TxOut(amount, fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash))
+      ), lockTime = 0L)
+    val btcWallet = new BitcoinCoreWallet(bitcoinrpcclient)
+    val future = for {
+      FundTransactionResponse(tx1, pos, fee) <- btcWallet.fundTransaction(tx, false)
+      SignTransactionResponse(tx2, true) <- btcWallet.signTransaction(tx1)
+      txid <- btcWallet.publishTransaction(tx2)
+    } yield txid
+    val txid = Await.result(future, 10 seconds)
+
+    awaitCond({
+      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      unconfirmed1 == unconfirmed + amount + amount
+    }, max = 30 seconds, interval = 1 second)
+
+    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    probe.expectMsgType[JValue]
+
+    awaitCond({
+      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      confirmed1 == confirmed + amount + amount
     }, max = 30 seconds, interval = 1 second)
   }
 
