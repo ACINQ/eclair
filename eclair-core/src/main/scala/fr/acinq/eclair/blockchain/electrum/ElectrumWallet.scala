@@ -622,6 +622,7 @@ object ElectrumWallet {
           val confirmedBalance = confirmedReceived.map(_.amount).sum - confirmedSpents.map(_.amount).sum
           val unconfirmedBalance = unconfirmedReceived.map(_.amount).sum - unconfirmedSpents.map(_.amount).sum
 
+          logger.debug(s"scriptHash=$scriptHash confirmedBalance=$confirmedBalance unconfirmedBalance=$unconfirmedBalance)")
           (confirmedBalance, unconfirmedBalance)
       }
     }
@@ -632,7 +633,11 @@ object ElectrumWallet {
       *         be up-to-date if we have not received all data we've asked for yet.
       */
     lazy val balance: (Satoshi, Satoshi) = {
-      (accountKeyMap.keys ++ changeKeyMap.keys).map(scriptHash => balance(scriptHash)).foldLeft((Satoshi(0), Satoshi(0))) {
+      // `.toList` is very important here: keys are returned in a Set-like structure, without the .toList we map
+      // to another set-like structure that will remove duplicates, so if we have several script hashes with exactly the
+      // same balance we don't return the correct aggregated balance
+      val balances = (accountKeyMap.keys ++ changeKeyMap.keys).toList.map(scriptHash => balance(scriptHash))
+      balances.foldLeft((Satoshi(0), Satoshi(0))) {
         case ((confirmed, unconfirmed), (confirmed1, unconfirmed1)) => (confirmed + confirmed1, unconfirmed + unconfirmed1)
       }
     }
