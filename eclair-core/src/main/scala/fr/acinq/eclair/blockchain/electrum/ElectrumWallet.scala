@@ -442,10 +442,7 @@ object ElectrumWallet {
       val publicKey = PublicKey(pub)
       if (Script.write(Script.pay2wpkh(publicKey)) == script) {
         Some(publicKey)
-      } else {
-        println("cannot find pubkey")
-        None
-      }
+      } else None
     } getOrElse None
   }
 
@@ -625,7 +622,7 @@ object ElectrumWallet {
           val confirmedBalance = confirmedReceived.map(_.amount).sum - confirmedSpents.map(_.amount).sum
           val unconfirmedBalance = unconfirmedReceived.map(_.amount).sum - unconfirmedSpents.map(_.amount).sum
 
-          logger.info(s"balance for $scriptHash is $confirmedBalance $unconfirmedBalance")
+          logger.debug(s"balance for $scriptHash is $confirmedBalance $unconfirmedBalance")
           (confirmedBalance, unconfirmedBalance)
       }
     }
