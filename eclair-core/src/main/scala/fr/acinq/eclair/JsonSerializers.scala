@@ -26,9 +26,9 @@ object JsonSerializers {
   implicit val remoteParamsReadWriter: ReadWriter[RemoteParams] = macroRW
   implicit val directionReadWriter: ReadWriter[Direction] = readwriter[String].bimap[Direction](f => f match {
     case IN =>
-      "INNN"
+      "IN"
     case OUT =>
-      "OUTTT"
+      "OUT"
   }, _ match {
     case "IN" => IN
     case "OUT" => OUT
@@ -96,8 +96,25 @@ object JsonSerializers {
   implicit val remoteCommitPublishedReadWriter: ReadWriter[RemoteCommitPublished] = macroRW
   implicit val revokedCommitPublishedReadWriter: ReadWriter[RevokedCommitPublished] = macroRW
   implicit val channelStateReadWriter: ReadWriter[fr.acinq.eclair.channel.State] = readwriter[String].bimap[fr.acinq.eclair.channel.State](_.toString, _ match {
+    case "WAIT_FOR_INIT_INTERNAL" => WAIT_FOR_INIT_INTERNAL
+    case "WAIT_FOR_OPEN_CHANNEL" => WAIT_FOR_OPEN_CHANNEL
+    case "WAIT_FOR_ACCEPT_CHANNEL" => WAIT_FOR_ACCEPT_CHANNEL
+    case "WAIT_FOR_FUNDING_INTERNAL" => WAIT_FOR_FUNDING_INTERNAL
+    case "WAIT_FOR_FUNDING_CREATED" => WAIT_FOR_FUNDING_CREATED
+    case "WAIT_FOR_FUNDING_SIGNED" => WAIT_FOR_FUNDING_SIGNED
+    case "WAIT_FOR_FUNDING_CONFIRMED" => WAIT_FOR_FUNDING_CONFIRMED
+    case "WAIT_FOR_FUNDING_LOCKED" => WAIT_FOR_FUNDING_LOCKED
     case "NORMAL" => NORMAL
+    case "SHUTDOWN" => SHUTDOWN
+    case "NEGOTIATING" => NEGOTIATING
     case "CLOSING" => CLOSING
+    case "CLOSED" => CLOSED
+    case "OFFLINE" => OFFLINE
+    case "SYNCING" => SYNCING
+    case "WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT" => WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT
+    case "ERR_FUNDING_LOST" => ERR_FUNDING_LOST
+    case "ERR_FUNDING_TIMEOUT" => ERR_FUNDING_TIMEOUT
+    case "ERR_INFORMATION_LEAK" => ERR_INFORMATION_LEAK
   })
   implicit val channelDataReadWriter: ReadWriter[fr.acinq.eclair.channel.Data] = ReadWriter.merge(
     macroRW[DATA_WAIT_FOR_ACCEPT_CHANNEL], macroRW[DATA_WAIT_FOR_FUNDING_CREATED], macroRW[DATA_WAIT_FOR_FUNDING_INTERNAL], macroRW[DATA_WAIT_FOR_FUNDING_SIGNED], macroRW[DATA_WAIT_FOR_FUNDING_LOCKED], macroRW[DATA_WAIT_FOR_FUNDING_CONFIRMED],
