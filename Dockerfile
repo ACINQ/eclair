@@ -6,9 +6,9 @@ FROM openjdk:8u121-jdk-alpine as BUILD
 
 RUN apk add --no-cache curl tar bash
 
-ARG MAVEN_VERSION=3.5.2
+ARG MAVEN_VERSION=3.3.9
 ARG USER_HOME_DIR="/root"
-ARG SHA=707b1f6e390a65bde4af4cdaf2a24d45fc19a6ded00fff02e91626e3e42ceaff
+ARG SHA=6e3e9c949ab4695a204f74038717aa7b2689b1be94875899ac1b3fe42800ff82
 ARG BASE_URL=https://apache.osuosl.org/maven/maven-3/${MAVEN_VERSION}/binaries
 
 RUN mkdir -p /usr/share/maven /usr/share/maven/ref \
