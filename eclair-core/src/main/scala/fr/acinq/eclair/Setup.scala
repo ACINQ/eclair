@@ -99,7 +99,11 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         progress = (json \ "verificationprogress").extract[Double]
         chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
         bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
-        unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) => values.map(value => (value \ "address").extract[String]) }
+        unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) =>
+          values
+            .filter(value => (value \ "spendable").extract[Boolean])
+            .map(value => (value \ "address").extract[String])
+        }
       } yield (progress, chainHash, bitcoinVersion, unspentAddresses)
       // blocking sanity checks
       val (progress, chainHash, bitcoinVersion, unspentAddresses) = Await.result(future, 30 seconds)
