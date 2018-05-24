@@ -1798,11 +1798,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
       // two main outputs are 760 000 and 200 000
       assert(mainTx.txOut(0).amount == Satoshi(741490))
-      assert(mainPenaltyTx.txOut(0).amount == Satoshi(195170))
-      assert(htlcPenaltyTxs(0).txOut(0).amount == Satoshi(4230))
-      assert(htlcPenaltyTxs(1).txOut(0).amount == Satoshi(4230))
-      assert(htlcPenaltyTxs(2).txOut(0).amount == Satoshi(4230))
-      assert(htlcPenaltyTxs(3).txOut(0).amount == Satoshi(4230))
+      assert(mainPenaltyTx.txOut(0).amount == Satoshi(195150))
+      assert(htlcPenaltyTxs(0).txOut(0).amount == Satoshi(4530))
+      assert(htlcPenaltyTxs(1).txOut(0).amount == Satoshi(4530))
+      assert(htlcPenaltyTxs(2).txOut(0).amount == Satoshi(4530))
+      assert(htlcPenaltyTxs(3).txOut(0).amount == Satoshi(4530))
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)

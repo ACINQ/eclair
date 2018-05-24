@@ -83,6 +83,12 @@ package object eclair {
    */
   val MinimumFeeratePerKw = 253
 
+  /*
+    minimum relay fee rate, in satoshi per kilo
+    bitcoin core uses virtual size and not the actual size in bytes, see above
+   */
+  val MinimumRelayFeeRate = 1000
+
   /**
     * Converts feerate in satoshi-per-kilobytes to feerate in satoshi-per-kw
     *

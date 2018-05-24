@@ -41,6 +41,11 @@ object Transactions {
   sealed trait TransactionWithInputInfo {
     def input: InputInfo
     def tx: Transaction
+    def fee: Satoshi = input.txOut.amount - tx.txOut.map(_.amount).sum
+    def minRelayFee: Satoshi = {
+      val vsize = (tx.weight() + 3) / 4
+      Satoshi(fr.acinq.eclair.MinimumRelayFeeRate * vsize / 1000)
+    }
   }
 
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
