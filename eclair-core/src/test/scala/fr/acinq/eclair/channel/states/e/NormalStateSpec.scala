@@ -1671,7 +1671,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         claimHtlcTx.txOut(0).amount
       }).sum
       // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
-      assert(amountClaimed == Satoshi(814920))
+      assert(amountClaimed == Satoshi(815160))
 
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxes(0))) // claim-main
@@ -1734,7 +1734,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         claimHtlcTx.txOut(0).amount
       }).sum
       // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
-      assert(amountClaimed == Satoshi(822340))
+      assert(amountClaimed == Satoshi(822280))
 
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxes(0))) // claim-main
@@ -1797,7 +1797,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       htlcPenaltyTxs.foreach(htlcPenaltyTx => Transaction.correctlySpends(htlcPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
       // two main outputs are 760 000 and 200 000
-      assert(mainTx.txOut(0).amount == Satoshi(741510))
+      assert(mainTx.txOut(0).amount == Satoshi(741490))
       assert(mainPenaltyTx.txOut(0).amount == Satoshi(195170))
       assert(htlcPenaltyTxs(0).txOut(0).amount == Satoshi(4230))
       assert(htlcPenaltyTxs(1).txOut(0).amount == Satoshi(4230))
