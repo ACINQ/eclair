@@ -68,13 +68,28 @@ package object eclair {
     */
   def feerateKw2Byte(feeratesPerKw: Long): Long = feeratesPerKw / 250
 
+  /*
+    why 253 and not 250 since feerate-per-kw is feerate-per-kb / 250 and the minimum relay fee rate is 1000 satoshi/Kb ?
+
+    because bitcoin core uses neither the actual tx size in bytes or the tx weight to check fees, but a "virtual size"
+    which is (3 * weight) / 4 ...
+    so we want :
+    fee > 1000 * virtual size
+    feerate-per-kw * weight > 1000 * (3 * weight / 4)
+    feerate_per-kw > 250 + 3000 / (4 * weight)
+    with a conservative minimum weight of 400, we get a minimum feerate_per-kw of 253
+
+    see https://github.com/ElementsProject/lightning/pull/1251
+   */
+  val MinimumFeeratePerKw = 253
+
   /**
     * Converts feerate in satoshi-per-kilobytes to feerate in satoshi-per-kw
     *
     * @param feeratePerKB fee rate in satoshi-per-kilobytes
     * @return feerate in satoshi-per-kw
     */
-  def feerateKB2Kw(feeratePerKB: Long): Long = feeratePerKB / 4
+  def feerateKB2Kw(feeratePerKB: Long): Long = Math.max(feeratePerKB / 4, MinimumFeeratePerKw)
 
   /**
     *
