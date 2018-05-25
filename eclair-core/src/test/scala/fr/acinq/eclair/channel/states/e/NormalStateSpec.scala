@@ -1339,6 +1339,22 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv UpdateFee (remote feerate is too small)") { case (_, bob, _, bob2alice, _, bob2blockchain, relayer) =>
+    within(30 seconds) {
+      val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val sender = TestProbe()
+      sender.send(bob, UpdateFee("00" * 32, 252))
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === "remote fee rate is too small: remoteFeeratePerKw=252")
+      awaitCond(bob.stateName == CLOSING)
+      // channel should be advertised as down
+      assert(relayer.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+      bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
   test("recv CMD_CLOSE (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()

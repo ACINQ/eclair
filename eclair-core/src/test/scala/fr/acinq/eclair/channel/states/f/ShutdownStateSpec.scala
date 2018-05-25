@@ -549,6 +549,20 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv UpdateFee (remote feerate is too small)") { case (_, bob, _, bob2alice, _, bob2blockchain, _) =>
+    within(30 seconds) {
+      val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
+      val sender = TestProbe()
+      sender.send(bob, UpdateFee("00" * 32, 252))
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === "remote fee rate is too small: remoteFeeratePerKw=252")
+      awaitCond(bob.stateName == CLOSING)
+      bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+      bob2blockchain.expectMsgType[PublishAsap] // main delayed
+      bob2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
   test("recv CurrentBlockCount (no htlc timed out)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
