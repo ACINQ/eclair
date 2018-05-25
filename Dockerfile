@@ -1,4 +1,4 @@
-FROM openjdk:8u121-jdk-alpine as BUILD
+FROM openjdk:8u151-jdk-alpine as BUILD
 
 # Setup maven, we don't use https://hub.docker.com/_/maven/ as it declare .m2 as volume, we loose all mvn cache
 # We can alternatively do as proposed by https://github.com/carlossg/docker-maven#packaging-a-local-repository-with-the-image
@@ -6,9 +6,9 @@ FROM openjdk:8u121-jdk-alpine as BUILD
 
 RUN apk add --no-cache curl tar bash
 
-ARG MAVEN_VERSION=3.5.2
+ARG MAVEN_VERSION=3.3.9
 ARG USER_HOME_DIR="/root"
-ARG SHA=707b1f6e390a65bde4af4cdaf2a24d45fc19a6ded00fff02e91626e3e42ceaff
+ARG SHA=6e3e9c949ab4695a204f74038717aa7b2689b1be94875899ac1b3fe42800ff82
 ARG BASE_URL=https://apache.osuosl.org/maven/maven-3/${MAVEN_VERSION}/binaries
 
 RUN mkdir -p /usr/share/maven /usr/share/maven/ref \
@@ -41,7 +41,7 @@ RUN mvn package -pl eclair-node -am -DskipTests -Dgit.commit.id=notag -Dgit.comm
 # It might be good idea to run the tests here, so that the docker build fail if the code is bugged
 
 # We currently use a debian image for runtime because of some jni-related issue with sqlite
-FROM openjdk:8u151-jre-slim
+FROM openjdk:8u171-jre-slim
 WORKDIR /app
 # Eclair only needs the eclair-node-*.jar to run
 COPY --from=BUILD /usr/src/eclair-node/target/eclair-node-*.jar .
