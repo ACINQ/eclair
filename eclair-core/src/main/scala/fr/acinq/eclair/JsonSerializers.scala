@@ -24,15 +24,7 @@ object JsonSerializers {
   implicit val uint64ReadWriter: ReadWriter[UInt64] = readwriter[String].bimap[UInt64](_.toString, s => UInt64(s.toLong))
   implicit val localParamsReadWriter: ReadWriter[LocalParams] = macroRW
   implicit val remoteParamsReadWriter: ReadWriter[RemoteParams] = macroRW
-  implicit val directionReadWriter: ReadWriter[Direction] = readwriter[String].bimap[Direction](f => f match {
-    case IN =>
-      "IN"
-    case OUT =>
-      "OUT"
-  }, _ match {
-    case "IN" => IN
-    case "OUT" => OUT
-  })
+  implicit val directionReadWriter: ReadWriter[Direction] = macroRW
   implicit val updateAddHtlcReadWriter: ReadWriter[UpdateAddHtlc] = macroRW
   implicit val updateFailHtlcReadWriter: ReadWriter[UpdateFailHtlc] = macroRW
   implicit val updateMessageReadWriter: ReadWriter[UpdateMessage] = ReadWriter.merge(macroRW[UpdateAddHtlc], macroRW[UpdateFailHtlc])
@@ -54,7 +46,16 @@ object JsonSerializers {
   implicit val waitingForRevocationReadWriter: ReadWriter[WaitingForRevocation] = macroRW
   implicit val paymentOriginReadWriter: ReadWriter[Origin] = readwriter[String].bimap[Origin](_.toString, _ => fr.acinq.eclair.payment.Local(None))
   implicit val remoteChangesReadWriter: ReadWriter[RemoteChanges] = macroRW
-  implicit val shaChainReadWriter: ReadWriter[ShaChain] = macroRW
+
+  case class ShaChain2(knownHashes: Map[Long, BinaryData], lastIndex: Option[Long] = None) {
+    def toShaChain = ShaChain(knownHashes.map { case (k, v) => ShaChain.moves(k) -> v }, lastIndex)
+  }
+  object ShaChain2 {
+    def toLong(input: Vector[Boolean]) : Long = input.foldLeft(0) { case (acc, flag) => if (flag) 2 * acc + 1 else 2 * acc }
+    def apply(shaChain: ShaChain): ShaChain2 = new ShaChain2(shaChain.knownHashes.map { case (k,v) => toLong(k) -> v }, shaChain.lastIndex)
+  }
+  implicit val shaChain2ReadWriter: ReadWriter[ShaChain2] = macroRW
+  implicit val shaChainReadWriter: ReadWriter[ShaChain] = readwriter[ShaChain2].bimap[ShaChain](s => ShaChain2(s), s2 => s2.toShaChain)
   implicit val commitmentsReadWriter: ReadWriter[Commitments] = macroRW
   implicit val actorRefReadWriter: ReadWriter[ActorRef] = readwriter[String].bimap[ActorRef](_.toString, _ => ActorRef.noSender)
   implicit val shortChannelIdReadWriter: ReadWriter[ShortChannelId] = readwriter[String].bimap[ShortChannelId](_.toString, s => ShortChannelId(s))

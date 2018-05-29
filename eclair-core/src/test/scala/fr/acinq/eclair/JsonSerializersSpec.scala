@@ -2,16 +2,20 @@ package fr.acinq.eclair
 
 import java.net.{InetAddress, InetSocketAddress}
 
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint}
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Hash, OutPoint}
 import fr.acinq.eclair.channel.{LocalChanges, LocalParams, RemoteParams}
+import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.ChannelStateSpec
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{NodeAddress, UpdateAddHtlc, UpdateFailHtlc}
+import org.junit.runner.RunWith
 import org.scalatest.FunSuite
+import org.scalatest.junit.JUnitRunner
 import upickle.default.write
 
 import scala.util.Random
 
+@RunWith(classOf[JUnitRunner])
 class JsonSerializersSpec extends FunSuite {
   import JsonSerializers._
 
@@ -25,7 +29,7 @@ class JsonSerializersSpec extends FunSuite {
       output2 -> BinaryData("beef")
     )
     val json = write(map)
-    assert(json === s"""{"${output1.txid}:0":"dead","${output2.txid}:1":"beef"}""")
+    assert(json === s"""[["${output1.hash}:0","dead"],["${output2.hash}:1","beef"]]""")
   }
 
   test("NodeAddress serialization") {
@@ -37,8 +41,8 @@ class JsonSerializersSpec extends FunSuite {
   }
 
   test("Direction serialization") {
-    assert(write(IN) ===  s""""IN"""")
-    assert(write(OUT) === s""""OUT"""")
+    assert(write(IN) ===  """{"$type":"fr.acinq.eclair.transactions.IN"}""")
+    assert(write(OUT) ===  """{"$type":"fr.acinq.eclair.transactions.OUT"}""")
   }
 
   test("serialize LocalParams") {
@@ -91,6 +95,15 @@ class JsonSerializersSpec extends FunSuite {
     val fail = UpdateFailHtlc(channelId, 42, BinaryData("0101"))
     val localChanges = LocalChanges(proposed = add :: add :: fail :: Nil, signed = add :: Nil, acked = fail :: fail :: Nil)
     println(write(localChanges))
+  }
+
+  test("serialize shaChain") {
+    val seed = Hash.Zeroes
+    var receiver = ShaChain.empty
+    for (i <- 0 until 7) {
+      receiver = receiver.addHash(ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFL - i), 0xFFFFFFFFFFFFL - i)
+    }
+    println(write(receiver))
   }
 
   test("serialize Commitments") {
