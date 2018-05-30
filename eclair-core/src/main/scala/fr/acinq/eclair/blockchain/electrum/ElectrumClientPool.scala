@@ -30,7 +30,6 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 class ElectrumClientPool(serverAddresses: Set[InetSocketAddress])(implicit val ec: ExecutionContext) extends Actor with FSM[ElectrumClientPool.State, ElectrumClientPool.Data] {
-
   import ElectrumClientPool._
 
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
@@ -163,11 +162,12 @@ object ElectrumClientPool {
   def readServerAddresses(stream: InputStream): Set[InetSocketAddress] = try {
     val JObject(values) = JsonMethods.parse(stream)
     val addresses = values.flatMap {
-      case (name, fields) =>
+      case (name, fields) if !name.endsWith(".onion") =>
         fields \ "t" match {
           case JString(port) => Some(InetSocketAddress.createUnresolved(name, port.toInt))
           case _ => None // we only support raw TCP (not SSL) connection to electrum servers for now
         }
+      case _ => None
     }
     addresses.toSet
   } finally {

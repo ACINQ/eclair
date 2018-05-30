@@ -326,6 +326,10 @@ object Commitments {
       throw FundeeCannotSendUpdateFee(commitments.channelId)
     }
 
+    if (fee.feeratePerKw < fr.acinq.eclair.MinimumFeeratePerKw) {
+      throw FeerateTooSmall(commitments.channelId, remoteFeeratePerKw = fee.feeratePerKw)
+    }
+
     val localFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
     if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, maxFeerateMismatch)) {
       throw FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw)
