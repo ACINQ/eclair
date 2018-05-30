@@ -549,6 +549,20 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv UpdateFee (remote feerate is too small)") { case (_, bob, _, bob2alice, _, bob2blockchain, _) =>
+    within(30 seconds) {
+      val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
+      val sender = TestProbe()
+      sender.send(bob, UpdateFee("00" * 32, 252))
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === "remote fee rate is too small: remoteFeeratePerKw=252")
+      awaitCond(bob.stateName == CLOSING)
+      bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+      bob2blockchain.expectMsgType[PublishAsap] // main delayed
+      bob2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
   test("recv CurrentBlockCount (no htlc timed out)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -633,7 +647,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         claimHtlcTx.txOut(0).amount
       }).sum
       // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat = 1000000 - 200000 = 800000 (because fees)
-      assert(amountClaimed == Satoshi(774070))
+      assert(amountClaimed == Satoshi(774010))
 
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxes(0)))
@@ -681,7 +695,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         claimHtlcTx.txOut(0).amount
       }).sum
       // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat - htlc1 = 1000000 - 200000 - 300 000 = 500000 (because fees)
-      assert(amountClaimed == Satoshi(481230))
+      assert(amountClaimed == Satoshi(481190))
 
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxes(0)))
@@ -728,10 +742,10 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       Transaction.correctlySpends(htlc2PenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       // two main outputs are 300 000 and 200 000, htlcs are 300 000 and 200 000
-      assert(mainTx.txOut(0).amount == Satoshi(284950))
-      assert(mainPenaltyTx.txOut(0).amount == Satoshi(195170))
-      assert(htlc1PenaltyTx.txOut(0).amount == Satoshi(194230))
-      assert(htlc2PenaltyTx.txOut(0).amount == Satoshi(294230))
+      assert(mainTx.txOut(0).amount == Satoshi(284930))
+      assert(mainPenaltyTx.txOut(0).amount == Satoshi(195150))
+      assert(htlc1PenaltyTx.txOut(0).amount == Satoshi(194530))
+      assert(htlc2PenaltyTx.txOut(0).amount == Satoshi(294530))
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)

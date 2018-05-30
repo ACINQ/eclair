@@ -101,4 +101,9 @@ class PackageSpec extends FunSuite {
     }
     assert(e.getMessage.contains("is neither a valid Base58 address") && e.getMessage.contains("nor a valid Bech32 address"))
   }
+
+  test("convert fee rates and enforce a minimum feerate-per-kw") {
+    assert(feerateByte2Kw(1) == MinimumFeeratePerKw)
+    assert(feerateKB2Kw(1000) == MinimumFeeratePerKw)
+  }
 }
