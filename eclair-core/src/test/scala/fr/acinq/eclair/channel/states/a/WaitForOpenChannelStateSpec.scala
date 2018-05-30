@@ -129,12 +129,12 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     within(30 seconds) {
       val open = alice2bob.expectMsgType[OpenChannel]
       // set a very small fee
-      val tinyFee = 254
+      val tinyFee = 253
       bob ! open.copy(feeratePerKw = tinyFee)
       alice2bob.forward(bob)
       val error = bob2alice.expectMsgType[Error]
       // we check that the error uses the temporary channel id
-      assert(error === Error(open.temporaryChannelId, "local/remote feerates are too different: remoteFeeratePerKw=254 localFeeratePerKw=10000".getBytes("UTF-8")))
+      assert(error === Error(open.temporaryChannelId, "local/remote feerates are too different: remoteFeeratePerKw=253 localFeeratePerKw=10000".getBytes("UTF-8")))
       awaitCond(bob.stateName == CLOSED)
     }
   }

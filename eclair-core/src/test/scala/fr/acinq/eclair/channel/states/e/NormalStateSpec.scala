@@ -1687,7 +1687,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         claimHtlcTx.txOut(0).amount
       }).sum
       // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
-      assert(amountClaimed == Satoshi(815160))
+      assert(amountClaimed == Satoshi(814840))
 
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxes(0))) // claim-main
