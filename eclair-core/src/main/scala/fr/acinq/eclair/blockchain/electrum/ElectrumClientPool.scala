@@ -71,7 +71,7 @@ class ElectrumClientPool(serverAddresses: Set[InetSocketAddress])(implicit val e
       master forward request
       stay
 
-    case Event(ElectrumClient.AddStatusListener(listener), d: ConnectedData) =>
+    case Event(ElectrumClient.AddStatusListener(listener), d: ConnectedData) if addresses.contains(d.master) =>
       statusListeners += listener
       listener ! ElectrumClient.ElectrumReady(d.tips(d.master), addresses(d.master))
       stay
