@@ -228,6 +228,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
               blockHeight = Globals.blockCount.intValue()))
 
           override def appKit: Kit = kit
+
+          override val socketHandler = makeSocketHandler(system)(materializer)
         }
         val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
           case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
