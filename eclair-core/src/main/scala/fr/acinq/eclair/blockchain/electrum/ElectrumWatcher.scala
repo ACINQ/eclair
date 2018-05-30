@@ -52,7 +52,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
   def receive = disconnected(Set.empty, Nil, SortedMap.empty)
 
   def disconnected(watches: Set[Watch], publishQueue: Seq[PublishAsap], block2tx: SortedMap[Long, Seq[Transaction]]): Receive = {
-    case ElectrumClient.ElectrumReady(_) =>
+    case ElectrumClient.ElectrumReady(_, _) =>
       client ! ElectrumClient.HeaderSubscription(self)
     case ElectrumClient.HeaderSubscriptionResponse(header) =>
       watches.map(self ! _)
@@ -220,7 +220,7 @@ object ElectrumWatcher extends App {
     }
 
     def receive = {
-      case ElectrumClient.ElectrumReady(_) =>
+      case ElectrumClient.ElectrumReady(_, _) =>
         log.info(s"starting watcher")
         context become running(context.actorOf(Props(new ElectrumWatcher(client)), "watcher"))
     }
