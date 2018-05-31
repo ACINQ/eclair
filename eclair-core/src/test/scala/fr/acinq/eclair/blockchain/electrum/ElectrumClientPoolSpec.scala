@@ -49,8 +49,12 @@ class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteL
 
   test("connect to an electrumx testnet server") {
     probe.send(router, AddStatusListener(probe.ref))
-    probe.expectMsgType[ElectrumReady](15 seconds)
-  }
+    // make sure our master is stable, if the first master that we select is behind the other servers we will switch
+    // during the first few seconds
+    awaitCond({
+      probe.expectMsgType[ElectrumReady]
+      probe.receiveOne(5 seconds) == null
+    }, max = 15 seconds, interval = 1000 millis)  }
 
   test("get transaction") {
     probe.send(router, GetTransaction("c5efb5cbd35a44ba956b18100be0a91c9c33af4c7f31be20e33741d95f04e202"))
