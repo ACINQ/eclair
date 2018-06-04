@@ -8,18 +8,18 @@
 ## Build
 To build the project, simply run:
 ```shell
-$ mvn install
+$ mvn clean install
 ```
 To skip the tests, run:
 ```shell
-$ mvn install -DskipTests
+$ mvn clean install -DskipTests
 ```
 To only build the `eclair-node` module
 ```shell
-$ mvn install -pl eclair-node -am -DskipTests
+$ mvn clean install -pl eclair-node -am -DskipTests
 ```
 To generate the windows installer along with the build, run the following command:
 ```shell
-$ mvn install -DskipTests -Pinstaller
+$ mvn clean install -DskipTests -Pinstaller
 ```
 The generated installer will be located in `eclair-node-gui/target/jfx/installer`
