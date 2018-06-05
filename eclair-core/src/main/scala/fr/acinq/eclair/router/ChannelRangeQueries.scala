@@ -78,44 +78,47 @@ object ChannelRangeQueries {
     */
   def decodeShortChannelIds(data: BinaryData): (Byte, Set[ShortChannelId], Boolean) = {
     val format = data.head
-    val buffer = new Array[Byte](8)
+    if (data.tail.isEmpty) (format, Set.empty[ShortChannelId], false) else {
+      val buffer = new Array[Byte](8)
 
-    // read 8 bytes from input
-    // zipped input stream often returns less bytes than what you want to read
-    @tailrec
-    def read8(input: InputStream, offset: Int = 0): Int = input.read(buffer, offset, 8 - offset) match {
-      case len if len <= 0 => len
-      case 8 => 8
-      case len if offset + len == 8 => 8
-      case len => read8(input, offset + len)
-    }
-
-    // read until there's nothing left
-    @tailrec
-    def loop(input: InputStream, acc: Set[ShortChannelId]): Set[ShortChannelId] = {
-      if (read8(input) <= 0) acc else loop(input, acc + ShortChannelId(Protocol.uint64(buffer, ByteOrder.BIG_ENDIAN)))
-    }
-
-    def readAll(useGzip: Boolean) = {
-      val bis = new ByteArrayInputStream(data.tail.toArray)
-      val input = format match {
-        case UNCOMPRESSED_FORMAT => bis
-        case ZLIB_FORMAT if useGzip => new GZIPInputStream(bis)
-        case ZLIB_FORMAT => new InflaterInputStream(bis)
+      // read 8 bytes from input
+      // zipped input stream often returns less bytes than what you want to read
+      @tailrec
+      def read8(input: InputStream, offset: Int = 0): Int = input.read(buffer, offset, 8 - offset) match {
+        case len if len <= 0 => len
+        case 8 => 8
+        case len if offset + len == 8 => 8
+        case len => read8(input, offset + len)
       }
+
+      // read until there's nothing left
+      @tailrec
+      def loop(input: InputStream, acc: Set[ShortChannelId]): Set[ShortChannelId] = {
+        val check = read8(input)
+        if (check <= 0) acc else loop(input, acc + ShortChannelId(Protocol.uint64(buffer, ByteOrder.BIG_ENDIAN)))
+      }
+
+      def readAll(useGzip: Boolean) = {
+        val bis = new ByteArrayInputStream(data.tail.toArray)
+        val input = format match {
+          case UNCOMPRESSED_FORMAT => bis
+          case ZLIB_FORMAT if useGzip => new GZIPInputStream(bis)
+          case ZLIB_FORMAT => new InflaterInputStream(bis)
+        }
+        try {
+          (format, loop(input, Set.empty[ShortChannelId]), useGzip)
+        }
+        finally {
+          input.close()
+        }
+      }
+
       try {
-        (format, loop(input, Set.empty[ShortChannelId]), useGzip)
+        readAll(useGzip = false)
       }
-      finally {
-        input.close()
+      catch {
+        case t: Throwable if format == ZLIB_FORMAT => readAll(useGzip = true)
       }
-    }
-
-    try {
-      readAll(useGzip = false)
-    }
-    catch {
-      case t: Throwable if format == ZLIB_FORMAT => readAll(useGzip = true)
     }
   }
 }
