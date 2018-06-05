@@ -440,8 +440,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
         val shortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
         // TODO: we don't compress to be compatible with old mobile apps, switch to ZLIB ASAP
-        val blocks
-        = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+        val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
         log.info("sending back reply_channel_range({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.size)
         val replies = blocks.map(block => ReplyChannelRange(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
         replies.foreach(reply => sender ! reply)
@@ -453,11 +452,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       if (chainHash != nodeParams.chainHash) {
         log.warning("received reply_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
-        val (_, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
+        val (format, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
         val ourShortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
         val missing = theirShortChannelIds -- ourShortChannelIds
-        log.info("we received their reply, we're missing {} channel announcements/updates, useGzip={}", missing.size, useGzip)
-        val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, missing, ChannelRangeQueries.ZLIB_FORMAT, useGzip)
+        log.info("we received their reply, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
+        val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, missing, format, useGzip)
         blocks.foreach(block => sender ! QueryShortChannelIds(chainHash, block.shortChannelIds))
       }
       stay
