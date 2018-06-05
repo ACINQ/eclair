@@ -21,7 +21,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.11</artifactId>
-        <version>0.2-android-beta4</version>
+        <version>0.2-android-beta5</version>
     </parent>
 
     <artifactId>eclair-core_2.11</artifactId>
