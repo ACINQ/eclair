@@ -111,6 +111,41 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     }
   }
 
+  test("recv AcceptChannel (reserve below dust limit)") { case (alice, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val accept = bob2alice.expectMsgType[AcceptChannel]
+      val reserveTooSmall = accept.dustLimitSatoshis - 1
+      alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
+      val error = alice2bob.expectMsgType[Error]
+      assert(error === Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, reserveTooSmall).getMessage.getBytes("UTF-8")))
+      awaitCond(alice.stateName == CLOSED)
+    }
+  }
+
+  test("recv AcceptChannel (reserve below our dust limit)") { case (alice, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val accept = bob2alice.expectMsgType[AcceptChannel]
+      val open = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].lastSent
+      val reserveTooSmall = open.dustLimitSatoshis - 1
+      alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
+      val error = alice2bob.expectMsgType[Error]
+      assert(error === Error(accept.temporaryChannelId, ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, reserveTooSmall, open.dustLimitSatoshis).getMessage.getBytes("UTF-8")))
+      awaitCond(alice.stateName == CLOSED)
+    }
+  }
+
+  test("recv AcceptChannel (dust limit above our reserve)") { case (alice, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val accept = bob2alice.expectMsgType[AcceptChannel]
+      val open = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].lastSent
+      val dustTooBig = open.channelReserveSatoshis + 1
+      alice ! accept.copy(dustLimitSatoshis = dustTooBig)
+      val error = alice2bob.expectMsgType[Error]
+      assert(error === Error(accept.temporaryChannelId, DustLimitAboveOurReserve(accept.temporaryChannelId, dustTooBig, open.channelReserveSatoshis).getMessage.getBytes("UTF-8")))
+      awaitCond(alice.stateName == CLOSED)
+    }
+  }
+
   test("recv Error") { case (bob, alice2bob, bob2alice, _) =>
     within(30 seconds) {
       bob ! Error("00" * 32, "oops".getBytes)
