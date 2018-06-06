@@ -389,7 +389,7 @@ object Peer {
       channelKeyPath,
       dustLimitSatoshis = nodeParams.dustLimitSatoshis,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
-      channelReserveSatoshis = (nodeParams.reserveToFundingRatio * fundingSatoshis).toLong,
+      channelReserveSatoshis = Math.max((nodeParams.reserveToFundingRatio * fundingSatoshis).toLong, nodeParams.dustLimitSatoshis), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimumMsat = nodeParams.htlcMinimumMsat,
       toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
