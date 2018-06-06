@@ -83,7 +83,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
       val lowDustLimitSatoshis = 545
       alice ! accept.copy(dustLimitSatoshis = lowDustLimitSatoshis)
       val error = alice2bob.expectMsgType[Error]
-      assert(error === Error(accept.temporaryChannelId, InvalidDustLimit(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUSTLIMIT).getMessage.getBytes("UTF-8")))
+      assert(error === Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUSTLIMIT).getMessage.getBytes("UTF-8")))
       awaitCond(alice.stateName == CLOSED)
     }
   }
