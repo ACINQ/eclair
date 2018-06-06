@@ -21,17 +21,18 @@ import java.nio.file.Files
 import java.util.UUID
 
 import akka.actor.Status.Failure
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.actor.{Actor, ActorRef, ActorSystem, Props, Status}
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{Block, MilliBtc, Satoshi, Script}
+import fr.acinq.bitcoin.{Block, MilliBtc, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError}
+import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.FundTransactionResponse
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError, JsonRPCRequest}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.JValue
+import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, JString}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -42,6 +43,7 @@ import scala.concurrent.duration._
 import scala.sys.process.{Process, _}
 import scala.util.{Random, Try}
 import collection.JavaConversions._
+import scala.concurrent.{ExecutionContext, Future}
 
 @RunWith(classOf[JUnitRunner])
 class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll with Logging {
@@ -55,6 +57,9 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
   var bitcoind: Process = null
   var bitcoinrpcclient: BasicBitcoinJsonRPCClient = null
   var bitcoincli: ActorRef = null
+
+  val commonConfig = ConfigFactory.parseMap(Map("eclair.chain" -> "regtest", "eclair.spv" -> false, "eclair.server.public-ips.1" -> "localhost", "eclair.bitcoind.port" -> 28333, "eclair.bitcoind.rpcport" -> 28332, "eclair.bitcoind.zmq" -> "tcp://127.0.0.1:28334", "eclair.router-broadcast-interval" -> "2 second", "eclair.auto-reconnect" -> false))
+  val config = ConfigFactory.load(commonConfig).getConfig("eclair")
 
   val walletPassword = Random.alphanumeric.take(8).mkString
 
@@ -77,9 +82,42 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
     waitForBitcoindReady()
   }
 
+  test("absence of rounding") {
+    val hexIn  = "020000000001404b4c0000000000220020822eb4234126c5fc84910e51a161a9b7af94eb67a2344f7031db247e0ecc2f9200000000"
+    val hexOut = "02000000013361e994f6bd5cbe9dc9e8cb3acdc12bc1510a3596469d9fc03cfddd71b223720000000000feffffff02c821354a00000000160014b6aa25d6f2a692517f2cf1ad55f243a5ba672cac404b4c0000000000220020822eb4234126c5fc84910e51a161a9b7af94eb67a2344f7031db247e0ecc2f9200000000"
+
+    0 to 9 foreach { satoshi =>
+
+      val apiAmount = JDecimal(BigDecimal(s"0.0000000$satoshi"))
+//      val apiAmount = JDouble(s"0.0000000$satoshi".toDouble)
+
+      val bitcoinClient = new BasicBitcoinJsonRPCClient(
+        user = config.getString("bitcoind.rpcuser"),
+        password = config.getString("bitcoind.rpcpassword"),
+        host = config.getString("bitcoind.host"),
+        port = config.getInt("bitcoind.rpcport")) {
+
+        override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
+          case "getbalance" => Future(apiAmount)
+          case "fundrawtransaction" => Future(JObject(List("hex" -> JString(hexOut), "changepos" -> JInt(1), "fee" -> apiAmount)))
+          case _ => Future.failed(new RuntimeException(s"Test BasicBitcoinJsonRPCClient: method $method is not supported"))
+        }
+      }
+
+      val wallet = new BitcoinCoreWallet(bitcoinClient)
+
+      val sender = TestProbe()
+
+      wallet.getBalance.pipeTo(sender.ref)
+      assert(sender.expectMsgType[Satoshi] == Satoshi(satoshi))
+
+      wallet.fundTransaction(hexIn, false).pipeTo(sender.ref)
+      val FundTransactionResponse(_, _, fee) = sender.expectMsgType[FundTransactionResponse]
+      assert(fee == satoshi)
+    }
+  }
+
   test("create/commit/rollback funding txes") {
-    val commonConfig = ConfigFactory.parseMap(Map("eclair.chain" -> "regtest", "eclair.spv" -> false, "eclair.server.public-ips.1" -> "localhost", "eclair.bitcoind.port" -> 28333, "eclair.bitcoind.rpcport" -> 28332, "eclair.bitcoind.zmq" -> "tcp://127.0.0.1:28334", "eclair.router-broadcast-interval" -> "2 second", "eclair.auto-reconnect" -> false))
-    val config = ConfigFactory.load(commonConfig).getConfig("eclair")
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
@@ -139,8 +177,6 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
   }
 
   test("unlock failed funding txes") {
-    val commonConfig = ConfigFactory.parseMap(Map("eclair.chain" -> "regtest", "eclair.spv" -> false, "eclair.server.public-ips.1" -> "localhost", "eclair.bitcoind.port" -> 28333, "eclair.bitcoind.rpcport" -> 28332, "eclair.bitcoind.zmq" -> "tcp://127.0.0.1:28334", "eclair.router-broadcast-interval" -> "2 second", "eclair.auto-reconnect" -> false))
-    val config = ConfigFactory.load(commonConfig).getConfig("eclair")
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
