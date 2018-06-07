@@ -37,6 +37,7 @@ import org.jgrapht.ext._
 import org.jgrapht.graph._
 
 import scala.collection.JavaConversions._
+import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -59,7 +60,7 @@ case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], update
 case class DescEdge(desc: ChannelDesc, u: ChannelUpdate) extends DefaultWeightedEdge
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
-                  channels: Map[ShortChannelId, ChannelAnnouncement],
+                  channels: SortedMap[ShortChannelId, ChannelAnnouncement],
                   updates: Map[ChannelDesc, ChannelUpdate],
                   stash: Stash,
                   rebroadcast: Rebroadcast,
@@ -106,7 +107,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     // this will be used to calculate routes
     val graph = new DirectedWeightedPseudograph[PublicKey, DescEdge](classOf[DescEdge])
 
-    val initChannels = channels.keys.map(c => (c.shortChannelId -> c)).toMap
+    val initChannels = channels.keys.foldLeft(TreeMap.empty[ShortChannelId, ChannelAnnouncement]) { case (m, c) => m + (c.shortChannelId -> c) }
     val initChannelUpdates = updates.map { u =>
       val desc = getDesc(u, initChannels(u.shortChannelId))
       addEdge(graph, desc, u)
@@ -454,6 +455,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       } else {
         val (format, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
         val ourShortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
+        // theirShortChannelIds is sorted, so is ourShortChannelIds => missing is also a sorted set
         val missing = theirShortChannelIds -- ourShortChannelIds
         log.info("we received their reply, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
         val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, missing, format, useGzip)

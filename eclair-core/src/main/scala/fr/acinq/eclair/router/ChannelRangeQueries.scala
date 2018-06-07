@@ -8,6 +8,7 @@ import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.ShortChannelId
 
 import scala.annotation.tailrec
+import scala.collection.SortedSet
 
 object ChannelRangeQueries {
 
@@ -55,14 +56,13 @@ object ChannelRangeQueries {
   /**
     * Decompress a zipped sequence of sorted short channel ids.
     *
-    * Does *not* preserve the order, we don't need it and a Set is better suited to our access patterns
     *
     * @param data
-    * @return
+    * @return a sorted set of short channel ids
     */
-  def decodeShortChannelIds(data: BinaryData): (Byte, Set[ShortChannelId], Boolean) = {
+  def decodeShortChannelIds(data: BinaryData): (Byte, SortedSet[ShortChannelId], Boolean) = {
     val format = data.head
-    if (data.tail.isEmpty) (format, Set.empty[ShortChannelId], false) else {
+    if (data.tail.isEmpty) (format, SortedSet.empty[ShortChannelId], false) else {
       val buffer = new Array[Byte](8)
 
       // read 8 bytes from input
@@ -77,7 +77,7 @@ object ChannelRangeQueries {
 
       // read until there's nothing left
       @tailrec
-      def loop(input: InputStream, acc: Set[ShortChannelId]): Set[ShortChannelId] = {
+      def loop(input: InputStream, acc: SortedSet[ShortChannelId]): SortedSet[ShortChannelId] = {
         val check = read8(input)
         if (check <= 0) acc else loop(input, acc + ShortChannelId(Protocol.uint64(buffer, ByteOrder.BIG_ENDIAN)))
       }
@@ -90,7 +90,7 @@ object ChannelRangeQueries {
           case ZLIB_FORMAT => new InflaterInputStream(bis)
         }
         try {
-          (format, loop(input, Set.empty[ShortChannelId]), useGzip)
+          (format, loop(input, SortedSet.empty[ShortChannelId]), useGzip)
         }
         finally {
           input.close()
