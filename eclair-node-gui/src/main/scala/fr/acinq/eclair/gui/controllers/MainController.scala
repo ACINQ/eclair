@@ -51,7 +51,7 @@ import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, P
 import fr.acinq.eclair.wire.{ChannelAnnouncement, IPv4, IPv6, NodeAnnouncement}
 import grizzled.slf4j.Logging
 
-case class ChannelInfo(announcement: ChannelAnnouncement, var feeBaseMsat: Long, var feeProportionalMillionths: Long,
+case class ChannelInfo(announcement: ChannelAnnouncement, var feeBaseMsatNode1: Long, var feeBaseMsatNode2: Long, var feeProportionalMillionthsNode1: Long,var feeProportionalMillionthsNode2: Long,
                        capacity: Satoshi, var isNode1Enabled: Option[Boolean], var isNode2Enabled: Option[Boolean])
 
 sealed trait Record {
@@ -109,8 +109,11 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   @FXML var networkChannelsNode1Column: TableColumn[ChannelInfo, String] = _
   @FXML var networkChannelsDirectionsColumn: TableColumn[ChannelInfo, ChannelInfo] = _
   @FXML var networkChannelsNode2Column: TableColumn[ChannelInfo, String] = _
-  @FXML var networkChannelsFeeBaseMsatColumn: TableColumn[ChannelInfo, String] = _
-  @FXML var networkChannelsFeeProportionalMillionthsColumn: TableColumn[ChannelInfo, String] = _
+  @FXML var networkChannelsFeeBaseMsatNode1Column: TableColumn[ChannelInfo, String] = _
+  @FXML var networkChannelsFeeProportionalMillionthsNode1Column: TableColumn[ChannelInfo, String] = _
+  @FXML var networkChannelsFeeBaseMsatNode2Column: TableColumn[ChannelInfo, String] = _
+  @FXML var networkChannelsFeeProportionalMillionthsNode2Column: TableColumn[ChannelInfo, String] = _
+
   @FXML var networkChannelsCapacityColumn: TableColumn[ChannelInfo, String] = _
 
   // payment sent table
@@ -228,14 +231,22 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     networkChannelsNode2Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
       def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(pc.getValue.announcement.nodeId2.toString)
     })
-    networkChannelsFeeBaseMsatColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
+    networkChannelsFeeBaseMsatNode1Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
       def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(
-        CoinUtils.formatAmountInUnit(MilliSatoshi(pc.getValue.feeBaseMsat), FxApp.getUnit, withUnit = true))
+        CoinUtils.formatAmountInUnit(MilliSatoshi(pc.getValue.feeBaseMsatNode1), FxApp.getUnit, withUnit = true))
+    })
+    networkChannelsFeeBaseMsatNode2Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
+      def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(
+        CoinUtils.formatAmountInUnit(MilliSatoshi(pc.getValue.feeBaseMsatNode2), FxApp.getUnit, withUnit = true))
     })
     // feeProportionalMillionths is fee per satoshi in millionths of a satoshi
-    networkChannelsFeeProportionalMillionthsColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
+    networkChannelsFeeProportionalMillionthsNode1Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
       def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(
-        s"${CoinUtils.COIN_FORMAT.format(pc.getValue.feeProportionalMillionths.toDouble / 1000000 * 100)}%")
+        s"${CoinUtils.COIN_FORMAT.format(pc.getValue.feeProportionalMillionthsNode1.toDouble / 1000000 * 100)}%")
+    })
+    networkChannelsFeeProportionalMillionthsNode2Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
+      def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(
+        s"${CoinUtils.COIN_FORMAT.format(pc.getValue.feeProportionalMillionthsNode2.toDouble / 1000000 * 100)}%")
     })
     networkChannelsCapacityColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
       def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(
@@ -262,19 +273,19 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
               setText(null)
             } else {
               item match {
-                case ChannelInfo(_, _, _, _, Some(true), Some(true)) =>
+                case ChannelInfo(_, _,_, _, _, _, Some(true), Some(true)) =>
                   directionImage.setImage(new Image("/gui/commons/images/in-out-11.png", false))
                   setTooltip(new Tooltip("Both Node 1 and Node 2 are enabled"))
                   setGraphic(directionImage)
-                case ChannelInfo(_, _, _, _, Some(true), Some(false)) =>
+                case ChannelInfo(_, _,_, _, _, _, Some(true), Some(false)) =>
                   directionImage.setImage(new Image("/gui/commons/images/in-out-10.png", false))
                   setTooltip(new Tooltip("Node 1 is enabled, but not Node 2"))
                   setGraphic(directionImage)
-                case ChannelInfo(_, _, _, _, Some(false), Some(true)) =>
+                case ChannelInfo(_, _,_, _, _, _, Some(false), Some(true)) =>
                   directionImage.setImage(new Image("/gui/commons/images/in-out-01.png", false))
                   setTooltip(new Tooltip("Node 2 is enabled, but not Node 1"))
                   setGraphic(directionImage)
-                case ChannelInfo(_, _, _, _, Some(false), Some(false)) =>
+                case ChannelInfo(_, _,_, _, _, _, Some(false), Some(false)) =>
                   directionImage.setImage(new Image("/gui/commons/images/in-out-00.png", false))
                   setTooltip(new Tooltip("Neither Node 1 nor Node 2 is enabled"))
                   setGraphic(directionImage)

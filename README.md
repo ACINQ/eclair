@@ -128,6 +128,7 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   connect      | nodeId, host, port                                                                     | open a secure connection to a lightning node
   connect      | uri                                                                                    | open a secure connection to a lightning node
   open         | nodeId, fundingSatoshis, pushMsat = 0, feerateSatPerByte = ?, channelFlags = 0x01      | open a channel with another lightning node, by default push = 0, feerate for the funding tx targets 6 blocks, and channel is announced
+  updaterelayfee | channelId, feeBaseMsat, feeProportionalMillionths                                    | updates the outgoing fee on this channel
   peers        |                                                                                        | list existing local peers
   channels     |                                                                                        | list existing local channels
   channels     | nodeId                                                                                 | list existing local channels opened with a particular nodeId

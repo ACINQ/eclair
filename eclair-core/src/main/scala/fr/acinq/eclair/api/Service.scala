@@ -175,7 +175,13 @@ trait Service extends Logging {
                           case JString(identifier) :: Nil => completeRpcFuture(req.id, sendToChannel(identifier, CMD_FORCECLOSE).mapTo[String])
                           case _ => reject(UnknownParamsRejection(req.id, "[channelId]"))
                         }
-
+                        case "updaterelayfee" => req.params match {
+                          case JString(identifier) :: JInt(feeBaseMsat) :: JInt(feeProportionalMillionths) :: Nil =>
+                            completeRpcFuture(req.id, sendToChannel(identifier, CMD_UPDATE_RELAY_FEE(feeBaseMsat.toLong, feeProportionalMillionths.toLong)).mapTo[String])
+                          case JString(identifier) :: JString(feeBaseMsat) :: JString(feeProportionalMillionths) :: Nil =>
+                            completeRpcFuture(req.id, sendToChannel(identifier, CMD_UPDATE_RELAY_FEE(feeBaseMsat.toLong, feeProportionalMillionths.toLong)).mapTo[String])
+                          case c@_ => reject(UnknownParamsRejection(req.id, "[channelId] [feeBaseMsat] [feeProportionalMillionths]"+c.toString()))
+                        }
                         // local network methods
                         case "peers" => completeRpcFuture(req.id, for {
                           peers <- (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]]
@@ -337,6 +343,7 @@ trait Service extends Logging {
     "connect (uri): open a secure connection to a lightning node",
     "connect (nodeId, host, port): open a secure connection to a lightning node",
     "open (nodeId, fundingSatoshis, pushMsat = 0, feerateSatPerByte = ?, channelFlags = 0x01): open a channel with another lightning node, by default push = 0, feerate for the funding tx targets 6 blocks, and channel is announced",
+    "updaterelayfee (channelId, feeBaseMsat, feeProportionalMillionths)",
     "peers: list existing local peers",
     "channels: list existing local channels",
     "channels (nodeId): list existing local channels to a particular nodeId",

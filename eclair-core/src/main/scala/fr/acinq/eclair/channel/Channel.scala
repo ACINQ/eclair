@@ -181,7 +181,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           // we rebuild a channel_update for two reasons:
           // - we want to reload values from configuration
           // - if eclair was previously killed, it might not have had time to publish a channel_update with enable=false
-          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, normal.channelUpdate.shortChannelId, nodeParams.expiryDeltaBlocks, normal.commitments.remoteParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = false)
+          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, normal.channelUpdate.shortChannelId, nodeParams.expiryDeltaBlocks, normal.commitments.remoteParams.htlcMinimumMsat,normal.channelUpdate.feeBaseMsat, normal.channelUpdate.feeProportionalMillionths, enable = false)
           goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate)
 
         case _ =>
@@ -817,6 +817,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = true)
       stay using store(d.copy(channelUpdate = channelUpdate))
 
+    case Event(CMD_UPDATE_RELAY_FEE(feeBaseMsat, feeProportionalMillionths), d: DATA_NORMAL) =>
+      // Command from API
+      log.debug(s"sending channel_update announcement (feeBaseMsat=$feeBaseMsat feeProportionalMillionths=$feeProportionalMillionths)")
+      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, enable = true)
+      context.system.eventStream.publish(LocalChannelUpdate(self, d.commitments.channelId, d.shortChannelId, d.commitments.remoteParams.nodeId, d.channelAnnouncement, channelUpdate))
+      // without the above the update is never published (untill you stop/start the node).
+      // as the below handler is a "stay" not a "goto" so onTransition is not triggered.
+      handleCommandSuccess(sender,store(d.copy(channelUpdate = channelUpdate)))
+
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NORMAL) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NORMAL) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
@@ -1339,7 +1348,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         }
       }
       // re-enable the channel
-      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, nodeParams.expiryDeltaBlocks, d.commitments.remoteParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = true)
+      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, nodeParams.expiryDeltaBlocks, d.commitments.remoteParams.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = true)
 
       goto(NORMAL) using d.copy(commitments = commitments1, channelUpdate = channelUpdate)
 

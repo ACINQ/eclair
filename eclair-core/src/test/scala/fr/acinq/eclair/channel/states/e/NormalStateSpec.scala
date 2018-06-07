@@ -1355,6 +1355,21 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv CMD_UPDATE_RELAY_FEE ") { case (alice, bob, alice2bob, bob2alice, _, _, relayer) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val newFeeBaseMsat=TestConstants.Alice.nodeParams.feeBaseMsat*2
+      val newFeeProportionalMillionth=TestConstants.Alice.nodeParams.feeProportionalMillionth*2
+      sender.send(alice, CMD_UPDATE_RELAY_FEE(newFeeBaseMsat,newFeeProportionalMillionth))
+      sender.expectMsg("ok")
+
+      val localUpdate=relayer.expectMsgType[LocalChannelUpdate]
+      assert(localUpdate.channelUpdate.feeBaseMsat==newFeeBaseMsat)
+      assert(localUpdate.channelUpdate.feeProportionalMillionths==newFeeProportionalMillionth)
+      relayer.expectNoMsg(1 seconds)
+    }
+  }
+
   test("recv CMD_CLOSE (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
