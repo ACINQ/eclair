@@ -16,13 +16,14 @@ object ChannelRangeQueries {
   val ZLIB_FORMAT = 1.toByte
 
   case class ShortChannelIdsBlock(val firstBlock: Int, val numBlocks: Int, shortChannelIds: BinaryData)
+
   /**
     * Compressed a sequence of *sorted* short channel id.
     *
     * @param shortChannelIds must be sorted beforehand
     * @return a sequence of encoded short channel ids
     */
-  def encodeShortChannelIds(firstBlockIn: Int, numBlocksIn: Int, shortChannelIds: Iterable[ShortChannelId], format: Byte, useGzip: Boolean = false): List[ShortChannelIdsBlock] = {
+  def encodeShortChannelIds(firstBlockIn: Int, numBlocksIn: Int, shortChannelIds: SortedSet[ShortChannelId], format: Byte, useGzip: Boolean = false): List[ShortChannelIdsBlock] = {
     // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
     val count = format match {
       case UNCOMPRESSED_FORMAT => 7000
@@ -55,7 +56,6 @@ object ChannelRangeQueries {
 
   /**
     * Decompress a zipped sequence of sorted short channel ids.
-    *
     *
     * @param data
     * @return a sorted set of short channel ids
@@ -101,7 +101,7 @@ object ChannelRangeQueries {
         readAll(useGzip = false)
       }
       catch {
-        case t: Throwable if format == ZLIB_FORMAT => readAll(useGzip = true)
+        case _: Throwable if format == ZLIB_FORMAT => readAll(useGzip = true)
       }
     }
   }

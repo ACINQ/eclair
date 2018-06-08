@@ -37,6 +37,7 @@ import org.jgrapht.ext._
 import org.jgrapht.graph._
 
 import scala.collection.JavaConversions._
+import scala.collection.SortedSet
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -439,7 +440,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.warning("received query_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
         // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-        val shortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
+        val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
         // TODO: we don't compress to be compatible with old mobile apps, switch to ZLIB ASAP
         val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
         log.info("sending back reply_channel_range({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.size)
@@ -454,9 +455,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.warning("received reply_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
         val (format, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
-        val ourShortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
-        // theirShortChannelIds is sorted, so is ourShortChannelIds => missing is also a sorted set
-        val missing = theirShortChannelIds -- ourShortChannelIds
+        val ourShortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
+        val missing: SortedSet[ShortChannelId] = theirShortChannelIds -- ourShortChannelIds
         log.info("we received their reply, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
         val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, missing, format, useGzip)
         blocks.foreach(block => sender ! QueryShortChannelIds(chainHash, block.shortChannelIds))

@@ -12,9 +12,9 @@ import org.scalatest.Outcome
 class PeerSpec extends TestkitBaseClass {
   val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(100)
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
-  val channels = fakeRoutingInfo.map(_._1)
-  val updates = fakeRoutingInfo.map(_._2) ++ fakeRoutingInfo.map(_._3)
-  val nodes = fakeRoutingInfo.map(_._4) ++ fakeRoutingInfo.map(_._5)
+  val channels = fakeRoutingInfo.map(_._1).toList
+  val updates = (fakeRoutingInfo.map(_._2) ++ fakeRoutingInfo.map(_._3)).toList
+  val nodes = (fakeRoutingInfo.map(_._4) ++ fakeRoutingInfo.map(_._5)).toList
 
   override type FixtureParam = TestProbe
 
@@ -26,9 +26,9 @@ class PeerSpec extends TestkitBaseClass {
   test("filter gossip message (no filtering)") { probe =>
     val rebroadcast = Rebroadcast(channels.map(_ -> Set.empty[ActorRef]).toMap, updates.map(_ -> Set.empty[ActorRef]).toMap, nodes.map(_ -> Set.empty[ActorRef]).toMap)
     val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, probe.ref, None)
-    assert(channels1.toSet == channels.toSet)
-    assert(updates1.toSet == updates.toSet)
-    assert(nodes1.toSet == nodes.toSet)
+    assert(channels1.toSet == channels)
+    assert(updates1.toSet == updates)
+    assert(nodes1.toSet == nodes)
   }
 
   test("filter gossip message (filtered by origin)") { probe =>
@@ -46,7 +46,7 @@ class PeerSpec extends TestkitBaseClass {
     val rebroadcast = Rebroadcast(channels.map(_ -> Set.empty[ActorRef]).toMap, updates.map(_ -> Set.empty[ActorRef]).toMap, nodes.map(_ -> Set.empty[ActorRef]).toMap)
     val timestamps = updates.map(_.timestamp).sorted.drop(10).take(20)
     val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, probe.ref, Some(GossipTimeRange(Block.RegtestGenesisBlock.blockId, timestamps.head, timestamps.last - timestamps.head)))
-    assert(updates1.toSet == updates.toSet.filter(u => timestamps.contains(u.timestamp)))
-    assert(nodes1.toSet == nodes.toSet.filter(u => timestamps.contains(u.timestamp)))
+    assert(updates1.toSet == updates.filter(u => timestamps.contains(u.timestamp)))
+    assert(nodes1.toSet == nodes.filter(u => timestamps.contains(u.timestamp)))
   }
 }

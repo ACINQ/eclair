@@ -7,6 +7,8 @@ import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
+import scala.collection.{SortedSet, immutable}
+
 @RunWith(classOf[JUnitRunner])
 class ChannelRangeQueriesSpec extends FunSuite {
   import ChannelRangeQueriesSpec._
@@ -16,7 +18,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
     val replies = blocks.map(block  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
     var decoded = Set.empty[ShortChannelId]
     replies.foreach(reply => decoded = decoded ++ ChannelRangeQueries.decodeShortChannelIds(reply.data)._2)
-    assert(decoded == shortChannelIds.toSet)
+    assert(decoded == shortChannelIds)
   }
 
   test("create `reply_channel_range` messages (ZLIB format)") {
@@ -27,7 +29,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
       val (ChannelRangeQueries.ZLIB_FORMAT, ids, false) = ChannelRangeQueries.decodeShortChannelIds(reply.data)
       ids
     })
-    assert(decoded == shortChannelIds.toSet)
+    assert(decoded == shortChannelIds)
   }
 
   test("create `reply_channel_range` messages (GZIP format)") {
@@ -38,14 +40,14 @@ class ChannelRangeQueriesSpec extends FunSuite {
       val (ChannelRangeQueries.ZLIB_FORMAT, ids, true) = ChannelRangeQueries.decodeShortChannelIds(reply.data)
       ids
     })
-    assert(decoded == shortChannelIds.toSet)
+    assert(decoded == shortChannelIds)
   }
 }
 
 object ChannelRangeQueriesSpec {
-  lazy val shortChannelIds = for {
+  lazy val shortChannelIds: immutable.SortedSet[ShortChannelId] = (for {
     block <- 400000 to 420000
     txindex <- 0 to 5
     outputIndex <- 0 to 1
-  } yield ShortChannelId(block, txindex, outputIndex)
+  } yield ShortChannelId(block, txindex, outputIndex)).foldLeft(SortedSet.empty[ShortChannelId])(_ + _)
 }
