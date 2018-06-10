@@ -679,7 +679,7 @@ object Router {
   /**
     * Filters channels that we want to send to nodes asking for a channel range
     */
-  def keep(firstBlockNum: Int, numberOfBlocks: Int, id: ShortChannelId, channels: Map[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Boolean = {
+  def keep(firstBlockNum: Long, numberOfBlocks: Long, id: ShortChannelId, channels: Map[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Boolean = {
     val TxCoordinates(height, _, _) = ShortChannelId.coordinates(id)
     val c = channels(id)
     val u1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))

@@ -15,7 +15,7 @@ object ChannelRangeQueries {
   val UNCOMPRESSED_FORMAT = 0.toByte
   val ZLIB_FORMAT = 1.toByte
 
-  case class ShortChannelIdsBlock(val firstBlock: Int, val numBlocks: Int, shortChannelIds: BinaryData)
+  case class ShortChannelIdsBlock(val firstBlock: Long, val numBlocks: Long, shortChannelIds: BinaryData)
 
   /**
     * Compressed a sequence of *sorted* short channel id.
@@ -23,7 +23,7 @@ object ChannelRangeQueries {
     * @param shortChannelIds must be sorted beforehand
     * @return a sequence of encoded short channel ids
     */
-  def encodeShortChannelIds(firstBlockIn: Int, numBlocksIn: Int, shortChannelIds: SortedSet[ShortChannelId], format: Byte, useGzip: Boolean = false): List[ShortChannelIdsBlock] = {
+  def encodeShortChannelIds(firstBlockIn: Long, numBlocksIn: Long, shortChannelIds: SortedSet[ShortChannelId], format: Byte, useGzip: Boolean = false): List[ShortChannelIdsBlock] = {
     // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
     val count = format match {
       case UNCOMPRESSED_FORMAT => 7000
@@ -31,8 +31,8 @@ object ChannelRangeQueries {
     }
     shortChannelIds.grouped(count).map(ids => {
       val (firstBlock, numBlocks) = if (ids.isEmpty) (firstBlockIn, numBlocksIn) else {
-        val firstBlock = ShortChannelId.coordinates(ids.head).blockHeight
-        val numBlocks = ShortChannelId.coordinates(ids.last).blockHeight - firstBlock + 1
+        val firstBlock: Long = ShortChannelId.coordinates(ids.head).blockHeight
+        val numBlocks: Long = ShortChannelId.coordinates(ids.last).blockHeight - firstBlock + 1
         (firstBlock, numBlocks)
       }
       val encoded = encodeShortChannelIdsSingle(ids, format, useGzip)
