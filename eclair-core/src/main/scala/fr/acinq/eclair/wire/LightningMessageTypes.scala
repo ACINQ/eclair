@@ -205,12 +205,12 @@ case class QueryShortChannelIds(chainHash: BinaryData,
                                 data: BinaryData) extends RoutingMessage
 
 case class QueryChannelRange(chainHash: BinaryData,
-                             firstBlockNum: Int,
-                             numberOfBlocks: Int) extends RoutingMessage
+                             firstBlockNum: Long,
+                             numberOfBlocks: Long) extends RoutingMessage
 
 case class ReplyChannelRange(chainHash: BinaryData,
-                             firstBlockNum: Int,
-                             numberOfBlocks: Int,
+                             firstBlockNum: Long,
+                             numberOfBlocks: Long,
                              complete: Byte,
                              data: BinaryData) extends RoutingMessage
 

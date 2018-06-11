@@ -24,34 +24,40 @@ import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.ShortChannelId
 
 import scala.annotation.tailrec
+import scala.collection.SortedSet
 
 object ChannelRangeQueries {
 
   val UNCOMPRESSED_FORMAT = 0.toByte
   val ZLIB_FORMAT = 1.toByte
 
-  case class ShortChannelIdsBlock(val firstBlock: Int, val numBlocks: Int, shortChannelIds: BinaryData)
+  case class ShortChannelIdsBlock(val firstBlock: Long, val numBlocks: Long, shortChannelIds: BinaryData)
+
   /**
     * Compressed a sequence of *sorted* short channel id.
     *
     * @param shortChannelIds must be sorted beforehand
     * @return a sequence of encoded short channel ids
     */
-  def encodeShortChannelIds(firstBlockIn: Int, numBlocksIn: Int, shortChannelIds: Iterable[ShortChannelId], format: Byte, useGzip: Boolean = false): List[ShortChannelIdsBlock] = {
-    // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
-    val count = format match {
-      case UNCOMPRESSED_FORMAT => 7000
-      case ZLIB_FORMAT => 12000 // TODO: do something less simplistic...
-    }
-    shortChannelIds.grouped(count).map(ids => {
-      val (firstBlock, numBlocks) = if (ids.isEmpty) (firstBlockIn, numBlocksIn) else {
-        val firstBlock = ShortChannelId.coordinates(ids.head).blockHeight
-        val numBlocks = ShortChannelId.coordinates(ids.last).blockHeight - firstBlock + 1
-        (firstBlock, numBlocks)
+  def encodeShortChannelIds(firstBlockIn: Long, numBlocksIn: Long, shortChannelIds: SortedSet[ShortChannelId], format: Byte, useGzip: Boolean = false): List[ShortChannelIdsBlock] = {
+    if (shortChannelIds.isEmpty) {
+      List(ShortChannelIdsBlock(firstBlockIn, numBlocksIn, Seq(format)))
+    } else {
+      // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
+      val count = format match {
+        case UNCOMPRESSED_FORMAT => 7000
+        case ZLIB_FORMAT => 12000 // TODO: do something less simplistic...
       }
-      val encoded = encodeShortChannelIdsSingle(ids, format, useGzip)
-      ShortChannelIdsBlock(firstBlock, numBlocks, encoded)
-    }).toList
+      shortChannelIds.grouped(count).map(ids => {
+        val (firstBlock, numBlocks) = if (ids.isEmpty) (firstBlockIn, numBlocksIn) else {
+          val firstBlock: Long = ShortChannelId.coordinates(ids.head).blockHeight
+          val numBlocks: Long = ShortChannelId.coordinates(ids.last).blockHeight - firstBlock + 1
+          (firstBlock, numBlocks)
+        }
+        val encoded = encodeShortChannelIdsSingle(ids, format, useGzip)
+        ShortChannelIdsBlock(firstBlock, numBlocks, encoded)
+      }).toList
+    }
   }
 
   def encodeShortChannelIdsSingle(shortChannelIds: Iterable[ShortChannelId], format: Byte, useGzip: Boolean): BinaryData = {
@@ -71,14 +77,12 @@ object ChannelRangeQueries {
   /**
     * Decompress a zipped sequence of sorted short channel ids.
     *
-    * Does *not* preserve the order, we don't need it and a Set is better suited to our access patterns
-    *
     * @param data
-    * @return
+    * @return a sorted set of short channel ids
     */
-  def decodeShortChannelIds(data: BinaryData): (Byte, Set[ShortChannelId], Boolean) = {
+  def decodeShortChannelIds(data: BinaryData): (Byte, SortedSet[ShortChannelId], Boolean) = {
     val format = data.head
-    if (data.tail.isEmpty) (format, Set.empty[ShortChannelId], false) else {
+    if (data.tail.isEmpty) (format, SortedSet.empty[ShortChannelId], false) else {
       val buffer = new Array[Byte](8)
 
       // read 8 bytes from input
@@ -93,7 +97,7 @@ object ChannelRangeQueries {
 
       // read until there's nothing left
       @tailrec
-      def loop(input: InputStream, acc: Set[ShortChannelId]): Set[ShortChannelId] = {
+      def loop(input: InputStream, acc: SortedSet[ShortChannelId]): SortedSet[ShortChannelId] = {
         val check = read8(input)
         if (check <= 0) acc else loop(input, acc + ShortChannelId(Protocol.uint64(buffer, ByteOrder.BIG_ENDIAN)))
       }
@@ -106,7 +110,7 @@ object ChannelRangeQueries {
           case ZLIB_FORMAT => new InflaterInputStream(bis)
         }
         try {
-          (format, loop(input, Set.empty[ShortChannelId]), useGzip)
+          (format, loop(input, SortedSet.empty[ShortChannelId]), useGzip)
         }
         finally {
           input.close()
@@ -117,7 +121,7 @@ object ChannelRangeQueries {
         readAll(useGzip = false)
       }
       catch {
-        case t: Throwable if format == ZLIB_FORMAT => readAll(useGzip = true)
+        case _: Throwable if format == ZLIB_FORMAT => readAll(useGzip = true)
       }
     }
   }

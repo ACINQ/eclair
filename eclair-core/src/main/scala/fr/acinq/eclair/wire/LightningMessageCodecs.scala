@@ -306,14 +306,14 @@ object LightningMessageCodecs {
 
   val queryChannelRangeCodec: Codec[QueryChannelRange] = (
     ("chainHash" | binarydata(32)) ::
-      ("firstBlockNum" | int32) ::
-      ("numberOfBlocks" | int32)
+      ("firstBlockNum" | uint32) ::
+      ("numberOfBlocks" | uint32)
     ).as[QueryChannelRange]
 
   val replyChannelRangeCodec: Codec[ReplyChannelRange] = (
     ("chainHash" | binarydata(32)) ::
-      ("firstBlockNum" | int32) ::
-      ("numberOfBlocks" | int32) ::
+      ("firstBlockNum" | uint32) ::
+      ("numberOfBlocks" | uint32) ::
       ("complete" | byte) ::
       ("data" | varsizebinarydata)
     ).as[ReplyChannelRange]

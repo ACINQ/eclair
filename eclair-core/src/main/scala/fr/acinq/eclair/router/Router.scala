@@ -32,6 +32,8 @@ import org.jgrapht.alg.DijkstraShortestPath
 import org.jgrapht.graph.{DirectedWeightedPseudograph, _}
 
 import scala.collection.JavaConversions._
+import scala.collection.SortedSet
+import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -54,7 +56,7 @@ case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], update
 case class DescEdge(desc: ChannelDesc, u: ChannelUpdate) extends DefaultWeightedEdge
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
-                  channels: Map[ShortChannelId, ChannelAnnouncement],
+                  channels: SortedMap[ShortChannelId, ChannelAnnouncement],
                   updates: Map[ChannelDesc, ChannelUpdate],
                   stash: Stash,
                   awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
@@ -100,7 +102,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     // this will be used to calculate routes
     val graph = new DirectedWeightedPseudograph[PublicKey, DescEdge](classOf[DescEdge])
 
-    val initChannels = channels.keys.map(c => (c.shortChannelId -> c)).toMap
+    val initChannels = channels.keys.foldLeft(TreeMap.empty[ShortChannelId, ChannelAnnouncement]) { case (m, c) => m + (c.shortChannelId -> c) }
     val initChannelUpdates = updates.map { u =>
       val desc = getDesc(u, initChannels(u.shortChannelId))
       addEdge(graph, desc, u)
@@ -323,8 +325,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.warning("received reply_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
         val (format, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
-        val ourShortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
-        val missing = theirShortChannelIds -- ourShortChannelIds
+        val ourShortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
+        val missing: SortedSet[ShortChannelId] = theirShortChannelIds -- ourShortChannelIds
         log.info("we received their reply, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
         val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, missing, format, useGzip)
         blocks.foreach(block => sender ! QueryShortChannelIds(chainHash, block.shortChannelIds))
@@ -529,7 +531,7 @@ object Router {
   /**
     * Filters channels that we want to send to nodes asking for a channel range
     */
-  def keep(firstBlockNum: Int, numberOfBlocks: Int, id: ShortChannelId, channels: Map[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Boolean = {
+  def keep(firstBlockNum: Long, numberOfBlocks: Long, id: ShortChannelId, channels: Map[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Boolean = {
     val TxCoordinates(height, _, _) = ShortChannelId.coordinates(id)
     val c = channels(id)
     val u1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
