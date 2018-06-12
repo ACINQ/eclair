@@ -51,7 +51,9 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
     case Event(RouteResponse(hops, ignoreNodes, ignoreChannels), WaitingForRoute(s, c, failures)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")} channels=${hops.map(_.lastUpdate.shortChannelId).mkString("->")}")
       val firstHop = hops.head
-      val finalExpiry = Globals.blockCount.get().toInt + c.finalCltvExpiry.toInt
+      // make sure that our final expiry would be accepted by our own node, otherwise we would create an htlc that we would not process
+      val finalExpiry = Globals.blockCount.get().toInt + Math.max(c.finalCltvExpiry.toInt, Channel.MIN_CLTV_EXPIRY + 1)
+
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
       val feePct = (cmd.amountMsat - c.amountMsat) / c.amountMsat.toDouble // c.amountMsat is required to be > 0, have to convert to double, otherwise will be rounded
       if (feePct > c.maxFeePct) {
