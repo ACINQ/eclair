@@ -103,11 +103,7 @@ object Commitments {
     if (cmd.expiry <= blockCount) {
       return Left(ExpiryCannotBeInThePast(commitments.channelId, cmd.expiry, blockCount))
     }
-    val minExpiry = blockCount + Channel.MIN_CLTV_EXPIRY
-    // we reject expiry=minExpiry, because if a new block has just been found maybe the counterparty will get notified before us, consider that the expiry is too soon and close the channel
-    if (cmd.expiry <= minExpiry) {
-      return Left(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.expiry, blockCount = blockCount))
-    }
+
     val maxExpiry = blockCount + Channel.MAX_CLTV_EXPIRY
     // we reject expiry=maxExpiry, because if a new block has just been found maybe the counterparty will get notified before us, consider that the expiry is too big and close the channel
     if (cmd.expiry >= maxExpiry) {
