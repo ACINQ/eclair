@@ -24,24 +24,20 @@ object ChannelRangeQueries {
     * @return a sequence of encoded short channel ids
     */
   def encodeShortChannelIds(firstBlockIn: Long, numBlocksIn: Long, shortChannelIds: SortedSet[ShortChannelId], format: Byte, useGzip: Boolean = false): List[ShortChannelIdsBlock] = {
-    if (shortChannelIds.isEmpty) {
-      List(ShortChannelIdsBlock(firstBlockIn, numBlocksIn, Seq(format)))
-    } else {
-      // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
-      val count = format match {
-        case UNCOMPRESSED_FORMAT => 7000
-        case ZLIB_FORMAT => 12000 // TODO: do something less simplistic...
-      }
-      shortChannelIds.grouped(count).map(ids => {
-        val (firstBlock, numBlocks) = if (ids.isEmpty) (firstBlockIn, numBlocksIn) else {
-          val firstBlock: Long = ShortChannelId.coordinates(ids.head).blockHeight
-          val numBlocks: Long = ShortChannelId.coordinates(ids.last).blockHeight - firstBlock + 1
-          (firstBlock, numBlocks)
-        }
-        val encoded = encodeShortChannelIdsSingle(ids, format, useGzip)
-        ShortChannelIdsBlock(firstBlock, numBlocks, encoded)
-      }).toList
+    // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
+    val count = format match {
+      case UNCOMPRESSED_FORMAT => 7000
+      case ZLIB_FORMAT => 12000 // TODO: do something less simplistic...
     }
+    shortChannelIds.grouped(count).map(ids => {
+      val (firstBlock, numBlocks) = if (ids.isEmpty) (firstBlockIn, numBlocksIn) else {
+        val firstBlock: Long = ShortChannelId.coordinates(ids.head).blockHeight
+        val numBlocks: Long = ShortChannelId.coordinates(ids.last).blockHeight - firstBlock + 1
+        (firstBlock, numBlocks)
+      }
+      val encoded = encodeShortChannelIdsSingle(ids, format, useGzip)
+      ShortChannelIdsBlock(firstBlock, numBlocks, encoded)
+    }).toList
   }
 
   def encodeShortChannelIdsSingle(shortChannelIds: Iterable[ShortChannelId], format: Byte, useGzip: Boolean): BinaryData = {

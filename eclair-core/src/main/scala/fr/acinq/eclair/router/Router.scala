@@ -442,11 +442,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       } else {
         // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
         val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
-        // TODO: we don't compress to be compatible with old mobile apps, switch to ZLIB ASAP
-        val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
-        log.info("sending back reply_channel_range({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.size)
-        val replies = blocks.map(block => ReplyChannelRange(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
-        replies.foreach(reply => sender ! reply)
+        if (shortChannelIds.isEmpty) {
+          // tell them we have nothing
+          sender ! ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, BinaryData("00"))
+        } else {
+          // TODO: we don't compress to be compatible with old mobile apps, switch to ZLIB ASAP
+          val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+          log.info("sending back reply_channel_range({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.size)
+          val replies = blocks.map(block => ReplyChannelRange(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
+          replies.foreach(reply => sender ! reply)
+        }
       }
       stay
 
