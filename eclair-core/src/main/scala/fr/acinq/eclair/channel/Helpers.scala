@@ -68,12 +68,23 @@ object Helpers {
     // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
     if (open.dustLimitSatoshis > open.channelReserveSatoshis) throw DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, open.channelReserveSatoshis)
 
+    // BOLT #2: The receiving node MUST fail the channel if both to_local and to_remote amounts for the initial commitment
+    // transaction are less than or equal to channel_reserve_satoshis (see BOLT 3).
+    val (toLocalMsat, toRemoteMsat) = (open.pushMsat, open.fundingSatoshis * 1000 - open.pushMsat)
+    if (toLocalMsat < open.channelReserveSatoshis * 1000 || toRemoteMsat < open.channelReserveSatoshis * 1000) {
+      throw ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis)
+    }
+
     val localFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
     if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.maxFeerateMismatch)) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
     // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
       if (open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
     }
+
+    // we don't check that the funder's amount for the initial commitment transaction is sufficient for full fee payment
+    // now, but it will be done later when we receive `funding_created`
+    
     if (open.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
     val reserveToFundingRatio = open.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
@@ -491,7 +502,7 @@ object Helpers {
 
           // and finally we steal the htlc outputs
           var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
-        val htlcPenaltyTxs = tx.txOut.collect { case txOut if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
+          val htlcPenaltyTxs = tx.txOut.collect { case txOut if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
           val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
           generateTx("htlc-penalty")(Try {
             val htlcPenalty = Transactions.makeHtlcPenaltyTx(tx, outputsAlreadyUsed, htlcRedeemScript, Satoshi(localParams.dustLimitSatoshis), localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
