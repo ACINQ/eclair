@@ -91,6 +91,17 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     }
   }
 
+  test("recv OpenChannel (invalid max accepted htlcs)") { case (bob, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val open = alice2bob.expectMsgType[OpenChannel]
+      val invalidMaxAcceptedHtlcs = Channel.MAX_ACCEPTED_HTLCS + 1
+      bob ! open.copy(maxAcceptedHtlcs = invalidMaxAcceptedHtlcs)
+      val error = bob2alice.expectMsgType[Error]
+      assert(error === Error(open.temporaryChannelId, new InvalidMaxAcceptedHtlcs(open.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).getMessage.getBytes("UTF-8")))
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
   test("recv OpenChannel (invalid push_msat)") { case (bob, alice2bob, bob2alice, _) =>
     within(30 seconds) {
       val open = alice2bob.expectMsgType[OpenChannel]
