@@ -142,7 +142,6 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
       // set a very small fee
       val tinyFee = 253
       bob ! open.copy(feeratePerKw = tinyFee)
-      alice2bob.forward(bob)
       val error = bob2alice.expectMsgType[Error]
       // we check that the error uses the temporary channel id
       assert(error === Error(open.temporaryChannelId, "local/remote feerates are too different: remoteFeeratePerKw=253 localFeeratePerKw=10000".getBytes("UTF-8")))
@@ -156,7 +155,6 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
       // set a very small fee
       val tinyFee = 252
       bob ! open.copy(feeratePerKw = tinyFee)
-      alice2bob.forward(bob)
       val error = bob2alice.expectMsgType[Error]
       // we check that the error uses the temporary channel id
       assert(error === Error(open.temporaryChannelId, "remote fee rate is too small: remoteFeeratePerKw=252".getBytes("UTF-8")))
@@ -170,10 +168,22 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
       val open = alice2bob.expectMsgType[OpenChannel]
       val reserveTooSmall = open.dustLimitSatoshis - 1
       bob ! open.copy(channelReserveSatoshis = reserveTooSmall)
-      alice2bob.forward(bob)
       val error = bob2alice.expectMsgType[Error]
       // we check that the error uses the temporary channel id
       assert(error === Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, reserveTooSmall).getMessage.getBytes("UTF-8")))
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
+  test("recv OpenChannel (toLocal + toRemote below reserve)") { case (bob, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val open = alice2bob.expectMsgType[OpenChannel]
+      val fundingSatoshis = open.channelReserveSatoshis + 499
+      val pushMsat = 500 * 1000
+      bob ! open.copy(fundingSatoshis = fundingSatoshis, pushMsat = pushMsat)
+      val error = bob2alice.expectMsgType[Error]
+      // we check that the error uses the temporary channel id
+      assert(error === Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, 500 * 1000, (open.channelReserveSatoshis - 1) * 1000, open.channelReserveSatoshis).getMessage.getBytes("UTF-8")))
       awaitCond(bob.stateName == CLOSED)
     }
   }
