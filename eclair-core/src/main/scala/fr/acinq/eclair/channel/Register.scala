@@ -37,7 +37,7 @@ class Register extends Actor with ActorLogging {
 
   override def receive: Receive = main(Map.empty, Map.empty, Map.empty, Map.empty)
 
-  def main(channels: Map[BinaryData, ActorRef], shortIds: Map[ShortChannelId, BinaryData], channelsTo: Map[BinaryData, PublicKey], preferredChannels: Map[PublicKey, Commitments]): Receive = {
+  def main(channels: Map[BinaryData, ActorRef], shortIds: Map[ShortChannelId, BinaryData], channelsTo: Map[BinaryData, PublicKey], preferredChannels: Map[PublicKey, Map[BinaryData, Commitments]]): Receive = {
     case ChannelCreated(channel, _, remoteNodeId, _, temporaryChannelId) =>
       context.watch(channel)
       context become main(channels + (temporaryChannelId -> channel), shortIds, channelsTo + (temporaryChannelId -> remoteNodeId), preferredChannels)
@@ -53,22 +53,17 @@ class Register extends Actor with ActorLogging {
       context become main(channels, shortIds + (shortChannelId -> channelId), channelsTo, preferredChannels)
 
     case ChannelSignatureReceived(_, commitments) =>
-      val preferred1 = preferredChannels.get(commitments.remoteParams.nodeId) match {
-        case Some(currentPreferred) if commitments.remoteCommit.spec.toRemoteMsat > currentPreferred.remoteCommit.spec.toRemoteMsat =>
-          // Note: remoteCommit.toRemote == our funds
-          log.info(s"preferred channel to nodeId={} is now channelId={}", commitments.remoteParams.nodeId, commitments.channelId)
-          commitments
-        case _ => commitments
+      val preferredChannels1 = preferredChannels.get(commitments.remoteParams.nodeId) match {
+        case Some(channels) => preferredChannels + (commitments.remoteParams.nodeId -> (channels + (commitments.channelId -> commitments)))
+        case None => preferredChannels + (commitments.remoteParams.nodeId -> Map(commitments.channelId -> commitments))
       }
-      context become main(channels, shortIds, channelsTo, preferredChannels + (preferred1.remoteParams.nodeId -> preferred1))
+      context become main(channels, shortIds, channelsTo, preferredChannels1)
 
     case Terminated(actor) if channels.values.toSet.contains(actor) =>
       val channelId = channels.find(_._2 == actor).get._1
       val shortChannelId = shortIds.find(_._2 == channelId).map(_._1).getOrElse(ShortChannelId(0L))
       val preferredChannels1 = channelsTo.get(channelId).flatMap(preferredChannels.get(_)) match {
-        case Some(c) if c.channelId == channelId =>
-          // this was the preferred channel
-          preferredChannels - channelsTo(channelId) // NB: channelsTo map does contain channelId because of the above
+        case Some(channels) => preferredChannels + (channelsTo(channelId) -> (channels - channelId)) // NB: channelsTo map does contain channelId because of the above
         case _ => preferredChannels
       }
       context become main(channels - channelId, shortIds - shortChannelId, channelsTo - channelId, preferredChannels1)
@@ -91,9 +86,15 @@ class Register extends Actor with ActorLogging {
         .map {
         case channelId if toPreferred =>
           channelsTo.get(channelId).flatMap(preferredChannels.get(_)) match {
-            case Some(preferred) if preferred.channelId != channelId =>
-              log.info("replacing by preferred channelId={}->{}", channelId, preferred.channelId)
-              preferred.channelId
+            case Some(channels) =>
+              // Note: remoteCommit.toRemote == our funds
+              val preferred = channels.values.toList.maxBy(_.remoteCommit.spec.toRemoteMsat)
+              if (preferred.channelId != channelId) {
+                log.info("replacing by preferred channelId={}->{}", channelId, preferred.channelId)
+                preferred.channelId
+              } else {
+                channelId
+              }
             case _ => channelId
           }
         case channelId => channelId
