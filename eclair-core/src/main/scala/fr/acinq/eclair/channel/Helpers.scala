@@ -58,18 +58,43 @@ object Helpers {
     * Called by the fundee
     */
   def validateParamsFundee(nodeParams: NodeParams, open: OpenChannel): Unit = {
+    // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
+    // MUST reject the channel.
     if (nodeParams.chainHash != open.chainHash) throw InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash)
     if (open.fundingSatoshis < nodeParams.minFundingSatoshis || open.fundingSatoshis >= Channel.MAX_FUNDING_SATOSHIS) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS)
+
+    // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (open.pushMsat > 1000 * open.fundingSatoshis) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat, 1000 * open.fundingSatoshis)
+
+    // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
+    if (open.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
+
+    // BOLT #2: The receiving node MUST fail the channel if: max_accepted_htlcs is greater than 483.
+    if (open.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) throw InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS)
+
+    // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (isFeeTooSmall(open.feeratePerKw)) throw FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw)
+
+    // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
+    if (open.dustLimitSatoshis > open.channelReserveSatoshis) throw DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, open.channelReserveSatoshis)
+
+    // BOLT #2: The receiving node MUST fail the channel if both to_local and to_remote amounts for the initial commitment
+    // transaction are less than or equal to channel_reserve_satoshis (see BOLT 3).
+    val (toLocalMsat, toRemoteMsat) = (open.pushMsat, open.fundingSatoshis * 1000 - open.pushMsat)
+    if (toLocalMsat < open.channelReserveSatoshis * 1000 && toRemoteMsat < open.channelReserveSatoshis * 1000) {
+      throw ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis)
+    }
 
     val localFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
     if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.maxFeerateMismatch)) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
     // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
-      if (open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw InvalidDustLimit(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
+      if (open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
     }
-    if (open.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
+
+    // we don't check that the funder's amount for the initial commitment transaction is sufficient for full fee payment
+    // now, but it will be done later when we receive `funding_created`
+
     val reserveToFundingRatio = open.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
   }
@@ -81,9 +106,24 @@ object Helpers {
     if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) throw InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS)
     // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
-      if (accept.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw InvalidDustLimit(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
+      if (accept.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
     }
+
+    // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
+    if (accept.dustLimitSatoshis > accept.channelReserveSatoshis) throw DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, accept.channelReserveSatoshis)
+
+    // if minimum_depth is unreasonably large:
+    // MAY reject the channel.
     if (accept.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
+
+    // if channel_reserve_satoshis is less than dust_limit_satoshis within the open_channel message:
+    //  MUST reject the channel.
+    if (accept.channelReserveSatoshis < open.dustLimitSatoshis) throw ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, accept.channelReserveSatoshis, open.dustLimitSatoshis)
+
+    // if channel_reserve_satoshis from the open_channel message is less than dust_limit_satoshis:
+    // MUST reject the channel. Other fields have the same requirements as their counterparts in open_channel.
+    if (open.channelReserveSatoshis < accept.dustLimitSatoshis) throw DustLimitAboveOurChannelReserve(accept.temporaryChannelId, accept.dustLimitSatoshis, open.channelReserveSatoshis)
+
     val reserveToFundingRatio = accept.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
   }
@@ -98,7 +138,7 @@ object Helpers {
     Math.abs((2.0 * (remoteFeeratePerKw - localFeeratePerKw)) / (localFeeratePerKw + remoteFeeratePerKw))
 
   def shouldUpdateFee(commitmentFeeratePerKw: Long, networkFeeratePerKw: Long, updateFeeMinDiffRatio: Double): Boolean =
-  feeRateMismatch(networkFeeratePerKw, commitmentFeeratePerKw) > updateFeeMinDiffRatio
+    feeRateMismatch(networkFeeratePerKw, commitmentFeeratePerKw) > updateFeeMinDiffRatio
 
   /**
     *
@@ -301,17 +341,18 @@ object Helpers {
 
       // all htlc output to us are delayed, so we need to claim them as soon as the delay is over
       val htlcDelayedTxes = htlcTxes.flatMap {
-        txinfo: TransactionWithInputInfo => generateTx("claim-htlc-delayed")(Try {
-          val claimDelayed = Transactions.makeClaimDelayedOutputTx(
-            txinfo.tx,
-            Satoshi(localParams.dustLimitSatoshis),
-            localRevocationPubkey,
-            remoteParams.toSelfDelay,
-            localDelayedPubkey,
-            localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
-          val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelKeyPath), localPerCommitmentPoint)
-          Transactions.addSigs(claimDelayed, sig)
-        })
+        txinfo: TransactionWithInputInfo =>
+          generateTx("claim-htlc-delayed")(Try {
+            val claimDelayed = Transactions.makeClaimDelayedOutputTx(
+              txinfo.tx,
+              Satoshi(localParams.dustLimitSatoshis),
+              localRevocationPubkey,
+              remoteParams.toSelfDelay,
+              localDelayedPubkey,
+              localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
+            val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelKeyPath), localPerCommitmentPoint)
+            Transactions.addSigs(claimDelayed, sig)
+          })
       }
 
       LocalCommitPublished(
@@ -327,9 +368,9 @@ object Helpers {
       *
       * Claim all the HTLCs that we've received from their current commit tx
       *
-      * @param commitments our commitment data, which include payment preimages
+      * @param commitments  our commitment data, which include payment preimages
       * @param remoteCommit the remote commitment data to use to claim outputs (it can be their current or next commitment)
-      * @param tx the remote commitment transaction that has just been published
+      * @param tx           the remote commitment transaction that has just been published
       * @return a list of transactions (one per HTLC that we can claim)
       */
     def claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
@@ -382,11 +423,11 @@ object Helpers {
       *
       * Claim our Main output only
       *
-      * @param commitments  either our current commitment data in case of usual remote uncooperative closing
-      *                     or our outdated commitment data in case of data loss protection procedure; in any case it is used only
-      *                     to get some constant parameters, not commitment data
+      * @param commitments              either our current commitment data in case of usual remote uncooperative closing
+      *                                 or our outdated commitment data in case of data loss protection procedure; in any case it is used only
+      *                                 to get some constant parameters, not commitment data
       * @param remotePerCommitmentPoint the remote perCommitmentPoint corresponding to this commitment
-      * @param tx the remote commitment transaction that has just been published
+      * @param tx                       the remote commitment transaction that has just been published
       * @return a list of transactions (one per HTLC that we can claim)
       */
     def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: Point, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
@@ -462,23 +503,23 @@ object Helpers {
           val htlcInfos = db.listHtlcHtlcInfos(commitments.channelId, txnumber)
           log.info(s"got htlcs=${htlcInfos.size} for txnumber=$txnumber")
           val htlcsRedeemScripts = (
-              htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), cltvExpiry) } ++
+            htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), cltvExpiry) } ++
               htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash)) }
-              )
+            )
             .map(redeemScript => (Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript)))
             .toMap
 
           // and finally we steal the htlc outputs
           var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
           val htlcPenaltyTxs = tx.txOut.collect { case txOut if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
-            val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
-            generateTx("htlc-penalty")(Try {
-              val htlcPenalty = Transactions.makeHtlcPenaltyTx(tx, outputsAlreadyUsed, htlcRedeemScript, Satoshi(localParams.dustLimitSatoshis), localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
-              outputsAlreadyUsed = outputsAlreadyUsed + htlcPenalty.input.outPoint.index.toInt
-              val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret)
-              Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
-            })
-          }.toList.flatten
+          val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
+          generateTx("htlc-penalty")(Try {
+            val htlcPenalty = Transactions.makeHtlcPenaltyTx(tx, outputsAlreadyUsed, htlcRedeemScript, Satoshi(localParams.dustLimitSatoshis), localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
+            outputsAlreadyUsed = outputsAlreadyUsed + htlcPenalty.input.outPoint.index.toInt
+            val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret)
+            Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
+          })
+        }.toList.flatten
 
           RevokedCommitPublished(
             commitTx = tx,
@@ -496,10 +537,10 @@ object Helpers {
       *
       * In case a revoked commitment with pending HTLCs is published, there are two ways the HTLC outputs can be taken as punishment:
       * - by spending the corresponding output of the commitment tx, using [[HtlcPenaltyTx]] that we generate as soon as we detect that a revoked commit
-      *   as been spent; note that those transactions will compete with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] published by the counterparty.
+      * as been spent; note that those transactions will compete with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] published by the counterparty.
       * - by spending the delayed output of [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] if those get confirmed; because the output of these txes is protected by
-      *   an OP_CSV delay, we will have time to spend them with a revocation key. In that case, we generate the spending transactions "on demand",
-      *   this is the purpose of this method.
+      * an OP_CSV delay, we will have time to spend them with a revocation key. In that case, we generate the spending transactions "on demand",
+      * this is the purpose of this method.
       *
       * @param keyManager
       * @param commitments
@@ -557,7 +598,7 @@ object Helpers {
       *
       * @param localCommit
       * @param tx
-      * @return a set of pairs (add, fulfills) if extraction was successful:
+      * @return   a set of pairs (add, fulfills) if extraction was successful:
       *           - add is the htlc in the downstream channel from which we extracted the preimage
       *           - fulfill needs to be sent to the upstream channel
       */
