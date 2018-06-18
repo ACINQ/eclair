@@ -42,9 +42,14 @@ class Register extends Actor with ActorLogging {
       context.watch(channel)
       context become main(channels + (temporaryChannelId -> channel), shortIds, channelsTo + (temporaryChannelId -> remoteNodeId), preferredChannels)
 
-    case ChannelRestored(channel, _, remoteNodeId, _, channelId, _) =>
+    case ChannelRestored(channel, _, remoteNodeId, _, channelId, d) =>
       context.watch(channel)
-      context become main(channels + (channelId -> channel), shortIds, channelsTo + (channelId -> remoteNodeId), preferredChannels)
+      import d.commitments
+      val preferredChannels1 = preferredChannels.get(commitments.remoteParams.nodeId) match {
+        case Some(channels) => preferredChannels + (commitments.remoteParams.nodeId -> (channels + (commitments.channelId -> commitments)))
+        case None => preferredChannels + (commitments.remoteParams.nodeId -> Map(commitments.channelId -> commitments))
+      }
+      context become main(channels + (channelId -> channel), shortIds, channelsTo + (channelId -> remoteNodeId), preferredChannels1)
 
     case ChannelIdAssigned(channel, remoteNodeId, temporaryChannelId, channelId) =>
       context become main(channels + (channelId -> channel) - temporaryChannelId, shortIds, channelsTo + (channelId -> remoteNodeId) - temporaryChannelId, preferredChannels)
