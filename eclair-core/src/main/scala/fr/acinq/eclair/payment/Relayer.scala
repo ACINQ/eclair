@@ -18,12 +18,13 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
+import fr.acinq.eclair.nodeFee
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, NodeParams, ShortChannelId}
+import fr.acinq.eclair.{NodeParams, ShortChannelId}
 import scodec.bits.BitVector
 import scodec.{Attempt, DecodeResult}
 
@@ -104,6 +105,8 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
               Left(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(add.amountMsat, channelUpdate)), commit = true))
             case Some(channelUpdate) if add.expiry != perHopPayload.outgoingCltvValue + channelUpdate.cltvExpiryDelta =>
               Left(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(add.expiry, channelUpdate)), commit = true))
+            case Some(channelUpdate) if (add.amountMsat - perHopPayload.amtToForward) < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, perHopPayload.amtToForward) =>
+              Left(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
             case _ =>
               Right(CMD_ADD_HTLC(perHopPayload.amtToForward, add.paymentHash, perHopPayload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Some(add), commit = true))
           }
