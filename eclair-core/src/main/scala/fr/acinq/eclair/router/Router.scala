@@ -115,6 +115,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     // send events for remaining channels/nodes
     initChannels.values.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))
+    initChannelUpdates.values.foreach(u => context.system.eventStream.publish(ChannelUpdateReceived(u)))
     initNodes.values.foreach(n => context.system.eventStream.publish(NodeDiscovered(n)))
 
     // watch the funding tx of all these channels

@@ -112,6 +112,7 @@ final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: BinaryData, failur
 final case class CMD_UPDATE_FEE(feeratePerKw: Long, commit: Boolean = false) extends Command
 final case object CMD_SIGN extends Command
 final case class CMD_CLOSE(scriptPubKey: Option[BinaryData]) extends Command
+final case class CMD_UPDATE_RELAY_FEE(feeBaseMsat: Long, feeProportionalMillionths: Long) extends Command
 final case object CMD_FORCECLOSE extends Command
 final case object CMD_GETSTATE extends Command
 final case object CMD_GETSTATEDATA extends Command
