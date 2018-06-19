@@ -24,6 +24,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.channel.Channel.TickRefreshChannelUpdate
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
@@ -2038,6 +2039,23 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       bob2alice.send(alice, annSigsA)
       // alice re-sends her sigs
       alice2bob.expectMsg(annSigsA)
+    }
+  }
+
+  test("recv TickRefreshChannelUpdate", Tag("channels_public")) { case (alice, bob, alice2bob, bob2alice, _, _, relayer) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+      sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+      bob2alice.expectMsgType[AnnouncementSignatures]
+      bob2alice.forward(alice)
+      val update1 = relayer.expectMsgType[LocalChannelUpdate]
+
+      // actual test starts here
+      Thread.sleep(1000)
+      sender.send(alice, TickRefreshChannelUpdate)
+      val update2 = relayer.expectMsgType[LocalChannelUpdate]
+      assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
     }
   }
 
