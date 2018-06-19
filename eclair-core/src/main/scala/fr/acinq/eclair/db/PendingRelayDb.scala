@@ -31,7 +31,7 @@ import fr.acinq.eclair.channel.Command
   * to handle all corner cases.
   *
   */
-trait PendingRelayDb {
+trait PendingRelayDb extends DbManagement {
 
   def addPendingRelay(channelId: BinaryData, htlcId: Long, cmd: Command)
 

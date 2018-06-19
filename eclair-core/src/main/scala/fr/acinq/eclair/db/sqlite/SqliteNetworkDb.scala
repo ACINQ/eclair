@@ -20,20 +20,21 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi}
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.db.NetworkDb
+import fr.acinq.eclair.db.{DbConfig, NetworkDb}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import scodec.bits.BitVector
 
-class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
+class SqliteNetworkDb(override val dbConfig: DbConfig) extends NetworkDb {
 
   import SqliteUtils._
 
   val DB_NAME = "network"
   val CURRENT_VERSION = 1
+  private def conn = dbConfig.getConnection()
 
-  using(sqlite.createStatement()) { statement =>
+  using(conn.createStatement()) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
     statement.execute("PRAGMA foreign_keys = ON")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
@@ -43,7 +44,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   }
 
   override def addNode(n: NodeAnnouncement): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO nodes VALUES (?, ?)")) { statement =>
+    using(conn.prepareStatement("INSERT OR IGNORE INTO nodes VALUES (?, ?)")) { statement =>
       statement.setBytes(1, n.nodeId.toBin)
       statement.setBytes(2, nodeAnnouncementCodec.encode(n).require.toByteArray)
       statement.executeUpdate()
@@ -51,7 +52,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   }
 
   override def updateNode(n: NodeAnnouncement): Unit = {
-    using(sqlite.prepareStatement("UPDATE nodes SET data=? WHERE node_id=?")) { statement =>
+    using(conn.prepareStatement("UPDATE nodes SET data=? WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeAnnouncementCodec.encode(n).require.toByteArray)
       statement.setBytes(2, n.nodeId.toBin)
       statement.executeUpdate()
@@ -59,21 +60,21 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   }
 
   override def removeNode(nodeId: Crypto.PublicKey): Unit = {
-    using(sqlite.prepareStatement("DELETE FROM nodes WHERE node_id=?")) { statement =>
+    using(conn.prepareStatement("DELETE FROM nodes WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeId.toBin)
       statement.executeUpdate()
     }
   }
 
   override def listNodes(): Seq[NodeAnnouncement] = {
-    using(sqlite.createStatement()) { statement =>
+    using(conn.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT data FROM nodes")
       codecSequence(rs, nodeAnnouncementCodec)
     }
   }
 
   override def addChannel(c: ChannelAnnouncement, txid: BinaryData, capacity: Satoshi): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO channels VALUES (?, ?, ?, ?)")) { statement =>
+    using(conn.prepareStatement("INSERT OR IGNORE INTO channels VALUES (?, ?, ?, ?)")) { statement =>
       statement.setLong(1, c.shortChannelId.toLong)
       statement.setString(2, txid.toString())
       statement.setBytes(3, channelAnnouncementCodec.encode(c).require.toByteArray)
@@ -83,7 +84,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   }
 
   override def removeChannel(shortChannelId: ShortChannelId): Unit = {
-    using(sqlite.createStatement) { statement =>
+    using(conn.createStatement) { statement =>
       statement.execute("BEGIN TRANSACTION")
       statement.executeUpdate(s"DELETE FROM channel_updates WHERE short_channel_id=${shortChannelId.toLong}")
       statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id=${shortChannelId.toLong}")
@@ -92,7 +93,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   }
 
   override def listChannels(): Map[ChannelAnnouncement, (BinaryData, Satoshi)] = {
-    using(sqlite.createStatement()) { statement =>
+    using(conn.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT data, txid, capacity_sat FROM channels")
       var m: Map[ChannelAnnouncement, (BinaryData, Satoshi)] = Map()
       while (rs.next()) {
@@ -104,7 +105,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   }
 
   override def addChannelUpdate(u: ChannelUpdate): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO channel_updates VALUES (?, ?, ?)")) { statement =>
+    using(conn.prepareStatement("INSERT OR IGNORE INTO channel_updates VALUES (?, ?, ?)")) { statement =>
       statement.setLong(1, u.shortChannelId.toLong)
       statement.setBoolean(2, Announcements.isNode1(u.flags))
       statement.setBytes(3, channelUpdateCodec.encode(u).require.toByteArray)
@@ -113,7 +114,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   }
 
   override def updateChannelUpdate(u: ChannelUpdate): Unit = {
-    using(sqlite.prepareStatement("UPDATE channel_updates SET data=? WHERE short_channel_id=? AND node_flag=?")) { statement =>
+    using(conn.prepareStatement("UPDATE channel_updates SET data=? WHERE short_channel_id=? AND node_flag=?")) { statement =>
       statement.setBytes(1, channelUpdateCodec.encode(u).require.toByteArray)
       statement.setLong(2, u.shortChannelId.toLong)
       statement.setBoolean(3, Announcements.isNode1(u.flags))
@@ -122,7 +123,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   }
 
   override def listChannelUpdates(): Seq[ChannelUpdate] = {
-    using(sqlite.createStatement()) { statement =>
+    using(conn.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT data FROM channel_updates")
       codecSequence(rs, channelUpdateCodec)
     }

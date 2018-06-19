@@ -60,7 +60,10 @@ class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) exte
       self ! msg
       checkMsg
     case None =>
-      context.system.scheduler.scheduleOnce(1 second)(checkMsg)
+      context
+        .system
+        .scheduler
+        .scheduleOnce(1 second)(checkMsg)
   }
 
   checkEvent

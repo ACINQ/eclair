@@ -35,7 +35,10 @@ object SqliteUtils {
     try {
       block(statement)
     } finally {
-      if (statement != null) statement.close()
+      if (statement != null) {
+        statement.close()
+        statement.getConnection.close()
+      }
     }
   }
 

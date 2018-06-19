@@ -20,7 +20,7 @@ import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 
-trait PeersDb {
+trait PeersDb extends DbManagement {
 
   def addOrUpdatePeer(nodeId: PublicKey, address: InetSocketAddress)
 

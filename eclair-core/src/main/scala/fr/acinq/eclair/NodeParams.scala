@@ -19,7 +19,6 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Files
-import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
 import com.typesafe.config.{Config, ConfigFactory}
@@ -30,6 +29,7 @@ import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.wire.Color
+import grizzled.slf4j.Logging
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
@@ -56,11 +56,6 @@ case class NodeParams(keyManager: KeyManager,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double,
-                      channelsDb: ChannelsDb,
-                      peersDb: PeersDb,
-                      networkDb: NetworkDb,
-                      pendingRelayDb: PendingRelayDb,
-                      paymentsDb: PaymentsDb,
                       routerBroadcastInterval: FiniteDuration,
                       pingInterval: FiniteDuration,
                       maxFeerateMismatch: Double,
@@ -73,12 +68,20 @@ case class NodeParams(keyManager: KeyManager,
                       paymentRequestExpiry: FiniteDuration,
                       maxPendingPaymentRequests: Int,
                       maxPaymentFee: Double,
-                      minFundingSatoshis: Long) {
+                      minFundingSatoshis: Long,
+                      dbConfig: DbConfig) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
+
+  lazy val channelsDb = new SqliteChannelsDb(dbConfig)
+  lazy val peersDb = new SqlitePeersDb(dbConfig)
+  lazy val networkDb = new SqliteNetworkDb(dbConfig)
+  lazy val pendingRelayDb = new SqlitePendingRelayDb(dbConfig)
+  lazy val paymentsDb = new SqlitePaymentsDb(dbConfig)
+
 }
 
-object NodeParams {
+object NodeParams extends Logging {
 
   sealed trait WatcherType
 
@@ -130,14 +133,7 @@ object NodeParams {
     val chaindir = new File(datadir, chain)
     chaindir.mkdir()
 
-    val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
-    val channelsDb = new SqliteChannelsDb(sqlite)
-    val peersDb = new SqlitePeersDb(sqlite)
-    val pendingRelayDb = new SqlitePendingRelayDb(sqlite)
-    val paymentsDb = new SqlitePaymentsDb(sqlite)
-
-    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "network.sqlite")}")
-    val networkDb = new SqliteNetworkDb(sqliteNetwork)
+    val dbConfig = DbConfig.fromConfig(config)
 
     val color = BinaryData(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
@@ -175,11 +171,6 @@ object NodeParams {
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
-      channelsDb = channelsDb,
-      peersDb = peersDb,
-      networkDb = networkDb,
-      pendingRelayDb = pendingRelayDb,
-      paymentsDb = paymentsDb,
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
@@ -192,7 +183,8 @@ object NodeParams {
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"),
       maxPaymentFee = config.getDouble("max-payment-fee"),
-      minFundingSatoshis = config.getLong("min-funding-satoshis")
+      minFundingSatoshis = config.getLong("min-funding-satoshis"),
+      dbConfig = dbConfig
     )
   }
 }

@@ -19,27 +19,28 @@ package fr.acinq.eclair.db
 import java.sql.DriverManager
 
 import fr.acinq.bitcoin.BinaryData
+import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqlitePendingRelayDb}
 import org.junit.runner.RunWith
-import org.scalatest.FunSuite
+import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.scalatest.junit.JUnitRunner
 import org.sqlite.SQLiteException
 
 @RunWith(classOf[JUnitRunner])
-class SqliteChannelsDbSpec extends FunSuite {
+class SqliteChannelsDbSpec extends FunSuite with BeforeAndAfterAll {
 
   def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
-
+  private val dbConfig = TestConstants.dbConfig
   test("init sqlite 2 times in a row") {
     val sqlite = inmem
-    val db1 = new SqliteChannelsDb(sqlite)
-    val db2 = new SqliteChannelsDb(sqlite)
+    val db1 = new SqliteChannelsDb(dbConfig)
+    val db2 = new SqliteChannelsDb(dbConfig)
   }
 
   test("add/remove/list channels") {
     val sqlite = inmem
-    val db = new SqliteChannelsDb(sqlite)
-    new SqlitePendingRelayDb(sqlite) // needed by db.removeChannel
+    val db = new SqliteChannelsDb(dbConfig)
+    new SqlitePendingRelayDb(dbConfig) // needed by db.removeChannel
 
     val channel = ChannelStateSpec.normal
 
@@ -49,7 +50,8 @@ class SqliteChannelsDbSpec extends FunSuite {
     val paymentHash2 = BinaryData("43" * 300)
     val cltvExpiry2 = 656
 
-    intercept[SQLiteException](db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
+    intercept[SQLiteException](db.addOrUpdateHtlcInfo(channel.channelId, commitNumber,
+      paymentHash1, cltvExpiry1)) // no related channel
 
     assert(db.listChannels().toSet === Set.empty)
     db.addOrUpdateChannel(channel)
@@ -67,4 +69,5 @@ class SqliteChannelsDbSpec extends FunSuite {
     assert(db.listHtlcHtlcInfos(channel.channelId, commitNumber).toList == Nil)
   }
 
+  override def afterAll(): Unit = dbConfig.close()
 }

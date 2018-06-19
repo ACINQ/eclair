@@ -19,7 +19,7 @@ package fr.acinq.eclair.db
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel.HasCommitments
 
-trait ChannelsDb {
+trait ChannelsDb extends DbManagement {
 
   def addOrUpdateChannel(state: HasCommitments)
 

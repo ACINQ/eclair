@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 
-trait NetworkDb {
+trait NetworkDb extends DbManagement {
 
   def addNode(n: NodeAnnouncement)
 

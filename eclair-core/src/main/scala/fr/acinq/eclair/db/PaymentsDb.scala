@@ -33,7 +33,7 @@ import fr.acinq.bitcoin.BinaryData
   * </ul>
   * Payments should not be updated nor deleted.
   */
-trait PaymentsDb {
+trait PaymentsDb extends DbManagement {
 
   def addPayment(payment: Payment)
 

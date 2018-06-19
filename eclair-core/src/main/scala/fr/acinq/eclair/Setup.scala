@@ -55,7 +55,10 @@ import scala.concurrent.{Await, ExecutionContext, Future, Promise}
   * @param actorSystem
   * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
   */
-class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem(), seed_opt: Option[BinaryData] = None) extends Logging {
+class Setup(datadir: File,
+            overrideDefaults: Config = ConfigFactory.empty(),
+            actorSystem: ActorSystem = ActorSystem(),
+            seed_opt: Option[BinaryData] = None) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")

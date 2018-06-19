@@ -16,13 +16,16 @@
 
 package fr.acinq.eclair
 
+import java.io.File
 import java.net.InetSocketAddress
 import java.sql.DriverManager
 
+import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.DbConfig
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.Color
@@ -37,11 +40,13 @@ object TestConstants {
   val pushMsat = 200000000L
   val feeratePerKw = 10000L
 
+  private val config = ConfigFactory.load()
+
+  def dbConfig = DbConfig.unittestConfig(config)
+
   object Alice {
     val seed = BinaryData("01" * 32)
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-
-    def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
 
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams = NodeParams(
@@ -64,11 +69,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      channelsDb = new SqliteChannelsDb(sqlite),
-      peersDb = new SqlitePeersDb(sqlite),
-      networkDb = new SqliteNetworkDb(sqlite),
-      pendingRelayDb = new SqlitePendingRelayDb(sqlite),
-      paymentsDb = new SqlitePaymentsDb(sqlite),
+
       routerBroadcastInterval = 60 seconds,
       pingInterval = 30 seconds,
       maxFeerateMismatch = 1.5,
@@ -81,7 +82,9 @@ object TestConstants {
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000,
       maxPaymentFee = 0.03,
-      minFundingSatoshis = 1000L)
+      minFundingSatoshis = 1000L,
+      dbConfig = dbConfig
+    )
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -95,8 +98,6 @@ object TestConstants {
   object Bob {
     val seed = BinaryData("02" * 32)
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-
-    def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
 
     def nodeParams = NodeParams(
       keyManager = keyManager,
@@ -118,11 +119,6 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      channelsDb = new SqliteChannelsDb(sqlite),
-      peersDb = new SqlitePeersDb(sqlite),
-      networkDb = new SqliteNetworkDb(sqlite),
-      pendingRelayDb = new SqlitePendingRelayDb(sqlite),
-      paymentsDb = new SqlitePaymentsDb(sqlite),
       routerBroadcastInterval = 60 seconds,
       pingInterval = 30 seconds,
       maxFeerateMismatch = 1.0,
@@ -135,7 +131,8 @@ object TestConstants {
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000,
       maxPaymentFee = 0.03,
-      minFundingSatoshis = 1000L)
+      minFundingSatoshis = 1000L,
+      dbConfig = dbConfig)
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

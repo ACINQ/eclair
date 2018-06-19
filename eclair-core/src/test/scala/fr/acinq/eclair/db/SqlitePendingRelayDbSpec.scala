@@ -20,26 +20,23 @@ import java.sql.DriverManager
 
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.sqlite.SqlitePendingRelayDb
-import fr.acinq.eclair.randomBytes
+import fr.acinq.eclair.{TestConstants, randomBytes}
 import fr.acinq.eclair.wire.FailureMessageCodecs
 import org.junit.runner.RunWith
-import org.scalatest.FunSuite
+import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.scalatest.junit.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
-class SqlitePendingRelayDbSpec extends FunSuite {
+class SqlitePendingRelayDbSpec extends FunSuite with BeforeAndAfterAll {
 
-  def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
-
+  private val dbConfig = TestConstants.dbConfig
   test("init sqlite 2 times in a row") {
-    val sqlite = inmem
-    val db1 = new SqlitePendingRelayDb(sqlite)
-    val db2 = new SqlitePendingRelayDb(sqlite)
+    val db1 = new SqlitePendingRelayDb(dbConfig)
+    val db2 = new SqlitePendingRelayDb(dbConfig)
   }
 
   test("add/remove/list messages") {
-    val sqlite = inmem
-    val db = new SqlitePendingRelayDb(sqlite)
+    val db = new SqlitePendingRelayDb(dbConfig)
 
     val channelId1 = randomBytes(32)
     val channelId2 = randomBytes(32)
@@ -62,6 +59,10 @@ class SqlitePendingRelayDbSpec extends FunSuite {
     assert(db.listPendingRelay(channelId2).toSet === Set(msg0, msg1))
     db.removePendingRelay(channelId1, msg1.id)
     assert(db.listPendingRelay(channelId1).toSet === Set(msg0, msg2, msg3, msg4))
+  }
+
+  override def afterAll(): Unit = {
+    dbConfig.close()
   }
 
 }

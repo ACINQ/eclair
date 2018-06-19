@@ -21,27 +21,25 @@ import java.sql.DriverManager
 
 import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
-import fr.acinq.eclair.{ShortChannelId, randomKey}
+import fr.acinq.eclair.{ShortChannelId, TestConstants, randomKey}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.Color
 import org.junit.runner.RunWith
-import org.scalatest.FunSuite
+import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.scalatest.junit.JUnitRunner
 import org.sqlite.SQLiteException
 
 @RunWith(classOf[JUnitRunner])
-class SqliteNetworkDbSpec extends FunSuite {
+class SqliteNetworkDbSpec extends FunSuite with BeforeAndAfterAll {
 
-  def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
-
+  val dbConfig = TestConstants.dbConfig
   test("init sqlite 2 times in a row") {
-    val sqlite = inmem
-    val db1 = new SqliteNetworkDb(sqlite)
-    val db2 = new SqliteNetworkDb(sqlite)
+    val db1 = new SqliteNetworkDb(dbConfig)
+    val db2 = new SqliteNetworkDb(dbConfig)
   }
 
   test("add/remove/list nodes") {
-    val sqlite = inmem
+    val sqlite = dbConfig
     val db = new SqliteNetworkDb(sqlite)
 
     val node_1 = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
@@ -61,7 +59,7 @@ class SqliteNetworkDbSpec extends FunSuite {
   }
 
   test("add/remove/list channels and channel_updates") {
-    val sqlite = inmem
+    val sqlite = dbConfig
     val db = new SqliteNetworkDb(sqlite)
 
     def sig = Crypto.encodeSignature(Crypto.sign(randomKey.toBin, randomKey)) :+ 1.toByte
@@ -100,5 +98,7 @@ class SqliteNetworkDbSpec extends FunSuite {
     assert(db.listChannelUpdates().toSet === Set(channel_update_1))
     db.updateChannelUpdate(channel_update_1)
   }
+
+  override def afterAll: Unit = dbConfig.close()
 
 }
