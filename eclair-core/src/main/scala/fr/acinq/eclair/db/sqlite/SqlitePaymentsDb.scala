@@ -42,10 +42,20 @@ class SqlitePaymentsDb(override val dbConfig: DbConfig) extends PaymentsDb with 
 
   private def conn = dbConfig.getConnection()
 
-  using(conn.createStatement()) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+  override def createTables: Unit = {
+    using(conn.createStatement()) { statement =>
+      require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+    }
   }
+
+  override def dropTables: Unit = {
+    using(conn.createStatement()) { statement =>
+      require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
+      statement.executeUpdate("DROP TABLE IF EXISTS payments")
+    }
+  }
+
 
   override def addPayment(payment: Payment): Unit = {
     using(conn.prepareStatement("INSERT INTO payments VALUES (?, ?, ?)")) { statement =>

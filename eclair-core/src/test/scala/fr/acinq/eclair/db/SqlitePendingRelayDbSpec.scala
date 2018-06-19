@@ -28,15 +28,21 @@ import org.scalatest.junit.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
 class SqlitePendingRelayDbSpec extends FunSuite with BeforeAndAfterAll {
-
   private val dbConfig = TestConstants.dbConfig
+  private val db = new SqlitePendingRelayDb(dbConfig)
+  override def beforeAll(): Unit = {
+    db.createTables
+  }
+
   test("init sqlite 2 times in a row") {
     val db1 = new SqlitePendingRelayDb(dbConfig)
     val db2 = new SqlitePendingRelayDb(dbConfig)
+    db1.createTables
+    db2.createTables
   }
 
   test("add/remove/list messages") {
-    val db = new SqlitePendingRelayDb(dbConfig)
+
 
     val channelId1 = randomBytes(32)
     val channelId2 = randomBytes(32)
@@ -62,6 +68,7 @@ class SqlitePendingRelayDbSpec extends FunSuite with BeforeAndAfterAll {
   }
 
   override def afterAll(): Unit = {
+    db.dropTables
     dbConfig.close()
   }
 

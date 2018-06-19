@@ -73,11 +73,11 @@ case class NodeParams(keyManager: KeyManager,
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
 
-  lazy val channelsDb = new SqliteChannelsDb(dbConfig)
-  lazy val peersDb = new SqlitePeersDb(dbConfig)
-  lazy val networkDb = new SqliteNetworkDb(dbConfig)
-  lazy val pendingRelayDb = new SqlitePendingRelayDb(dbConfig)
-  lazy val paymentsDb = new SqlitePaymentsDb(dbConfig)
+  val channelsDb = new SqliteChannelsDb(dbConfig)
+  val peersDb = new SqlitePeersDb(dbConfig)
+  val networkDb = new SqliteNetworkDb(dbConfig)
+  val pendingRelayDb = new SqlitePendingRelayDb(dbConfig)
+  val paymentsDb = new SqlitePaymentsDb(dbConfig)
 
 }
 

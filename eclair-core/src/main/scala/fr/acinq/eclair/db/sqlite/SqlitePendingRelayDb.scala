@@ -28,10 +28,20 @@ class SqlitePendingRelayDb(override val dbConfig: DbConfig) extends PendingRelay
   val CURRENT_VERSION = 1
   private def conn = dbConfig.getConnection()
 
-  using(conn.createStatement()) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
-    // note: should we use a foreign key to local_channels table here?
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending_relay (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
+  override def createTables: Unit = {
+    using(conn.createStatement()) { statement =>
+      require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
+      // note: should we use a foreign key to local_channels table here?
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending_relay (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
+    }
+  }
+
+  override def dropTables: Unit = {
+    using(conn.createStatement()) { statement =>
+      require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
+      // note: should we use a foreign key to local_channels table here?
+      statement.executeUpdate("DROP TABLE IF EXISTS pending_relay")
+    }
   }
 
   override def addPendingRelay(channelId: BinaryData, htlcId: Long, cmd: Command): Unit = {

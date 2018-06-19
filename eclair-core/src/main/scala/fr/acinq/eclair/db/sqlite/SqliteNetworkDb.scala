@@ -34,14 +34,27 @@ class SqliteNetworkDb(override val dbConfig: DbConfig) extends NetworkDb {
   val CURRENT_VERSION = 1
   private def conn = dbConfig.getConnection()
 
-  using(conn.createStatement()) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
-    statement.execute("PRAGMA foreign_keys = ON")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, data BLOB NOT NULL, capacity_sat INTEGER NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
+  override def createTables: Unit = {
+    using(conn.createStatement()) { statement =>
+      require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
+      statement.execute("PRAGMA foreign_keys = ON")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, data BLOB NOT NULL, capacity_sat INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
+      statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
+    }
   }
+
+  override def dropTables: Unit = {
+    using(conn.createStatement()) { statement =>
+      require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
+      statement.executeUpdate("DROP TABLE IF EXISTS nodes")
+      statement.executeUpdate("DROP TABLE IF EXISTS channels")
+      statement.executeUpdate("DROP TABLE IF EXISTS channel_updates")
+      statement.executeUpdate("DROP INDEX IF EXISTS channel_updates_idx")
+    }
+  }
+
 
   override def addNode(n: NodeAnnouncement): Unit = {
     using(conn.prepareStatement("INSERT OR IGNORE INTO nodes VALUES (?, ?)")) { statement =>

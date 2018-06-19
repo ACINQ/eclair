@@ -29,17 +29,22 @@ import org.sqlite.SQLiteException
 @RunWith(classOf[JUnitRunner])
 class SqliteChannelsDbSpec extends FunSuite with BeforeAndAfterAll {
 
-  def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
   private val dbConfig = TestConstants.dbConfig
+  private val db = new SqliteChannelsDb(dbConfig)
+
+  override def beforeAll(): Unit = {
+    db.createTables
+  }
+
   test("init sqlite 2 times in a row") {
-    val sqlite = inmem
     val db1 = new SqliteChannelsDb(dbConfig)
     val db2 = new SqliteChannelsDb(dbConfig)
+    db1.createTables
+    db2.createTables
   }
 
   test("add/remove/list channels") {
-    val sqlite = inmem
-    val db = new SqliteChannelsDb(dbConfig)
+
     new SqlitePendingRelayDb(dbConfig) // needed by db.removeChannel
 
     val channel = ChannelStateSpec.normal
@@ -69,5 +74,8 @@ class SqliteChannelsDbSpec extends FunSuite with BeforeAndAfterAll {
     assert(db.listHtlcHtlcInfos(channel.channelId, commitNumber).toList == Nil)
   }
 
-  override def afterAll(): Unit = dbConfig.close()
+  override def afterAll(): Unit = {
+    db.dropTables
+    dbConfig.close()
+  }
 }

@@ -27,11 +27,18 @@ import org.scalatest.{BeforeAndAfterAll, FunSuite}
 @RunWith(classOf[JUnitRunner])
 class SqlitePeersDbSpec extends FunSuite with BeforeAndAfterAll {
 
-  val dbConfig = TestConstants.dbConfig
+  private val dbConfig = TestConstants.dbConfig
+  private val db = new SqlitePeersDb(dbConfig)
+
+  override def beforeAll(): Unit = {
+    db.createTables
+  }
 
   test("init sqlite 2 times in a row") {
     val db1 = new SqlitePeersDb(dbConfig)
     val db2 = new SqlitePeersDb(dbConfig)
+    db1.createTables
+    db2.createTables
   }
 
   test("add/remove/list peers") {
@@ -56,6 +63,7 @@ class SqlitePeersDbSpec extends FunSuite with BeforeAndAfterAll {
   }
 
   override def afterAll: Unit = {
+    db.dropTables
     dbConfig.close()
   }
 

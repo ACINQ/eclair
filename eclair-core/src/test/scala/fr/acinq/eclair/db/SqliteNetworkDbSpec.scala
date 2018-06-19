@@ -32,16 +32,21 @@ import org.sqlite.SQLiteException
 @RunWith(classOf[JUnitRunner])
 class SqliteNetworkDbSpec extends FunSuite with BeforeAndAfterAll {
 
-  val dbConfig = TestConstants.dbConfig
+  private val dbConfig = TestConstants.dbConfig
+  private val db = new SqliteNetworkDb(dbConfig = dbConfig)
+
+  override def beforeAll(): Unit = {
+    db.createTables
+  }
+
   test("init sqlite 2 times in a row") {
     val db1 = new SqliteNetworkDb(dbConfig)
     val db2 = new SqliteNetworkDb(dbConfig)
+    db1.createTables
+    db2.createTables
   }
 
   test("add/remove/list nodes") {
-    val sqlite = dbConfig
-    val db = new SqliteNetworkDb(sqlite)
-
     val node_1 = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
     val node_2 = Announcements.makeNodeAnnouncement(randomKey, "node-bob", Color(100.toByte, 200.toByte, 300.toByte), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
     val node_3 = Announcements.makeNodeAnnouncement(randomKey, "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
@@ -59,9 +64,6 @@ class SqliteNetworkDbSpec extends FunSuite with BeforeAndAfterAll {
   }
 
   test("add/remove/list channels and channel_updates") {
-    val sqlite = dbConfig
-    val db = new SqliteNetworkDb(sqlite)
-
     def sig = Crypto.encodeSignature(Crypto.sign(randomKey.toBin, randomKey)) :+ 1.toByte
 
     val channel_1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
@@ -99,6 +101,9 @@ class SqliteNetworkDbSpec extends FunSuite with BeforeAndAfterAll {
     db.updateChannelUpdate(channel_update_1)
   }
 
-  override def afterAll: Unit = dbConfig.close()
+  override def afterAll: Unit = {
+    db.dropTables
+    dbConfig.close()
+  }
 
 }

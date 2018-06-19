@@ -28,15 +28,21 @@ import org.scalatest.junit.JUnitRunner
 @RunWith(classOf[JUnitRunner])
 class SqlitePaymentsDbSpec extends FunSuite with BeforeAndAfterAll {
 
-  val dbConfig = TestConstants.dbConfig
+  private val dbConfig = TestConstants.dbConfig
+  private val db = new SqlitePaymentsDb(dbConfig)
+
+  override def beforeAll(): Unit = {
+    db.createTables
+  }
 
   test("init sqlite 2 times in a row") {
     val db1 = new SqlitePaymentsDb(dbConfig)
     val db2 = new SqlitePaymentsDb(dbConfig)
+    db1.createTables
+    db2.createTables
   }
 
   test("add/list payments/find 1 payment that exists/find 1 payment that does not exist") {
-    val db = new SqlitePaymentsDb(dbConfig)
 
     val p1 = Payment(BinaryData("08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 12345678, 1513871928275L)
     val p2 = Payment(BinaryData("0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345678, 1513871928275L)
@@ -48,5 +54,8 @@ class SqlitePaymentsDbSpec extends FunSuite with BeforeAndAfterAll {
     assert(db.findByPaymentHash("6e7e8018f05e169cf1d99e77dc22cb372d09f10b6a81f1eae410718c56cad187") === None)
   }
 
-  override def afterAll: Unit = dbConfig.close()
+  override def afterAll: Unit = {
+    db.dropTables
+    dbConfig.close()
+  }
 }

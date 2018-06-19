@@ -33,12 +33,20 @@ class SqlitePeersDb(override val dbConfig: DbConfig) extends PeersDb {
 
   private def conn = dbConfig.getConnection()
 
-  {
+  override def createTables: Unit = {
     using(conn.createStatement()) { statement =>
       require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
       statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
     }
   }
+
+  override def dropTables: Unit = {
+    using(conn.createStatement()) { statement =>
+      require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
+      statement.executeUpdate("DROP TABLE IF EXISTS peers")
+    }
+  }
+
 
 
   override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: InetSocketAddress): Unit = {
