@@ -227,7 +227,7 @@ trait Service extends Logging {
                           completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description)).mapTo[PaymentRequest].map(PaymentRequest.write))
                         case JInt(amountMsat) :: JString(description) :: JInt(expirySeconds) :: Nil =>
                           completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description, Some(expirySeconds.toLong))).mapTo[PaymentRequest].map(PaymentRequest.write))
-                        case r => reject(UnknownParamsRejection(req.id, "[description] or [amount, description] or [amount, description, expiryDuration] : "+r.toString()))
+                        case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description] or [amount, description, expiryDuration]"))
                       }
 
                       case "checkinvoice" => req.params match {
