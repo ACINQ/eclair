@@ -133,11 +133,20 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
   test("Payment request generation should succeed when the amount is not set") {
     val handler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
     val sender = TestProbe()
-    val eventListener = TestProbe()
-    system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
 
     sender.send(handler, ReceivePayment(None, "This is a donation PR"))
     val pr = sender.expectMsgType[PaymentRequest]
     assert(pr.amount.isEmpty && pr.nodeId.toString == Alice.nodeParams.nodeId.toString)
+  }
+
+  test("Payment request generation should handle custom expiries or use the default otherwise") {
+    val handler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
+    val sender = TestProbe()
+
+    sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee"))
+    assert(sender.expectMsgType[PaymentRequest].expiry === Some(Alice.nodeParams.paymentRequestExpiry.toSeconds))
+
+    sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee with custom expiry", expirySeconds_opt = Some(60)))
+    assert(sender.expectMsgType[PaymentRequest].expiry === Some(60))
   }
 }

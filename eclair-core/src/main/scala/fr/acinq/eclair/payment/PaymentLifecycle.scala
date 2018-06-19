@@ -183,7 +183,7 @@ object PaymentLifecycle {
   def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router, register)
 
   // @formatter:off
-  case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String, expiry: Option[Long] = None)
+  case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None)
   /**
     * @param finalCltvExpiry by default we choose finalCltvExpiry = Channel.MIN_CLTV_EXPIRY + 1 to not have our htlc fail when a new block has just been found
     * @param maxFeePct set by default to 3% as a safety measure (even if a route is found, if fee is higher than that payment won't be attempted)
