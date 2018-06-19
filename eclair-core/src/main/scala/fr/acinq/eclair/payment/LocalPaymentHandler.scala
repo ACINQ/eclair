@@ -54,7 +54,8 @@ class LocalPaymentHandler(nodeParams: NodeParams)(implicit ec: ExecutionContext 
         }
         val paymentPreimage = randomBytes(32)
         val paymentHash = Crypto.sha256(paymentPreimage)
-        val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress = None, expirySeconds = Some(expiry_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)))
+        val expirySeconds = expiry_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
+        val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress = None, expirySeconds = Some(expirySeconds))
         log.debug(s"generated payment request=${PaymentRequest.write(paymentRequest)} from amount=$amount_opt")
         sender ! paymentRequest
         context.become(run(hash2preimage + (paymentHash -> (paymentPreimage, paymentRequest))))
