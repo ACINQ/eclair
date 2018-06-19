@@ -180,7 +180,7 @@ trait Service extends Logging {
                             completeRpcFuture(req.id, sendToChannel(identifier, CMD_UPDATE_RELAY_FEE(feeBaseMsat.toLong, feeProportionalMillionths.toLong)).mapTo[String])
                           case JString(identifier) :: JString(feeBaseMsat) :: JString(feeProportionalMillionths) :: Nil =>
                             completeRpcFuture(req.id, sendToChannel(identifier, CMD_UPDATE_RELAY_FEE(feeBaseMsat.toLong, feeProportionalMillionths.toLong)).mapTo[String])
-                          case c@_ => reject(UnknownParamsRejection(req.id, "[channelId] [feeBaseMsat] [feeProportionalMillionths]"+c.toString()))
+                          case _ => reject(UnknownParamsRejection(req.id, "[channelId] [feeBaseMsat] [feeProportionalMillionths]"))
                         }
                         // local network methods
                         case "peers" => completeRpcFuture(req.id, for {
