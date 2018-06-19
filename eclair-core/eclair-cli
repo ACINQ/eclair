@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # Check if jq is installed. If not, display instructions and abort program
 command -v jq >/dev/null 2>&1 || { echo -e "This tool requires jq.\nFor installation instructions, visit https://stedolan.github.io/jq/download/.\n\nAborting..."; exit 1; }
 
@@ -79,6 +78,7 @@ case ${METHOD}_${#} in
     "open_2")       call ${METHOD} "'$(printf '["%s",%s]' "${1}" "${2}")'" ;; # ${2} is numeric (funding)
 
     "receive_2")    call ${METHOD} "'$(printf '[%s,"%s"]' "${1}" "${2}")'" ;; # ${1} is numeric (amount to receive)
+    "receive_3")    call ${METHOD} "'$(printf '[%s,"%s",%s]' "${1}" "${2}" "${3}")'" ;; # ${1} is numeric (amount to receive) as is ${2} for expiry in seconds
 
     "channel_"*)    call ${METHOD} "'${PARAMS}'" "if .error != null then .error.message else .result | { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceMsat: .data.commitments.localCommit.spec.toLocalMsat, capacitySat: .data.commitments.commitInput.txOut.amount.amount } end" ;;
 

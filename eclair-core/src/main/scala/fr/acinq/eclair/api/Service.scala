@@ -225,7 +225,9 @@ trait Service extends Logging {
                         // the amount is now given with the description
                         case JInt(amountMsat) :: JString(description) :: Nil =>
                           completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description)).mapTo[PaymentRequest].map(PaymentRequest.write))
-                        case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description]"))
+                        case JInt(amountMsat) :: JString(description) :: JInt(expirySeconds) :: Nil =>
+                          completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description, Some(expirySeconds.toLong))).mapTo[PaymentRequest].map(PaymentRequest.write))
+                        case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description] or [amount, description, expiryDuration]"))
                       }
 
                       case "checkinvoice" => req.params match {
@@ -346,6 +348,7 @@ trait Service extends Logging {
     "allupdates: list all channels updates",
     "allupdates (nodeId): list all channels updates for this nodeId",
     "receive (amountMsat, description): generate a payment request for a given amount",
+    "receive (amountMsat, description, expirySeconds): generate a payment request for a given amount with a description and a number of seconds till it expires",
     "checkinvoice (paymentRequest): returns node, amount and payment hash in an invoice/paymentRequest",
     "findroute (paymentRequest|nodeId): given a payment request or nodeID checks if there is a valid payment route returns JSON with attempts, nodes and channels of route",
     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
