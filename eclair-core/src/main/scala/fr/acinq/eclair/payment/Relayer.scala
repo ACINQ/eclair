@@ -17,6 +17,7 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import fr.acinq.eclair.nodeFee
 import fr.acinq.eclair.channel._
@@ -36,7 +37,7 @@ sealed trait Origin
 case class Local(sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
 case class Relayed(originChannelId: BinaryData, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
 
-case class ForwardAdd(add: UpdateAddHtlc)
+case class ForwardAdd(add: UpdateAddHtlc, canRedirect: Boolean = true)
 case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin, htlc: UpdateAddHtlc)
 case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc)
 case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc)
@@ -51,22 +52,46 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
+  context.system.eventStream.subscribe(self, classOf[ChannelRestored])
+  context.system.eventStream.subscribe(self, classOf[ChannelSignatureReceived])
+
+  case class OutgoingChannel(channelUpdate: ChannelUpdate, remoteNodeId: PublicKey, channelId: BinaryData)
 
   val commandBuffer = context.actorOf(Props(new CommandBuffer(nodeParams, register)))
 
-  override def receive: Receive = main(Map())
+  override def receive: Receive = main(Map.empty, Map.empty, Map.empty)
 
-  def main(channelUpdates: Map[ShortChannelId, ChannelUpdate]): Receive = {
+  def updatePreferredChannels(preferredChannels: Map[PublicKey, Map[BinaryData, Commitments]], commitments: Commitments): Map[PublicKey, Map[BinaryData, Commitments]] =
+    preferredChannels.get(commitments.remoteParams.nodeId) match {
+      case Some(channels) => preferredChannels + (commitments.remoteParams.nodeId -> (channels + (commitments.channelId -> commitments)))
+      case None => preferredChannels + (commitments.remoteParams.nodeId -> Map(commitments.channelId -> commitments))
+  }
+
+  def removeFromPreferredChannels(preferredChannels: Map[PublicKey, Map[BinaryData, Commitments]], remoteNodeId: PublicKey, channelId: BinaryData): Map[PublicKey, Map[BinaryData, Commitments]] =
+    preferredChannels.get(remoteNodeId) match {
+      case Some(channels) => preferredChannels + (remoteNodeId -> (channels - channelId))
+      case None => preferredChannels
+    }
+
+  def main(channelUpdates: Map[ShortChannelId, OutgoingChannel], shortIds: Map[BinaryData, ShortChannelId], preferredChannels: Map[PublicKey, Map[BinaryData, Commitments]]): Receive = {
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate) =>
       log.debug(s"updating channel_update for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate=$channelUpdate ")
-      context become main(channelUpdates + (channelUpdate.shortChannelId -> channelUpdate))
+      context become main(channelUpdates + (channelUpdate.shortChannelId -> OutgoingChannel(channelUpdate, remoteNodeId, channelId)), shortIds + (channelId -> shortChannelId), preferredChannels)
 
-    case LocalChannelDown(_, channelId, shortChannelId, _) =>
+    case LocalChannelDown(_, channelId, shortChannelId, remoteNodeId) =>
       log.debug(s"removed local channel_update for channelId=$channelId shortChannelId=$shortChannelId")
-      context become main(channelUpdates - shortChannelId)
+      context become main(channelUpdates - shortChannelId, shortIds - channelId, removeFromPreferredChannels(preferredChannels, remoteNodeId, channelId))
 
-    case ForwardAdd(add) =>
+    case ChannelRestored(_, _, _, _, _, d) =>
+      val preferredChannels1 = updatePreferredChannels(preferredChannels, d.commitments)
+      context become main(channelUpdates, shortIds, preferredChannels1)
+
+    case ChannelSignatureReceived(_, commitments) =>
+      val preferredChannels1 = updatePreferredChannels(preferredChannels, commitments)
+      context become main(channelUpdates, shortIds, preferredChannels1)
+
+    case ForwardAdd(add, canRedirect) =>
       log.debug(s"received forwarding request for htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} ")
       Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket)
         .flatMap {
@@ -94,10 +119,25 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
               paymentHandler forward addHtlc
           }
         case Success((perHopPayload, nextPacket, _)) =>
-          val cmd = channelUpdates.get(perHopPayload.channel_id) match {
+          // TODO: following doesn't work if channels have different expiry/fee settings
+          val selectedShortChannelId = channelUpdates.get(perHopPayload.channel_id) match {
+            case Some(OutgoingChannel(_, remoteNodeId, channelId)) if canRedirect =>
+              val preferredChannel_opt = preferredChannels.get(remoteNodeId).map(_.values.toList.maxBy(_.remoteCommit.spec.toRemoteMsat))
+              preferredChannel_opt match {
+                case Some(preferred) if preferred.channelId != channelId =>
+                    shortIds.get(preferred.channelId) match {
+                      case Some(preferredShortChannelId) if channelUpdates.contains(preferredShortChannelId) =>
+                        log.info("replacing by preferred channelId={}->{} shortChannelId={}->{}", channelId, preferred.channelId, perHopPayload.channel_id, preferredShortChannelId)
+                        preferredShortChannelId
+                      case _ => perHopPayload.channel_id
+                    }
+                case _ => perHopPayload.channel_id
+              }
+            case _ => perHopPayload.channel_id
+          }
+
+          val cmd = channelUpdates.get(selectedShortChannelId).map(_.channelUpdate) match {
             case None =>
-              // if we don't (yet?) have a channel_update for the next channel, we consider the channel doesn't exist
-              // TODO: use a different channel to the same peer instead?
               Left(CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
             case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.flags) =>
               Left(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.flags, channelUpdate)), commit = true))
@@ -108,7 +148,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
             case Some(channelUpdate) if (add.amountMsat - perHopPayload.amtToForward) < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, perHopPayload.amtToForward) =>
               Left(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
             case _ =>
-              Right(CMD_ADD_HTLC(perHopPayload.amtToForward, add.paymentHash, perHopPayload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Some(add), commit = true))
+              Right(CMD_ADD_HTLC(perHopPayload.amtToForward, add.paymentHash, perHopPayload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Some(add), commit = true, redirected = (selectedShortChannelId != perHopPayload.channel_id)))
           }
           cmd match {
             case Left(cmdFail) =>
@@ -116,7 +156,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
               commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
             case Right(cmdAdd) =>
               log.info(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=${perHopPayload.channel_id}")
-              register ! Register.ForwardShortId(perHopPayload.channel_id, cmdAdd, toPreferred = true)
+              register ! Register.ForwardShortId(selectedShortChannelId, cmdAdd)
           }
         case Failure(t) =>
           log.warning(s"couldn't parse onion: reason=${t.getMessage}")
@@ -125,32 +165,39 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
       }
 
-    case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(shortChannelId, CMD_ADD_HTLC(_, _, _, _, Some(add), _), _))) =>
+    case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(shortChannelId, CMD_ADD_HTLC(_, _, _, _, Some(add), _, _)))) =>
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
       commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
 
-    case Status.Failure(AddHtlcFailed(_, paymentHash, _, Local(None), _)) =>
+    case Status.Failure(AddHtlcFailed(_, paymentHash, _, Local(None), _, _)) =>
       // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
       context.system.eventStream.publish(PaymentFailed(paymentHash, Nil))
 
-    case Status.Failure(AddHtlcFailed(_, _, error, Local(Some(sender)), _)) =>
+    case Status.Failure(AddHtlcFailed(_, _, error, Local(Some(sender)), _, _)) =>
       sender ! Status.Failure(error)
 
-    case Status.Failure(AddHtlcFailed(_, paymentHash, error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt)) =>
-      val failure = (error, channelUpdate_opt) match {
-        case (_: ExpiryTooSmall, Some(channelUpdate)) => ExpiryTooSoon(channelUpdate)
-        case (_: ExpiryTooBig, _) => ExpiryTooFar
-        case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
-        case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
-        case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.flags) => ChannelDisabled(channelUpdate.flags, channelUpdate)
-        case (_: ChannelUnavailable, None) => PermanentChannelFailure
-        case (_: HtlcTimedout, _) => PermanentChannelFailure
-        case _ => TemporaryNodeFailure
+    case Status.Failure(AddHtlcFailed(_, paymentHash, error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt, originalCommand_opt)) =>
+      originalCommand_opt match {
+        case Some(cmd) if cmd.redirected && cmd.upstream_opt.isDefined => // cmd.upstream_opt.isDefined always true since origin = relayed
+          // if it was redirected, we give it one more try with the original requested channel (meaning that the error returned will always be for the requested channel)
+          log.info(s"retrying htlc #$originHtlcId paymentHash=$paymentHash from channelId=$originChannelId")
+          self ! ForwardAdd(cmd.upstream_opt.get, canRedirect = false)
+        case _ =>
+          val failure = (error, channelUpdate_opt) match {
+            case (_: ExpiryTooSmall, Some(channelUpdate)) => ExpiryTooSoon(channelUpdate)
+            case (_: ExpiryTooBig, _) => ExpiryTooFar
+            case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
+            case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
+            case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.flags) => ChannelDisabled(channelUpdate.flags, channelUpdate)
+            case (_: ChannelUnavailable, None) => PermanentChannelFailure
+            case (_: HtlcTimedout, _) => PermanentChannelFailure
+            case _ => TemporaryNodeFailure
+          }
+          val cmdFail = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
+          log.info(s"rejecting htlc #$originHtlcId paymentHash=$paymentHash from channelId=$originChannelId reason=${cmdFail.reason}")
+          commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmdFail)
       }
-      val cmdFail = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
-      log.info(s"rejecting htlc #$originHtlcId paymentHash=$paymentHash from channelId=$originChannelId reason=${cmdFail.reason}")
-      commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmdFail)
 
     case ForwardFulfill(fulfill, Local(None), add) =>
       // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
