@@ -217,6 +217,6 @@ case class ReplyChannelRange(chainHash: BinaryData,
 case class ReplyShortChannelIdsEnd(chainHash: BinaryData,
                                   complete: Byte) extends RoutingMessage
 
-case class GossipTimeRange(chainHash: BinaryData,
-                           firstTimestamp: Long,
-                           timestampRange: Long) extends RoutingMessage
+case class GossipTimestampFilter(chainHash: BinaryData,
+                                 firstTimestamp: Long,
+                                 timestampRange: Long) extends RoutingMessage
