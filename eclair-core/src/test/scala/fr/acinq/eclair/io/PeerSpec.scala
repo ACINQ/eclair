@@ -7,8 +7,11 @@ import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueriesSpec, Rebroadcast}
 import fr.acinq.eclair.wire.GossipTimestampFilter
+import org.junit.runner.RunWith
 import org.scalatest.Outcome
+import org.scalatest.junit.JUnitRunner
 
+@RunWith(classOf[JUnitRunner])
 class PeerSpec extends TestkitBaseClass {
   val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(100)
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
@@ -26,9 +29,9 @@ class PeerSpec extends TestkitBaseClass {
   test("filter gossip message (no filtering)") { probe =>
     val rebroadcast = Rebroadcast(channels.map(_ -> Set.empty[ActorRef]).toMap, updates.map(_ -> Set.empty[ActorRef]).toMap, nodes.map(_ -> Set.empty[ActorRef]).toMap)
     val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, probe.ref, None)
-    assert(channels1.toSet == channels)
-    assert(updates1.toSet == updates)
-    assert(nodes1.toSet == nodes)
+    assert(channels1.toSet == channels.toSet)
+    assert(updates1.toSet == updates.toSet)
+    assert(nodes1.toSet == nodes.toSet)
   }
 
   test("filter gossip message (filtered by origin)") { probe =>
@@ -46,7 +49,8 @@ class PeerSpec extends TestkitBaseClass {
     val rebroadcast = Rebroadcast(channels.map(_ -> Set.empty[ActorRef]).toMap, updates.map(_ -> Set.empty[ActorRef]).toMap, nodes.map(_ -> Set.empty[ActorRef]).toMap)
     val timestamps = updates.map(_.timestamp).sorted.drop(10).take(20)
     val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, probe.ref, Some(GossipTimestampFilter(Block.RegtestGenesisBlock.blockId, timestamps.head, timestamps.last - timestamps.head)))
-    assert(updates1.toSet == updates.filter(u => timestamps.contains(u.timestamp)))
-    assert(nodes1.toSet == nodes.filter(u => timestamps.contains(u.timestamp)))
+    assert(updates1.toSet == updates.filter(u => timestamps.contains(u.timestamp)).toSet)
+    assert(nodes1.toSet == nodes.filter(u => timestamps.contains(u.timestamp)).toSet)
+    assert(channels1.toSet == channels.filter(ca => updates1.map(_.shortChannelId).contains(ca.shortChannelId)).toSet)
   }
 }
