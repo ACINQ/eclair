@@ -24,32 +24,34 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
+import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.DbConfig
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.Color
+import grizzled.slf4j.Logging
 
 import scala.concurrent.duration._
 
 /**
   * Created by PM on 26/04/2016.
   */
-object TestConstants {
+object TestConstants extends Logging {
   val fundingSatoshis = 1000000L
   val pushMsat = 200000000L
   val feeratePerKw = 10000L
 
-  private val config = ConfigFactory.load()
-
-  def dbConfig = DbConfig.unittestConfig(config)
+  val config = ConfigFactory.load()
+  //val dbConfig = DbConfig.unittestConfig(config)
 
   object Alice {
     val seed = BinaryData("01" * 32)
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    lazy val aliceDbConfig = ???
 
     // This is a function, and not a val! When called will return a new NodeParams
-    def nodeParams = NodeParams(
+    def nodeParams: NodeParams = NodeParams(
       keyManager = keyManager,
       alias = "alice",
       color = Color(1, 2, 3),
@@ -83,10 +85,10 @@ object TestConstants {
       maxPendingPaymentRequests = 10000000,
       maxPaymentFee = 0.03,
       minFundingSatoshis = 1000L,
-      dbConfig = dbConfig
+      dbConfig = aliceDbConfig
     )
 
-    def channelParams = Peer.makeChannelParams(
+    def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(4), compressed = true).publicKey)),
       isFunder = true,
@@ -98,8 +100,8 @@ object TestConstants {
   object Bob {
     val seed = BinaryData("02" * 32)
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-
-    def nodeParams = NodeParams(
+    lazy val bobDbConfig = ???
+    def nodeParams: NodeParams = NodeParams(
       keyManager = keyManager,
       alias = "bob",
       color = Color(4, 5, 6),
@@ -132,9 +134,9 @@ object TestConstants {
       maxPendingPaymentRequests = 10000000,
       maxPaymentFee = 0.03,
       minFundingSatoshis = 1000L,
-      dbConfig = dbConfig)
+      dbConfig = bobDbConfig)
 
-    def channelParams = Peer.makeChannelParams(
+    def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey)),
       isFunder = false,
@@ -143,4 +145,19 @@ object TestConstants {
     )
   }
 
+  //crib from bitcoin-s to create some random dir
+  private def randomDirName: String = {
+    0.until(5).map(_ => scala.util.Random.alphanumeric.head).mkString
+  }
+
+  def initUnitTestDb: Unit = {
+    val chaindir = new File("/home/chris/.eclair/unittest")
+    val eclair = new File(chaindir, "eclair.sqlite")
+    val res1 = eclair.createNewFile()
+    logger.info(s"res1 $res1")
+    val network = new File(chaindir, "network.sqlite")
+    val res2 = network.createNewFile()
+    logger.info(s"res2 $res2")
+    ()
+  }
 }

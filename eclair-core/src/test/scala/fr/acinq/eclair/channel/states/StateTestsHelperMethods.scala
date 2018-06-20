@@ -23,6 +23,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.db.DbConfig
 import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
@@ -35,6 +36,8 @@ import scala.util.Random
   */
 trait StateTestsHelperMethods extends TestKitBase {
 
+  //val dbConfig: DbConfig
+
   def defaultOnion: BinaryData = "00" * Sphinx.PacketLength
 
   case class Setup(alice: TestFSMRef[State, Data, Channel],
@@ -46,7 +49,9 @@ trait StateTestsHelperMethods extends TestKitBase {
                    router: TestProbe,
                    relayer: TestProbe)
 
-  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams): Setup = {
+  def init(
+            nodeParamsA: NodeParams = TestConstants.Alice.nodeParams,
+           nodeParamsB: NodeParams = TestConstants.Bob.nodeParams): Setup = {
     Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()

@@ -36,6 +36,7 @@ class SqliteChannelsDb(override val dbConfig: DbConfig) extends ChannelsDb {
   private def conn = dbConfig.getConnection()
 
   override def createTables: Unit = {
+
     using(conn.createStatement()) { statement =>
       require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
       statement.execute("PRAGMA foreign_keys = ON")

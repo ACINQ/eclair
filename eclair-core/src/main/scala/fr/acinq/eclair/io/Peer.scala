@@ -375,7 +375,8 @@ object Peer {
 
   // @formatter:on
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData,
+                        isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
     val entropy = new Array[Byte](16)
     secureRandom.nextBytes(entropy)
     val bis = new ByteArrayInputStream(entropy)

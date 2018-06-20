@@ -20,7 +20,7 @@
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <encoder>
-            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %X{akkaSource} - %msg%ex{12}%n</pattern>
+            <pattern>%d{HH:mm:ss.SSS} TKD [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 
@@ -45,7 +45,7 @@
     <!--logger name="fr.acinq.eclair.channel" level="DEBUG"/-->
     <logger name="fr.acinq.eclair.router" level="WARN"/>
 
-    <root level="INFO">
+    <root level="TRACE">
         <!--appender-ref ref="FILE"/>
         <appender-ref ref="CONSOLEWARN"/-->
         <appender-ref ref="CONSOLE"/>

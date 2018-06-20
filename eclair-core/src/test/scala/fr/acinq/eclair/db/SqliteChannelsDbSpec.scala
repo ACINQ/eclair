@@ -21,30 +21,34 @@ import java.sql.DriverManager
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqlitePendingRelayDb}
+import grizzled.slf4j.Logging
 import org.junit.runner.RunWith
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.scalatest.junit.JUnitRunner
 import org.sqlite.SQLiteException
 
 @RunWith(classOf[JUnitRunner])
-class SqliteChannelsDbSpec extends FunSuite with BeforeAndAfterAll {
+class SqliteChannelsDbSpec extends FunSuite with BeforeAndAfterAll with Logging {
 
-  private val dbConfig = TestConstants.dbConfig
-  private val db = new SqliteChannelsDb(dbConfig)
 
   override def beforeAll(): Unit = {
+    def dbConfig = DbConfig.regtestConfig(TestConstants.config)
+    val db = new SqliteChannelsDb(dbConfig)
+
     db.createTables
   }
 
-  test("init sqlite 2 times in a row") {
+/*  test("init sqlite 2 times in a row") {
     val db1 = new SqliteChannelsDb(dbConfig)
     val db2 = new SqliteChannelsDb(dbConfig)
     db1.createTables
     db2.createTables
-  }
+  }*/
 
   test("add/remove/list channels") {
-
+    val dbConfig = DbConfig.regtestConfig(TestConstants.config)
+    val db = new SqliteChannelsDb(dbConfig)
+    logger.info(s"db.isClose() ${dbConfig.isClosed()}")
     new SqlitePendingRelayDb(dbConfig) // needed by db.removeChannel
 
     val channel = ChannelStateSpec.normal
@@ -75,7 +79,7 @@ class SqliteChannelsDbSpec extends FunSuite with BeforeAndAfterAll {
   }
 
   override def afterAll(): Unit = {
-    db.dropTables
-    dbConfig.close()
+    //db.dropTables
+    //dbConfig.close()
   }
 }

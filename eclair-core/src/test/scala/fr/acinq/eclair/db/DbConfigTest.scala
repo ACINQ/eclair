@@ -12,7 +12,7 @@ class DbConfigTest extends FunSuite {
 
   test("read regtest database configuration") {
     val config = ConfigFactory.load()
-    val dbConfig = DbConfig.fromConfig(config)
+    val dbConfig = DbConfig.unittestConfig(config)
     val conn = dbConfig.getConnection()
     assert(!conn.isClosed)
     conn.close()

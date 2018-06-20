@@ -28,7 +28,7 @@ import org.scalatest.junit.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
 class SqlitePendingRelayDbSpec extends FunSuite with BeforeAndAfterAll {
-  private val dbConfig = TestConstants.dbConfig
+  private val dbConfig = ??? //TestConstants.dbConfig
   private val db = new SqlitePendingRelayDb(dbConfig)
   override def beforeAll(): Unit = {
     db.createTables
@@ -69,7 +69,7 @@ class SqlitePendingRelayDbSpec extends FunSuite with BeforeAndAfterAll {
 
   override def afterAll(): Unit = {
     db.dropTables
-    dbConfig.close()
+    //dbConfig.close()
   }
 
 }

@@ -27,7 +27,7 @@ import org.scalatest.{BeforeAndAfterAll, FunSuite}
 @RunWith(classOf[JUnitRunner])
 class SqlitePeersDbSpec extends FunSuite with BeforeAndAfterAll {
 
-  private val dbConfig = TestConstants.dbConfig
+  private val dbConfig = ??? //TestConstants.dbConfig
   private val db = new SqlitePeersDb(dbConfig)
 
   override def beforeAll(): Unit = {
@@ -64,7 +64,7 @@ class SqlitePeersDbSpec extends FunSuite with BeforeAndAfterAll {
 
   override def afterAll: Unit = {
     db.dropTables
-    dbConfig.close()
+    //dbConfig.close()
   }
 
 }

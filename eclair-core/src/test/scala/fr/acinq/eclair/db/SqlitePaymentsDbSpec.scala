@@ -28,7 +28,7 @@ import org.scalatest.junit.JUnitRunner
 @RunWith(classOf[JUnitRunner])
 class SqlitePaymentsDbSpec extends FunSuite with BeforeAndAfterAll {
 
-  private val dbConfig = TestConstants.dbConfig
+  private val dbConfig = ??? //TestConstants.dbConfig
   private val db = new SqlitePaymentsDb(dbConfig)
 
   override def beforeAll(): Unit = {
@@ -56,6 +56,6 @@ class SqlitePaymentsDbSpec extends FunSuite with BeforeAndAfterAll {
 
   override def afterAll: Unit = {
     db.dropTables
-    dbConfig.close()
+    //dbConfig.close()
   }
 }

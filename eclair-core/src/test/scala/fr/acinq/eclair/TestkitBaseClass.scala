@@ -20,6 +20,7 @@ import akka.actor.{ActorNotFound, ActorSystem, PoisonPill}
 import akka.testkit.TestKit
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.db.sqlite._
+import grizzled.slf4j.Logging
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, fixture}
 
 import scala.concurrent.Await
@@ -28,22 +29,40 @@ import scala.concurrent.Await
   * This base class kills all actor between each tests.
   * Created by PM on 06/09/2016.
   */
-abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterEach with BeforeAndAfterAll {
-  private val dbConfig = TestConstants.dbConfig
-  private val dbs = List(
-    new SqliteChannelsDb(dbConfig)
-    new SqlitePeersDb(dbConfig)
-    new SqliteNetworkDb(dbConfig)
-    new SqlitePendingRelayDb(dbConfig)
-    new SqlitePaymentsDb(dbConfig)
-  )
-  override def beforeAll {
+abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike
+  with BeforeAndAfterEach with BeforeAndAfterAll with Logging {
+
+  //val dbConfig = TestConstants.dbConfig
+  /*  lazy val aliceDbConfig = TestConstants.Alice.aliceDbConfig
+    lazy val bobDbConfig = TestConstants.Bob.bobDbConfig
+    private lazy val aliceDbs = List(
+      new SqliteChannelsDb(aliceDbConfig),
+      new SqlitePeersDb(aliceDbConfig),
+      new SqliteNetworkDb(aliceDbConfig),
+      new SqlitePendingRelayDb(aliceDbConfig),
+      new SqlitePaymentsDb(aliceDbConfig)
+    )*/
+
+/*  private lazy val bobDbs = List(
+    new SqliteChannelsDb(bobDbConfig),
+    new SqlitePeersDb(bobDbConfig),
+    new SqliteNetworkDb(bobDbConfig),
+    new SqlitePendingRelayDb(bobDbConfig),
+    new SqlitePaymentsDb(bobDbConfig)
+  )*/
+
+  //private lazy val dbs = aliceDbs ++ bobDbs
+
+  override def beforeAll(): Unit =  {
+
     Globals.blockCount.set(400000)
     Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
-    dbs.foreach(_.createTables)
+/*    dbs.foreach { db =>
+      db.createTables
+    }*/
   }
 
-  override def afterEach() {
+  override def afterEach(): Unit = {
     system.actorSelection(system / "*") ! PoisonPill
     intercept[ActorNotFound] {
       import scala.concurrent.duration._
@@ -51,8 +70,8 @@ abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixtur
     }
   }
 
-  override def afterAll {
-    dbs.foreach(_.dropTables)
+  override def afterAll(): Unit = {
+    //dbs.foreach(_.dropTables)
     TestKit.shutdownActorSystem(system)
     Globals.feeratesPerKw.set(FeeratesPerKw.single(1))
   }
