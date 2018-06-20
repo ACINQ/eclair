@@ -163,7 +163,7 @@ case object NodeAddress {
   def apply(inetSocketAddress: InetSocketAddress): NodeAddress = inetSocketAddress.getAddress match {
     case a: Inet4Address => IPv4(a, inetSocketAddress.getPort)
     case a: Inet6Address => IPv6(a, inetSocketAddress.getPort)
-    case _ => ??? // there are no other implementations of InetAddress
+    case _ => throw new RuntimeException(s"Invalid socket address $inetSocketAddress")
   }
 }
 case object Padding extends NodeAddress
