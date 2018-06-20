@@ -19,12 +19,13 @@ package fr.acinq.eclair.crypto
 import java.nio.ByteOrder
 
 import akka.actor.{Actor, ActorRef, ExtendedActorSystem, FSM, PoisonPill, Props, Terminated}
+import akka.event.Logging.MDC
 import akka.event._
 import akka.io.Tcp
 import akka.util.ByteString
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Protocol}
-import fr.acinq.eclair.{Diagnostics, Logs}
+import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs}
 import fr.acinq.eclair.crypto.Noise._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
@@ -49,12 +50,12 @@ import scala.util.{Failure, Success, Try}
   * @param rs         remote node static public key (which must be known before we initiate communication)
   * @param connection actor that represents the other node's
   */
-class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, codec: Codec[T]) extends Actor with FSM[TransportHandler.State, TransportHandler.Data] {
+class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, codec: Codec[T]) extends Actor with FSMDiagnosticActorLogging[TransportHandler.State, TransportHandler.Data] {
 
   // will hold the peer's public key once it is available (we don't know it right away in case of an incoming connection)
-  var remoteNodeId_opt: Option[PublicKey] = None
+  var remoteNodeId_opt: Option[PublicKey] = rs.map(PublicKey(_))
 
-  val diagLog = new BusLogging(context.system.eventStream, "", classOf[Diagnostics], context.system.asInstanceOf[ExtendedActorSystem].logFilter) with DiagnosticLoggingAdapter
+  val wireLog = new BusLogging(context.system.eventStream, "", classOf[Diagnostics], context.system.asInstanceOf[ExtendedActorSystem].logFilter) with DiagnosticLoggingAdapter
 
   def diag(message: T, direction: String) = {
     require(direction == "IN" || direction == "OUT")
@@ -64,15 +65,15 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       case _ => None
     }
 
-    diagLog.mdc(Logs.mdc(remoteNodeId_opt, channelId_opt))
+    wireLog.mdc(Logs.mdc(remoteNodeId_opt, channelId_opt))
     if (channelId_opt.isDefined) {
       // channel-related messages are logged as info
-      diagLog.info(s"$direction msg={}", message)
+      wireLog.info(s"$direction msg={}", message)
     } else {
       // other messages (e.g. routing gossip) are logged as debug
-      diagLog.debug(s"$direction msg={}", message)
+      wireLog.debug(s"$direction msg={}", message)
     }
-    diagLog.clearMDC()
+    wireLog.clearMDC()
   }
 
   import TransportHandler._
@@ -265,6 +266,8 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
   override def aroundPostStop(): Unit = connection ! Tcp.Close // attempts to gracefully close the connection when dying
 
   initialize()
+
+  override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = remoteNodeId_opt)
 
 }
 
