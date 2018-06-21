@@ -76,7 +76,7 @@ case class NodeParams(keyManager: KeyManager,
   val channelsDb = new SqliteChannelsDb(dbConfig.eclairDb)
   val peersDb = new SqlitePeersDb(dbConfig.networkDb)
   val networkDb = new SqliteNetworkDb(dbConfig.networkDb)
-  val pendingRelayDb = new SqlitePendingRelayDb(dbConfig.networkDb)
+  val pendingRelayDb = new SqlitePendingRelayDb(dbConfig.eclairDb)
   val paymentsDb = new SqlitePaymentsDb(dbConfig.eclairDb)
 
 }

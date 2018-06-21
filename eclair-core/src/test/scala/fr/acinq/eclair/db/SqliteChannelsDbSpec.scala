@@ -32,9 +32,10 @@ class SqliteChannelsDbSpec extends FunSuite with BeforeAndAfterAll with Logging 
 
   val dbConfig = TestConstants.eclairDb
   val db = new SqliteChannelsDb(dbConfig)
-  val relayDb = new SqlitePendingRelayDb(TestConstants.networkDb) // needed by db.removeChannel
+  val relayDb = new SqlitePendingRelayDb(TestConstants.eclairDb) // needed by db.removeChannel
 
   override def beforeAll(): Unit = {
+    relayDb.createTables
     db.createTables
   }
 

@@ -45,6 +45,8 @@
     <!--logger name="fr.acinq.eclair.channel" level="DEBUG"/-->
     <logger name="fr.acinq.eclair.router" level="WARN"/>
 
+    <logger name="com.zaxxer" level="WARN"/>
+
     <root level="INFO">
         <!--appender-ref ref="FILE"/>
         <appender-ref ref="CONSOLEWARN"/-->

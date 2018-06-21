@@ -39,7 +39,7 @@ abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixtur
       new SqliteChannelsDb(aliceDbConfig.eclairDb),
       new SqlitePeersDb(aliceDbConfig.networkDb),
       new SqliteNetworkDb(aliceDbConfig.networkDb),
-      new SqlitePendingRelayDb(aliceDbConfig.networkDb),
+      new SqlitePendingRelayDb(aliceDbConfig.eclairDb),
       new SqlitePaymentsDb(aliceDbConfig.eclairDb)
     )
 
@@ -47,7 +47,7 @@ abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixtur
     new SqliteChannelsDb(bobDbConfig.eclairDb),
     new SqlitePeersDb(bobDbConfig.networkDb),
     new SqliteNetworkDb(bobDbConfig.networkDb),
-    new SqlitePendingRelayDb(bobDbConfig.networkDb),
+    new SqlitePendingRelayDb(bobDbConfig.eclairDb),
     new SqlitePaymentsDb(bobDbConfig.eclairDb)
   )
 
