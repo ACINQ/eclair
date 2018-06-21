@@ -18,13 +18,14 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
 
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
-import fr.acinq.eclair.channel.HasCommitments
-import fr.acinq.eclair.db.AuditDb
-import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
-import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
+import fr.acinq.eclair.channel.NetworkFeePaid
+import fr.acinq.eclair.db.{AuditDb, NetworkFee}
+import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 
 import scala.collection.immutable.Queue
+import scala.compat.Platform
 
 class SqliteAuditDb(sqlite: Connection) extends AuditDb {
 
@@ -38,36 +39,48 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (amount_in_msat INTEGER NOT NULL, amount_out_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
   }
 
-  override def add(paymentSent: PaymentSent): Unit =
+  override def add(e: PaymentSent): Unit =
     using(sqlite.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setLong(1, paymentSent.amount.toLong)
-      statement.setLong(2, paymentSent.feesPaid.toLong)
-      statement.setBytes(3, paymentSent.paymentHash)
-      statement.setBytes(4, paymentSent.paymentPreimage)
-      statement.setBytes(5, paymentSent.toChannelId)
-      statement.setLong(6, paymentSent.timestamp)
+      statement.setLong(1, e.amount.toLong)
+      statement.setLong(2, e.feesPaid.toLong)
+      statement.setBytes(3, e.paymentHash)
+      statement.setBytes(4, e.paymentPreimage)
+      statement.setBytes(5, e.toChannelId)
+      statement.setLong(6, e.timestamp)
       statement.executeUpdate()
     }
 
-  override def add(paymentReceived: PaymentReceived): Unit =
+  override def add(e: PaymentReceived): Unit =
     using(sqlite.prepareStatement("INSERT INTO received VALUES (?, ?, ?, ?)")) { statement =>
-      statement.setLong(1, paymentReceived.amount.toLong)
-      statement.setBytes(2, paymentReceived.paymentHash)
-      statement.setBytes(3, paymentReceived.fromChannelId)
-      statement.setLong(4, paymentReceived.timestamp)
+      statement.setLong(1, e.amount.toLong)
+      statement.setBytes(2, e.paymentHash)
+      statement.setBytes(3, e.fromChannelId)
+      statement.setLong(4, e.timestamp)
       statement.executeUpdate()
     }
 
-  override def add(paymentRelayed: PaymentRelayed): Unit =
+  override def add(e: PaymentRelayed): Unit =
     using(sqlite.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setLong(1, paymentRelayed.amountIn.toLong)
-      statement.setLong(2, paymentRelayed.amountOut.toLong)
-      statement.setBytes(3, paymentRelayed.paymentHash)
-      statement.setBytes(4, paymentRelayed.fromChannelId)
-      statement.setBytes(5, paymentRelayed.toChannelId)
-      statement.setLong(6, paymentRelayed.timestamp)
+      statement.setLong(1, e.amountIn.toLong)
+      statement.setLong(2, e.amountOut.toLong)
+      statement.setBytes(3, e.paymentHash)
+      statement.setBytes(4, e.fromChannelId)
+      statement.setBytes(5, e.toChannelId)
+      statement.setLong(6, e.timestamp)
+      statement.executeUpdate()
+    }
+
+  override def add(e: NetworkFeePaid): Unit =
+    using(sqlite.prepareStatement("INSERT INTO network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setBytes(1, e.channelId)
+      statement.setBytes(2, e.remoteNodeId.toBin)
+      statement.setBytes(3, e.tx.txid)
+      statement.setLong(4, e.fee.toLong)
+      statement.setString(5, e.txType)
+      statement.setLong(6, Platform.currentTime)
       statement.executeUpdate()
     }
 
@@ -117,5 +130,19 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
       q
     }
 
-
+  override def listNetworkFees: Seq[NetworkFee] =
+    using(sqlite.createStatement()) { statement =>
+      val rs = statement.executeQuery("SELECT * FROM network_fees")
+      var q: Queue[NetworkFee] = Queue()
+      while (rs.next()) {
+        q = q :+ NetworkFee(
+          remoteNodeId = PublicKey(rs.getBytes("node_id")),
+          channelId = BinaryData(rs.getBytes("channel_id")),
+          txId = BinaryData(rs.getBytes("tx_id")),
+          feeSat = rs.getLong("fee_sat"),
+          txType = rs.getString("tx_type"),
+          timestamp = rs.getLong("timestamp"))
+      }
+      q
+    }
 }

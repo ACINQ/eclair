@@ -18,10 +18,11 @@ package fr.acinq.eclair.db
 
 import java.sql.DriverManager
 
-import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.bitcoin.{MilliSatoshi, Satoshi, Transaction}
+import fr.acinq.eclair.channel.NetworkFeePaid
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
-import fr.acinq.eclair.randomBytes
+import fr.acinq.eclair.{randomBytes, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -44,13 +45,17 @@ class SqliteAuditDbSpec extends FunSuite {
     val e1 = PaymentSent(MilliSatoshi(42000), MilliSatoshi(1000), randomBytes(32), randomBytes(32), randomBytes(32))
     val e2 = PaymentReceived(MilliSatoshi(42000), randomBytes(32), randomBytes(32))
     val e3 = PaymentRelayed(MilliSatoshi(42000), MilliSatoshi(1000), randomBytes(32), randomBytes(32), randomBytes(32))
+    val e4 = NetworkFeePaid(null, randomKey.publicKey, randomBytes(32), Transaction(0, Seq.empty, Seq.empty, 0), Satoshi(42), "mutual")
 
     db.add(e1)
     db.add(e2)
     db.add(e3)
+    db.add(e4)
 
     assert(db.listSent.toList === List(e1))
     assert(db.listReceived.toList === List(e2))
     assert(db.listRelayed.toList === List(e3))
+    assert(db.listNetworkFees.size === 1)
+    assert(db.listNetworkFees.head.txType === "mutual")
   }
 }

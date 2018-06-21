@@ -411,6 +411,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           log.info(s"committing txid=${fundingTx.txid}")
           wallet.commit(fundingTx).onComplete {
             case Success(true) =>
+              // TODO: funding fee is unknown
+              context.system.eventStream.publish(NetworkFeePaid(self, remoteNodeId, commitments.channelId, fundingTx, Satoshi(0), "funding"))
               replyToUser(Right(s"created channel $channelId"))
             case Success(false) =>
               replyToUser(Left(Left(new RuntimeException("couldn't publish funding tx"))))
@@ -1157,12 +1159,26 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), _, _), d: DATA_CLOSING) =>
       log.info(s"txid=${tx.txid} has reached mindepth, updating closing state")
-      // first we check if this tx belongs to a one of the current local/remote commits and update it
+      // first we check if this tx belongs to one of the current local/remote commits and update it
       val localCommitPublished1 = d.localCommitPublished.map(Closing.updateLocalCommitPublished(_, tx))
       val remoteCommitPublished1 = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx))
       val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx))
       val futureRemoteCommitPublished1 = d.futureRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx))
       val revokedCommitPublished1 = d.revokedCommitPublished.map(Closing.updateRevokedCommitPublished(_, tx))
+      // we also send events (only funder pays the fee)
+      if (d.commitments.localParams.isFunder) {
+        val fee = d.commitments.commitInput.txOut.amount - tx.txOut.map(_.amount).sum
+        (if (d.mutualClosePublished.exists(_.txid == tx.txid)) Some((fee, "mutual"))
+        else if (localCommitPublished1.map(_.commitTx) == Some(tx)) Some((fee, "local"))
+        else if (remoteCommitPublished1.map(_.commitTx) == Some(tx)) Some((fee, "remote"))
+        else if (nextRemoteCommitPublished1.map(_.commitTx) == Some(tx)) Some((fee, "remote"))
+        else if (futureRemoteCommitPublished1.map(_.commitTx) == Some(tx)) Some((fee, "local"))
+        else if (revokedCommitPublished1.map(_.commitTx) == Some(tx)) Some((fee, "revoked"))
+        else None) match {
+          case Some((fee, desc)) => context.system.eventStream.publish(NetworkFeePaid(self, remoteNodeId, d.channelId, tx, fee, desc))
+          case _ => ()
+        }
+      }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
       val timedoutHtlcs =
         Closing.timedoutHtlcs(d.commitments.localCommit, Satoshi(d.commitments.localParams.dustLimitSatoshis), tx) ++

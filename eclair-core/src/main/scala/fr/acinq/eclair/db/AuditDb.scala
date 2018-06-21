@@ -16,6 +16,9 @@
 
 package fr.acinq.eclair.db
 
+import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.channel.NetworkFeePaid
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 
 trait AuditDb {
@@ -26,10 +29,16 @@ trait AuditDb {
 
   def add(paymentRelayed: PaymentRelayed)
 
+  def add(networkFeePaid: NetworkFeePaid)
+
   def listSent: Seq[PaymentSent]
 
   def listReceived: Seq[PaymentReceived]
 
   def listRelayed: Seq[PaymentRelayed]
 
+  def listNetworkFees: Seq[NetworkFee]
+
 }
+
+case class NetworkFee(remoteNodeId: PublicKey, channelId: BinaryData, txId: BinaryData, feeSat: Long, txType: String, timestamp: Long)
