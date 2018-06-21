@@ -46,14 +46,14 @@ object TestConstants extends Logging {
   private val config = ConfigFactory.load().resolve()
 
   //currently both bob and alice will share these configs
-  val eclairDb = EclairDbConfig.unittestConfig(config)
-  val networkDb = NetworkDbConfig.unittestConfig(config)
-  lazy val dbConfig = AppDbConfig(eclairDb,networkDb)
+  def eclairDb = EclairDbConfig.unittestConfig(config)
+  def networkDb = NetworkDbConfig.unittestConfig(config)
+  def dbConfig = AppDbConfig(eclairDb,networkDb)
 
   object Alice {
     val seed = BinaryData("01" * 32)
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-    lazy val aliceDbConfig = dbConfig
+    def aliceDbConfig = dbConfig
 
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams: NodeParams = NodeParams(
@@ -105,7 +105,7 @@ object TestConstants extends Logging {
   object Bob {
     val seed = BinaryData("02" * 32)
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-    lazy val bobDbConfig = dbConfig
+    def bobDbConfig = dbConfig
     def nodeParams: NodeParams = NodeParams(
       keyManager = keyManager,
       alias = "bob",

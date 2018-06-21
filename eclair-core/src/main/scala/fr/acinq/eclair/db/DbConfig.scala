@@ -93,6 +93,7 @@ object NetworkDbConfig extends Logging  {
     val hikariConfig = new HikariConfig()
     hikariConfig.setDriverClassName(driver)
     hikariConfig.setJdbcUrl(dbUrl)
+
     //create file if it DNE
     val filePath = dbUrl.split(":").last
     logger.info(s"filePath $filePath")
