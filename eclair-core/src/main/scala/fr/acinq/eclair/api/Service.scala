@@ -57,7 +57,6 @@ case class Error(code: Int, message: String)
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 case class Status(node_id: String)
 case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: BinaryData, blockHeight: Int)
-case class LocalChannelInfo(nodeId: BinaryData, channelId: BinaryData, state: String)
 trait RPCRejection extends Rejection {
   def requestId: String
 }
@@ -191,16 +190,14 @@ trait Service extends Logging {
                           case Nil =>
                             val f = for {
                               channels_id <- (register ? 'channels).mapTo[Map[BinaryData, ActorRef]].map(_.keys)
-                              channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
-                                .map(gi => LocalChannelInfo(gi.nodeId, gi.channelId, gi.state.toString))))
+                              channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]))
                             } yield channels
                             completeRpcFuture(req.id, f)
                           case JString(remoteNodeId) :: Nil => Try(PublicKey(remoteNodeId)) match {
                             case Success(pk) =>
                               val f = for {
                                 channels_id <- (register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == pk).keys)
-                                channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
-                                  .map(gi => LocalChannelInfo(gi.nodeId, gi.channelId, gi.state.toString))))
+                                channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]))
                               } yield channels
                               completeRpcFuture(req.id, f)
                             case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid remote node id '$remoteNodeId'"))
