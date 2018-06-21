@@ -33,33 +33,31 @@ abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixtur
   with BeforeAndAfterEach with BeforeAndAfterAll with Logging {
 
   //val dbConfig = TestConstants.dbConfig
-  /*  lazy val aliceDbConfig = TestConstants.Alice.aliceDbConfig
+    lazy val aliceDbConfig = TestConstants.Alice.aliceDbConfig
     lazy val bobDbConfig = TestConstants.Bob.bobDbConfig
     private lazy val aliceDbs = List(
-      new SqliteChannelsDb(aliceDbConfig),
-      new SqlitePeersDb(aliceDbConfig),
-      new SqliteNetworkDb(aliceDbConfig),
-      new SqlitePendingRelayDb(aliceDbConfig),
-      new SqlitePaymentsDb(aliceDbConfig)
-    )*/
+      new SqliteChannelsDb(aliceDbConfig.eclairDb),
+      new SqlitePeersDb(aliceDbConfig.networkDb),
+      new SqliteNetworkDb(aliceDbConfig.networkDb),
+      new SqlitePendingRelayDb(aliceDbConfig.networkDb),
+      new SqlitePaymentsDb(aliceDbConfig.eclairDb)
+    )
 
-/*  private lazy val bobDbs = List(
-    new SqliteChannelsDb(bobDbConfig),
-    new SqlitePeersDb(bobDbConfig),
-    new SqliteNetworkDb(bobDbConfig),
-    new SqlitePendingRelayDb(bobDbConfig),
-    new SqlitePaymentsDb(bobDbConfig)
-  )*/
+  private lazy val bobDbs = List(
+    new SqliteChannelsDb(bobDbConfig.eclairDb),
+    new SqlitePeersDb(bobDbConfig.networkDb),
+    new SqliteNetworkDb(bobDbConfig.networkDb),
+    new SqlitePendingRelayDb(bobDbConfig.networkDb),
+    new SqlitePaymentsDb(bobDbConfig.eclairDb)
+  )
 
-  //private lazy val dbs = aliceDbs ++ bobDbs
+  private lazy val dbs = aliceDbs ++ bobDbs
 
   override def beforeAll(): Unit =  {
 
     Globals.blockCount.set(400000)
     Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
-/*    dbs.foreach { db =>
-      db.createTables
-    }*/
+    dbs.foreach(_.createTables)
   }
 
   override def afterEach(): Unit = {
@@ -71,7 +69,7 @@ abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixtur
   }
 
   override def afterAll(): Unit = {
-    //dbs.foreach(_.dropTables)
+    dbs.foreach(_.dropTables)
     TestKit.shutdownActorSystem(system)
     Globals.feeratesPerKw.set(FeeratesPerKw.single(1))
   }

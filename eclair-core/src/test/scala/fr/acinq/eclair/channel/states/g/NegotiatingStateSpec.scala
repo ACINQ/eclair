@@ -78,7 +78,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     }
   }
 
-/*  test("recv ClosingSigned (theirCloseFee != ourCloseFee)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv ClosingSigned (theirCloseFee != ourCloseFee)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       // alice initiates the negotiation
       val aliceCloseSig1 = alice2bob.expectMsgType[ClosingSigned]
@@ -217,6 +217,6 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       alice2blockchain.expectMsgType[PublishAsap]
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(tx))
     }
-  }*/
+  }
 
 }
