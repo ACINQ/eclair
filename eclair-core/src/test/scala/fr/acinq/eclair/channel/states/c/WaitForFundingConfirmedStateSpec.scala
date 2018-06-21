@@ -29,20 +29,22 @@ import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
-
+import grizzled.slf4j.Logging
 /**
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsHelperMethods with Logging {
 
-  type FixtureParam = Tuple5[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
+  type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe]
 
   override def withFixture(test: OneArgTest) = {
     val setup = init()
     import setup._
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
+    val eventStream=TestProbe()
+    system.eventStream.subscribe(eventStream.ref,classOf[ChannelIdAssigned])
     within(30 seconds) {
       alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
       bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, bob2alice.ref, aliceInit)
@@ -58,10 +60,10 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
       alice2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     }
-    test((alice, bob, alice2bob, bob2alice, alice2blockchain))
+    test((alice, bob, alice2bob, bob2alice, alice2blockchain,eventStream))
   }
 
-  test("recv FundingLocked") { case (alice, bob, _, bob2alice, _) =>
+  test("recv FundingLocked") { case (alice, bob, _, bob2alice, _, eventStream) =>
     within(30 seconds) {
       // make bob send a FundingLocked msg
       bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42)
@@ -69,10 +71,13 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
       bob2alice.forward(alice)
       awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].deferred == Some(msg))
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+      //logger.info(eventStream.expectMsgType[ChannelIdAssigned].toString());
+      assert(eventStream.expectMsgType[ChannelIdAssigned] ==
+        ChannelIdAssigned(alice,Bob.nodeParams.nodeId,"00"*32,alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].channelId,TestConstants.feeratePerKw))
     }
   }
 
-  test("recv BITCOIN_FUNDING_DEPTHOK") { case (alice, _, alice2bob, _, alice2blockchain) =>
+  test("recv BITCOIN_FUNDING_DEPTHOK") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42)
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
@@ -81,7 +86,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     }
   }
 
-  test("recv BITCOIN_FUNDING_PUBLISH_FAILED") { case (alice, _, alice2bob, _, _) =>
+  test("recv BITCOIN_FUNDING_PUBLISH_FAILED") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       alice ! BITCOIN_FUNDING_PUBLISH_FAILED
       alice2bob.expectMsgType[Error]
@@ -89,7 +94,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     }
   }
 
-  test("recv BITCOIN_FUNDING_TIMEOUT") { case (alice, _, alice2bob, _, _) =>
+  test("recv BITCOIN_FUNDING_TIMEOUT") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       alice ! BITCOIN_FUNDING_TIMEOUT
       alice2bob.expectMsgType[Error]
@@ -97,7 +102,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (remote commit)") { case (alice, bob, _, _, alice2blockchain) =>
+  test("recv BITCOIN_FUNDING_SPENT (remote commit)") { case (alice, bob, _, _, alice2blockchain, _) =>
     within(30 seconds) {
       // bob publishes his commitment tx
       val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
@@ -108,7 +113,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (other commit)") { case (alice, _, alice2bob, _, alice2blockchain) =>
+  test("recv BITCOIN_FUNDING_SPENT (other commit)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, Transaction(0, Nil, Nil, 0))
@@ -118,7 +123,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     }
   }
 
-  test("recv Error") { case (alice, _, _, _, alice2blockchain) =>
+  test("recv Error") { case (alice, _, _, _, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error("00" * 32, "oops".getBytes)
@@ -129,7 +134,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     }
   }
 
-  test("recv CMD_CLOSE") { case (alice, _, _, _, _) =>
+  test("recv CMD_CLOSE") { case (alice, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_CLOSE(None))
@@ -137,7 +142,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     }
   }
 
-  test("recv CMD_FORCECLOSE") { case (alice, _, _, _, alice2blockchain) =>
+  test("recv CMD_FORCECLOSE") { case (alice, _, _, _, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! CMD_FORCECLOSE

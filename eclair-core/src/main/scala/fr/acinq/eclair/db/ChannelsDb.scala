@@ -25,7 +25,9 @@ trait ChannelsDb {
 
   def removeChannel(channelId: BinaryData)
 
-  def listChannels(): Seq[HasCommitments]
+  def getChannel(channelId: BinaryData, deleted: Boolean=false): Option[HasCommitments]
+
+  def listChannels(includeDeleted: Boolean =false): Seq[HasCommitments]
 
   def addOrUpdateHtlcInfo(channelId: BinaryData, commitmentNumber: Long, paymentHash: BinaryData, cltvExpiry: Long)
 

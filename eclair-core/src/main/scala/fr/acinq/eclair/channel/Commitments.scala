@@ -550,17 +550,17 @@ object Commitments {
        |  toLocal: ${commitments.localCommit.spec.toLocalMsat}
        |  toRemote: ${commitments.localCommit.spec.toRemoteMsat}
        |  htlcs:
-       |${commitments.localCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.expiry}").mkString("\n")}
+       |${commitments.localCommit.spec.htlcs.map(h => s"   ${h.add.amountMsat} ${h.direction} ${h.add.id} ${h.add.expiry}").mkString("\n")}
        |remotecommit:
        |  toLocal: ${commitments.remoteCommit.spec.toLocalMsat}
        |  toRemote: ${commitments.remoteCommit.spec.toRemoteMsat}
        |  htlcs:
-       |${commitments.remoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.expiry}").mkString("\n")}
+       |${commitments.remoteCommit.spec.htlcs.map(h => s"   ${h.add.amountMsat} ${h.direction} ${h.add.id} ${h.add.expiry}").mkString("\n")}
        |next remotecommit:
        |  toLocal: ${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toLocalMsat).getOrElse("N/A")}
        |  toRemote: ${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toRemoteMsat).getOrElse("N/A")}
        |  htlcs:
-       |${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.expiry}").mkString("\n")).getOrElse("N/A")}""".stripMargin
+       |${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.map(h => s"   ${h.add.amountMsat} ${h.direction} ${h.add.id} ${h.add.expiry}").mkString("\n")).getOrElse("N/A")}""".stripMargin
   }
 }
 

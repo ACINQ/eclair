@@ -36,11 +36,13 @@ import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db.ChannelBalances
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
-import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentRequest}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
+import fr.acinq.eclair.transactions.{IN,OUT}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging
@@ -57,7 +59,7 @@ case class Error(code: Int, message: String)
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 case class Status(node_id: String)
 case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: BinaryData, blockHeight: Int)
-case class LocalChannelInfo(nodeId: BinaryData, channelId: BinaryData, state: String)
+case class LocalChannelInfo(nodeId: BinaryData, channelId: BinaryData, state: String, capacity: Long=0, funder: Option[Boolean]=None)
 trait RPCRejection extends Rejection {
   def requestId: String
 }
@@ -74,7 +76,7 @@ trait Service extends Logging {
   def scheduler: Scheduler
 
   implicit val serialization = jackson.Serialization
-  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new UInt64Serializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer
+  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new UInt64Serializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer +new State2Serializer
   implicit val timeout = Timeout(60 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
@@ -192,7 +194,11 @@ trait Service extends Logging {
                             val f = for {
                               channels_id <- (register ? 'channels).mapTo[Map[BinaryData, ActorRef]].map(_.keys)
                               channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
-                                .map(gi => LocalChannelInfo(gi.nodeId, gi.channelId, gi.state.toString))))
+                                .map(gi => gi.data match {
+                                  case d: DATA_NORMAL => LocalChannelInfo(gi.nodeId, gi.channelId, gi.state.toString, d.commitments.localCommit.spec.totalFunds,
+                                      Some(d.commitments.localParams.isFunder))
+                                  case _ =>LocalChannelInfo(gi.nodeId, gi.channelId, gi.state.toString)
+                                })))
                             } yield channels
                             completeRpcFuture(req.id, f)
                           case JString(remoteNodeId) :: Nil => Try(PublicKey(remoteNodeId)) match {
@@ -211,7 +217,23 @@ trait Service extends Logging {
                           case JString(identifier) :: Nil => completeRpcFuture(req.id, sendToChannel(identifier, CMD_GETINFO).mapTo[RES_GETINFO])
                           case _ => reject(UnknownParamsRejection(req.id, "[channelId]"))
                         }
-
+                        case "channelbalance" => req.params match {
+                          case JString(identifier) :: Nil => completeRpcFuture(req.id, (balances ? CHANNEL_BALANCE(BinaryData(identifier))  ).mapTo[AuditReturn])
+                          case _ => reject(UnknownParamsRejection(req.id, "[channelId]"))
+                        }
+                        case "reconcileall" => {
+                          completeRpcFuture(req.id, (balances ? CHANNEL_RECONCILE_ERRORS  ).mapTo[Seq[RECONCILE]])
+                        }
+                        case "channelbalanceall" => {
+                          completeRpcFuture(req.id, (balances ? CHANNEL_GET_INFO  ).mapTo[GET_INFO])
+                        }
+                        case "dailystats" => {
+                          completeRpcFuture(req.id, (balances ? CHANNEL_GET_DAILY_STATS  ).mapTo[Seq[DAILY_STATS]])
+                        }
+                        case "reconcile" => req.params match {
+                          case JString(identifier) :: Nil => completeRpcFuture(req.id, (balances ? CHANNEL_RECONCILE(BinaryData(identifier))  ).mapTo[RECONCILE])
+                          case _ => reject(UnknownParamsRejection(req.id, "[channelId]"))
+                        }
                         // global network methods
                         case "allnodes" => completeRpcFuture(req.id, (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]])
                         case "allchannels" => completeRpcFuture(req.id, (router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))))
@@ -256,15 +278,17 @@ trait Service extends Logging {
                         case _ => reject(UnknownParamsRejection(req.id, "[payment_request] or [nodeId]"))
                       }
 
-                      case "send" => req.params match {
+                      case command@("send" | "sendasync") => req.params match {
                         // user manually sets the payment information
                         case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
                           (Try(BinaryData(paymentHash)), Try(PublicKey(nodeId))) match {
-                            case (Success(ph), Success(pk)) => completeRpcFuture(req.id, (paymentInitiator ?
+                            case (Success(ph), Success(pk)) if command=="send" => completeRpcFuture(req.id, (paymentInitiator ?
                               SendPayment(amountMsat.toLong, ph, pk, maxFeePct = nodeParams.maxPaymentFee)).mapTo[PaymentResult].map {
-                              case s: PaymentSucceeded => s
-                              case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
-                            })
+                                case s: PaymentSucceeded => s
+                                case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
+                              })
+                            case (Success(ph), Success(pk)) if command=="sendasync" => completeRpcFuture(req.id, (paymentInitiator ?
+                                SendPayment(amountMsat.toLong, ph, pk, maxFeePct = nodeParams.maxPaymentFee, async=true)).mapTo[SendPaymentId])
                             case (Failure(_), _) => reject(RpcValidationRejection(req.id, s"invalid payment hash '$paymentHash'"))
                             case _ => reject(RpcValidationRejection(req.id, s"invalid node id '$nodeId'"))
                           }
@@ -284,33 +308,42 @@ trait Service extends Logging {
                               case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, maxFeePct = nodeParams.maxPaymentFee)
                               case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry, maxFeePct = nodeParams.maxPaymentFee)
                             }
-                            completeRpcFuture(req.id, (paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
-                              case s: PaymentSucceeded => s
-                              case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
-                            })
+                            command match {
+                              case "send"=> completeRpcFuture(req.id, (paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
+                                case s: PaymentSucceeded => s
+                                case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
+                                })
+                              case "sendasync" => completeRpcFuture(req.id, (paymentInitiator ? sendPayment.copy(async=true)).mapTo[SendPaymentId])
+                            }
                           case _ => reject(RpcValidationRejection(req.id, s"payment request is not valid"))
                         }
                         case _ => reject(UnknownParamsRejection(req.id, "[amountMsat, paymentHash, nodeId or [paymentRequest] or [paymentRequest, amountMsat]"))
                       }
 
-                        // check received payments
-                        case "checkpayment" => req.params match {
-                          case JString(identifier) :: Nil => completeRpcFuture(req.id, for {
-                            paymentHash <- Try(PaymentRequest.read(identifier)) match {
-                              case Success(pr) => Future.successful(pr.paymentHash)
-                              case _ => Try(BinaryData(identifier)) match {
-                                case Success(s) => Future.successful(s)
-                                case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
-                              }
-                            }
-                            found <- (paymentHandler ? CheckPayment(paymentHash)).map(found => new JBool(found.asInstanceOf[Boolean]))
-                          } yield found)
-                          case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
-                        }
-
-                        // method name was not found
-                        case _ => reject(UnknownMethodRejection(req.id))
+                      // check SENT payments
+                      case "checksentpayment" => req.params match {
+                        case JString(id) :: Nil => completeRpcFuture(req.id, (paymentInitiator ? SendPaymentId(id.toLong)).mapTo[CheckSendPaymentResult])
+                        case _ => reject(UnknownParamsRejection(req.id, "[sentPaymentId]"))
                       }
+
+                      // check received payments
+                      case "checkpayment" => req.params match {
+                        case JString(identifier) :: Nil => completeRpcFuture(req.id, for {
+                          paymentHash <- Try(PaymentRequest.read(identifier)) match {
+                            case Success(pr) => Future.successful(pr.paymentHash)
+                            case _ => Try(BinaryData(identifier)) match {
+                              case Success(s) => Future.successful(s)
+                              case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
+                            }
+                          }
+                          found <- (paymentHandler ? CheckPayment(paymentHash)).map(found => new JBool(found.asInstanceOf[Boolean]))
+                        } yield found)
+                        case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
+                      }
+
+                      // method name was not found
+                      case _ => reject(UnknownMethodRejection(req.id))
+                    }
                   }
                 }
               }
@@ -350,6 +383,11 @@ trait Service extends Logging {
     "channels: list existing local channels",
     "channels (nodeId): list existing local channels to a particular nodeId",
     "channel (channelId): retrieve detailed information about a given channel",
+    "channelbalance (channelId): get current balances on channel - as per Audit and Commitments",
+    "channelbalanceall: get current balances on node - as per Audit and Commitments",
+    "dailystats: get stats of tx per day from audit log",
+    "reconcile(channelId): reconcile one channel commitment against audit database",
+    "reconcileall: list existing local channels where audit does not match commitments",
     "allnodes: list all known nodes",
     "allchannels: list all known channels",
     "allupdates: list all channels updates",
@@ -361,6 +399,8 @@ trait Service extends Logging {
     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
     "send (paymentRequest): send a payment to a lightning node using a BOLT11 payment request",
     "send (paymentRequest, amountMsat): send a payment to a lightning node using a BOLT11 payment request and a custom amount",
+    "sendasync - as send but returns an ID so status can be polled later",
+    "checksentpayment (sentpaymentid): returns result of sendasync",
     "close (channelId): close a channel",
     "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
     "forceclose (channelId): force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)",
@@ -383,4 +423,5 @@ trait Service extends Logging {
         .recoverWith { case _ => Future.failed(new RuntimeException(s"invalid channel identifier '$channelIdentifier'")) }
       res <- appKit.register ? fwdReq
     } yield res
+
 }

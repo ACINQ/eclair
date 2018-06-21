@@ -21,7 +21,8 @@ import java.net.InetSocketAddress
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
-import fr.acinq.eclair.channel.State
+import fr.acinq.eclair.channel._
+
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.router.RouteResponse
 import fr.acinq.eclair.transactions.Direction
@@ -35,6 +36,12 @@ import org.json4s.{CustomKeySerializer, CustomSerializer}
   * JSON Serializers.
   * Note: in general, deserialization does not need to be implemented.
   */
+
+class State2Serializer extends CustomKeySerializer[State](format => ({ null }, {
+  case x: State => x.toString()
+}))
+
+
 class BinaryDataSerializer extends CustomSerializer[BinaryData](format => ({ null }, {
   case x: BinaryData => JString(x.toString())
 }))

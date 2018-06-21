@@ -23,10 +23,9 @@ import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import scodec.bits.BitVector
-
 import scala.collection.immutable.Queue
 
-class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
+class SqliteChannelsDb(sqlite: Connection, deleteChannelOnClose: Boolean=true) extends ChannelsDb {
 
   import SqliteUtils._
 
@@ -37,6 +36,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
     statement.execute("PRAGMA foreign_keys = ON")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS deleted_local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
   }
@@ -57,6 +57,14 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
   }
 
   override def removeChannel(channelId: BinaryData): Unit = {
+
+    if(!deleteChannelOnClose){
+      using(sqlite.prepareStatement("INSERT INTO deleted_local_channels SELECT * FROM local_channels WHERE channel_id=?")) { statement =>
+        statement.setBytes(1, channelId)
+        statement.executeUpdate()
+      }
+    }
+
     using(sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId)
       statement.executeUpdate()
@@ -71,11 +79,13 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
       statement.setBytes(1, channelId)
       statement.executeUpdate()
     }
+
   }
 
-  override def listChannels(): Seq[HasCommitments] = {
+  override def listChannels(includeDeleted: Boolean =false): Seq[HasCommitments] = {
+    val extraSql = if(includeDeleted) " union select data FROM deleted_local_channels" else ""
     using(sqlite.createStatement) { statement =>
-      val rs = statement.executeQuery("SELECT data FROM local_channels")
+      val rs = statement.executeQuery("SELECT data FROM local_channels"+extraSql)
       codecSequence(rs, stateDataCodec)
     }
   }
@@ -102,4 +112,18 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
       q
     }
   }
+
+  override def getChannel(channelId: BinaryData, deleted: Boolean=false): Option[HasCommitments] = {
+    val table=if(deleted) "deleted_local_channels" else "local_channels"
+    using(sqlite.prepareStatement("SELECT data FROM "+table+" WHERE channel_id=?")) { statement =>
+      statement.setBytes(1, channelId)
+      val rs = statement.executeQuery()
+      if(rs.next())
+        Some(stateDataCodec.decode(BitVector(rs.getBytes("data"))).require.value)
+      else None
+      
+    }
+  }
+  
 }
+

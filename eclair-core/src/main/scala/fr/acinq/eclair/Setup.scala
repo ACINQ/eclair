@@ -39,6 +39,7 @@ import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
+import fr.acinq.eclair.payment.AuditLogger
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 
@@ -69,6 +70,10 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   // early checks
   DBCompatChecker.checkDBCompatibility(nodeParams)
+
+  if(config.getBoolean("audit-enabled"))
+    DBCompatChecker.checkAuditDBCompatibility(nodeParams)
+
   DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
   PortChecker.checkAvailable(config.getString("server.binding-ip"), config.getInt("server.port"))
 
@@ -191,6 +196,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port")), Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.nodeId, router, register), "payment-initiator", SupervisorStrategy.Restart))
 
+      audit = system.actorOf(SimpleSupervisor.props(AuditLogger.props(nodeParams,config.getBoolean("audit-enabled")), "audit-logger", SupervisorStrategy.Resume))
+      balances = system.actorOf(SimpleSupervisor.props(AuditBalances.props(audit,register,nodeParams.channelsDb), "audit-logger", SupervisorStrategy.Resume))
+
       kit = Kit(
         nodeParams = nodeParams,
         system = system,
@@ -202,7 +210,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         switchboard = switchboard,
         paymentInitiator = paymentInitiator,
         server = server,
-        wallet = wallet)
+        wallet = wallet,
+        audit = audit,
+        balances=balances)
 
       zmqTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
       tcpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("server.port"))))
@@ -261,7 +271,9 @@ case class Kit(nodeParams: NodeParams,
                switchboard: ActorRef,
                paymentInitiator: ActorRef,
                server: ActorRef,
-               wallet: EclairWallet)
+               wallet: EclairWallet,
+               audit: ActorRef,
+               balances: ActorRef)
 
 case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could not connect to bitcoind using zeromq")
 
@@ -274,3 +286,5 @@ case object EmptyAPIPasswordException extends RuntimeException("must set a passw
 case object IncompatibleDBException extends RuntimeException("database is not compatible with this version of eclair")
 
 case object IncompatibleNetworkDBException extends RuntimeException("network database is not compatible with this version of eclair")
+
+case object IncompatibleAuditDBException extends RuntimeException("audit database is not compatible with this version of eclair")

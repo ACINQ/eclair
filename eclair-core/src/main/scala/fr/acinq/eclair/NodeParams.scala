@@ -73,7 +73,9 @@ case class NodeParams(keyManager: KeyManager,
                       paymentRequestExpiry: FiniteDuration,
                       maxPendingPaymentRequests: Int,
                       maxPaymentFee: Double,
-                      minFundingSatoshis: Long) {
+                      minFundingSatoshis: Long,
+                      auditDb: AuditDb) {
+
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
 }
@@ -131,10 +133,14 @@ object NodeParams {
     chaindir.mkdir()
 
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
-    val channelsDb = new SqliteChannelsDb(sqlite)
+    val channelsDb = new SqliteChannelsDb(sqlite, !config.getBoolean("audit-enabled")) //if audit enabled do not delete channels from database.
+    //logic is we are not disk constrained so saving a few k deleting the channel is pointless - this could be useful debug info if we lose money.
     val peersDb = new SqlitePeersDb(sqlite)
     val pendingRelayDb = new SqlitePendingRelayDb(sqlite)
     val paymentsDb = new SqlitePaymentsDb(sqlite)
+
+    val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "audit.sqlite")}")
+    val auditDb = new SqliteAuditDb(sqliteAudit)
 
     val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "network.sqlite")}")
     val networkDb = new SqliteNetworkDb(sqliteNetwork)
@@ -192,7 +198,7 @@ object NodeParams {
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"),
       maxPaymentFee = config.getDouble("max-payment-fee"),
-      minFundingSatoshis = config.getLong("min-funding-satoshis")
-    )
+      minFundingSatoshis = config.getLong("min-funding-satoshis"),
+      auditDb = auditDb)
   }
 }

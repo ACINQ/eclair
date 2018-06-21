@@ -219,7 +219,8 @@ object ChannelCodecs extends Logging {
       ("mainPenaltyTx" | optional(bool, txCodec)) ::
       ("htlcPenaltyTxs" | listOfN(uint16, txCodec)) ::
       ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, txCodec)) ::
-      ("spent" | spentMapCodec)).as[RevokedCommitPublished]
+      ("spent" | spentMapCodec) ::
+      ("remoteSuccessTimeoutHtlcTxs" | listOfN(uint16, txCodec))).as[RevokedCommitPublished]
 
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::

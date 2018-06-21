@@ -17,12 +17,15 @@
 package fr.acinq.eclair.integration
 
 import java.io.{File, PrintWriter}
+
 import java.nio.file.Files
 import java.util.{Properties, UUID}
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
+import akka.pattern.ask
 import akka.testkit.{TestKit, TestProbe}
+import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -36,11 +39,15 @@ import fr.acinq.eclair.io.Peer.Disconnect
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
 import fr.acinq.eclair.payment.{LocalPaymentHandler, PaymentRequest}
+import fr.acinq.eclair.payment.{CHANNEL_GET_INFO,GET_INFO}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
+import fr.acinq.eclair.router.{RouteRequest,RouteResponse}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, Kit, Setup}
+import fr.acinq.eclair.db.ChannelBalances
+import fr.acinq.eclair.payment.GET_BALANCES
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
@@ -49,9 +56,12 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.concurrent.Await
+import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.sys.process._
+import scala.util.{Failure, Success, Try}
+
 
 /**
   * Created by PM on 15/03/2017.
@@ -69,6 +79,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   var bitcoinrpcclient: BitcoinJsonRPCClient = null
   var bitcoincli: ActorRef = null
   var nodes: Map[String, Kit] = Map()
+  var channels: Map[String,Seq[BinaryData]]=Map()
 
   implicit val formats = DefaultFormats
 
@@ -101,8 +112,36 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         setup.system.terminate()
     }
     //    logger.warn(s"starting bitcoin-qt")
-    //    val PATH_BITCOINQT = new File(System.getProperty("buildDirectory"), "bitcoin-0.14.0/bin/bitcoin-qt").toPath
+    //   val PATH_BITCOINQT = new File(System.getProperty("buildDirectory"), "bitcoin-0.16.0/bin/bitcoin-qt").toPath
     //    bitcoind = s"$PATH_BITCOINQT -datadir=$PATH_BITCOIND_DATADIR".run()
+  }
+  
+  
+  def checkAllNodesBalances(nodes:  Map[String, Kit]) ={
+    implicit val timeout = Timeout(120 seconds)
+    awaitAssert({
+      var futures: Seq[Tuple2[String,Future[Any]]]=Seq.empty
+      nodes.keys.filter(_.head != 'F').foreach(node=>{
+        futures = futures :+ (node, nodes(node).balances ? CHANNEL_GET_INFO)
+      })
+      futures.foreach(f=>{
+        val name=f._1
+        Await.ready(f._2,Duration.Inf)
+        f._2.value match {
+          case Some(Success(c: GET_INFO)) => {
+            assert(c.channelBalances.amount.amount==c.localCommitiment.toLocalmSat,s"Local Amount issue in $name data: $c")
+            assert(c.channelBalances.htlcAmount.amount==c.localCommitiment.inflightOutHtlc,s"htlc amount issue in $name data: $c")
+            assert(c.channelBalances.maxLocalHTLCId+1==c.localCommitiment.nextHtlcId,s"htlc id issue in $name data: $c")
+            assert(c.channelBalances.profitIn+c.channelBalances.profitOut==c.channelBalances.relaySentMsat+c.channelBalances.relayReceivedMsat,s"profit issue in $name data: $c")
+            assert(c.channelBalances.amount.amount+c.channelBalances.htlcAmount.amount-(c.channelBalances.receivedMsat.amount+c.channelBalances.sentMsat.amount) 
+                -c.channelBalances.rounding.amount+c.channelBalances.penalty*1000   == -(c.channelBalances.btcAmount-c.channelBalances.btcFee)*1000L,
+                s"btc balance issue in $name data: $c")
+            logger.debug(s"$name is OK")
+          }
+          case _ => fail(s"error getting $f._1")
+        }
+      })
+    }, max = 60 seconds, interval = 1 second) 
   }
 
   test("wait bitcoind ready") {
@@ -167,7 +206,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       pushMsat = MilliSatoshi(pushMsat),
       fundingTxFeeratePerKw_opt = None,
       channelFlags = None))
-    assert(sender.expectMsgType[String](10 seconds).startsWith("created channel"))
+    val returnMessage=sender.expectMsgType[String](10 seconds)
+    assert(returnMessage.startsWith("created channel"))
+    BinaryData(returnMessage.replaceFirst("created channel ", ""))
   }
 
   test("connect nodes") {
@@ -181,17 +222,16 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val eventListener = TestProbe()
     nodes.values.foreach(_.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged]))
 
-    connect(nodes("A"), nodes("B"), 10000000, 0)
-    connect(nodes("B"), nodes("C"), 2000000, 0)
-    connect(nodes("C"), nodes("D"), 5000000, 0)
-    connect(nodes("C"), nodes("D"), 5000000, 0)
-    connect(nodes("B"), nodes("E"), 10000000, 0)
-    connect(nodes("E"), nodes("C"), 10000000, 0)
-    connect(nodes("C"), nodes("F1"), 5000000, 0)
-    connect(nodes("C"), nodes("F2"), 5000000, 0)
-    connect(nodes("C"), nodes("F3"), 5000000, 0)
-    connect(nodes("C"), nodes("F4"), 5000000, 0)
-    connect(nodes("C"), nodes("F5"), 5000000, 0)
+    channels += ("AB" -> Seq[BinaryData](connect(nodes("A"), nodes("B"), 10000000, 0)))
+    channels += ("BC" -> Seq[BinaryData](connect(nodes("B"), nodes("C"), 2000000, 0)))
+    channels += ("CD" -> Seq[BinaryData](connect(nodes("C"), nodes("D"), 5000000, 0),connect(nodes("C"), nodes("D"), 5000000, 0)))
+    channels += ("BE" -> Seq[BinaryData](connect(nodes("B"), nodes("E"), 10000000, 0)))
+    channels += ("CE" -> Seq[BinaryData](connect(nodes("E"), nodes("C"), 10000000, 0)))
+    channels += ("CF1" -> Seq[BinaryData](connect(nodes("C"), nodes("F1"), 5000000, 0)))
+    channels += ("CF2"-> Seq[BinaryData](connect(nodes("C"), nodes("F2"), 5000000, 0)))
+    channels += ("CF3" -> Seq[BinaryData](connect(nodes("C"), nodes("F3"), 5000000, 0)))
+    channels += ("CF4" -> Seq[BinaryData](connect(nodes("C"), nodes("F4"), 5000000, 0)))
+    channels += ("CF5" -> Seq[BinaryData](connect(nodes("C"), nodes("F5"), 5000000, 0)))
 
     val numberOfChannels = 11
     val channelEndpointsCount = 2 * numberOfChannels
@@ -259,8 +299,65 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(nodes("A").paymentInitiator,
       SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId))
     sender.expectMsgType[PaymentSucceeded]
-  }
 
+    val channelA=channels("AB").head
+
+    //b->c and c->d = 2 x 1000 fee-base-msat + 2 x 4200000 x 100 fee-proportional-millionths / 1000000 = 2840
+    // audit updated async so can be behind
+
+    awaitAssert({
+      assert(
+      nodes("A").nodeParams.auditDb.channelBalances(channelA) == 
+        ChannelBalances(0,-1,MilliSatoshi(9995797160L),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(2840),-10003960,-3960,sentMsat=MilliSatoshi(-4202840)))
+    }, max = 5 seconds, interval = 0.1 second)
+
+    sender.send(nodes("A").register,Register.Forward(channelA, CMD_GETINFO))
+    val localSpecA=sender.expectMsgType[RES_GETINFO].asInstanceOf[RES_GETINFO].data
+      .asInstanceOf[HasCommitments].commitments.localCommit.spec
+
+    assert(localSpecA.toLocalMsat==9995797160L)
+
+    //same channel ID gets 1/4 of profit as it passes through 2 channels and it is endpoint on one. But no BtcFee as channel A funded.
+    awaitAssert({
+       assert(nodes("B").nodeParams.auditDb.channelBalances(channelA)==
+      ChannelBalances(-1,0,MilliSatoshi(4202840L),MilliSatoshi(0),MilliSatoshi(710),MilliSatoshi(0),MilliSatoshi(0),0,0,receivedMsat=MilliSatoshi(4202840), relayReceivedMsat=MilliSatoshi(4202840)))
+      }, max = 5 seconds, interval = 0.1 second) 
+
+    awaitAssert({
+      assert(nodes("B").nodeParams.auditDb.channelBalances(channels("BC").head)==
+        ChannelBalances(0,-1,MilliSatoshi(1995798580L),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(710),MilliSatoshi(0),-2003960,-3960, sentMsat=MilliSatoshi(-4201420),relaySentMsat=MilliSatoshi(-4201420)))
+      }, max = 5 seconds, interval = 0.1 second)
+
+    val dTailBalance=nodes("D").nodeParams.auditDb.channelBalances(channels("CD").last)
+    val dHeadBalance=nodes("D").nodeParams.auditDb.channelBalances(channels("CD").head)
+    var channelReceived=BinaryData.empty
+    var channelReceived2=BinaryData.empty
+    if(dHeadBalance==ChannelBalances(-1,0,MilliSatoshi(4200000),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),0,0,0,0,MilliSatoshi(0),MilliSatoshi(4200000))){
+      assert(dTailBalance==ChannelBalances())
+      channelReceived2=channels("CD").last
+      channelReceived=channels("CD").head
+    } else {
+      assert(dHeadBalance==ChannelBalances())
+      assert(dTailBalance==ChannelBalances(-1,0,MilliSatoshi(4200000),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),0,0,0,0,MilliSatoshi(0),MilliSatoshi(4200000)))
+      channelReceived=channels("CD").last
+      channelReceived2=channels("CD").head
+    }
+    // this awaitCond needed as just cos A has made payment does not mean D has received yet.
+    awaitCond({
+      sender.send(nodes("D").register,Register.Forward(channelReceived, CMD_GETINFO))
+      val commit=sender.expectMsgType[RES_GETINFO].asInstanceOf[RES_GETINFO].data
+        .asInstanceOf[HasCommitments].commitments
+      logger.info(commit.toString)
+      logger.info(commit.remoteCommit.spec.toString())
+      logger.info(commit.localCommit.spec.toString())
+      // We check commit gets to local and remote.
+      commit.remoteCommit.spec.toRemoteMsat==4200000L && commit.localCommit.spec.toLocalMsat==4200000L
+    },max = 5 seconds, interval = 0.1 second)
+
+    checkAllNodesBalances(nodes)
+      
+  }
+ 
   // TODO: reenable this test
   ignore("send an HTLC A->D with an invalid expiry delta for B") {
     val sender = TestProbe()
@@ -284,6 +381,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       sender.send(nodes("A").router, 'updates)
       sender.expectMsgType[Iterable[ChannelUpdate]].toSeq.contains(channelUpdateBC)
     }, max = 20 seconds, interval = 1 second)
+    
+
   }
 
   test("send an HTLC A->D with an amount greater than capacity of B-C") {
@@ -297,6 +396,21 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(nodes("A").paymentInitiator, sendReq)
     // A will first receive an error from C, then retry and route around C: A->B->E->C->D
     sender.expectMsgType[PaymentSucceeded](5 seconds)
+    
+    //check channel balance in audit changed
+    awaitAssert({
+      assert( nodes("A").nodeParams.auditDb.channelBalances(channels("AB").head)==
+        ChannelBalances(1,-1,MilliSatoshi(9695735157L),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(64843),-10003960,-3960,sentMsat=MilliSatoshi(-304264843)))
+      }, max = 2 seconds, interval = 0.1 second)
+      
+    sender.send(nodes("A").register,Register.Forward(channels("AB").head, CMD_GETINFO))
+    val remoteSpec=sender.expectMsgType[RES_GETINFO].asInstanceOf[RES_GETINFO].data
+      .asInstanceOf[HasCommitments].commitments.remoteCommit.spec
+    logger.info(remoteSpec.toString())
+    // We check remote commit as is not in local yet. Is remote-remote so local balance!
+    assert(remoteSpec.toRemoteMsat==9695735157L)
+    checkAllNodesBalances(nodes)
+   
   }
 
   test("send an HTLC A->D with an unknown payment hash") {
@@ -309,6 +423,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, UnknownPaymentHash))
+    checkAllNodesBalances(nodes)
   }
 
   test("send an HTLC A->D with a lower amount than requested") {
@@ -327,6 +442,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectPaymentAmount))
+    checkAllNodesBalances(nodes)
   }
 
   test("send an HTLC A->D with too much overpayment") {
@@ -345,6 +461,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectPaymentAmount))
+    val dTailBalance=nodes("B").nodeParams.auditDb.channelBalances(channels("BC").head)
+    logger.info(dTailBalance.toString())
+ 
+    checkAllNodesBalances(nodes)
   }
 
   test("send an HTLC A->D with a reasonable overpayment") {
@@ -358,10 +478,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sendReq = SendPayment(300000000L, pr.paymentHash, nodes("D").nodeParams.nodeId)
     sender.send(nodes("A").paymentInitiator, sendReq)
     sender.expectMsgType[PaymentSucceeded]
+    checkAllNodesBalances(nodes)
   }
 
   test("send multiple HTLCs A->D with a failover when a channel gets exhausted") {
     val sender = TestProbe()
+
     // there are two C-D channels with 5000000 sat, so we should be able to make 7 payments worth 1000000 sat each
     for (i <- 0 until 7) {
       // first we retrieve a payment hash from D for 2 mBTC
@@ -369,11 +491,35 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 payment"))
       val pr = sender.expectMsgType[PaymentRequest]
 
-      // A send payment of 3 mBTC, more than asked but it should still be accepted
       val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId)
       sender.send(nodes("A").paymentInitiator, sendReq)
       sender.expectMsgType[PaymentSucceeded]
     }
+    val dTailBalance=nodes("D").nodeParams.auditDb.channelBalances(channels("CD").last)
+    logger.info(dTailBalance.toString())
+    val dHeadBalance=nodes("D").nodeParams.auditDb.channelBalances(channels("CD").head)
+    logger.info(dHeadBalance.toString())
+
+    assert((dTailBalance==ChannelBalances(-1,2,MilliSatoshi(3000000000L),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),0,0,0,0,MilliSatoshi(0),MilliSatoshi(3000000000L)) &&
+            dHeadBalance==ChannelBalances(-1,9,MilliSatoshi(4604200000L),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),0,0,0,0,MilliSatoshi(0),MilliSatoshi(4604200000L))
+            ) || (
+            dHeadBalance==ChannelBalances(-1,2,MilliSatoshi(3000000000L),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),0,0,0,0,MilliSatoshi(0),MilliSatoshi(3000000000L)) &&
+             dTailBalance==ChannelBalances(-1,9,MilliSatoshi(4604200000L),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),0,0,0,0,MilliSatoshi(0),MilliSatoshi(4604200000L))
+             ))
+
+    awaitCond({
+      sender.send(nodes("D").register,Register.Forward(channels("CD").head, CMD_GETINFO))
+      val headspec=sender.expectMsgType[RES_GETINFO].asInstanceOf[RES_GETINFO].data
+        .asInstanceOf[HasCommitments].commitments.localCommit.spec
+      sender.send(nodes("D").register,Register.Forward(channels("CD").last, CMD_GETINFO))
+      val lastspec=sender.expectMsgType[RES_GETINFO].asInstanceOf[RES_GETINFO].data
+        .asInstanceOf[HasCommitments].commitments.localCommit.spec
+      logger.info(headspec)
+      logger.info(lastspec)
+      (headspec.toLocalMsat==3000000000L && lastspec.toLocalMsat==4604200000L) ||
+           (headspec.toLocalMsat==4604200000L && lastspec.toLocalMsat==3000000000L)
+    }, max = 2 seconds, interval = 0.1 second)
+    checkAllNodesBalances(nodes)
   }
 
   /**
@@ -405,17 +551,30 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
     nodes("F1").paymentHandler ! htlcReceiver.ref
+    
     val preimage: BinaryData = "42" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F1").nodeParams.nodeId, maxAttempts = 1)
+    val paymentReq = SendPayment(100000042L, paymentHash, nodes("F1").nodeParams.nodeId, maxAttempts = 1)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
     val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+
+    val preimage2: BinaryData = "47" * 32
+    val paymentHash2 = Crypto.sha256(preimage2)
+    val paymentReq2 = SendPayment(200000L, paymentHash2, nodes("F1").nodeParams.nodeId, maxAttempts = 1) // below dust limit so trimmed - carefull not too small or hit the 3% fee limit!
+    paymentSender.send(nodes("A").paymentInitiator, paymentReq2)
+    // F gets the htlc
+    val htlc2 = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    
+    
+    
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
-    val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
+    val cNormalData=sender.expectMsgType[DATA_NORMAL]
+    val finalAddressC = scriptPubKeyToAddress(cNormalData.commitments.localParams.defaultFinalScriptPubKey)
+    assert(cNormalData.commitments.localCommit.publishableTxs.commitTx.tx.txOut.size==2) // only tolocal and one htlc - toRemote and other htlc trimmed
     sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressF = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
     // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
@@ -441,6 +600,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     }, max = 20 seconds, interval = 1 second)
     // we then fulfill the htlc, which will make F redeem it on-chain
     sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
+    sender.send(nodes("F1").register, Forward(htlc2.channelId, CMD_FULFILL_HTLC(htlc2.id, preimage2)))
     // we then generate one block so that the htlc success tx gets written to the blockchain
     sender.send(bitcoincli, BitcoinReq("generate", 1))
     sender.expectMsgType[JValue](10 seconds)
@@ -468,6 +628,16 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 8, 9, 20)
+    
+    //we forwarded 100,000 sat so net btc balance is that 
+    
+    awaitAssert({
+      assert(nodes("C").nodeParams.auditDb.channelBalances(channels("CF1").head)==
+        ChannelBalances(1,-1,MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(5500),MilliSatoshi(0),-162631,-62430,sentMsat=MilliSatoshi(-100000042),relaySentMsat=MilliSatoshi(-100000042),
+            rounding=MilliSatoshi(-200958)))
+      }, max = 2 seconds, interval = 0.1 second)
+      
+    checkAllNodesBalances(nodes)
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
@@ -483,14 +653,24 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
     nodes("F2").paymentHandler ! htlcReceiver.ref
-    val preimage: BinaryData = "42" * 32
+    val preimage: BinaryData = "43" * 32 // different preimage as else auditlogger gets confused - is this a bug?
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F2").nodeParams.nodeId, maxAttempts = 1)
+    val paymentReq = SendPayment(100000001L, paymentHash, nodes("F2").nodeParams.nodeId, maxAttempts = 1)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
     val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    
+    val preimage2: BinaryData = "39" * 32 // different preimage as else auditlogger gets confused - is this a bug?
+    val paymentHash2 = Crypto.sha256(preimage2)
+    // A sends a payment to F
+    val paymentReq2 = SendPayment(200000L, paymentHash2, nodes("F2").nodeParams.nodeId, maxAttempts = 1) // small amount below dust of 546sat so will be trimmed
+    paymentSender.send(nodes("A").paymentInitiator, paymentReq2)
+    // F gets the htlc
+    val htlc2 = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    
+    
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -542,6 +722,17 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 7, 8, 18)
+    
+    //we forwarded 100,000,001 msat Due to rounding this becomes 100,001 sat. hence the -999msat of rounding. 
+    awaitAssert({
+      assert(nodes("C").nodeParams.auditDb.channelBalances(channels("CF2").head)==
+        ChannelBalances(1,-1,MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(5500),MilliSatoshi(0),-160943,-60742,sentMsat=MilliSatoshi(-100000001),relaySentMsat=MilliSatoshi(-100000001),
+            rounding=MilliSatoshi(-200999)))
+      }, max = 2 seconds, interval = 0.1 second)  
+    
+    // the receipt of funds is not shown as was F2 has a no-op payment handler - so checking this does not make sense.
+
+    checkAllNodesBalances(nodes)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (local commit)") {
@@ -557,10 +748,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
     nodes("F3").paymentHandler ! htlcReceiver.ref
-    val preimage: BinaryData = "42" * 32
+    val preimage: BinaryData = "44" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F3").nodeParams.nodeId, maxAttempts = 1)
+    val paymentReq = SendPayment(100000043L, paymentHash, nodes("F3").nodeParams.nodeId, maxAttempts = 1)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
@@ -577,10 +768,11 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.expectMsgType[JValue](10 seconds)
     // we generate more blocks for the htlc-timeout to reach enough confirmations
     awaitCond({
+      logger.info("generating a block")
       sender.send(bitcoincli, BitcoinReq("generate", 1))
       sender.expectMsgType[JValue](10 seconds)
       paymentSender.msgAvailable
-    }, max = 30 seconds, interval = 1 second)
+    }, max = 120 seconds, interval = 10 second)
     // this will fail the htlc
     val failed = paymentSender.expectMsgType[PaymentFailed](30 seconds)
     assert(failed.paymentHash === paymentHash)
@@ -602,6 +794,21 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 6, 7, 16)
+
+    
+    awaitAssert({
+      assert(nodes("C").nodeParams.auditDb.channelBalances(channels("CF3").head) ==
+        ChannelBalances(0,-1,MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),-110416,-110415,rounding=MilliSatoshi(-1000))) 
+      // load of fees from open:39600, commit:41287, delayedmain: 18508, htlcTimeout:30551, htlcDelayed: 18508
+      // we lose on the rounding down of both the tolocal and the htlc...
+      }, max = 2 seconds, interval = 0.1 second)  
+    
+    // never received anything and did not fund channel so no fees/receipts.
+    awaitAssert({
+      assert(nodes("F3").nodeParams.auditDb.channelBalances(channels("CF3").head)==
+        ChannelBalances(-1,-1,MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),0,0))
+      }, max = 2 seconds, interval = 0.1 second)   
+    checkAllNodesBalances(nodes)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (remote commit)") {
@@ -617,10 +824,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
     nodes("F4").paymentHandler ! htlcReceiver.ref
-    val preimage: BinaryData = "42" * 32
+    val preimage: BinaryData = "45" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F4").nodeParams.nodeId, maxAttempts = 1)
+    val paymentReq = SendPayment(100000045L, paymentHash, nodes("F4").nodeParams.nodeId, maxAttempts = 1)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
@@ -665,6 +872,19 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 5, 6, 14)
+    
+    awaitAssert({
+      assert(nodes("C").nodeParams.auditDb.channelBalances(channels("CF4").head)==
+          ChannelBalances(0,-1,MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),-85268,-85267,rounding=MilliSatoshi(-1000))) 
+      // load of fees from open:39600, commit:41287, delayedmain: 18508, htlcTimeout:30551, htlcDelayed: 18508
+      }, max = 2 seconds, interval = 0.1 second)  
+    
+    // never received anything and did not fund channel so no fees/receipts.
+    awaitAssert({
+      assert(nodes("F4").nodeParams.auditDb.channelBalances(channels("CF4").head)
+        ==ChannelBalances(-1,-1,MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(0),0,0))
+      }, max = 2 seconds, interval = 0.1 second)   
+    checkAllNodesBalances(nodes)
   }
 
   test("punish a node that has published a revoked commit tx") {
@@ -688,10 +908,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
     awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
     // first we send 3 mBTC to F so that it has a balance
-    val amountMsat = MilliSatoshi(300000000L)
+    val amountMsat = MilliSatoshi(300000046L)
     sender.send(paymentHandlerF, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
-    val sendReq = SendPayment(300000000L, pr.paymentHash, pr.nodeId)
+    val sendReq = SendPayment(300000046L, pr.paymentHash, pr.nodeId)
     sender.send(nodes("A").paymentInitiator, sendReq)
     // we forward the htlc to the payment handler
     forwardHandlerF.expectMsgType[UpdateAddHtlc]
@@ -707,19 +927,19 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       sender.send(paymentInitiator, sendReq)
     }
     val buffer = TestProbe()
-    send(100000000, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
+    send(100000001, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
     forwardHandlerF.expectMsgType[UpdateAddHtlc]
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
-    send(110000000, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
+    send(110000002, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
     forwardHandlerF.expectMsgType[UpdateAddHtlc]
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
-    send(120000000, paymentHandlerC, nodes("F5").paymentInitiator)
+    send(120000003, paymentHandlerC, nodes("F5").paymentInitiator)
     forwardHandlerC.expectMsgType[UpdateAddHtlc]
     forwardHandlerC.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
-    send(130000000, paymentHandlerC, nodes("F5").paymentInitiator)
+    send(130000004, paymentHandlerC, nodes("F5").paymentInitiator)
     forwardHandlerC.expectMsgType[UpdateAddHtlc]
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
@@ -787,6 +1007,18 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     // this will remove the channel
     awaitAnnouncements(nodes.filter(_._1 == "A"), 4, 5, 12)
+
+    
+    awaitAssert({
+      
+      assert(nodes("C").nodeParams.auditDb.channelBalances(channels("CF5").head)==
+        ChannelBalances(2,1,MilliSatoshi(0L),MilliSatoshi(0),MilliSatoshi(0),MilliSatoshi(15500),MilliSatoshi(0),-267097,-267097,-260001,0,MilliSatoshi(-510000049), MilliSatoshi(250000007),
+            relaySentMsat=MilliSatoshi(-300000046),rounding=MilliSatoshi(-958))) 
+      // load of fees from open:3960, commit:41287, delayedmain: 18508, htlcTimeout:30551, htlcDelayed: 18508
+      // penalty of -260000 is cos we had paid 260000 on the channel so owed that to the other side. Our actual gain is a lot less due to fees.
+      // it is -269632+260000 = -9623. So we lost money on this chain due to fees even though we made a gain from the penalty tx's
+      }, max = 2 seconds, interval = 0.1 second)  
+    checkAllNodesBalances(nodes)
   }
 
   test("generate and validate lots of channels") {

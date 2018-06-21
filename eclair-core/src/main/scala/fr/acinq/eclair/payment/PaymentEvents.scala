@@ -25,8 +25,14 @@ sealed trait PaymentEvent {
   val paymentHash: BinaryData
 }
 
-case class PaymentSent(amount: MilliSatoshi, feesPaid: MilliSatoshi, paymentHash: BinaryData, paymentPreimage: BinaryData) extends PaymentEvent
+case class PaymentSent(amount: MilliSatoshi, feesPaid: MilliSatoshi, paymentHash: BinaryData, paymentPreimage: BinaryData,
+    channelId: BinaryData, commitId: Long, targetNode: BinaryData) extends PaymentEvent
 
-case class PaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: BinaryData) extends PaymentEvent
+case class PaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: BinaryData,
+    channelIdIn: BinaryData, commitIdIn: Long, channelIdOut: BinaryData, commitIdOut: Long) extends PaymentEvent
 
-case class PaymentReceived(amount: MilliSatoshi, paymentHash: BinaryData) extends PaymentEvent
+case class PaymentReceived(amount: MilliSatoshi, paymentHash: BinaryData,
+    channelId: BinaryData, commitId: Long) extends PaymentEvent
+
+case class PaymentHTLCSent(amount: MilliSatoshi, paymentHash: BinaryData, channelId: BinaryData, commitId: Long) extends PaymentEvent
+case class PaymentHTLCErrored(channelId: BinaryData, commitId: Long, paymentHash: BinaryData) extends PaymentEvent

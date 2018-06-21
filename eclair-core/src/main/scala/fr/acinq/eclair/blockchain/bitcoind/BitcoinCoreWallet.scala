@@ -39,7 +39,8 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDouble(fee) = json \ "fee"
-      FundTransactionResponse(Transaction.read(hex), changepos.intValue(), (fee * 1e8).toLong)
+      //beware of floating point maths on small numbers!
+      FundTransactionResponse(Transaction.read(hex), changepos.intValue(), Math.round(fee * 1e8))
     })
   }
 
@@ -63,7 +64,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("lockunspent", true, outPoints.toList.map(outPoint => Utxo(outPoint.txid.toString, outPoint.index))) collect { case JBool(result) => result }
 
 
-  override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDouble(balance) => Satoshi((balance * 1e8).toLong) }
+  override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDouble(balance) => Satoshi(Math.round(balance * 1e8)) }
 
   override def getFinalAddress: Future[String] = for {
     JString(address) <- rpcClient.invoke("getnewaddress")
@@ -95,7 +96,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
       // there will probably be a change output, so we need to find which output is ours
       outputIndex = Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
       _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=$fee")
-    } yield MakeFundingTxResponse(fundingTx, outputIndex)
+    } yield MakeFundingTxResponse(fundingTx, outputIndex, fee)
   }
 
   override def commit(tx: Transaction): Future[Boolean] = publishTransaction(tx)
