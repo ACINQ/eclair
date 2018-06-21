@@ -1,16 +1,21 @@
 package fr.acinq.eclair.db
 
+import java.io.File
 import java.sql.Connection
 
 import com.typesafe.config.Config
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
+import fr.acinq.eclair.db.EclairDbConfig.logger
+import grizzled.slf4j.Logging
 
 
 
 case class AppDbConfig(eclairDb: EclairDbConfig, networkDb: NetworkDbConfig)
 
-abstract class DbConfig(hikariConfig: HikariConfig) {
-  private val dataSource: HikariDataSource = new HikariDataSource(hikariConfig)
+abstract class DbConfig(hikariConfig: HikariConfig) extends Logging {
+  private val dataSource: HikariDataSource = {
+    new HikariDataSource(hikariConfig)
+  }
 
   def getConnection(): Connection = dataSource.getConnection
 
@@ -26,24 +31,31 @@ case class EclairDbConfig(hikariConfig: HikariConfig) extends DbConfig(hikariCon
 
 case class NetworkDbConfig(hikariConfig: HikariConfig) extends DbConfig(hikariConfig)
 
-object EclairDbConfig {
-
-  private val eclairDbKey = "eclairDb"
+object EclairDbConfig extends Logging {
 
   /** Reads the network you want from the reference.conf file */
   def fromConfig(config: Config): EclairDbConfig = {
     val chain = config.getString("eclair.chain")
     fromConfig(config,chain)
-    ???
   }
 
   private def fromConfig(config: Config, chain: String): EclairDbConfig = {
-    val driver = config.getString(s"eclair.${eclairDbKey}.driver")
-    val dbChainConfig = config.getConfig(s"eclair.${eclairDbKey}.${chain}")
+    val driver = config.getString(s"eclair.db.driver")
+    val dbChainConfig = config.getConfig(s"eclair.db.${chain}")
     val dbUrl = dbChainConfig.getString("url")
     val hikariConfig = new HikariConfig()
     hikariConfig.setDriverClassName(driver)
-    hikariConfig.setJdbcUrl(dbUrl)
+
+    //create file if it DNE
+    val filePath = dbUrl.split(":").last
+    logger.info(s"filePath $filePath")
+    val file = new File(filePath)
+    file.mkdir()
+    val db = new File(file.getAbsolutePath + "/eclair.sqlite")
+    logger.info(s"db ${db.getAbsolutePath}")
+    db.createNewFile()
+
+    hikariConfig.setJdbcUrl(dbUrl + "/eclair.sqlite")
     EclairDbConfig(hikariConfig)
   }
 
@@ -66,9 +78,7 @@ object EclairDbConfig {
   }
 }
 
-object NetworkDbConfig {
-
-  private val networkDbKey = "networkDb"
+object NetworkDbConfig extends Logging  {
 
   /** Reads the network you want from the reference.conf file */
   def fromConfig(config: Config): NetworkDbConfig = {
@@ -77,12 +87,22 @@ object NetworkDbConfig {
   }
 
   private def fromConfig(config: Config, chain: String): NetworkDbConfig = {
-    val driver = config.getString(s"eclair.${networkDbKey}.driver")
-    val dbChainConfig = config.getConfig(s"eclair.${networkDbKey}.${chain}")
+    val driver = config.getString(s"eclair.db.driver")
+    val dbChainConfig = config.getConfig(s"eclair.db.${chain}")
     val dbUrl = dbChainConfig.getString("url")
     val hikariConfig = new HikariConfig()
     hikariConfig.setDriverClassName(driver)
     hikariConfig.setJdbcUrl(dbUrl)
+    //create file if it DNE
+    val filePath = dbUrl.split(":").last
+    logger.info(s"filePath $filePath")
+    val file = new File(filePath)
+    file.mkdirs()
+    val db = new File(file.getAbsolutePath + "/network.sqlite")
+    logger.info(s"db ${db.getAbsolutePath}")
+    db.createNewFile()
+
+    hikariConfig.setJdbcUrl(dbUrl + "/network.sqlite")
     NetworkDbConfig(hikariConfig)
   }
 
