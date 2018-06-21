@@ -36,7 +36,6 @@ import scala.util.Random
   */
 trait StateTestsHelperMethods extends TestKitBase {
 
-  //val dbConfig: DbConfig
 
   def defaultOnion: BinaryData = "00" * Sphinx.PacketLength
 

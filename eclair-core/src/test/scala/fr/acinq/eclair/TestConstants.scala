@@ -43,7 +43,7 @@ object TestConstants extends Logging {
   val feeratePerKw = 10000L
 
 
-  private val config = ConfigFactory.load()
+  private val config = ConfigFactory.load().resolve()
 
   //currently both bob and alice will share these configs
   val eclairDb = EclairDbConfig.unittestConfig(config)

@@ -49,9 +49,8 @@ class SqliteChannelsDb(override val dbConfig: EclairDbConfig) extends ChannelsDb
   override def dropTables: Unit = {
     using(conn.createStatement()) { statement =>
       require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
-      statement.execute("PRAGMA foreign_keys = ON")
-      statement.executeUpdate("DROP TABLE IF EXISTS local_channels")
       statement.executeUpdate("DROP TABLE IF EXISTS htlc_infos")
+      statement.executeUpdate("DROP TABLE IF EXISTS local_channels")
       statement.executeUpdate("DROP INDEX IF EXISTS htlc_infos_idx")
     }
   }
