@@ -48,11 +48,9 @@ object EclairDbConfig extends Logging {
 
     //create file if it DNE
     val filePath = dbUrl.split(":").last
-    logger.info(s"filePath $filePath")
     val file = new File(filePath)
     file.mkdirs()
     val db = new File(file.getAbsolutePath + "/eclair.sqlite")
-    logger.info(s"db ${db.getAbsolutePath}")
     db.createNewFile()
 
     hikariConfig.setJdbcUrl(dbUrl + "/eclair.sqlite")
@@ -96,11 +94,9 @@ object NetworkDbConfig extends Logging  {
 
     //create file if it DNE
     val filePath = dbUrl.split(":").last
-    logger.info(s"filePath $filePath")
     val file = new File(filePath)
     file.mkdirs()
     val db = new File(file.getAbsolutePath + "/network.sqlite")
-    logger.info(s"db ${db.getAbsolutePath}")
     db.createNewFile()
 
     hikariConfig.setJdbcUrl(dbUrl + "/network.sqlite")
