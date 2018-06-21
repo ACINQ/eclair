@@ -2,14 +2,17 @@ package fr.acinq.eclair.router
 
 import akka.actor.{Actor, ActorRef, Props}
 import akka.testkit.TestProbe
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.eclair
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{ValidateRequest, ValidateResult, WatchSpentBasic}
+import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement, RoutingMessage}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -22,7 +25,7 @@ class RoutingSyncSpec extends TestkitBaseClass {
 
   val txid = BinaryData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
-  type FixtureParam = Tuple2[ActorRef, ActorRef]
+  type FixtureParam = Tuple3[ActorRef, ActorRef, ActorRef]
 
   val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(500)
 
@@ -62,6 +65,7 @@ class RoutingSyncSpec extends TestkitBaseClass {
     }), "switchboard")
 
     val routerA = system.actorOf(Props(new Router(paramsA, watcherA)), "routerA")
+    val idA = PrivateKey(BinaryData("01"  *32), true).publicKey
 
     val watcherB = system.actorOf(Props(new FakeWatcher()))
     val paramsB = Bob.nodeParams
@@ -74,7 +78,9 @@ class RoutingSyncSpec extends TestkitBaseClass {
         paramsB.networkDb.addNode(n2)
     }
     val routerB = system.actorOf(Props(new Router(paramsB, watcherB)), "routerB")
+    val idB = PrivateKey(BinaryData("02"  *32), true).publicKey
 
+    val pipe = system.actorOf(Props(new RoutingSyncSpec.Pipe(routerA, idA, routerB, idA)))
     val sender = TestProbe()
     awaitCond({
       sender.send(routerA, 'channels)
@@ -82,16 +88,16 @@ class RoutingSyncSpec extends TestkitBaseClass {
       channelsA.size == routingInfoA.size
     }, max = 30 seconds)
 
-    test((routerA, routerB))
+    test((routerA, routerB, pipe))
   }
 
   test("initial sync") {
-    case (routerA, routerB) => {
+    case (routerA, routerB, pipe) => {
       Globals.blockCount.set(shortChannelIds.map(id => ShortChannelId.coordinates(id).blockHeight).max)
 
       val sender = TestProbe()
-      sender.send(routerA, SendChannelQuery(routerB))
-      sender.send(routerB, SendChannelQuery(routerA))
+      routerA ! SendChannelQuery(Alice.nodeParams.nodeId, pipe)
+      routerB ! SendChannelQuery(Bob.nodeParams.nodeId, pipe)
 
       awaitCond({
         sender.send(routerA, 'channels)
@@ -114,5 +120,12 @@ object RoutingSyncSpec {
     val nodeAnnouncement_a = makeNodeAnnouncement(priv_a, "a", Alice.nodeParams.color, List())
     val nodeAnnouncement_b = makeNodeAnnouncement(priv_b, "b", Bob.nodeParams.color, List())
     (channelAnn_ab, channelUpdate_ab, channelUpdate_ba, nodeAnnouncement_a, nodeAnnouncement_b)
+  }
+
+  class Pipe(a: ActorRef, idA: PublicKey, b: ActorRef, idB: PublicKey) extends Actor {
+    def receive = {
+      case msg: RoutingMessage if sender == a => b ! PeerRoutingMessage(idA, msg)
+      case msg: RoutingMessage if sender == b => a ! PeerRoutingMessage(idB, msg)
+    }
   }
 }
