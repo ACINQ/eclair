@@ -35,13 +35,13 @@ object EclairDbConfig extends Logging {
 
   /** Reads the network you want from the reference.conf file */
   def fromConfig(config: Config): EclairDbConfig = {
-    val chain = config.getString("eclair.chain")
+    val chain = config.getString("chain")
     fromConfig(config,chain)
   }
 
   private def fromConfig(config: Config, chain: String): EclairDbConfig = {
-    val driver = config.getString(s"eclair.db.driver")
-    val dbChainConfig = config.getConfig(s"eclair.db.${chain}")
+    val driver = config.getString(s"db.driver")
+    val dbChainConfig = config.getConfig(s"db.${chain}")
     val dbUrl = dbChainConfig.getString("url")
     val hikariConfig = new HikariConfig()
     hikariConfig.setDriverClassName(driver)
@@ -80,13 +80,13 @@ object NetworkDbConfig extends Logging  {
 
   /** Reads the network you want from the reference.conf file */
   def fromConfig(config: Config): NetworkDbConfig = {
-    val chain = config.getString("eclair.chain")
+    val chain = config.getString("chain")
     fromConfig(config,chain)
   }
 
   private def fromConfig(config: Config, chain: String): NetworkDbConfig = {
-    val driver = config.getString(s"eclair.db.driver")
-    val dbChainConfig = config.getConfig(s"eclair.db.${chain}")
+    val driver = config.getString(s"db.driver")
+    val dbChainConfig = config.getConfig(s"db.${chain}")
     val dbUrl = dbChainConfig.getString("url")
     val hikariConfig = new HikariConfig()
     hikariConfig.setDriverClassName(driver)

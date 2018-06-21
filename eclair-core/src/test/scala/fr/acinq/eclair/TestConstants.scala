@@ -43,12 +43,12 @@ object TestConstants extends Logging {
   val feeratePerKw = 10000L
 
 
-  private val config = ConfigFactory.load().resolve()
+  private val config = ConfigFactory.load().resolve().getConfig("eclair")
 
   //currently both bob and alice will share these configs
-  def eclairDb = EclairDbConfig.unittestConfig(config)
-  def networkDb = NetworkDbConfig.unittestConfig(config)
-  def dbConfig = AppDbConfig(eclairDb,networkDb)
+  lazy val  eclairDb = EclairDbConfig.unittestConfig(config)
+  lazy val networkDb = NetworkDbConfig.unittestConfig(config)
+  lazy val dbConfig = AppDbConfig(eclairDb,networkDb)
 
   object Alice {
     val seed = BinaryData("01" * 32)

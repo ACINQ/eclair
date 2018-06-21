@@ -74,10 +74,15 @@ case class NodeParams(keyManager: KeyManager,
   val nodeId = keyManager.nodeId
 
   val channelsDb = new SqliteChannelsDb(dbConfig.eclairDb)
+  channelsDb.createTables //create tables if DNE
   val peersDb = new SqlitePeersDb(dbConfig.networkDb)
+  peersDb.createTables //create tables if DNE
   val networkDb = new SqliteNetworkDb(dbConfig.networkDb)
+  networkDb.createTables //create tables if DNE
   val pendingRelayDb = new SqlitePendingRelayDb(dbConfig.eclairDb)
+  pendingRelayDb.createTables //create tables if DNE
   val paymentsDb = new SqlitePaymentsDb(dbConfig.eclairDb)
+  paymentsDb.createTables //create tables if DNE
 
 }
 
