@@ -43,24 +43,13 @@ class RoutingSyncSpec extends TestkitBaseClass {
 
   type FixtureParam = Tuple3[ActorRef, ActorRef, ActorRef]
 
-  val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(500)
+  val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(100)
 
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
   // A will be missing the last 1000 items
-  val routingInfoA = fakeRoutingInfo.dropRight(100)
+  val routingInfoA = fakeRoutingInfo.dropRight(10)
   // and B will be missing the first 1000 items
-  val routingInfoB = fakeRoutingInfo.drop(100)
-
-  class FakeWatcher extends Actor {
-    def receive = {
-      case _: WatchSpentBasic => ()
-      case ValidateRequest(ann) =>
-        val txOut = TxOut(Satoshi(1000000), Script.pay2wsh(Scripts.multiSig2of2(ann.bitcoinKey1, ann.bitcoinKey2)))
-        val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(ann.shortChannelId)
-        sender ! ValidateResult(ann, Some(Transaction(version = 0, txIn = Nil, txOut = List.fill(outputIndex + 1)(txOut), lockTime = 0)), true, None)
-      case unexpected => println(s"unexpected : $unexpected")
-    }
-  }
+  val routingInfoB = fakeRoutingInfo.drop(10)
 
   override def withFixture(test: OneArgTest) = {
     val watcherA = system.actorOf(Props(new FakeWatcher()))
@@ -127,6 +116,17 @@ class RoutingSyncSpec extends TestkitBaseClass {
 }
 
 object RoutingSyncSpec {
+  class FakeWatcher extends Actor {
+    def receive = {
+      case _: WatchSpentBasic => ()
+      case ValidateRequest(ann) =>
+        val txOut = TxOut(Satoshi(1000000), Script.pay2wsh(Scripts.multiSig2of2(ann.bitcoinKey1, ann.bitcoinKey2)))
+        val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(ann.shortChannelId)
+        sender ! ValidateResult(ann, Some(Transaction(version = 0, txIn = Nil, txOut = List.fill(outputIndex + 1)(txOut), lockTime = 0)), true, None)
+      case unexpected => println(s"unexpected : $unexpected")
+    }
+  }
+
   def makeFakeRoutingInfo(shortChannelId: ShortChannelId): (ChannelAnnouncement, ChannelUpdate, ChannelUpdate, NodeAnnouncement, NodeAnnouncement) = {
     val (priv_a, priv_b, priv_funding_a, priv_funding_b) = (randomKey, randomKey, randomKey, randomKey)
     val channelAnn_ab = channelAnnouncement(shortChannelId, priv_a, priv_b, priv_funding_a, priv_funding_b)
