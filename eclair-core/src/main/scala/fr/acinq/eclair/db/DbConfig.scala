@@ -50,7 +50,7 @@ object EclairDbConfig extends Logging {
     val filePath = dbUrl.split(":").last
     logger.info(s"filePath $filePath")
     val file = new File(filePath)
-    file.mkdir()
+    file.mkdirs()
     val db = new File(file.getAbsolutePath + "/eclair.sqlite")
     logger.info(s"db ${db.getAbsolutePath}")
     db.createNewFile()
