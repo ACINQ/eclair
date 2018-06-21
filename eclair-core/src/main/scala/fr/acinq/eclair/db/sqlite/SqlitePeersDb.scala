@@ -21,12 +21,12 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.db.{DbConfig, PeersDb}
+import fr.acinq.eclair.db.{DbConfig, NetworkDbConfig, PeersDb}
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import fr.acinq.eclair.wire.{IPv4, IPv6, LightningMessageCodecs, NodeAddress}
 import scodec.bits.BitVector
 
-class SqlitePeersDb(override val dbConfig: DbConfig) extends PeersDb {
+class SqlitePeersDb(override val dbConfig: NetworkDbConfig) extends PeersDb {
 
   val DB_NAME = "peers"
   val CURRENT_VERSION = 1

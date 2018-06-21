@@ -32,7 +32,7 @@ import org.sqlite.SQLiteException
 @RunWith(classOf[JUnitRunner])
 class SqliteNetworkDbSpec extends FunSuite with BeforeAndAfterAll {
 
-  private val dbConfig = ??? //TestConstants.dbConfig
+  private val dbConfig = TestConstants.networkDb
   private val db = new SqliteNetworkDb(dbConfig = dbConfig)
 
   override def beforeAll(): Unit = {
@@ -103,7 +103,6 @@ class SqliteNetworkDbSpec extends FunSuite with BeforeAndAfterAll {
 
   override def afterAll: Unit = {
     db.dropTables
-    //dbConfig.close()
   }
 
 }

@@ -19,10 +19,10 @@ package fr.acinq.eclair.db.sqlite
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel.Command
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{codecSequence, getVersion, using}
-import fr.acinq.eclair.db.{DbConfig, PendingRelayDb}
+import fr.acinq.eclair.db.{DbConfig, NetworkDbConfig, PendingRelayDb}
 import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
 
-class SqlitePendingRelayDb(override val dbConfig: DbConfig) extends PendingRelayDb {
+class SqlitePendingRelayDb(override val dbConfig: NetworkDbConfig) extends PendingRelayDb {
 
   val DB_NAME = "pending_relay"
   val CURRENT_VERSION = 1

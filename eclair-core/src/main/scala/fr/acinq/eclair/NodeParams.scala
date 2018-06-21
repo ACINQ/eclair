@@ -69,15 +69,15 @@ case class NodeParams(keyManager: KeyManager,
                       maxPendingPaymentRequests: Int,
                       maxPaymentFee: Double,
                       minFundingSatoshis: Long,
-                      dbConfig: DbConfig) {
+                      dbConfig: AppDbConfig) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
 
-  val channelsDb = new SqliteChannelsDb(dbConfig)
-  val peersDb = new SqlitePeersDb(dbConfig)
-  val networkDb = new SqliteNetworkDb(dbConfig)
-  val pendingRelayDb = new SqlitePendingRelayDb(dbConfig)
-  val paymentsDb = new SqlitePaymentsDb(dbConfig)
+  val channelsDb = new SqliteChannelsDb(dbConfig.eclairDb)
+  val peersDb = new SqlitePeersDb(dbConfig.networkDb)
+  val networkDb = new SqliteNetworkDb(dbConfig.networkDb)
+  val pendingRelayDb = new SqlitePendingRelayDb(dbConfig.networkDb)
+  val paymentsDb = new SqlitePaymentsDb(dbConfig.eclairDb)
 
 }
 
@@ -133,8 +133,9 @@ object NodeParams extends Logging {
     val chaindir = new File(datadir, chain)
     chaindir.mkdir()
 
-    val dbConfig = DbConfig.fromConfig(config)
-
+    val eclairDb = EclairDbConfig.fromConfig(config)
+    val networkDb = NetworkDbConfig.fromConfig(config)
+    val appDbConfig = AppDbConfig(eclairDb,networkDb)
     val color = BinaryData(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
 
@@ -184,7 +185,7 @@ object NodeParams extends Logging {
       maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"),
       maxPaymentFee = config.getDouble("max-payment-fee"),
       minFundingSatoshis = config.getLong("min-funding-satoshis"),
-      dbConfig = dbConfig
+      dbConfig = appDbConfig
     )
   }
 }

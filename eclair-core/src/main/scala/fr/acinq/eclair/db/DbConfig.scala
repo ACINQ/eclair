@@ -4,10 +4,13 @@ import java.sql.Connection
 
 import com.typesafe.config.Config
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
-import grizzled.slf4j.Logging
 
-trait DbConfig {
-  def dataSource: HikariDataSource
+
+
+case class AppDbConfig(eclairDb: EclairDbConfig, networkDb: NetworkDbConfig)
+
+abstract class DbConfig(hikariConfig: HikariConfig) {
+  private val dataSource: HikariDataSource = new HikariDataSource(hikariConfig)
 
   def getConnection(): Connection = dataSource.getConnection
 
@@ -19,56 +22,83 @@ trait DbConfig {
   def isRunning(): Boolean = dataSource.isRunning
 }
 
+case class EclairDbConfig(hikariConfig: HikariConfig) extends DbConfig(hikariConfig)
 
-object DbConfig extends Logging {
-  private case class DbConfigImpl(dataSource: HikariDataSource) extends DbConfig
+case class NetworkDbConfig(hikariConfig: HikariConfig) extends DbConfig(hikariConfig)
+
+object EclairDbConfig {
+
+  private val eclairDbKey = "eclairDb"
 
   /** Reads the network you want from the reference.conf file */
-  def fromConfig(config: Config): DbConfig = {
+  def fromConfig(config: Config): EclairDbConfig = {
     val chain = config.getString("eclair.chain")
     fromConfig(config,chain)
     ???
   }
 
-  private def fromConfig(config: Config, chain: String): HikariConfig = {
-    val driver = config.getString("eclair.db.driver")
-    val dbUrl = config.getString(s"eclair.db.${chain}.url")
+  private def fromConfig(config: Config, chain: String): EclairDbConfig = {
+    val driver = config.getString(s"eclair.${eclairDbKey}.driver")
+    val dbChainConfig = config.getConfig(s"eclair.${eclairDbKey}.${chain}")
+    val dbUrl = dbChainConfig.getString("url")
     val hikariConfig = new HikariConfig()
+    hikariConfig.setDriverClassName(driver)
     hikariConfig.setJdbcUrl(dbUrl)
-    logger.info(s"hikariConfig ${hikariConfig}")
-    hikariConfig
+    EclairDbConfig(hikariConfig)
   }
 
-  def mainnetConfig(config: Config): DbConfig = {
+  def mainnetConfig(config: Config): EclairDbConfig = {
     fromConfig(config, "mainnet")
-    ???
   }
 
-  def testnetConfig(config: Config): DbConfig = {
+  def testnetConfig(config: Config): EclairDbConfig = {
     fromConfig(config,"testnet")
-    ???
   }
 
 
-  private var regtest: Option[DbConfig] = None
 
-  def regtestConfig(config: Config): DbConfig = {
-    regtest.getOrElse {
-      val c = fromConfig(config,"regtest")
-      logger.info(s"before creating dbConfig")
-      regtest = Some(DbConfigImpl(new HikariDataSource(c)))
-      logger.info(s"regtest ${regtest}")
-      regtest.get
-    }
+  def regtestConfig(config: Config): EclairDbConfig = {
+    fromConfig(config,"regtest")
   }
 
-  private var unittest: Option[DbConfig] = None
+  def unittestConfig(config: Config): EclairDbConfig = {
+    fromConfig(config,"unittest")
+  }
+}
 
-  def unittestConfig(config: Config): DbConfig = {
-    unittest.getOrElse {
-      val c = fromConfig(config,"unittest")
-      unittest = Some(DbConfigImpl(new HikariDataSource(c)))
-      unittest.get
-    }
+object NetworkDbConfig {
+
+  private val networkDbKey = "networkDb"
+
+  /** Reads the network you want from the reference.conf file */
+  def fromConfig(config: Config): NetworkDbConfig = {
+    val chain = config.getString("eclair.chain")
+    fromConfig(config,chain)
+  }
+
+  private def fromConfig(config: Config, chain: String): NetworkDbConfig = {
+    val driver = config.getString(s"eclair.${networkDbKey}.driver")
+    val dbChainConfig = config.getConfig(s"eclair.${networkDbKey}.${chain}")
+    val dbUrl = dbChainConfig.getString("url")
+    val hikariConfig = new HikariConfig()
+    hikariConfig.setDriverClassName(driver)
+    hikariConfig.setJdbcUrl(dbUrl)
+    NetworkDbConfig(hikariConfig)
+  }
+
+  def mainnetConfig(config: Config): NetworkDbConfig = {
+    fromConfig(config, "mainnet")
+  }
+
+  def testnetConfig(config: Config): NetworkDbConfig = {
+    fromConfig(config,"testnet")
+  }
+
+  def regtestConfig(config: Config): NetworkDbConfig = {
+    fromConfig(config,"regtest")
+  }
+
+  def unittestConfig(config: Config): NetworkDbConfig = {
+    fromConfig(config,"unittest")
   }
 }

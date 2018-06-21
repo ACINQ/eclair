@@ -45,7 +45,7 @@
     <!--logger name="fr.acinq.eclair.channel" level="DEBUG"/-->
     <logger name="fr.acinq.eclair.router" level="WARN"/>
 
-    <root level="TRACE">
+    <root level="DEBUG">
         <!--appender-ref ref="FILE"/>
         <appender-ref ref="CONSOLEWARN"/-->
         <appender-ref ref="CONSOLE"/>

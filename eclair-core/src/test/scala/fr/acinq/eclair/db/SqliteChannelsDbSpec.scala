@@ -30,27 +30,22 @@ import org.sqlite.SQLiteException
 @RunWith(classOf[JUnitRunner])
 class SqliteChannelsDbSpec extends FunSuite with BeforeAndAfterAll with Logging {
 
+  val dbConfig = TestConstants.eclairDb
+  val db = new SqliteChannelsDb(dbConfig)
+  val relayDb = new SqlitePendingRelayDb(TestConstants.networkDb) // needed by db.removeChannel
 
   override def beforeAll(): Unit = {
-    def dbConfig = DbConfig.regtestConfig(TestConstants.config)
-    val db = new SqliteChannelsDb(dbConfig)
-
     db.createTables
   }
 
-/*  test("init sqlite 2 times in a row") {
+  test("init sqlite 2 times in a row") {
     val db1 = new SqliteChannelsDb(dbConfig)
     val db2 = new SqliteChannelsDb(dbConfig)
     db1.createTables
     db2.createTables
-  }*/
+  }
 
   test("add/remove/list channels") {
-    val dbConfig = DbConfig.regtestConfig(TestConstants.config)
-    val db = new SqliteChannelsDb(dbConfig)
-    logger.info(s"db.isClose() ${dbConfig.isClosed()}")
-    new SqlitePendingRelayDb(dbConfig) // needed by db.removeChannel
-
     val channel = ChannelStateSpec.normal
 
     val commitNumber = 42
@@ -79,7 +74,7 @@ class SqliteChannelsDbSpec extends FunSuite with BeforeAndAfterAll with Logging 
   }
 
   override def afterAll(): Unit = {
-    //db.dropTables
-    //dbConfig.close()
+    db.dropTables
+    relayDb.dropTables
   }
 }

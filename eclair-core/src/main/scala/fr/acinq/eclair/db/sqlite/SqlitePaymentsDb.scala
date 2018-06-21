@@ -20,7 +20,7 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
-import fr.acinq.eclair.db.{DbConfig, Payment, PaymentsDb}
+import fr.acinq.eclair.db.{DbConfig, EclairDbConfig, Payment, PaymentsDb}
 import grizzled.slf4j.Logging
 
 import scala.collection.immutable.Queue
@@ -35,7 +35,7 @@ import scala.collection.immutable.Queue
   * <li>`amount_msat`: INTEGER
   * <li>`timestamp`: INTEGER (unix timestamp)
   */
-class SqlitePaymentsDb(override val dbConfig: DbConfig) extends PaymentsDb with Logging {
+class SqlitePaymentsDb(override val dbConfig: EclairDbConfig) extends PaymentsDb with Logging {
 
   val DB_NAME = "payments"
   val CURRENT_VERSION = 1

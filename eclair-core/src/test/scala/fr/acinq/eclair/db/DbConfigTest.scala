@@ -10,14 +10,21 @@ import org.scalatest.junit.JUnitRunner
 @RunWith(classOf[JUnitRunner])
 class DbConfigTest extends FunSuite {
 
-  test("read regtest database configuration") {
+  test("read eclair db unittest database configuration") {
     val config = ConfigFactory.load()
-    val dbConfig = DbConfig.unittestConfig(config)
+    val dbConfig = EclairDbConfig.unittestConfig(config)
     val conn = dbConfig.getConnection()
     assert(!conn.isClosed)
     conn.close()
     assert(conn.isClosed)
-    dbConfig.close()
-    assert(dbConfig.isClosed())
+  }
+
+  test("read network db unittest database configuration") {
+    val config = ConfigFactory.load()
+    val dbConfig = NetworkDbConfig.unittestConfig(config)
+    val conn = dbConfig.getConnection()
+    assert(!conn.isClosed)
+    conn.close()
+    assert(conn.isClosed)
   }
 }

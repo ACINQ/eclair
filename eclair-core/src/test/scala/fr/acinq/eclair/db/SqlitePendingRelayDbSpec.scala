@@ -28,7 +28,7 @@ import org.scalatest.junit.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
 class SqlitePendingRelayDbSpec extends FunSuite with BeforeAndAfterAll {
-  private val dbConfig = ??? //TestConstants.dbConfig
+  private val dbConfig = TestConstants.networkDb
   private val db = new SqlitePendingRelayDb(dbConfig)
   override def beforeAll(): Unit = {
     db.createTables

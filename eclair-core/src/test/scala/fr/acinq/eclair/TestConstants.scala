@@ -26,7 +26,7 @@ import fr.acinq.bitcoin.{BinaryData, Block, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.LocalKeyManager
-import fr.acinq.eclair.db.DbConfig
+import fr.acinq.eclair.db.{AppDbConfig, DbConfig, EclairDbConfig, NetworkDbConfig}
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.Color
@@ -42,13 +42,18 @@ object TestConstants extends Logging {
   val pushMsat = 200000000L
   val feeratePerKw = 10000L
 
-  val config = ConfigFactory.load()
-  //val dbConfig = DbConfig.unittestConfig(config)
+
+  private val config = ConfigFactory.load()
+
+  //currently both bob and alice will share these configs
+  val eclairDb = EclairDbConfig.unittestConfig(config)
+  val networkDb = NetworkDbConfig.unittestConfig(config)
+  lazy val dbConfig = AppDbConfig(eclairDb,networkDb)
 
   object Alice {
     val seed = BinaryData("01" * 32)
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-    lazy val aliceDbConfig = ???
+    lazy val aliceDbConfig = dbConfig
 
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams: NodeParams = NodeParams(
@@ -100,7 +105,7 @@ object TestConstants extends Logging {
   object Bob {
     val seed = BinaryData("02" * 32)
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-    lazy val bobDbConfig = ???
+    lazy val bobDbConfig = dbConfig
     def nodeParams: NodeParams = NodeParams(
       keyManager = keyManager,
       alias = "bob",

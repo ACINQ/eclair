@@ -20,13 +20,13 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel.HasCommitments
-import fr.acinq.eclair.db.{ChannelsDb, DbConfig}
+import fr.acinq.eclair.db.{ChannelsDb, DbConfig, EclairDbConfig}
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import scodec.bits.BitVector
 
 import scala.collection.immutable.Queue
 
-class SqliteChannelsDb(override val dbConfig: DbConfig) extends ChannelsDb {
+class SqliteChannelsDb(override val dbConfig: EclairDbConfig) extends ChannelsDb {
 
   import SqliteUtils._
 

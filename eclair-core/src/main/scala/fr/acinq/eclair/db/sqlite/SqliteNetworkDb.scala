@@ -20,13 +20,13 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi}
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.db.{DbConfig, NetworkDb}
+import fr.acinq.eclair.db.{DbConfig, NetworkDb, NetworkDbConfig}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import scodec.bits.BitVector
 
-class SqliteNetworkDb(override val dbConfig: DbConfig) extends NetworkDb {
+class SqliteNetworkDb(override val dbConfig: NetworkDbConfig) extends NetworkDb {
 
   import SqliteUtils._
 
@@ -48,9 +48,9 @@ class SqliteNetworkDb(override val dbConfig: DbConfig) extends NetworkDb {
   override def dropTables: Unit = {
     using(conn.createStatement()) { statement =>
       require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
-      statement.executeUpdate("DROP TABLE IF EXISTS nodes")
-      statement.executeUpdate("DROP TABLE IF EXISTS channels")
       statement.executeUpdate("DROP TABLE IF EXISTS channel_updates")
+      statement.executeUpdate("DROP TABLE IF EXISTS channels")
+      statement.executeUpdate("DROP TABLE IF EXISTS nodes")
       statement.executeUpdate("DROP INDEX IF EXISTS channel_updates_idx")
     }
   }
