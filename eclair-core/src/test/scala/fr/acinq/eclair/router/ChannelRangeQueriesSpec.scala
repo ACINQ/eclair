@@ -58,12 +58,6 @@ class ChannelRangeQueriesSpec extends FunSuite {
     })
     assert(decoded == shortChannelIds)
   }
-
-  test("encode empty channel id set") {
-    val blocks = ChannelRangeQueries.encodeShortChannelIds(400000, 20000, SortedSet.empty[ShortChannelId], ChannelRangeQueries.ZLIB_FORMAT, useGzip = true)
-    val reply :: Nil = blocks.map(block  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
-    assert(reply === ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 400000, 20000, 1.toByte, Seq(ChannelRangeQueries.ZLIB_FORMAT)))
-  }
 }
 
 object ChannelRangeQueriesSpec {

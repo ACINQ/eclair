@@ -132,20 +132,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (expiry too small)") { case (alice, _, alice2bob, _, _, _, _) =>
-    within(30 seconds) {
-      val sender = TestProbe()
-      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-      val currentBlockCount = Globals.blockCount.get
-      val expiryTooSmall = currentBlockCount + 3
-      val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = expiryTooSmall)
-      sender.send(alice, add)
-      val error = ExpiryTooSmall(channelId(alice), minimum = currentBlockCount + Channel.MIN_CLTV_EXPIRY, actual = expiryTooSmall, blockCount = currentBlockCount)
-      sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate))))
-      alice2bob.expectNoMsg(200 millis)
-    }
-  }
-
   test("recv CMD_ADD_HTLC (expiry too big)") { case (alice, _, alice2bob, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()

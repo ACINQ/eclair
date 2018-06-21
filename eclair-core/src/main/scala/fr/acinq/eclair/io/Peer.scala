@@ -245,8 +245,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       stay
 
-    case Event(rebroadcast: Rebroadcast, ConnectedData(_, transport, _, _, gossipTimeRange)) =>
-      val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, self, gossipTimeRange)
+    case Event(rebroadcast: Rebroadcast, ConnectedData(_, transport, _, _, maybeGossipTimestampFilter)) =>
+      val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, self, maybeGossipTimestampFilter)
       val channelsSent = channels1.length
       val updatesSent = updates1.length
       val nodesSent = nodes1.length
@@ -258,7 +258,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay
 
-    case Event(msg: GossipTimeRange, data: ConnectedData) =>
+    case Event(msg: GossipTimestampFilter, data: ConnectedData) =>
       // special case: time range filters are peer specific and must not be sent to
       // the router
       sender ! TransportHandler.ReadAck(msg)
@@ -267,7 +267,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         stay
       } else {
         // update their timestamp filter
-        stay using data.copy(gossipTimeRange = Some(msg))
+        stay using data.copy(gossipTimestampFilter = Some(msg))
       }
 
     case Event(msg: wire.RoutingMessage, _) =>
@@ -380,7 +380,7 @@ object Peer {
   case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
   case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
   case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef]) extends Data
-  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], gossipTimeRange: Option[GossipTimeRange] = None) extends Data
+  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], gossipTimestampFilter: Option[GossipTimestampFilter] = None) extends Data
 
   sealed trait State
   case object INSTANTIATING extends State
@@ -432,31 +432,31 @@ object Peer {
     * filter out gossip messages using the provided origin and optional timestamp range
     * @param rebroadcast rebroacast message
     * @param self messages which have been sent by `self` will be filtered out
-    * @param gossipTimeRange optional gossip timestamp range
+    * @param gossipTimestampFilter optional gossip timestamp range
     * @return a filtered (channel announcements, channel updates, node announcements) tuple
     */
-  def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimeRange: Option[GossipTimeRange]): (Vector[ChannelAnnouncement], Vector[ChannelUpdate], Vector[NodeAnnouncement]) = {
+  def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimestampFilter: Option[GossipTimestampFilter]): (Vector[ChannelAnnouncement], Vector[ChannelUpdate], Vector[NodeAnnouncement]) = {
     // we filter out announcements that we received from this node
     val channels1 = rebroadcast.channels.collect { case (a, origins) if !origins.contains(self) => a } toVector
     val updates1 = rebroadcast.updates.collect { case (a, origins) if !origins.contains(self) => a } toVector
     val nodes1 = rebroadcast.nodes.collect { case (a, origins) if !origins.contains(self) => a } toVector
 
     // filter out updates against their timestamp range
-    val updates2 = gossipTimeRange match {
+    val updates2 = gossipTimestampFilter match {
       case None => updates1
-      case Some(GossipTimeRange(_, firstTimestamp, timestampRange)) => updates1.filter(cu => cu.timestamp >= firstTimestamp && cu.timestamp <= firstTimestamp + timestampRange)
+      case Some(GossipTimestampFilter(_, firstTimestamp, timestampRange)) => updates1.filter(cu => cu.timestamp >= firstTimestamp && cu.timestamp <= firstTimestamp + timestampRange)
     }
 
     // filter out channels that don't have a matching channel update
-    val shortChannelIds = updates1.map(_.shortChannelId).toSet
+    val shortChannelIds = updates2.map(_.shortChannelId).toSet
     // note that we filter out channel_announcements that don't have a corresponding channel_update, instead of making up a timestamp (e.g. based on the blockheight) like the spec suggests.
     // we can do that because our implementation of rebroadcast ensures that we resend channel_announcement every time there is a channel_update
     val channels2 = channels1.filter(ca => shortChannelIds.contains(ca.shortChannelId))
 
     // filter out nodes against their timestamp range
-    val nodes2 = gossipTimeRange match {
+    val nodes2 = gossipTimestampFilter match {
       case None => nodes1
-      case Some(GossipTimeRange(_, firstTimestamp, timestampRange)) => nodes1.filter(cu => cu.timestamp >= firstTimestamp && cu.timestamp <= firstTimestamp + timestampRange)
+      case Some(GossipTimestampFilter(_, firstTimestamp, timestampRange)) => nodes1.filter(cu => cu.timestamp >= firstTimestamp && cu.timestamp <= firstTimestamp + timestampRange)
     }
     (channels2, updates2, nodes2)
   }

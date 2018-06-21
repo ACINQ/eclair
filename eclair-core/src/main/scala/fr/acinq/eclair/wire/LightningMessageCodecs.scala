@@ -318,11 +318,11 @@ object LightningMessageCodecs {
       ("data" | varsizebinarydata)
     ).as[ReplyChannelRange]
 
-  val gossipTimeRangeCodec: Codec[GossipTimeRange] = (
+  val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
     ("chainHash" | binarydata(32)) ::
       ("firstTimestamp" | uint32) ::
       ("timestampRange" | uint32)
-  ).as[GossipTimeRange]
+  ).as[GossipTimestampFilter]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
@@ -352,7 +352,7 @@ object LightningMessageCodecs {
     .typecase(262, replyShortChanelIdsEndCodec)
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
-    .typecase(265, gossipTimeRangeCodec)
+    .typecase(265, gossipTimestampFilterCodec)
 
 
   /**
