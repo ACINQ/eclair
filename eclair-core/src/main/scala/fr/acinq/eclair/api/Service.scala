@@ -308,6 +308,8 @@ trait Service extends Logging {
                           case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
                         }
 
+                        case "listpayments" => completeRpcFuture(req.id, Future(nodeParams.paymentsDb.listPayments))
+
                         // method name was not found
                         case _ => reject(UnknownMethodRejection(req.id))
                       }
@@ -366,6 +368,7 @@ trait Service extends Logging {
     "forceclose (channelId): force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)",
     "checkpayment (paymentHash): returns true if the payment has been received, false otherwise",
     "checkpayment (paymentRequest): returns true if the payment has been received, false otherwise",
+    "listpayments: returns the list of received payments",
     "getinfo: returns info about the blockchain and this node",
     "help: display this message")
 
