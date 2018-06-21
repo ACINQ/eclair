@@ -252,8 +252,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val paymentOK = sender.expectMsgType[PaymentSucceeded]
     assert(paymentOK.amountMsat > request.amountMsat)
-    val PaymentSent(MilliSatoshi(request.amountMsat), feesPaid, request.paymentHash, paymentOK.paymentPreimage) = eventListener.expectMsgType[PaymentSent]
-    assert(feesPaid.amount > 0)
+    val PaymentSent(MilliSatoshi(request.amountMsat), request.paymentHash, paymentOK.paymentPreimage) = eventListener.expectMsgType[PaymentSent]
   }
 
   test("filter errors properly") { case _ =>

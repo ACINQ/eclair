@@ -55,7 +55,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
-      eventListener.expectMsg(PaymentReceived(amountMsat, add.paymentHash))
+      eventListener.expectMsg(PaymentReceived(amountMsat, add.paymentHash, add.channelId))
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === true)
     }
@@ -68,7 +68,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
-      eventListener.expectMsg(PaymentReceived(amountMsat, add.paymentHash))
+      eventListener.expectMsg(PaymentReceived(amountMsat, add.paymentHash, add.channelId))
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === true)
     }

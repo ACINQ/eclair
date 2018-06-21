@@ -339,7 +339,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.channelId === origin.originChannelId)
     assert(fwd.message.id === origin.originHtlcId)
 
-    eventListener.expectMsg(PaymentRelayed(MilliSatoshi(origin.amountMsatIn), MilliSatoshi(origin.amountMsatOut), Crypto.sha256(fulfill_ba.paymentPreimage)))
+    eventListener.expectMsg(PaymentRelayed(MilliSatoshi(origin.amountMsatIn), MilliSatoshi(origin.amountMsatOut), add_bc.paymentHash, channelId_ab, channelId_bc))
   }
 
   test("relay an htlc-fail") { case (relayer, register, _) =>

@@ -20,7 +20,7 @@ import java.net.InetSocketAddress
 
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.router.RouteResponse
@@ -41,6 +41,10 @@ class BinaryDataSerializer extends CustomSerializer[BinaryData](format => ({ nul
 
 class UInt64Serializer extends CustomSerializer[UInt64](format => ({ null }, {
   case x: UInt64 => JInt(x.toBigInt)
+}))
+
+class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](format => ({ null }, {
+  case x: MilliSatoshi => JInt(x.amount)
 }))
 
 class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](format => ({ null }, {

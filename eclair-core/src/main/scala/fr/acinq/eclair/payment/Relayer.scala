@@ -153,16 +153,18 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmdFail)
 
     case ForwardFulfill(fulfill, Local(None), add) =>
-      // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
-      context.system.eventStream.publish(PaymentSucceeded(add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil))
+      val feesPaid = MilliSatoshi(0)
+      context.system.eventStream.publish(PaymentSent(MilliSatoshi(add.amountMsat), feesPaid, add.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
+      // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the success on the event stream
+      context.system.eventStream.publish(PaymentSucceeded(add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil)) //
 
     case ForwardFulfill(fulfill, Local(Some(sender)), _) =>
       sender ! fulfill
 
-    case ForwardFulfill(fulfill, Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut), _) =>
+    case ForwardFulfill(fulfill, Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut), add) =>
       val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
       commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
-      context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), Crypto.sha256(fulfill.paymentPreimage)))
+      context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), add.paymentHash, fromChannelId = originChannelId, toChannelId = fulfill.channelId))
 
     case ForwardFail(_, Local(None), add) =>
       // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
