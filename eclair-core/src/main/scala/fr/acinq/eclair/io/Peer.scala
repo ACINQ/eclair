@@ -110,7 +110,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         }
         if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
-          router ! SendChannelQuery(transport)
+          router ! SendChannelQuery(remoteNodeId, transport)
         }
 
         // let's bring existing/requested channels online
@@ -272,15 +272,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(msg: wire.RoutingMessage, _) =>
       // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
-      msg match {
-          // special case: we forward the `sync` routing messages
-          // because it makes more sense to have the router reply directly
-        case _: QueryChannelRange => router forward msg
-        case _: ReplyChannelRange => router forward msg
-        case _: QueryShortChannelIds => router forward msg
-        case _: ReplyShortChannelIdsEnd => router forward msg
-        case _ => router ! msg
-      }
+      // we forward messages so the router can reply directly
+      router forward PeerRoutingMessage(remoteNodeId, msg)
       stay
 
     case Event(readAck: TransportHandler.ReadAck, ConnectedData(_, transport, _, _, _)) =>
@@ -401,6 +394,8 @@ object Peer {
   }
   case object GetPeerInfo
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
+
+  case class PeerRoutingMessage(remoteNodeId: PublicKey, message: RoutingMessage)
 
   // @formatter:on
 

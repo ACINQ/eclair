@@ -25,6 +25,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire._
 import org.jgrapht.WeightedGraph
@@ -47,7 +48,7 @@ case class RouteRequest(source: PublicKey, target: PublicKey, assistedRoutes: Se
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) { require(hops.size > 0, "route cannot be empty") }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
-case class SendChannelQuery(to: ActorRef)
+case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef)
 case object GetRoutingState
 case class RoutingState(channels: Iterable[ChannelAnnouncement], updates: Iterable[ChannelUpdate], nodes: Iterable[NodeAnnouncement])
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
@@ -201,11 +202,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       sender ! TransportHandler.ReadAck(n)
       stay // we just ignore node_announcements on Android
 
-    case Event(u: ChannelUpdate, d: Data) =>
-      sender ! TransportHandler.ReadAck(u)
-      log.debug("received channel update for shortChannelId={} from {}", u.shortChannelId, sender)
-      stay using handle(u, sender, d)
-
     case Event(WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)), d) if d.channels.contains(shortChannelId) =>
       val lostChannel = d.channels(shortChannelId)
       log.info("funding tx of channelId={} has been spent", shortChannelId)
@@ -307,44 +303,103 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(GetRoutingState, d: Data) =>
       stay // ignored on Android
 
-    case Event(SendChannelQuery(remote), _) =>
+    case Event(SendChannelQuery(remoteNodeId, remote), _) =>
       // ask for everything
       val query = QueryChannelRange(nodeParams.chainHash, firstBlockNum = 0, numberOfBlocks = Int.MaxValue)
-      log.debug("querying channel range {}", query)
+      log.info("querying {} from {}", query, remoteNodeId)
       remote ! query
       stay
 
-    case Event(query@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks), d) =>
-      sender ! TransportHandler.ReadAck(query)
+    case Event(PeerRoutingMessage(remoteNodeId, u: ChannelUpdate), d) =>
+      sender ! TransportHandler.ReadAck(u)
+      log.debug("received channel update for shortChannelId={} from {}", u.shortChannelId, remoteNodeId)
+      stay using handle(u, sender, d)
+
+    case Event(PeerRoutingMessage(remoteNodeId, c: ChannelAnnouncement), d) =>
+      log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={} from {}", c.shortChannelId, c.nodeId1, c.nodeId2, sender)
+      if (d.channels.contains(c.shortChannelId)) {
+        sender ! TransportHandler.ReadAck(c)
+        log.debug("ignoring {} (duplicate)", c)
+        stay
+      } else if (d.awaiting.contains(c)) {
+        sender ! TransportHandler.ReadAck(c)
+        log.debug("ignoring {} (being verified)", c)
+        // adding the sender to the list of origins so that we don't send back the same announcement to this peer later
+        val origins = d.awaiting(c) :+ sender
+        stay using d.copy(awaiting = d.awaiting + (c -> origins))
+      } else if (!Announcements.checkSigs(c)) {
+        sender ! TransportHandler.ReadAck(c)
+        log.warning("bad signature for announcement {}", c)
+        sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
+        stay
+      } else {
+        // On Android, after checking the sig we remove as much data as possible to reduce RAM consumption
+        val c1 = c.copy(
+          nodeSignature1 = null,
+          nodeSignature2 = null,
+          bitcoinSignature1 = null,
+          bitcoinSignature2 = null,
+          features = null,
+          chainHash = null,
+          bitcoinKey1 = null,
+          bitcoinKey2 = null)
+        sender ! TransportHandler.ReadAck(c)
+        // On Android, we don't validate announcements for now, it means that neither awaiting nor stashed announcements are used
+        db.addChannel(c1, BinaryData(""), Satoshi(0))
+        stay using d.copy(
+          channels = d.channels + (c1.shortChannelId -> c1),
+          privateChannels = d.privateChannels - c1.shortChannelId // we remove fake announcements that we may have made before)
+        )
+      }
+
+    case Event(PeerRoutingMessage(remoteNodeId, n: NodeAnnouncement), d: Data) =>
+      sender ! TransportHandler.ReadAck(n)
+      stay // we just ignore node_announcements on Android
+
+    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryChannelRange(chainHash, _, _)), d) if chainHash != nodeParams.chainHash =>
+      sender ! TransportHandler.ReadAck(routingMessage)
+      log.warning("{} sent {} message for chain {}, we're on {}", remoteNodeId, routingMessage, chainHash, nodeParams.chainHash)
+      stay
+
+    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks)), d) =>
+      sender ! TransportHandler.ReadAck(routingMessage)
       // On Android we ignore queries
       stay
 
-    case Event(reply@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data), d) =>
-      sender ! TransportHandler.ReadAck(reply)
-      if (chainHash != nodeParams.chainHash) {
-        log.warning("received reply_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
-      } else {
-        val (format, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
-        val ourShortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
-        val missing: SortedSet[ShortChannelId] = theirShortChannelIds -- ourShortChannelIds
-        log.info("we received their reply, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
-        val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, missing, format, useGzip)
-        blocks.foreach(block => sender ! QueryShortChannelIds(chainHash, block.shortChannelIds))
-      }
+    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data)), d) if chainHash != nodeParams.chainHash =>
+      sender ! TransportHandler.ReadAck(routingMessage)
+      log.warning("{} sent {} message for chain {}, we're on {}", remoteNodeId, routingMessage, chainHash, nodeParams.chainHash)
       stay
 
-    case Event(query@QueryShortChannelIds(chainHash, data), d) =>
-      sender ! TransportHandler.ReadAck(query)
+    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data)), d) =>
+      sender ! TransportHandler.ReadAck(routingMessage)
+      val (format, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
+      val ourShortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
+      val missing: SortedSet[ShortChannelId] = theirShortChannelIds -- ourShortChannelIds
+      log.info("{} sent their reply fr, we're missing {} channel announcements/updates, format={} useGzip={}", remoteNodeId, missing.size, format, useGzip)
+      val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, missing, format, useGzip)
+      blocks.foreach(block => sender ! QueryShortChannelIds(chainHash, block.shortChannelIds))
+      stay
+
+    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryShortChannelIds(chainHash, data)), d) if chainHash != nodeParams.chainHash =>
+      sender ! TransportHandler.ReadAck(routingMessage)
+      log.warning("{} sent {} message for chain {}, we're on {}", remoteNodeId, routingMessage, chainHash, nodeParams.chainHash)
+      stay
+
+    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryShortChannelIds(chainHash, data)), d) =>
+      sender ! TransportHandler.ReadAck(routingMessage)
       // On Android we ignore queries
       stay
 
-    case Event(end@ReplyShortChannelIdsEnd(chainHash, complete), d) =>
-      sender ! TransportHandler.ReadAck(end)
-      if (chainHash != nodeParams.chainHash) {
-        log.warning("received reply_short_channel_ids_end message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
-      } else {
-        log.debug("we've received {}", end)
-      }
+    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@ReplyShortChannelIdsEnd(chainHash, complete)), d) if chainHash != nodeParams.chainHash =>
+      sender ! TransportHandler.ReadAck(routingMessage)
+      log.warning("{} sent {} message for chain {}, we're on {}", remoteNodeId, routingMessage, chainHash, nodeParams.chainHash)
+      stay
+
+    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@ReplyShortChannelIdsEnd(chainHash, complete)), d) =>
+      sender ! TransportHandler.ReadAck(routingMessage)
+      // we don't do anything with this yet
+      log.info("{} sent {}", remoteNodeId, routingMessage)
       stay
   }
 
@@ -552,7 +607,7 @@ object Router {
     val validChannels = (channels -- staleChannels).values
     val staleUpdates = staleChannels.map(channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
     val validUpdates = (updates -- staleUpdates).values
-    val validNodes = validChannels.foldLeft(Set.empty[NodeAnnouncement]) { case (nodesAcc, c) => nodesAcc ++  nodes.get(c.nodeId1) ++ nodes.get(c.nodeId2) } // using a set deduplicates nodes
+    val validNodes = validChannels.foldLeft(Set.empty[NodeAnnouncement]) { case (nodesAcc, c) => nodesAcc ++ nodes.get(c.nodeId1) ++ nodes.get(c.nodeId2) } // using a set deduplicates nodes
     (validChannels, validNodes, validUpdates)
   }
 
