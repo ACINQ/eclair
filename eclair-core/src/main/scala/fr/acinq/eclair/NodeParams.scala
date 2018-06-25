@@ -156,21 +156,11 @@ object NodeParams {
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
 
-    val publicAddresses = {
-      val errMsg = "server.public-ips must contain valid IP address(es)"
-      val publicIPs = config.getStringList("server.public-ips").toList
-      val invalid = publicIPs.filter(!InetAddresses.isInetAddress(_))
-      require(invalid.isEmpty, s"$errMsg. invalid addresses: [${invalid.mkString(",")}]")
-      val valid = publicIPs.map(ip => new InetSocketAddress(ip, config.getInt("server.port")))
-      require(valid.count(_.getAddress == null) == 0, errMsg)
-      valid
-    }
-
     NodeParams(
       keyManager = keyManager,
       alias = config.getString("node-alias").take(32),
       color = Color(color.data(0), color.data(1), color.data(2)),
-      publicAddresses = publicAddresses,
+      publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port"))),
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),
       dustLimitSatoshis = dustLimitSatoshis,
