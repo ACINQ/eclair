@@ -129,9 +129,11 @@ trait Service extends Logging {
     }
     .result()
 
+  private val customTimeoutResponse = HttpResponse(StatusCodes.RequestTimeout).withEntity(ContentTypes.`application/json`, """{ "result": null, "error": { "code": 408, "message": "request timed out"} } """)
+
   val route: Route =
     respondWithDefaultHeaders(customHeaders) {
-      withRequestTimeoutResponse(r => HttpResponse(StatusCodes.RequestTimeout).withEntity(ContentTypes.`application/json`, """{ "result": null, "error": { "code": 408, "message": "request timed out"} } """)) {
+      withRequestTimeoutResponse(_ => customTimeoutResponse) {
         handleExceptions(myExceptionHandler) {
           handleRejections(myRejectionHandler) {
             authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator) { _ =>

@@ -125,6 +125,34 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
       }
   }
 
+  test("GetInfo response should include this node ID") {
+    val mockService = new {} with MockService {
+      override def getInfoResponse: Future[GetInfoResponse] = Future.successful(GetInfoResponse(
+        nodeId = Alice.nodeParams.nodeId,
+        alias = Alice.nodeParams.alias,
+        port = 9735,
+        chainHash = Alice.nodeParams.chainHash,
+        blockHeight = 123456
+      ))
+    }
+    import mockService.formats
+    import mockService.serialization
+
+    val postBody = JsonRPCBody(method = "getinfo", params = Seq.empty)
+
+    Post("/", postBody) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == StatusCodes.OK)
+        val resp = entityAs[JsonRPCRes]
+        assert(resp.result.toString.contains(Alice.nodeParams.nodeId.toString))
+        matchTestJson("getinfo", false ,resp)
+      }
+  }
+
 
   def readFileAsString(path: Path): String = Files.exists(path) match {
     case true => new String(Files.readAllBytes(path.toAbsolutePath))
@@ -139,7 +167,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
       assert(false, "'overWrite' should be false before commit")
     }else{
       val expectedResponse = readFileAsString(path)
-      assert(responseContent == expectedResponse)
+      assert(responseContent == expectedResponse, s"test mock for $rpcMethod did not match the expected response")
     }
 
   }
