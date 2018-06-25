@@ -18,8 +18,6 @@ package fr.acinq.eclair
 
 import java.io.File
 
-import akka.actor.ActorSystem
-import com.typesafe.config.ConfigFactory
 import grizzled.slf4j.Logging
 
 /**
@@ -29,13 +27,9 @@ object Boot extends App with Logging {
 
   val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
 
-  val eclairNodeConf =
-    ConfigFactory.parseFile(new File(datadir, "eclair.conf"))
-      .withFallback(ConfigFactory.load())
-  
   try {
     import scala.concurrent.ExecutionContext.Implicits.global
-    new Setup(datadir, actorSystem = ActorSystem("default", eclairNodeConf)).bootstrap onFailure {
+    new Setup(datadir).bootstrap onFailure {
       case t: Throwable => onError(t)
     }
   } catch {
