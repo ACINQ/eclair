@@ -22,6 +22,7 @@ import java.nio.file.Files
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
+import com.google.common.net.InetAddresses
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.WatcherType
@@ -155,8 +156,15 @@ object NodeParams {
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
 
-    val publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(ip, config.getInt("server.port")))
-    require(publicAddresses.count(_.getAddress == null) == 0, s"server.public-ips must contain valid IP addresses or host names")
+    val publicAddresses = {
+      val errMsg = "server.public-ips must contain valid IP address(es)"
+      val publicIPs = config.getStringList("server.public-ips").toList
+      val invalid = publicIPs.filter(!InetAddresses.isInetAddress(_))
+      require(invalid.isEmpty, s"$errMsg. invalid addresses: [${invalid.mkString(",")}]")
+      val valid = publicIPs.map(ip => new InetSocketAddress(ip, config.getInt("server.port")))
+      require(valid.count(_.getAddress == null) == 0, errMsg)
+      valid
+    }
 
     NodeParams(
       keyManager = keyManager,
