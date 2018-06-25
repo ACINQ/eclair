@@ -5,7 +5,7 @@ import java.nio.file.{Files, Path, Paths, StandardOpenOption}
 import java.nio.file.StandardOpenOption._
 import akka.actor.{Actor, ActorSystem, Props, Scheduler}
 import org.scalatest.FunSuite
-import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.{marshaller, unmarshaller}
 import fr.acinq.eclair.blockchain.TestWallet
@@ -18,6 +18,7 @@ import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.server.Route
 import akka.stream.scaladsl.Flow
 import org.json4s.Formats
+import org.json4s.JsonAST.{JInt, JString}
 import org.json4s.jackson.Serialization
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -47,9 +48,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
   )
   
   class MockActor extends Actor {
-    override def receive: Receive = {
-      case msg =>
-    }
+    override def receive: Receive = { case _ => }
   }
   
   class MockService(kit: Kit = defaultMockKit) extends Service {
@@ -64,11 +63,66 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
     override val socketHandler: Flow[Message, TextMessage.Strict, NotUsed] = makeSocketHandler(system)(materializer)
   }
 
+  test("API service should handle failures correctly"){
+    val mockService = new MockService
+    import mockService.formats
+    import mockService.serialization
+
+    //no auth
+    Post("/", JsonRPCBody(method = "help", params = Seq.empty)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == Unauthorized)
+      }
+
+    //wrong auth
+    Post("/", JsonRPCBody(method = "help", params = Seq.empty)) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password+"what!")) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == Unauthorized)
+      }
+
+    //correct auth but wrong URL
+    Post("/mistake", JsonRPCBody(method = "help", params = Seq.empty)) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == NotFound)
+      }
+
+    //wrong rpc method
+    Post("/", JsonRPCBody(method = "open_not_really", params = Seq.empty)) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == BadRequest)
+      }
+
+    //wrong params
+    Post("/", JsonRPCBody(method = "open", params = Seq(JInt(123), JString("abc")))) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == BadRequest)
+      }
+
+  }
+
   test("Help should respond with a help message") {
     val mockService = new MockService
     import mockService.formats
     import mockService.serialization
-  
+
     val postBody = JsonRPCBody(method = "help", params = Seq.empty)
 
     Post("/", postBody) ~>
@@ -77,7 +131,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
-        assert(status == StatusCodes.OK)
+        assert(status == OK)
         val resp = entityAs[JsonRPCRes]
         matchTestJson("help", false ,resp)
     }
@@ -115,7 +169,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
-        assert(status == StatusCodes.OK)
+        assert(status == OK)
         val response = entityAs[JsonRPCRes]
         val peerInfos = response.result.asInstanceOf[Seq[Map[String,String]]]
         assert(peerInfos.size == 1)
@@ -146,7 +200,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
-        assert(status == StatusCodes.OK)
+        assert(status == OK)
         val resp = entityAs[JsonRPCRes]
         assert(resp.result.toString.contains(Alice.nodeParams.nodeId.toString))
         matchTestJson("getinfo", false ,resp)
