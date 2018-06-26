@@ -22,13 +22,12 @@ import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.Payment
 import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment}
 import fr.acinq.eclair.wire._
-
-import scala.concurrent.duration._
 import fr.acinq.eclair.{Globals, NodeParams, randomBytes}
 
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
-import scala.util.{Failure, Success, Try}
+import scala.concurrent.duration._
+import scala.util.Try
 
 /**
   * Created by PM on 17/06/2016.
@@ -47,7 +46,7 @@ class LocalPaymentHandler(nodeParams: NodeParams)(implicit ec: ExecutionContext 
         case e@(_, (_, pr)) if pr.timestamp + pr.expiry.get > currentSeconds => e // clean up expired requests
       }))
 
-    case ReceivePayment(amount_opt, desc, expirySeconds_opt) =>
+    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops) =>
       Try {
         if (hash2preimage.size > nodeParams.maxPendingPaymentRequests) {
           throw new RuntimeException(s"too many pending payment requests (max=${nodeParams.maxPendingPaymentRequests})")
@@ -55,7 +54,7 @@ class LocalPaymentHandler(nodeParams: NodeParams)(implicit ec: ExecutionContext 
         val paymentPreimage = randomBytes(32)
         val paymentHash = Crypto.sha256(paymentPreimage)
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
-        val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress = None, expirySeconds = Some(expirySeconds))
+        val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress = None, expirySeconds = Some(expirySeconds), extraHops = extraHops)
         log.debug(s"generated payment request=${PaymentRequest.write(paymentRequest)} from amount=$amount_opt")
         sender ! paymentRequest
         context.become(run(hash2preimage + (paymentHash -> (paymentPreimage, paymentRequest))))
