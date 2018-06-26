@@ -146,14 +146,26 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
         case GetPeerInfo => sender() ! PeerInfo(
           nodeId = Alice.nodeParams.nodeId,
           state = "CONNECTED",
+          address = Some(Alice.nodeParams.publicAddresses.head),
+          channels = 1)
+      }
+    }))
+
+    val mockBobPeer = system.actorOf(Props(new {} with MockActor {
+      override def receive = {
+        case GetPeerInfo => sender() ! PeerInfo(
+          nodeId = Bob.nodeParams.nodeId,
+          state = "DISCONNECTED",
           address = None,
           channels = 1)
       }
     }))
+
+
     val mockService = new MockService(defaultMockKit.copy(
       switchboard = system.actorOf(Props(new {} with MockActor {
         override def receive = {
-          case 'peers => sender() ! Map(Alice.nodeParams.nodeId -> mockAlicePeer)
+          case 'peers => sender() ! Map(Alice.nodeParams.nodeId -> mockAlicePeer, Bob.nodeParams.nodeId -> mockBobPeer)
         }
       }))
     ))
@@ -172,7 +184,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(status == OK)
         val response = entityAs[JsonRPCRes]
         val peerInfos = response.result.asInstanceOf[Seq[Map[String,String]]]
-        assert(peerInfos.size == 1)
+        assert(peerInfos.size == 2)
         assert(peerInfos.head.get("nodeId") == Some(Alice.nodeParams.nodeId.toString))
         assert(peerInfos.head.get("state") == Some("CONNECTED"))
         matchTestJson("peers", false, response)
@@ -208,12 +220,12 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
   }
 
 
-  def readFileAsString(path: Path): String = Files.exists(path) match {
+  private def readFileAsString(path: Path): String = Files.exists(path) match {
     case true => new String(Files.readAllBytes(path.toAbsolutePath))
     case false => throw new IllegalArgumentException(s"Mock file for $path does not exist, please use 'overWrite' first.")
   }
 
-  def matchTestJson(rpcMethod: String, overWrite: Boolean, response: JsonRPCRes)(implicit formats: Formats) = {
+  private def matchTestJson(rpcMethod: String, overWrite: Boolean, response: JsonRPCRes)(implicit formats: Formats) = {
     val responseContent = Serialization.writePretty(response)
     val path = Paths.get(s"src/test/resources/api/$rpcMethod")
     if(overWrite){
