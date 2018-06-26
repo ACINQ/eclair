@@ -16,12 +16,8 @@
 
 package fr.acinq.eclair.blockchain.bitcoind
 
-import java.io.File
-import java.nio.file.Files
-import java.util.UUID
-
+import akka.actor.ActorSystem
 import akka.actor.Status.Failure
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
@@ -37,35 +33,20 @@ import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
+import scala.collection.JavaConversions._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
-import scala.sys.process.{Process, _}
 import scala.util.{Random, Try}
-import collection.JavaConversions._
 
 @RunWith(classOf[JUnitRunner])
-class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll with Logging {
-
-  val INTEGRATION_TMP_DIR = s"${System.getProperty("buildDirectory")}/bitcoinj-${UUID.randomUUID().toString}"
-  logger.info(s"using tmp dir: $INTEGRATION_TMP_DIR")
-
-  val PATH_BITCOIND = new File(System.getProperty("buildDirectory"), "bitcoin-0.16.0/bin/bitcoind")
-  val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
-
-  var bitcoind: Process = null
-  var bitcoinrpcclient: BasicBitcoinJsonRPCClient = null
-  var bitcoincli: ActorRef = null
+class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
 
   val walletPassword = Random.alphanumeric.take(8).mkString
 
   implicit val formats = DefaultFormats
 
-  case class BitcoinReq(method: String, params: Any*)
 
   override def beforeAll(): Unit = {
-    Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
-    Files.copy(classOf[BitcoinCoreWalletSpec].getResourceAsStream("/integration/bitcoin.conf"), new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)
-
     startBitcoind()
   }
 
@@ -178,40 +159,5 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
 
     wallet.getBalance.pipeTo(sender.ref)
     assert(sender.expectMsgType[Satoshi] > Satoshi(0))
-
   }
-
-  private def startBitcoind(): Unit = {
-    bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
-    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 28332)
-    bitcoincli = system.actorOf(Props(new Actor {
-      override def receive: Receive = {
-        case BitcoinReq(method) => bitcoinrpcclient.invoke(method) pipeTo sender
-        case BitcoinReq(method, params) => bitcoinrpcclient.invoke(method, params) pipeTo sender
-        case BitcoinReq(method, param1, param2) => bitcoinrpcclient.invoke(method, param1, param2) pipeTo sender
-      }
-    }))
-  }
-
-  private def stopBitcoind(): Int = {
-    // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging
-    logger.info(s"stopping bitcoind")
-    val sender = TestProbe()
-    sender.send(bitcoincli, BitcoinReq("stop"))
-    sender.expectMsgType[JValue]
-    bitcoind.exitValue()
-  }
-
-  private def waitForBitcoindReady(): Unit = {
-    val sender = TestProbe()
-    logger.info(s"waiting for bitcoind to initialize...")
-    awaitCond({
-      sender.send(bitcoincli, BitcoinReq("getnetworkinfo"))
-      sender.receiveOne(5 second).isInstanceOf[JValue]
-    }, max = 30 seconds, interval = 500 millis)
-    logger.info(s"generating initial blocks...")
-    sender.send(bitcoincli, BitcoinReq("generate", 500))
-    sender.expectMsgType[JValue](30 seconds)
-  }
-
 }
