@@ -35,6 +35,7 @@ sealed trait RoutingMessage extends LightningMessage
 sealed trait HasTimestamp extends LightningMessage { def timestamp: Long }
 sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChannelId: BinaryData } // <- not in the spec
 sealed trait HasChannelId extends LightningMessage { def channelId: BinaryData } // <- not in the spec
+sealed trait HasChainHash extends LightningMessage { def chainHash: BinaryData } // <- not in the spec
 sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 // @formatter:on
 
@@ -71,7 +72,7 @@ case class OpenChannel(chainHash: BinaryData,
                        delayedPaymentBasepoint: Point,
                        htlcBasepoint: Point,
                        firstPerCommitmentPoint: Point,
-                       channelFlags: Byte) extends ChannelMessage with HasTemporaryChannelId
+                       channelFlags: Byte) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
 
 case class AcceptChannel(temporaryChannelId: BinaryData,
                          dustLimitSatoshis: Long,
@@ -152,7 +153,7 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData,
                                nodeId1: PublicKey,
                                nodeId2: PublicKey,
                                bitcoinKey1: PublicKey,
-                               bitcoinKey2: PublicKey) extends RoutingMessage
+                               bitcoinKey2: PublicKey) extends RoutingMessage with HasChainHash
 
 case class Color(r: Byte, g: Byte, b: Byte) {
   override def toString: String = f"#$r%02x$g%02x$b%02x" // to hexa s"#  ${r}%02x ${r & 0xFF}${g & 0xFF}${b & 0xFF}"
@@ -195,28 +196,28 @@ case class ChannelUpdate(signature: BinaryData,
                          cltvExpiryDelta: Int,
                          htlcMinimumMsat: Long,
                          feeBaseMsat: Long,
-                         feeProportionalMillionths: Long) extends RoutingMessage with HasTimestamp
+                         feeProportionalMillionths: Long) extends RoutingMessage with HasTimestamp with HasChainHash
 
 case class PerHopPayload(channel_id: ShortChannelId,
                          amtToForward: Long,
                          outgoingCltvValue: Long)
 
 case class QueryShortChannelIds(chainHash: BinaryData,
-                                data: BinaryData) extends RoutingMessage
+                                data: BinaryData) extends RoutingMessage with HasChainHash
 
 case class QueryChannelRange(chainHash: BinaryData,
                              firstBlockNum: Long,
-                             numberOfBlocks: Long) extends RoutingMessage
+                             numberOfBlocks: Long) extends RoutingMessage with HasChainHash
 
 case class ReplyChannelRange(chainHash: BinaryData,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
                              complete: Byte,
-                             data: BinaryData) extends RoutingMessage
+                             data: BinaryData) extends RoutingMessage with HasChainHash
 
 case class ReplyShortChannelIdsEnd(chainHash: BinaryData,
-                                  complete: Byte) extends RoutingMessage
+                                  complete: Byte) extends RoutingMessage with HasChainHash
 
 case class GossipTimestampFilter(chainHash: BinaryData,
                                  firstTimestamp: Long,
-                                 timestampRange: Long) extends RoutingMessage
+                                 timestampRange: Long) extends RoutingMessage with HasChainHash
