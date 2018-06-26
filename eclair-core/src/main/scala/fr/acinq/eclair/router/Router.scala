@@ -310,6 +310,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       remote ! query
       stay
 
+    case Event(PeerRoutingMessage(remoteNodeId, routingMessage: HasChainHash), d) if routingMessage.chainHash != nodeParams.chainHash =>
+      sender ! TransportHandler.ReadAck(routingMessage)
+      log.warning("{} sent {} message for chain {}, we're on {}", remoteNodeId, routingMessage, routingMessage.chainHash, nodeParams.chainHash)
+      stay
+
     case Event(PeerRoutingMessage(remoteNodeId, u: ChannelUpdate), d) =>
       sender ! TransportHandler.ReadAck(u)
       log.debug("received channel update for shortChannelId={} from {}", u.shortChannelId, remoteNodeId)
@@ -356,19 +361,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       sender ! TransportHandler.ReadAck(n)
       stay // we just ignore node_announcements on Android
 
-    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryChannelRange(chainHash, _, _)), d) if chainHash != nodeParams.chainHash =>
-      sender ! TransportHandler.ReadAck(routingMessage)
-      log.warning("{} sent {} message for chain {}, we're on {}", remoteNodeId, routingMessage, chainHash, nodeParams.chainHash)
-      stay
-
     case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       // On Android we ignore queries
-      stay
-
-    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data)), d) if chainHash != nodeParams.chainHash =>
-      sender ! TransportHandler.ReadAck(routingMessage)
-      log.warning("{} sent {} message for chain {}, we're on {}", remoteNodeId, routingMessage, chainHash, nodeParams.chainHash)
       stay
 
     case Event(PeerRoutingMessage(remoteNodeId, routingMessage@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data)), d) =>
@@ -381,19 +376,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       blocks.foreach(block => sender ! QueryShortChannelIds(chainHash, block.shortChannelIds))
       stay
 
-    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryShortChannelIds(chainHash, data)), d) if chainHash != nodeParams.chainHash =>
-      sender ! TransportHandler.ReadAck(routingMessage)
-      log.warning("{} sent {} message for chain {}, we're on {}", remoteNodeId, routingMessage, chainHash, nodeParams.chainHash)
-      stay
-
     case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryShortChannelIds(chainHash, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       // On Android we ignore queries
-      stay
-
-    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@ReplyShortChannelIdsEnd(chainHash, complete)), d) if chainHash != nodeParams.chainHash =>
-      sender ! TransportHandler.ReadAck(routingMessage)
-      log.warning("{} sent {} message for chain {}, we're on {}", remoteNodeId, routingMessage, chainHash, nodeParams.chainHash)
       stay
 
     case Event(PeerRoutingMessage(remoteNodeId, routingMessage@ReplyShortChannelIdsEnd(chainHash, complete)), d) =>
