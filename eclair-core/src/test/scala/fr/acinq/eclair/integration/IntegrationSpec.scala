@@ -17,16 +17,17 @@
 package fr.acinq.eclair.integration
 
 import java.io.{File, PrintWriter}
-import java.util.Properties
+import java.nio.file.Files
+import java.util.{Properties, UUID}
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, BinaryData, Block, Crypto, MilliSatoshi, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
-import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Register.Forward
 import fr.acinq.eclair.channel._
@@ -50,30 +51,58 @@ import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
+import scala.sys.process._
 
 /**
   * Created by PM on 15/03/2017.
   */
 @RunWith(classOf[JUnitRunner])
-class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
+class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll with Logging {
 
+  val INTEGRATION_TMP_DIR = s"${System.getProperty("buildDirectory")}/integration-${UUID.randomUUID().toString}"
+  logger.info(s"using tmp dir: $INTEGRATION_TMP_DIR")
+
+  val PATH_BITCOIND = new File(System.getProperty("buildDirectory"), "bitcoin-0.16.0/bin/bitcoind")
+  val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
+
+  var bitcoind: Process = null
+  var bitcoinrpcclient: BitcoinJsonRPCClient = null
+  var bitcoincli: ActorRef = null
   var nodes: Map[String, Kit] = Map()
 
   implicit val formats = DefaultFormats
 
+  case class BitcoinReq(method: String, params: Any*)
+
   override def beforeAll(): Unit = {
-    startBitcoind()
+    Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
+    Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf"), new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)
+
+    bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
+    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 28332)
+    bitcoincli = system.actorOf(Props(new Actor {
+      override def receive: Receive = {
+        case BitcoinReq(method) => bitcoinrpcclient.invoke(method) pipeTo sender
+        case BitcoinReq(method, params) => bitcoinrpcclient.invoke(method, params) pipeTo sender
+      }
+    }))
   }
 
   override def afterAll(): Unit = {
     // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging
     logger.info(s"stopping bitcoind")
-    stopBitcoind()
+    val sender = TestProbe()
+    sender.send(bitcoincli, BitcoinReq("stop"))
+    sender.expectMsgType[JValue]
+    bitcoind.exitValue()
     nodes.foreach {
       case (name, setup) =>
         logger.info(s"stopping node $name")
         setup.system.terminate()
     }
+    //    logger.warn(s"starting bitcoin-qt")
+    //    val PATH_BITCOINQT = new File(System.getProperty("buildDirectory"), "bitcoin-0.14.0/bin/bitcoin-qt").toPath
+    //    bitcoind = s"$PATH_BITCOINQT -datadir=$PATH_BITCOIND_DATADIR".run()
   }
 
   test("wait bitcoind ready") {
