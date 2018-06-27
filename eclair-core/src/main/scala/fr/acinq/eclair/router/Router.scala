@@ -193,30 +193,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       sender ! RoutingState(validChannels, validUpdates, validNodes)
       stay
 
-    case Event(c: ChannelAnnouncement, d) =>
-      log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={} from {}", c.shortChannelId, c.nodeId1, c.nodeId2, sender)
-      if (d.channels.contains(c.shortChannelId)) {
-        sender ! TransportHandler.ReadAck(c)
-        log.debug("ignoring {} (duplicate)", c)
-        stay
-      } else if (d.awaiting.contains(c)) {
-        sender ! TransportHandler.ReadAck(c)
-        log.debug("ignoring {} (being verified)", c)
-        // adding the sender to the list of origins so that we don't send back the same announcement to this peer later
-        val origins = d.awaiting(c) :+ sender
-        stay using d.copy(awaiting = d.awaiting + (c -> origins))
-      } else if (!Announcements.checkSigs(c)) {
-        sender ! TransportHandler.ReadAck(c)
-        log.warning("bad signature for announcement {}", c)
-        sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
-        stay
-      } else {
-        log.info("validating shortChannelId={}", c.shortChannelId)
-        watcher ! ValidateRequest(c)
-        // we don't acknowledge the message just yet
-        stay using d.copy(awaiting = d.awaiting + (c -> Seq(sender)))
-      }
-
     case Event(v@ValidateResult(c, _, _, _), d0) =>
       d0.awaiting.get(c) match {
         case Some(origin +: others) => origin ! TransportHandler.ReadAck(c) // now we can acknowledge the message, we only need to do it for the first peer that sent us the announcement
