@@ -30,6 +30,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
+import scodec.bits.BitVector
 
 import scala.concurrent.duration._
 
@@ -229,6 +230,25 @@ class RelayerSpec extends TestkitBaseClass {
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
     assert(fail.reason == Right(IncorrectCltvExpiry(cmd.expiry, channelUpdate_bc)))
+
+    register.expectNoMsg(100 millis)
+    paymentHandler.expectNoMsg(100 millis)
+  }
+
+  test("fail to relay an htlc-add when relay fee isn't sufficient") { case (relayer, register, paymentHandler) =>
+    val sender = TestProbe()
+
+    val hops1 = hops.updated(1, hops(1).copy(lastUpdate = hops(1).lastUpdate.copy(feeBaseMsat = hops(1).lastUpdate.feeBaseMsat / 2)))
+    val (cmd, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops1)
+    // and then manually build an htlc
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
+    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc)
+
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
+    assert(fail.id === add_ab.id)
+    assert(fail.reason == Right(FeeInsufficient(add_ab.amountMsat, channelUpdate_bc)))
 
     register.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)

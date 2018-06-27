@@ -51,7 +51,7 @@ object TestConstants {
       publicAddresses = new InetSocketAddress("localhost", 9731) :: Nil,
       globalFeatures = "",
       localFeatures = "00",
-      dustLimitSatoshis = 546,
+      dustLimitSatoshis = 1100,
       maxHtlcValueInFlightMsat = UInt64(150000000),
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = 144,
