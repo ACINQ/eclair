@@ -16,15 +16,16 @@
 
 package fr.acinq.eclair.payment
 
-import akka.actor.{ActorSystem, Status}
 import akka.actor.Status.Failure
+import akka.actor.{ActorSystem, Status}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
-import fr.acinq.eclair.Globals
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment}
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UpdateAddHtlc}
+import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuiteLike
 import org.scalatest.junit.JUnitRunner
@@ -133,11 +134,39 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
   test("Payment request generation should succeed when the amount is not set") {
     val handler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
     val sender = TestProbe()
-    val eventListener = TestProbe()
-    system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
 
     sender.send(handler, ReceivePayment(None, "This is a donation PR"))
     val pr = sender.expectMsgType[PaymentRequest]
     assert(pr.amount.isEmpty && pr.nodeId.toString == Alice.nodeParams.nodeId.toString)
+  }
+
+  test("Payment request generation should handle custom expiries or use the default otherwise") {
+    val handler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
+    val sender = TestProbe()
+
+    sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee"))
+    assert(sender.expectMsgType[PaymentRequest].expiry === Some(Alice.nodeParams.paymentRequestExpiry.toSeconds))
+
+    sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee with custom expiry", expirySeconds_opt = Some(60)))
+    assert(sender.expectMsgType[PaymentRequest].expiry === Some(60))
+  }
+
+  test("Generated payment request contains the provided extra hops") {
+    val handler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
+    val sender = TestProbe()
+
+    val x = randomKey.publicKey
+    val y = randomKey.publicKey
+    val extraHop_x_y = ExtraHop(x, ShortChannelId(1), 10, 11, 12)
+    val extraHop_y_z = ExtraHop(y, ShortChannelId(2), 20, 21, 22)
+    val extraHop_x_t = ExtraHop(x, ShortChannelId(3), 30, 31, 32)
+    val route_x_z = extraHop_x_y :: extraHop_y_z :: Nil
+    val route_x_t = extraHop_x_t :: Nil
+
+    sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee with additional routing info", extraHops = Seq(route_x_z, route_x_t)))
+    assert(sender.expectMsgType[PaymentRequest].routingInfo === Seq(route_x_z, route_x_t))
+
+    sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee without routing info"))
+    assert(sender.expectMsgType[PaymentRequest].routingInfo === Nil)
   }
 }

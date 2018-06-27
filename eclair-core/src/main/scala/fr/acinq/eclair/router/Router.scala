@@ -161,43 +161,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay
       }
 
-    case Event(c: ChannelAnnouncement, d) =>
-      log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={} from {}", c.shortChannelId, c.nodeId1, c.nodeId2, sender)
-      if (d.channels.contains(c.shortChannelId)) {
-        sender ! TransportHandler.ReadAck(c)
-        log.debug("ignoring {} (duplicate)", c)
-        stay
-      } else if (d.awaiting.contains(c)) {
-        sender ! TransportHandler.ReadAck(c)
-        log.debug("ignoring {} (being verified)", c)
-        // adding the sender to the list of origins so that we don't send back the same announcement to this peer later
-        val origins = d.awaiting(c) :+ sender
-        stay using d.copy(awaiting = d.awaiting + (c -> origins))
-      } else if (!Announcements.checkSigs(c)) {
-        sender ! TransportHandler.ReadAck(c)
-        log.warning("bad signature for announcement {}", c)
-        sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
-        stay
-      } else {
-        // On Android, after checking the sig we remove as much data as possible to reduce RAM consumption
-        val c1 = c.copy(
-          nodeSignature1 = null,
-          nodeSignature2 = null,
-          bitcoinSignature1 = null,
-          bitcoinSignature2 = null,
-          features = null,
-          chainHash = null,
-          bitcoinKey1 = null,
-          bitcoinKey2 = null)
-        sender ! TransportHandler.ReadAck(c)
-        // On Android, we don't validate announcements for now, it means that neither awaiting nor stashed announcements are used
-        db.addChannel(c1, BinaryData(""), Satoshi(0))
-        stay using d.copy(
-          channels = d.channels + (c1.shortChannelId -> c1),
-          privateChannels = d.privateChannels - c1.shortChannelId // we remove fake announcements that we may have made before)
-        )
-      }
-
     case Event(n: NodeAnnouncement, d: Data) =>
       sender ! TransportHandler.ReadAck(n)
       stay // we just ignore node_announcements on Android

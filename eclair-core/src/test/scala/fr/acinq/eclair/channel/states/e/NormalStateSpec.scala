@@ -24,6 +24,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.channel.Channel.TickRefreshChannelUpdate
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
@@ -552,7 +553,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val commitSig = alice2bob.expectMsgType[CommitSig]
       assert(commitSig.htlcSignatures.toSet.size == htlcCount)
       alice2bob.forward(bob)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.size ==  htlcCount)
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.size == htlcCount)
       val htlcTxs = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs
       val amounts = htlcTxs.map(_.txinfo.tx.txOut.head.amount.toLong)
       assert(amounts === amounts.sorted)
@@ -1341,6 +1342,21 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  ignore("recv CMD_UPDATE_RELAY_FEE ") { case (alice, bob, alice2bob, bob2alice, _, _, relayer) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val newFeeBaseMsat = TestConstants.Alice.nodeParams.feeBaseMsat * 2
+      val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.feeProportionalMillionth * 2
+      sender.send(alice, CMD_UPDATE_RELAY_FEE(newFeeBaseMsat, newFeeProportionalMillionth))
+      sender.expectMsg("ok")
+
+      val localUpdate = relayer.expectMsgType[LocalChannelUpdate]
+      assert(localUpdate.channelUpdate.feeBaseMsat == newFeeBaseMsat)
+      assert(localUpdate.channelUpdate.feeProportionalMillionths == newFeeProportionalMillionth)
+      relayer.expectNoMsg(1 seconds)
+    }
+  }
+
   test("recv CMD_CLOSE (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -2024,6 +2040,23 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       bob2alice.send(alice, annSigsA)
       // alice re-sends her sigs
       alice2bob.expectMsg(annSigsA)
+    }
+  }
+
+  ignore("recv TickRefreshChannelUpdate", Tag("channels_public")) { case (alice, bob, alice2bob, bob2alice, _, _, relayer) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+      sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+      bob2alice.expectMsgType[AnnouncementSignatures]
+      bob2alice.forward(alice)
+      val update1 = relayer.expectMsgType[LocalChannelUpdate]
+
+      // actual test starts here
+      Thread.sleep(1000)
+      sender.send(alice, TickRefreshChannelUpdate)
+      val update2 = relayer.expectMsgType[LocalChannelUpdate]
+      assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
     }
   }
 
