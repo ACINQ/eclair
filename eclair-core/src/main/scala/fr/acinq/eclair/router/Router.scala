@@ -349,7 +349,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         d.channels.filterKeys(id => shortChannelIds.contains(id))
       }
 
-      val staleChannels = getStaleChannels(pruningCandidates.values, d.updates)
+      // we limit the maximum number of channels that we will prune in one go to avoid "freezing" the app
+      val staleChannels = getStaleChannels(pruningCandidates.values, d.updates).take(MAX_PRUNE_COUNT)
       // then we clean up the related channel updates
       val staleUpdates = staleChannels.map(d.channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
       // finally we remove nodes that aren't tied to any channels anymore (and deduplicate them)
@@ -545,6 +546,9 @@ object Router {
     val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
     u.timestamp < staleThresholdSeconds
   }
+
+  // maximum number of stale channels that we will prune on startup
+  val MAX_PRUNE_COUNT = 200
 
   /**
     * Is stale a channel that:
