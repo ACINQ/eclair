@@ -124,7 +124,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       write(config.root().render());
       close
     }
-    val setup = new Setup(datadir, actorSystem = ActorSystem(s"system-$name"))
+    implicit val system = ActorSystem(s"system-$name")
+    val setup = new Setup(datadir)
     val kit = Await.result(setup.bootstrap, 10 seconds)
     nodes = nodes + (name -> kit)
   }
