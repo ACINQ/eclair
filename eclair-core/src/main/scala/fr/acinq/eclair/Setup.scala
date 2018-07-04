@@ -27,7 +27,7 @@ import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
-import fr.acinq.eclair.api.{GetInfoResponse, Service}
+import fr.acinq.eclair.api.{EclairClient, GetInfoResponse, Service}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
@@ -66,6 +66,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   val chain = config.getString("chain")
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
   val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
+
 
   // early checks
   DBCompatChecker.checkDBCompatibility(nodeParams)
@@ -212,7 +213,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
         val api = new Service {
-
+          override val client: EclairClient = new EclairClient(datadir)
           override def scheduler = system.scheduler
 
           override val password = {
