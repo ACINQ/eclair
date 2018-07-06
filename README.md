@@ -133,6 +133,7 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   channels     |                                                                                        | list existing local channels
   channels     | nodeId                                                                                 | list existing local channels opened with a particular nodeId
   channel      | channelId                                                                              | retrieve detailed information about a given channel
+  channelstats |                                                                                        | retrieves statistics about channel usage (fees, number and average amount of payments)
   allnodes     |                                                                                        | list all known nodes
   allchannels  |                                                                                        | list all known channels
   allupdates   |                                                                                        | list all channels updates

@@ -361,6 +361,7 @@ trait Service extends Logging {
     "channels: list existing local channels",
     "channels (nodeId): list existing local channels to a particular nodeId",
     "channel (channelId): retrieve detailed information about a given channel",
+    "channelstats: retrieves statistics about channel usage (fees, number and average amount of payments)",
     "allnodes: list all known nodes",
     "allchannels: list all known channels",
     "allupdates: list all channels updates",
