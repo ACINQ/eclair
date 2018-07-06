@@ -38,7 +38,7 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: BinaryData)(implicit
   override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long) = {
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, pubkeyScript) :: Nil, lockTime = 0)
     (wallet ? CompleteTransaction(tx, feeRatePerKw)).mapTo[CompleteTransactionResponse].map(response => response match {
-      case CompleteTransactionResponse(tx1, None) => MakeFundingTxResponse(tx1, 0)
+      case CompleteTransactionResponse(tx1, None) => MakeFundingTxResponse(tx1, 0, Satoshi(tx1.weight() * feeRatePerKw / 1000)) // TODO: output index is always 0? and check fee formula
       case CompleteTransactionResponse(_, Some(error)) => throw error
     })
   }

@@ -63,7 +63,7 @@ package object eclair {
 
   /**
     *
-    * @param feeratesPerKw fee rate in satoshiper-kw
+    * @param feeratesPerKw fee rate in satoshi-per-kw
     * @return fee rate in satoshi-per-byte
     */
   def feerateKw2Byte(feeratesPerKw: Long): Long = feeratesPerKw / 250

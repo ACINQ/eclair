@@ -58,4 +58,33 @@ class SqliteAuditDbSpec extends FunSuite {
     assert(db.listNetworkFees.size === 1)
     assert(db.listNetworkFees.head.txType === "mutual")
   }
+
+  test("stats") {
+    val sqlite = inmem
+    val db = new SqliteAuditDb(sqlite)
+
+    val n1 = randomKey.publicKey
+    val n2 = randomKey.publicKey
+    val n3 = randomKey.publicKey
+
+    val c1 = randomBytes(32)
+    val c2 = randomBytes(32)
+    val c3 = randomBytes(32)
+
+    db.add(PaymentRelayed(MilliSatoshi(46000), MilliSatoshi(44000), randomBytes(32), randomBytes(32), c1))
+    db.add(PaymentRelayed(MilliSatoshi(41000), MilliSatoshi(40000), randomBytes(32), randomBytes(32), c1))
+    db.add(PaymentRelayed(MilliSatoshi(43000), MilliSatoshi(42000), randomBytes(32), randomBytes(32), c1))
+    db.add(PaymentRelayed(MilliSatoshi(42000), MilliSatoshi(40000), randomBytes(32), randomBytes(32), c2))
+
+    db.add(NetworkFeePaid(null, n1, c1, Transaction(0, Seq.empty, Seq.empty, 0), Satoshi(100), "funding"))
+    db.add(NetworkFeePaid(null, n2, c2, Transaction(0, Seq.empty, Seq.empty, 0), Satoshi(200), "funding"))
+    db.add(NetworkFeePaid(null, n2, c2, Transaction(0, Seq.empty, Seq.empty, 0), Satoshi(300), "mutual"))
+    db.add(NetworkFeePaid(null, n3, c3, Transaction(0, Seq.empty, Seq.empty, 0), Satoshi(400), "funding"))
+
+    assert(db.stats.toSet === Set(
+      Stats(channelId = c1, avgPaymentAmountSatoshi = 42, paymentCount = 3, relayFeeSatoshi = 4, networkFeeSatoshi = 100),
+      Stats(channelId = c2, avgPaymentAmountSatoshi = 40, paymentCount = 1, relayFeeSatoshi = 2, networkFeeSatoshi = 500),
+      Stats(channelId = c3, avgPaymentAmountSatoshi = 0, paymentCount = 0, relayFeeSatoshi = 0, networkFeeSatoshi = 400)
+    ))
+  }
 }

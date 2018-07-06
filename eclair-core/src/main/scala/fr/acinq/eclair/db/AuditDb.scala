@@ -39,6 +39,10 @@ trait AuditDb {
 
   def listNetworkFees: Seq[NetworkFee]
 
+  def stats: Seq[Stats]
+
 }
 
 case class NetworkFee(remoteNodeId: PublicKey, channelId: BinaryData, txId: BinaryData, feeSat: Long, txType: String, timestamp: Long)
+
+case class Stats(channelId: BinaryData, avgPaymentAmountSatoshi: Long, paymentCount: Int, relayFeeSatoshi: Long, networkFeeSatoshi: Long)

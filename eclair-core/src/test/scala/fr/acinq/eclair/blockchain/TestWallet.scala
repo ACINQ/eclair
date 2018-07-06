@@ -45,7 +45,7 @@ object TestWallet {
       txIn = TxIn(OutPoint("42" * 32, 42), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
       txOut = TxOut(amount, pubkeyScript) :: Nil,
       lockTime = 0)
-    MakeFundingTxResponse(fundingTx, 0)
+    MakeFundingTxResponse(fundingTx, 0, Satoshi(420))
   }
 
   def malleateTx(tx: Transaction): Transaction = {

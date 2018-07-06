@@ -21,7 +21,7 @@ import java.sql.Connection
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel.NetworkFeePaid
-import fr.acinq.eclair.db.{AuditDb, NetworkFee}
+import fr.acinq.eclair.db.{AuditDb, NetworkFee, Stats}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 
 import scala.collection.immutable.Queue
@@ -142,6 +142,49 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
           feeSat = rs.getLong("fee_sat"),
           txType = rs.getString("tx_type"),
           timestamp = rs.getLong("timestamp"))
+      }
+      q
+    }
+
+  override def stats: Seq[Stats] =
+    using(sqlite.createStatement()) { statement =>
+      val rs = statement.executeQuery(
+        """
+          |SELECT
+          |     channel_id,
+          |     sum(avg_payment_amount_sat) AS avg_payment_amount_sat,
+          |     sum(payment_count) AS payment_count,
+          |     sum(relay_fee_sat) AS relay_fee_sat,
+          |     sum(network_fee_sat) AS network_fee_sat
+          |FROM (
+          |       SELECT
+          |           to_channel_id AS channel_id,
+          |           avg(amount_out_msat) / 1000 AS avg_payment_amount_sat,
+          |           count(*) AS payment_count,
+          |           sum(amount_in_msat - amount_out_msat) / 1000 AS relay_fee_sat,
+          |           0 AS network_fee_sat
+          |       FROM relayed
+          |       GROUP BY 1
+          |     UNION
+          |       SELECT
+          |           channel_id,
+          |           0 AS avg_payment_amount_sat,
+          |           0 AS payment_count,
+          |           0 AS relay_fee_sat,
+          |           sum(fee_sat) AS network_fee_sat
+          |       FROM network_fees
+          |       GROUP BY 1
+          |)
+          |GROUP BY 1
+        """.stripMargin)
+      var q: Queue[Stats] = Queue()
+      while (rs.next()) {
+        q = q :+ Stats(
+          channelId = BinaryData(rs.getBytes("channel_id")),
+          avgPaymentAmountSatoshi = rs.getLong("avg_payment_amount_sat"),
+          paymentCount = rs.getInt("payment_count"),
+          relayFeeSatoshi = rs.getLong("relay_fee_sat"),
+          networkFeeSatoshi = rs.getLong("network_fee_sat"))
       }
       q
     }

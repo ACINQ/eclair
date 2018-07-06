@@ -313,7 +313,11 @@ trait Service extends Logging {
                             relayed = nodeParams.auditDb.listRelayed)
                         ))
 
-                        case "network_fees" => completeRpcFuture(req.id, Future(nodeParams.auditDb.listNetworkFees))
+                        case "networkfees" => completeRpcFuture(req.id, Future(nodeParams.auditDb.listNetworkFees))
+
+                        // retrieve fee stats
+                        case "channelstats" => completeRpcFuture(req.id, Future(nodeParams.auditDb.stats))
+
 
                         // method name was not found
                         case _ => reject(UnknownMethodRejection(req.id))
