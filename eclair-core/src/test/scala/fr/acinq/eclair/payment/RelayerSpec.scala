@@ -339,7 +339,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.channelId === origin.originChannelId)
     assert(fwd.message.id === origin.originHtlcId)
 
-    eventListener.expectMsg(PaymentRelayed(MilliSatoshi(origin.amountMsatIn), MilliSatoshi(origin.amountMsatOut), add_bc.paymentHash, channelId_ab, channelId_bc))
+    val paymentRelayed = eventListener.expectMsgType[PaymentRelayed]
+    assert(paymentRelayed.copy(timestamp = 0) === PaymentRelayed(MilliSatoshi(origin.amountMsatIn), MilliSatoshi(origin.amountMsatOut), add_bc.paymentHash, channelId_ab, channelId_bc, timestamp = 0))
   }
 
   test("relay an htlc-fail") { case (relayer, register, _) =>
