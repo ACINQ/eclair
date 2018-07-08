@@ -1885,7 +1885,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   override def mdc(currentMessage: Any): MDC = {
     val id = Helpers.getChannelId(stateData)
-    Map("channelId" -> id)
+    Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(id))
   }
 
   // we let the peer decide what to do
