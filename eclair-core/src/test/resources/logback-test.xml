@@ -44,6 +44,7 @@
 
     <!--logger name="fr.acinq.eclair.channel" level="DEBUG"/-->
     <logger name="fr.acinq.eclair.router" level="WARN"/>
+    <logger name="fr.acinq.eclair.Diagnostics" level="OFF"/>
 
     <root level="INFO">
         <!--appender-ref ref="FILE"/>
