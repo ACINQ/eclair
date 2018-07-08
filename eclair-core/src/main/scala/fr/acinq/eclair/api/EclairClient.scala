@@ -27,7 +27,9 @@ class EclairClient(datadir: File = new File(s"${System.getenv("HOME")}/.eclair")
 
 
   implicit val dispatcher = system.dispatcher
-  private val _ = datadir.mkdirs()
+
+  private val _ = require(datadir.mkdirs(), s"Failed to make directory for eclair ${datadir.getAbsolutePath}")
+
   private val setup = new Setup(datadir, actorSystem = system)
   private val kitF: Future[Kit] = setup.bootstrap
   private val logger = LoggerFactory.getLogger(this.getClass.getSimpleName)
@@ -101,7 +103,7 @@ class EclairClient(datadir: File = new File(s"${System.getenv("HOME")}/.eclair")
         .mapTo[Map[BinaryData, ActorRef]]
         .map { m :Map[BinaryData, ActorRef] =>
           if (pubKeyOpt.isDefined) {
-            m.filter(_._2 == pubKeyOpt.get).keys
+            m.filter(_._1 == pubKeyOpt.get).keys
           } else {
             m.keys
           }
@@ -109,7 +111,8 @@ class EclairClient(datadir: File = new File(s"${System.getenv("HOME")}/.eclair")
 
       val sentF: Future[Iterable[RES_GETINFO]] = channelsIdF.flatMap { channels_id: Iterable[BinaryData] =>
         val x: Iterable[Future[RES_GETINFO]] = channels_id.map { channel_id =>
-          sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
+          val x = sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
+          x
         }
         Future.sequence(x)
       }
@@ -130,7 +133,7 @@ class EclairClient(datadir: File = new File(s"${System.getenv("HOME")}/.eclair")
     kitF.flatMap { kit =>
       val descs: Future[Iterable[ChannelDesc]] = {
         (kit.router ? 'channels).mapTo[Iterable[ChannelAnnouncement]]
-        .map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)))
+          .map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)))
       }
       descs.map(_.toVector)
     }
@@ -145,13 +148,15 @@ class EclairClient(datadir: File = new File(s"${System.getenv("HOME")}/.eclair")
 
   override def allUpdates(nodeIdOpt: Option[PublicKey]): Future[Vector[ChannelUpdate]] = {
     kitF.flatMap { kit =>
-      val updates: Future[Iterable[ChannelUpdate]] = if (nodeIdOpt.isDefined) {
-        val updateMap: Future[Map[ChannelDesc, ChannelUpdate]] = {
-          (kit.router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]]
+      val updates: Future[Iterable[ChannelUpdate]] = {
+        if (nodeIdOpt.isDefined) {
+          val updateMap: Future[Map[ChannelDesc, ChannelUpdate]] = {
+            (kit.router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]]
+          }
+          updateMap.map(_.filter(e => e._1.a == nodeIdOpt.get || e._1.b == nodeIdOpt.get).values)
+        } else {
+          (kit.router ? 'updates).mapTo[Iterable[ChannelUpdate]]
         }
-        updateMap.map(_.filter(e => e._1.a == nodeIdOpt.get || e._1.b == nodeIdOpt.get).values)
-      } else {
-        (kit.router ? 'updates).mapTo[Iterable[ChannelUpdate]]
       }
       updates.map(_.toVector)
     }
@@ -198,11 +203,25 @@ class EclairClient(datadir: File = new File(s"${System.getenv("HOME")}/.eclair")
   /** Pasting this over here for now as a bridge between old implementation in Service
     * and the new implementation in EclairClient
     */
-  private def sendToChannel(channelIdentifier: String, request: Any): Future[Any] =
-    for {
+  private def sendToChannel(channelIdentifier: String, request: Any): Future[Any] = {
+    val res: Future[Any] = for {
       fwdReq <- Future(Register.ForwardShortId(ShortChannelId(channelIdentifier), request))
         .recoverWith { case _ => Future(Register.Forward(BinaryData(channelIdentifier), request)) }
         .recoverWith { case _ => Future.failed(new RuntimeException(s"invalid channel identifier '$channelIdentifier'")) }
-      res <- kitF.map(kit => kit.register ? fwdReq)
+      res <- kitF.flatMap(kit => kit.register ? fwdReq)
     } yield res
+    res
+  }
+
+  private val rpcClient = {
+    new BasicBitcoinJsonRPCClient(
+      user = setup.config.getString("bitcoind.rpcuser"),
+      password = setup.config.getString("bitcoind.rpcpassword"),
+      host = setup.config.getString("bitcoind.host"),
+      port = setup.config.getInt("bitcoind.rpcport"))
+  }
+
+  def generateBlocks(n: Int): Future[Unit] = {
+    rpcClient.invoke("generate", n).map(_ => ())
+  }
 }
