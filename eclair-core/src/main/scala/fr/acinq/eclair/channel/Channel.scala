@@ -545,6 +545,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(fulfill: UpdateFulfillHtlc, d: DATA_NORMAL) =>
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(Right((commitments1, origin, htlc))) =>
+          // NB: fulfills must be forwarded to the upstream channel asap, because they allow us to get money
           relayer ! ForwardFulfill(fulfill, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
@@ -570,6 +571,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(fail: UpdateFailHtlc, d: DATA_NORMAL) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(Right((commitments1, origin, htlc))) =>
+          // TODO NB: fails must not be forwarded to the upstream channel before they are signed, because they cancel the incoming payment
           relayer ! ForwardFail(fail, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
@@ -579,6 +581,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(fail: UpdateFailMalformedHtlc, d: DATA_NORMAL) =>
       Try(Commitments.receiveFailMalformed(d.commitments, fail)) match {
         case Success(Right((commitments1, origin, htlc))) =>
+          // TODO NB: fails must not be forwarded to the upstream channel before they are signed, because they cancel the incoming payment
           relayer ! ForwardFailMalformed(fail, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
@@ -895,6 +898,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(fail: UpdateFailHtlc, d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(Right((commitments1, origin, htlc))) =>
+          // TODO NB: fails must not be forwarded to the upstream channel before they are signed, because they cancel the incoming payment
           relayer ! ForwardFail(fail, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
@@ -904,6 +908,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(fail: UpdateFailMalformedHtlc, d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFailMalformed(d.commitments, fail)) match {
         case Success(Right((commitments1, origin, htlc))) =>
+          // TODO NB: fails must not be forwarded to the upstream channel before they are signed, because they cancel the incoming payment
           relayer ! ForwardFailMalformed(fail, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
@@ -1173,6 +1178,14 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         val origin = d.commitments.originChannels(add.id)
         log.warning(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
         relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcTimedout(d.channelId), origin, None, None))
+      }
+      // we also need to fail outgoing htlcs that we know will never reach the blockchain
+      val overridenHtlcs =
+        Closing.overridenHtlcs(d.commitments.localCommit, d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(d.commitments.remoteCommit), tx)
+      overridenHtlcs.foreach { add =>
+        val origin = d.commitments.originChannels(add.id)
+        log.warning(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overriden by local commit")
+        relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcOverridenByLocalCommit(d.channelId), origin, None, None))
       }
       // then let's see if any of the possible close scenarii can be considered done
       val mutualCloseDone = d.mutualClosePublished.exists(_.txid == tx.txid) // this case is trivial, in a mutual close scenario we only need to make sure that one of the closing txes is confirmed

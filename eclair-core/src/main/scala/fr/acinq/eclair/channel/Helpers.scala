@@ -674,6 +674,25 @@ object Helpers {
         }).toSet.flatten
       }
 
+
+    /**
+      * If a local commitment tx reaches min_depth, we need to fail the outgoing htlcs that only us had signed, because
+      * they will never reach the blockchain.
+      *
+      * Those are only present in the remote's commitment.
+      *
+      * @param localCommit
+      * @param remoteCommit
+      * @param tx
+      * @param log
+      * @return
+      */
+    def overridenHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
+      if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
+        // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs
+        remoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add) -- localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
+      } else Set.empty
+
     /**
       * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
       * local commit scenario and keep track of it.
