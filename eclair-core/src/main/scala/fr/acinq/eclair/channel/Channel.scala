@@ -26,10 +26,9 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
-import fr.acinq.eclair.crypto.{Generators, LocalKeyManager, ShaChain, Sphinx}
+import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelReestablish, _}
 
@@ -608,11 +607,14 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           Try(Commitments.sendCommit(d.commitments, keyManager)) match {
             case Success((commitments1, commit)) =>
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
+              // maybe this was a replayed message, in that case need to delete it from temp db
+              // TODO: non optimal, most of the time it won't be in the db
               commitments1.localChanges.signed.collect {
-                case u: UpdateFulfillHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
-                case u: UpdateFailHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
-                case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
+                case u: UpdateFulfillHtlc => nodeParams.pendingRelayDb.removePendingRelay(u.channelId, u.id)
+                case u: UpdateFailHtlc => nodeParams.pendingRelayDb.removePendingRelay(u.channelId, u.id)
+                case u: UpdateFailMalformedHtlc => nodeParams.pendingRelayDb.removePendingRelay(u.channelId, u.id)
               }
+
               // TODO: be smarter and only consider commitments1.localChanges.signed and commitments1.remoteChanges.signed
               val nextRemoteCommit = commitments1.remoteNextCommitInfo.left.get.nextRemoteCommit
               val nextCommitNumber = nextRemoteCommit.index
@@ -933,10 +935,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           Try(Commitments.sendCommit(d.commitments, keyManager)) match {
             case Success((commitments1, commit)) =>
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
+              // maybe this was a replayed message, in that case need to delete it from temp db
+              // TODO: non optimal, most of the time it won't be in the db
               commitments1.localChanges.signed.collect {
-                case u: UpdateFulfillHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
-                case u: UpdateFailHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
-                case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
+                case u: UpdateFulfillHtlc => nodeParams.pendingRelayDb.removePendingRelay(u.channelId, u.id)
+                case u: UpdateFailHtlc => nodeParams.pendingRelayDb.removePendingRelay(u.channelId, u.id)
+                case u: UpdateFailMalformedHtlc => nodeParams.pendingRelayDb.removePendingRelay(u.channelId, u.id)
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
@@ -1426,6 +1430,36 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case _ => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), None, Some(c)), c) // we don't provide a channel_update: this will be a permanent channel failure
       }
 
+    case Event(c: CMD_FULFILL_HTLC, d: HasCommitments) =>
+      // let's just see if the command is valid...
+      Try(Commitments.sendFulfill(d.commitments, c)) match {
+        case Success((_, _)) =>
+          // and store it in a temporary database, we'll replay it when we go back online
+          nodeParams.pendingRelayDb.addPendingRelay(d.channelId, c.id, c)
+          stay // TODO: should be answer OK or not?
+        case Failure(cause) => handleCommandError(cause, c)
+      }
+
+    case Event(c: CMD_FAIL_HTLC, d: HasCommitments) =>
+      // let's just see if the command is valid...
+      Try(Commitments.sendFail(d.commitments, c, nodeParams.privateKey)) match {
+        case Success((_, _)) =>
+          // and store it in a temporary database, we'll replay it when we go back online
+          nodeParams.pendingRelayDb.addPendingRelay(d.channelId, c.id, c)
+          stay // TODO: should be answer OK or not?
+        case Failure(cause) => handleCommandError(cause, c)
+      }
+
+    case Event(c: CMD_FAIL_MALFORMED_HTLC, d: HasCommitments) =>
+      // let's just see if the command is valid...
+      Try(Commitments.sendFailMalformed(d.commitments, c)) match {
+        case Success((_, _)) =>
+          // and store it in a temporary database, we'll replay it when we go back online
+          nodeParams.pendingRelayDb.addPendingRelay(d.channelId, c.id, c)
+          stay // TODO: should be answer OK or not?
+        case Failure(cause) => handleCommandError(cause, c)
+      }
+
     case Event(c: CMD_CLOSE, d) => handleCommandError(CannotCloseInThisState(Helpers.getChannelId(d), stateName), c)
 
     case Event(c@CMD_FORCECLOSE, d) =>
@@ -1456,6 +1490,21 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       if (nextState == CLOSED) {
         // channel is closed, scheduling this actor for self destruction
         context.system.scheduler.scheduleOnce(10 seconds, self, 'shutdown)
+      }
+
+      // if we were offline let's replay the fulfill/fail commands that we weren't able to process
+      (state, nextState) match {
+        case (OFFLINE, NORMAL | SHUTDOWN | CLOSING) =>
+          val channelId = Helpers.getChannelId(nextStateData)
+          nodeParams.pendingRelayDb.listPendingRelay(channelId) match {
+            case Nil => ()
+            case msgs =>
+              log.info(s"re-sending ${msgs.size} unacked fulfills/fails to channel $channelId")
+              msgs.foreach(self ! _) // they all have commit = false
+              // better to sign once instead of after each fulfill/fail
+              self ! CMD_SIGN
+          }
+        case _ => ()
       }
 
       // if channel is private, we send the channel_update directly to remote
