@@ -374,7 +374,7 @@ object Peer {
 
   sealed trait Data {
     def address_opt: Option[InetSocketAddress]
-    def channels: Map[_ <: ChannelId, ActorRef] // will be overriden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
+    def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
   }
   case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
   case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
@@ -431,7 +431,7 @@ object Peer {
 
   /**
     * filter out gossip messages using the provided origin and optional timestamp range
-    * @param rebroadcast rebroacast message
+    * @param rebroadcast rebroadcast message
     * @param self messages which have been sent by `self` will be filtered out
     * @param gossipTimestampFilter optional gossip timestamp range
     * @return a filtered (channel announcements, channel updates, node announcements) tuple

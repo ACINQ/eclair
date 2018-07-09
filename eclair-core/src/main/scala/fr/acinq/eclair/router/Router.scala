@@ -18,7 +18,7 @@ package fr.acinq.eclair.router
 
 import java.io.StringWriter
 
-import akka.actor.{ActorRef, FSM, Props, Status}
+import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.BinaryData
@@ -394,7 +394,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       // it takes precedence over all other channel_updates we know
       val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end)).toMap
       // we also filter out updates corresponding to channels/nodes that are blacklisted for this particular request
-      // TODO: in case of duplicates, d.updates will be overriden by assistedUpdates even if they are more recent!
+      // TODO: in case of duplicates, d.updates will be overridden by assistedUpdates even if they are more recent!
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       findRoute(d.graph, start, end, withEdges = assistedUpdates, withoutEdges = ignoredUpdates)
@@ -405,7 +405,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
     case Event(SendChannelQuery(remoteNodeId, remote), _) =>
       // ask for everything
       val query = QueryChannelRange(nodeParams.chainHash, firstBlockNum = 0, numberOfBlocks = Int.MaxValue)
-      log.info("sending {}", query)
+      log.info("sending query_channel_range={}", query)
       remote ! query
 
       // we also set a pass-all filter for now (we can update it later)
@@ -424,7 +424,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       stay using handle(u, sender, d)
 
     case Event(PeerRoutingMessage(remoteNodeId, c: ChannelAnnouncement), d) =>
-      Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
       if (d.channels.contains(c.shortChannelId)) {
         sender ! TransportHandler.ReadAck(c)
@@ -448,46 +447,46 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         stay using d.copy(awaiting = d.awaiting + (c -> Seq(sender)))
       }
 
-    case Event(PeerRoutingMessage(remoteNodeId, n: NodeAnnouncement), d: Data) =>
+    case Event(PeerRoutingMessage(_, n: NodeAnnouncement), d: Data) =>
       sender ! TransportHandler.ReadAck(n)
       log.debug("received node announcement for nodeId={}", n.nodeId)
       stay using handle(n, sender, d)
 
-    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks)), d) =>
+    case Event(PeerRoutingMessage(_, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
-      log.info("received query {}", routingMessage)
+      log.info("received query_channel_range={}", routingMessage)
       // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
       val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
       if (shortChannelIds.isEmpty) {
         // tell them we have nothing
-        log.info("sending back empty reply_channel_range for range({}, {})", firstBlockNum, numberOfBlocks)
+        log.info("sending back empty reply_channel_range for range=({}, {})", firstBlockNum, numberOfBlocks)
         sender ! ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, BinaryData("00"))
       } else {
         // TODO: we don't compress to be compatible with old mobile apps, switch to ZLIB ASAP
         val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
-        log.info("sending back reply_channel_range with {} items", shortChannelIds.size)
+        log.info("sending back reply_channel_range with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
         val replies = blocks.map(block => ReplyChannelRange(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
         replies.foreach(reply => sender ! reply)
       }
       stay
 
-    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data)), d) =>
+    case Event(PeerRoutingMessage(_, routingMessage@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       val (format, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
       val ourShortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
       val missing: SortedSet[ShortChannelId] = theirShortChannelIds -- ourShortChannelIds
-      log.info("received reply_cyhannel_range, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
+      log.info("received reply_channel_range, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
       val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, missing, format, useGzip)
       blocks.foreach(block => sender ! QueryShortChannelIds(chainHash, block.shortChannelIds))
       stay
 
-    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryShortChannelIds(chainHash, data)), d) =>
+    case Event(PeerRoutingMessage(_, routingMessage@QueryShortChannelIds(chainHash, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       val (_, shortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
-      log.info("received  query for {} channel announcements, useGzip={}", shortChannelIds.size, useGzip)
+      log.info("received query_short_channel_ids for {} channel announcements, useGzip={}", shortChannelIds.size, useGzip)
       shortChannelIds.foreach(shortChannelId => {
         d.channels.get(shortChannelId) match {
-          case None => log.warning("received query for a channel announcement {} that we don't have", shortChannelId)
+          case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
           case Some(ca) =>
             sender ! ca
             d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => sender ! u)
@@ -500,7 +499,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
     case Event(PeerRoutingMessage(remoteNodeId, routingMessage@ReplyShortChannelIdsEnd(chainHash, complete)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       // we don't do anything with this yet
-      log.info("received {}", routingMessage)
+      log.info("received reply_short_channel_ids_end={}", routingMessage)
       stay
   }
 
