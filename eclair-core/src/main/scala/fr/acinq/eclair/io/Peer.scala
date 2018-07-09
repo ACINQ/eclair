@@ -437,28 +437,31 @@ object Peer {
     * @return a filtered (channel announcements, channel updates, node announcements) tuple
     */
   def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimestampFilter: Option[GossipTimestampFilter]): (Seq[ChannelAnnouncement], Seq[ChannelUpdate], Seq[NodeAnnouncement]) = {
-    // we filter out announcements that we received from this node
-    val channels1 = rebroadcast.channels.collect { case (a, origins) if !origins.contains(self) => a } toSeq
-    val updates1 = rebroadcast.updates.collect { case (a, origins) if !origins.contains(self) => a } toSeq
-    val nodes1 = rebroadcast.nodes.collect { case (a, origins) if !origins.contains(self) => a } toSeq
 
-    // filter out updates against their timestamp range
-    val updates2 = gossipTimestampFilter match {
-      case None => updates1
-      case Some(GossipTimestampFilter(_, firstTimestamp, timestampRange)) => updates1.filter(cu => cu.timestamp >= firstTimestamp && cu.timestamp <= firstTimestamp + timestampRange)
+    /**
+      *
+      * @param routingMessage routing message
+      * @return false if this message has a timestamp that does not match our timestamp filter, true otherwise
+      */
+    def checkTimestamp(routingMessage: RoutingMessage): Boolean = gossipTimestampFilter match {
+      case None => true // no filtering
+      case Some(GossipTimestampFilter(_, firstTimestamp, timestampRange)) => routingMessage match {
+        case hts: HasTimestamp => hts.timestamp >= firstTimestamp && hts.timestamp <= firstTimestamp + timestampRange
+        case _ => true
+      }
     }
 
-    // filter out channels that don't have a matching channel update
-    val shortChannelIds = updates2.map(_.shortChannelId).toSet
-    // note that we filter out channel_announcements that don't have a corresponding channel_update, instead of making up a timestamp (e.g. based on the blockheight) like the spec suggests.
-    // we can do that because our implementation of rebroadcast ensures that we resend channel_announcement every time there is a channel_update
-    val channels2 = channels1.filter(ca => shortChannelIds.contains(ca.shortChannelId))
 
-    // filter out nodes against their timestamp range
-    val nodes2 = gossipTimestampFilter match {
-      case None => nodes1
-      case Some(GossipTimestampFilter(_, firstTimestamp, timestampRange)) => nodes1.filter(cu => cu.timestamp >= firstTimestamp && cu.timestamp <= firstTimestamp + timestampRange)
-    }
-    (channels2, updates2, nodes2)
+    // we filter out announcements that we received from this node, and we also filter out updates against their timestamp filter
+    val updates1 = rebroadcast.updates.collect { case (a, origins) if !origins.contains(self) && checkTimestamp(a) => a} toSeq
+    val nodes1 = rebroadcast.nodes.collect { case (a, origins) if !origins.contains(self) && checkTimestamp(a) => a } toSeq
+
+    // keep a set of short channel ids for which we have an update
+    val shortChannelIds = updates1.map(_.shortChannelId).toSet
+
+    // filter out channels for which we don't have an update
+    val channels1 = rebroadcast.channels.collect { case (a, origins) if !origins.contains(self) && shortChannelIds.contains(a.shortChannelId) => a } toSeq
+
+    (channels1, updates1, nodes1)
   }
 }
