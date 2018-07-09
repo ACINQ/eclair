@@ -69,7 +69,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
       log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
-      val availableLocalBalance = commitments.remoteCommit.spec.toRemoteMsat
+      val availableLocalBalance = commitments.remoteCommit.spec.toRemoteMsat // note that remoteCommit.toRemote == toLocal
       context become main(channelUpdates + (channelUpdate.shortChannelId -> OutgoingChannel(remoteNodeId, channelUpdate, availableLocalBalance)), node2channels.addBinding(remoteNodeId, channelUpdate.shortChannelId))
 
     case LocalChannelDown(_, channelId, shortChannelId, remoteNodeId) =>
