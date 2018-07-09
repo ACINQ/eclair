@@ -18,12 +18,16 @@ package fr.acinq.eclair.crypto
 
 import java.nio.ByteOrder
 
-import akka.actor.{Actor, ActorRef, FSM, PoisonPill, Props, Terminated}
+import akka.actor.{Actor, ActorRef, ExtendedActorSystem, FSM, PoisonPill, Props, Terminated}
+import akka.event.Logging.MDC
+import akka.event._
 import akka.io.Tcp
 import akka.util.ByteString
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Protocol}
+import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs}
 import fr.acinq.eclair.crypto.Noise._
+import fr.acinq.eclair.wire._
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec, DecodeResult}
@@ -46,7 +50,31 @@ import scala.util.{Failure, Success, Try}
   * @param rs         remote node static public key (which must be known before we initiate communication)
   * @param connection actor that represents the other node's
   */
-class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, codec: Codec[T]) extends Actor with FSM[TransportHandler.State, TransportHandler.Data] {
+class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, codec: Codec[T]) extends Actor with FSMDiagnosticActorLogging[TransportHandler.State, TransportHandler.Data] {
+
+  // will hold the peer's public key once it is available (we don't know it right away in case of an incoming connection)
+  var remoteNodeId_opt: Option[PublicKey] = rs.map(PublicKey(_))
+
+  val wireLog = new BusLogging(context.system.eventStream, "", classOf[Diagnostics], context.system.asInstanceOf[ExtendedActorSystem].logFilter) with DiagnosticLoggingAdapter
+
+  def diag(message: T, direction: String) = {
+    require(direction == "IN" || direction == "OUT")
+    val channelId_opt = message match {
+      case msg: HasTemporaryChannelId => Some(msg.temporaryChannelId)
+      case msg: HasChannelId => Some(msg.channelId)
+      case _ => None
+    }
+
+    wireLog.mdc(Logs.mdc(remoteNodeId_opt, channelId_opt))
+    if (channelId_opt.isDefined) {
+      // channel-related messages are logged as info
+      wireLog.info(s"$direction msg={}", message)
+    } else {
+      // other messages (e.g. routing gossip) are logged as debug
+      wireLog.debug(s"$direction msg={}", message)
+    }
+    wireLog.clearMDC()
+  }
 
   import TransportHandler._
 
@@ -74,6 +102,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
     var m: Map[T, Int] = Map()
     plaintextMessages.foreach(plaintext => Try(codec.decode(BitVector(plaintext.data))) match {
       case Success(Attempt.Successful(DecodeResult(message, _))) =>
+        diag(message, "IN")
         listener ! message
         m += (message -> (m.getOrElse(message, 0) + 1))
       case Success(Attempt.Failure(err)) =>
@@ -100,6 +129,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
         reader.read(payload) match {
           case (writer, _, Some((dec, enc, ck))) =>
             val remoteNodeId = PublicKey(writer.rs)
+            remoteNodeId_opt = Some(remoteNodeId)
             context.parent ! HandshakeCompleted(connection, self, remoteNodeId)
             val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
             goto(WaitingForListener) using nextStateData
@@ -116,6 +146,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
               case (_, message, Some((enc, dec, ck))) => {
                 connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
                 val remoteNodeId = PublicKey(writer.rs)
+                remoteNodeId_opt = Some(remoteNodeId)
                 context.parent ! HandshakeCompleted(connection, self, remoteNodeId)
                 val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
                 goto(WaitingForListener) using nextStateData
@@ -183,6 +214,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
         }
         stay using d.copy(sendBuffer = sendBuffer1)
       } else {
+        diag(t, "OUT")
         val blob = codec.encode(t).require.toByteArray
         val (enc1, ciphertext) = d.encryptor.encrypt(blob)
         connection ! Tcp.Write(buf(ciphertext), WriteAck)
@@ -191,11 +223,13 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
     case Event(WriteAck, d: NormalData[T]) =>
       def send(t: T) = {
+        diag(t, "OUT")
         val blob = codec.encode(t).require.toByteArray
         val (enc1, ciphertext) = d.encryptor.encrypt(blob)
         connection ! Tcp.Write(buf(ciphertext), WriteAck)
         enc1
       }
+
       d.sendBuffer.normalPriority.dequeueOption match {
         case Some((t, normalPriority1)) =>
           val enc1 = send(t)
@@ -220,11 +254,20 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       log.info(s"connection terminated, stopping the transport")
       // this can be the connection or the listener, either way it is a cause of death
       stop(FSM.Normal)
+
+    case Event(msg, d) =>
+      d match {
+        case n: NormalData[T] => log.warning(s"unhandled message $msg in state normal unackedSent=${n.unackedSent.size} unackedReceived=${n.unackedReceived.size} sendBuffer.lowPriority=${n.sendBuffer.lowPriority.size} sendBuffer.normalPriority=${n.sendBuffer.normalPriority.size}")
+        case _ => log.warning(s"unhandled message $msg in state ${d.getClass.getSimpleName}")
+      }
+      stay
   }
 
   override def aroundPostStop(): Unit = connection ! Tcp.Close // attempts to gracefully close the connection when dying
 
   initialize()
+
+  override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = remoteNodeId_opt)
 
 }
 
@@ -371,6 +414,5 @@ object TransportHandler {
   case class ReadAck(msg: Any)
   case object WriteAck extends Tcp.Event
   // @formatter:on
-
 
 }

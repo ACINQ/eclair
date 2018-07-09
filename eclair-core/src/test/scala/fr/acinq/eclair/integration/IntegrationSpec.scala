@@ -334,13 +334,11 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   test("send multiple HTLCs A->D with a failover when a channel gets exhausted") {
     val sender = TestProbe()
     // there are two C-D channels with 5000000 sat, so we should be able to make 7 payments worth 1000000 sat each
-    for (i <- 0 until 7) {
-      // first we retrieve a payment hash from D for 2 mBTC
+    for (_ <- 0 until 7) {
       val amountMsat = MilliSatoshi(1000000000L)
       sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 payment"))
       val pr = sender.expectMsgType[PaymentRequest]
 
-      // A send payment of 3 mBTC, more than asked but it should still be accepted
       val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId)
       sender.send(nodes("A").paymentInitiator, sendReq)
       sender.expectMsgType[PaymentSucceeded]
