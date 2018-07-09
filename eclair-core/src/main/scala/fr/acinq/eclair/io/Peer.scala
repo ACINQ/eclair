@@ -438,11 +438,7 @@ object Peer {
     */
   def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimestampFilter: Option[GossipTimestampFilter]): (Seq[ChannelAnnouncement], Seq[ChannelUpdate], Seq[NodeAnnouncement]) = {
 
-    /**
-      *
-      * @param routingMessage routing message
-      * @return false if this message has a timestamp that does not match our timestamp filter, true otherwise
-      */
+    // check if this message has a timestamp that matches our timestamp filter
     def checkTimestamp(routingMessage: RoutingMessage): Boolean = gossipTimestampFilter match {
       case None => true // no filtering
       case Some(GossipTimestampFilter(_, firstTimestamp, timestampRange)) => routingMessage match {
@@ -450,7 +446,6 @@ object Peer {
         case _ => true
       }
     }
-
 
     // we filter out announcements that we received from this node, and we also filter out updates against their timestamp filter
     val updates1 = rebroadcast.updates.collect { case (a, origins) if !origins.contains(self) && checkTimestamp(a) => a} toSeq
