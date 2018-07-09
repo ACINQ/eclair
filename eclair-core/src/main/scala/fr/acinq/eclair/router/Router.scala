@@ -330,26 +330,26 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
     case Event(PeerRoutingMessage(_, routingMessage@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       val (format, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
-      log.info("received reply_channel_range, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
-
       // keep our channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-      val ourShortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(isInRange(_, firstBlockNum, numberOfBlocks))
-
-      // don't ask for stale channel ids
-      val ourShortChannelIdsNotStale = ourShortChannelIds.filterNot(isStale(_, d.channels, d.updates))
-      val missing: SortedSet[ShortChannelId] = theirShortChannelIds -- ourShortChannelIdsNotStale
-      log.info("we received their reply, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
+      val ourShortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
+      val missing: SortedSet[ShortChannelId] = theirShortChannelIds -- ourShortChannelIds
+      log.info("received reply_channel_range, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
       val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, missing, format, useGzip)
       blocks.foreach(block => sender ! QueryShortChannelIds(chainHash, block.shortChannelIds))
 
-      // we have channel announcement that they don't have: check if can can prune them
+      // we have channel announcement that they don't have: check if we can prune them
       val pruningCandidates = {
-        val shortChannelIds = ourShortChannelIds -- theirShortChannelIds
+        val first = ShortChannelId(firstBlockNum.toInt, 0, 0)
+        val last = ShortChannelId((firstBlockNum + numberOfBlocks).toInt, 0xFFFFFFFF, 0xFFFF)
+        // channel ids are sorted so we can simplify our range check
+        val shortChannelIds = d.channels.keySet.dropWhile(_ < first).takeWhile(_ <= last) -- theirShortChannelIds
         log.info("we have {} channel that they do not have", shortChannelIds.size)
         d.channels.filterKeys(id => shortChannelIds.contains(id))
       }
 
       // we limit the maximum number of channels that we will prune in one go to avoid "freezing" the app
+      // we first check which candidates are stale, then cap the result. We could also cap the candidate list first, there
+      // would be less calls to getStaleChannels but it would be less efficient from a "pruning" p.o.v
       val staleChannels = getStaleChannels(pruningCandidates.values, d.updates).take(MAX_PRUNE_COUNT)
       // then we clean up the related channel updates
       val staleUpdates = staleChannels.map(d.channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
@@ -569,21 +569,6 @@ object Router {
     blockHeight < staleThresholdBlocks && update1_opt.map(isStale).getOrElse(true) && update2_opt.map(isStale).getOrElse(true)
   }
 
-  /**
-    *
-    * @param shortChannelId short channel id
-    * @param channels channel announcements, indexed by short channel id
-    * @param updates channel updatesm indexed by channel descriptor
-    * @return true if shortChannelId is stale
-    */
-  def isStale(shortChannelId: ShortChannelId, channels: Map[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Boolean = {
-    val c = channels(shortChannelId)
-    val u1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
-    val u2 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
-    isStale(c, u1, u2)
-  }
-
-
   def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Iterable[ShortChannelId] = {
     val staleChannels = channels.filter { c =>
       val update1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
@@ -594,22 +579,14 @@ object Router {
   }
 
   /**
-    *
-    * @param id short channel id
-    * @param firstBlockNum first block height
-    * @param numberOfBlocks number of blocks
-    * @return true if id's height is in [firstBlockNum, firstBlockNum + numberOfBlocks]
-    */
-  def isInRange(id: ShortChannelId, firstBlockNum: Long, numberOfBlocks: Long): Boolean = {
-    val TxCoordinates(height, _, _) = ShortChannelId.coordinates(id)
-    height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
-  }
-
-  /**
     * Filters channels that we want to send to nodes asking for a channel range
     */
   def keep(firstBlockNum: Long, numberOfBlocks: Long, id: ShortChannelId, channels: Map[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Boolean = {
-    isInRange(id, firstBlockNum, numberOfBlocks) && !isStale(id, channels, updates)
+    val TxCoordinates(height, _, _) = ShortChannelId.coordinates(id)
+    val c = channels(id)
+    val u1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
+    val u2 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
+    height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks) && !isStale(c, u1, u2)
   }
 
 
