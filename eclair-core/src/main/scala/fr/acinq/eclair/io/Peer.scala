@@ -101,8 +101,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
         if (remoteHasInitialRoutingSync) {
           if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
-            // if they support channel queries so we do nothing, they will send us their filters
-            log.info("{} has set initial routing sync and support channel range queries, we do nothing (they will end us a query)", remoteNodeId)
+            // if they support channel queries we do nothing, they will send us their filters
+            log.info("{} has set initial routing sync and support channel range queries, we do nothing (they will send us a query)", remoteNodeId)
           } else {
             // "old" nodes, do as before
             router ! GetRoutingState
@@ -436,11 +436,11 @@ object Peer {
     * @param gossipTimestampFilter optional gossip timestamp range
     * @return a filtered (channel announcements, channel updates, node announcements) tuple
     */
-  def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimestampFilter: Option[GossipTimestampFilter]): (Vector[ChannelAnnouncement], Vector[ChannelUpdate], Vector[NodeAnnouncement]) = {
+  def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimestampFilter: Option[GossipTimestampFilter]): (Seq[ChannelAnnouncement], Seq[ChannelUpdate], Seq[NodeAnnouncement]) = {
     // we filter out announcements that we received from this node
-    val channels1 = rebroadcast.channels.collect { case (a, origins) if !origins.contains(self) => a } toVector
-    val updates1 = rebroadcast.updates.collect { case (a, origins) if !origins.contains(self) => a } toVector
-    val nodes1 = rebroadcast.nodes.collect { case (a, origins) if !origins.contains(self) => a } toVector
+    val channels1 = rebroadcast.channels.collect { case (a, origins) if !origins.contains(self) => a } toSeq
+    val updates1 = rebroadcast.updates.collect { case (a, origins) if !origins.contains(self) => a } toSeq
+    val nodes1 = rebroadcast.nodes.collect { case (a, origins) if !origins.contains(self) => a } toSeq
 
     // filter out updates against their timestamp range
     val updates2 = gossipTimestampFilter match {
