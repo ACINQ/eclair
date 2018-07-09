@@ -267,7 +267,7 @@ object PaymentLifecycle {
     */
   def transformForUser(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
     failures.map {
-      case LocalFailure(AddHtlcFailed(_, _, t, _, _)) => LocalFailure(t) // we're interested in the error which caused the add-htlc to fail
+      case LocalFailure(AddHtlcFailed(_, _, t, _, _, _)) => LocalFailure(t) // we're interested in the error which caused the add-htlc to fail
       case other => other
     } match {
       case previousFailures :+ LocalFailure(RouteNotFound) if previousFailures.nonEmpty => previousFailures
