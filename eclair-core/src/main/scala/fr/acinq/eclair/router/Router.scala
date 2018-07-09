@@ -19,6 +19,7 @@ package fr.acinq.eclair.router
 import java.io.StringWriter
 
 import akka.actor.{ActorRef, FSM, Props, Status}
+import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -85,7 +86,7 @@ case object TickPruneStaleChannels
   * Created by PM on 24/05/2016.
   */
 
-class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data] {
+class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticActorLogging[State, Data] {
 
   import Router._
 
@@ -273,7 +274,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(n: NodeAnnouncement, d: Data) =>
       // it was sent by us, routing messages that are sent by  our peers are now wrapped in a PeerRoutingMessage
-      log.debug("received node announcement for nodeId={} from {}", n.nodeId, sender)
+      log.debug("received node announcement from {}", sender)
       stay using handle(n, sender, d)
 
     case Event(WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)), d) if d.channels.contains(shortChannelId) =>
@@ -404,7 +405,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(SendChannelQuery(remoteNodeId, remote), _) =>
       // ask for everything
       val query = QueryChannelRange(nodeParams.chainHash, firstBlockNum = 0, numberOfBlocks = Int.MaxValue)
-      log.info("querying {} from {}", query, remoteNodeId)
+      log.info("sending {}", query)
       remote ! query
 
       // we also set a pass-all filter for now (we can update it later)
@@ -414,16 +415,17 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(PeerRoutingMessage(remoteNodeId, routingMessage: HasChainHash), d) if routingMessage.chainHash != nodeParams.chainHash =>
       sender ! TransportHandler.ReadAck(routingMessage)
-      log.warning("{} sent {} message for chain {}, we're on {}", remoteNodeId, routingMessage, routingMessage.chainHash, nodeParams.chainHash)
+      log.warning("message {} for wrong chain {}, we're on {}", routingMessage, routingMessage.chainHash, nodeParams.chainHash)
       stay
 
     case Event(PeerRoutingMessage(remoteNodeId, u: ChannelUpdate), d) =>
       sender ! TransportHandler.ReadAck(u)
-      log.debug("received channel update for shortChannelId={} from {}", u.shortChannelId, remoteNodeId)
+      log.debug("received channel update for shortChannelId={}", u.shortChannelId)
       stay using handle(u, sender, d)
 
     case Event(PeerRoutingMessage(remoteNodeId, c: ChannelAnnouncement), d) =>
-      log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={} from {}", c.shortChannelId, c.nodeId1, c.nodeId2, remoteNodeId)
+      Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
+      log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
       if (d.channels.contains(c.shortChannelId)) {
         sender ! TransportHandler.ReadAck(c)
         log.debug("ignoring {} (duplicate)", c)
@@ -440,7 +442,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
         stay
       } else {
-        log.info("validating shortChannelId={} from {}", c.shortChannelId, remoteNodeId)
+        log.info("validating shortChannelId={}", c.shortChannelId)
         watcher ! ValidateRequest(c)
         // we don't acknowledge the message just yet
         stay using d.copy(awaiting = d.awaiting + (c -> Seq(sender)))
@@ -448,22 +450,22 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(PeerRoutingMessage(remoteNodeId, n: NodeAnnouncement), d: Data) =>
       sender ! TransportHandler.ReadAck(n)
-      log.debug("received node announcement for nodeId={} from {}", n.nodeId, remoteNodeId)
+      log.debug("received node announcement for nodeId={}", n.nodeId)
       stay using handle(n, sender, d)
 
     case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
-      log.info("{} sent {}", remoteNodeId, routingMessage)
+      log.info("received query {}", routingMessage)
       // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
       val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
       if (shortChannelIds.isEmpty) {
         // tell them we have nothing
-        log.info("sending back empty reply_channel_range to {}", firstBlockNum, numberOfBlocks, shortChannelIds.size, remoteNodeId)
+        log.info("sending back empty reply_channel_range for range({}, {})", firstBlockNum, numberOfBlocks)
         sender ! ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, BinaryData("00"))
       } else {
         // TODO: we don't compress to be compatible with old mobile apps, switch to ZLIB ASAP
         val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
-        log.info("sending back reply_channel_range for {} channels to {}", shortChannelIds.size, remoteNodeId)
+        log.info("sending back reply_channel_range with {} items", shortChannelIds.size)
         val replies = blocks.map(block => ReplyChannelRange(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
         replies.foreach(reply => sender ! reply)
       }
@@ -474,7 +476,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val (format, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
       val ourShortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
       val missing: SortedSet[ShortChannelId] = theirShortChannelIds -- ourShortChannelIds
-      log.info("{} sent their reply fr, we're missing {} channel announcements/updates, format={} useGzip={}", remoteNodeId, missing.size, format, useGzip)
+      log.info("received reply_cyhannel_range, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
       val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, missing, format, useGzip)
       blocks.foreach(block => sender ! QueryShortChannelIds(chainHash, block.shortChannelIds))
       stay
@@ -482,10 +484,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryShortChannelIds(chainHash, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       val (_, shortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
-      log.info("{} is asking for {} channel announcements, useGzip={}", remoteNodeId, shortChannelIds.size, useGzip)
+      log.info("received  query for {} channel announcements, useGzip={}", shortChannelIds.size, useGzip)
       shortChannelIds.foreach(shortChannelId => {
         d.channels.get(shortChannelId) match {
-          case None => log.warning("{} asked for a channel announcement {} that we don't have", remoteNodeId, shortChannelId)
+          case None => log.warning("received query for a channel announcement {} that we don't have", shortChannelId)
           case Some(ca) =>
             sender ! ca
             d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => sender ! u)
@@ -498,7 +500,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(PeerRoutingMessage(remoteNodeId, routingMessage@ReplyShortChannelIdsEnd(chainHash, complete)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       // we don't do anything with this yet
-      log.info("{} sent {}", remoteNodeId, routingMessage)
+      log.info("received {}", routingMessage)
       stay
   }
 
@@ -620,6 +622,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       d
     }
 
+  override def mdc(currentMessage: Any): MDC = currentMessage match {
+    case SendChannelQuery(remoteNodeId, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
+    case PeerRoutingMessage(remoteNodeId, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
+    case _ => akka.event.Logging.emptyMDC
+  }
 }
 
 object Router {
