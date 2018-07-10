@@ -413,6 +413,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       remote ! filter
       stay
 
+    // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(remoteNodeId, routingMessage: HasChainHash), d) if routingMessage.chainHash != nodeParams.chainHash =>
       sender ! TransportHandler.ReadAck(routingMessage)
       log.warning("message {} for wrong chain {}, we're on {}", routingMessage, routingMessage.chainHash, nodeParams.chainHash)
@@ -457,17 +458,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       log.info("received query_channel_range={}", routingMessage)
       // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
       val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
-      if (shortChannelIds.isEmpty) {
-        // tell them we have nothing
-        log.info("sending back empty reply_channel_range for range=({}, {})", firstBlockNum, numberOfBlocks)
-        sender ! ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, BinaryData("00"))
-      } else {
-        // TODO: we don't compress to be compatible with old mobile apps, switch to ZLIB ASAP
-        val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
-        log.info("sending back reply_channel_range with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
-        val replies = blocks.map(block => ReplyChannelRange(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
-        replies.foreach(reply => sender ! reply)
-      }
+      // TODO: we don't compress to be compatible with old mobile apps, switch to ZLIB ASAP
+      // Careful: when we remove GZIP support, eclair-wallet 0.3.0 will stop working i.e. channels to ACINQ nodes will not
+      // work anymore
+      val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+      log.info("sending back reply_channel_range with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
+      val replies = blocks.map(block => ReplyChannelRange(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
+      replies.foreach(reply => sender ! reply)
       stay
 
     case Event(PeerRoutingMessage(_, routingMessage@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data)), d) =>

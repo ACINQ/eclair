@@ -42,7 +42,8 @@ class PeerSpec extends TestkitBaseClass {
     val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, probe.ref, None)
     assert(channels1.toSet == channels.toSet - channels(5))
     assert(updates1.toSet == updates.toSet - updates(6) - updates(10))
-    assert(nodes1.toSet == nodes.toSet - nodes(4))
+    val removed = nodes.collect { case n if channels(5).nodeId1 == n.nodeId || channels(5).nodeId2 == n.nodeId => n }
+    assert(nodes1.toSet == nodes.toSet - nodes(4) -- removed)
   }
 
   test("filter gossip message (filtered by timestamp)") { probe =>
@@ -51,6 +52,6 @@ class PeerSpec extends TestkitBaseClass {
     val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, probe.ref, Some(GossipTimestampFilter(Block.RegtestGenesisBlock.blockId, timestamps.head, timestamps.last - timestamps.head)))
     assert(updates1.toSet == updates.filter(u => timestamps.contains(u.timestamp)).toSet)
     assert(nodes1.toSet == nodes.filter(u => timestamps.contains(u.timestamp)).toSet)
-    assert(channels1.toSet == channels.filter(ca => updates1.map(_.shortChannelId).contains(ca.shortChannelId)).toSet)
+    assert(channels1.toSet == channels.filter(ca => updates1.map(_.shortChannelId).toSet.contains(ca.shortChannelId)).toSet)
   }
 }

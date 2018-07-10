@@ -42,6 +42,17 @@ class ChannelRangeQueriesSpec extends FunSuite {
     })
     assert(decoded == shortChannelIds)
   }
+
+  test("create empty `reply_channel_range` message") {
+    val blocks = ChannelRangeQueries.encodeShortChannelIds(400000, 20000, SortedSet.empty[ShortChannelId], ChannelRangeQueries.ZLIB_FORMAT, useGzip = false)
+    val replies = blocks.map(block  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
+    var decoded = Set.empty[ShortChannelId]
+    replies.foreach(reply => decoded = decoded ++ {
+      val (format, ids, false) = ChannelRangeQueries.decodeShortChannelIds(reply.data)
+      ids
+    })
+    assert(decoded.isEmpty)
+  }
 }
 
 object ChannelRangeQueriesSpec {

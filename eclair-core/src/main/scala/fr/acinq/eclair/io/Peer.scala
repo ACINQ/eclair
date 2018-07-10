@@ -115,7 +115,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
         // let's bring existing/requested channels online
         channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(transport)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(CONNECTED) using ConnectedData(address_opt, transport, remoteInit, channels.map { case (k: ChannelId, v) => (k, v)})
+        goto(CONNECTED) using ConnectedData(address_opt, transport, remoteInit, channels.map { case (k: ChannelId, v) => (k, v) })
       } else {
         log.warning(s"incompatible features, disconnecting")
         origin_opt.map(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
@@ -238,6 +238,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           transport ! ann
           c + 1
       }
+
       log.info(s"sending all announcements to {}", remoteNodeId)
       val channelsSent = send(channels)
       val nodesSent = send(nodes)
@@ -247,12 +248,20 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(rebroadcast: Rebroadcast, ConnectedData(_, transport, _, _, maybeGossipTimestampFilter)) =>
       val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, self, maybeGossipTimestampFilter)
-      val channelsSent = channels1.length
-      val updatesSent = updates1.length
-      val nodesSent = nodes1.length
-      channels1.foreach(transport ! _)
-      updates1.foreach(transport ! _)
-      nodes1.foreach(transport ! _)
+
+      /**
+        * Send and count in a single iteration
+        */
+      def sendAndCount(msgs: Iterable[RoutingMessage]): Int = msgs.foldLeft(0) {
+        case (count, msg) =>
+          transport ! msg
+          count + 1
+      }
+
+      val channelsSent = sendAndCount(channels1)
+      val updatesSent = sendAndCount(updates1)
+      val nodesSent = sendAndCount(nodes1)
+
       if (channelsSent > 0 || updatesSent > 0 || nodesSent > 0) {
         log.debug(s"sent announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       }
@@ -431,12 +440,13 @@ object Peer {
 
   /**
     * filter out gossip messages using the provided origin and optional timestamp range
-    * @param rebroadcast rebroadcast message
-    * @param self messages which have been sent by `self` will be filtered out
+    *
+    * @param rebroadcast           rebroadcast message
+    * @param self                  messages which have been sent by `self` will be filtered out
     * @param gossipTimestampFilter optional gossip timestamp range
     * @return a filtered (channel announcements, channel updates, node announcements) tuple
     */
-  def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimestampFilter: Option[GossipTimestampFilter]): (Seq[ChannelAnnouncement], Seq[ChannelUpdate], Seq[NodeAnnouncement]) = {
+  def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimestampFilter: Option[GossipTimestampFilter]): (Iterable[ChannelAnnouncement], Iterable[ChannelUpdate], Iterable[NodeAnnouncement]) = {
 
     // check if this message has a timestamp that matches our timestamp filter
     def checkTimestamp(routingMessage: RoutingMessage): Boolean = gossipTimestampFilter match {
@@ -447,15 +457,20 @@ object Peer {
       }
     }
 
-    // we filter out announcements that we received from this node, and we also filter out updates against their timestamp filter
-    val updates1 = rebroadcast.updates.collect { case (a, origins) if !origins.contains(self) && checkTimestamp(a) => a} toSeq
-    val nodes1 = rebroadcast.nodes.collect { case (a, origins) if !origins.contains(self) && checkTimestamp(a) => a } toSeq
+    // we filter out updates against their timestamp filter
+    val (updates1, shortChannelIds) = rebroadcast.updates.foldLeft((Seq.empty[ChannelUpdate], Set.empty[ShortChannelId])){
+      case ((channelUpdates, shortChannelIds), (a, origins)) if !origins.contains(self) && checkTimestamp(a)=> (a +: channelUpdates, shortChannelIds + a.shortChannelId)
+      case ((channelUpdates, shortChannelIds), (a, origins)) => (channelUpdates, shortChannelIds)
+    }
 
-    // keep a set of short channel ids for which we have an update
-    val shortChannelIds = updates1.map(_.shortChannelId).toSet
+    // we filter out channels for which we don't have an update
+    val (channels1, nodeIds) = rebroadcast.channels.foldLeft((Seq.empty[ChannelAnnouncement], Set.empty[PublicKey])){
+      case ((channelAnnouncements, nodeIds), (a, origins)) if !origins.contains(self) && shortChannelIds.contains(a.shortChannelId) => (a +: channelAnnouncements, nodeIds + a.nodeId1 + a.nodeId2)
+      case ((channelAnnouncements, nodeIds), (a, origins)) => (channelAnnouncements, nodeIds)
+    }
 
-    // filter out channels for which we don't have an update
-    val channels1 = rebroadcast.channels.collect { case (a, origins) if !origins.contains(self) && shortChannelIds.contains(a.shortChannelId) => a } toSeq
+    // we filter out nodes for which we don't have a channel announcement
+    val nodes1 = rebroadcast.nodes.collect { case (a, origins) if !origins.contains(self) && checkTimestamp(a) && nodeIds.contains(a.nodeId) => a }
 
     (channels1, updates1, nodes1)
   }
