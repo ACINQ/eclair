@@ -63,6 +63,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     logger.info("stopping bitcoind")
     stopBitcoind()
     super.afterAll()
+    TestKit.shutdownActorSystem(system)
   }
 
   def getCurrentAddress(probe: TestProbe) = {
