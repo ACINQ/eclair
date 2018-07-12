@@ -457,20 +457,23 @@ object Peer {
       }
     }
 
-    // we filter out updates against their timestamp filter
+    // we filter out updates against their timestamp filter, and build a list of all channel ids for which we have an update
     val (updates1, shortChannelIds) = rebroadcast.updates.foldLeft((Seq.empty[ChannelUpdate], Set.empty[ShortChannelId])){
       case ((channelUpdates, shortChannelIds), (a, origins)) if !origins.contains(self) && checkTimestamp(a)=> (a +: channelUpdates, shortChannelIds + a.shortChannelId)
       case ((channelUpdates, shortChannelIds), (a, origins)) => (channelUpdates, shortChannelIds)
     }
 
     // we filter out channels for which we don't have an update
-    val (channels1, nodeIds) = rebroadcast.channels.foldLeft((Seq.empty[ChannelAnnouncement], Set.empty[PublicKey])){
-      case ((channelAnnouncements, nodeIds), (a, origins)) if !origins.contains(self) && shortChannelIds.contains(a.shortChannelId) => (a +: channelAnnouncements, nodeIds + a.nodeId1 + a.nodeId2)
-      case ((channelAnnouncements, nodeIds), (a, origins)) => (channelAnnouncements, nodeIds)
+    val channels1 = rebroadcast.channels.foldLeft((Seq.empty[ChannelAnnouncement])) {
+      case (channelAnnouncements, (a, origins)) if !origins.contains(self) && shortChannelIds.contains(a.shortChannelId) => a +: channelAnnouncements
+      case (channelAnnouncements, (a, _)) => channelAnnouncements
     }
 
-    // we filter out nodes for which we don't have a channel announcement
-    val nodes1 = rebroadcast.nodes.collect { case (a, origins) if !origins.contains(self) && checkTimestamp(a) && nodeIds.contains(a.nodeId) => a }
+    // we filter out nodes against their timestamp filter
+    // TODO: we do * not * filter out nodes for which matching channel announcements were pruned above.
+    // Our rebroadcast message may sometimes include "orphan" nodes without matching channel announcements, because of
+    // the way announcements are handled in the router
+    val nodes1 = rebroadcast.nodes.collect { case (a, origins) if !origins.contains(self) && checkTimestamp(a) => a }
 
     (channels1, updates1, nodes1)
   }
