@@ -49,6 +49,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     logger.info("stopping bitcoind")
     stopBitcoind()
     super.afterAll()
+    TestKit.shutdownActorSystem(system)
   }
 
   test("watch for confirmed transactions") {
