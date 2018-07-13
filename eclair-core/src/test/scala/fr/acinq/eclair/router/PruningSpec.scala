@@ -102,7 +102,8 @@ class PruningSpec extends TestkitBaseClass with BeforeAndAfterAll {
       awaitCond({
         probe.send(router, 'channels)
         val channels = probe.expectMsgType[Iterable[ChannelAnnouncement]]
-        channels.size == fakeRoutingInfo.size - 10
+        val ourIds = channels.map(_.shortChannelId).toSet
+        ourIds == shortChannelIds1
       }, max = 30 seconds)
     }
   }
