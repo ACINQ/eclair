@@ -28,7 +28,8 @@ case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] 
 
   override def toString: String = id.toHexString
 
-  override def compare(that: ShortChannelId): Int = this.id.compareTo(that.id)
+  // we use an unsigned long comparison here
+  override def compare(that: ShortChannelId): Int = (this.id + Long.MinValue).compareTo(that.id + Long.MinValue)
 }
 
 object ShortChannelId {
