@@ -1,19 +1,3 @@
-/*
- * Copyright 2018 ACINQ SAS
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package fr.acinq.eclair.router
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, InputStream}
@@ -40,20 +24,25 @@ object ChannelRangeQueries {
     * @return a sequence of encoded short channel ids
     */
   def encodeShortChannelIds(firstBlockIn: Long, numBlocksIn: Long, shortChannelIds: SortedSet[ShortChannelId], format: Byte, useGzip: Boolean = false): List[ShortChannelIdsBlock] = {
-    // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
-    val count = format match {
-      case UNCOMPRESSED_FORMAT => 7000
-      case ZLIB_FORMAT => 12000 // TODO: do something less simplistic...
-    }
-    shortChannelIds.grouped(count).map(ids => {
-      val (firstBlock, numBlocks) = if (ids.isEmpty) (firstBlockIn, numBlocksIn) else {
-        val firstBlock: Long = ShortChannelId.coordinates(ids.head).blockHeight
-        val numBlocks: Long = ShortChannelId.coordinates(ids.last).blockHeight - firstBlock + 1
-        (firstBlock, numBlocks)
+    if (shortChannelIds.isEmpty) {
+      // special case: reply with an "empty" block
+      List(ShortChannelIdsBlock(firstBlockIn, numBlocksIn, BinaryData("00")))
+    } else {
+      // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
+      val count = format match {
+        case UNCOMPRESSED_FORMAT => 7000
+        case ZLIB_FORMAT => 12000 // TODO: do something less simplistic...
       }
-      val encoded = encodeShortChannelIdsSingle(ids, format, useGzip)
-      ShortChannelIdsBlock(firstBlock, numBlocks, encoded)
-    }).toList
+      shortChannelIds.grouped(count).map(ids => {
+        val (firstBlock, numBlocks) = if (ids.isEmpty) (firstBlockIn, numBlocksIn) else {
+          val firstBlock: Long = ShortChannelId.coordinates(ids.head).blockHeight
+          val numBlocks: Long = ShortChannelId.coordinates(ids.last).blockHeight - firstBlock + 1
+          (firstBlock, numBlocks)
+        }
+        val encoded = encodeShortChannelIdsSingle(ids, format, useGzip)
+        ShortChannelIdsBlock(firstBlock, numBlocks, encoded)
+      }).toList
+    }
   }
 
   def encodeShortChannelIdsSingle(shortChannelIds: Iterable[ShortChannelId], format: Byte, useGzip: Boolean): BinaryData = {

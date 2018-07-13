@@ -1,19 +1,3 @@
-/*
- * Copyright 2018 ACINQ SAS
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package fr.acinq.eclair.io
 
 import akka.actor.ActorRef
@@ -67,6 +51,6 @@ class PeerSpec extends TestkitBaseClass {
     val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, probe.ref, Some(GossipTimestampFilter(Block.RegtestGenesisBlock.blockId, timestamps.head, timestamps.last - timestamps.head)))
     assert(updates1.toSet == updates.filter(u => timestamps.contains(u.timestamp)).toSet)
     assert(nodes1.toSet == nodes.filter(u => timestamps.contains(u.timestamp)).toSet)
-    assert(channels1.toSet == channels.filter(ca => updates1.map(_.shortChannelId).contains(ca.shortChannelId)).toSet)
+    assert(channels1.toSet == channels.filter(ca => updates1.map(_.shortChannelId).toSet.contains(ca.shortChannelId)).toSet)
   }
 }

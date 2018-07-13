@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.router
 
-import akka.actor.{ActorRef, FSM, Props, Status}
+import akka.actor.{ActorRef, Props, Status}
+import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Satoshi}
@@ -79,7 +80,7 @@ case object TickPruneStaleChannels
   * Created by PM on 24/05/2016.
   */
 
-class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data] {
+class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticActorLogging[State, Data] {
 
   import Router._
 
@@ -115,7 +116,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   }
 
   when(NORMAL) {
-    case Event(LocalChannelUpdate(_, _, shortChannelId, remoteNodeId, channelAnnouncement_opt, u), d: Data) =>
+    case Event(LocalChannelUpdate(_, _, shortChannelId, remoteNodeId, channelAnnouncement_opt, u, _), d: Data) =>
       d.channels.get(shortChannelId) match {
         case Some(_) =>
           // channel has already been announced and router knows about it, we can process the channel_update
@@ -255,7 +256,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       // it takes precedence over all other channel_updates we know
       val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end)).toMap
       // we also filter out updates corresponding to channels/nodes that are blacklisted for this particular request
-      // TODO: in case of duplicates, d.updates will be overriden by assistedUpdates even if they are more recent!
+      // TODO: in case of duplicates, d.updates will be overridden by assistedUpdates even if they are more recent!
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       findRoute(d.graph, start, end, withEdges = assistedUpdates, withoutEdges = ignoredUpdates)
@@ -269,7 +270,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(SendChannelQuery(remoteNodeId, remote), _) =>
       // ask for everything
       val query = QueryChannelRange(nodeParams.chainHash, firstBlockNum = 0, numberOfBlocks = Int.MaxValue)
-      log.info("querying {} from {}", query, remoteNodeId)
+      log.info("sending query_channel_range={}", query)
       remote ! query
 
       // we also set a pass-all filter for now (we can update it later)
@@ -277,18 +278,19 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       remote ! filter
       stay
 
+    // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(remoteNodeId, routingMessage: HasChainHash), d) if routingMessage.chainHash != nodeParams.chainHash =>
       sender ! TransportHandler.ReadAck(routingMessage)
-      log.warning("{} sent {} message for chain {}, we're on {}", remoteNodeId, routingMessage, routingMessage.chainHash, nodeParams.chainHash)
+      log.warning("message {} for wrong chain {}, we're on {}", routingMessage, routingMessage.chainHash, nodeParams.chainHash)
       stay
 
     case Event(PeerRoutingMessage(remoteNodeId, u: ChannelUpdate), d) =>
       sender ! TransportHandler.ReadAck(u)
-      log.debug("received channel update for shortChannelId={} from {}", u.shortChannelId, remoteNodeId)
+      log.debug("received channel update for shortChannelId={}", u.shortChannelId)
       stay using handle(u, sender, d)
 
     case Event(PeerRoutingMessage(remoteNodeId, c: ChannelAnnouncement), d) =>
-      log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={} from {}", c.shortChannelId, c.nodeId1, c.nodeId2, sender)
+      log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
       if (d.channels.contains(c.shortChannelId)) {
         sender ! TransportHandler.ReadAck(c)
         log.debug("ignoring {} (duplicate)", c)
@@ -324,26 +326,26 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         )
       }
 
-    case Event(PeerRoutingMessage(remoteNodeId, n: NodeAnnouncement), d: Data) =>
+    case Event(PeerRoutingMessage(_, n: NodeAnnouncement), d: Data) =>
       sender ! TransportHandler.ReadAck(n)
       stay // we just ignore node_announcements on Android
 
-    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks)), d) =>
+    case Event(PeerRoutingMessage(_, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       // On Android we ignore queries
       stay
 
-    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data)), d) =>
+    case Event(PeerRoutingMessage(_, routingMessage@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       val (format, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
       val ourShortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
       val missing: SortedSet[ShortChannelId] = theirShortChannelIds -- ourShortChannelIds
-      log.info("{} sent their reply fr, we're missing {} channel announcements/updates, format={} useGzip={}", remoteNodeId, missing.size, format, useGzip)
+      log.info("received reply_channel_range, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
       val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, missing, format, useGzip)
       blocks.foreach(block => sender ! QueryShortChannelIds(chainHash, block.shortChannelIds))
       stay
 
-    case Event(PeerRoutingMessage(remoteNodeId, routingMessage@QueryShortChannelIds(chainHash, data)), d) =>
+    case Event(PeerRoutingMessage(_, routingMessage@QueryShortChannelIds(chainHash, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       // On Android we ignore queries
       stay
@@ -351,7 +353,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(PeerRoutingMessage(remoteNodeId, routingMessage@ReplyShortChannelIdsEnd(chainHash, complete)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       // we don't do anything with this yet
-      log.info("{} sent {}", remoteNodeId, routingMessage)
+      log.info("received reply_short_channel_ids_end={}", routingMessage)
       stay
   }
 
@@ -471,6 +473,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     }
   }
 
+  override def mdc(currentMessage: Any): MDC = currentMessage match {
+    case SendChannelQuery(remoteNodeId, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
+    case PeerRoutingMessage(remoteNodeId, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
+    case _ => akka.event.Logging.emptyMDC
+  }
 }
 
 object Router {

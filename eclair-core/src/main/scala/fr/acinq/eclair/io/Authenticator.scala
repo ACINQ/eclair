@@ -18,9 +18,10 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, DiagnosticActorLogging, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
+import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.{Logs, NodeParams}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
@@ -33,7 +34,7 @@ import fr.acinq.eclair.wire.LightningMessageCodecs
   *
   * All incoming/outgoing connections are processed here, before being sent to the switchboard
   */
-class Authenticator(nodeParams: NodeParams) extends Actor with ActorLogging {
+class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLogging {
 
   override def receive: Receive = {
     case switchboard: ActorRef => context become ready(switchboard, Map.empty)
@@ -71,6 +72,15 @@ class Authenticator(nodeParams: NodeParams) extends Actor with ActorLogging {
 
   // we should not restart a failing transport-handler
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
+
+  override def mdc(currentMessage: Any): MDC = {
+    val remoteNodeId_opt = currentMessage match {
+      case PendingAuth(_, remoteNodeId_opt, _, _) => remoteNodeId_opt
+      case HandshakeCompleted(_, _, remoteNodeId) => Some(remoteNodeId)
+      case _ => None
+    }
+    Logs.mdc(remoteNodeId_opt = remoteNodeId_opt)
+  }
 }
 
 object Authenticator {

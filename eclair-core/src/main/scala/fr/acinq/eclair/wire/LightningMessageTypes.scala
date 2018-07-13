@@ -198,7 +198,7 @@ case class ChannelUpdate(signature: BinaryData,
                          feeBaseMsat: Long,
                          feeProportionalMillionths: Long) extends RoutingMessage with HasTimestamp with HasChainHash
 
-case class PerHopPayload(channel_id: ShortChannelId,
+case class PerHopPayload(shortChannelId: ShortChannelId,
                          amtToForward: Long,
                          outgoingCltvValue: Long)
 

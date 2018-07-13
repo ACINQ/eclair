@@ -20,7 +20,8 @@ import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
 import java.nio.ByteOrder
 
-import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{ActorRef, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
+import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
@@ -37,7 +38,7 @@ import scala.util.Random
 /**
   * Created by PM on 26/08/2016.
   */
-class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSM[Peer.State, Peer.Data] {
+class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -115,7 +116,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
         // let's bring existing/requested channels online
         channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(transport)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(CONNECTED) using ConnectedData(address_opt, transport, remoteInit, channels.map { case (k: ChannelId, v) => (k, v)})
+        goto(CONNECTED) using ConnectedData(address_opt, transport, remoteInit, channels.map { case (k: ChannelId, v) => (k, v) })
       } else {
         log.warning(s"incompatible features, disconnecting")
         origin_opt.map(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
@@ -238,6 +239,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           transport ! ann
           c + 1
       }
+
       log.info(s"sending all announcements to {}", remoteNodeId)
       val channelsSent = send(channels)
       val nodesSent = send(nodes)
@@ -247,14 +249,22 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(rebroadcast: Rebroadcast, ConnectedData(_, transport, _, _, maybeGossipTimestampFilter)) =>
       val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, self, maybeGossipTimestampFilter)
-      val channelsSent = channels1.length
-      val updatesSent = updates1.length
-      val nodesSent = nodes1.length
-      channels1.foreach(transport ! _)
-      updates1.foreach(transport ! _)
-      nodes1.foreach(transport ! _)
+
+      /**
+        * Send and count in a single iteration
+        */
+      def sendAndCount(msgs: Iterable[RoutingMessage]): Int = msgs.foldLeft(0) {
+        case (count, msg) =>
+          transport ! msg
+          count + 1
+      }
+
+      val channelsSent = sendAndCount(channels1)
+      val updatesSent = sendAndCount(updates1)
+      val nodesSent = sendAndCount(nodes1)
+
       if (channelsSent > 0 || updatesSent > 0 || nodesSent > 0) {
-        log.info(s"sent announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
+        log.debug(s"sent announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       }
       stay
 
@@ -348,6 +358,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
   initialize()
 
+  override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
+
 }
 
 object Peer {
@@ -368,7 +380,7 @@ object Peer {
 
   sealed trait Data {
     def address_opt: Option[InetSocketAddress]
-    def channels: Map[_ <: ChannelId, ActorRef] // will be overriden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
+    def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
   }
   case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
   case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
@@ -425,34 +437,41 @@ object Peer {
 
   /**
     * filter out gossip messages using the provided origin and optional timestamp range
-    * @param rebroadcast rebroacast message
-    * @param self messages which have been sent by `self` will be filtered out
+    *
+    * @param rebroadcast           rebroadcast message
+    * @param self                  messages which have been sent by `self` will be filtered out
     * @param gossipTimestampFilter optional gossip timestamp range
     * @return a filtered (channel announcements, channel updates, node announcements) tuple
     */
-  def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimestampFilter: Option[GossipTimestampFilter]): (Vector[ChannelAnnouncement], Vector[ChannelUpdate], Vector[NodeAnnouncement]) = {
-    // we filter out announcements that we received from this node
-    val channels1 = rebroadcast.channels.collect { case (a, origins) if !origins.contains(self) => a } toVector
-    val updates1 = rebroadcast.updates.collect { case (a, origins) if !origins.contains(self) => a } toVector
-    val nodes1 = rebroadcast.nodes.collect { case (a, origins) if !origins.contains(self) => a } toVector
+  def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimestampFilter: Option[GossipTimestampFilter]): (Iterable[ChannelAnnouncement], Iterable[ChannelUpdate], Iterable[NodeAnnouncement]) = {
 
-    // filter out updates against their timestamp range
-    val updates2 = gossipTimestampFilter match {
-      case None => updates1
-      case Some(GossipTimestampFilter(_, firstTimestamp, timestampRange)) => updates1.filter(cu => cu.timestamp >= firstTimestamp && cu.timestamp <= firstTimestamp + timestampRange)
+    // check if this message has a timestamp that matches our timestamp filter
+    def checkTimestamp(routingMessage: RoutingMessage): Boolean = gossipTimestampFilter match {
+      case None => true // no filtering
+      case Some(GossipTimestampFilter(_, firstTimestamp, timestampRange)) => routingMessage match {
+        case hts: HasTimestamp => hts.timestamp >= firstTimestamp && hts.timestamp <= firstTimestamp + timestampRange
+        case _ => true
+      }
     }
 
-    // filter out channels that don't have a matching channel update
-    val shortChannelIds = updates2.map(_.shortChannelId).toSet
-    // note that we filter out channel_announcements that don't have a corresponding channel_update, instead of making up a timestamp (e.g. based on the blockheight) like the spec suggests.
-    // we can do that because our implementation of rebroadcast ensures that we resend channel_announcement every time there is a channel_update
-    val channels2 = channels1.filter(ca => shortChannelIds.contains(ca.shortChannelId))
-
-    // filter out nodes against their timestamp range
-    val nodes2 = gossipTimestampFilter match {
-      case None => nodes1
-      case Some(GossipTimestampFilter(_, firstTimestamp, timestampRange)) => nodes1.filter(cu => cu.timestamp >= firstTimestamp && cu.timestamp <= firstTimestamp + timestampRange)
+    // we filter out updates against their timestamp filter, and build a list of all channel ids for which we have an update
+    val (updates1, shortChannelIds) = rebroadcast.updates.foldLeft((Seq.empty[ChannelUpdate], Set.empty[ShortChannelId])){
+      case ((channelUpdates, shortChannelIds), (a, origins)) if !origins.contains(self) && checkTimestamp(a)=> (a +: channelUpdates, shortChannelIds + a.shortChannelId)
+      case ((channelUpdates, shortChannelIds), (a, origins)) => (channelUpdates, shortChannelIds)
     }
-    (channels2, updates2, nodes2)
+
+    // we filter out channels for which we don't have an update
+    val channels1 = rebroadcast.channels.foldLeft((Seq.empty[ChannelAnnouncement])) {
+      case (channelAnnouncements, (a, origins)) if !origins.contains(self) && shortChannelIds.contains(a.shortChannelId) => a +: channelAnnouncements
+      case (channelAnnouncements, (a, _)) => channelAnnouncements
+    }
+
+    // we filter out nodes against their timestamp filter
+    // TODO: we do * not * filter out nodes for which matching channel announcements were pruned above.
+    // Our rebroadcast message may sometimes include "orphan" nodes without matching channel announcements, because of
+    // the way announcements are handled in the router
+    val nodes1 = rebroadcast.nodes.collect { case (a, origins) if !origins.contains(self) && checkTimestamp(a) => a }
+
+    (channels1, updates1, nodes1)
   }
 }

@@ -24,13 +24,11 @@ import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.WatchConfirmed.extractPublicKeyScript
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
-import fr.acinq.eclair.crypto.{Generators, LocalKeyManager, ShaChain, Sphinx}
+import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelReestablish, _}
 
@@ -59,8 +57,8 @@ object Channel {
   // we won't exchange more than this many signatures when negotiating the closing fee
   val MAX_NEGOTIATION_ITERATIONS = 20
 
-  // this is defined in BOLT 7
-  val MIN_CLTV_EXPIRY = 7L
+  // this is defined in BOLT 11
+  val MIN_CLTV_EXPIRY = 9L
   val MAX_CLTV_EXPIRY = 7 * 144L // one week
 
   case object TickRefreshChannelUpdate
@@ -518,15 +516,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
       // but we want to converge as fast as possible and they would probably not route them anyway
       val error = NoMoreHtlcsClosingInProgress(d.channelId)
-      handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), Some(d.channelUpdate)), c)
+      handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), Some(d.channelUpdate), Some(c)), c)
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
       Try(Commitments.sendAdd(d.commitments, c, origin(c))) match {
         case Success(Right((commitments1, add))) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending add
-        case Success(Left(error)) => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), Some(d.channelUpdate)), c)
-        case Failure(cause) => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, cause, origin(c), Some(d.channelUpdate)), c)
+        case Success(Left(error)) => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), Some(d.channelUpdate), Some(c)), c)
+        case Failure(cause) => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, cause, origin(c), Some(d.channelUpdate), Some(c)), c)
       }
 
     case Event(add: UpdateAddHtlc, d: DATA_NORMAL) =>
@@ -616,7 +614,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
               }
               // On Android we don't store htlc informations, because since wallet is spend only a revoked transaction is
               // always in our favor and we don't need to steal the htlcs
+              val nextRemoteCommit = commitments1.remoteNextCommitInfo.left.get.nextRemoteCommit
+              val nextCommitNumber = nextRemoteCommit.index
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
+              context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, nextRemoteCommit.spec.toRemoteMsat)) // note that remoteCommit.toRemote == toLocal
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
             case Failure(cause) => handleCommandError(cause, c)
           }
@@ -831,7 +832,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.debug(s"sending channel_update announcement (disable)")
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = false)
       d.commitments.localChanges.proposed.collect {
-        case add: UpdateAddHtlc => relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate)))
+        case add: UpdateAddHtlc => relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate), None))
       }
       goto(OFFLINE) using d.copy(channelUpdate = channelUpdate)
 
@@ -1166,7 +1167,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       timedoutHtlcs.foreach { add =>
         val origin = d.commitments.originChannels(add.id)
         log.warning(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
-        relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcTimedout(d.channelId), origin, None))
+        relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcTimedout(d.channelId), origin, None, None))
       }
       // then let's see if any of the possible close scenarii can be considered done
       val mutualCloseDone = d.mutualClosePublished.exists(_.txid == tx.txid) // this case is trivial, in a mutual close scenario we only need to make sure that one of the closing txes is confirmed
@@ -1416,8 +1417,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.info(s"rejecting htlc request in state=$stateName")
       val error = ChannelUnavailable(d.channelId)
       d match {
-        case normal: DATA_NORMAL => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), Some(normal.channelUpdate)), c) // can happen if we are in OFFLINE or SYNCING state (channelUpdate will have enable=false)
-        case _ => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), None), c) // we don't provide a channel_update: this will be a permanent channel failure
+        case normal: DATA_NORMAL => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), Some(normal.channelUpdate), Some(c)), c) // can happen if we are in OFFLINE or SYNCING state (channelUpdate will have enable=false)
+        case _ => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), None, Some(c)), c) // we don't provide a channel_update: this will be a permanent channel failure
       }
 
     case Event(c: CMD_CLOSE, d) => handleCommandError(CannotCloseInThisState(Helpers.getChannelId(d), stateName), c)
@@ -1463,7 +1464,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         ()
       case (_, normal: DATA_NORMAL) =>
         // whenever we go to a state with NORMAL data (can be OFFLINE or NORMAL), we send out the new channel_update (most of the time it will just be to enable/disable the channel)
-        context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate))
+        context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
       case (normal: DATA_NORMAL, _) =>
         // when we finally leave the NORMAL state (or OFFLINE with NORMAL data) to got to SHUTDOWN/NEGOTIATING/CLOSING/ERR*, we advertise the fact that channel can't be used for payments anymore
         // if the channel is private we don't really need to tell the counterparty because it is already aware that the channel is being closed
@@ -1896,7 +1897,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   override def mdc(currentMessage: Any): MDC = {
     val id = Helpers.getChannelId(stateData)
-    Map("channelId" -> id)
+    Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(id))
   }
 
   // we let the peer decide what to do
