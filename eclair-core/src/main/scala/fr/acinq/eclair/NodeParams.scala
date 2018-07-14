@@ -32,7 +32,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.wire.Color
 
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.concurrent.duration.FiniteDuration
 
 /**
@@ -160,7 +160,7 @@ object NodeParams {
       keyManager = keyManager,
       alias = config.getString("node-alias").take(32),
       color = Color(color.data(0), color.data(1), color.data(2)),
-      publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port"))),
+      publicAddresses = config.getStringList("server.public-ips").asScala.toList.map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port"))),
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),
       dustLimitSatoshis = dustLimitSatoshis,

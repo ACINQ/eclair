@@ -122,6 +122,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
         case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
         case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
+        case _ => throw new MatchError("invalid chainHash")
       }
       val stream = classOf[Setup].getResourceAsStream(addressesFile)
       val addresses = ElectrumClientPool.readServerAddresses(stream)

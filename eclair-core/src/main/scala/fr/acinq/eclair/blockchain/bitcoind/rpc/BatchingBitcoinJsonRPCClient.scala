@@ -30,6 +30,6 @@ class BatchingBitcoinJsonRPCClient(rpcClient: BasicBitcoinJsonRPCClient)(implici
 
   val batchingClient = system.actorOf(Props(new BatchingClient(rpcClient)), name = "batching-client")
 
-  override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JsonAST.JValue] =
+  override def invoke(method: String, params: Any*)(): Future[JsonAST.JValue] =
     (batchingClient ? JsonRPCRequest(method = method, params = params)).mapTo[JsonAST.JValue]
 }
