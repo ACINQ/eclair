@@ -161,7 +161,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       ), lockTime = 0L)
     val btcWallet = new BitcoinCoreWallet(bitcoinrpcclient)
     val future = for {
-      FundTransactionResponse(tx1, pos, fee) <- btcWallet.fundTransaction(tx, false, 250)
+      FundTransactionResponse(tx1, pos, fee) <- btcWallet.fundTransaction(tx, false, 1000)
       SignTransactionResponse(tx2, true) <- btcWallet.signTransaction(tx1)
       txid <- btcWallet.publishTransaction(tx2)
     } yield txid
