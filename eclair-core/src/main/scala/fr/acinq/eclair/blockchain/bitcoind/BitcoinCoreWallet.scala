@@ -34,16 +34,16 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
   import BitcoinCoreWallet._
 
 
-  def fundTransaction(hex: String, lockUnspents: Boolean): Future[FundTransactionResponse] = {
-    rpcClient.invoke("fundrawtransaction", hex, BitcoinCoreWallet.Options(lockUnspents)).map(json => {
+  def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = {
+    rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, feeRatePerKw / SatoshisPerBTC)).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDouble(fee) = json \ "fee"
-      FundTransactionResponse(Transaction.read(hex), changepos.intValue(), (fee * 1e8).toLong)
+      FundTransactionResponse(Transaction.read(hex), changepos.intValue(), (fee * SatoshisPerBTC).toLong)
     })
   }
 
-  def fundTransaction(tx: Transaction, lockUnspents: Boolean): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toString(), lockUnspents)
+  def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toString(), lockUnspents, feeRatePerKw)
 
   def signTransaction(hex: String): Future[SignTransactionResponse] =
     rpcClient.invoke("signrawtransaction", hex).map(json => {
@@ -63,7 +63,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("lockunspent", true, outPoints.toList.map(outPoint => Utxo(outPoint.txid.toString, outPoint.index))) collect { case JBool(result) => result }
 
 
-  override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDouble(balance) => Satoshi((balance * 1e8).toLong) }
+  override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDouble(balance) => Satoshi((balance * SatoshisPerBTC).toLong) }
 
   override def getFinalAddress: Future[String] = for {
     JString(address) <- rpcClient.invoke("getnewaddress")
@@ -89,7 +89,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
       lockTime = 0)
     for {
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
-      FundTransactionResponse(unsignedFundingTx, changepos, fee) <- fundTransaction(partialFundingTx, lockUnspents = true)
+      FundTransactionResponse(unsignedFundingTx, changepos, fee) <- fundTransaction(partialFundingTx, lockUnspents = true, feeRatePerKw)
       // now let's sign the funding tx
       SignTransactionResponse(fundingTx, _) <- signTransactionOrUnlock(unsignedFundingTx)
       // there will probably be a change output, so we need to find which output is ours
@@ -111,8 +111,10 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
 
 object BitcoinCoreWallet {
 
+  val SatoshisPerBTC: Double = 1e8
+
   // @formatter:off
-  case class Options(lockUnspents: Boolean)
+  case class Options(lockUnspents: Boolean, feeRate: Double)
   case class Utxo(txid: String, vout: Long)
   case class FundTransactionResponse(tx: Transaction, changepos: Int, feeSatoshis: Long)
   case class SignTransactionResponse(tx: Transaction, complete: Boolean)
