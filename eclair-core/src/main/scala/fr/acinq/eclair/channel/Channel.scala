@@ -1435,8 +1435,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((_, _)) =>
           // and store it in a temporary database, we'll replay it when we go back online
-          nodeParams.pendingRelayDb.addPendingRelay(d.channelId, c.id, c)
-          stay // TODO: should be answer OK or not?
+          nodeParams.pendingRelayDb.addPendingRelay(d.channelId, c.id, c.copy(commit = false)) // commit=false so that we only sign once for all cmds at replay
+          stay // TODO: should we answer OK or not?
         case Failure(cause) => handleCommandError(cause, c)
       }
 
@@ -1445,8 +1445,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       Try(Commitments.sendFail(d.commitments, c, nodeParams.privateKey)) match {
         case Success((_, _)) =>
           // and store it in a temporary database, we'll replay it when we go back online
-          nodeParams.pendingRelayDb.addPendingRelay(d.channelId, c.id, c)
-          stay // TODO: should be answer OK or not?
+          nodeParams.pendingRelayDb.addPendingRelay(d.channelId, c.id, c.copy(commit = false)) // commit=false so that we only sign once for all cmds at replay
+          stay // TODO: should we answer OK or not?
         case Failure(cause) => handleCommandError(cause, c)
       }
 
@@ -1455,8 +1455,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       Try(Commitments.sendFailMalformed(d.commitments, c)) match {
         case Success((_, _)) =>
           // and store it in a temporary database, we'll replay it when we go back online
-          nodeParams.pendingRelayDb.addPendingRelay(d.channelId, c.id, c)
-          stay // TODO: should be answer OK or not?
+          nodeParams.pendingRelayDb.addPendingRelay(d.channelId, c.id, c.copy(commit = false)) // commit=false so that we only sign once for all cmds at replay
+          stay // TODO: should we answer OK or not?
         case Failure(cause) => handleCommandError(cause, c)
       }
 
