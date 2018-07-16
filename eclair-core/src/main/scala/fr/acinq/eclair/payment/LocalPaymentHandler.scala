@@ -98,7 +98,5 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
 }
 
 object LocalPaymentHandler {
-  def props(nodeParams: NodeParams): Props =  {
-    Props(new LocalPaymentHandler(nodeParams))
-  }
+  def props(nodeParams: NodeParams): Props = Props(new LocalPaymentHandler(nodeParams))
 }
