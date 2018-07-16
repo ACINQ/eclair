@@ -31,7 +31,7 @@ object Boot extends App with Logging {
   val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
 
   try {
-    implicit val system: ActorSystem = ActorSystem("Eclair-Node")
+    implicit val system: ActorSystem = ActorSystem("eclair-node")
     implicit val ec: ExecutionContext = system.dispatcher
     new Setup(datadir).bootstrap onFailure {
       case t: Throwable => onError(t)

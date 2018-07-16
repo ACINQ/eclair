@@ -28,11 +28,11 @@ import grizzled.slf4j.Logging
   */
 object JavafxBoot extends App with Logging {
   val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
-  implicit val system = ActorSystem("Eclair-Node-GUI")
   try {
     val headless = System.getProperty("eclair.headless") != null
 
     if (headless) {
+      implicit val system = ActorSystem("eclair-node-gui")
       new Setup(datadir).bootstrap
     } else {
       LauncherImpl.launchApplication(classOf[FxApp], classOf[FxPreloader], Array(datadir.getAbsolutePath))
