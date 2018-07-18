@@ -106,4 +106,11 @@ class PackageSpec extends FunSuite {
     assert(feerateByte2Kw(1) == MinimumFeeratePerKw)
     assert(feerateKB2Kw(1000) == MinimumFeeratePerKw)
   }
+
+  test("compare short channel ids as unsigned longs") {
+    assert(ShortChannelId(Long.MinValue - 1) < ShortChannelId(Long.MinValue))
+    assert(ShortChannelId(Long.MinValue) < ShortChannelId(Long.MinValue + 1))
+    assert(ShortChannelId(Long.MaxValue - 1) < ShortChannelId(Long.MaxValue))
+    assert(ShortChannelId(Long.MaxValue) < ShortChannelId(Long.MaxValue + 1))
+  }
 }

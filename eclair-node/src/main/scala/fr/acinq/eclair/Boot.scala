@@ -20,7 +20,8 @@ import java.io.File
 
 import grizzled.slf4j.Logging
 
-import scala.util.{Failure, Success}
+import scala.concurrent.ExecutionContext
+import akka.actor.ActorSystem
 
 /**
   * Created by PM on 25/01/2016.
@@ -30,10 +31,10 @@ object Boot extends App with Logging {
   val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
 
   try {
-    import scala.concurrent.ExecutionContext.Implicits.global
-    new Setup(datadir, seed_opt = Some("0123456789")).bootstrap onComplete {
-      case Success(kit) => new Textui(kit)
-      case Failure(t) => onError(t)
+    implicit val system: ActorSystem = ActorSystem("eclair-node")
+    implicit val ec: ExecutionContext = system.dispatcher
+    new Setup(datadir).bootstrap onFailure {
+      case t: Throwable => onError(t)
     }
   } catch {
     case t: Throwable => onError(t)

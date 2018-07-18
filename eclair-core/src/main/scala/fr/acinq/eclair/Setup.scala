@@ -44,14 +44,16 @@ import scala.concurrent.{ExecutionContext, Future, Promise}
   *
   * @param datadir  directory where eclair-core will write/read its data
   * @param overrideDefaults
-  * @param actorSystem
   * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
   */
-class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem(), seed_opt: Option[BinaryData] = None) extends Logging {
+class Setup(datadir: File,
+            overrideDefaults: Config = ConfigFactory.empty(),
+            seed_opt: Option[BinaryData] = None)(implicit system: ActorSystem) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   logger.info(s"datadir=${datadir.getCanonicalPath}")
+
 
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
@@ -62,7 +64,6 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
 
-  implicit val system = actorSystem
   implicit val timeout = Timeout(30 seconds)
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
@@ -117,7 +118,6 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
       }
 
       wallet = bitcoin match {
-        case _ if wallet_opt.isDefined => wallet_opt.get
         case Electrum(electrumClient) =>
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash)), "electrum-wallet")
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
