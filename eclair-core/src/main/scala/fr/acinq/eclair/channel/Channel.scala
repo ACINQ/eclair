@@ -442,8 +442,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.error(s"failed to publish funding tx")
       val exc = ChannelFundingError(d.channelId)
       val error = Error(d.channelId, exc.getMessage.getBytes)
+      // NB: we don't use the handleLocalError handler because it would result in the commit tx being published, which we don't want:
+      // implementation *guarantees* that in case of BITCOIN_FUNDING_PUBLISH_FAILED, the funding tx hasn't and will never be published, so we can close the channel right away
       context.system.eventStream.publish(ChannelFailed(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc)))
-      // note: implementation guarantees that the tx will not ever be published, so we can close the channel right away
       goto(CLOSED) sending error
 
     // TODO: not implemented, users will have to manually close
