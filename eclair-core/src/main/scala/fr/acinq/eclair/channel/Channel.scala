@@ -544,6 +544,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(fulfill: UpdateFulfillHtlc, d: DATA_NORMAL) =>
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(Right((commitments1, origin, htlc))) =>
+          // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
           relayer ! ForwardFulfill(fulfill, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
@@ -615,7 +616,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
                 case u: UpdateFailMalformedHtlc => nodeParams.pendingRelayDb.removePendingRelay(u.channelId, u.id)
               }
 
-              // TODO: be smarter and only consider commitments1.localChanges.signed and commitments1.remoteChanges.signed
+              // NB: this is for revoked tx handling
+              // we can't just consider newly signed htlcs, because we need to index them by commit number
               val nextRemoteCommit = commitments1.remoteNextCommitInfo.left.get.nextRemoteCommit
               val nextCommitNumber = nextRemoteCommit.index
               nextRemoteCommit.spec.htlcs collect {
@@ -872,6 +874,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(fulfill: UpdateFulfillHtlc, d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(Right((commitments1, origin, htlc))) =>
+          // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
           relayer ! ForwardFulfill(fulfill, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
