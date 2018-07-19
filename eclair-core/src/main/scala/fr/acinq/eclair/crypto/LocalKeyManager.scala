@@ -29,6 +29,7 @@ object LocalKeyManager {
   def channelKeyBasePath(chainHash: BinaryData) = chainHash match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(1) :: Nil
+    case _ => throw new MatchError("invalid chainHash")
   }
 
 
@@ -38,6 +39,7 @@ object LocalKeyManager {
   def nodeKeyBasePath(chainHash: BinaryData) = chainHash match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(0) :: Nil
+    case _ => throw new MatchError("invalid chainHash")
   }
 }
 

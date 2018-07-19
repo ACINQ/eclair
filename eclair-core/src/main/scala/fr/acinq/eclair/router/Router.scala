@@ -38,7 +38,7 @@ import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.ext._
 import org.jgrapht.graph._
 
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.collection.SortedSet
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
@@ -756,9 +756,8 @@ object Router {
     *
     */
   def removeEdge(g: WeightedGraph[PublicKey, DescEdge], d: ChannelDesc) = {
-    import scala.collection.JavaConversions._
     Option(g.getAllEdges(d.a, d.b)) match {
-      case Some(edges) => edges.find(_.desc == d) match {
+      case Some(edges) => edges.asScala.find(_.desc == d) match {
         case Some(e) => g.removeEdge(e)
         case None => ()
       }
@@ -795,7 +794,7 @@ object Router {
     if (!workingGraph.containsVertex(targetNodeId)) throw RouteNotFound
     val route_opt = Option(DijkstraShortestPath.findPathBetween(workingGraph, localNodeId, targetNodeId))
     route_opt match {
-      case Some(path) => path.getEdgeList.map(edge => Hop(edge.desc.a, edge.desc.b, edge.u))
+      case Some(path) => path.getEdgeList.asScala.map(edge => Hop(edge.desc.a, edge.desc.b, edge.u))
       case None => throw RouteNotFound
     }
   }
@@ -819,8 +818,8 @@ object Router {
       override def getComponentAttributes(nodeId: PublicKey): java.util.Map[String, String] =
 
         nodes.get(nodeId) match {
-          case Some(ann) => Map("label" -> ann.alias, "color" -> ann.rgbColor.toString)
-          case None => Map.empty[String, String]
+          case Some(ann) => Map("label" -> ann.alias, "color" -> ann.rgbColor.toString).asJava
+          case None => Map.empty[String, String].asJava
         }
     }
     val exporter = new DOTExporter[PublicKey, DescEdge](vertexIDProvider, null, edgeLabelProvider, vertexAttributeProvider, null)

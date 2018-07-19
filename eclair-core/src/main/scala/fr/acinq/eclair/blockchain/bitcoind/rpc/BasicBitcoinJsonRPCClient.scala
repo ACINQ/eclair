@@ -63,7 +63,7 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
     }
   }
 
-  override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] =
+  override def invoke(method: String, params: Any*)(): Future[JValue] =
     invoke(Seq(JsonRPCRequest(method = method, params = params))).map(l => jsonResponse2Exception(l.head).result)
 
   def jsonResponse2Exception(jsonRPCResponse: JsonRPCResponse): JsonRPCResponse = jsonRPCResponse match {
@@ -71,7 +71,7 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
     case o => o
   }
 
-  def invoke(requests: Seq[JsonRPCRequest])(implicit ec: ExecutionContext): Future[Seq[JsonRPCResponse]] =
+  def invoke(requests: Seq[JsonRPCRequest])(): Future[Seq[JsonRPCResponse]] =
     for {
       entity <- Marshal(requests).to[RequestEntity]
       _ = log.debug("sending rpc request with body={}", entity)

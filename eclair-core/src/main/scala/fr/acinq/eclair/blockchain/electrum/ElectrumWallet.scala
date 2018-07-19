@@ -88,6 +88,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       case Block.RegtestGenesisBlock.hash => ElectrumClient.Header.RegtestGenesisHeader
       case Block.TestnetGenesisBlock.hash => ElectrumClient.Header.TestnetGenesisHeader
       case Block.LivenetGenesisBlock.hash => ElectrumClient.Header.LivenetGenesisHeader
+      case _ => throw new MatchError("invalid chainHash")
     }
     val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
     val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
@@ -356,6 +357,7 @@ object ElectrumWallet {
     chainHash match {
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, hash)
       case Block.LivenetGenesisBlock.hash => Base58Check.encode(Base58.Prefix.ScriptAddress, hash)
+      case _ => throw new MatchError("invalid chainHash")
     }
   }
 
@@ -380,6 +382,7 @@ object ElectrumWallet {
   def accountPath(chainHash: BinaryData) : List[Long] = chainHash match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(49) :: hardened(1) :: hardened(0) :: Nil
     case Block.LivenetGenesisBlock.hash => hardened(49) :: hardened(0) :: hardened(0) :: Nil
+    case _ => throw new MatchError("invalid chainHash")
   }
 
   /**
@@ -403,6 +406,7 @@ object ElectrumWallet {
     val prefix = chainHash match {
       case Block.LivenetGenesisBlock.hash => DeterministicWallet.xpub
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.tpub
+      case _ => throw new MatchError("invalid chainHash")
     }
     (DeterministicWallet.encode(xpub, prefix), xpub.path.toString())
   }

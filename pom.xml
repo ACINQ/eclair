@@ -63,8 +63,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <scala.version>2.11.11</scala.version>
-        <scala.version.short>2.11</scala.version.short>
+        <scala.version>2.12.6</scala.version>
+        <scala.version.short>2.12</scala.version.short>
         <akka.version>2.4.20</akka.version>
         <bitcoinlib.version>0.9.17</bitcoinlib.version>
         <guava.version>24.0-android</guava.version>
@@ -114,7 +114,7 @@
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
-                <version>3.3.1</version>
+                <version>3.4.1</version>
                 <configuration>
                     <args combine.children="append">
                         <arg>-deprecation</arg>
@@ -238,7 +238,7 @@
         <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.version.short}</artifactId>
-            <version>2.2.6</version>
+            <version>3.0.5</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
