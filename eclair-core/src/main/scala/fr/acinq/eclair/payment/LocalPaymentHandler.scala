@@ -32,11 +32,13 @@ import scala.util.Try
 /**
   * Created by PM on 17/06/2016.
   */
-class LocalPaymentHandler(nodeParams: NodeParams)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Actor with ActorLogging {
+class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
+
+  implicit val ec: ExecutionContext = context.system.dispatcher
 
   context.system.scheduler.schedule(10 minutes, 10 minutes)(self ! Platform.currentTime / 1000)
 
-  override def receive: Receive = run(Map())
+  override def receive: Receive = run(Map.empty)
 
   def run(hash2preimage: Map[BinaryData, (BinaryData, PaymentRequest)]): Receive = {
 
@@ -97,5 +99,5 @@ class LocalPaymentHandler(nodeParams: NodeParams)(implicit ec: ExecutionContext 
 }
 
 object LocalPaymentHandler {
-  def props(nodeParams: NodeParams) = Props(new LocalPaymentHandler(nodeParams))
+  def props(nodeParams: NodeParams): Props = Props(new LocalPaymentHandler(nodeParams))
 }

@@ -30,36 +30,17 @@ object Features {
   val OPTION_DATA_LOSS_PROTECT_OPTIONAL = 1
 
   // reserved but not used as per lightningnetwork/lightning-rfc/pull/178
-  val INITIAL_ROUTING_SYNC_BIT_MANDATORY = 2
+  //val INITIAL_ROUTING_SYNC_BIT_MANDATORY = 2
   val INITIAL_ROUTING_SYNC_BIT_OPTIONAL = 3
 
-  /**
-    *
-    * @param features feature bits
-    * @return true if an initial dump of the routing table is requested
-    */
-  def initialRoutingSync(features: BitSet): Boolean = features.get(INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
+  val CHANNEL_RANGE_QUERIES_BIT_MANDATORY = 6
+  val CHANNEL_RANGE_QUERIES_BIT_OPTIONAL = 7
 
-  /**
-    *
-    * @param features feature bits
-    * @return true if an initial dump of the routing table is requested
-    */
-  def initialRoutingSync(features: BinaryData): Boolean = initialRoutingSync(BitSet.valueOf(features.reverse.toArray))
 
-  /**
-    *
-    * @param features feature bits
-    * @return true if data loss protection is supported (meaning that there is a corresponding OPTIONAL or MANDATORY flag)
-    */
-  def dataLossProtect(features: BitSet): Boolean = features.get(OPTION_DATA_LOSS_PROTECT_OPTIONAL) || features.get(OPTION_DATA_LOSS_PROTECT_MANDATORY)
+  def hasFeature(features: BitSet, bit: Int): Boolean = features.get(bit)
 
-  /**
-    *
-    * @param features feature bits
-    * @return true if data loss protection is supported
-    */
-  def dataLossProtect(features: BinaryData): Boolean = dataLossProtect(BitSet.valueOf(features.reverse.toArray))
+  def hasFeature(features: BinaryData, bit: Int): Boolean = hasFeature(BitSet.valueOf(features.reverse.toArray), bit)
+
 
   /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that
