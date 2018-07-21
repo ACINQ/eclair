@@ -1423,7 +1423,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(c@CMD_FORCECLOSE, d) =>
       d match {
-        case data: HasCommitments => handleLocalError(ForcedLocalCommit(data.channelId, "forced local commit"), data, Some(c)) replying "ok"
+        case data: HasCommitments => handleLocalError(ForcedLocalCommit(data.channelId), data, Some(c)) replying "ok"
         case _ => handleCommandError(CannotCloseInThisState(Helpers.getChannelId(d), stateName), c)
       }
 
