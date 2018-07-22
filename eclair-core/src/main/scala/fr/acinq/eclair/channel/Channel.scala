@@ -570,7 +570,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(fail: UpdateFailHtlc, d: DATA_NORMAL) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(Right((commitments1, origin, htlc))) =>
-          relayer ! ForwardFail(fail, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fail))
@@ -579,7 +578,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(fail: UpdateFailMalformedHtlc, d: DATA_NORMAL) =>
       Try(Commitments.receiveFailMalformed(d.commitments, fail)) match {
         case Success(Right((commitments1, origin, htlc))) =>
-          relayer ! ForwardFailMalformed(fail, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fail))
@@ -653,15 +651,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // we received a revocation because we sent a signature
       // => all our changes have been acked
       Try(Commitments.receiveRevocation(d.commitments, revocation)) match {
-        case Success(commitments1) =>
-          // we forward HTLCs only when they have been committed by both sides
-          // it always happen when we receive a revocation, because, we always sign our changes before they sign them
-          d.commitments.remoteChanges.signed.collect {
-            case htlc: UpdateAddHtlc =>
-              log.debug(s"relaying $htlc")
-              relayer ! ForwardAdd(htlc)
-          }
+        case Success((commitments1, forwards)) =>
           log.debug(s"received a new rev, spec:\n${Commitments.specs2String(commitments1)}")
+          forwards.foreach { forward =>
+            log.debug(s"forwarding {} to relayer", forward)
+            relayer ! forward
+          }
           if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
             self ! CMD_SIGN
           }
@@ -900,7 +895,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(fail: UpdateFailHtlc, d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(Right((commitments1, origin, htlc))) =>
-          relayer ! ForwardFail(fail, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fail))
@@ -909,7 +903,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(fail: UpdateFailMalformedHtlc, d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFailMalformed(d.commitments, fail)) match {
         case Success(Right((commitments1, origin, htlc))) =>
-          relayer ! ForwardFailMalformed(fail, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fail))
@@ -955,28 +948,27 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
 
     case Event(commit: CommitSig, d@DATA_SHUTDOWN(_, localShutdown, remoteShutdown)) =>
-      Try(Commitments.receiveCommit(d.commitments, commit, keyManager)) map {
-        case (commitments1, revocation) =>
+      Try(Commitments.receiveCommit(d.commitments, commit, keyManager)) match {
+        case Success((commitments1, revocation)) =>
           // we always reply with a revocation
           log.debug(s"received a new sig:\n${Commitments.specs2String(commitments1)}")
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
-          (commitments1, revocation)
-      } match {
-        case Success((commitments1, revocation)) if commitments1.hasNoPendingHtlcs =>
-          if (d.commitments.localParams.isFunder) {
-            // we are funder, need to initiate the negotiation by sending the first closing_signed
-            val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-            goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTx_opt = None)) sending revocation :: closingSigned :: Nil
+          if (commitments1.hasNoPendingHtlcs) {
+            if (d.commitments.localParams.isFunder) {
+              // we are funder, need to initiate the negotiation by sending the first closing_signed
+              val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
+              goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTx_opt = None)) sending revocation :: closingSigned :: Nil
+            } else {
+              // we are fundee, will wait for their closing_signed
+              goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None)) sending revocation
+            }
           } else {
-            // we are fundee, will wait for their closing_signed
-            goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None)) sending revocation
+            if (Commitments.localHasChanges(commitments1)) {
+              // if we have newly acknowledged changes let's sign them
+              self ! CMD_SIGN
+            }
+            stay using store(d.copy(commitments = commitments1)) sending revocation
           }
-        case Success((commitments1, revocation)) =>
-          if (Commitments.localHasChanges(commitments1)) {
-            // if we have newly acknowledged changes let's sign them
-            self ! CMD_SIGN
-          }
-          stay using store(d.copy(commitments = commitments1)) sending revocation
         case Failure(cause) => handleLocalError(cause, d, Some(commit))
       }
 
@@ -984,28 +976,33 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // we received a revocation because we sent a signature
       // => all our changes have been acked including the shutdown message
       Try(Commitments.receiveRevocation(commitments, revocation)) match {
-        case Success(commitments1) if commitments1.hasNoPendingHtlcs =>
-          log.debug(s"received a new rev, switching to NEGOTIATING spec:\n${Commitments.specs2String(commitments1)}")
-          if (d.commitments.localParams.isFunder) {
-            // we are funder, need to initiate the negotiation by sending the first closing_signed
-            val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-            goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTx_opt = None)) sending closingSigned
-          } else {
-            // we are fundee, will wait for their closing_signed
-            goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None))
-          }
-        case Success(commitments1) =>
-          // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
-          d.commitments.remoteChanges.signed.collect {
-            case htlc: UpdateAddHtlc =>
-              log.debug(s"closing in progress: failing $htlc")
-              self ! CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure), commit = true)
-          }
-          if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
-            self ! CMD_SIGN
-          }
+        case Success((commitments1, forwards)) =>
           log.debug(s"received a new rev, spec:\n${Commitments.specs2String(commitments1)}")
-          stay using store(d.copy(commitments = commitments1))
+          forwards.foreach {
+            case forwardAdd: ForwardAdd =>
+            // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
+            log.debug(s"closing in progress: failing ${forwardAdd.add}")
+            self ! CMD_FAIL_HTLC(forwardAdd.add.id, Right(PermanentChannelFailure), commit = true)
+            case forward =>
+              log.debug(s"forwarding {} to relayer", forward)
+              relayer ! forward
+          }
+          if (commitments1.hasNoPendingHtlcs) {
+            log.debug(s"switching to NEGOTIATING spec:\n${Commitments.specs2String(commitments1)}")
+            if (d.commitments.localParams.isFunder) {
+              // we are funder, need to initiate the negotiation by sending the first closing_signed
+              val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
+              goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTx_opt = None)) sending closingSigned
+            } else {
+              // we are fundee, will wait for their closing_signed
+              goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None))
+            }
+          } else {
+            if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
+              self ! CMD_SIGN
+            }
+            stay using store(d.copy(commitments = commitments1))
+          }
         case Failure(cause) => handleLocalError(cause, d, Some(revocation))
       }
 

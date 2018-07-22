@@ -39,10 +39,11 @@ sealed trait Origin
 case class Local(sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
 case class Relayed(originChannelId: BinaryData, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
 
-case class ForwardAdd(add: UpdateAddHtlc, canRedirect: Boolean = true)
-case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin, htlc: UpdateAddHtlc)
-case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc)
-case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc)
+sealed trait ForwardMessage
+case class ForwardAdd(add: UpdateAddHtlc, canRedirect: Boolean = true) extends ForwardMessage
+case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
+case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
+case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
 
 // @formatter:on
 

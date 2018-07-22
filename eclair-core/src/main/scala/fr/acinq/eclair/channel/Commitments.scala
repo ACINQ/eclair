@@ -20,7 +20,7 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
-import fr.acinq.eclair.payment.Origin
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
@@ -466,30 +466,47 @@ object Commitments {
       publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs))
     val ourChanges1 = localChanges.copy(acked = Nil)
     val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
-    // the outgoing following htlcs have been completed (fulfilled or failed) when we received this sig
-    val completedOutgoingHtlcs = commitments.localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add.id) -- localCommit1.spec.htlcs.filter(_.direction == OUT).map(_.add.id)
-    // we remove the newly completed htlcs from the origin map
-    val originChannels1 = commitments.originChannels -- completedOutgoingHtlcs
-    val commitments1 = commitments.copy(localCommit = localCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1, originChannels = originChannels1)
+    val commitments1 = commitments.copy(localCommit = localCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
 
     (commitments1, revocation)
   }
 
-  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): Commitments = {
+  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): (Commitments, Seq[ForwardMessage]) = {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
       case Left(_) if revocation.perCommitmentSecret.toPoint != remoteCommit.remotePerCommitmentPoint =>
         throw InvalidRevocation(commitments.channelId)
       case Left(WaitingForRevocation(theirNextCommit, _, _, _)) =>
+         val forwards = commitments.remoteChanges.signed collect {
+          // we forward adds downstream only when they have been committed by both sides
+          // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
+          case add: UpdateAddHtlc => ForwardAdd(add)
+          // same for fails: we need to make sure that they are in neither commitment before propagating the fail upstream
+          case fail: UpdateFailHtlc =>
+            val origin = commitments.originChannels(fail.id)
+            val add = commitments.remoteCommit.spec.htlcs.find(p => p.direction == IN && p.add.id == fail.id).map(_.add).get
+            ForwardFail(fail, origin, add)
+          // same as above
+          case fail: UpdateFailMalformedHtlc =>
+            val origin = commitments.originChannels(fail.id)
+            val add = commitments.remoteCommit.spec.htlcs.find(p => p.direction == IN && p.add.id == fail.id).map(_.add).get
+            ForwardFailMalformed(fail, origin, add)
+        }
+        // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
+        // they have been removed from both local and remote commitment
+        // (since fulfill/fail are sent by remote, they are (1) signed by them, (2) revoked by us, (3) signed by us, (4) revoked by them
+        val completedOutgoingHtlcs = commitments.remoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add.id) -- theirNextCommit.spec.htlcs.filter(_.direction == IN).map(_.add.id)
+        // we remove the newly completed htlcs from the origin map
+        val originChannels1 = commitments.originChannels -- completedOutgoingHtlcs
         val commitments1 = commitments.copy(
           localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
           remoteChanges = remoteChanges.copy(signed = Nil),
           remoteCommit = theirNextCommit,
           remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
-          remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index))
-
-        commitments1
+          remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index),
+          originChannels = originChannels1)
+        (commitments1, forwards)
       case Right(_) =>
         throw UnexpectedRevocation(commitments.channelId)
     }
