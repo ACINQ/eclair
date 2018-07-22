@@ -1271,7 +1271,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       handleLocalError(HtlcTimedout(d.channelId), d, Some(c))
 
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
-    case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, _, _), _) => stay
+    case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK | BITCOIN_FUNDING_DEEPLYBURIED, _, _), _) => stay
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.map(_.unsignedTx.txid).contains(tx.txid) => handleMutualClose(tx, Left(d))
 
@@ -1378,7 +1378,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(c@CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) => handleLocalError(HtlcTimedout(d.channelId), d, Some(c))
 
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
-    case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, _, _), _) => stay
+    case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK | BITCOIN_FUNDING_DEEPLYBURIED, _, _), _) => stay
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.map(_.unsignedTx.txid).contains(tx.txid) => handleMutualClose(tx, Left(d))
 
