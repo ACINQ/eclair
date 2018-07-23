@@ -31,19 +31,20 @@ import org.scalatest.junit.JUnitRunner
 class FeaturesSpec extends FunSuite {
 
   test("'initial_routing_sync' feature") {
-    assert(initialRoutingSync("08"))
+    assert(hasFeature("08", Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL))
   }
 
   test("'data_loss_protect' feature") {
-    assert(dataLossProtect("02"))
+    assert(hasFeature("01", Features.OPTION_DATA_LOSS_PROTECT_MANDATORY))
+    assert(hasFeature("02", Features.OPTION_DATA_LOSS_PROTECT_OPTIONAL))
   }
 
   test("'initial_routing_sync' and 'data_loss_protect' feature") {
-    assert(areSupported("0a") && dataLossProtect("0a") && initialRoutingSync("0a"))
+    val features = "0a"
+    assert(areSupported(features) && hasFeature(features, OPTION_DATA_LOSS_PROTECT_OPTIONAL) && hasFeature(features, INITIAL_ROUTING_SYNC_BIT_OPTIONAL))
   }
 
   test("features compatibility") {
-    assert(!areSupported(Protocol.writeUInt64(1L << INITIAL_ROUTING_SYNC_BIT_MANDATORY, ByteOrder.BIG_ENDIAN)))
     assert(areSupported(Protocol.writeUInt64(1l << INITIAL_ROUTING_SYNC_BIT_OPTIONAL, ByteOrder.BIG_ENDIAN)))
     assert(areSupported(Protocol.writeUInt64(1L << OPTION_DATA_LOSS_PROTECT_MANDATORY, ByteOrder.BIG_ENDIAN)))
     assert(areSupported(Protocol.writeUInt64(1l << OPTION_DATA_LOSS_PROTECT_OPTIONAL, ByteOrder.BIG_ENDIAN)))

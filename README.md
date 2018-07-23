@@ -128,6 +128,7 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   connect      | nodeId, host, port                                                                     | open a secure connection to a lightning node
   connect      | uri                                                                                    | open a secure connection to a lightning node
   open         | nodeId, fundingSatoshis, pushMsat = 0, feerateSatPerByte = ?, channelFlags = 0x01      | open a channel with another lightning node, by default push = 0, feerate for the funding tx targets 6 blocks, and channel is announced
+  updaterelayfee | channelId, feeBaseMsat, feeProportionalMillionths                                    | updates the outgoing fee on this channel
   peers        |                                                                                        | list existing local peers
   channels     |                                                                                        | list existing local channels
   channels     | nodeId                                                                                 | list existing local channels opened with a particular nodeId
@@ -138,6 +139,7 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   allupdates   | nodeId                                                                                 | list all channels updates for this nodeId
   receive      | description                                                                            | generate a payment request without a required amount (can be useful for donations)
   receive      | amountMsat, description                                                                | generate a payment request for a given amount
+  receive      | amountMsat, description, expirySeconds                                                 | generate a payment request for a given amount that expires after given number of seconds
   checkinvoice | paymentRequest                                                                         | returns node, amount and payment hash in an invoice/paymentRequest
   findroute    | paymentRequest|nodeId                                                                  | given a payment request or nodeID checks if there is a valid payment route returns JSON with attempts, nodes and channels of route
   send         | amountMsat, paymentHash, nodeId                                                        | send a payment to a lightning node

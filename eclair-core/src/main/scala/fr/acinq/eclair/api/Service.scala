@@ -175,7 +175,13 @@ trait Service extends Logging {
                           case JString(identifier) :: Nil => completeRpcFuture(req.id, sendToChannel(identifier, CMD_FORCECLOSE).mapTo[String])
                           case _ => reject(UnknownParamsRejection(req.id, "[channelId]"))
                         }
-
+                        case "updaterelayfee" => req.params match {
+                          case JString(identifier) :: JInt(feeBaseMsat) :: JInt(feeProportionalMillionths) :: Nil =>
+                            completeRpcFuture(req.id, sendToChannel(identifier, CMD_UPDATE_RELAY_FEE(feeBaseMsat.toLong, feeProportionalMillionths.toLong)).mapTo[String])
+                          case JString(identifier) :: JString(feeBaseMsat) :: JString(feeProportionalMillionths) :: Nil =>
+                            completeRpcFuture(req.id, sendToChannel(identifier, CMD_UPDATE_RELAY_FEE(feeBaseMsat.toLong, feeProportionalMillionths.toLong)).mapTo[String])
+                          case _ => reject(UnknownParamsRejection(req.id, "[channelId] [feeBaseMsat] [feeProportionalMillionths]"))
+                        }
                         // local network methods
                         case "peers" => completeRpcFuture(req.id, for {
                           peers <- (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]]
@@ -225,7 +231,9 @@ trait Service extends Logging {
                         // the amount is now given with the description
                         case JInt(amountMsat) :: JString(description) :: Nil =>
                           completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description)).mapTo[PaymentRequest].map(PaymentRequest.write))
-                        case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description]"))
+                        case JInt(amountMsat) :: JString(description) :: JInt(expirySeconds) :: Nil =>
+                          completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description, Some(expirySeconds.toLong))).mapTo[PaymentRequest].map(PaymentRequest.write))
+                        case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description] or [amount, description, expiryDuration]"))
                       }
 
                       case "checkinvoice" => req.params match {
@@ -337,6 +345,7 @@ trait Service extends Logging {
     "connect (uri): open a secure connection to a lightning node",
     "connect (nodeId, host, port): open a secure connection to a lightning node",
     "open (nodeId, fundingSatoshis, pushMsat = 0, feerateSatPerByte = ?, channelFlags = 0x01): open a channel with another lightning node, by default push = 0, feerate for the funding tx targets 6 blocks, and channel is announced",
+    "updaterelayfee (channelId, feeBaseMsat, feeProportionalMillionths)",
     "peers: list existing local peers",
     "channels: list existing local channels",
     "channels (nodeId): list existing local channels to a particular nodeId",
@@ -346,6 +355,7 @@ trait Service extends Logging {
     "allupdates: list all channels updates",
     "allupdates (nodeId): list all channels updates for this nodeId",
     "receive (amountMsat, description): generate a payment request for a given amount",
+    "receive (amountMsat, description, expirySeconds): generate a payment request for a given amount with a description and a number of seconds till it expires",
     "checkinvoice (paymentRequest): returns node, amount and payment hash in an invoice/paymentRequest",
     "findroute (paymentRequest|nodeId): given a payment request or nodeID checks if there is a valid payment route returns JSON with attempts, nodes and channels of route",
     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",

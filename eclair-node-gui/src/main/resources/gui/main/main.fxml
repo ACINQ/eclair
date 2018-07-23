@@ -87,18 +87,24 @@
                                                 <TableColumn fx:id="networkChannelsIdColumn"
                                                              minWidth="120.0" prefWidth="170.0" maxWidth="200.0"
                                                              text="Short Channel Id"/>
+                                                <TableColumn fx:id="networkChannelsCapacityColumn" text="Capacity"
+                                                             minWidth="80.0" prefWidth="120.0" maxWidth="200.0"/>
                                                 <TableColumn fx:id="networkChannelsNode1Column" text="Node 1"/>
+                                                <TableColumn fx:id="networkChannelsFeeBaseMsatNode1Column"
+                                                             minWidth="100.0" prefWidth="120.0" maxWidth="200.0"
+                                                             text="Node 1 Base Fee"/>
+                                                <TableColumn fx:id="networkChannelsFeeProportionalMillionthsNode1Column"
+                                                             minWidth="60.0" prefWidth="120.0" maxWidth="200.0"
+                                                             text="Node 1 Proportional Fee"/>
                                                 <TableColumn fx:id="networkChannelsDirectionsColumn"
                                                              minWidth="30.0" prefWidth="30.0" maxWidth="30.0"/>
                                                 <TableColumn fx:id="networkChannelsNode2Column" text="Node 2"/>
-                                                <TableColumn fx:id="networkChannelsCapacityColumn" text="Capacity"
-                                                             minWidth="80.0" prefWidth="120.0" maxWidth="200.0"/>
-                                                <TableColumn fx:id="networkChannelsFeeBaseMsatColumn"
+                                                <TableColumn fx:id="networkChannelsFeeBaseMsatNode2Column"
                                                              minWidth="100.0" prefWidth="120.0" maxWidth="200.0"
-                                                             text="Base Fee"/>
-                                                <TableColumn fx:id="networkChannelsFeeProportionalMillionthsColumn"
+                                                             text="Node 2 Base Fee"/>
+                                                <TableColumn fx:id="networkChannelsFeeProportionalMillionthsNode2Column"
                                                              minWidth="60.0" prefWidth="120.0" maxWidth="200.0"
-                                                             text="Proportional Fee"/>
+                                                             text="Node 2 Proportional Fee"/>
                                             </columns>
                                         </TableView>
                                     </children>

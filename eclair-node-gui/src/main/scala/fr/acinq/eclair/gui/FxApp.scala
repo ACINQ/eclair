@@ -25,7 +25,7 @@ import javafx.fxml.FXMLLoader
 import javafx.scene.image.Image
 import javafx.scene.{Parent, Scene}
 import javafx.stage.{Popup, Screen, Stage, WindowEvent}
-import akka.actor.{Props, SupervisorStrategy}
+import akka.actor.{ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.ElectrumEvent
@@ -83,6 +83,7 @@ class FxApp extends Application with Logging {
           mainFXML.setController(controller)
           val mainRoot = mainFXML.load[Parent]
           val datadir = new File(getParameters.getUnnamed.get(0))
+          implicit val system = ActorSystem("eclair-node-gui")
           val setup = new Setup(datadir)
 
           val unitConf = setup.config.getString("gui.unit")
@@ -93,13 +94,13 @@ class FxApp extends Application with Logging {
             case Success(u) => u
           }
 
-          val guiUpdater = setup.system.actorOf(SimpleSupervisor.props(Props(classOf[GUIUpdater], controller), "gui-updater", SupervisorStrategy.Resume))
-          setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
-          setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
-          setup.system.eventStream.subscribe(guiUpdater, classOf[PaymentEvent])
-          setup.system.eventStream.subscribe(guiUpdater, classOf[PaymentResult])
-          setup.system.eventStream.subscribe(guiUpdater, classOf[ZMQEvent])
-          setup.system.eventStream.subscribe(guiUpdater, classOf[ElectrumEvent])
+          val guiUpdater = system.actorOf(SimpleSupervisor.props(Props(classOf[GUIUpdater], controller), "gui-updater", SupervisorStrategy.Resume))
+          system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
+          system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
+          system.eventStream.subscribe(guiUpdater, classOf[PaymentEvent])
+          system.eventStream.subscribe(guiUpdater, classOf[PaymentResult])
+          system.eventStream.subscribe(guiUpdater, classOf[ZMQEvent])
+          system.eventStream.subscribe(guiUpdater, classOf[ElectrumEvent])
           pKit.completeWith(setup.bootstrap)
           pKit.future.onComplete {
             case Success(_) =>

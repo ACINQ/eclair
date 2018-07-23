@@ -18,13 +18,13 @@ package fr.acinq.eclair.gui
 
 import java.time.LocalDateTime
 import java.util.function.Predicate
-
 import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXMLLoader
 import javafx.scene.control.Alert.AlertType
 import javafx.scene.control.{Alert, ButtonType}
 import javafx.scene.layout.VBox
+
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
@@ -180,7 +180,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       log.debug(s"peer channel discovered with channel id=${channelAnnouncement.shortChannelId}")
       runInGuiThread { () =>
         if (!mainController.networkChannelsList.exists(c => c.announcement.shortChannelId == channelAnnouncement.shortChannelId)) {
-          mainController.networkChannelsList.add(new ChannelInfo(channelAnnouncement, -1, -1, capacity, None, None))
+          mainController.networkChannelsList.add(new ChannelInfo(channelAnnouncement, None, None, None, None, capacity, None, None))
         }
       }
 
@@ -193,18 +193,21 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       }
 
     case ChannelUpdateReceived(channelUpdate) =>
-      log.debug(s"peer channel with id=${channelUpdate.shortChannelId} has been updated")
+      log.debug(s"peer channel with id=${channelUpdate.shortChannelId} has been updated - flags: ${channelUpdate.flags} fees: ${channelUpdate.feeBaseMsat} ${channelUpdate.feeProportionalMillionths}")
       runInGuiThread { () =>
         val idx = mainController.networkChannelsList.indexWhere(c => c.announcement.shortChannelId == channelUpdate.shortChannelId)
         if (idx >= 0) {
           val c = mainController.networkChannelsList.get(idx)
           if (Announcements.isNode1(channelUpdate.flags)) {
             c.isNode1Enabled = Some(Announcements.isEnabled(channelUpdate.flags))
+            c.feeBaseMsatNode1_opt = Some(channelUpdate.feeBaseMsat)
+            c.feeProportionalMillionthsNode1_opt = Some(channelUpdate.feeProportionalMillionths)
           } else {
             c.isNode2Enabled = Some(Announcements.isEnabled(channelUpdate.flags))
+            c.feeBaseMsatNode2_opt = Some(channelUpdate.feeBaseMsat)
+            c.feeProportionalMillionthsNode2_opt = Some(channelUpdate.feeProportionalMillionths)
           }
-          c.feeBaseMsat = channelUpdate.feeBaseMsat
-          c.feeProportionalMillionths = channelUpdate.feeProportionalMillionths
+
           mainController.networkChannelsList.update(idx, c)
         }
       }
