@@ -206,6 +206,18 @@
         </dependency>
         <!-- TESTS -->
         <dependency>
+            <groupId>com.whisk</groupId>
+            <artifactId>docker-testkit-scalatest_${scala.version.short}</artifactId>
+            <version>0.9.5</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.whisk</groupId>
+            <artifactId>docker-testkit-impl-spotify_${scala.version.short}</artifactId>
+            <version>0.9.5</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-testkit_${scala.version.short}</artifactId>
             <version>${akka.version}</version>

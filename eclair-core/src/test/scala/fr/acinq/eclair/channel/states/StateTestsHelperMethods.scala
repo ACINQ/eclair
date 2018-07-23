@@ -78,7 +78,8 @@ trait StateTestsHelperMethods extends TestKitBase {
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
-    // no announcements
+    // reset global feerates (they may have been changed by previous tests)
+    Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
     alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags)
     bob ! INPUT_INIT_FUNDEE("00" * 32, bobParams, bob2alice.ref, aliceInit)
     alice2bob.expectMsgType[OpenChannel]
