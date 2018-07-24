@@ -27,6 +27,8 @@ import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
+import scala.compat.Platform
+
 @RunWith(classOf[JUnitRunner])
 class SqliteAuditDbSpec extends FunSuite {
 
@@ -46,17 +48,22 @@ class SqliteAuditDbSpec extends FunSuite {
     val e2 = PaymentReceived(MilliSatoshi(42000), randomBytes(32), randomBytes(32))
     val e3 = PaymentRelayed(MilliSatoshi(42000), MilliSatoshi(1000), randomBytes(32), randomBytes(32), randomBytes(32))
     val e4 = NetworkFeePaid(null, randomKey.publicKey, randomBytes(32), Transaction(0, Seq.empty, Seq.empty, 0), Satoshi(42), "mutual")
+    val e5 = PaymentSent(MilliSatoshi(42000), MilliSatoshi(1000), randomBytes(32), randomBytes(32), randomBytes(32), timestamp = 0)
+    val e6 = PaymentSent(MilliSatoshi(42000), MilliSatoshi(1000), randomBytes(32), randomBytes(32), randomBytes(32), timestamp = Platform.currentTime * 2)
 
     db.add(e1)
     db.add(e2)
     db.add(e3)
     db.add(e4)
+    db.add(e5)
+    db.add(e6)
 
-    assert(db.listSent.toList === List(e1))
-    assert(db.listReceived.toList === List(e2))
-    assert(db.listRelayed.toList === List(e3))
-    assert(db.listNetworkFees.size === 1)
-    assert(db.listNetworkFees.head.txType === "mutual")
+    assert(db.listSent(from = 0L, to = Long.MaxValue).toList === List(e1, e5, e6))
+    assert(db.listSent(from = 100000L, to = Platform.currentTime).toList === List(e1))
+    assert(db.listReceived(from = 0L, to = Long.MaxValue).toList === List(e2))
+    assert(db.listRelayed(from = 0L, to = Long.MaxValue).toList === List(e3))
+    assert(db.listNetworkFees(from = 0L, to = Long.MaxValue).size === 1)
+    assert(db.listNetworkFees(from = 0L, to = Long.MaxValue).head.txType === "mutual")
   }
 
   test("stats") {

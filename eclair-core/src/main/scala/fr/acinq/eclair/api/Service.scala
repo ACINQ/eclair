@@ -307,13 +307,23 @@ trait Service extends Logging {
                         }
 
                         // retrieve audit events
-                        case "audit" => completeRpcFuture(req.id, Future(AuditResponse(
-                            sent = nodeParams.auditDb.listSent,
-                            received = nodeParams.auditDb.listReceived,
-                            relayed = nodeParams.auditDb.listRelayed)
-                        ))
+                        case "audit" =>
+                          val (from, to) = req.params match {
+                            case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
+                            case _ => (0L, Long.MaxValue)
+                          }
+                          completeRpcFuture(req.id, Future(AuditResponse(
+                            sent = nodeParams.auditDb.listSent(from, to),
+                            received = nodeParams.auditDb.listReceived(from, to),
+                            relayed = nodeParams.auditDb.listRelayed(from, to))
+                          ))
 
-                        case "networkfees" => completeRpcFuture(req.id, Future(nodeParams.auditDb.listNetworkFees))
+                        case "networkfees" =>
+                          val (from, to) = req.params match {
+                            case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
+                            case _ => (0L, Long.MaxValue)
+                          }
+                          completeRpcFuture(req.id, Future(nodeParams.auditDb.listNetworkFees(from, to)))
 
                         // retrieve fee stats
                         case "channelstats" => completeRpcFuture(req.id, Future(nodeParams.auditDb.stats))
@@ -356,7 +366,7 @@ trait Service extends Logging {
     "connect (uri): open a secure connection to a lightning node",
     "connect (nodeId, host, port): open a secure connection to a lightning node",
     "open (nodeId, fundingSatoshis, pushMsat = 0, feerateSatPerByte = ?, channelFlags = 0x01): open a channel with another lightning node, by default push = 0, feerate for the funding tx targets 6 blocks, and channel is announced",
-    "updaterelayfee (channelId, feeBaseMsat, feeProportionalMillionths)",
+    "updaterelayfee (channelId, feeBaseMsat, feeProportionalMillionths): update relay fee for payments going through this channel",
     "peers: list existing local peers",
     "channels: list existing local channels",
     "channels (nodeId): list existing local channels to a particular nodeId",
@@ -378,6 +388,10 @@ trait Service extends Logging {
     "forceclose (channelId): force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)",
     "checkpayment (paymentHash): returns true if the payment has been received, false otherwise",
     "checkpayment (paymentRequest): returns true if the payment has been received, false otherwise",
+    "audit: list all send/received/relayed payments",
+    "audit (from, to): list send/received/relayed payments in that interval (from <= timestamp < to)",
+    "networkfees: list all network fees paid to the miners, by transaction",
+    "networkfees (from, to): list network fees paid to the miners, by transaction, in that interval (from <= timestamp < to)",
     "getinfo: returns info about the blockchain and this node",
     "help: display this message")
 

@@ -31,13 +31,13 @@ trait AuditDb {
 
   def add(networkFeePaid: NetworkFeePaid)
 
-  def listSent: Seq[PaymentSent]
+  def listSent(from: Long, to: Long): Seq[PaymentSent]
 
-  def listReceived: Seq[PaymentReceived]
+  def listReceived(from: Long, to: Long): Seq[PaymentReceived]
 
-  def listRelayed: Seq[PaymentRelayed]
+  def listRelayed(from: Long, to: Long): Seq[PaymentRelayed]
 
-  def listNetworkFees: Seq[NetworkFee]
+  def listNetworkFees(from: Long, to: Long): Seq[NetworkFee]
 
   def stats: Seq[Stats]
 

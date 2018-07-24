@@ -84,9 +84,11 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
       statement.executeUpdate()
     }
 
-  override def listSent: Seq[PaymentSent] =
-    using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT * FROM sent")
+  override def listSent(from: Long, to: Long): Seq[PaymentSent] =
+    using(sqlite.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>
+      statement.setLong(1, from)
+      statement.setLong(2, to)
+      val rs = statement.executeQuery()
       var q: Queue[PaymentSent] = Queue()
       while (rs.next()) {
         q = q :+ PaymentSent(
@@ -100,9 +102,11 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
       q
     }
 
-  override def listReceived: Seq[PaymentReceived] =
-    using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT * FROM received")
+  override def listReceived(from: Long, to: Long): Seq[PaymentReceived] =
+    using(sqlite.prepareStatement("SELECT * FROM received WHERE timestamp >= ? AND timestamp < ?")) { statement =>
+      statement.setLong(1, from)
+      statement.setLong(2, to)
+      val rs = statement.executeQuery()
       var q: Queue[PaymentReceived] = Queue()
       while (rs.next()) {
         q = q :+ PaymentReceived(
@@ -114,9 +118,11 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
       q
     }
 
-  override def listRelayed: Seq[PaymentRelayed] =
-    using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT * FROM relayed")
+  override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] =
+    using(sqlite.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ?")) { statement =>
+      statement.setLong(1, from)
+      statement.setLong(2, to)
+      val rs = statement.executeQuery()
       var q: Queue[PaymentRelayed] = Queue()
       while (rs.next()) {
         q = q :+ PaymentRelayed(
@@ -130,9 +136,11 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
       q
     }
 
-  override def listNetworkFees: Seq[NetworkFee] =
-    using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT * FROM network_fees")
+  override def listNetworkFees(from: Long, to: Long): Seq[NetworkFee] =
+    using(sqlite.prepareStatement("SELECT * FROM network_fees WHERE timestamp >= ? AND timestamp < ?")) { statement =>
+      statement.setLong(1, from)
+      statement.setLong(2, to)
+      val rs = statement.executeQuery()
       var q: Queue[NetworkFee] = Queue()
       while (rs.next()) {
         q = q :+ NetworkFee(
