@@ -58,7 +58,7 @@ class SqliteAuditDbSpec extends FunSuite {
     db.add(e5)
     db.add(e6)
 
-    assert(db.listSent(from = 0L, to = Long.MaxValue).toList === List(e1, e5, e6))
+    assert(db.listSent(from = 0L, to = Long.MaxValue).toSet === Set(e1, e5, e6))
     assert(db.listSent(from = 100000L, to = Platform.currentTime).toList === List(e1))
     assert(db.listReceived(from = 0L, to = Long.MaxValue).toList === List(e2))
     assert(db.listRelayed(from = 0L, to = Long.MaxValue).toList === List(e3))
