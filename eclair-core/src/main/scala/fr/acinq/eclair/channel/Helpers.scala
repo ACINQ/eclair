@@ -834,9 +834,13 @@ object Helpers {
     }
 
     /**
-      * This helper function returns the fee paid
+      * This helper function returns the fee paid by the given transaction.
       *
-      * @return
+      * It relies on the current channel data to find the parent tx and compute the fee, and also provides a description.
+      *
+      * @param tx  a tx for which we want to compute the fee
+      * @param d   current channel data
+      * @return    if the parent tx is found, a tuple (fee, description)
       */
     def networkFeePaid(tx: Transaction, d: DATA_CLOSING): Option[(Satoshi, String)] = {
       // only funder pays the fee
