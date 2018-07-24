@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain.bitcoind
 
 import akka.actor.ActorSystem
-import fr.acinq.bitcoin.{BinaryData, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Transactions
@@ -35,11 +35,11 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
 
 
   def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = {
-    rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, feeRatePerKw / SatoshisPerBTC)).map(json => {
+    rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, satoshi2btc(Satoshi(feeRatePerKw)).amount)).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDouble(fee) = json \ "fee"
-      FundTransactionResponse(Transaction.read(hex), changepos.intValue(), (fee * SatoshisPerBTC).toLong)
+      FundTransactionResponse(Transaction.read(hex), changepos.intValue(), btc2satoshi(Btc(fee)).toLong)
     })
   }
 
@@ -63,7 +63,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("lockunspent", true, outPoints.toList.map(outPoint => Utxo(outPoint.txid.toString, outPoint.index))) collect { case JBool(result) => result }
 
 
-  override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDouble(balance) => Satoshi((balance * SatoshisPerBTC).toLong) }
+  override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDouble(balance) => btc2satoshi(Btc(balance)) }
 
   override def getFinalAddress: Future[String] = for {
     JString(address) <- rpcClient.invoke("getnewaddress")
@@ -114,7 +114,7 @@ object BitcoinCoreWallet {
   val SatoshisPerBTC: Double = 1e8
 
   // @formatter:off
-  case class Options(lockUnspents: Boolean, feeRate: Double)
+  case class Options(lockUnspents: Boolean, feeRate: BigDecimal)
   case class Utxo(txid: String, vout: Long)
   case class FundTransactionResponse(tx: Transaction, changepos: Int, feeSatoshis: Long)
   case class SignTransactionResponse(tx: Transaction, complete: Boolean)
