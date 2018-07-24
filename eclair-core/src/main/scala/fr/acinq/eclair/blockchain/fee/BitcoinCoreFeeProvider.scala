@@ -17,8 +17,9 @@
 package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
-import org.json4s.JsonAST.{JDouble, JInt}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, Error, JsonRPCError}
+import org.json4s.DefaultFormats
+import org.json4s.JsonAST._
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -26,6 +27,8 @@ import scala.concurrent.{ExecutionContext, Future}
   * Created by PM on 09/07/2017.
   */
 class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: FeeratesPerKB)(implicit ec: ExecutionContext) extends FeeProvider {
+
+  implicit val formats = DefaultFormats.withBigDecimal
 
   /**
     * We need this to keep commitment tx fees in sync with the state of the network
@@ -35,16 +38,21 @@ class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: F
     */
   def estimateSmartFee(nBlocks: Int): Future[Long] =
     rpcClient.invoke("estimatesmartfee", nBlocks).map(json => {
-      json \ "feerate" match {
-        case JDouble(feerate) =>
-          // estimatesmartfee returns a fee rate in Btc/KB
-          btc2satoshi(Btc(feerate)).amount
-        case JInt(feerate) if feerate.toLong < 0 =>
-          // negative value means failure
-          feerate.toLong
-        case JInt(feerate) =>
-          // should (hopefully) never happen
-          btc2satoshi(Btc(feerate.toLong)).amount
+      val optError = (json \ "errors").extractOpt[JArray].map(ja => Error(0, ja.arr.map(_.extract[String]).mkString(". ")))
+      if (optError.isDefined) {
+        throw JsonRPCError(optError.get)
+      } else {
+        json \ "feerate" match {
+          case JDecimal(feerate) =>
+            // estimatesmartfee returns a fee rate in Btc/KB
+            btc2satoshi(Btc(feerate)).amount
+          case JInt(feerate) if feerate.toLong < 0 =>
+            // negative value means failure
+            feerate.toLong
+          case JInt(feerate) =>
+            // should (hopefully) never happen
+            btc2satoshi(Btc(feerate.toLong)).amount
+        }
       }
     })
 

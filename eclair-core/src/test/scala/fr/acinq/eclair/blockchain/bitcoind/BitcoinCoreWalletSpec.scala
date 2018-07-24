@@ -70,7 +70,6 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     0 to 9 foreach { satoshi =>
 
       val apiAmount = JDecimal(BigDecimal(s"0.0000000$satoshi"))
-//      val apiAmount = JDouble(s"0.0000000$satoshi".toDouble)
 
       val bitcoinClient = new BasicBitcoinJsonRPCClient(
         user = config.getString("bitcoind.rpcuser"),
