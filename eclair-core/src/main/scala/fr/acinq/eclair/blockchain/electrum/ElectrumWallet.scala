@@ -223,8 +223,8 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(CompleteTransaction(tx, feeRatePerKw), data) =>
       Try(data.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, allowSpendUnconfirmed)) match {
-        case Success((data1, tx1)) => stay using data1 replying CompleteTransactionResponse(tx1, None)
-        case Failure(t) => stay replying CompleteTransactionResponse(tx, Some(t))
+        case Success((data1, tx1, fee1)) => stay using data1 replying CompleteTransactionResponse(tx1, fee1, None)
+        case Failure(t) => stay replying CompleteTransactionResponse(tx, Satoshi(0), Some(t))
       }
 
     case Event(SendAll(publicKeyScript, feeRatePerKw), data) =>
@@ -309,7 +309,7 @@ object ElectrumWallet {
   case class GetDataResponse(state: Data) extends Response
 
   case class CompleteTransaction(tx: Transaction, feeRatePerKw: Long) extends Request
-  case class CompleteTransactionResponse(tx: Transaction, error: Option[Throwable]) extends Response
+  case class CompleteTransactionResponse(tx: Transaction, fee: Satoshi, error: Option[Throwable]) extends Response
 
   case class SendAll(publicKeyScript: BinaryData, feeRatePerKw: Long) extends Request
   case class SendAllResponse(tx: Transaction, fee: Satoshi) extends Response
@@ -715,12 +715,12 @@ object ElectrumWallet {
       * @param feeRatePerKw fee rate per kiloweight
       * @param minimumFee   minimum fee
       * @param dustLimit    dust limit
-      * @return a (state, tx) tuple where state has been updated and tx is a complete,
+      * @return a (state, tx, fee) tuple where state has been updated and tx is a complete,
       *         fully signed transaction that can be broadcast.
       *         our utxos spent by this tx are locked and won't be available for spending
       *         until the tx has been cancelled. If the tx is committed, they will be removed
       */
-    def completeTransaction(tx: Transaction, feeRatePerKw: Long, minimumFee: Satoshi, dustLimit: Satoshi, allowSpendUnconfirmed: Boolean): (Data, Transaction) = {
+    def completeTransaction(tx: Transaction, feeRatePerKw: Long, minimumFee: Satoshi, dustLimit: Satoshi, allowSpendUnconfirmed: Boolean): (Data, Transaction, Satoshi) = {
       require(tx.txIn.isEmpty, "cannot complete a tx that already has inputs")
       require(feeRatePerKw >= 0, "fee rate cannot be negative")
       val amount = tx.txOut.map(_.amount).sum
@@ -752,8 +752,9 @@ object ElectrumWallet {
 
       // and add the completed tx to the lokcs
       val data1 = this.copy(locks = this.locks + tx3)
+      val fee3 = spent - tx3.txOut.map(_.amount).sum
 
-      (data1, tx3)
+      (data1, tx3, fee3)
     }
 
     def signTransaction(tx: Transaction) : Transaction = {
