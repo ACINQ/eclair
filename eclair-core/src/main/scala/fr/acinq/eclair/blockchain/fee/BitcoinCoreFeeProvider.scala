@@ -17,8 +17,9 @@
 package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
-import org.json4s.JsonAST.{JDouble, JInt}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, Error, JsonRPCError}
+import org.json4s.DefaultFormats
+import org.json4s.JsonAST._
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -27,6 +28,8 @@ import scala.concurrent.{ExecutionContext, Future}
   */
 class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: FeeratesPerKB)(implicit ec: ExecutionContext) extends FeeProvider {
 
+  implicit val formats = DefaultFormats.withBigDecimal
+
   /**
     * We need this to keep commitment tx fees in sync with the state of the network
     *
@@ -34,19 +37,7 @@ class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: F
     * @return the current fee estimate in Satoshi/KB
     */
   def estimateSmartFee(nBlocks: Int): Future[Long] =
-    rpcClient.invoke("estimatesmartfee", nBlocks).map(json => {
-      json \ "feerate" match {
-        case JDouble(feerate) =>
-          // estimatesmartfee returns a fee rate in Btc/KB
-          btc2satoshi(Btc(feerate)).amount
-        case JInt(feerate) if feerate.toLong < 0 =>
-          // negative value means failure
-          feerate.toLong
-        case JInt(feerate) =>
-          // should (hopefully) never happen
-          btc2satoshi(Btc(feerate.toLong)).amount
-      }
-    })
+    rpcClient.invoke("estimatesmartfee", nBlocks).map(BitcoinCoreFeeProvider.parseFeeEstimate)
 
   override def getFeerates: Future[FeeratesPerKB] = for {
     block_1 <- estimateSmartFee(1)
@@ -62,5 +53,28 @@ class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: F
     blocks_12 = if (blocks_12 > 0) blocks_12 else defaultFeerates.blocks_12,
     blocks_36 = if (blocks_36 > 0) blocks_36 else defaultFeerates.blocks_36,
     blocks_72 = if (blocks_72 > 0) blocks_72 else defaultFeerates.blocks_72)
+}
 
+object BitcoinCoreFeeProvider {
+  def parseFeeEstimate(json: JValue): Long = {
+    json \ "errors" match {
+      case JNothing =>
+        json \ "feerate" match {
+          case JDecimal(feerate) =>
+            // estimatesmartfee returns a fee rate in Btc/KB
+            btc2satoshi(Btc(feerate)).amount
+          case JInt(feerate) if feerate.toLong < 0 =>
+            // negative value means failure
+            feerate.toLong
+          case JInt(feerate) =>
+            // should (hopefully) never happen
+            btc2satoshi(Btc(feerate.toLong)).amount
+        }
+      case JArray(errors) =>
+        val error = errors collect { case JString(error) => error } mkString (", ")
+        throw new RuntimeException(s"estimatesmartfee failed: $error")
+      case _ =>
+        throw new RuntimeException("estimatesmartfee failed")
+    }
+  }
 }
