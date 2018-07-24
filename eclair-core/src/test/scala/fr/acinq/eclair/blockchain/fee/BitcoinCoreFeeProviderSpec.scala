@@ -11,6 +11,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonR
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST._
+import org.json4s.jackson.JsonMethods
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
@@ -42,6 +43,22 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
     waitForBitcoindReady()
   }
 
+  test("parse error") {
+    val raw =
+      """
+        |{
+        |  "errors": [
+        |    "Insufficient data or no feerate found"
+        |  ],
+        |  "blocks": 0
+        |}
+      """.stripMargin
+    val json = JsonMethods.parse(raw)
+    intercept[RuntimeException] {
+      BitcoinCoreFeeProvider.parseFeeEstimate(json)
+    }
+  }
+
   test("get fee rates") {
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
@@ -53,7 +70,7 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
     val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(1,2,3,4,5,6))
     val sender = TestProbe()
     regtestProvider.getFeerates.pipeTo(sender.ref)
-    assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("Insufficient data or no feerate found"))
+    assert(sender.expectMsgType[Failure].cause.asInstanceOf[RuntimeException].getMessage.contains("Insufficient data or no feerate found"))
 
     val fees = Map(
       1 -> 1500,
