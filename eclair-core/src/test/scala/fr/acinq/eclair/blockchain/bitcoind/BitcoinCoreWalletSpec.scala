@@ -93,7 +93,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
 
       wallet.fundTransaction(hexIn, false).pipeTo(sender.ref)
       val FundTransactionResponse(_, _, fee) = sender.expectMsgType[FundTransactionResponse]
-      assert(fee == satoshi)
+      assert(fee == Satoshi(satoshi))
     }
   }
 

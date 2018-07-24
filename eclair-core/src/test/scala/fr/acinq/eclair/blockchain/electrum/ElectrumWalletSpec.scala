@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionRes
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JDouble, JString, JValue}
+import org.json4s.JsonAST.{JDecimal, JString, JValue}
 import org.junit.experimental.categories.Category
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -239,8 +239,8 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
     awaitCond({
       probe.send(bitcoincli, BitcoinReq("getreceivedbyaddress", address))
-      val JDouble(value) = probe.expectMsgType[JValue]
-      value == 1.0
+      val JDecimal(value) = probe.expectMsgType[JValue]
+      value == BigDecimal(1.0)
     }, max = 30 seconds, interval = 1 second)
 
     awaitCond({
