@@ -511,7 +511,7 @@ object Helpers {
 
           // and finally we steal the htlc outputs
           var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
-          val htlcPenaltyTxs = tx.txOut.collect { case txOut if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
+        val htlcPenaltyTxs = tx.txOut.collect { case txOut if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
           val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
           generateTx("htlc-penalty")(Try {
             val htlcPenalty = Transactions.makeHtlcPenaltyTx(tx, outputsAlreadyUsed, htlcRedeemScript, Satoshi(localParams.dustLimitSatoshis), localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
@@ -833,6 +833,62 @@ object Helpers {
       irrevocablySpent.contains(outPoint)
     }
 
+    /**
+      * This helper function returns the fee paid by the given transaction.
+      *
+      * It relies on the current channel data to find the parent tx and compute the fee, and also provides a description.
+      *
+      * @param tx  a tx for which we want to compute the fee
+      * @param d   current channel data
+      * @return    if the parent tx is found, a tuple (fee, description)
+      */
+    def networkFeePaid(tx: Transaction, d: DATA_CLOSING): Option[(Satoshi, String)] = {
+      // only funder pays the fee
+      if (d.commitments.localParams.isFunder) {
+        // we build a map with all known txes (that's not particularly efficient, but it doesn't really matter)
+        val txes: Map[BinaryData, (Transaction, String)] = (
+          d.mutualClosePublished.map(_ -> "mutual") ++
+            d.localCommitPublished.map(_.commitTx).map(_ -> "local-commit").toSeq ++
+            d.localCommitPublished.flatMap(_.claimMainDelayedOutputTx).map(_ -> "local-main-delayed") ++
+            d.localCommitPublished.toSeq.flatMap(_.htlcSuccessTxs).map(_ -> "local-htlc-success") ++
+            d.localCommitPublished.toSeq.flatMap(_.htlcTimeoutTxs).map(_ -> "local-htlc-timeout") ++
+            d.localCommitPublished.toSeq.flatMap(_.claimHtlcDelayedTxs).map(_ -> "local-htlc-delayed") ++
+            d.remoteCommitPublished.map(_.commitTx).map(_ -> "remote-commit") ++
+            d.remoteCommitPublished.toSeq.flatMap(_.claimMainOutputTx).map(_ -> "remote-main") ++
+            d.remoteCommitPublished.toSeq.flatMap(_.claimHtlcSuccessTxs).map(_ -> "remote-htlc-success") ++
+            d.remoteCommitPublished.toSeq.flatMap(_.claimHtlcTimeoutTxs).map(_ -> "remote-htlc-timeout") ++
+            d.nextRemoteCommitPublished.map(_.commitTx).map(_ -> "remote-commit") ++
+            d.nextRemoteCommitPublished.toSeq.flatMap(_.claimMainOutputTx).map(_ -> "remote-main") ++
+            d.nextRemoteCommitPublished.toSeq.flatMap(_.claimHtlcSuccessTxs).map(_ -> "remote-htlc-success") ++
+            d.nextRemoteCommitPublished.toSeq.flatMap(_.claimHtlcTimeoutTxs).map(_ -> "remote-htlc-timeout") ++
+            d.revokedCommitPublished.map(_.commitTx).map(_ -> "revoked-commit") ++
+            d.revokedCommitPublished.flatMap(_.claimMainOutputTx).map(_ -> "revoked-main") ++
+            d.revokedCommitPublished.flatMap(_.mainPenaltyTx).map(_ -> "revoked-main-penalty") ++
+            d.revokedCommitPublished.flatMap(_.htlcPenaltyTxs).map(_ -> "revoked-htlc-penalty") ++
+            d.revokedCommitPublished.flatMap(_.claimHtlcDelayedPenaltyTxs).map(_ -> "revoked-htlc-penalty-delayed")
+          )
+          .map { case (tx, desc) => tx.txid -> (tx, desc) } // will allow easy lookup of parent transaction
+          .toMap
+
+        def fee(child: Transaction): Option[Satoshi] = {
+          require(child.txIn.size == 1, "transaction must have exactly one input")
+          val outPoint = child.txIn.head.outPoint
+          val parentTxOut_opt = if (outPoint == d.commitments.commitInput.outPoint) {
+            Some(d.commitments.commitInput.txOut)
+          }
+          else {
+            txes.get(outPoint.txid) map { case (parent, _) => parent.txOut(outPoint.index.toInt) }
+          }
+          parentTxOut_opt map {
+            case parentTxOut => parentTxOut.amount - child.txOut.map(_.amount).sum
+          }
+        }
+
+        txes.get(tx.txid) flatMap {
+          case (_, desc) => fee(tx).map(_ -> desc)
+        }
+      } else None
+    }
   }
 
 }

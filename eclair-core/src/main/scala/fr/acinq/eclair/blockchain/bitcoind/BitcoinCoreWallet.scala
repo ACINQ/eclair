@@ -89,13 +89,13 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
       lockTime = 0)
     for {
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
-      FundTransactionResponse(unsignedFundingTx, changepos, fee) <- fundTransaction(partialFundingTx, lockUnspents = true)
+      FundTransactionResponse(unsignedFundingTx, _, fee) <- fundTransaction(partialFundingTx, lockUnspents = true)
       // now let's sign the funding tx
       SignTransactionResponse(fundingTx, _) <- signTransactionOrUnlock(unsignedFundingTx)
       // there will probably be a change output, so we need to find which output is ours
       outputIndex = Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
       _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=$fee")
-    } yield MakeFundingTxResponse(fundingTx, outputIndex)
+    } yield MakeFundingTxResponse(fundingTx, outputIndex, fee)
   }
 
   override def commit(tx: Transaction): Future[Boolean] = publishTransaction(tx)

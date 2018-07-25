@@ -56,7 +56,7 @@ case class InvalidHtlcSignature                (override val channelId: BinaryDa
 case class InvalidCloseSignature               (override val channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid close signature: tx=$tx")
 case class InvalidCloseFee                     (override val channelId: BinaryData, feeSatoshi: Long) extends ChannelException(channelId, s"invalid close fee: fee_satoshis=$feeSatoshi")
 case class HtlcSigCountMismatch                (override val channelId: BinaryData, expected: Int, actual: Int) extends ChannelException(channelId, s"htlc sig count mismatch: expected=$expected actual: $actual")
-case class ForcedLocalCommit                   (override val channelId: BinaryData, reason: String) extends ChannelException(channelId, s"forced local commit: reason")
+case class ForcedLocalCommit                   (override val channelId: BinaryData) extends ChannelException(channelId, s"forced local commit")
 case class UnexpectedHtlcId                    (override val channelId: BinaryData, expected: Long, actual: Long) extends ChannelException(channelId, s"unexpected htlc id: expected=$expected actual=$actual")
 case class InvalidPaymentHash                  (override val channelId: BinaryData) extends ChannelException(channelId, "invalid payment hash")
 case class ExpiryTooSmall                      (override val channelId: BinaryData, minimum: Long, actual: Long, blockCount: Long) extends ChannelException(channelId, s"expiry too small: minimum=$minimum actual=$actual blockCount=$blockCount")

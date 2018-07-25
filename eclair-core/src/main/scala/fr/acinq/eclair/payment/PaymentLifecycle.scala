@@ -74,7 +74,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
     case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, c, cmd, _, _, _, _, hops)) =>
       reply(s, PaymentSucceeded(cmd.amountMsat, c.paymentHash, fulfill.paymentPreimage, hops))
-      context.system.eventStream.publish(PaymentSent(MilliSatoshi(c.amountMsat), MilliSatoshi(cmd.amountMsat - c.amountMsat), cmd.paymentHash, fulfill.paymentPreimage))
+      context.system.eventStream.publish(PaymentSent(MilliSatoshi(c.amountMsat), MilliSatoshi(cmd.amountMsat - c.amountMsat), cmd.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
       stop(FSM.Normal)
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>

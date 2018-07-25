@@ -39,7 +39,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
-import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentRequest}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
@@ -57,7 +57,7 @@ case class Error(code: Int, message: String)
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 case class Status(node_id: String)
 case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: BinaryData, blockHeight: Int)
-case class LocalChannelInfo(nodeId: BinaryData, channelId: BinaryData, state: String)
+case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 trait RPCRejection extends Rejection {
   def requestId: String
 }
@@ -74,7 +74,7 @@ trait Service extends Logging {
   def scheduler: Scheduler
 
   implicit val serialization = jackson.Serialization
-  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new UInt64Serializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer
+  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer
   implicit val timeout = Timeout(60 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
@@ -191,16 +191,14 @@ trait Service extends Logging {
                           case Nil =>
                             val f = for {
                               channels_id <- (register ? 'channels).mapTo[Map[BinaryData, ActorRef]].map(_.keys)
-                              channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
-                                .map(gi => LocalChannelInfo(gi.nodeId, gi.channelId, gi.state.toString))))
+                              channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]))
                             } yield channels
                             completeRpcFuture(req.id, f)
                           case JString(remoteNodeId) :: Nil => Try(PublicKey(remoteNodeId)) match {
                             case Success(pk) =>
                               val f = for {
                                 channels_id <- (register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == pk).keys)
-                                channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
-                                  .map(gi => LocalChannelInfo(gi.nodeId, gi.channelId, gi.state.toString))))
+                                channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]))
                               } yield channels
                               completeRpcFuture(req.id, f)
                             case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid remote node id '$remoteNodeId'"))
@@ -308,6 +306,29 @@ trait Service extends Logging {
                           case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
                         }
 
+                        // retrieve audit events
+                        case "audit" =>
+                          val (from, to) = req.params match {
+                            case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
+                            case _ => (0L, Long.MaxValue)
+                          }
+                          completeRpcFuture(req.id, Future(AuditResponse(
+                            sent = nodeParams.auditDb.listSent(from, to),
+                            received = nodeParams.auditDb.listReceived(from, to),
+                            relayed = nodeParams.auditDb.listRelayed(from, to))
+                          ))
+
+                        case "networkfees" =>
+                          val (from, to) = req.params match {
+                            case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
+                            case _ => (0L, Long.MaxValue)
+                          }
+                          completeRpcFuture(req.id, Future(nodeParams.auditDb.listNetworkFees(from, to)))
+
+                        // retrieve fee stats
+                        case "channelstats" => completeRpcFuture(req.id, Future(nodeParams.auditDb.stats))
+
+
                         // method name was not found
                         case _ => reject(UnknownMethodRejection(req.id))
                       }
@@ -345,11 +366,12 @@ trait Service extends Logging {
     "connect (uri): open a secure connection to a lightning node",
     "connect (nodeId, host, port): open a secure connection to a lightning node",
     "open (nodeId, fundingSatoshis, pushMsat = 0, feerateSatPerByte = ?, channelFlags = 0x01): open a channel with another lightning node, by default push = 0, feerate for the funding tx targets 6 blocks, and channel is announced",
-    "updaterelayfee (channelId, feeBaseMsat, feeProportionalMillionths)",
+    "updaterelayfee (channelId, feeBaseMsat, feeProportionalMillionths): update relay fee for payments going through this channel",
     "peers: list existing local peers",
     "channels: list existing local channels",
     "channels (nodeId): list existing local channels to a particular nodeId",
     "channel (channelId): retrieve detailed information about a given channel",
+    "channelstats: retrieves statistics about channel usage (fees, number and average amount of payments)",
     "allnodes: list all known nodes",
     "allchannels: list all known channels",
     "allupdates: list all channels updates",
@@ -366,6 +388,10 @@ trait Service extends Logging {
     "forceclose (channelId): force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)",
     "checkpayment (paymentHash): returns true if the payment has been received, false otherwise",
     "checkpayment (paymentRequest): returns true if the payment has been received, false otherwise",
+    "audit: list all send/received/relayed payments",
+    "audit (from, to): list send/received/relayed payments in that interval (from <= timestamp < to)",
+    "networkfees: list all network fees paid to the miners, by transaction",
+    "networkfees (from, to): list network fees paid to the miners, by transaction, in that interval (from <= timestamp < to)",
     "getinfo: returns info about the blockchain and this node",
     "help: display this message")
 

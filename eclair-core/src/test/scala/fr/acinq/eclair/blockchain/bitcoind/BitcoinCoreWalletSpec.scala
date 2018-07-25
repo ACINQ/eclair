@@ -117,7 +117,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val fundingTxes = for (i <- 0 to 3) yield {
       val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
       wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
-      val MakeFundingTxResponse(fundingTx, _) = sender.expectMsgType[MakeFundingTxResponse]
+      val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
       fundingTx
     }
 
@@ -187,7 +187,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     sender.expectMsgType[JValue]
 
     wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
-    val MakeFundingTxResponse(fundingTx, _) = sender.expectMsgType[MakeFundingTxResponse]
+    val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
 
     wallet.commit(fundingTx).pipeTo(sender.ref)
     assert(sender.expectMsgType[Boolean])

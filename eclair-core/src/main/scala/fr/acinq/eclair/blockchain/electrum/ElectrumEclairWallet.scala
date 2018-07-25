@@ -38,8 +38,8 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: BinaryData)(implicit
   override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long) = {
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, pubkeyScript) :: Nil, lockTime = 0)
     (wallet ? CompleteTransaction(tx, feeRatePerKw)).mapTo[CompleteTransactionResponse].map(response => response match {
-      case CompleteTransactionResponse(tx1, None) => MakeFundingTxResponse(tx1, 0)
-      case CompleteTransactionResponse(_, Some(error)) => throw error
+      case CompleteTransactionResponse(tx1, fee1, None) => MakeFundingTxResponse(tx1, 0, fee1) // TODO: output index is always 0?
+      case CompleteTransactionResponse(_, _, Some(error)) => throw error
     })
   }
 
@@ -71,11 +71,11 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: BinaryData)(implicit
     (wallet ? CompleteTransaction(tx, feeRatePerKw))
       .mapTo[CompleteTransactionResponse]
       .flatMap {
-        case CompleteTransactionResponse(tx, None) => commit(tx).map {
+        case CompleteTransactionResponse(tx, _, None) => commit(tx).map {
           case true => tx.txid.toString()
           case false => throw new RuntimeException(s"could not commit tx=$tx")
         }
-        case CompleteTransactionResponse(_, Some(error)) => throw error
+        case CompleteTransactionResponse(_, _, Some(error)) => throw error
       }
   }
 
