@@ -22,7 +22,7 @@ import fr.acinq.eclair.blockchain.{NewBlock, NewTransaction}
 import org.zeromq.ZMQ.Event
 import org.zeromq.{ZContext, ZMQ, ZMsg}
 
-import scala.concurrent.Promise
+import scala.concurrent.{ExecutionContext, Promise}
 import scala.concurrent.duration._
 import scala.util.Try
 
@@ -44,7 +44,7 @@ class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) exte
   val monitor = ctx.createSocket(ZMQ.PAIR)
   monitor.connect("inproc://events")
 
-  import scala.concurrent.ExecutionContext.Implicits.global
+  implicit val ec: ExecutionContext = context.system.dispatcher
 
   // we check messages in a non-blocking manner with an interval, making sure to retrieve all messages before waiting again
   def checkEvent: Unit = Option(Event.recv(monitor, ZMQ.DONTWAIT)) match {
