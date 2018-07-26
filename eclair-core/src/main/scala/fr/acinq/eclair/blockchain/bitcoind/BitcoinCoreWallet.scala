@@ -18,6 +18,7 @@ package fr.acinq.eclair.blockchain.bitcoind
 
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin._
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Transactions
@@ -34,8 +35,9 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
   import BitcoinCoreWallet._
 
 
-  def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = {
-    rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, satoshi2btc(Satoshi(feeRatePerKw)).amount)).map(json => {
+  def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Satoshi): Future[FundTransactionResponse] = {
+    val feeRatePerKB = Satoshi(feerateKw2KB(feeRatePerKw.amount))
+    rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, satoshi2btc(feeRatePerKB).amount)).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDecimal(fee) = json \ "fee"
@@ -43,7 +45,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
     })
   }
 
-  def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toString(), lockUnspents, feeRatePerKw)
+  def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Satoshi): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toString(), lockUnspents, feeRatePerKw)
 
   def signTransaction(hex: String): Future[SignTransactionResponse] =
     rpcClient.invoke("signrawtransaction", hex).map(json => {
@@ -80,7 +82,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
     }
   }
 
-  override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = {
+  override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Satoshi): Future[MakeFundingTxResponse] = {
     // partial funding tx
     val partialFundingTx = Transaction(
       version = 2,
@@ -111,14 +113,11 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
 
 object BitcoinCoreWallet {
 
-  val SatoshisPerBTC: Double = 1e8
-
   // @formatter:off
   case class Options(lockUnspents: Boolean, feeRate: BigDecimal)
   case class Utxo(txid: String, vout: Long)
   case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Satoshi)
   case class SignTransactionResponse(tx: Transaction, complete: Boolean)
   // @formatter:on
-
 
 }
