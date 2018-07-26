@@ -180,6 +180,7 @@ class Setup(datadir: File,
         case address => logger.info(s"initial wallet address=$address")
       }
 
+      audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
         case "local" => LocalPaymentHandler.props(nodeParams)
         case "noop" => Props[NoopPaymentHandler]

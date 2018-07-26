@@ -119,7 +119,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
       wallet.makeFundingTx(pubkeyScript, MilliBtc(50), Satoshi(249)).pipeTo(sender.ref)
       assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("Transaction too large for fee policy"))
       wallet.makeFundingTx(pubkeyScript, MilliBtc(50), Satoshi(250)).pipeTo(sender.ref)
-      val MakeFundingTxResponse(fundingTx, _) = sender.expectMsgType[MakeFundingTxResponse]
+      val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
       fundingTx
     }
 
@@ -189,7 +189,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     sender.expectMsgType[JValue]
 
     wallet.makeFundingTx(pubkeyScript, MilliBtc(50), Satoshi(10000)).pipeTo(sender.ref)
-    val MakeFundingTxResponse(fundingTx, _) = sender.expectMsgType[MakeFundingTxResponse]
+    val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
 
     wallet.commit(fundingTx).pipeTo(sender.ref)
     assert(sender.expectMsgType[Boolean])

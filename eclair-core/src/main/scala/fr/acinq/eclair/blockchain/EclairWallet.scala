@@ -54,4 +54,4 @@ trait EclairWallet {
 
 }
 
-final case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int)
+final case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int, fee: Satoshi)

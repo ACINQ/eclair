@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionRes
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JDecimal, JString, JValue}
+import org.json4s.JsonAST.{JDecimal, JDouble, JString, JValue}
 import org.junit.experimental.categories.Category
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -227,7 +227,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     val JString(address) = probe.expectMsgType[JValue]
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
     probe.send(wallet, CompleteTransaction(tx, 20000))
-    val CompleteTransactionResponse(tx1, None) = probe.expectMsgType[CompleteTransactionResponse]
+    val CompleteTransactionResponse(tx1, fee1, None) = probe.expectMsgType[CompleteTransactionResponse]
 
     // send it ourselves
     logger.info(s"sending 1 btc to $address with tx ${tx1.txid}")
@@ -260,7 +260,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     val JString(address) = probe.expectMsgType[JValue]
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
     probe.send(wallet, CompleteTransaction(tx, 20000))
-    val CompleteTransactionResponse(tx1, None) = probe.expectMsgType[CompleteTransactionResponse]
+    val CompleteTransactionResponse(tx1, fee1, None) = probe.expectMsgType[CompleteTransactionResponse]
 
     // send it ourselves
     logger.info(s"sending 1 btc to $address with tx ${tx1.txid}")
