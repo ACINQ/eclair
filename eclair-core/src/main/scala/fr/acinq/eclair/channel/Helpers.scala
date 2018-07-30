@@ -687,7 +687,7 @@ object Helpers {
       * @param log
       * @return
       */
-    def overridenHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
+    def overriddenHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
         // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs
         remoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add) -- localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
