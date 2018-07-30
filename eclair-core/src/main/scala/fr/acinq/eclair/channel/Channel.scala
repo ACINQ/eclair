@@ -1880,8 +1880,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   }
 
   def store[T](d: T)(implicit tp: T <:< HasCommitments): T = {
-    log.debug(s"updating database record for channelId=${d.channelId}")
+    log.debug(s"updating database record for channelId={}", d.channelId)
     nodeParams.channelsDb.addOrUpdateChannel(d)
+    context.system.eventStream.publish(ChannelPersisted(self, remoteNodeId, d.channelId, d))
     d
   }
 
