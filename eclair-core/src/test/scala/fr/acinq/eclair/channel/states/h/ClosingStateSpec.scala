@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel.states.h
 
+import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{OutPoint, ScriptFlags, Transaction, TxIn}
@@ -173,7 +174,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (our commit)") { case (alice, _, _, _, alice2blockchain, _, _, _) =>
+  test("recv BITCOIN_FUNDING_SPENT (local commit)") { case (alice, _, _, _, alice2blockchain, _, _, _) =>
     within(30 seconds) {
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
@@ -259,7 +260,36 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (their commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, bobCommitTxes) =>
+  test("recv BITCOIN_TX_CONFIRMED (local commit with htlcs only signed by local)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      // an error occurs and alice publishes her commit tx
+      val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
+      val aliceCommitTx = aliceData.commitments.localCommit.publishableTxs.commitTx.tx
+      // alice sends an htlc
+      val (r, htlc) = addHtlc(4200000, alice, bob, alice2bob, bob2alice)
+      // and signs it (but bob doesn't sign it)
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[CommitSig]
+      // then we make alice unilaterally close the channel
+      alice ! Error("00" * 32, "oops".getBytes)
+      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx)) // commit tx
+      awaitCond(alice.stateName == CLOSING)
+      val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
+      assert(initialState.localCommitPublished.isDefined)
+      relayer.expectMsgType[LocalChannelDown]
+
+      // actual test starts here
+      // when the commit tx is signed, alice knows that the htlc she sent right before the unilateral close will never reach the chain
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 0, 0)
+      // so she fails it
+      val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
+      relayer.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverridenByLocalCommit(aliceData.channelId), origin, None, None)))
+    }
+  }
+
+  test("recv BITCOIN_FUNDING_SPENT (remote commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, bobCommitTxes) =>
     within(30 seconds) {
       mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
