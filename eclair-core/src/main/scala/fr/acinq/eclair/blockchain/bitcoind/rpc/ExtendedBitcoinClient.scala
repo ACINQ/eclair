@@ -53,10 +53,10 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
         case Some(b) => Future.successful(b)
         case None => rpcClient.invoke("getbestblockhash") collect { case JString(b) => b }
       }
-      (prevblockhash, txids) <- rpcClient.invoke("getblock", blockhash).map(json => ((json \ "previousblockhash").extract[String], (json \ "tx").extract[List[String]]))
-      txes <- Future.sequence(txids.map(getTransaction(_)))
-      res <- txes.find(tx => tx.txIn.exists(i => i.outPoint.txid.toString() == txid && i.outPoint.index == outputIndex)) match {
-        case None => lookForSpendingTx(Some(prevblockhash), txid, outputIndex)
+      // with a verbosity of 0, getblock returns the raw serialized block
+      block <- rpcClient.invoke("getblock", blockhash, 0).collect { case JString(b) => Block.read(b) }
+      res <- block.tx.find(tx => tx.txIn.exists(i => i.outPoint.txid.toString() == txid && i.outPoint.index == outputIndex)) match {
+        case None => lookForSpendingTx(Some(BinaryData(block.header.hashPreviousBlock.reverse).toString), txid, outputIndex)
         case Some(tx) => Future.successful(tx)
       }
     } yield res
