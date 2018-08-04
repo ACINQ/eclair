@@ -271,7 +271,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           log.debug(s"remote params: $remoteParams")
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey)))
-          wallet.makeFundingTx(fundingPubkeyScript, Satoshi(fundingSatoshis), Satoshi(fundingTxFeeratePerKw)).pipeTo(self)
+          wallet.makeFundingTx(fundingPubkeyScript, Satoshi(fundingSatoshis), fundingTxFeeratePerKw).pipeTo(self)
           goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open)
       }
 

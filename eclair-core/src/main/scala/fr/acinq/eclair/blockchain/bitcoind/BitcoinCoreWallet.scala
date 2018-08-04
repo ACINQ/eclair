@@ -35,9 +35,9 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
   import BitcoinCoreWallet._
 
 
-  def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Satoshi): Future[FundTransactionResponse] = {
-    val feeRatePerKB = Satoshi(feerateKw2KB(feeRatePerKw.amount))
-    rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, satoshi2btc(feeRatePerKB).amount)).map(json => {
+  def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = {
+    val feeRatePerKB = BigDecimal(feerateKw2KB(feeRatePerKw))
+    rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, feeRatePerKB.bigDecimal.scaleByPowerOfTen(-8))).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDecimal(fee) = json \ "fee"
@@ -45,7 +45,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
     })
   }
 
-  def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Satoshi): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toString(), lockUnspents, feeRatePerKw)
+  def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toString(), lockUnspents, feeRatePerKw)
 
   def signTransaction(hex: String): Future[SignTransactionResponse] =
     rpcClient.invoke("signrawtransaction", hex).map(json => {
@@ -82,7 +82,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
     }
   }
 
-  override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Satoshi): Future[MakeFundingTxResponse] = {
+  override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = {
     // partial funding tx
     val partialFundingTx = Transaction(
       version = 2,

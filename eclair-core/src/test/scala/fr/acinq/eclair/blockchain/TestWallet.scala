@@ -30,7 +30,7 @@ class TestWallet extends EclairWallet {
 
   override def getFinalAddress: Future[String] = Future.successful("2MsRZ1asG6k94m6GYUufDGaZJMoJ4EV5JKs")
 
-  override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Satoshi): Future[MakeFundingTxResponse] =
+  override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] =
     Future.successful(TestWallet.makeDummyFundingTx(pubkeyScript, amount, feeRatePerKw))
 
   override def commit(tx: Transaction): Future[Boolean] = Future.successful(true)
@@ -40,7 +40,7 @@ class TestWallet extends EclairWallet {
 
 object TestWallet {
 
-  def makeDummyFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Satoshi): MakeFundingTxResponse = {
+  def makeDummyFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): MakeFundingTxResponse = {
     val fundingTx = Transaction(version = 2,
       txIn = TxIn(OutPoint("42" * 32, 42), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
       txOut = TxOut(amount, pubkeyScript) :: Nil,
