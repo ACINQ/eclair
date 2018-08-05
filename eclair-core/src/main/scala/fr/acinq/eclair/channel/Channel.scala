@@ -26,10 +26,9 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
-import fr.acinq.eclair.crypto.{Generators, LocalKeyManager, ShaChain, Sphinx}
+import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelReestablish, _}
 
@@ -65,7 +64,9 @@ object Channel {
   case object TickRefreshChannelUpdate
 
   sealed trait ChannelError
+
   case class LocalError(t: Throwable) extends ChannelError
+
   case class RemoteError(e: Error) extends ChannelError
 
 }
@@ -1300,63 +1301,74 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
       goto(WAIT_FOR_FUNDING_LOCKED) sending fundingLocked
 
-    case Event(channelReestablish@ChannelReestablish(_, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), _), d: DATA_NORMAL)
-      if d.commitments.localCommit.index < nextRemoteRevocationNumber =>
-      // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
-      // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
-      if (keyManager.commitmentSecret(d.commitments.localParams.channelKeyPath, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
-        log.warning(s"counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${d.commitments.localCommit.index} theirCommitmentNumber=${nextRemoteRevocationNumber}")
-        // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
-        // would punish us by taking all the funds in the channel
-        val exc = PleasePublishYourCommitment(d.channelId)
-        val error = Error(d.channelId, exc.getMessage.getBytes)
-        goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using store(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish)) sending error
-      } else {
-        // they lied! the last per_commitment_secret they claimed to have received from us is invalid
-        throw CommitmentSyncError(d.channelId)
-      }
-
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
-      if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
-        // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
-        log.debug(s"re-sending fundingLocked")
-        val nextPerCommitmentPoint = keyManager.commitmentPoint(d.commitments.localParams.channelKeyPath, 1)
-        val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
-        forwarder ! fundingLocked
+      channelReestablish match {
+        case ChannelReestablish(_, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), _) if Helpers.ourNextLocalCommitmentNumberCheck(d, nextRemoteRevocationNumber) =>
+          // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
+          // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
+          if (keyManager.commitmentSecret(d.commitments.localParams.channelKeyPath, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
+            log.warning(s"counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${d.commitments.localCommit.index} theirCommitmentNumber=${nextRemoteRevocationNumber}")
+            // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
+            // would punish us by taking all the funds in the channel
+            val exc = PleasePublishYourCommitment(d.channelId)
+            val error = Error(d.channelId, exc.getMessage.getBytes)
+            goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using store(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish)) sending error
+          } else {
+            // they lied! the last per_commitment_secret they claimed to have received from us is invalid
+            throw InvalidRevokedCommitProof(d.channelId, d.commitments.localCommit.index, nextRemoteRevocationNumber, yourLastPerCommitmentSecret)
+          }
+        case ChannelReestablish(_, nextLocalCommitmentNumber, _, _, _) if !Helpers.theirNextLocalCommitmentNumberCheck(d, nextLocalCommitmentNumber) =>
+          // if next_local_commit_number is more than one more our remote commitment index, it means that either we are using an outdated commitment, or they are lying
+          log.warning(s"counterparty says that they have a more recent commitment than the one we know of!!! ourCommitmentNumber=${d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.index).getOrElse(d.commitments.remoteCommit.index)} theirCommitmentNumber=${nextLocalCommitmentNumber}")
+          // there is no way to make sure that they are saying the truth, the best thing to do is ask them to publish their commitment right now
+          // maybe they will publish their commitment, in that case we need to remember their commitment point in order to be able to claim our outputs
+          // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
+          val exc = PleasePublishYourCommitment(d.channelId)
+          val error = Error(d.channelId, exc.getMessage.getBytes)
+          goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using store(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish)) sending error
+        case _ =>
+          // normal case, our data is up-to-date
+          if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
+            // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
+            log.debug(s"re-sending fundingLocked")
+            val nextPerCommitmentPoint = keyManager.commitmentPoint(d.commitments.localParams.channelKeyPath, 1)
+            val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
+            forwarder ! fundingLocked
+          }
+
+          val commitments1 = handleSync(channelReestablish, d)
+
+          // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
+          d.localShutdown.foreach {
+            localShutdown =>
+              log.debug(s"re-sending localShutdown")
+              forwarder ! localShutdown
+          }
+
+          if (!d.buried) {
+            // even if we were just disconnected/reconnected, we need to put back the watch because the event may have been
+            // fired while we were in OFFLINE (if not, the operation is idempotent anyway)
+            blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
+          } else {
+            // channel has been buried enough, should we (re)send our announcement sigs?
+            d.channelAnnouncement match {
+              case None if !d.commitments.announceChannel =>
+                // that's a private channel, nothing to do
+                ()
+              case None =>
+                // BOLT 7: a node SHOULD retransmit the announcement_signatures message if it has not received an announcement_signatures message
+                val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, d.shortChannelId)
+                forwarder ! localAnnSigs
+              case Some(_) =>
+                // channel was already announced, nothing to do
+                ()
+            }
+          }
+          // re-enable the channel
+          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, nodeParams.expiryDeltaBlocks, d.commitments.remoteParams.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = true)
+
+          goto(NORMAL) using d.copy(commitments = commitments1, channelUpdate = channelUpdate)
       }
-
-      val commitments1 = handleSync(channelReestablish, d)
-
-      // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-      d.localShutdown.foreach {
-        localShutdown =>
-          log.debug(s"re-sending localShutdown")
-          forwarder ! localShutdown
-      }
-
-      if (!d.buried) {
-        // even if we were just disconnected/reconnected, we need to put back the watch because the event may have been
-        // fired while we were in OFFLINE (if not, the operation is idempotent anyway)
-        blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
-      } else {
-        // channel has been buried enough, should we (re)send our announcement sigs?
-        d.channelAnnouncement match {
-          case None if !d.commitments.announceChannel =>
-            // that's a private channel, nothing to do
-            ()
-          case None =>
-            // BOLT 7: a node SHOULD retransmit the announcement_signatures message if it has not received an announcement_signatures message
-            val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, d.shortChannelId)
-            forwarder ! localAnnSigs
-          case Some(_) =>
-            // channel was already announced, nothing to do
-            ()
-        }
-      }
-      // re-enable the channel
-      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, nodeParams.expiryDeltaBlocks, d.commitments.remoteParams.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = true)
-
-      goto(NORMAL) using d.copy(commitments = commitments1, channelUpdate = channelUpdate)
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_SHUTDOWN) =>
       val commitments1 = handleSync(channelReestablish, d)

@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel
 
+import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.payment.{Origin, Relayed}
@@ -76,6 +77,7 @@ case class CannotSignWithoutChanges            (override val channelId: BinaryDa
 case class CannotSignBeforeRevocation          (override val channelId: BinaryData) extends ChannelException(channelId, "cannot sign until next revocation hash is received")
 case class UnexpectedRevocation                (override val channelId: BinaryData) extends ChannelException(channelId, "received unexpected RevokeAndAck message")
 case class InvalidRevocation                   (override val channelId: BinaryData) extends ChannelException(channelId, "invalid revocation")
+case class InvalidRevokedCommitProof           (override val channelId: BinaryData, ourCommitmentNumber: Long, theirCommitmentNumber: Long, perCommitmentSecret: Scalar) extends ChannelException(channelId, s"counterparty claimed that we have a revoked commit but their proof doesn't check out: ourCommitmentNumber=$ourCommitmentNumber theirCommitmentNumber=$theirCommitmentNumber perCommitmentSecret=$perCommitmentSecret")
 case class CommitmentSyncError                 (override val channelId: BinaryData) extends ChannelException(channelId, "commitment sync error")
 case class RevocationSyncError                 (override val channelId: BinaryData) extends ChannelException(channelId, "revocation sync error")
 case class InvalidFailureCode                  (override val channelId: BinaryData) extends ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")

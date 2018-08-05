@@ -219,6 +219,42 @@ object Helpers {
 
   }
 
+  /**
+    * Tells whether or not their expected next remote commitment number matches with our data
+    *
+    * @param d
+    * @param nextRemoteRevocationNumber
+    * @return
+    */
+  def ourNextLocalCommitmentNumberCheck(d: HasCommitments, nextRemoteRevocationNumber: Long): Boolean = {
+    d.commitments.localCommit.index < nextRemoteRevocationNumber
+  }
+
+  /**
+    * Tells whether or not their expected next local commitment number matches with our data
+    *
+    * @param d
+    * @param nextLocalCommitmentNumber
+    * @return
+    */
+  def theirNextLocalCommitmentNumberCheck(d: HasCommitments, nextLocalCommitmentNumber: Long): Boolean = {
+    d.commitments.remoteNextCommitInfo match {
+      case Left(waitingForRevocation) if nextLocalCommitmentNumber == waitingForRevocation.nextRemoteCommit.index =>
+        // // we just sent a new commitment but they didn't receive the new commitment
+        true
+      case Left(waitingForRevocation) if nextLocalCommitmentNumber == (waitingForRevocation.nextRemoteCommit.index + 1) =>
+        // we just sent a new commitment, they have received it but we haven't received their revocation
+        true
+      case Right(_) if nextLocalCommitmentNumber == (d.commitments.remoteCommit.index + 1) =>
+        // they have acknowledged the last commitment we sent
+        true
+      case _ =>
+        // something is off
+        false
+    }
+  }
+
+
   object Closing {
 
     // used only to compute tx weights and estimate fees
@@ -857,9 +893,9 @@ object Helpers {
       *
       * It relies on the current channel data to find the parent tx and compute the fee, and also provides a description.
       *
-      * @param tx  a tx for which we want to compute the fee
-      * @param d   current channel data
-      * @return    if the parent tx is found, a tuple (fee, description)
+      * @param tx a tx for which we want to compute the fee
+      * @param d  current channel data
+      * @return if the parent tx is found, a tuple (fee, description)
       */
     def networkFeePaid(tx: Transaction, d: DATA_CLOSING): Option[(Satoshi, String)] = {
       // only funder pays the fee

@@ -191,7 +191,6 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("discover that we have a revoked commitment") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
     val sender = TestProbe()
 
-    // first let's ge
     val (ra1, htlca1) = addHtlc(250000000, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     val (ra2, htlca2) = addHtlc(100000000, alice, bob, alice2bob, bob2alice)
@@ -205,6 +204,57 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     crossSign(bob, alice, bob2alice, alice2bob)
     fulfillHtlc(htlca3.id, ra3, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // then we manually replace alice's state with an older one
+    alice.setState(OFFLINE, oldStateData)
+
+    // then we reconnect them
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
+
+    // peers exchange channel_reestablish messages
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+
+    // alice then realizes it has an old state...
+    bob2alice.forward(alice)
+    // ... and ask bob to publish its current commitment
+    val error = alice2bob.expectMsgType[Error]
+    assert(new String(error.data) === PleasePublishYourCommitment(channelId(alice)).getMessage)
+
+    // alice now waits for bob to publish its commitment
+    awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
+
+    // bob is nice and publishes its commitment
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    sender.send(alice, WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx))
+
+    // alice is able to claim its main output
+    val claimMainOutput = alice2blockchain.expectMsgType[PublishAsap].tx
+    Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+  }
+
+  test("discover that they have a more recent commit than the one we know") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+    val sender = TestProbe()
+
+    // we start by storing the current state
+    val oldStateData = alice.stateData
+    // then we add an htlc and sign it
+    val (ra1, htlca1) = addHtlc(250000000, alice, bob, alice2bob, bob2alice)
+    sender.send(alice, CMD_SIGN)
+    sender.expectMsg("ok")
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    // alice will receive neither the revocation nor the commit sig
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.expectMsgType[CommitSig]
 
     // we simulate a disconnection
     sender.send(alice, INPUT_DISCONNECTED)
@@ -265,7 +315,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // alice then finds out bob is lying
     bob2alice.send(alice, ba_reestablish_forged)
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data) === CommitmentSyncError(channelId(alice)).getMessage)
+    assert(new String(error.data) === InvalidRevokedCommitProof(channelId(alice), 0, 42, ba_reestablish_forged.yourLastPerCommitmentSecret.get).getMessage)
   }
 
 }
