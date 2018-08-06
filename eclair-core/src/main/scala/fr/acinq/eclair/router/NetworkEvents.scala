@@ -37,3 +37,5 @@ case class ChannelDiscovered(ann: ChannelAnnouncement, capacity: Satoshi) extend
 case class ChannelLost(shortChannelId: ShortChannelId) extends NetworkEvent
 
 case class ChannelUpdateReceived(ann: ChannelUpdate) extends NetworkEvent
+
+case class SyncProgress(progress: Double) extends NetworkEvent
