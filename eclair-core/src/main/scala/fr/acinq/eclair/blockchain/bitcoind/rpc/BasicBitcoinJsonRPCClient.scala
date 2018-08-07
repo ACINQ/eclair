@@ -45,7 +45,7 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
       json = Serialization.write(requests)
       r = Gigahorse.url(s"$scheme://$host:$port")
         .post(json, Charset.defaultCharset())
-        .withHeaders(("content-type" -> "application/json"))
+        .withContentType("application/json")
         .withAuth(user, password)
       res <- http.run(r, Gigahorse.asString)
       jsonRpcRes = JsonMethods.parse(res).extract[Seq[JsonRPCResponse]]
