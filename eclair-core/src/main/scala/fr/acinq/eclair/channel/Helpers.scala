@@ -225,9 +225,23 @@ object Helpers {
     * @param d
     * @param nextRemoteRevocationNumber
     * @return
+    *         - true if parties are in sync or remote is behind
+    *         - false if we are behind
     */
   def checkLocalCommit(d: HasCommitments, nextRemoteRevocationNumber: Long): Boolean = {
-    d.commitments.localCommit.index >= nextRemoteRevocationNumber
+    if (d.commitments.localCommit.index == nextRemoteRevocationNumber) {
+      // they just sent a new commit_sig, we have received it but they didn't receive our revocation
+      true
+    } else if (d.commitments.localCommit.index == nextRemoteRevocationNumber + 1) {
+      // we are in sync
+      true
+    } else if (d.commitments.localCommit.index > nextRemoteRevocationNumber + 1) {
+      // remote is behind: we return true because things are fine on our side
+      true
+    } else {
+      // we are behind
+      false
+    }
   }
 
   /**
@@ -236,20 +250,28 @@ object Helpers {
     * @param d
     * @param nextLocalCommitmentNumber
     * @return
+    *         - true if parties are in sync or remote is behind
+    *         - false if we are behind
     */
   def checkRemoteCommit(d: HasCommitments, nextLocalCommitmentNumber: Long): Boolean = {
     d.commitments.remoteNextCommitInfo match {
       case Left(waitingForRevocation) if nextLocalCommitmentNumber == waitingForRevocation.nextRemoteCommit.index =>
-        // // we just sent a new commitment but they didn't receive the new commitment
+        // we just sent a new commit_sig but they didn't receive it
         true
       case Left(waitingForRevocation) if nextLocalCommitmentNumber == (waitingForRevocation.nextRemoteCommit.index + 1) =>
-        // we just sent a new commitment, they have received it but we haven't received their revocation
+        // we just sent a new commit_sig, they have received it but we haven't received their revocation
+        true
+      case Left(waitingForRevocation) if nextLocalCommitmentNumber < waitingForRevocation.nextRemoteCommit.index =>
+        // they are behind
         true
       case Right(_) if nextLocalCommitmentNumber == (d.commitments.remoteCommit.index + 1) =>
-        // they have acknowledged the last commitment we sent
+        // they have acknowledged the last commit_sig we sent
+        true
+      case Right(_) if nextLocalCommitmentNumber < (d.commitments.remoteCommit.index + 1) =>
+        // they are behind
         true
       case _ =>
-        // something is off
+        // we are behind
         false
     }
   }
