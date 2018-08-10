@@ -226,8 +226,8 @@ object Helpers {
     * @param nextRemoteRevocationNumber
     * @return
     */
-  def ourNextLocalCommitmentNumberCheck(d: HasCommitments, nextRemoteRevocationNumber: Long): Boolean = {
-    d.commitments.localCommit.index < nextRemoteRevocationNumber
+  def checkLocalCommit(d: HasCommitments, nextRemoteRevocationNumber: Long): Boolean = {
+    d.commitments.localCommit.index >= nextRemoteRevocationNumber
   }
 
   /**
@@ -237,7 +237,7 @@ object Helpers {
     * @param nextLocalCommitmentNumber
     * @return
     */
-  def theirNextLocalCommitmentNumberCheck(d: HasCommitments, nextLocalCommitmentNumber: Long): Boolean = {
+  def checkRemoteCommit(d: HasCommitments, nextLocalCommitmentNumber: Long): Boolean = {
     d.commitments.remoteNextCommitInfo match {
       case Left(waitingForRevocation) if nextLocalCommitmentNumber == waitingForRevocation.nextRemoteCommit.index =>
         // // we just sent a new commitment but they didn't receive the new commitment
