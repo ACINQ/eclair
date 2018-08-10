@@ -22,7 +22,6 @@ import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
-import scodec.bits.BitVector
 
 import scala.collection.immutable.Queue
 

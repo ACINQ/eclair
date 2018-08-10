@@ -17,8 +17,8 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.channel.Channel.ChannelError
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
@@ -47,7 +47,9 @@ case class ChannelSignatureSent(channel: ActorRef, commitments: Commitments) ext
 
 case class ChannelSignatureReceived(channel: ActorRef, commitments: Commitments) extends ChannelEvent
 
+case class ChannelFailed(channel: ActorRef, channelId: BinaryData, remoteNodeId: PublicKey, data: Data, error: ChannelError) extends ChannelEvent
+
+case class NetworkFeePaid(channel: ActorRef, remoteNodeId: PublicKey, channelId: BinaryData, tx: Transaction, fee: Satoshi, txType: String) extends ChannelEvent
+
 // NB: this event is only sent when the channel is available
 case class AvailableBalanceChanged(channel: ActorRef, channelId: BinaryData, shortChannelId: ShortChannelId, localBalanceMsat: Long) extends ChannelEvent
-
-case class ChannelFailed(channel: ActorRef, channelId: BinaryData, remoteNodeId: PublicKey, data: Data, error: ChannelError) extends ChannelEvent

@@ -40,7 +40,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   val initialBlockCount = 420000
   Globals.blockCount.set(initialBlockCount)
-  
+
   val defaultAmountMsat = 142000000L
   val defaultPaymentHash = BinaryData("42" * 32)
 
@@ -253,9 +253,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, UpdateFulfillHtlc("00" * 32, 0, defaultPaymentHash))
 
     val paymentOK = sender.expectMsgType[PaymentSucceeded]
-    assert(paymentOK.amountMsat > request.amountMsat)
-    val PaymentSent(MilliSatoshi(request.amountMsat), feesPaid, request.paymentHash, paymentOK.paymentPreimage) = eventListener.expectMsgType[PaymentSent]
-    assert(feesPaid.amount > 0)
+    val PaymentSent(MilliSatoshi(request.amountMsat), fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
+    assert(fee > MilliSatoshi(0))
+    assert(fee === MilliSatoshi(paymentOK.amountMsat - request.amountMsat))
   }
 
   test("filter errors properly") { case _ =>

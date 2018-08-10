@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel
 
+import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.payment.{Origin, Relayed}
@@ -49,6 +50,7 @@ case class InvalidFinalScript                  (override val channelId: BinaryDa
 case class FundingTxTimedout                   (override val channelId: BinaryData) extends ChannelException(channelId, "funding tx timed out")
 case class FundingTxSpent                      (override val channelId: BinaryData, spendingTx: Transaction) extends ChannelException(channelId, s"funding tx has been spent by txid=${spendingTx.txid}")
 case class HtlcTimedout                        (override val channelId: BinaryData) extends ChannelException(channelId, "one or more htlcs timed out")
+case class HtlcOverridenByLocalCommit          (override val channelId: BinaryData) extends ChannelException(channelId, "htlc was overriden by local commit")
 case class FeerateTooSmall                     (override val channelId: BinaryData, remoteFeeratePerKw: Long) extends ChannelException(channelId, s"remote fee rate is too small: remoteFeeratePerKw=$remoteFeeratePerKw")
 case class FeerateTooDifferent                 (override val channelId: BinaryData, localFeeratePerKw: Long, remoteFeeratePerKw: Long) extends ChannelException(channelId, s"local/remote feerates are too different: remoteFeeratePerKw=$remoteFeeratePerKw localFeeratePerKw=$localFeeratePerKw")
 case class InvalidCommitmentSignature          (override val channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid commitment signature: tx=$tx")
@@ -56,7 +58,7 @@ case class InvalidHtlcSignature                (override val channelId: BinaryDa
 case class InvalidCloseSignature               (override val channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid close signature: tx=$tx")
 case class InvalidCloseFee                     (override val channelId: BinaryData, feeSatoshi: Long) extends ChannelException(channelId, s"invalid close fee: fee_satoshis=$feeSatoshi")
 case class HtlcSigCountMismatch                (override val channelId: BinaryData, expected: Int, actual: Int) extends ChannelException(channelId, s"htlc sig count mismatch: expected=$expected actual: $actual")
-case class ForcedLocalCommit                   (override val channelId: BinaryData, reason: String) extends ChannelException(channelId, s"forced local commit: reason")
+case class ForcedLocalCommit                   (override val channelId: BinaryData) extends ChannelException(channelId, s"forced local commit")
 case class UnexpectedHtlcId                    (override val channelId: BinaryData, expected: Long, actual: Long) extends ChannelException(channelId, s"unexpected htlc id: expected=$expected actual=$actual")
 case class InvalidPaymentHash                  (override val channelId: BinaryData) extends ChannelException(channelId, "invalid payment hash")
 case class ExpiryTooSmall                      (override val channelId: BinaryData, minimum: Long, actual: Long, blockCount: Long) extends ChannelException(channelId, s"expiry too small: minimum=$minimum actual=$actual blockCount=$blockCount")
@@ -75,6 +77,7 @@ case class CannotSignWithoutChanges            (override val channelId: BinaryDa
 case class CannotSignBeforeRevocation          (override val channelId: BinaryData) extends ChannelException(channelId, "cannot sign until next revocation hash is received")
 case class UnexpectedRevocation                (override val channelId: BinaryData) extends ChannelException(channelId, "received unexpected RevokeAndAck message")
 case class InvalidRevocation                   (override val channelId: BinaryData) extends ChannelException(channelId, "invalid revocation")
+case class InvalidRevokedCommitProof           (override val channelId: BinaryData, ourCommitmentNumber: Long, theirCommitmentNumber: Long, perCommitmentSecret: Scalar) extends ChannelException(channelId, s"counterparty claimed that we have a revoked commit but their proof doesn't check out: ourCommitmentNumber=$ourCommitmentNumber theirCommitmentNumber=$theirCommitmentNumber perCommitmentSecret=$perCommitmentSecret")
 case class CommitmentSyncError                 (override val channelId: BinaryData) extends ChannelException(channelId, "commitment sync error")
 case class RevocationSyncError                 (override val channelId: BinaryData) extends ChannelException(channelId, "revocation sync error")
 case class InvalidFailureCode                  (override val channelId: BinaryData) extends ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")

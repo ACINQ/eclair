@@ -128,11 +128,12 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   connect      | nodeId, host, port                                                                     | open a secure connection to a lightning node
   connect      | uri                                                                                    | open a secure connection to a lightning node
   open         | nodeId, fundingSatoshis, pushMsat = 0, feerateSatPerByte = ?, channelFlags = 0x01      | open a channel with another lightning node, by default push = 0, feerate for the funding tx targets 6 blocks, and channel is announced
-  updaterelayfee | channelId, feeBaseMsat, feeProportionalMillionths                                    | updates the outgoing fee on this channel
+  updaterelayfee | channelId, feeBaseMsat, feeProportionalMillionths                                    | update relay fee for payments going through this channel
   peers        |                                                                                        | list existing local peers
   channels     |                                                                                        | list existing local channels
   channels     | nodeId                                                                                 | list existing local channels opened with a particular nodeId
   channel      | channelId                                                                              | retrieve detailed information about a given channel
+  channelstats |                                                                                        | retrieves statistics about channel usage (fees, number and average amount of payments)
   allnodes     |                                                                                        | list all known nodes
   allchannels  |                                                                                        | list all known channels
   allupdates   |                                                                                        | list all channels updates
@@ -150,6 +151,10 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   close        | channelId                                                                              | close a channel
   close        | channelId, scriptPubKey                                                                | close a channel and send the funds to the given scriptPubKey
   forceclose   | channelId                                                                              | force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)"
+  audit        |                                                                                        | list all send/received/relayed payments
+  audit        | from, to                                                                               | list send/received/relayed payments in that interval (from <= timestamp < to)
+  networkfees  |                                                                                        | list all network fees paid to the miners, by transaction
+  networkfees  |from, to                                                                                | list network fees paid to the miners, by transaction, in that interval (from <= timestamp < to)
   help         |                                                                                        | display available methods
 
 ## Docker

@@ -38,8 +38,8 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
     rpcClient.invoke("fundrawtransaction", hex, BitcoinCoreWallet.Options(lockUnspents)).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
-      val JDouble(fee) = json \ "fee"
-      FundTransactionResponse(Transaction.read(hex), changepos.intValue(), (fee * 1e8).toLong)
+      val JDecimal(fee) = json \ "fee"
+      FundTransactionResponse(Transaction.read(hex), changepos.intValue(), Satoshi(fee.bigDecimal.scaleByPowerOfTen(8).longValue()))
     })
   }
 
@@ -63,7 +63,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("lockunspent", true, outPoints.toList.map(outPoint => Utxo(outPoint.txid.toString, outPoint.index))) collect { case JBool(result) => result }
 
 
-  override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDouble(balance) => Satoshi((balance * 1e8).toLong) }
+  override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDecimal(balance) => Satoshi(balance.bigDecimal.scaleByPowerOfTen(8).longValue()) }
 
   override def getFinalAddress: Future[String] = for {
     JString(address) <- rpcClient.invoke("getnewaddress")
@@ -89,13 +89,13 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
       lockTime = 0)
     for {
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
-      FundTransactionResponse(unsignedFundingTx, changepos, fee) <- fundTransaction(partialFundingTx, lockUnspents = true)
+      FundTransactionResponse(unsignedFundingTx, _, fee) <- fundTransaction(partialFundingTx, lockUnspents = true)
       // now let's sign the funding tx
       SignTransactionResponse(fundingTx, _) <- signTransactionOrUnlock(unsignedFundingTx)
       // there will probably be a change output, so we need to find which output is ours
       outputIndex = Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
       _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=$fee")
-    } yield MakeFundingTxResponse(fundingTx, outputIndex)
+    } yield MakeFundingTxResponse(fundingTx, outputIndex, fee)
   }
 
   override def commit(tx: Transaction): Future[Boolean] = publishTransaction(tx)
@@ -114,7 +114,7 @@ object BitcoinCoreWallet {
   // @formatter:off
   case class Options(lockUnspents: Boolean)
   case class Utxo(txid: String, vout: Long)
-  case class FundTransactionResponse(tx: Transaction, changepos: Int, feeSatoshis: Long)
+  case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Satoshi)
   case class SignTransactionResponse(tx: Transaction, complete: Boolean)
   // @formatter:on
 
