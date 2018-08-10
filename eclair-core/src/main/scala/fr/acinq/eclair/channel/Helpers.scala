@@ -219,6 +219,64 @@ object Helpers {
 
   }
 
+  /**
+    * Tells whether or not their expected next remote commitment number matches with our data
+    *
+    * @param d
+    * @param nextRemoteRevocationNumber
+    * @return
+    *         - true if parties are in sync or remote is behind
+    *         - false if we are behind
+    */
+  def checkLocalCommit(d: HasCommitments, nextRemoteRevocationNumber: Long): Boolean = {
+    if (d.commitments.localCommit.index == nextRemoteRevocationNumber) {
+      // they just sent a new commit_sig, we have received it but they didn't receive our revocation
+      true
+    } else if (d.commitments.localCommit.index == nextRemoteRevocationNumber + 1) {
+      // we are in sync
+      true
+    } else if (d.commitments.localCommit.index > nextRemoteRevocationNumber + 1) {
+      // remote is behind: we return true because things are fine on our side
+      true
+    } else {
+      // we are behind
+      false
+    }
+  }
+
+  /**
+    * Tells whether or not their expected next local commitment number matches with our data
+    *
+    * @param d
+    * @param nextLocalCommitmentNumber
+    * @return
+    *         - true if parties are in sync or remote is behind
+    *         - false if we are behind
+    */
+  def checkRemoteCommit(d: HasCommitments, nextLocalCommitmentNumber: Long): Boolean = {
+    d.commitments.remoteNextCommitInfo match {
+      case Left(waitingForRevocation) if nextLocalCommitmentNumber == waitingForRevocation.nextRemoteCommit.index =>
+        // we just sent a new commit_sig but they didn't receive it
+        true
+      case Left(waitingForRevocation) if nextLocalCommitmentNumber == (waitingForRevocation.nextRemoteCommit.index + 1) =>
+        // we just sent a new commit_sig, they have received it but we haven't received their revocation
+        true
+      case Left(waitingForRevocation) if nextLocalCommitmentNumber < waitingForRevocation.nextRemoteCommit.index =>
+        // they are behind
+        true
+      case Right(_) if nextLocalCommitmentNumber == (d.commitments.remoteCommit.index + 1) =>
+        // they have acknowledged the last commit_sig we sent
+        true
+      case Right(_) if nextLocalCommitmentNumber < (d.commitments.remoteCommit.index + 1) =>
+        // they are behind
+        true
+      case _ =>
+        // we are behind
+        false
+    }
+  }
+
+
   object Closing {
 
     // used only to compute tx weights and estimate fees
@@ -857,9 +915,9 @@ object Helpers {
       *
       * It relies on the current channel data to find the parent tx and compute the fee, and also provides a description.
       *
-      * @param tx  a tx for which we want to compute the fee
-      * @param d   current channel data
-      * @return    if the parent tx is found, a tuple (fee, description)
+      * @param tx a tx for which we want to compute the fee
+      * @param d  current channel data
+      * @return if the parent tx is found, a tuple (fee, description)
       */
     def networkFeePaid(tx: Transaction, d: DATA_CLOSING): Option[(Satoshi, String)] = {
       // only funder pays the fee
