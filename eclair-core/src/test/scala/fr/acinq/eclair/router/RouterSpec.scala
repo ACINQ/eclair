@@ -111,7 +111,7 @@ class RouterSpec extends BaseRouterSpec {
 
   }
 
-  test("handle bad signature for ChannelAnnouncement") { case (router, _) =>
+  ignore("handle bad signature for ChannelAnnouncement") { case (router, _) =>
     val sender = TestProbe()
     val channelId_ac = ShortChannelId(420000, 5, 0)
     val chan_ac = channelAnnouncement(channelId_ac, priv_a, priv_c, priv_funding_a, priv_funding_c)
@@ -129,7 +129,7 @@ class RouterSpec extends BaseRouterSpec {
     sender.expectMsgType[Error]
   }
 
-  test("handle bad signature for ChannelUpdate") { case (router, _) =>
+  ignore("handle bad signature for ChannelUpdate") { case (router, _) =>
     val sender = TestProbe()
     val buggy_channelUpdate_ab = channelUpdate_ab.copy(signature = ann_b.signature, timestamp = channelUpdate_ab.timestamp + 1)
     sender.send(router, PeerRoutingMessage(remoteNodeId, buggy_channelUpdate_ab))
