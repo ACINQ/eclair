@@ -138,21 +138,21 @@ object Announcements {
     )
   }
 
-  def checkSigs(ann: ChannelAnnouncement): Boolean = {
+  def checkSigs(ann: ChannelAnnouncement): Boolean = true /*{
     val witness = channelAnnouncementWitnessEncode(ann.chainHash, ann.shortChannelId, ann.nodeId1, ann.nodeId2, ann.bitcoinKey1, ann.bitcoinKey2, ann.features)
     verifySignature(witness, ann.nodeSignature1, ann.nodeId1) &&
       verifySignature(witness, ann.nodeSignature2, ann.nodeId2) &&
       verifySignature(witness, ann.bitcoinSignature1, ann.bitcoinKey1) &&
       verifySignature(witness, ann.bitcoinSignature2, ann.bitcoinKey2)
-  }
+  }*/
 
-  def checkSig(ann: NodeAnnouncement): Boolean = {
+  def checkSig(ann: NodeAnnouncement): Boolean = true /*{
     val witness = nodeAnnouncementWitnessEncode(ann.timestamp, ann.nodeId, ann.rgbColor, ann.alias, ann.features, ann.addresses)
     verifySignature(witness, ann.signature, ann.nodeId)
-  }
+  }*/
 
-  def checkSig(ann: ChannelUpdate, nodeId: PublicKey): Boolean = {
+  def checkSig(ann: ChannelUpdate, nodeId: PublicKey): Boolean = true /*{
     val witness = channelUpdateWitnessEncode(ann.chainHash, ann.shortChannelId, ann.timestamp, ann.flags, ann.cltvExpiryDelta, ann.htlcMinimumMsat, ann.feeBaseMsat, ann.feeProportionalMillionths)
     verifySignature(witness, ann.signature, nodeId)
-  }
+  }*/
 }
