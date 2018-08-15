@@ -24,7 +24,10 @@ object JsonSerializers {
   implicit val uint64ReadWriter: ReadWriter[UInt64] = readwriter[String].bimap[UInt64](_.toString, s => UInt64(s.toLong))
   implicit val localParamsReadWriter: ReadWriter[LocalParams] = macroRW
   implicit val remoteParamsReadWriter: ReadWriter[RemoteParams] = macroRW
-  implicit val directionReadWriter: ReadWriter[Direction] = macroRW
+  implicit val directionReadWriter: ReadWriter[Direction] = readwriter[String].bimap[Direction](_ match {
+    case OUT => "OUT"
+    case IN => "IN"
+  }, s => null)
   implicit val updateAddHtlcReadWriter: ReadWriter[UpdateAddHtlc] = macroRW
   implicit val updateFailHtlcReadWriter: ReadWriter[UpdateFailHtlc] = macroRW
   implicit val updateMessageReadWriter: ReadWriter[UpdateMessage] = ReadWriter.merge(macroRW[UpdateAddHtlc], macroRW[UpdateFailHtlc])
