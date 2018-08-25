@@ -35,10 +35,12 @@ class FailureMessageCodecsSpec extends FunSuite {
     shortChannelId = ShortChannelId(12345),
     timestamp = 1234567L,
     cltvExpiryDelta = 100,
-    flags = BinaryData("0001"),
+    messageFlags = BinaryData("00"),
+    channelFlags = BinaryData("01"),
     htlcMinimumMsat = 1000,
     feeBaseMsat = 12,
-    feeProportionalMillionths = 76)
+    feeProportionalMillionths = 76,
+    htlcMaximumMsat = None)
 
   def randomBytes(size: Int): BinaryData = {
     val bin = new Array[Byte](size)
@@ -50,9 +52,9 @@ class FailureMessageCodecsSpec extends FunSuite {
     val msgs: List[FailureMessage] =
       InvalidRealm :: TemporaryNodeFailure :: PermanentNodeFailure :: RequiredNodeFeatureMissing ::
         InvalidOnionVersion(randomBytes(32)) :: InvalidOnionHmac(randomBytes(32)) :: InvalidOnionKey(randomBytes(32)) ::
-        TemporaryChannelFailure(channelUpdate) :: PermanentChannelFailure :: RequiredChannelFeatureMissing :: UnknownNextPeer ::
+        TemporaryChannelFailure(channelUpdate) :: PermanentChannelFailure :: RequiredChannelFeatureMissing :: UnknownNextPeer :: Nil
         AmountBelowMinimum(123456, channelUpdate) :: FeeInsufficient(546463, channelUpdate) :: IncorrectCltvExpiry(1211, channelUpdate) :: ExpiryTooSoon(channelUpdate)  ::
-        UnknownPaymentHash :: IncorrectPaymentAmount :: FinalExpiryTooSoon :: FinalIncorrectCltvExpiry(1234) :: ChannelDisabled(BinaryData("0101"), channelUpdate) :: ExpiryTooFar :: Nil
+        UnknownPaymentHash :: IncorrectPaymentAmount :: FinalExpiryTooSoon :: FinalIncorrectCltvExpiry(1234) :: ChannelDisabled(BinaryData("01"), channelUpdate) :: ExpiryTooFar :: Nil
 
     msgs.foreach {
       case msg => {

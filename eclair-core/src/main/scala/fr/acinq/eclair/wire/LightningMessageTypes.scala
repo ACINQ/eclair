@@ -192,11 +192,13 @@ case class ChannelUpdate(signature: BinaryData,
                          chainHash: BinaryData,
                          shortChannelId: ShortChannelId,
                          timestamp: Long,
-                         flags: BinaryData,
+                         messageFlags: BinaryData,
+                         channelFlags: BinaryData,
                          cltvExpiryDelta: Int,
                          htlcMinimumMsat: Long,
                          feeBaseMsat: Long,
-                         feeProportionalMillionths: Long) extends RoutingMessage with HasTimestamp with HasChainHash
+                         feeProportionalMillionths: Long,
+                         htlcMaximumMsat: Option[Long]) extends RoutingMessage with HasTimestamp with HasChainHash
 
 case class PerHopPayload(shortChannelId: ShortChannelId,
                          amtToForward: Long,
