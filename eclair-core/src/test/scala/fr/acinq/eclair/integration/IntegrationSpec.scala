@@ -25,7 +25,7 @@ import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, BinaryData, Block, Crypto, MilliSatoshi, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
-import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
+import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.TickRefreshChannelUpdate
@@ -64,6 +64,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
   override def beforeAll(): Unit = {
     startBitcoind()
+    waitForBitcoindReady()
   }
 
   override def afterAll(): Unit = {
@@ -75,18 +76,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
         logger.info(s"stopping node $name")
         setup.system.terminate()
     }
-  }
-
-  test("wait bitcoind ready") {
-    val sender = TestProbe()
-    logger.info(s"waiting for bitcoind to initialize...")
-    awaitCond({
-      sender.send(bitcoincli, BitcoinReq("getnetworkinfo"))
-      sender.receiveOne(5 second).isInstanceOf[JValue]
-    }, max = 30 seconds, interval = 500 millis)
-    logger.info(s"generating initial blocks...")
-    sender.send(bitcoincli, BitcoinReq("generate", 500))
-    sender.expectMsgType[JValue](30 seconds)
   }
 
   def instantiateEclairNode(name: String, config: Config) = {
@@ -781,6 +770,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
   test("generate and validate lots of channels") {
     implicit val extendedClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+    implicit val wallet: BitcoinCoreWallet = btcWallet
     // we simulate fake channels by publishing a funding tx and sending announcement messages to a node at random
     logger.info(s"generating fake channels")
     val sender = TestProbe()

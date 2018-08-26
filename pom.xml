@@ -68,6 +68,14 @@
         <akka.version>2.4.20</akka.version>
         <bitcoinlib.version>0.9.17</bitcoinlib.version>
         <guava.version>24.0-android</guava.version>
+        <bitcoin-core.version>0.16.3</bitcoin-core.version>
+
+        <bitcoind.md5.linux>c371e383f024c6c45fb255d528a6beec</bitcoind.md5.linux>
+        <bitcoind.sha1.linux>e6d8ab1f7661a6654fd81e236b9b5fd35a3d4dcb</bitcoind.sha1.linux>
+        <bitcoind.md5.osx>bacd87d0c3f65a5acd666e33d094a59e</bitcoind.md5.osx>
+        <bitcoind.sha1.osx>62cc5bd9ced610bb9e8d4a854396bfe2139e3d0f</bitcoind.sha1.osx>
+        <bitcoind.md5.win>bbde9b1206956d19298034319e9f405e</bitcoind.md5.win>
+        <bitcoind.sha1.win>85e3dc8a9c6f93b1b20cb79fa5850b5ce81da221</bitcoind.sha1.win>
     </properties>
 
     <build>
@@ -191,6 +199,29 @@
                             </sources>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>bsh-property</id>
+                        <goals>
+                            <goal>bsh-property</goal>
+                        </goals>
+                        <configuration>
+                            <properties>
+                                <property>bitcoin.core.main_version</property>
+                                <!-- Some versions, like the release candidates, can be obtained from a different
+                                path under https://bitcoin.org/bin/bitcoin-core-${bitcoin.core.main_version} -->
+                                <property>bitcoin.core.sub_path</property>
+                            </properties>
+                            <source>
+                                btcVersion = project.getProperties().getProperty("bitcoin-core.version");
+                                bitcoin.core.sub_path = "";
+                                bitcoin.core.main_version = btcVersion;
+                                if(btcVersion.matches(".*rc\\d")) {
+                                   bitcoin.core.sub_path = "test." + btcVersion.substring(btcVersion.lastIndexOf("rc"), btcVersion.length());
+                                   bitcoin.core.main_version = btcVersion.substring(0,btcVersion.length()-3);
+                                }
+                            </source>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>
@@ -210,6 +241,8 @@
                     </includes>
                     <systemPropertyVariables>
                         <buildDirectory>${project.build.directory}</buildDirectory>
+                        <bitcoin-core.version>${bitcoin-core.version}</bitcoin-core.version>
+                        <bitcoin.core.main_version>${bitcoin.core.main_version}</bitcoin.core.main_version>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

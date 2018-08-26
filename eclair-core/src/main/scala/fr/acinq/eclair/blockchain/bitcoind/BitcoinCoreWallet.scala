@@ -30,10 +30,11 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
   * Created by PM on 06/07/2017.
   */
-class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorSystem, ec: ExecutionContext) extends EclairWallet with Logging {
+class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, version: Int)(implicit system: ActorSystem, ec: ExecutionContext) extends EclairWallet with Logging {
 
   import BitcoinCoreWallet._
 
+  val signMethod: String = if (version >= 170000) "signrawtransactionwithwallet" else "signrawtransaction"
 
   def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = {
     val feeRatePerKB = BigDecimal(feerateKw2KB(feeRatePerKw))
@@ -48,7 +49,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
   def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toString(), lockUnspents, feeRatePerKw)
 
   def signTransaction(hex: String): Future[SignTransactionResponse] =
-    rpcClient.invoke("signrawtransaction", hex).map(json => {
+    rpcClient.invoke(signMethod, hex).map(json => {
       val JString(hex) = json \ "hex"
       val JBool(complete) = json \ "complete"
       SignTransactionResponse(Transaction.read(hex), complete)

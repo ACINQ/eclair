@@ -48,9 +48,6 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
 
   val walletPassword = Random.alphanumeric.take(8).mkString
 
-  implicit val formats = DefaultFormats
-
-
   override def beforeAll(): Unit = {
     startBitcoind()
   }
@@ -84,7 +81,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
         }
       }
 
-      val wallet = new BitcoinCoreWallet(bitcoinClient)
+      val wallet = new BitcoinCoreWallet(bitcoinClient, version)
 
       val sender = TestProbe()
 
@@ -98,12 +95,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
   }
 
   test("create/commit/rollback funding txes") {
-    val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport"))
-    val wallet = new BitcoinCoreWallet(bitcoinClient)
+    val wallet = btcWallet
 
     val sender = TestProbe()
 
@@ -159,12 +151,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
   }
 
   test("unlock failed funding txes") {
-    val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport"))
-    val wallet = new BitcoinCoreWallet(bitcoinClient)
+    val wallet = btcWallet
 
     val sender = TestProbe()
 

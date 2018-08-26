@@ -76,13 +76,15 @@
         <profile>
             <id>default</id>
             <activation>
-                <activeByDefault>true</activeByDefault>
+                <os>
+                    <family>linux</family>
+                </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.16.3/bitcoin-0.16.3-x86_64-linux-gnu.tar.gz
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-${bitcoin.core.main_version}/${bitcoin.core.sub_path}/bitcoin-${bitcoin-core.version}-x86_64-linux-gnu.tar.gz
                 </bitcoind.url>
-                <bitcoind.md5>c371e383f024c6c45fb255d528a6beec</bitcoind.md5>
-                <bitcoind.sha1>e6d8ab1f7661a6654fd81e236b9b5fd35a3d4dcb</bitcoind.sha1>
+                <bitcoind.md5>${bitcoind.md5.linux}</bitcoind.md5>
+                <bitcoind.sha1>${bitcoind.sha1.linux}</bitcoind.sha1>
             </properties>
         </profile>
         <profile>
@@ -93,10 +95,10 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.16.3/bitcoin-0.16.3-osx64.tar.gz
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-${bitcoin.core.main_version}/${bitcoin.core.sub_path}/bitcoin-${bitcoin-core.version}-osx64.tar.gz
                 </bitcoind.url>
-                <bitcoind.md5>bacd87d0c3f65a5acd666e33d094a59e</bitcoind.md5>
-                <bitcoind.sha1>62cc5bd9ced610bb9e8d4a854396bfe2139e3d0f</bitcoind.sha1>
+                <bitcoind.md5>${bitcoind.md5.osx}</bitcoind.md5>
+                <bitcoind.sha1>${bitcoind.sha1.osx}</bitcoind.sha1>
             </properties>
         </profile>
         <profile>
@@ -107,9 +109,21 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.16.3/bitcoin-0.16.3-win64.zip</bitcoind.url>
-                <bitcoind.md5>bbde9b1206956d19298034319e9f405e</bitcoind.md5>
-                <bitcoind.sha1>85e3dc8a9c6f93b1b20cb79fa5850b5ce81da221</bitcoind.sha1>
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-${bitcoin.core.main_version}/${bitcoin.core.sub_path}/bitcoin-${bitcoin-core.version}-win64.zip</bitcoind.url>
+                <bitcoind.md5>${bitcoind.md5.win}</bitcoind.md5>
+                <bitcoind.sha1>${bitcoind.sha1.win}</bitcoind.sha1>
+            </properties>
+        </profile>
+        <profile>
+            <id>0.17</id>
+            <properties>
+                <bitcoin-core.version>0.17.0</bitcoin-core.version>
+                <bitcoind.md5.linux>988053e5775aeddca9a8496cd3a3bba7</bitcoind.md5.linux>
+                <bitcoind.sha1.linux>ef521402e19030f4511fa8c0a297855d4a6106b3</bitcoind.sha1.linux>
+                <bitcoind.md5.osx>9b4aefb16a37a457ea0f856120cf615d</bitcoind.md5.osx>
+                <bitcoind.sha1.osx>4aa6d060a5b72a3985c2ef52fe09284389bbc1d4</bitcoind.sha1.osx>
+                <bitcoind.md5.win>bb55d2be8fb2a79fa8776a941a869475</bitcoind.md5.win>
+                <bitcoind.sha1.win>a49da6fc299d612ffb50488f8459db144899aaac</bitcoind.sha1.win>
             </properties>
         </profile>
     </profiles>
