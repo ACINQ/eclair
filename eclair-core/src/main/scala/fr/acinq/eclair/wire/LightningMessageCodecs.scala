@@ -280,7 +280,7 @@ object LightningMessageCodecs {
     ("signature" | signature) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
-  val channelUpdateWitnessCodec = (
+  val channelUpdateWitnessCodec =
     ("chainHash" | binarydata(32)) ::
       ("shortChannelId" | shortchannelid) ::
       ("timestamp" | uint32) ::
@@ -290,7 +290,7 @@ object LightningMessageCodecs {
       ("htlcMinimumMsat" | uint64) ::
       ("feeBaseMsat" | uint32) ::
       ("feeProportionalMillionths" | uint32) ::
-      ("htlcMaximumMsat" | optional(bool, uint64)))
+      ("htlcMaximumMsat" | optional(bool, uint64))
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (
     ("signature" | signature) ::
