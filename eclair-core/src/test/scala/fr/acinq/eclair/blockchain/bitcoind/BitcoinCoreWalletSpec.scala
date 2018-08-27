@@ -136,9 +136,12 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     sender.send(bitcoincli, BitcoinReq("getrawtransaction", fundingTxes(2).txid.toString()))
     assert(sender.expectMsgType[JString](10 seconds).s === fundingTxes(2).toString())
 
-    // NB: bitcoin core doesn't clear the locks when a tx is published
+    // Bitcoin core 0.16.x does not clear the the locks when the tx is published, but 0.17 started to
+    // do since https://github.com/bitcoin/bitcoin/pull/13160.
+    sender.send(bitcoincli, BitcoinReq("lockunspent", true))
+
     sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    assert(sender.expectMsgType[JValue](10 seconds).children.size === 2)
+    assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
 
   }
 
