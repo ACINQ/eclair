@@ -1,11 +1,11 @@
 <!-- This issue tracker is only for technical issues related to Eclair.
 
 We use github for strictly technical issues. Questions about Lightning or Eclair, and support requests are best directed to our gitter at https://gitter.im/ACINQ/eclair.
-Please check that there is not already a similar issue before posting a new one.
+Please check that there is not already a similar issue before opening a new one.
 -->
 
 <!-- Describe the issue -->
-<!-- What behavior did you expect? -->
+<!-- What behaviour did you expect? -->
 
 <!-- What was the actual behaviour (provide screenshots if the issue is GUI-related)? -->
 
