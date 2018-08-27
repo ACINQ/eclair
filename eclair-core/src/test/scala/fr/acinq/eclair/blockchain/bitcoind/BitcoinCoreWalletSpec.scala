@@ -168,15 +168,20 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     sender.send(bitcoincli, BitcoinReq("listlockunspent"))
     assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
 
-    val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
-    wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
+    // Due to https://github.com/bitcoin/bitcoin/issues/14082, makeFundingTx will not ask for walletpassphrase and will
+    // throw a 'missing key' error. To keep the test flow, we're calling a different RPC method here here.
+    wallet.getFinalAddress.map(a => sender.send(bitcoincli, BitcoinReq("dumpprivkey", a.toString)))
     assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("Please enter the wallet passphrase with walletpassphrase first."))
-
-    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
 
     sender.send(bitcoincli, BitcoinReq("walletpassphrase", walletPassword, 10))
     sender.expectMsgType[JValue]
+
+    val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
+    wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
+    sender.expectMsgType[MakeFundingTxResponse]
+
+    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
+    assert(sender.expectMsgType[JValue](10 seconds).children.size === 1)
 
     wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
     val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
