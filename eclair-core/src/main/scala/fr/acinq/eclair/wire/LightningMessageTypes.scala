@@ -198,7 +198,11 @@ case class ChannelUpdate(signature: BinaryData,
                          htlcMinimumMsat: Long,
                          feeBaseMsat: Long,
                          feeProportionalMillionths: Long,
-                         htlcMaximumMsat: Option[Long]) extends RoutingMessage with HasTimestamp with HasChainHash
+                         htlcMaximumMsat: Option[Long]) extends RoutingMessage with HasTimestamp with HasChainHash {
+
+  if (messageFlags.headOption.exists(_ << ~0 < 0)) require(htlcMaximumMsat.isDefined,
+    "htlcMaximumMsat must be defined when messageFlags bit is set")
+}
 
 case class PerHopPayload(shortChannelId: ShortChannelId,
                          amtToForward: Long,

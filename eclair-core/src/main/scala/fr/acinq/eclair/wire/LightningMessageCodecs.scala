@@ -290,8 +290,8 @@ object LightningMessageCodecs {
       ("htlcMinimumMsat" | uint64) ::
       ("feeBaseMsat" | uint32) ::
       ("feeProportionalMillionths" | uint32) flatAppend { parsed =>
-      "htlcMaximumMsat" | conditional(parsed(_3).headOption.exists(_ << ~0 < 0), uint64)
-    }
+        "htlcMaximumMsat" | conditional(parsed(_3).headOption.exists(_ << ~0 < 0), uint64)
+      }
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (
     ("signature" | signature) ::
