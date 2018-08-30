@@ -120,6 +120,14 @@ For example, to specify a different data directory you would run the following c
 java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
 ```
 
+#### Logging
+
+Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a different configuration, and override the internal logback.xml, run:
+
+```shell
+java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gui-<version>-<commit_id>.jar
+```
+
 ## JSON-RPC API
 
  method        |  params                                                                                | description
