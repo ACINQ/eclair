@@ -103,8 +103,8 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
       }
     }
 
-    val mockPrivider = new BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(1, 2, 3, 4, 5, 6))
-    mockPrivider.getFeerates.pipeTo(sender.ref)
+    val mockProvider = new BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(1, 2, 3, 4, 5, 6))
+    mockProvider.getFeerates.pipeTo(sender.ref)
     assert(sender.expectMsgType[FeeratesPerKB] == ref)
   }
 
