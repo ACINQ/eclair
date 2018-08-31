@@ -96,15 +96,6 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
   def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
     getRawTransaction(txId).map(raw => Transaction.read(raw))
 
-  def getTransaction(height: Int, index: Int)(implicit ec: ExecutionContext): Future[Transaction] =
-    for {
-      hash <- rpcClient.invoke("getblockhash", height).map(json => json.extract[String])
-      json <- rpcClient.invoke("getblock", hash)
-      JArray(txs) = json \ "tx"
-      txid = txs(index).extract[String]
-      tx <- getTransaction(txid)
-    } yield tx
-
   def isTransactionOutputSpendable(txId: String, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
       json <- rpcClient.invoke("gettxout", txId, outputIndex, includeMempool)
