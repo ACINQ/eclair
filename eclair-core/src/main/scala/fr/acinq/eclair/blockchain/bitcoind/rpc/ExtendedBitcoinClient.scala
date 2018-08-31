@@ -69,21 +69,6 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     } yield txs
 
   /**
-    * *used in interop test*
-    * tell bitcoind to sent bitcoins from a specific local account
-    *
-    * @param account     name of the local account to send bitcoins from
-    * @param destination destination address
-    * @param amount      amount in BTC (not milliBTC, not Satoshis !!)
-    * @param ec          execution context
-    * @return a Future[txid] where txid (a String) is the is of the tx that sends the bitcoins
-    */
-  def sendFromAccount(account: String, destination: String, amount: Double)(implicit ec: ExecutionContext): Future[String] =
-    rpcClient.invoke("sendfrom", account, destination, amount) collect {
-      case JString(txid) => txid
-    }
-
-  /**
     * @param txId
     * @param ec
     * @return
