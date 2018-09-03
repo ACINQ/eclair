@@ -11,6 +11,9 @@ To build the project, simply run:
 ```shell
 $ mvn install
 ```
+
+#### Other build options
+
 If you don't have Docker you can skip tests that depend on it:
 ```shell
 $ mvn install -DexcludedGroups=fr.acinq.eclair.blockchain.electrum.DockerTest
