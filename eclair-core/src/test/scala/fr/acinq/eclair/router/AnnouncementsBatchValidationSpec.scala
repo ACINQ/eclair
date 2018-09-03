@@ -103,6 +103,6 @@ object AnnouncementsBatchValidationSpec {
   }
 
   def makeChannelUpdate(c: SimulatedChannel, shortChannelId: ShortChannelId): ChannelUpdate =
-    Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, c.node1Key, c.node2Key.publicKey, shortChannelId, 10, 1000, 10, 100)
+    Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, c.node1Key, c.node2Key.publicKey, shortChannelId, 10, 1000, 10, 100, 500000000L)
 
 }

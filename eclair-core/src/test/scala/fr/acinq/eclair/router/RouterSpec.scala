@@ -48,21 +48,21 @@ class RouterSpec extends BaseRouterSpec {
 
     val channelId_ac = ShortChannelId(420000, 5, 0)
     val chan_ac = channelAnnouncement(channelId_ac, priv_a, priv_c, priv_funding_a, priv_funding_c)
-    val update_ac = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId_ac, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
+    val update_ac = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId_ac, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, 500000000L)
     // a-x will not be found
     val priv_x = randomKey
     val chan_ax = channelAnnouncement(ShortChannelId(42001), priv_a, priv_x, priv_funding_a, randomKey)
-    val update_ax = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_x.publicKey, chan_ax.shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
+    val update_ax = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_x.publicKey, chan_ax.shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, 500000000L)
     // a-y will have an invalid script
     val priv_y = randomKey
     val priv_funding_y = randomKey
     val chan_ay = channelAnnouncement(ShortChannelId(42002), priv_a, priv_y, priv_funding_a, priv_funding_y)
-    val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, chan_ay.shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
+    val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, chan_ay.shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, 500000000L)
     // a-z will be spent
     val priv_z = randomKey
     val priv_funding_z = randomKey
     val chan_az = channelAnnouncement(ShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
-    val update_az = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_z.publicKey, chan_az.shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
+    val update_az = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_z.publicKey, chan_az.shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, 500000000L)
 
     router ! PeerRoutingMessage(remoteNodeId, chan_ac)
     router ! PeerRoutingMessage(remoteNodeId, chan_ax)
@@ -187,7 +187,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.hops.last.nextNodeId === d)
 
-    val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, enable = false)
+    val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, 500000000L, enable = false)
     sender.send(router, PeerRoutingMessage(remoteNodeId, channelUpdate_cd1))
     sender.expectMsg(TransportHandler.ReadAck(channelUpdate_cd1))
     sender.send(router, RouteRequest(a, d))
