@@ -100,12 +100,13 @@ object Commitments {
     }
 
     val blockCount = Globals.blockCount.get()
-    if (cmd.expiry <= blockCount) {
-      return Left(ExpiryCannotBeInThePast(commitments.channelId, cmd.expiry, blockCount))
+    // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
+    val minExpiry = blockCount + Channel.MIN_CLTV_EXPIRY
+    if (cmd.expiry < minExpiry) {
+      return Left(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.expiry, blockCount = blockCount))
     }
-
     val maxExpiry = blockCount + Channel.MAX_CLTV_EXPIRY
-    // we reject expiry=maxExpiry, because if a new block has just been found maybe the counterparty will get notified before us, consider that the expiry is too big and close the channel
+    // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
     if (cmd.expiry >= maxExpiry) {
       return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.expiry, blockCount = blockCount))
     }
@@ -152,20 +153,6 @@ object Commitments {
 
     if (add.paymentHash.size != 32) {
       throw InvalidPaymentHash(commitments.channelId)
-    }
-
-    val blockCount = Globals.blockCount.get()
-    if (add.expiry <= blockCount) {
-      throw ExpiryCannotBeInThePast(commitments.channelId, add.expiry, blockCount)
-    }
-    // we need a reasonable amount of time to pull the funds before the sender can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
-    val minExpiry = blockCount + Channel.MIN_CLTV_EXPIRY
-    if (add.expiry < minExpiry) {
-      throw ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = add.expiry, blockCount = blockCount)
-    }
-    val maxExpiry = blockCount + Channel.MAX_CLTV_EXPIRY
-    if (add.expiry > maxExpiry) {
-      throw ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = add.expiry, blockCount = blockCount)
     }
 
     if (add.amountMsat < commitments.localParams.htlcMinimumMsat) {
