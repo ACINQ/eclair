@@ -4,7 +4,6 @@ import akka.actor.{Actor, ActorRef, Props}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction, TxOut}
-import fr.acinq.eclair
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{ValidateRequest, ValidateResult, WatchSpentBasic}
@@ -40,7 +39,7 @@ class RoutingSyncSpec extends TestkitBaseClass {
       case _: WatchSpentBasic => ()
       case ValidateRequest(ann) =>
         val txOut = TxOut(Satoshi(1000000), Script.pay2wsh(Scripts.multiSig2of2(ann.bitcoinKey1, ann.bitcoinKey2)))
-        val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(ann.shortChannelId)
+        val outputIndex = ann.shortChannelId.outputIndex
         sender ! ValidateResult(ann, Some(Transaction(version = 0, txIn = Nil, txOut = List.fill(outputIndex + 1)(txOut), lockTime = 0)), true, None)
       case unexpected => println(s"unexpected : $unexpected")
     }
@@ -93,7 +92,7 @@ class RoutingSyncSpec extends TestkitBaseClass {
 
   test("initial sync") {
     case (routerA, routerB, pipe) => {
-      Globals.blockCount.set(shortChannelIds.map(id => ShortChannelId.coordinates(id).blockHeight).max)
+      Globals.blockCount.set(shortChannelIds.map(id => id.blockHeight).max)
 
       val sender = TestProbe()
       routerA ! SendChannelQuery(Alice.nodeParams.nodeId, pipe)
@@ -114,7 +113,7 @@ object RoutingSyncSpec {
   def makeFakeRoutingInfo(shortChannelId: ShortChannelId): (ChannelAnnouncement, ChannelUpdate, ChannelUpdate, NodeAnnouncement, NodeAnnouncement) = {
     val (priv_a, priv_b, priv_funding_a, priv_funding_b) = (randomKey, randomKey, randomKey, randomKey)
     val channelAnn_ab = channelAnnouncement(shortChannelId, priv_a, priv_b, priv_funding_a, priv_funding_b)
-    val TxCoordinates(blockHeight, _, _) = ShortChannelId.coordinates(shortChannelId)
+    val blockHeight = shortChannelId.blockHeight
     val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, timestamp = blockHeight)
     val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, priv_a.publicKey, shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, timestamp = blockHeight)
     val nodeAnnouncement_a = makeNodeAnnouncement(priv_a, "a", Alice.nodeParams.color, List())

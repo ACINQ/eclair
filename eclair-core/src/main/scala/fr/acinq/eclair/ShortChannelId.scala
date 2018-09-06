@@ -22,25 +22,25 @@ package fr.acinq.eclair
   * See BOLT 7: https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
   *
   */
-case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] {
+case class ShortChannelId(blockHeight: Int, txIndex: Int, outputIndex: Int) extends Ordered[ShortChannelId] {
+  require(blockHeight >= 0 && txIndex >= 0 && outputIndex >= 0)
 
-  def toLong: Long = id
+  def toLong: Long = ShortChannelId.toShortId(blockHeight, txIndex, outputIndex)
 
-  override def toString: String = id.toHexString
+  override def toString: String = s"$blockHeight:$txIndex:$outputIndex"
 
   // we use an unsigned long comparison here
-  override def compare(that: ShortChannelId): Int = (this.id + Long.MinValue).compareTo(that.id + Long.MinValue)
+  override def compare(that: ShortChannelId): Int = (this.toLong + Long.MinValue).compareTo(that.toLong + Long.MinValue)
 }
 
 object ShortChannelId {
 
-  def apply(s: String): ShortChannelId = ShortChannelId(java.lang.Long.parseLong(s, 16))
+  def apply(id: Long): ShortChannelId = new ShortChannelId(((id >> 40) & 0xFFFFFF).toInt, ((id >> 16) & 0xFFFFFF).toInt, (id & 0xFFFF).toInt)
 
-  def apply(blockHeight: Int, txIndex: Int, outputIndex: Int): ShortChannelId = ShortChannelId(toShortId(blockHeight, txIndex, outputIndex))
+  def apply(s: String): ShortChannelId = {
+    val Array(a, b, c) = s.split(":")
+    new ShortChannelId(a.toInt, b.toInt, c.toInt)
+  }
 
   def toShortId(blockHeight: Int, txIndex: Int, outputIndex: Int): Long = ((blockHeight & 0xFFFFFFL) << 40) | ((txIndex & 0xFFFFFFL) << 16) | (outputIndex & 0xFFFFL)
-
-  def coordinates(shortChannelId: ShortChannelId): TxCoordinates = TxCoordinates(((shortChannelId.id >> 40) & 0xFFFFFF).toInt, ((shortChannelId.id >> 16) & 0xFFFFFF).toInt, (shortChannelId.id & 0xFFFF).toInt)
 }
-
-case class TxCoordinates(blockHeight: Int, txIndex: Int, outputIndex: Int)

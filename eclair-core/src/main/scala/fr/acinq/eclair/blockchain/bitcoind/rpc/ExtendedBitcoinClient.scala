@@ -17,8 +17,8 @@
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.ShortChannelId.coordinates
-import fr.acinq.eclair.TxCoordinates
+import fr.acinq.eclair
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.ValidateResult
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import org.json4s.JsonAST._
@@ -127,7 +127,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     }
 
   def validate(c: ChannelAnnouncement)(implicit ec: ExecutionContext): Future[ValidateResult] = {
-    val TxCoordinates(blockHeight, txIndex, outputIndex) = coordinates(c.shortChannelId)
+    val ShortChannelId(blockHeight, txIndex, outputIndex) = c.shortChannelId
 
     for {
       blockHash: String <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOrElse[String]("00" * 32))

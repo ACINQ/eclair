@@ -133,7 +133,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
     // note: some of them may already have been spent, in that case we will receive the watch event immediately
     initChannels.values.foreach { c =>
       val txid = channels(c)._1
-      val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
+      val outputIndex = c.shortChannelId.outputIndex
       val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
       watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
     }
@@ -212,7 +212,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
           false
         case ValidateResult(c, Some(tx), true, None) =>
           // TODO: blacklisting
-          val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
+          val outputIndex = c.shortChannelId.outputIndex
           // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
           val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
           if (tx.txOut.size < outputIndex + 1) {
@@ -698,7 +698,7 @@ object Router {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update, so we keep them as long as they are less than 2 weeks (2016 blocks) old
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
-    val TxCoordinates(blockHeight, _, _) = ShortChannelId.coordinates(channel.shortChannelId)
+    val blockHeight = channel.shortChannelId.blockHeight
     blockHeight < staleThresholdBlocks && update1_opt.map(isStale).getOrElse(true) && update2_opt.map(isStale).getOrElse(true)
   }
 
@@ -715,7 +715,7 @@ object Router {
     * Filters channels that we want to send to nodes asking for a channel range
     */
   def keep(firstBlockNum: Long, numberOfBlocks: Long, id: ShortChannelId, channels: Map[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Boolean = {
-    val TxCoordinates(height, _, _) = ShortChannelId.coordinates(id)
+    val height =  id.blockHeight
     val c = channels(id)
     val u1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
     val u2 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
