@@ -277,11 +277,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         stay using d0.copy(stash = stash1, awaiting = awaiting1)
       }
 
-    case Event(n: NodeAnnouncement, d: Data) =>
-      // it was sent by us, routing messages that are sent by  our peers are now wrapped in a PeerRoutingMessage
-      log.debug("received node announcement from {}", sender)
-      stay using handle(n, sender, d)
-
     case Event(WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)), d) if d.channels.contains(shortChannelId) =>
       val lostChannel = d.channels(shortChannelId)
       log.info("funding tx of channelId={} has been spent", shortChannelId)
@@ -424,6 +419,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       log.warning("message {} for wrong chain {}, we're on {}", routingMessage, routingMessage.chainHash, nodeParams.chainHash)
       stay
 
+    case Event(u: ChannelUpdate, d: Data) =>
+      // it was sent by us, routing messages that are sent by  our peers are now wrapped in a PeerRoutingMessage
+      log.debug("received channel update from {}", sender)
+      stay using handle(u, sender, d)
+
     case Event(PeerRoutingMessage(remoteNodeId, u: ChannelUpdate), d) =>
       sender ! TransportHandler.ReadAck(u)
       log.debug("received channel update for shortChannelId={}", u.shortChannelId)
@@ -452,6 +452,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         // we don't acknowledge the message just yet
         stay using d.copy(awaiting = d.awaiting + (c -> Seq(sender)))
       }
+
+    case Event(n: NodeAnnouncement, d: Data) =>
+      // it was sent by us, routing messages that are sent by  our peers are now wrapped in a PeerRoutingMessage
+      log.debug("received node announcement from {}", sender)
+      stay using handle(n, sender, d)
 
     case Event(PeerRoutingMessage(_, n: NodeAnnouncement), d: Data) =>
       sender ! TransportHandler.ReadAck(n)
