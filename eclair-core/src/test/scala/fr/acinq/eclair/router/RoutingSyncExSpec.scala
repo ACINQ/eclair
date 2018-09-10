@@ -18,21 +18,25 @@ import org.scalatest.junit.JUnitRunner
 import scala.concurrent.duration._
 
 @RunWith(classOf[JUnitRunner])
-class RoutingSyncSpec extends TestkitBaseClass {
+class RoutingSyncExSpec extends TestkitBaseClass {
 
-  import RoutingSyncSpec._
+  import RoutingSyncExSpec._
 
   val txid = BinaryData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
   type FixtureParam = Tuple3[ActorRef, ActorRef, ActorRef]
 
-  val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(500)
+  val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(700)
 
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
-  // A will be missing the last 1000 items
-  val routingInfoA = fakeRoutingInfo.dropRight(100)
-  // and B will be missing the first 1000 items
-  val routingInfoB = fakeRoutingInfo.drop(100)
+  // A will be missing the last 100 items
+  val routingInfoA = fakeRoutingInfo.dropRight(200)
+  // and B will be missing the first 100 items
+  // and items 100 to 199 will have older timestamps
+  val routingInfoB = fakeRoutingInfo.drop(200).zipWithIndex.map {
+    case ((ca, u1, u2, na1, na2), i) if i >= 100 && i < 300 => (ca, u1.copy(timestamp = u1.timestamp - 100), u2.copy(timestamp = u2.timestamp - 100), na1, na2)
+    case (t, _) => t
+  }
 
   class FakeWatcher extends Actor {
     def receive = {
@@ -64,7 +68,7 @@ class RoutingSyncSpec extends TestkitBaseClass {
     }), "switchboard")
 
     val routerA = system.actorOf(Props(new Router(paramsA, watcherA)), "routerA")
-    val idA = PrivateKey(BinaryData("01"  *32), true).publicKey
+    val idA = PrivateKey(BinaryData("01" * 32), true).publicKey
 
     val watcherB = system.actorOf(Props(new FakeWatcher()))
     val paramsB = Bob.nodeParams
@@ -77,7 +81,7 @@ class RoutingSyncSpec extends TestkitBaseClass {
         paramsB.networkDb.addNode(n2)
     }
     val routerB = system.actorOf(Props(new Router(paramsB, watcherB)), "routerB")
-    val idB = PrivateKey(BinaryData("02"  *32), true).publicKey
+    val idB = PrivateKey(BinaryData("02" * 32), true).publicKey
 
     val pipe = system.actorOf(Props(new RoutingSyncSpec.Pipe(routerA, idA, routerB, idA)))
     val sender = TestProbe()
@@ -95,8 +99,8 @@ class RoutingSyncSpec extends TestkitBaseClass {
       Globals.blockCount.set(shortChannelIds.map(id => ShortChannelId.coordinates(id).blockHeight).max)
 
       val sender = TestProbe()
-      routerA ! SendChannelQuery(Alice.nodeParams.nodeId, pipe)
-      routerB ! SendChannelQuery(Bob.nodeParams.nodeId, pipe)
+      routerA ! SendChannelQueryEx(Alice.nodeParams.nodeId, pipe)
+      routerB ! SendChannelQueryEx(Bob.nodeParams.nodeId, pipe)
 
       awaitCond({
         sender.send(routerA, 'channels)
@@ -109,7 +113,7 @@ class RoutingSyncSpec extends TestkitBaseClass {
   }
 }
 
-object RoutingSyncSpec {
+object RoutingSyncExSpec {
   def makeFakeRoutingInfo(shortChannelId: ShortChannelId): (ChannelAnnouncement, ChannelUpdate, ChannelUpdate, NodeAnnouncement, NodeAnnouncement) = {
     val (priv_a, priv_b, priv_funding_a, priv_funding_b) = (randomKey, randomKey, randomKey, randomKey)
     val channelAnn_ab = channelAnnouncement(shortChannelId, priv_a, priv_b, priv_funding_a, priv_funding_b)
@@ -127,4 +131,5 @@ object RoutingSyncSpec {
       case msg: RoutingMessage if sender == b => a ! PeerRoutingMessage(idB, msg)
     }
   }
+
 }

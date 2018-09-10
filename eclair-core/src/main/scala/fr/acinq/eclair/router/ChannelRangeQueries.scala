@@ -48,14 +48,12 @@ object ChannelRangeQueries {
   def encodeShortChannelIdsSingle(shortChannelIds: Iterable[ShortChannelId], format: Byte, useGzip: Boolean): BinaryData = {
     val bos = new ByteArrayOutputStream()
     bos.write(format)
-    format match {
-      case UNCOMPRESSED_FORMAT =>
-        shortChannelIds.foreach(id => Protocol.writeUInt64(id.toLong, bos, ByteOrder.BIG_ENDIAN))
-      case ZLIB_FORMAT =>
-        val output = if (useGzip) new GZIPOutputStream(bos) else new DeflaterOutputStream(bos)
-        shortChannelIds.foreach(id => Protocol.writeUInt64(id.toLong, output, ByteOrder.BIG_ENDIAN))
-        output.finish()
+    val out = format match {
+      case UNCOMPRESSED_FORMAT => bos
+      case ZLIB_FORMAT => if (useGzip) new GZIPOutputStream(bos) else new DeflaterOutputStream(bos)
     }
+    shortChannelIds.foreach(id => Protocol.writeUInt64(id.toLong, out, ByteOrder.BIG_ENDIAN))
+    out.close()
     bos.toByteArray
   }
 
