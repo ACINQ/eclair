@@ -45,6 +45,7 @@ import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncemen
 import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JBool, JInt, JString}
+import org.json4s.jackson.Serialization
 import org.json4s.{JValue, jackson}
 
 import scala.concurrent.duration._
@@ -352,8 +353,22 @@ trait Service extends Logging {
 
     // register an actor that feeds the queue when a payment is received
     system.actorOf(Props(new Actor {
-      override def preStart: Unit = context.system.eventStream.subscribe(self, classOf[PaymentReceived])
-      def receive: Receive = { case received: PaymentReceived => flowInput.offer(received.paymentHash.toString) }
+
+      override def preStart: Unit = {
+        context.system.eventStream.subscribe(self, classOf[ChannelPersisted])
+        context.system.eventStream.subscribe(self, classOf[PaymentReceived])
+        context.system.eventStream.subscribe(self, classOf[PaymentRelayed])
+        context.system.eventStream.subscribe(self, classOf[PaymentSent])
+      }
+
+      def receive: Receive = {
+        case persisted: ChannelPersisted => flowInput.offer(Serialization write persisted)
+        case received: PaymentReceived => flowInput.offer(Serialization write received)
+        case relayed: PaymentRelayed => flowInput.offer(Serialization write relayed)
+        case sent: PaymentSent => flowInput.offer(Serialization write sent)
+        case other => logger.info(s"Unexpected ws message: $other")
+      }
+
     }))
 
     Flow[Message]
