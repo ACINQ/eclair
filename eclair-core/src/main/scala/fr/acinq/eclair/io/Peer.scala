@@ -95,12 +95,17 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val remoteHasInitialRoutingSync = Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
+      val remoteHasChannelRangeQueriesExOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL)
+      val remoteHasChannelRangeQueriesExMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY)
       log.info(s"$remoteNodeId has features: initialRoutingSync=$remoteHasInitialRoutingSync channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional channelRangeQueriesMandatory=$remoteHasChannelRangeQueriesMandatory")
       if (Features.areSupported(remoteInit.localFeatures)) {
         origin_opt.map(origin => origin ! "connected")
 
         if (remoteHasInitialRoutingSync) {
-          if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
+          if (remoteHasChannelRangeQueriesExOptional || remoteHasChannelRangeQueriesExMandatory) {
+            // if they support extended channel queries we do nothing, they will send us their filters
+            log.info("{} has set initial routing sync and support extended channel range queries, we do nothing (they will send us a query)", remoteNodeId)
+          } else if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
             // if they support channel queries we do nothing, they will send us their filters
             log.info("{} has set initial routing sync and support channel range queries, we do nothing (they will send us a query)", remoteNodeId)
           } else {
@@ -108,7 +113,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
             router ! GetRoutingState
           }
         }
-        if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
+        if (remoteHasChannelRangeQueriesExOptional || remoteHasChannelRangeQueriesExMandatory) {
+          // if they support extended channel queries, always ask for their filter
+          router ! SendChannelQueryEx(remoteNodeId, transport)
+        } else if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
           router ! SendChannelQuery(remoteNodeId, transport)
         }
