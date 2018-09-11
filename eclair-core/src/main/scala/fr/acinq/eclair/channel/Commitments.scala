@@ -59,12 +59,15 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: BinaryData) {
 
+  def pendingOutgoingHtlcs: Set[DirectedHtlc] = {
+    val nextRemoteCommitHtlcs = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(_.direction == IN)).getOrElse(Set.empty)
+    val allHtlcs = localCommit.spec.htlcs.filter(_.direction == OUT) ++ remoteCommit.spec.htlcs.filter(_.direction == IN) ++ nextRemoteCommitHtlcs
+    allHtlcs.groupBy(_.add.paymentHash).map(_._2.head).toSet
+  }
+
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
-  def hasTimedoutOutgoingHtlcs(blockheight: Long): Boolean =
-    localCommit.spec.htlcs.exists(htlc => htlc.direction == OUT && blockheight >= htlc.add.expiry) ||
-      remoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.expiry) ||
-      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.expiry)).getOrElse(false)
+  def hasTimedoutOutgoingHtlcs(blockheight: Long): Boolean = pendingOutgoingHtlcs.exists(blockheight >= _.add.expiry)
 
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
 

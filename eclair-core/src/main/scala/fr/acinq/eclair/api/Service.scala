@@ -41,6 +41,7 @@ import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
+import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging
@@ -210,6 +211,13 @@ trait Service extends Logging {
                           case JString(identifier) :: Nil => completeRpcFuture(req.id, sendToChannel(identifier, CMD_GETINFO).mapTo[RES_GETINFO])
                           case _ => reject(UnknownParamsRejection(req.id, "[channelId]"))
                         }
+
+                        case "pendingpayments" =>
+                          val f: Future[Iterable[Set[DirectedHtlc]]] = for {
+                            channels_id <- (register ? 'channels).mapTo[Map[BinaryData, ActorRef]].map(_.keys)
+                            htlcs <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GET_PENDING_HTLCS).mapTo[Set[DirectedHtlc]]))
+                          } yield htlcs
+                          completeRpcFuture(req.id, f.map(_.flatten))
 
                         // global network methods
                         case "allnodes" => completeRpcFuture(req.id, (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]])

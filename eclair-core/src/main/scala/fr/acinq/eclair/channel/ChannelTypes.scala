@@ -117,6 +117,7 @@ final case object CMD_FORCECLOSE extends Command
 final case object CMD_GETSTATE extends Command
 final case object CMD_GETSTATEDATA extends Command
 final case object CMD_GETINFO extends Command
+final case object CMD_GET_PENDING_HTLCS extends Command
 final case class RES_GETINFO(nodeId: BinaryData, channelId: BinaryData, state: State, data: Data)
 
 /*
