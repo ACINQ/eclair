@@ -167,10 +167,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         stay
       }
 
-    case Event(n: NodeAnnouncement, d: Data) =>
-      sender ! TransportHandler.ReadAck(n)
-      stay // we just ignore node_announcements on Android
-
     case Event(WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)), d) if d.channels.contains(shortChannelId) =>
       val lostChannel = d.channels(shortChannelId)
       log.info("funding tx of channelId={} has been spent", shortChannelId)
@@ -281,6 +277,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       log.warning("message {} for wrong chain {}, we're on {}", routingMessage, routingMessage.chainHash, nodeParams.chainHash)
       stay
 
+    case Event(u: ChannelUpdate, d: Data) =>
+      // it was sent by us, routing messages that are sent by  our peers are now wrapped in a PeerRoutingMessage
+      log.debug("received channel update from {}", sender)
+      stay using handle(u, sender, d)
+
     case Event(PeerRoutingMessage(remoteNodeId, u: ChannelUpdate), d) =>
       sender ! TransportHandler.ReadAck(u)
       log.debug("received channel update for shortChannelId={}", u.shortChannelId)
@@ -322,6 +323,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
           privateChannels = d.privateChannels - c1.shortChannelId // we remove fake announcements that we may have made before)
         )
       }
+
+    case Event(n: NodeAnnouncement, d: Data) =>
+      // it was sent by us, routing messages that are sent by  our peers are now wrapped in a PeerRoutingMessage
+      stay // we just ignore node_announcements on Android
 
     case Event(PeerRoutingMessage(_, n: NodeAnnouncement), d: Data) =>
       sender ! TransportHandler.ReadAck(n)

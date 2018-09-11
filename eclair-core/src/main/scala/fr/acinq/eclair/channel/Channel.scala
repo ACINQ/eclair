@@ -1641,7 +1641,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     */
   def publishIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, BinaryData]) = {
     val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
-    process.foreach(tx => blockchain ! PublishAsap(tx))
+    process.foreach { tx =>
+      log.info(s"publishing txid=${tx.txid}")
+      blockchain ! PublishAsap(tx)
+    }
     skip.foreach(tx => log.info(s"no need to republish txid=${tx.txid}, it has already been confirmed"))
   }
 

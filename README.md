@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=master)](https://travis-ci.org/ACINQ/eclair)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Gitter chat](https://img.shields.io/badge/chat-on%20gitter-rose.svg)](https://gitter.im/ACINQ/eclair)
+[![Gitter chat](https://img.shields.io/badge/chat-on%20gitter-red.svg)](https://gitter.im/ACINQ/eclair)
 
 **Eclair** (french for Lightning) is a scala implementation of the Lightning Network. It can run with or without a GUI, and a JSON-RPC API is also available.
 
@@ -118,6 +118,14 @@ eclair.printToConsole | Log to stdout (in addition to eclair.log)  |
 For example, to specify a different data directory you would run the following command:
 ```shell
 java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
+```
+
+#### Logging
+
+Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a different configuration, and override the internal logback.xml, run:
+
+```shell
+java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gui-<version>-<commit_id>.jar
 ```
 
 ## JSON-RPC API

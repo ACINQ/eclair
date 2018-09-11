@@ -17,7 +17,8 @@
 package fr.acinq.eclair.blockchain.bitcoind
 
 import akka.actor.ActorSystem
-import fr.acinq.bitcoin.{BinaryData, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin._
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Transactions
@@ -34,8 +35,9 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
   import BitcoinCoreWallet._
 
 
-  def fundTransaction(hex: String, lockUnspents: Boolean): Future[FundTransactionResponse] = {
-    rpcClient.invoke("fundrawtransaction", hex, BitcoinCoreWallet.Options(lockUnspents)).map(json => {
+  def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = {
+    val feeRatePerKB = BigDecimal(feerateKw2KB(feeRatePerKw))
+    rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, feeRatePerKB.bigDecimal.scaleByPowerOfTen(-8))).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDecimal(fee) = json \ "fee"
@@ -43,7 +45,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
     })
   }
 
-  def fundTransaction(tx: Transaction, lockUnspents: Boolean): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toString(), lockUnspents)
+  def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toString(), lockUnspents, feeRatePerKw)
 
   def signTransaction(hex: String): Future[SignTransactionResponse] =
     rpcClient.invoke("signrawtransaction", hex).map(json => {
@@ -89,7 +91,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
       lockTime = 0)
     for {
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
-      FundTransactionResponse(unsignedFundingTx, _, fee) <- fundTransaction(partialFundingTx, lockUnspents = true)
+      FundTransactionResponse(unsignedFundingTx, _, fee) <- fundTransaction(partialFundingTx, lockUnspents = true, feeRatePerKw)
       // now let's sign the funding tx
       SignTransactionResponse(fundingTx, _) <- signTransactionOrUnlock(unsignedFundingTx)
       // there will probably be a change output, so we need to find which output is ours
@@ -112,11 +114,10 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
 object BitcoinCoreWallet {
 
   // @formatter:off
-  case class Options(lockUnspents: Boolean)
+  case class Options(lockUnspents: Boolean, feeRate: BigDecimal)
   case class Utxo(txid: String, vout: Long)
   case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Satoshi)
   case class SignTransactionResponse(tx: Transaction, complete: Boolean)
   // @formatter:on
-
 
 }
