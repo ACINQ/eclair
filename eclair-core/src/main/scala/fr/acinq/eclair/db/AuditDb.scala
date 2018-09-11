@@ -33,6 +33,8 @@ trait AuditDb {
 
   def receivedPaymentInfo(paymentHash: BinaryData): Option[PaymentReceived]
 
+  def sentPaymentInfo(paymentHash: BinaryData): Option[PaymentSent]
+
   def listSent(from: Long, to: Long): Seq[PaymentSent]
 
   def listReceived(from: Long, to: Long): Seq[PaymentReceived]

@@ -95,12 +95,21 @@ class SqliteAuditDbSpec extends FunSuite {
     ))
   }
 
-  test("received payment details" ) {
+  test("received payment details") {
     val sqlite = inmem
     val db = new SqliteAuditDb(sqlite)
 
     val e2 = PaymentReceived(MilliSatoshi(42000), randomBytes(32), randomBytes(32))
     db.add(e2)
     assert(db.receivedPaymentInfo(e2.paymentHash).contains(e2))
+  }
+
+  test("sent payment details") {
+    val sqlite = inmem
+    val db = new SqliteAuditDb(sqlite)
+
+    val e1 = PaymentSent(MilliSatoshi(42000), MilliSatoshi(1000), randomBytes(32), randomBytes(32), randomBytes(32))
+    db.add(e1)
+    assert(db.sentPaymentInfo(e1.paymentHash).contains(e1))
   }
 }

@@ -41,7 +41,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (amount_in_msat INTEGER NOT NULL, amount_out_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
 
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON received(payment_hash)")
+    statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_payment_hash_idx ON sent(payment_hash)")
+    statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_payment_hash_idx ON received(payment_hash)")
 
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_timestamp_idx ON sent(timestamp)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_timestamp_idx ON received(timestamp)")
@@ -97,6 +98,18 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
       val rs = statement.executeQuery()
       if (rs.next()) {
         Some(PaymentReceived(MilliSatoshi(rs.getLong("amount_msat")), BinaryData(rs.getBytes("payment_hash")), BinaryData(rs.getBytes("from_channel_id")), rs.getLong("timestamp")))
+      } else {
+        None
+      }
+    }
+  }
+
+  override def sentPaymentInfo(paymentHash: BinaryData): Option[PaymentSent] = {
+    using(sqlite.prepareStatement("SELECT * FROM sent WHERE payment_hash = ?")) { statement =>
+      statement.setBytes(1, paymentHash)
+      val rs = statement.executeQuery()
+      if (rs.next()) {
+        Some(PaymentSent(MilliSatoshi(rs.getLong("amount_msat")), MilliSatoshi(rs.getLong("fees_msat")), BinaryData(rs.getBytes("payment_hash")), BinaryData(rs.getBytes("payment_preimage")), BinaryData(rs.getBytes("to_channel_id")), rs.getLong("timestamp")))
       } else {
         None
       }
