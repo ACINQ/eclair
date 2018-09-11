@@ -22,6 +22,7 @@ import fr.acinq.eclair.blockchain.{NewBlock, NewTransaction}
 import org.zeromq.ZMQ.Event
 import org.zeromq.{ZContext, ZMQ, ZMsg}
 
+import scala.annotation.tailrec
 import scala.concurrent.{ExecutionContext, Promise}
 import scala.concurrent.duration._
 import scala.util.Try
@@ -47,20 +48,26 @@ class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) exte
   implicit val ec: ExecutionContext = context.system.dispatcher
 
   // we check messages in a non-blocking manner with an interval, making sure to retrieve all messages before waiting again
-  def checkEvent: Unit = Option(Event.recv(monitor, ZMQ.DONTWAIT)) match {
-    case Some(event) =>
-      self ! event
-      checkEvent
+  def checkEvent: Unit = checkEventRec
+
+  @tailrec
+  private def checkEventRec: Unit = Option(Event.recv(monitor, ZMQ.DONTWAIT)) match {
     case None =>
       context.system.scheduler.scheduleOnce(1 second)(checkEvent)
+    case Some(event) =>
+      self ! event
+      checkEventRec
   }
 
-  def checkMsg: Unit = Option(ZMsg.recvMsg(subscriber, ZMQ.DONTWAIT)) match {
-    case Some(msg) =>
-      self ! msg
-      checkMsg
+  def checkMsg: Unit = checkMsgRec
+
+  @tailrec
+  private def checkMsgRec: Unit = Option(ZMsg.recvMsg(subscriber, ZMQ.DONTWAIT)) match {
     case None =>
       context.system.scheduler.scheduleOnce(1 second)(checkMsg)
+    case Some(msg) =>
+      self ! msg
+      checkMsgRec
   }
 
   checkEvent
