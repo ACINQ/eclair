@@ -356,9 +356,8 @@ trait Service extends Logging {
 
       override def preStart: Unit = {
         context.system.eventStream.subscribe(self, classOf[ChannelPersisted])
-        context.system.eventStream.subscribe(self, classOf[PaymentReceived])
-        context.system.eventStream.subscribe(self, classOf[PaymentRelayed])
-        context.system.eventStream.subscribe(self, classOf[PaymentSent])
+        context.system.eventStream.subscribe(self, classOf[PaymentFailed])
+        context.system.eventStream.subscribe(self, classOf[PaymentEvent])
       }
 
       def receive: Receive = {
@@ -366,6 +365,7 @@ trait Service extends Logging {
         case received: PaymentReceived => flowInput.offer(Serialization write received)
         case relayed: PaymentRelayed => flowInput.offer(Serialization write relayed)
         case sent: PaymentSent => flowInput.offer(Serialization write sent)
+        case failed: PaymentFailed => flowInput.offer(Serialization write failed)
         case other => logger.info(s"Unexpected ws message: $other")
       }
 
