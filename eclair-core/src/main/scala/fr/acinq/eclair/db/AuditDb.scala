@@ -31,6 +31,8 @@ trait AuditDb {
 
   def add(networkFeePaid: NetworkFeePaid)
 
+  def receivedPaymentInfo(paymentHash: BinaryData): Option[PaymentReceived]
+
   def listSent(from: Long, to: Long): Seq[PaymentSent]
 
   def listReceived(from: Long, to: Long): Seq[PaymentReceived]
