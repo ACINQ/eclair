@@ -1271,11 +1271,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
       goto(SYNCING) sending channelReestablish
 
-    case Event(c@CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
+    case Event(c@CurrentBlockCount(count), d: HasCommitments) =>
       // note: this can only happen if state is NORMAL or SHUTDOWN
       // -> in NEGOTIATING there are no more htlcs
       // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
-      handleLocalError(HtlcTimedout(d.channelId), d, Some(c))
+      d.commitments.pendingOutgoingHtlcs.foreach(htlc => nodeParams.pendingPaymentDb.updateDelay(htlc.add.paymentHash, count))
+      if (d.commitments.hasTimedoutOutgoingHtlcs(count)) handleLocalError(HtlcTimedout(d.channelId), d, Some(c)) else stay
 
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK | BITCOIN_FUNDING_DEEPLYBURIED, _, _), _) => stay
@@ -1393,7 +1394,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         goto(NEGOTIATING) using d.copy(closingTxProposed = closingTxProposed1) sending d.localShutdown
       }
 
-    case Event(c@CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) => handleLocalError(HtlcTimedout(d.channelId), d, Some(c))
+    case Event(c@CurrentBlockCount(count), d: HasCommitments) =>
+      d.commitments.pendingOutgoingHtlcs.foreach(htlc => nodeParams.pendingPaymentDb.updateDelay(htlc.add.paymentHash, count))
+      if (d.commitments.hasTimedoutOutgoingHtlcs(count)) handleLocalError(HtlcTimedout(d.channelId), d, Some(c)) else stay
 
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK | BITCOIN_FUNDING_DEEPLYBURIED, _, _), _) => stay

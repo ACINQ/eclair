@@ -20,7 +20,7 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
-import fr.acinq.eclair.Globals
+import fr.acinq.eclair.{Globals, TestConstants}
 import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelUnavailable}
 import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.crypto.Sphinx
@@ -42,9 +42,10 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   val defaultAmountMsat = 142000000L
   val defaultPaymentHash = BinaryData("42" * 32)
+  val nodeParams = TestConstants.Alice.nodeParams
 
   test("payment failed (route not found)") { case (router, _) =>
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -59,7 +60,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (route too expensive)") { case (router, _) =>
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -76,7 +77,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   test("payment failed (unparsable failure)") { case (router, _) =>
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -113,7 +114,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   test("payment failed (local error)") { case (router, _) =>
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -140,7 +141,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   test("payment failed (first hop returns an UpdateFailMalformedHtlc)") { case (router, _) =>
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -167,7 +168,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   test("payment failed (TemporaryChannelFailure)") { case (router, _) =>
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -203,7 +204,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   test("payment failed (PermanentChannelFailure)") { case (router, _) =>
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -234,7 +235,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment succeeded") { case (router, _) =>
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
     val eventListener = TestProbe()

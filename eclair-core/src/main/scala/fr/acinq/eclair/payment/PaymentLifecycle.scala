@@ -37,7 +37,7 @@ import scala.util.{Failure, Success}
 /**
   * Created by PM on 26/08/2016.
   */
-class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) extends FSM[PaymentLifecycle.State, PaymentLifecycle.Data] {
+class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef, nodeParams: NodeParams) extends FSM[PaymentLifecycle.State, PaymentLifecycle.Data] {
 
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
@@ -51,7 +51,8 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
     case Event(RouteResponse(hops, ignoreNodes, ignoreChannels), WaitingForRoute(s, c, failures)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")} channels=${hops.map(_.lastUpdate.shortChannelId).mkString("->")}")
       val firstHop = hops.head
-      val finalExpiry = Globals.blockCount.get().toInt + c.finalCltvExpiry.toInt
+      val currentHeight = Globals.blockCount.get()
+      val finalExpiry = currentHeight.toInt + c.finalCltvExpiry.toInt
 
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
       val feePct = (cmd.amountMsat - c.amountMsat) / c.amountMsat.toDouble // c.amountMsat is required to be > 0, have to convert to double, otherwise will be rounded
@@ -61,6 +62,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
         stop(FSM.Normal)
       } else {
         register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
+        nodeParams.pendingPaymentDb.add(c.paymentHash, firstHop.nodeId, c.targetNodeId, firstHop.lastUpdate.cltvExpiryDelta, currentHeight, currentHeight, finalExpiry)
         goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
       }
 
@@ -179,7 +181,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
 object PaymentLifecycle {
 
-  def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router, register)
+  def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef, nodeParams: NodeParams) = Props(classOf[PaymentLifecycle], sourceNodeId, router, register, nodeParams)
 
   // @formatter:off
   case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: Seq[Seq[ExtraHop]] = Nil)

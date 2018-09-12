@@ -29,6 +29,7 @@ import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.db.noop.NoopPendingPaymentDb
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.wire.Color
 
@@ -61,6 +62,7 @@ case class NodeParams(keyManager: KeyManager,
                       peersDb: PeersDb,
                       networkDb: NetworkDb,
                       pendingRelayDb: PendingRelayDb,
+                      pendingPaymentDb: PendingPaymentDb,
                       paymentsDb: PaymentsDb,
                       auditDb: AuditDb,
                       routerBroadcastInterval: FiniteDuration,
@@ -144,6 +146,11 @@ object NodeParams {
     val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "audit.sqlite")}")
     val auditDb = new SqliteAuditDb(sqliteAudit)
 
+    val pendingPaymentDb = config.getString("pending-payment-db") match {
+      case "sqlite" => new SqlitePendingPaymentDb(sqlite)
+      case _ => new NoopPendingPaymentDb
+    }
+
     val color = BinaryData(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
 
@@ -186,6 +193,7 @@ object NodeParams {
       pendingRelayDb = pendingRelayDb,
       paymentsDb = paymentsDb,
       auditDb = auditDb,
+      pendingPaymentDb = pendingPaymentDb,
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),

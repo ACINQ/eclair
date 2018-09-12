@@ -212,13 +212,6 @@ trait Service extends Logging {
                           case _ => reject(UnknownParamsRejection(req.id, "[channelId]"))
                         }
 
-                        case "pendingpayments" =>
-                          val f: Future[Iterable[Set[DirectedHtlc]]] = for {
-                            channels_id <- (register ? 'channels).mapTo[Map[BinaryData, ActorRef]].map(_.keys)
-                            htlcs <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GET_PENDING_HTLCS).mapTo[Set[DirectedHtlc]]))
-                          } yield htlcs
-                          completeRpcFuture(req.id, f.map(_.flatten))
-
                         // global network methods
                         case "allnodes" => completeRpcFuture(req.id, (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]])
                         case "allchannels" => completeRpcFuture(req.id, (router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))))
@@ -309,7 +302,7 @@ trait Service extends Logging {
                           case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
                         }
 
-                        case "receivedpaymentinfo" => req.params match {
+                        case "receivedinfo" => req.params match {
                           case JString(identifier) :: Nil => extractPaymentHash(identifier) match {
                             case Success(hash) => kit.nodeParams.auditDb.receivedPaymentInfo(hash) match {
                               case Some(paymentReceived) => completeRpcFuture(req.id, Future.successful(paymentReceived))
@@ -319,6 +312,24 @@ trait Service extends Logging {
                           }
                           case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
                         }
+
+                        case "sentinfo" => req.params match {
+                          case JString(identifier) :: Nil => extractPaymentHash(identifier) match {
+                            case Success(hash) => kit.nodeParams.auditDb.sentPaymentInfo(hash) match {
+                              case Some(paymentSent) => completeRpcFuture(req.id, Future.successful(paymentSent))
+                              case None => completeRpcFuture(req.id, Future.failed(new IllegalArgumentException("no such payment sent yet")))
+                            }
+                            case _ => completeRpcFuture(req.id, Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash")))
+                          }
+                          case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
+                        }
+
+                        case "sentpending" =>
+                          val f: Future[Iterable[Set[DirectedHtlc]]] = for {
+                            channels_id <- (register ? 'channels).mapTo[Map[BinaryData, ActorRef]].map(_.keys)
+                            htlcs <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GET_PENDING_HTLCS).mapTo[Set[DirectedHtlc]]))
+                          } yield htlcs
+                          completeRpcFuture(req.id, f.map(_.flatten))
 
                         // retrieve audit events
                         case "audit" =>
