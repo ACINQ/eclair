@@ -331,6 +331,19 @@ trait Service extends Logging {
                           } yield htlcs
                           completeRpcFuture(req.id, f.map(_.flatten))
 
+                        case "sentdelayed" => req.params match {
+                          case JString(payeeNodeId) :: JInt(sinceBlockHeight) :: Nil => Try(PublicKey(payeeNodeId)) match {
+                            case Success(pk) => completeRpcFuture(req.id, Future.successful(nodeParams.pendingPaymentDb.listDelays(pk, sinceBlockHeight.toLong)))
+                            case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid payeeNodeId '$payeeNodeId'"))
+                          }
+                          case _ => reject(UnknownParamsRejection(req.id, "[payeeNodeId, sinceBlockHeight]"))
+                        }
+
+                        case "badpeers" => req.params match {
+                          case JInt(sinceBlockHeight) :: Nil => completeRpcFuture(req.id, Future.successful(nodeParams.pendingPaymentDb.listBadPeers(sinceBlockHeight.toLong)))
+                          case _ => reject(UnknownParamsRejection(req.id, "[sinceBlockHeight]"))
+                        }
+
                         // retrieve audit events
                         case "audit" =>
                           val (from1, to1) = req.params match {
@@ -427,6 +440,13 @@ trait Service extends Logging {
     "forceclose (channelId): force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)",
     "checkpayment (paymentHash): returns true if the payment has been received, false otherwise",
     "checkpayment (paymentRequest): returns true if the payment has been received, false otherwise",
+    "receivedinfo (paymentHash): returns extended info about received payment",
+    "receivedinfo (paymentRequest): returns extended info about received payment",
+    "sentinfo (paymentHash): returns extended info about sent payment",
+    "sentinfo (paymentRequest): returns extended info about sent payment",
+    "sentpending: list all outgoing payments which are pending currently, this includes sent as well as routed payments",
+    "sentdelayed (payeeNodeId, sinceBlockHeight): list all outgoing locally initiated payments which were delayed when sent to a given payee since a given blockchain height",
+    "badpeers: list direct peers which did not fail our outgoing payments when they should have done that",
     "audit: list all send/received/relayed payments",
     "audit (from, to): list send/received/relayed payments in that interval (from <= timestamp < to)",
     "networkfees: list all network fees paid to the miners, by transaction",

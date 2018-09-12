@@ -36,7 +36,7 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
 
   using(sqlite.createStatement()) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending (payment_hash BLOB NOT NULL, peer_node_id BLOB NOT NULL, target_node_id BLOB NOT NULL, peer_cltv_delta INTEGER NOT NULL, added INTEGER NOT NULL, delay INTEGER NOT NULL, expiry INTEGER NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending (payment_hash BLOB NOT NULL UNIQUE, peer_node_id BLOB NOT NULL, target_node_id BLOB NOT NULL, peer_cltv_delta INTEGER NOT NULL, added INTEGER NOT NULL, delay INTEGER NOT NULL, expiry INTEGER NOT NULL)")
 
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON pending(payment_hash)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS target_node_id_idx ON pending(target_node_id)")
@@ -46,7 +46,7 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
   override def add(paymentHash: BinaryData, peerNodeId: PublicKey, targetNodeId: PublicKey,
                    peerCltvDelta: Long, added: Long, delay: Long, expiry: Long): Unit = {
 
-    using(sqlite.prepareStatement("INSERT INTO pending VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pending VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, paymentHash)
       statement.setBytes(2, peerNodeId.toBin)
       statement.setBytes(3, targetNodeId.toBin)
@@ -67,6 +67,7 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
   }
 
   override def listDelays(targetNodeId: PublicKey, sinceBlockHeight: Long): Seq[Long] = {
+    // "expiry - delay > peer_cltv_delta" to exclude cases where payment is delayed by our direct peer so payee has nothing to do with it
     using(sqlite.prepareStatement("SELECT delay - added AS delayed FROM pending WHERE target_node_id = ? AND added > ? AND expiry - delay > peer_cltv_delta AND delayed > 0")) { statement =>
       statement.setBytes(1, targetNodeId.toBin)
       statement.setLong(2, sinceBlockHeight)
@@ -80,7 +81,8 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
   }
 
   override def listBadPeers(sinceBlockHeight: Long): Seq[PublicKey] = {
-    using(sqlite.prepareStatement("SELECT peer_node_id FROM pending WHERE added > ? AND expiry - delay <= peer_cltv_delta")) { statement =>
+    // "expiry - delay <= peer_cltv_delta" to catch cases where our direct peer should have failed a payment but did not
+    using(sqlite.prepareStatement("SELECT peer_node_id FROM pending WHERE added > ?")) { statement =>
       statement.setLong(1, sinceBlockHeight)
       val rs = statement.executeQuery()
       var q: Queue[PublicKey] = Queue()

@@ -62,7 +62,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
         stop(FSM.Normal)
       } else {
         register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
-        nodeParams.pendingPaymentDb.add(c.paymentHash, firstHop.nodeId, c.targetNodeId, firstHop.lastUpdate.cltvExpiryDelta, currentHeight, currentHeight, finalExpiry)
+        if (hops.size > 1) nodeParams.pendingPaymentDb.add(c.paymentHash, firstHop.nextNodeId, c.targetNodeId, firstHop.lastUpdate.cltvExpiryDelta, currentHeight, currentHeight, cmd.expiry)
         goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
       }
 
