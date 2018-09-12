@@ -57,4 +57,16 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
     assert(db.listDelays(targetNodeId1, 1420) == Nil) // Peer is to blame
     assert(db.listBadPeers(1420) == Seq(peerNodeId))
   }
+
+  test("list bad peers") {
+    val sqlite = inmem
+    val db = new SqlitePendingPaymentDb(sqlite)
+
+    db.add(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.add(paymentHash2, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.updateDelay(paymentHash1, delay = 1840)
+    db.updateDelay(paymentHash2, delay = 1840)
+
+    assert(db.listBadPeers(1420) == Seq(peerNodeId, peerNodeId)) // This peer has delayed our payment twice since block 1420
+  }
 }

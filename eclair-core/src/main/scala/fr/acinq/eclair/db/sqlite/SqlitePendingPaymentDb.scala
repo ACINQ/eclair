@@ -82,7 +82,7 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
 
   override def listBadPeers(sinceBlockHeight: Long): Seq[PublicKey] = {
     // "expiry - delay <= peer_cltv_delta" to catch cases where our direct peer should have failed a payment but did not
-    using(sqlite.prepareStatement("SELECT peer_node_id FROM pending WHERE added > ?")) { statement =>
+    using(sqlite.prepareStatement("SELECT peer_node_id FROM pending WHERE added > ? AND expiry - delay <= peer_cltv_delta")) { statement =>
       statement.setLong(1, sinceBlockHeight)
       val rs = statement.executeQuery()
       var q: Queue[PublicKey] = Queue()
