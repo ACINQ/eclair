@@ -20,7 +20,7 @@ import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{OutPoint, ScriptFlags, Transaction, TxIn}
-import fr.acinq.eclair.{Globals, TestkitBaseClass}
+import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -233,6 +233,8 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv BITCOIN_TX_CONFIRMED (local commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _, _) =>
     within(30 seconds) {
+      val listener = TestProbe()
+      system.eventStream.subscribe(listener.ref, classOf[LocalCommitConfirmed])
       // alice sends an htlc to bob
       val (ra1, htlca1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       crossSign(alice, bob, alice2bob, bob2alice)
@@ -252,10 +254,11 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(initialState.localCommitPublished.isDefined)
 
       // actual test starts here
-      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 0, 0)
-      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainDelayedTx), 0, 0)
-      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(htlcTimeoutTx), 0, 0)
-      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimDelayedTx), 0, 0)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 42, 0)
+      assert(listener.expectMsgType[LocalCommitConfirmed].refundAtBlock == 42 + TestConstants.Bob.channelParams.toSelfDelay)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainDelayedTx), 200, 0)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(htlcTimeoutTx), 201, 0)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimDelayedTx), 202, 0)
       awaitCond(alice.stateName == CLOSED)
     }
   }
