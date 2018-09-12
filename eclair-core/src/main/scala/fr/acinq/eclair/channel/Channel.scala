@@ -1172,8 +1172,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcTimedout(d.channelId), origin, None, None))
       }
       // we also need to fail outgoing htlcs that we know will never reach the blockchain
-      val overridenHtlcs =
-        Closing.overriddenHtlcs(d.commitments.localCommit, d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(d.commitments.remoteCommit), tx)
+      val overridenHtlcs = Closing.overriddenHtlcs(d.commitments.localCommit, d.commitments.remoteCommit, d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit), tx)
       overridenHtlcs.foreach { add =>
         val origin = d.commitments.originChannels(add.id)
         log.warning(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overriden by local commit")
