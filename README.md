@@ -154,6 +154,8 @@ java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gu
   send         | amountMsat, paymentHash, nodeId                                                        | send a payment to a lightning node
   send         | paymentRequest                                                                         | send a payment to a lightning node using a BOLT11 payment request
   send         | paymentRequest, amountMsat                                                             | send a payment to a lightning node using a BOLT11 payment request and a custom amount
+  sendasync    | as per send above                                                                      | send a payment to a lightning node. Same parameters as send but returns an ID instantly. 
+  checksentpayment| sendpaymentid                                                                       | returns if id is valid and a result if there is one. If no result payment is still pending.
   checkpayment | paymentHash                                                                            | returns true if the payment has been received, false otherwise
   checkpayment | paymentRequest                                                                         | returns true if the payment has been received, false otherwise
   close        | channelId                                                                              | close a channel

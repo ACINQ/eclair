@@ -177,6 +177,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
   def reply(to: ActorRef, e: PaymentResult) = {
     to ! e
+    context.parent ! e
     context.system.eventStream.publish(e)
   }
 
@@ -193,7 +194,8 @@ object PaymentLifecycle {
     * @param finalCltvExpiry by default we choose finalCltvExpiry = Channel.MIN_CLTV_EXPIRY + 1 to not have our htlc fail when a new block has just been found
     * @param maxFeePct set by default to 3% as a safety measure (even if a route is found, if fee is higher than that payment won't be attempted)
     */
-  case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY + 1, maxAttempts: Int = 5, maxFeePct: Double = 0.03) {
+  case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+      finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY + 1, maxAttempts: Int = 5, maxFeePct: Double = 0.03, async: Boolean=false) {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
   case class CheckPayment(paymentHash: BinaryData)

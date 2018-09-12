@@ -254,15 +254,17 @@ trait Service extends Logging {
                         case _ => reject(UnknownParamsRejection(req.id, "[payment_request] or [nodeId]"))
                       }
 
-                      case "send" => req.params match {
+                      case command@("send" | "sendasync") => req.params match {
                         // user manually sets the payment information
                         case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
                           (Try(BinaryData(paymentHash)), Try(PublicKey(nodeId))) match {
-                            case (Success(ph), Success(pk)) => completeRpcFuture(req.id, (paymentInitiator ?
+                            case (Success(ph), Success(pk)) if command=="send" => completeRpcFuture(req.id, (paymentInitiator ?
                               SendPayment(amountMsat.toLong, ph, pk, maxFeePct = nodeParams.maxPaymentFee)).mapTo[PaymentResult].map {
-                              case s: PaymentSucceeded => s
-                              case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
-                            })
+                                case s: PaymentSucceeded => s
+                                case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
+                              })
+                            case (Success(ph), Success(pk)) if command=="sendasync" => completeRpcFuture(req.id, (paymentInitiator ?
+                                SendPayment(amountMsat.toLong, ph, pk, maxFeePct = nodeParams.maxPaymentFee, async=true)).mapTo[SendPaymentId])
                             case (Failure(_), _) => reject(RpcValidationRejection(req.id, s"invalid payment hash '$paymentHash'"))
                             case _ => reject(RpcValidationRejection(req.id, s"invalid node id '$nodeId'"))
                           }
@@ -282,56 +284,64 @@ trait Service extends Logging {
                               case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, maxFeePct = nodeParams.maxPaymentFee)
                               case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry, maxFeePct = nodeParams.maxPaymentFee)
                             }
-                            completeRpcFuture(req.id, (paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
-                              case s: PaymentSucceeded => s
-                              case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
-                            })
+                            command match {
+                              case "send"=> completeRpcFuture(req.id, (paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
+                                case s: PaymentSucceeded => s
+                                case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
+                                })
+                              case "sendasync" => completeRpcFuture(req.id, (paymentInitiator ? sendPayment.copy(async=true)).mapTo[SendPaymentId])
+                            }
                           case _ => reject(RpcValidationRejection(req.id, s"payment request is not valid"))
                         }
                         case _ => reject(UnknownParamsRejection(req.id, "[amountMsat, paymentHash, nodeId or [paymentRequest] or [paymentRequest, amountMsat]"))
                       }
 
-                        // check received payments
-                        case "checkpayment" => req.params match {
-                          case JString(identifier) :: Nil => completeRpcFuture(req.id, for {
-                            paymentHash <- Try(PaymentRequest.read(identifier)) match {
-                              case Success(pr) => Future.successful(pr.paymentHash)
-                              case _ => Try(BinaryData(identifier)) match {
-                                case Success(s) => Future.successful(s)
-                                case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
-                              }
-                            }
-                            found <- (paymentHandler ? CheckPayment(paymentHash)).map(found => new JBool(found.asInstanceOf[Boolean]))
-                          } yield found)
-                          case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
-                        }
-
-                        // retrieve audit events
-                        case "audit" =>
-                          val (from, to) = req.params match {
-                            case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
-                            case _ => (0L, Long.MaxValue)
-                          }
-                          completeRpcFuture(req.id, Future(AuditResponse(
-                            sent = nodeParams.auditDb.listSent(from, to),
-                            received = nodeParams.auditDb.listReceived(from, to),
-                            relayed = nodeParams.auditDb.listRelayed(from, to))
-                          ))
-
-                        case "networkfees" =>
-                          val (from, to) = req.params match {
-                            case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
-                            case _ => (0L, Long.MaxValue)
-                          }
-                          completeRpcFuture(req.id, Future(nodeParams.auditDb.listNetworkFees(from, to)))
-
-                        // retrieve fee stats
-                        case "channelstats" => completeRpcFuture(req.id, Future(nodeParams.auditDb.stats))
-
-
-                        // method name was not found
-                        case _ => reject(UnknownMethodRejection(req.id))
+                      // check SENT payments
+                      case "checksentpayment" => req.params match {
+                        case JString(id) :: Nil => completeRpcFuture(req.id, (paymentInitiator ? SendPaymentId(id.toLong)).mapTo[CheckSendPaymentResult])
+                        case _ => reject(UnknownParamsRejection(req.id, "[sentPaymentId]"))
                       }
+                      
+                      //check received payments
+                      case "checkpayment" => req.params match {
+                        case JString(identifier) :: Nil => completeRpcFuture(req.id, for {
+                          paymentHash <- Try(PaymentRequest.read(identifier)) match {
+                            case Success(pr) => Future.successful(pr.paymentHash)
+                            case _ => Try(BinaryData(identifier)) match {
+                              case Success(s) => Future.successful(s)
+                              case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
+                            }
+                          }
+                          found <- (paymentHandler ? CheckPayment(paymentHash)).map(found => new JBool(found.asInstanceOf[Boolean]))
+                        } yield found)
+                        case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
+                      }
+                      
+                      // retrieve audit events
+                      case "audit" =>
+                        val (from, to) = req.params match {
+                          case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
+                          case _ => (0L, Long.MaxValue)
+                        }
+                        completeRpcFuture(req.id, Future(AuditResponse(
+                          sent = nodeParams.auditDb.listSent(from, to),
+                          received = nodeParams.auditDb.listReceived(from, to),
+                          relayed = nodeParams.auditDb.listRelayed(from, to))
+                        ))
+
+                      case "networkfees" =>
+                        val (from, to) = req.params match {
+                          case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
+                          case _ => (0L, Long.MaxValue)
+                        }
+                        completeRpcFuture(req.id, Future(nodeParams.auditDb.listNetworkFees(from, to)))
+
+                      // retrieve fee stats
+                      case "channelstats" => completeRpcFuture(req.id, Future(nodeParams.auditDb.stats))
+
+                      // method name was not found
+                      case _ => reject(UnknownMethodRejection(req.id))
+                    }
                   }
                 }
               }
@@ -383,6 +393,8 @@ trait Service extends Logging {
     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
     "send (paymentRequest): send a payment to a lightning node using a BOLT11 payment request",
     "send (paymentRequest, amountMsat): send a payment to a lightning node using a BOLT11 payment request and a custom amount",
+    "sendasync - as send but returns an ID so status can be polled later",
+    "checksentpayment (sentpaymentid): returns result of sendasync",
     "close (channelId): close a channel",
     "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
     "forceclose (channelId): force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)",
