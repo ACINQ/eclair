@@ -20,7 +20,7 @@
 
     <groupId>fr.acinq.eclair</groupId>
     <artifactId>eclair_2.11</artifactId>
-    <version>0.2-android-beta10</version>
+    <version>0.2-android-beta11</version>
     <packaging>pom</packaging>
 
     <modules>
