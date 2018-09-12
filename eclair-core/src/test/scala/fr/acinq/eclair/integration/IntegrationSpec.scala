@@ -264,6 +264,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     awaitCond({
       sender.send(nodes("A").router, 'updatesMap)
       val u = sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
+      println(s"u=$u")
       u.cltvExpiryDelta == 144
     }, max = 30 seconds, interval = 1 second)
   }
