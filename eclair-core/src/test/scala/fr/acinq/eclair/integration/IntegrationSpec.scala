@@ -257,10 +257,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // A will receive an error from B that include the updated channel update, then will retry the payment
     sender.expectMsgType[PaymentSucceeded](5 seconds)
     // in the meantime, the router will have updated its state
-    awaitCond({
-      sender.send(nodes("A").router, 'updates)
-      sender.expectMsgType[Iterable[ChannelUpdate]].toSeq.contains(channelUpdateBC)
-    }, max = 20 seconds, interval = 1 second)
+     sender.send(nodes("A").router, 'updates)
+    sender.expectMsgType[Iterable[ChannelUpdate]].toSeq.contains(channelUpdateBC)
     // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, TickRefreshChannelUpdate))
     awaitCond({
@@ -269,7 +267,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
         .find(u => u.shortChannelId == channelUpdateBC.shortChannelId && u.flags == channelUpdateBC.flags)
           .get
       u.cltvExpiryDelta == 144
-    }, max = 20 seconds, interval = 1 second)
+    }, max = 60 seconds, interval = 1 second)
   }
 
   test("send an HTLC A->D with an amount greater than capacity of B-C") {
