@@ -1469,8 +1469,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     // we receive this when we send command to ourselves
     case Event("ok", _) => stay
 
-    // when we realize we need to update our network fees, we send a CMD_UPDATE_FEE to ourselves, this can be ignored
+    // when we realize we need to update our network fees, we send a CMD_UPDATE_FEE to ourselves which may result in this error being sent back to ourselves, this can be ignored
     case Event(Status.Failure(_: CannotAffordFees), _) => stay
+
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: HasCommitments) if tx.txid == d.commitments.localCommit.publishableTxs.commitTx.tx.txid =>
+      log.warning(s"processing local commit spent in catch-all handler")
+      spendLocalCurrent(d)
   }
 
   onTransition {
