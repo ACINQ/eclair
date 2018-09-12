@@ -36,7 +36,7 @@ import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
 import fr.acinq.eclair.payment.{LocalPaymentHandler, PaymentRequest}
-import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
+import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, ChannelDesc}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
@@ -257,17 +257,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // A will receive an error from B that include the updated channel update, then will retry the payment
     sender.expectMsgType[PaymentSucceeded](5 seconds)
     // in the meantime, the router will have updated its state
-     sender.send(nodes("A").router, 'updates)
-    sender.expectMsgType[Iterable[ChannelUpdate]].toSeq.contains(channelUpdateBC)
+    sender.send(nodes("A").router, 'updatesMap)
+    assert(sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)) === channelUpdateBC)
     // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, TickRefreshChannelUpdate))
     awaitCond({
-      sender.send(nodes("A").router, 'updates)
-      val u = sender.expectMsgType[Iterable[ChannelUpdate]].toSeq
-        .find(u => u.shortChannelId == channelUpdateBC.shortChannelId && u.flags == channelUpdateBC.flags)
-          .get
+      sender.send(nodes("A").router, 'updatesMap)
+      val u = sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
       u.cltvExpiryDelta == 144
-    }, max = 60 seconds, interval = 1 second)
+    }, max = 30 seconds, interval = 1 second)
   }
 
   test("send an HTLC A->D with an amount greater than capacity of B-C") {
