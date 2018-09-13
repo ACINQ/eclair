@@ -36,7 +36,7 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
 
   using(sqlite.createStatement()) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending (payment_hash BLOB NOT NULL UNIQUE, peer_node_id BLOB NOT NULL, target_node_id BLOB NOT NULL, peer_cltv_delta INTEGER NOT NULL, added INTEGER NOT NULL, delay INTEGER NOT NULL, expiry INTEGER NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending (payment_hash BLOB NOT NULL UNIQUE, peer_node_id BLOB NOT NULL, target_node_id BLOB NOT NULL, peer_cltv_delta INTEGER NOT NULL, added INTEGER NOT NULL, delay INTEGER NOT NULL, expiry INTEGER NOT NULL, UNIQUE (payment_hash, peer_node_id) ON CONFLICT IGNORE)")
 
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON pending(payment_hash)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS target_node_id_idx ON pending(target_node_id)")
@@ -58,10 +58,11 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
     }
   }
 
-  override def updateDelay(paymentHash: BinaryData, delay: Long): Unit = {
-    using (sqlite.prepareStatement("UPDATE pending SET delay=? WHERE payment_hash=?")) { update =>
+  override def updateDelay(paymentHash: BinaryData, peerNodeId: PublicKey, delay: Long): Unit = {
+    using (sqlite.prepareStatement("UPDATE pending SET delay=? WHERE payment_hash=? AND peer_node_id=?")) { update =>
       update.setLong(1, delay)
       update.setBytes(2, paymentHash)
+      update.setBytes(3, peerNodeId.toBin)
       update.executeUpdate()
     }
   }

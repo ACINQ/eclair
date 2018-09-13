@@ -26,7 +26,7 @@ trait PendingPaymentDb {
   def add(paymentHash: BinaryData, peerNodeId: PublicKey, targetNodeId: PublicKey,
           peerCltvDelta: Long, added: Long, delay: Long, expiry: Long)
 
-  def updateDelay(paymentHash: BinaryData, delay: Long)
+  def updateDelay(paymentHash: BinaryData, peerNodeId: PublicKey, delay: Long)
 
   def listDelays(targetNodeId: PublicKey, sinceBlockHeight: Long): Seq[Long]
 

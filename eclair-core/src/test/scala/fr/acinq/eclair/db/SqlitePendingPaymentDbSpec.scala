@@ -54,12 +54,25 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
 
     db.add(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
     db.add(paymentHash2, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
-    db.updateDelay(paymentHash1, delay = 1840)
-    db.updateDelay(paymentHash2, delay = 1740)
+    db.updateDelay(paymentHash1, peerNodeId, delay = 1840)
+    db.updateDelay(paymentHash2, peerNodeId, delay = 1740)
 
     assert(db.listDelays(targetNodeId2, 1420) == Seq(300)) // delayed by 300 blocks
     assert(db.listDelays(targetNodeId1, 1420) == Nil) // Peer is to blame
     assert(db.listBadPeers(1420) == Seq(peerNodeId))
+  }
+
+  test("ignore same payment for same peer node") {
+    val sqlite = inmem
+    val db = new SqlitePendingPaymentDb(sqlite)
+
+    db.add(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1540, expiry = 1900)
+    db.add(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1540, delay = 1740, expiry = 2000)
+    assert(db.listDelays(targetNodeId1, 1420) == Seq(100))
+
+    db.updateDelay(paymentHash2, peerNodeId, delay = 1440)
+    db.updateDelay(paymentHash1, peerNodeId, delay = 1740)
+    assert(db.listDelays(targetNodeId1, 1420) == Seq(300))
   }
 
   test("list bad peers") {
@@ -68,8 +81,8 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
 
     db.add(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
     db.add(paymentHash2, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
-    db.updateDelay(paymentHash1, delay = 1840)
-    db.updateDelay(paymentHash2, delay = 1840)
+    db.updateDelay(paymentHash1, peerNodeId, delay = 1840)
+    db.updateDelay(paymentHash2, peerNodeId, delay = 1840)
 
     assert(db.listBadPeers(1420) == Seq(peerNodeId, peerNodeId)) // This peer has delayed our payment twice since block 1420
   }
@@ -84,12 +97,12 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
     db.add(paymentHash4, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
     db.add(paymentHash5, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
     db.add(paymentHash6, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
-    db.updateDelay(paymentHash1, delay = 1452) // an outlier
-    db.updateDelay(paymentHash2, delay = 1443)
-    db.updateDelay(paymentHash3, delay = 1444)
-    db.updateDelay(paymentHash4, delay = 1445)
-    db.updateDelay(paymentHash5, delay = 1446)
-    db.updateDelay(paymentHash6, delay = 1447)
+    db.updateDelay(paymentHash1, peerNodeId, delay = 1452) // an outlier
+    db.updateDelay(paymentHash2, peerNodeId, delay = 1443)
+    db.updateDelay(paymentHash3, peerNodeId, delay = 1444)
+    db.updateDelay(paymentHash4, peerNodeId, delay = 1445)
+    db.updateDelay(paymentHash5, peerNodeId, delay = 1446)
+    db.updateDelay(paymentHash6, peerNodeId, delay = 1447)
 
     val expected = RiskInfo(targetNodeId1, 1420, 6, 6.166666666666667, 5.82141639885766, Seq(12, 3, 5, 6), Seq(12))
     assert(db.riskInfo(targetNodeId1, sinceBlockHeight = 1420, sdTimes = 2).contains(expected))

@@ -27,7 +27,7 @@ class NoopPendingPaymentDb extends PendingPaymentDb {
   override def add(paymentHash: BinaryData, peerNodeId: PublicKey, targetNodeId: PublicKey,
           peerCltvDelta: Long, added: Long, delay: Long, expiry: Long): Unit = ()
 
-  override def updateDelay(paymentHash: BinaryData, delay: Long): Unit = ()
+  override def updateDelay(paymentHash: BinaryData, peerNodeId: PublicKey, delay: Long): Unit = ()
 
   override def listDelays(targetNodeId: PublicKey, sinceBlockHeight: Long): Seq[Long] = Nil
 

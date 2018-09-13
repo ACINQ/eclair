@@ -1275,7 +1275,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // note: this can only happen if state is NORMAL or SHUTDOWN
       // -> in NEGOTIATING there are no more htlcs
       // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
-      d.commitments.pendingOutgoingHtlcs.foreach(htlc => nodeParams.pendingPaymentDb.updateDelay(htlc.add.paymentHash, count))
+      d.commitments.pendingOutgoingHtlcs.foreach(htlc => nodeParams.pendingPaymentDb.updateDelay(htlc.add.paymentHash, d.commitments.remoteParams.nodeId, count))
       if (d.commitments.hasTimedoutOutgoingHtlcs(count)) handleLocalError(HtlcTimedout(d.channelId), d, Some(c)) else stay
 
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
@@ -1395,7 +1395,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
 
     case Event(c@CurrentBlockCount(count), d: HasCommitments) =>
-      d.commitments.pendingOutgoingHtlcs.foreach(htlc => nodeParams.pendingPaymentDb.updateDelay(htlc.add.paymentHash, count))
+      d.commitments.pendingOutgoingHtlcs.foreach(htlc => nodeParams.pendingPaymentDb.updateDelay(htlc.add.paymentHash, d.commitments.remoteParams.nodeId, count))
       if (d.commitments.hasTimedoutOutgoingHtlcs(count)) handleLocalError(HtlcTimedout(d.channelId), d, Some(c)) else stay
 
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
