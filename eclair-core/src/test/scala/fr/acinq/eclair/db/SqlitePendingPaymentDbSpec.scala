@@ -37,6 +37,10 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
   val targetNodeId2 = PublicKey(BinaryData("0x03a214ebd875aab6ddfd77f22c5e7311d7f77f17a169e599f157bbcdae8bf071f4"))
   val paymentHash1 = BinaryData("0001020304050607080900010203040506070809000102030405060708090102")
   val paymentHash2 = BinaryData("0001020304050607080900010203040506070809000102030405060708090104")
+  val paymentHash3 = BinaryData("0001020304050607080900010203040506070809000102030405060708090106")
+  val paymentHash4 = BinaryData("0001020304050607080900010203040506070809000102030405060708090108")
+  val paymentHash5 = BinaryData("0001020304050607080900010203040506070809000102030405060708090110")
+  val paymentHash6 = BinaryData("0001020304050607080900010203040506070809000102030405060708090112")
 
   test("init sqlite 2 times in a row") {
     val sqlite = inmem
@@ -68,5 +72,25 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
     db.updateDelay(paymentHash2, delay = 1840)
 
     assert(db.listBadPeers(1420) == Seq(peerNodeId, peerNodeId)) // This peer has delayed our payment twice since block 1420
+  }
+
+  test("risk evaluation") {
+    val sqlite = inmem
+    val db = new SqlitePendingPaymentDb(sqlite)
+
+    db.add(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.add(paymentHash2, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.add(paymentHash3, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.add(paymentHash4, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.add(paymentHash5, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.add(paymentHash6, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.updateDelay(paymentHash1, delay = 1452) // an outlier
+    db.updateDelay(paymentHash2, delay = 1443)
+    db.updateDelay(paymentHash3, delay = 1444)
+    db.updateDelay(paymentHash4, delay = 1445)
+    db.updateDelay(paymentHash5, delay = 1446)
+    db.updateDelay(paymentHash6, delay = 1447)
+
+    println(db.riskInfo(targetNodeId1, sinceBlockHeight = 1420, sdTimes = 2))
   }
 }

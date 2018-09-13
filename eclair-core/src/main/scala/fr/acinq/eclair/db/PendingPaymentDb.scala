@@ -30,5 +30,9 @@ trait PendingPaymentDb {
 
   def listDelays(targetNodeId: PublicKey, sinceBlockHeight: Long): Seq[Long]
 
+  def riskInfo(targetNodeId: PublicKey, sinceBlockHeight: Long, sdTimes: Double): Option[RiskInfo]
+
   def listBadPeers(sinceBlockHeight: Long): Seq[PublicKey]
 }
+
+case class RiskInfo(targetNodeId: PublicKey, sinceBlockHeight: Long, total: Long, mean: Double, sdTimes: Double, delays: Seq[Long], adjusted: Seq[Long])

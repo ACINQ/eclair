@@ -331,12 +331,12 @@ trait Service extends Logging {
                           } yield htlcs
                           completeRpcFuture(req.id, f.map(_.flatten))
 
-                        case "sentdelayed" => req.params match {
-                          case JString(payeeNodeId) :: JInt(sinceBlockHeight) :: Nil => Try(PublicKey(payeeNodeId)) match {
-                            case Success(pk) => completeRpcFuture(req.id, Future.successful(nodeParams.pendingPaymentDb.listDelays(pk, sinceBlockHeight.toLong)))
+                        case "riskinfo" => req.params match {
+                          case JString(payeeNodeId) :: JInt(sinceBlockHeight) :: JString(sdTimes) :: Nil => Try(PublicKey(payeeNodeId)) match {
+                            case Success(pk) => completeRpcFuture(req.id, Future.successful(nodeParams.pendingPaymentDb.riskInfo(pk, sinceBlockHeight.toLong, sdTimes.toDouble)))
                             case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid payeeNodeId '$payeeNodeId'"))
                           }
-                          case _ => reject(UnknownParamsRejection(req.id, "[payeeNodeId, sinceBlockHeight]"))
+                          case _ => reject(UnknownParamsRejection(req.id, "[payeeNodeId, sinceBlockHeight, standardDeviationTimes]"))
                         }
 
                         case "badpeers" => req.params match {
@@ -445,7 +445,7 @@ trait Service extends Logging {
     "sentinfo (paymentHash): returns extended info about sent payment",
     "sentinfo (paymentRequest): returns extended info about sent payment",
     "sentpending: list all outgoing payments which are pending currently, this includes sent as well as routed payments",
-    "sentdelayed (payeeNodeId, sinceBlockHeight): list all outgoing locally initiated payments which were delayed when sent to a given payee since a given blockchain height",
+    "riskinfo (payeeNodeId, sinceBlockHeight, standardDeviationTimes): show a risk info about a given payee since a given blockchain height",
     "badpeers: list direct peers which did not fail our outgoing payments when they should have done that",
     "audit: list all send/received/relayed payments",
     "audit (from, to): list send/received/relayed payments in that interval (from <= timestamp < to)",

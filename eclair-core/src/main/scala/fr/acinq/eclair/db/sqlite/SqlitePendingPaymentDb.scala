@@ -20,7 +20,7 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.db.PendingPaymentDb
+import fr.acinq.eclair.db.{PendingPaymentDb, RiskInfo}
 
 import scala.collection.immutable.Queue
 
@@ -68,7 +68,8 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
 
   override def listDelays(targetNodeId: PublicKey, sinceBlockHeight: Long): Seq[Long] = {
     // "expiry - delay > peer_cltv_delta" to exclude cases where payment is delayed by our direct peer so payee has nothing to do with it
-    using(sqlite.prepareStatement("SELECT delay - added AS delayed FROM pending WHERE target_node_id = ? AND added > ? AND expiry - delay > peer_cltv_delta AND delayed > 0")) { statement =>
+    // "delayed > 1" because a delay of one block may be caused naturally when another block appears while normal payment is in flight
+    using(sqlite.prepareStatement("SELECT delay - added AS delayed FROM pending WHERE target_node_id = ? AND added > ? AND delayed > 1 AND expiry - delay > peer_cltv_delta")) { statement =>
       statement.setBytes(1, targetNodeId.toBin)
       statement.setLong(2, sinceBlockHeight)
       val rs = statement.executeQuery()
@@ -90,6 +91,31 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
         q = q :+ PublicKey(rs.getBytes("peer_node_id"))
       }
       q
+    }
+  }
+
+  override def riskInfo(targetNodeId: PublicKey, sinceBlockHeight: Long, sdTimes: Double): Option[RiskInfo] = {
+    using(sqlite.prepareStatement(
+      """
+        |SELECT mean.value AS average, count(payment_hash) AS total, AVG((delay - added - mean.value) * (delay - added - mean.value)) AS variance
+        |FROM pending, (SELECT AVG(delay - added) AS value FROM pending WHERE added > ? AND delay - added > 1) AS mean
+        |WHERE added > ? AND delay - added > 1
+      """.stripMargin)) { statement =>
+
+      statement.setLong(1, sinceBlockHeight)
+      statement.setLong(2, sinceBlockHeight)
+
+      val rs = statement.executeQuery()
+      if (rs.next()) {
+        val total = rs.getLong("total")
+        val mean = rs.getDouble("average")
+        val sd = math.sqrt(rs.getDouble("variance"))
+        val delays = listDelays(targetNodeId, sinceBlockHeight)
+        val adjusted = delays.filter(_ >= mean + sd * sdTimes)
+        Some(RiskInfo(targetNodeId, sinceBlockHeight, total, mean, sd * sdTimes, delays, adjusted))
+      } else {
+        None
+      }
     }
   }
 }
