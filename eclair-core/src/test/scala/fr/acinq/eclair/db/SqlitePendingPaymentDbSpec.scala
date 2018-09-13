@@ -91,6 +91,7 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
     db.updateDelay(paymentHash5, delay = 1446)
     db.updateDelay(paymentHash6, delay = 1447)
 
-    println(db.riskInfo(targetNodeId1, sinceBlockHeight = 1420, sdTimes = 2))
+    val expected = RiskInfo(targetNodeId1, 1420, 6, 6.166666666666667, 5.82141639885766, Seq(12, 3, 5, 6), Seq(12))
+    assert(db.riskInfo(targetNodeId1, sinceBlockHeight = 1420, sdTimes = 2).contains(expected))
   }
 }
