@@ -39,7 +39,6 @@ import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.utils.Version
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 
@@ -111,14 +110,13 @@ class Setup(datadir: File,
       } yield (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
       // blocking sanity checks
       val (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
-      assert(Version(bitcoinVersion) >= Version("0.16.0"), "Eclair requires Bitcoin Core 0.16.0 or higher")
+      assert(bitcoinVersion.startsWith("16"), "Eclair requires Bitcoin Core 0.16.0 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
         assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Make sure that all your UTXOS are segwit UTXOS and not p2pkh (check out our README for more details)")
       }
-      val maxUnsyncBlocks = config.getInt("bitcoind.max-unsync-blocks")
-      logger.info(s"progress=$progress blocks=$blocks headers=$headers, maxUnsyncBlocks=$maxUnsyncBlocks")
-      assert(progress > 0.999 && headers - blocks <= maxUnsyncBlocks, "bitcoind should be synchronized")
+      assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress")
+      assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks")
       // TODO: add a check on bitcoin version?
 
       Bitcoind(bitcoinClient)
