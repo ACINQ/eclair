@@ -112,19 +112,25 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
         case Success(e@ErrorPacket(nodeId, failureMessage: Update)) =>
           log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
           if (Announcements.checkSig(failureMessage.update, nodeId)) {
-            // note that we check the sig, but we don't make sure that this update was for the exact channel we required
-            // the reason is that we don't want to prevent relaying nodes to use another channel to the same N+1 node if they deem necessary
-            failureMessage match {
-              case _: TemporaryChannelFailure =>
-                // node indicates that its outgoing channel is experiencing a transient issue (eg. channel capacity reached, too many in-flight htlc)
-                hops.find(_.nodeId == nodeId).map(_.lastUpdate) match {
-                  case Some(u) if u.copy(signature = BinaryData.empty, timestamp = 0) == failureMessage.update.copy(signature = BinaryData.empty, timestamp = 0) =>
-                    // node returned the exact same update we used: in that case, let's temporarily exclude the channel from future routes, giving it time to recover
-                    val nextNodeId = hops.find(_.nodeId == nodeId).get.nextNodeId
-                    router ! ExcludeChannel(ChannelDesc(failureMessage.update.shortChannelId, nodeId, nextNodeId))
-                  case _ => // node returned a different update, maybe the payment will go through next time...
-                }
-              case _ => {}
+            getChannelUpdateForNode(nodeId, hops) match {
+              case Some(u) if u.shortChannelId != failureMessage.update.shortChannelId =>
+                // it is possible that nodes in the route prefer using a different channel (to the same N+1 node) than the one we requested, that's fine
+                log.info(s"received an update for a different channel than the one we asked: requested=${u.shortChannelId} actual=${failureMessage.update.shortChannelId} update=${failureMessage.update}")
+              case Some(u) if areSame(u, failureMessage.update) =>
+                // node returned the exact same update we used, this can happen e.g. if the channel is imbalanced
+                // in that case, let's temporarily exclude the channel from future routes, giving it time to recover
+                log.info(s"received exact same update from nodeId=$nodeId, excluding the channel from futures routes")
+                val nextNodeId = hops.find(_.nodeId == nodeId).get.nextNodeId
+                router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, nextNodeId))
+              case Some(u) if hasAlreadyFailedOnce(nodeId, failures) =>
+                // this node had already given us a new channel update and is still unhappy, it is probably messing with us, let's exclude it
+                log.warning(s"it is the second time nodeId=$nodeId answers with a new update, excluding it: old=$u new=${failureMessage.update}")
+                val nextNodeId = hops.find(_.nodeId == nodeId).get.nextNodeId
+                router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, nextNodeId))
+              case Some(u) =>
+                log.info(s"got a new update for shortChannelId=${u.shortChannelId}: old=$u new=${failureMessage.update}")
+              case None =>
+                log.error(s"couldn't find a channel update for node=$nodeId, this should never happen")
             }
             // in any case, we forward the update to the router
             router ! failureMessage.update
@@ -274,4 +280,38 @@ object PaymentLifecycle {
       case other => other
     }
   }
+
+  /**
+    * This method retrieves the channel update that we used when we built a route.
+    *
+    * It just iterates over the hops, but there are at most 20 of them.
+    *
+    * @param nodeId
+    * @param hops
+    * @return the channel update if found
+    */
+  def getChannelUpdateForNode(nodeId: PublicKey, hops: Seq[Hop]): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.lastUpdate)
+
+  /**
+    * This method compares channel updates, ignoring fields that don't matter, like signature or timestamp
+    *
+    * @param u1
+    * @param u2
+    * @return true if channel updates are "equal"
+    */
+  def areSame(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
+    u1.copy(signature = BinaryData.empty, timestamp = 0) == u2.copy(signature = BinaryData.empty, timestamp = 0)
+
+  /**
+    * This allows us to detect if a bad node always answers with a new update (e.g. with a slightly different expiry or fee)
+    * in order to mess with us.
+    *
+    * @param nodeId
+    * @param failures
+    * @return
+    */
+  def hasAlreadyFailedOnce(nodeId: PublicKey, failures: Seq[PaymentFailure]): Boolean =
+    failures
+      .collectFirst { case RemoteFailure(_, ErrorPacket(origin, u: Update)) if origin == nodeId => u.update }
+      .isDefined
 }

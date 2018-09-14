@@ -28,14 +28,15 @@ import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, BinaryData, Block, Crypto,
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
-import fr.acinq.eclair.channel.Register.Forward
+import fr.acinq.eclair.channel.Channel.TickRefreshChannelUpdate
+import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
 import fr.acinq.eclair.payment.{LocalPaymentHandler, PaymentRequest}
-import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
+import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, ChannelDesc}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
@@ -233,16 +234,20 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.expectMsgType[PaymentSucceeded]
   }
 
-  // TODO: reenable this test
-  ignore("send an HTLC A->D with an invalid expiry delta for B") {
+  test("send an HTLC A->D with an invalid expiry delta for B") {
     val sender = TestProbe()
     // to simulate this, we will update B's relay params
     // first we find out the short channel id for channel B-C
     sender.send(nodes("B").router, 'channels)
     val shortIdBC = sender.expectMsgType[Iterable[ChannelAnnouncement]].find(c => Set(c.nodeId1, c.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)).get.shortChannelId
+    // we also need the full commitment
+    sender.send(nodes("B").register, ForwardShortId(shortIdBC, CMD_GETINFO))
+    val commitmentBC = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].commitments
+    // we then forge a new channel_update for B-C...
     val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.nodeId, shortIdBC, nodes("B").nodeParams.expiryDeltaBlocks + 1, nodes("C").nodeParams.htlcMinimumMsat, nodes("B").nodeParams.feeBaseMsat, nodes("B").nodeParams.feeProportionalMillionth)
-    sender.send(nodes("B").relayer, channelUpdateBC)
-    // first we retrieve a payment hash from D
+    // ...and notify B's relayer
+    sender.send(nodes("B").relayer, LocalChannelUpdate(system.deadLetters, commitmentBC.channelId, shortIdBC, commitmentBC.remoteParams.nodeId, None, channelUpdateBC, commitmentBC))
+    // we retrieve a payment hash from D
     val amountMsat = MilliSatoshi(4200000)
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
@@ -252,10 +257,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // A will receive an error from B that include the updated channel update, then will retry the payment
     sender.expectMsgType[PaymentSucceeded](5 seconds)
     // in the meantime, the router will have updated its state
+    sender.send(nodes("A").router, 'updatesMap)
+    assert(sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)) === channelUpdateBC)
+    // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
+    sender.send(nodes("B").register, ForwardShortId(shortIdBC, TickRefreshChannelUpdate))
     awaitCond({
-      sender.send(nodes("A").router, 'updates)
-      sender.expectMsgType[Iterable[ChannelUpdate]].toSeq.contains(channelUpdateBC)
-    }, max = 20 seconds, interval = 1 second)
+      sender.send(nodes("A").router, 'updatesMap)
+      val u = sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
+      u.cltvExpiryDelta == 144
+    }, max = 30 seconds, interval = 1 second)
   }
 
   test("send an HTLC A->D with an amount greater than capacity of B-C") {
