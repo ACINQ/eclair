@@ -1,17 +1,18 @@
 package fr.acinq.eclair.router
 
 import akka.actor.{Actor, ActorRef, Props}
-import akka.testkit.TestProbe
+import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{ValidateRequest, ValidateResult, WatchSpentBasic}
+import fr.acinq.eclair.crypto.TransportHandler.ReadAck
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement, RoutingMessage}
+import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -23,16 +24,18 @@ class RoutingSyncSpec extends TestkitBaseClass {
   import RoutingSyncSpec._
 
   val txid = BinaryData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+  val idA = PrivateKey(BinaryData("01"  *32), true).publicKey
+  val idB = PrivateKey(BinaryData("02"  *32), true).publicKey
 
   type FixtureParam = Tuple3[ActorRef, ActorRef, ActorRef]
 
   val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(500)
 
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
-  // A will be missing the last 1000 items
+  // A will be missing the last 100 items
   val routingInfoA = fakeRoutingInfo.dropRight(100)
-  // and B will be missing the first 1000 items
-  val routingInfoB = fakeRoutingInfo.drop(100)
+  // and B will be missing the first 100 items
+  val routingInfoB = fakeRoutingInfo.drop(200)
 
   class FakeWatcher extends Actor {
     def receive = {
@@ -56,15 +59,7 @@ class RoutingSyncSpec extends TestkitBaseClass {
         paramsA.networkDb.addNode(n1)
         paramsA.networkDb.addNode(n2)
     }
-    val probe = TestProbe()
-    val switchboard = system.actorOf(Props(new Actor {
-      override def receive: Receive = {
-        case msg => probe.ref forward msg
-      }
-    }), "switchboard")
-
     val routerA = system.actorOf(Props(new Router(paramsA, watcherA)), "routerA")
-    val idA = PrivateKey(BinaryData("01"  *32), true).publicKey
 
     val watcherB = system.actorOf(Props(new FakeWatcher()))
     val paramsB = Bob.nodeParams
@@ -77,9 +72,8 @@ class RoutingSyncSpec extends TestkitBaseClass {
         paramsB.networkDb.addNode(n2)
     }
     val routerB = system.actorOf(Props(new Router(paramsB, watcherB)), "routerB")
-    val idB = PrivateKey(BinaryData("02"  *32), true).publicKey
 
-    val pipe = system.actorOf(Props(new RoutingSyncSpec.Pipe(routerA, idA, routerB, idA)))
+    val pipe = system.actorOf(Props(new RoutingSyncSpec.Pipe(routerA, idA, routerB, idB)))
     val sender = TestProbe()
     awaitCond({
       sender.send(routerA, 'channels)
@@ -95,8 +89,8 @@ class RoutingSyncSpec extends TestkitBaseClass {
       Globals.blockCount.set(shortChannelIds.map(id => ShortChannelId.coordinates(id).blockHeight).max)
 
       val sender = TestProbe()
-      routerA ! SendChannelQuery(Alice.nodeParams.nodeId, pipe)
-      routerB ! SendChannelQuery(Bob.nodeParams.nodeId, pipe)
+      routerA ! SendChannelQuery(idB, pipe)
+      routerB ! SendChannelQuery(idA, pipe)
 
       awaitCond({
         sender.send(routerA, 'channels)
@@ -104,9 +98,40 @@ class RoutingSyncSpec extends TestkitBaseClass {
         sender.send(routerB, 'channels)
         val channelsB = sender.expectMsgType[Iterable[ChannelAnnouncement]]
         channelsA.toSet == channelsB.toSet
+        channelsA.size == fakeRoutingInfo.size
       }, max = 30 seconds)
     }
   }
+
+  test("handle split range replies") {
+    case (routerA, _, _) => {
+      Globals.blockCount.set(shortChannelIds.map(id => ShortChannelId.coordinates(id).blockHeight).max)
+
+      val sender = TestProbe()
+      sender.ignoreMsg {
+        case ReadAck(_) => true
+      }
+      val routerB =  TestFSMRef(new Router(Bob.nodeParams, TestProbe().ref), "routerBB")
+      routerB ! SendChannelQuery(Alice.nodeParams.nodeId, sender.ref)
+      val query = sender.expectMsgType[QueryChannelRange]
+      sender.expectMsgType[GossipTimestampFilter]
+
+      sender.send(routerA, PeerRoutingMessage(idB, query))
+      val reply1 = sender.expectMsgType[ReplyChannelRange]
+      val reply2 = sender.expectMsgType[ReplyChannelRange]
+
+
+      // tell routerB it's missing 150 channels
+      sender.send(routerB, PeerRoutingMessage(idA, reply1))
+      // now routerB thinks it's missing 150 channels
+      awaitCond(routerB.stateData.sync(idA).count == 150, 3 seconds)
+
+      // tell routerB it's missing another 150 channels
+      sender.send(routerB, PeerRoutingMessage(idA, reply2))
+      awaitCond(routerB.stateData.sync(idA).count == 300, 3 seconds)
+    }
+  }
+
 }
 
 object RoutingSyncSpec {

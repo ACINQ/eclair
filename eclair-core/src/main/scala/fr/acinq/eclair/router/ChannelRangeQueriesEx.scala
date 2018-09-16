@@ -61,22 +61,7 @@ object ChannelRangeQueriesEx {
     out.close()
     bos.toByteArray
   }
-
-  def encodeShortChannelIdAndFlagSingle(shortChannelIds: Iterable[ShortChannelId], flag: ShortChannelId => Byte, format: Byte): BinaryData = {
-    val bos = new ByteArrayOutputStream()
-    bos.write(format)
-    val out = format match {
-      case UNCOMPRESSED_FORMAT => bos
-      case ZLIB_FORMAT => new DeflaterOutputStream(bos)
-    }
-    shortChannelIds.foreach(id => {
-      Protocol.writeUInt64(id.toLong, bos, ByteOrder.BIG_ENDIAN)
-      Protocol.writeUInt8(flag(id), bos)
-    })
-    out.close()
-    bos.toByteArray
-  }
-
+  
   /**
     * Decompress a zipped sequence of sorted [short channel id | timestamp] values.
     *

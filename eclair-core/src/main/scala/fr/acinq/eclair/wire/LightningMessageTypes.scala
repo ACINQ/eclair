@@ -213,7 +213,7 @@ case class QueryShortChannelIds(chainHash: BinaryData,
 /**
   *
   * @param chainHash chain hash
-  * @param flag if flag == 1, don't include send back channel announcements
+  * @param flag if flag == 1, don't send back channel announcements
   * @param data prefix + list of short channel ids, where prefix specifies how the list is encoded
   */
 case class QueryShortChannelIdsEx(chainHash: BinaryData,
