@@ -28,8 +28,8 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.Error
-import fr.acinq.eclair.{ShortChannelId, randomKey}
+import fr.acinq.eclair.wire.{Error, QueryChannelRange}
+import fr.acinq.eclair.{ShortChannelId, TestConstants, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -235,4 +235,11 @@ class RouterSpec extends BaseRouterSpec {
     assert(state.updates.size == 8)
   }
 
+  test("channel range queries") {  case (router, _) =>
+    val sender = TestProbe()
+    sender.send(router, SendChannelQuery(TestConstants.Alice.nodeParams.nodeId, sender.ref))
+    val routinTable = ChannelRangeQueriesSpec.shortChannelIds.take(500).map(RoutingSyncSpec.makeFakeRoutingInfo)
+    val queryChannelRange = sender.expectMsgType[QueryChannelRange]
+    println(queryChannelRange)
+  }
 }

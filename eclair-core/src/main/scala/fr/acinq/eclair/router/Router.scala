@@ -21,7 +21,7 @@ import java.io.StringWriter
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -402,8 +402,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         .recover { case t => sender ! Status.Failure(t) }
       stay
 
-    case Event(SendChannelQuery(remoteNodeId, remote), _) =>
+    case Event(SendChannelQuery(_, remote), _) =>
       // ask for everything
+      // we currently send only one query_channel_range message per peer, when we just (re)connected to it, so we don't
+      // have to worry about sending a new query_channel_range when another query is still in progress
       val query = QueryChannelRange(nodeParams.chainHash, firstBlockNum = 0, numberOfBlocks = Int.MaxValue)
       log.info("sending query_channel_range={}", query)
       remote ! query
@@ -471,8 +473,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       // TODO: we don't compress to be compatible with old mobile apps, switch to ZLIB ASAP
       // Careful: when we remove GZIP support, eclair-wallet 0.3.0 will stop working i.e. channels to ACINQ nodes will not
       // work anymore
-      val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+      val maxCount = if (nodeParams.chainHash == Block.RegtestGenesisBlock.hash) Some(150) else None
+      val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT, maxCount = maxCount)
       log.info("sending back reply_channel_range with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
+      // there could be several reply_channel_range messages for a single query
       val replies = blocks.map(block => ReplyChannelRange(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
       replies.foreach(reply => sender ! reply)
       stay
@@ -484,9 +488,19 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       val missing: SortedSet[ShortChannelId] = theirShortChannelIds -- ourShortChannelIds
       log.info("received reply_channel_range, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
       val d1 = if (missing.nonEmpty) {
-        val (slice, rest) = missing.splitAt(SHORTID_WINDOW)
-        sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, format, useGzip))
-        d.copy(sync = d.sync + (remoteNodeId -> Sync(rest, missing.size)))
+        // they may send back several reply_channel_range messages for a single query_channel_range query, and we must not
+        // send another query_short_channel_ids query if they're still processing one
+        d.sync.get(remoteNodeId) match {
+          case None =>
+            // we don't have a pending query with this peer
+            val (slice, rest) = missing.splitAt(SHORTID_WINDOW)
+            sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, format, useGzip))
+            Sync(rest, missing.size)
+            d.copy(sync = d.sync + (remoteNodeId -> Sync(rest, missing.size)))
+          case Some(sync) =>
+            // we already have a pending query with this peer, add missing ids to our "sync" state
+            d.copy(sync = d.sync + (remoteNodeId -> Sync(sync.missing ++ missing, sync.count + missing.size)))
+        }
       } else d
       context.system.eventStream.publish(syncProgress(d1))
       stay using d1
@@ -512,11 +526,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       log.info("received reply_short_channel_ids_end={}", routingMessage)
       // have we more channels to ask this peer?
       val d1 = d.sync.get(remoteNodeId) match {
-        case Some(sync) if sync.missing.nonEmpty =>
+        case Some(sync) =>
           log.info(s"asking {} for the next slice of short_channel_ids", remoteNodeId)
           val (slice, rest) = sync.missing.splitAt(SHORTID_WINDOW)
           sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
-          d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
+          val sync1 = if (rest.isEmpty) {
+            d.sync - remoteNodeId
+          } else {
+            d.sync + (remoteNodeId -> sync.copy(missing = rest))
+          }
+          d.copy(sync = sync1)
         case _ =>
           d
       }
