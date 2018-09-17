@@ -18,9 +18,8 @@ package fr.acinq.eclair.router
 
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
 import fr.acinq.eclair.crypto.TransportHandler
@@ -40,7 +39,6 @@ import scala.concurrent.duration._
   */
 @RunWith(classOf[JUnitRunner])
 class RouterSpec extends BaseRouterSpec {
-  import BaseRouterSpec._
 
   test("properly announce valid new channels and ignore invalid ones") { case (router, watcher) =>
     val eventListener = TestProbe()
@@ -234,5 +232,4 @@ class RouterSpec extends BaseRouterSpec {
     assert(state.nodes.size == 6)
     assert(state.updates.size == 8)
   }
-
 }
