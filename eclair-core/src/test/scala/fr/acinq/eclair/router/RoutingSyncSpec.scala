@@ -124,8 +124,8 @@ object RoutingSyncSpec {
 
   class Pipe(a: ActorRef, idA: PublicKey, b: ActorRef, idB: PublicKey) extends Actor {
     def receive = {
-      case msg: RoutingMessage if sender == a => b ! PeerRoutingMessage(idA, msg)
-      case msg: RoutingMessage if sender == b => a ! PeerRoutingMessage(idB, msg)
+      case msg: RoutingMessage if sender == a => b ! PeerRoutingMessage(self, idA, msg)
+      case msg: RoutingMessage if sender == b => a ! PeerRoutingMessage(self, idB, msg)
     }
   }
 }
