@@ -45,14 +45,14 @@ class RoutingSyncExSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val List(block3) = ChannelRangeQueriesEx.encodeShortChannelIdAndTimestamps(firstBlockNum, numberOfBlocks, shortChannelIds.drop(200).take(150), Router.getTimestamp(initChannels, initChannelUpdates), ChannelRangeQueriesEx.UNCOMPRESSED_FORMAT)
 
     // send first block
-    sender.send(router, PeerRoutingMessage(remoteNodeId, ReplyChannelRangeEx(chainHash, block1.firstBlock, block1.numBlocks, 1, block1.shortChannelIdAndTimestamps)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyChannelRangeEx(chainHash, block1.firstBlock, block1.numBlocks, 1, block1.shortChannelIdAndTimestamps)))
     // router should ask for our first block of ids
     val QueryShortChannelIdsEx(_, _, data1) = sender.expectMsgType[QueryShortChannelIdsEx]
     val (_, shortChannelIds1, false) = ChannelRangeQueries.decodeShortChannelIds(data1)
     assert(shortChannelIds1 == shortChannelIds.take(100))
 
     // send second block
-    sender.send(router, PeerRoutingMessage(remoteNodeId, ReplyChannelRangeEx(chainHash, block2.firstBlock, block2.numBlocks, 1, block2.shortChannelIdAndTimestamps)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyChannelRangeEx(chainHash, block2.firstBlock, block2.numBlocks, 1, block2.shortChannelIdAndTimestamps)))
 
     // router should not ask for more ids, it already has a pending query !
     sender.expectNoMsg(1 second)
@@ -60,23 +60,23 @@ class RoutingSyncExSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     // send the first 50 items
     shortChannelIds1.take(50).foreach(id => {
       val (ca, cu1, cu2, _, _) = fakeRoutingInfo(id)
-      sender.send(router, PeerRoutingMessage(remoteNodeId, ca))
-      sender.send(router, PeerRoutingMessage(remoteNodeId, cu1))
-      sender.send(router, PeerRoutingMessage(remoteNodeId, cu2))
+      sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ca))
+      sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu1))
+      sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu2))
     })
     sender.expectNoMsg(1 second)
 
     // send the last 50 items
     shortChannelIds1.drop(50).foreach(id => {
       val (ca, cu1, cu2, _, _) = fakeRoutingInfo(id)
-      sender.send(router, PeerRoutingMessage(remoteNodeId, ca))
-      sender.send(router, PeerRoutingMessage(remoteNodeId, cu1))
-      sender.send(router, PeerRoutingMessage(remoteNodeId, cu2))
+      sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ca))
+      sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu1))
+      sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu2))
     })
     sender.expectNoMsg(1 second)
 
     // now send our ReplyShortChannelIdsEnd message
-    sender.send(router, PeerRoutingMessage(remoteNodeId, ReplyShortChannelIdsEndEx(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndEx(chainHash, 1.toByte)))
 
     // router should ask for our second block of ids
     val QueryShortChannelIdsEx(_, _, data2) = sender.expectMsgType[QueryShortChannelIdsEx]

@@ -18,11 +18,13 @@ import scala.concurrent.duration._
 
 @RunWith(classOf[JUnitRunner])
 class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
+
   import RoutingSyncSpec.makeFakeRoutingInfo
 
-  test("handle chanel range queries") {
+  test("handle channel range queries") {
     val params = TestConstants.Alice.nodeParams
     val router = TestFSMRef(new Router(params, TestProbe().ref))
+    val transport = TestProbe()
     val sender = TestProbe()
     sender.ignoreMsg { case _: TransportHandler.ReadAck => true }
     val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
@@ -42,41 +44,39 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val List(block3) = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds.drop(200).take(150), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
 
     // send first block
-    sender.send(router, PeerRoutingMessage(remoteNodeId, ReplyChannelRange(chainHash, block1.firstBlock, block1.numBlocks, 1, block1.shortChannelIds)))
+    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyChannelRange(chainHash, block1.firstBlock, block1.numBlocks, 1, block1.shortChannelIds)))
     // router should ask for our first block of ids
-    val QueryShortChannelIds(_, data1) = sender.expectMsgType[QueryShortChannelIds]
+    val QueryShortChannelIds(_, data1) = transport.expectMsgType[QueryShortChannelIds]
     val (_, shortChannelIds1, false) = ChannelRangeQueries.decodeShortChannelIds(data1)
     assert(shortChannelIds1 == shortChannelIds.take(100))
 
     // send second block
-    sender.send(router, PeerRoutingMessage(remoteNodeId, ReplyChannelRange(chainHash, block2.firstBlock, block2.numBlocks, 1, block2.shortChannelIds)))
-
-    // router should not ask for more ids, it already has a pending query !
-    sender.expectNoMsg(1 second)
+    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyChannelRange(chainHash, block2.firstBlock, block2.numBlocks, 1, block2.shortChannelIds)))
 
     // send the first 50 items
     shortChannelIds1.take(50).foreach(id => {
       val (ca, cu1, cu2, _, _) = fakeRoutingInfo(id)
-      sender.send(router, PeerRoutingMessage(remoteNodeId, ca))
-      sender.send(router, PeerRoutingMessage(remoteNodeId, cu1))
-      sender.send(router, PeerRoutingMessage(remoteNodeId, cu2))
+      sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ca))
+      sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu1))
+      sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu2))
     })
-    sender.expectNoMsg(1 second)
 
     // send the last 50 items
     shortChannelIds1.drop(50).foreach(id => {
       val (ca, cu1, cu2, _, _) = fakeRoutingInfo(id)
-      sender.send(router, PeerRoutingMessage(remoteNodeId, ca))
-      sender.send(router, PeerRoutingMessage(remoteNodeId, cu1))
-      sender.send(router, PeerRoutingMessage(remoteNodeId, cu2))
+      sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ca))
+      sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu1))
+      sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu2))
     })
-    sender.expectNoMsg(1 second)
+
+    // during that time, router should not have asked for more ids, it already has a pending query !
+    transport.expectNoMsg(200 millis)
 
     // now send our ReplyShortChannelIdsEnd message
-    sender.send(router, PeerRoutingMessage(remoteNodeId, ReplyShortChannelIdsEnd(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyShortChannelIdsEnd(chainHash, 1.toByte)))
 
     // router should ask for our second block of ids
-    val QueryShortChannelIds(_, data2) = sender.expectMsgType[QueryShortChannelIds]
+    val QueryShortChannelIds(_, data2) = transport.expectMsgType[QueryShortChannelIds]
     val (_, shortChannelIds2, false) = ChannelRangeQueries.decodeShortChannelIds(data2)
     assert(shortChannelIds2 == shortChannelIds.drop(100).take(100))
   }

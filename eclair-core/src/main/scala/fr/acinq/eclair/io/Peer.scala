@@ -27,7 +27,7 @@ import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Protocol
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.crypto.TransportHandler.Listener
+import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
@@ -73,7 +73,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(Authenticator.Authenticated(_, transport, remoteNodeId, address, outgoing, origin_opt), DisconnectedData(_, channels, _, init)) =>
       log.debug(s"got authenticated connection to $remoteNodeId@${address.getHostString}:${address.getPort}")
-      transport ! Listener(self)
+      transport ! TransportHandler.Listener(self)
       context watch transport
       val localInit = init.getOrElse(wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures))
       transport ! localInit
@@ -88,6 +88,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val h = channels.filter(_._2 == actor).map(_._1)
       log.info(s"channel closed: channelId=${h.mkString("/")}")
       stay using d.copy(channels = channels -- h)
+
+    case Event(_: wire.LightningMessage, _) => stay // we probably just got disconnected and that's the last messages we received
   }
 
   when(INITIALIZING) {
@@ -157,14 +159,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   when(CONNECTED, stateTimeout = nodeParams.pingInterval) {
-    case Event(StateTimeout, ConnectedData(_, transport, _, _, _, _)) =>
+    case Event(StateTimeout, ConnectedData(_, transport, _, _, _, _ ,_)) =>
       // no need to use secure random here
       val pingSize = Random.nextInt(1000)
       val pongSize = Random.nextInt(1000)
       transport ! wire.Ping(pongSize, BinaryData("00" * pingSize))
       stay
 
-    case Event(ping@wire.Ping(pongLength, _), ConnectedData(_, transport, _, _, _, _)) =>
+    case Event(ping@wire.Ping(pongLength, _), ConnectedData(_, transport, _, _, _, _ ,_)) =>
       transport ! TransportHandler.ReadAck(ping)
       // TODO: (optional) check against the expected data size tat we requested when we sent ping messages
       if (pongLength > 0) {
@@ -172,20 +174,20 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay
 
-    case Event(pong@wire.Pong(data), ConnectedData(_, transport, _, _, _, _)) =>
+    case Event(pong@wire.Pong(data), ConnectedData(_, transport, _, _, _, _ ,_)) =>
       transport ! TransportHandler.ReadAck(pong)
       // TODO: compute latency for remote peer ?
       log.debug(s"received pong with ${data.length} bytes")
       stay
 
-    case Event(err@wire.Error(channelId, reason), ConnectedData(_, transport, _, channels, _, _)) if channelId == CHANNELID_ZERO =>
+    case Event(err@wire.Error(channelId, reason), ConnectedData(_, transport, _, channels, _, _ ,_)) if channelId == CHANNELID_ZERO =>
       transport ! TransportHandler.ReadAck(err)
       log.error(s"connection-level error, failing all channels! reason=${new String(reason)}")
       channels.values.toSet[ActorRef].foreach(_ forward err) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
       transport ! PoisonPill
       stay
 
-    case Event(err: wire.Error, ConnectedData(_, transport, _, channels, _, _)) =>
+    case Event(err: wire.Error, ConnectedData(_, transport, _, channels, _, _ ,_)) =>
       transport ! TransportHandler.ReadAck(err)
       // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
       channels.get(FinalChannelId(err.channelId)).orElse(channels.get(TemporaryChannelId(err.channelId))) match {
@@ -194,7 +196,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay
 
-    case Event(c: Peer.OpenChannel, d@ConnectedData(_, transport, remoteInit, channels, _, _)) =>
+    case Event(c: Peer.OpenChannel, d@ConnectedData(_, transport, remoteInit, channels, _, _ ,_)) =>
       log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt}")
       val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis.toLong, origin_opt = Some(sender))
       val temporaryChannelId = randomBytes(32)
@@ -203,7 +205,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, transport, remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
       stay using d.copy(channels = channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
-    case Event(msg: wire.OpenChannel, d@ConnectedData(_, transport, remoteInit, channels, _, _)) =>
+    case Event(msg: wire.OpenChannel, d@ConnectedData(_, transport, remoteInit, channels, _, _ ,_)) =>
       transport ! TransportHandler.ReadAck(msg)
       channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
         case None =>
@@ -218,7 +220,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           stay
       }
 
-    case Event(msg: wire.HasChannelId, ConnectedData(_, transport, _, channels, _, _)) =>
+    case Event(msg: wire.HasChannelId, ConnectedData(_, transport, _, channels, _, _, _)) =>
       transport ! TransportHandler.ReadAck(msg)
       channels.get(FinalChannelId(msg.channelId)) match {
         case Some(channel) => channel forward msg
@@ -226,7 +228,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay
 
-    case Event(msg: wire.HasTemporaryChannelId, ConnectedData(_, transport, _, channels, _, _)) =>
+    case Event(msg: wire.HasTemporaryChannelId, ConnectedData(_, transport, _, channels, _, _, _)) =>
       transport ! TransportHandler.ReadAck(msg)
       channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
         case Some(channel) => channel forward msg
@@ -234,13 +236,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay
 
-    case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId), d@ConnectedData(_, _, _, channels, _, _)) if channels.contains(TemporaryChannelId(temporaryChannelId)) =>
+    case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId), d@ConnectedData(_, _, _, channels, _, _, _)) if channels.contains(TemporaryChannelId(temporaryChannelId)) =>
       log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
       // NB: we keep the temporary channel id because the switch is not always acknowledged at this point (see https://github.com/lightningnetwork/lightning-rfc/pull/151)
       // we won't clean it up, but we won't remember the temporary id on channel termination
       stay using d.copy(channels = channels + (FinalChannelId(channelId) -> channel))
 
-    case Event(RoutingState(channels, updates, nodes), ConnectedData(_, transport, _, _, _, _)) =>
+    case Event(RoutingState(channels, updates, nodes), ConnectedData(_, transport, _, _, _, _, _)) =>
       // let's send the messages
       def send(announcements: Iterable[_ <: LightningMessage]) = announcements.foldLeft(0) {
         case (c, ann) =>
@@ -255,7 +257,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       stay
 
-    case Event(rebroadcast: Rebroadcast, ConnectedData(_, transport, _, _, maybeGossipTimestampFilter, _)) =>
+    case Event(rebroadcast: Rebroadcast, ConnectedData(_, transport, _, _, maybeGossipTimestampFilter, _, _)) =>
       val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, self, maybeGossipTimestampFilter)
 
       /**
@@ -288,27 +290,72 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         stay using data.copy(gossipTimestampFilter = Some(msg))
       }
 
-    case Event(msg: wire.RoutingMessage, _) =>
-      // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
-      // we forward messages so the router can reply directly
-      router forward PeerRoutingMessage(remoteNodeId, msg)
+    case Event(msg: wire.RoutingMessage, ConnectedData(_, transport, _, _, _, _, behavior)) =>
+      msg match {
+        case _: ChannelAnnouncement | _: ChannelUpdate | _: NodeAnnouncement if behavior.ignoreNetworkAnnouncement =>
+          // this peer is currently under embargo!
+          sender ! TransportHandler.ReadAck(msg)
+        case _ =>
+          // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
+          router ! PeerRoutingMessage(transport, remoteNodeId, msg)
+      }
       stay
 
-    case Event(readAck: TransportHandler.ReadAck, ConnectedData(_, transport, _, _, _, _)) =>
+    case Event(readAck: TransportHandler.ReadAck, c: ConnectedData) =>
       // we just forward acks from router to transport
-      transport forward readAck
+      c.transport forward readAck
       stay
 
-    case Event(Disconnect, ConnectedData(_, transport, _, _, _, _)) =>
-      transport ! PoisonPill
+    case Event(badMessage: BadMessage, data@ConnectedData(_, transport, _, _, _, _, behavior)) =>
+      val behavior1 = badMessage match {
+        case InvalidSignature(r) =>
+          val bin = LightningMessageCodecs.lightningMessageCodec.encode(r)
+          log.error(s"peer sent us a routing message with invalid sig: r=$r bin=$bin")
+          // for now we just return an error, maybe ban the peer in the future?
+          transport ! Error(CHANNELID_ZERO, s"bad announcement sig! bin=$bin".getBytes())
+          behavior
+        case ChannelClosed(_) =>
+          if (behavior.ignoreNetworkAnnouncement) {
+            // we already are ignoring announcements, we may have additional notifications for announcements that were received right before our ban
+            behavior.copy(fundingTxAlreadySpentCount = behavior.fundingTxAlreadySpentCount + 1)
+          } else if (behavior.fundingTxAlreadySpentCount < MAX_FUNDING_TX_ALREADY_SPENT) {
+            behavior.copy(fundingTxAlreadySpentCount = behavior.fundingTxAlreadySpentCount + 1)
+          } else {
+            log.warning(s"peer sent us too many channel announcements with funding tx already spent (count=${behavior.fundingTxAlreadySpentCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
+            import scala.concurrent.ExecutionContext.Implicits.global
+            context.system.scheduler.scheduleOnce(IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, self, ResumeAnnouncements)
+            behavior.copy(fundingTxAlreadySpentCount = behavior.fundingTxAlreadySpentCount + 1, ignoreNetworkAnnouncement = true)
+          }
+        case NonexistingChannel(_) =>
+          // this should never happen, unless we are not in sync or there is a 6+ blocks reorg
+          if (behavior.ignoreNetworkAnnouncement) {
+            // we already are ignoring announcements, we may have additional notifications for announcements that were received right before our ban
+            behavior.copy(fundingTxNotFoundCount = behavior.fundingTxNotFoundCount + 1)
+          } else if (behavior.fundingTxNotFoundCount < MAX_FUNDING_TX_NOT_FOUND) {
+            behavior.copy(fundingTxNotFoundCount = behavior.fundingTxNotFoundCount + 1)
+          } else {
+            log.warning(s"peer sent us too many channel announcements with non-existing funding tx (count=${behavior.fundingTxNotFoundCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
+            import scala.concurrent.ExecutionContext.Implicits.global
+            context.system.scheduler.scheduleOnce(IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, self, ResumeAnnouncements)
+            behavior.copy(fundingTxNotFoundCount = behavior.fundingTxNotFoundCount + 1, ignoreNetworkAnnouncement = true)
+          }
+      }
+      stay using data.copy(behavior = behavior1)
+
+    case Event(ResumeAnnouncements, data: ConnectedData) =>
+      log.info(s"resuming processing of network announcements for peer")
+      stay using data.copy(behavior = data.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
+
+    case Event(Disconnect, c:ConnectedData) =>
+      c.transport ! PoisonPill
       stay
 
-    case Event(Terminated(actor), ConnectedData(address_opt, transport, _, channels, _, _)) if actor == transport =>
+    case Event(Terminated(actor), ConnectedData(address_opt, transport, _, channels, _, _, _)) if actor == transport =>
       log.info(s"lost connection to $remoteNodeId")
       channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
       goto(DISCONNECTED) using DisconnectedData(address_opt, channels.collect { case (k: FinalChannelId, v) => (k, v) })
 
-    case Event(Terminated(actor), d@ConnectedData(_, transport, _, channels, _, _)) if channels.values.toSet.contains(actor) =>
+    case Event(Terminated(actor), d@ConnectedData(_, transport, _, channels, _, _, _)) if channels.values.toSet.contains(actor) =>
       // we will have at most 2 ids: a TemporaryChannelId and a FinalChannelId
       val channelIds = channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
@@ -318,7 +365,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay using d.copy(channels = channels -- channelIds)
 
-    case Event(h: Authenticator.Authenticated, ConnectedData(address_opt, oldTransport, _, channels, _, _)) =>
+    case Event(h: Authenticator.Authenticated, ConnectedData(address_opt, oldTransport, _, channels, _, _, _)) =>
       log.info(s"got new transport while already connected, switching to new transport")
       context unwatch oldTransport
       oldTransport ! PoisonPill
@@ -382,6 +429,12 @@ object Peer {
 
   val RECONNECT_TIMER = "reconnect"
 
+  val MAX_FUNDING_TX_ALREADY_SPENT = 10
+
+  val MAX_FUNDING_TX_NOT_FOUND = 10
+
+  val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
+
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet: EclairWallet))
 
   // @formatter:off
@@ -397,7 +450,7 @@ object Peer {
   case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
   case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0, localInit: Option[wire.Init] = None) extends Data
   case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef], localInit: wire.Init) extends Data
-  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], gossipTimestampFilter: Option[GossipTimestampFilter] = None, localInit: wire.Init) extends Data
+  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], gossipTimestampFilter: Option[GossipTimestampFilter] = None, localInit: wire.Init, behavior: Behavior = Behavior()) extends Data
 
   sealed trait State
   case object INSTANTIATING extends State
@@ -409,6 +462,7 @@ object Peer {
   case class Connect(uri: NodeURI, init: Option[wire.Init] = None)
   case object Reconnect
   case object Disconnect
+  case object ResumeAnnouncements
   case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte]) {
     require(fundingSatoshis.amount < Channel.MAX_FUNDING_SATOSHIS, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING_SATOSHIS}")
     require(pushMsat.amount <= 1000 * fundingSatoshis.amount, s"pushMsat must be less or equal to fundingSatoshis")
@@ -419,7 +473,14 @@ object Peer {
   case object GetPeerInfo
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 
-  case class PeerRoutingMessage(remoteNodeId: PublicKey, message: RoutingMessage)
+  case class PeerRoutingMessage(transport: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage)
+
+  sealed trait BadMessage
+  case class InvalidSignature(r: RoutingMessage) extends BadMessage
+  case class ChannelClosed(c: ChannelAnnouncement) extends BadMessage
+  case class NonexistingChannel(c: ChannelAnnouncement) extends BadMessage
+
+  case class Behavior(fundingTxAlreadySpentCount: Int = 0, fundingTxNotFoundCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 
   // @formatter:on
 
@@ -467,8 +528,8 @@ object Peer {
     }
 
     // we filter out updates against their timestamp filter, and build a list of all channel ids for which we have an update
-    val (updates1, shortChannelIds) = rebroadcast.updates.foldLeft((Seq.empty[ChannelUpdate], Set.empty[ShortChannelId])){
-      case ((channelUpdates, shortChannelIds), (a, origins)) if !origins.contains(self) && checkTimestamp(a)=> (a +: channelUpdates, shortChannelIds + a.shortChannelId)
+    val (updates1, shortChannelIds) = rebroadcast.updates.foldLeft((Seq.empty[ChannelUpdate], Set.empty[ShortChannelId])) {
+      case ((channelUpdates, shortChannelIds), (a, origins)) if !origins.contains(self) && checkTimestamp(a) => (a +: channelUpdates, shortChannelIds + a.shortChannelId)
       case ((channelUpdates, shortChannelIds), (a, origins)) => (channelUpdates, shortChannelIds)
     }
 

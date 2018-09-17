@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.{Block, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.io.Peer.{InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
@@ -62,15 +62,15 @@ class RouterSpec extends BaseRouterSpec {
     val chan_az = channelAnnouncement(ShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
     val update_az = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_z.publicKey, chan_az.shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
 
-    router ! PeerRoutingMessage(remoteNodeId, chan_ac)
-    router ! PeerRoutingMessage(remoteNodeId, chan_ax)
-    router ! PeerRoutingMessage(remoteNodeId, chan_ay)
-    router ! PeerRoutingMessage(remoteNodeId, chan_az)
+    router ! PeerRoutingMessage(null, remoteNodeId, chan_ac)
+    router ! PeerRoutingMessage(null, remoteNodeId, chan_ax)
+    router ! PeerRoutingMessage(null, remoteNodeId, chan_ay)
+    router ! PeerRoutingMessage(null, remoteNodeId, chan_az)
     // router won't validate channels before it has a recent enough channel update
-    router ! PeerRoutingMessage(remoteNodeId, update_ac)
-    router ! PeerRoutingMessage(remoteNodeId, update_ax)
-    router ! PeerRoutingMessage(remoteNodeId, update_ay)
-    router ! PeerRoutingMessage(remoteNodeId, update_az)
+    router ! PeerRoutingMessage(null, remoteNodeId, update_ac)
+    router ! PeerRoutingMessage(null, remoteNodeId, update_ax)
+    router ! PeerRoutingMessage(null, remoteNodeId, update_ay)
+    router ! PeerRoutingMessage(null, remoteNodeId, update_az)
     watcher.expectMsg(ValidateRequest(chan_ac))
     watcher.expectMsg(ValidateRequest(chan_ax))
     watcher.expectMsg(ValidateRequest(chan_ay))
@@ -114,25 +114,25 @@ class RouterSpec extends BaseRouterSpec {
     val channelId_ac = ShortChannelId(420000, 5, 0)
     val chan_ac = channelAnnouncement(channelId_ac, priv_a, priv_c, priv_funding_a, priv_funding_c)
     val buggy_chan_ac = chan_ac.copy(nodeSignature1 = chan_ac.nodeSignature2)
-    sender.send(router, PeerRoutingMessage(remoteNodeId, buggy_chan_ac))
+    sender.send(router, PeerRoutingMessage(null, remoteNodeId, buggy_chan_ac))
     sender.expectMsg(TransportHandler.ReadAck(buggy_chan_ac))
-    sender.expectMsgType[Error]
+    sender.expectMsg(InvalidSignature(buggy_chan_ac))
   }
 
   test("handle bad signature for NodeAnnouncement") { case (router, _) =>
     val sender = TestProbe()
     val buggy_ann_a = ann_a.copy(signature = ann_b.signature, timestamp = ann_a.timestamp + 1)
-    sender.send(router, PeerRoutingMessage(remoteNodeId, buggy_ann_a))
+    sender.send(router, PeerRoutingMessage(null, remoteNodeId, buggy_ann_a))
     sender.expectMsg(TransportHandler.ReadAck(buggy_ann_a))
-    sender.expectMsgType[Error]
+    sender.expectMsg(InvalidSignature(buggy_ann_a))
   }
 
   test("handle bad signature for ChannelUpdate") { case (router, _) =>
     val sender = TestProbe()
     val buggy_channelUpdate_ab = channelUpdate_ab.copy(signature = ann_b.signature, timestamp = channelUpdate_ab.timestamp + 1)
-    sender.send(router, PeerRoutingMessage(remoteNodeId, buggy_channelUpdate_ab))
+    sender.send(router, PeerRoutingMessage(null, remoteNodeId, buggy_channelUpdate_ab))
     sender.expectMsg(TransportHandler.ReadAck(buggy_channelUpdate_ab))
-    sender.expectMsgType[Error]
+    sender.expectMsg(InvalidSignature(buggy_channelUpdate_ab))
   }
 
   test("route not found (unreachable target)") { case (router, _) =>
@@ -186,7 +186,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(res.hops.last.nextNodeId === d)
 
     val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, enable = false)
-    sender.send(router, PeerRoutingMessage(remoteNodeId, channelUpdate_cd1))
+    sender.send(router, PeerRoutingMessage(null, remoteNodeId, channelUpdate_cd1))
     sender.expectMsg(TransportHandler.ReadAck(channelUpdate_cd1))
     sender.send(router, RouteRequest(a, d))
     sender.expectMsg(Failure(RouteNotFound))
