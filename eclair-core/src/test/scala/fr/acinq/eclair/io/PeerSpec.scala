@@ -104,6 +104,7 @@ class PeerSpec extends TestkitBaseClass {
       transport.send(peer, ann)
       transport.expectMsg(TransportHandler.ReadAck(ann))
     }
+    router.expectNoMsg(1 second)
     // other routing messages go through
     transport.send(peer, query)
     router.expectMsg(Peer.PeerRoutingMessage(transport.ref, remoteNodeId, query))
@@ -127,6 +128,7 @@ class PeerSpec extends TestkitBaseClass {
       transport.send(peer, ann)
       transport.expectMsg(TransportHandler.ReadAck(ann))
     }
+    router.expectNoMsg(1 second)
     // other routing messages go through
     transport.send(peer, query)
     router.expectMsg(Peer.PeerRoutingMessage(transport.ref, remoteNodeId, query))
