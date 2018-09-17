@@ -344,6 +344,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       staleChannels.foreach { shortChannelId =>
         log.info("pruning shortChannelId={} (stale)", shortChannelId)
         db.removeChannel(shortChannelId) // NB: this also removes channel updates
+        // we keep track of recently pruned channels so we don't revalidate them (zombie churn)
+        db.addToPruned(shortChannelId)
         context.system.eventStream.publish(ChannelLost(shortChannelId))
       }
       // we also need to remove updates from the graph
@@ -357,6 +359,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
+
       stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
@@ -402,7 +405,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         .recover { case t => sender ! Status.Failure(t) }
       stay
 
-    case Event(SendChannelQuery(remoteNodeId, remote), _) =>
+    case Event(SendChannelQuery(_, remote), _) =>
       // ask for everything
       val query = QueryChannelRange(nodeParams.chainHash, firstBlockNum = 0, numberOfBlocks = Int.MaxValue)
       log.info("sending query_channel_range={}", query)
@@ -441,6 +444,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         // adding the sender to the list of origins so that we don't send back the same announcement to this peer later
         val origins = d.awaiting(c) :+ sender
         stay using d.copy(awaiting = d.awaiting + (c -> origins))
+      } else if (db.isPruned(c.shortChannelId)) {
+        sender ! TransportHandler.ReadAck(c)
+        // channel was pruned and we haven't received a recent channel_update, so we have no reason to revalidate it
+        log.info("ignoring {} (was pruned)", c)
+        stay
       } else if (!Announcements.checkSigs(c)) {
         sender ! TransportHandler.ReadAck(c)
         log.warning("bad signature for announcement {}", c)
@@ -637,6 +645,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         addEdge(d.graph, desc, u)
         d.copy(privateUpdates = d.privateUpdates + (desc -> u))
       }
+    } else if (db.isPruned(u.shortChannelId) && !isStale(u)) {
+      // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
+      // of a zombie channel coming back from the dead. they probably sent us a channel_announcement right before this update,
+      // but we ignored it because the channel was in the 'pruned' list. Now that we know that the channel is alive again,
+      // let's remove the channel from the zombie list and ask the sender to re-send announcements (channel_announcement + updates)
+      // about that channel. We can ignore this update since we will receive it again
+      log.info(s"channel shortChannelId=${u.shortChannelId} is back from the dead! requesting announcements about this channel")
+      db.removeFromPruned(u.shortChannelId)
+      origin ! QueryShortChannelIds(u.chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(Seq(u.shortChannelId), ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
+      d
     } else {
       log.debug("ignoring announcement {} (unknown channel)", u)
       d
