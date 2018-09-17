@@ -74,7 +74,8 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   privateUpdates: Map[ChannelDesc, ChannelUpdate],
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graph: DirectedWeightedPseudograph[PublicKey, DescEdge],
-                  sync: Map[PublicKey, Sync]
+                  sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query
+                                             // for which we have not yet received an 'end' message
                )
 
 sealed trait State
@@ -473,8 +474,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       // TODO: we don't compress to be compatible with old mobile apps, switch to ZLIB ASAP
       // Careful: when we remove GZIP support, eclair-wallet 0.3.0 will stop working i.e. channels to ACINQ nodes will not
       // work anymore
-      val maxCount = if (nodeParams.chainHash == Block.RegtestGenesisBlock.hash) Some(150) else None
-      val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT, maxCount = maxCount)
+      val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
       log.info("sending back reply_channel_range with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
       // there could be several reply_channel_range messages for a single query
       val replies = blocks.map(block => ReplyChannelRange(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
@@ -495,7 +495,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
             // we don't have a pending query with this peer
             val (slice, rest) = missing.splitAt(SHORTID_WINDOW)
             sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, format, useGzip))
-            Sync(rest, missing.size)
             d.copy(sync = d.sync + (remoteNodeId -> Sync(rest, missing.size)))
           case Some(sync) =>
             // we already have a pending query with this peer, add missing ids to our "sync" state
@@ -526,16 +525,15 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       log.info("received reply_short_channel_ids_end={}", routingMessage)
       // have we more channels to ask this peer?
       val d1 = d.sync.get(remoteNodeId) match {
-        case Some(sync) =>
+        case Some(sync) if sync.missing.nonEmpty =>
           log.info(s"asking {} for the next slice of short_channel_ids", remoteNodeId)
           val (slice, rest) = sync.missing.splitAt(SHORTID_WINDOW)
           sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
-          val sync1 = if (rest.isEmpty) {
-            d.sync - remoteNodeId
-          } else {
-            d.sync + (remoteNodeId -> sync.copy(missing = rest))
-          }
-          d.copy(sync = sync1)
+           d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
+        case Some(sync) if sync.missing.isEmpty =>
+          // we received reply_short_channel_ids_end for our last query aand have not sent another one, we can now remove
+          // the remote peer from our map
+          d.copy(sync = d.sync - remoteNodeId)
         case _ =>
           d
       }
