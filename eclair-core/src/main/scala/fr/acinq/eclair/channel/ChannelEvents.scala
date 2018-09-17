@@ -55,3 +55,5 @@ case class NetworkFeePaid(channel: ActorRef, remoteNodeId: PublicKey, channelId:
 case class AvailableBalanceChanged(channel: ActorRef, channelId: BinaryData, shortChannelId: ShortChannelId, localBalanceMsat: Long) extends ChannelEvent
 
 case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelId: BinaryData, data: Data) extends ChannelEvent
+
+case class LocalCommitConfirmed(channel: ActorRef, remoteNodeId: PublicKey, channelId: BinaryData, refundAtBlock: Long) extends ChannelEvent
