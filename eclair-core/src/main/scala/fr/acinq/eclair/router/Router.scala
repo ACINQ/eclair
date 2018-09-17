@@ -303,29 +303,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         stay
       } else {
         log.info("broadcasting routing messages")
-        // we don't want to rebroadcast old channels if we don't have a recent channel_update, otherwise we will keep sending zombies channels back and forth
-        // instead, we base the rebroadcast on updates, and only keep the ones that are younger than 2 weeks
-        val rebroadcastUpdates1 = d.rebroadcast.updates.filterKeys(u => !isStale(u))
-        // for each update, we rebroadcast the corresponding channel announcement (suboptimal)
-        // we have to do this because we didn't broadcast old channels for which we didn't yet receive the channel_update
-        val rebroadcastChannels1 = rebroadcastUpdates1.foldLeft(Map.empty[ChannelAnnouncement, Set[ActorRef]]) {
-          case (channels, (u, updateOrigins)) =>
-            d.channels.get(u.shortChannelId) match {
-              case Some(c) => d.rebroadcast.channels.get(c) match {
-                case Some(channelOrigins) => channels + (c -> channelOrigins) // we have origin peers for this channel
-                case None => channels + (c -> updateOrigins) // we don't have origin peers for this channel, let's use the same origin list as corresponding update (they must know the channel)
-              }
-              case None => channels // weird, we don't know this channel, that should never happen and we can ignore it anyway
-            }
-        }
-        // and we only keep nodes that have at least one valid channel
-        val staleChannels = getStaleChannels(d.channels.values, d.updates)
-        val validChannels = (d.channels -- staleChannels).values
-        val rebroadcastNodes1 = d.rebroadcast.nodes.filterKeys(n => hasChannels(n.nodeId, validChannels))
-        // then we're ready to broadcast
-        val rebroadcast1 = d.rebroadcast.copy(channels = rebroadcastChannels1, updates = rebroadcastUpdates1, nodes = rebroadcastNodes1)
-        log.debug("staggered broadcast details: channels={} updates={} nodes={}", rebroadcast1.channels.size, rebroadcast1.updates.size, rebroadcast1.nodes.size)
-        context.actorSelection(context.system / "*" / "switchboard") ! rebroadcast1
+        log.debug("staggered broadcast details: channels={} updates={} nodes={}", d.rebroadcast.channels.size, d.rebroadcast.updates.size, d.rebroadcast.nodes.size)
+        context.actorSelection(context.system / "*" / "switchboard") ! d.rebroadcast
         stay using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
 
