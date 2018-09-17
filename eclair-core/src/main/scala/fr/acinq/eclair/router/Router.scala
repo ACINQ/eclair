@@ -572,6 +572,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
             // we already have a pending query with this peer, add outdated ids to our "sync" state
             d.copy(sync = d.sync + (remoteNodeId -> sync.copy(outdated = sync.outdated ++ outdated, totalOutdatedCount = sync.totalOutdatedCount + outdated.size)))
         }
+        // they may send back several reply_channel_range messages for a single query_channel_range query, and we must not
+        // send another query_short_channel_ids query if they're still processing one
+        d.sync.get(remoteNodeId) match {
+          case None =>
+            // we don't have a pending query with this peer
+            val (slice, rest) = missing.splitAt(SHORTID_WINDOW)
+            sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, format, useGzip = false))
+            d.copy(sync = d.sync + (remoteNodeId -> Sync(rest, missing.size)))
+          case Some(sync) =>
+            // we already have a pending query with this peer, add missing ids to our "sync" state
+            d.copy(sync = d.sync + (remoteNodeId -> Sync(sync.missing ++ missing, sync.totalMissingCount + missing.size)))
+        }
       } else d
       context.system.eventStream.publish(syncProgress(d1))
       stay using d1
@@ -617,7 +629,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
           log.info(s"asking {} for the next slice of short_channel_ids", remoteNodeId)
           val (slice, rest) = sync.missing.splitAt(SHORTID_WINDOW)
           sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
-           d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
+          d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
         case Some(sync) if sync.missing.isEmpty =>
           // we received reply_short_channel_ids_end for our last query and have not sent another one, we can now remove
           // the remote peer from our map
@@ -642,7 +654,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
           log.info(s"asking {} for the next slice of outdated short_channel_ids", remoteNodeId)
           val (slice, rest) = sync.outdated.splitAt(SHORTID_WINDOW)
           sender ! QueryShortChannelIdsEx(chainHash, 0.toByte, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
-           d.copy(sync = d.sync + (remoteNodeId -> sync.copy(outdated = rest)))
+          d.copy(sync = d.sync + (remoteNodeId -> sync.copy(outdated = rest)))
         case Some(sync) if sync.missing.isEmpty && sync.outdated.isEmpty =>
           // we received reply_short_channel_ids_end for our last query and have not sent another one, we can now remove
           // the remote peer from our map
@@ -892,8 +904,8 @@ object Router {
   /**
     *
     * @param channels id -> announcement map
-    * @param updates channel updates
-    * @param id short channel id
+    * @param updates  channel updates
+    * @param id       short channel id
     * @return the timestamp of the most recent update for this channel id, 0 if we don't have any
     */
   def getTimestamp(channels: SortedMap[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate])(id: ShortChannelId): Long = {
