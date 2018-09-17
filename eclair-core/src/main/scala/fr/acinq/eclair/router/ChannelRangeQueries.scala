@@ -21,7 +21,7 @@ object ChannelRangeQueries {
     * Compressed a sequence of *sorted* short channel id.
     *
     * @param shortChannelIds must be sorted beforehand
-    * @return a sequence of encoded short channel ids
+    * @return a sequence of short channel id blocks
     */
   def encodeShortChannelIds(firstBlockIn: Long, numBlocksIn: Long, shortChannelIds: SortedSet[ShortChannelId], format: Byte, useGzip: Boolean = false): List[ShortChannelIdsBlock] = {
     if (shortChannelIds.isEmpty) {

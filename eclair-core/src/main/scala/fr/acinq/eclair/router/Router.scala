@@ -21,7 +21,7 @@ import java.io.StringWriter
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -60,7 +60,7 @@ case class RoutingState(channels: Iterable[ChannelAnnouncement], updates: Iterab
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
-case class Sync(missing: SortedSet[ShortChannelId], count: Int)
+case class Sync(missing: SortedSet[ShortChannelId], totalMissingCount: Int)
 
 case class DescEdge(desc: ChannelDesc, u: ChannelUpdate) extends DefaultWeightedEdge
 
@@ -74,7 +74,8 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   privateUpdates: Map[ChannelDesc, ChannelUpdate],
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graph: DirectedWeightedPseudograph[PublicKey, DescEdge],
-                  sync: Map[PublicKey, Sync]
+                  sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query
+                                             // for which we have not yet received an 'end' message
                )
 
 sealed trait State
@@ -402,8 +403,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         .recover { case t => sender ! Status.Failure(t) }
       stay
 
-    case Event(SendChannelQuery(remoteNodeId, remote), _) =>
+    case Event(SendChannelQuery(_, remote), _) =>
       // ask for everything
+      // we currently send only one query_channel_range message per peer, when we just (re)connected to it, so we don't
+      // have to worry about sending a new query_channel_range when another query is still in progress
       val query = QueryChannelRange(nodeParams.chainHash, firstBlockNum = 0, numberOfBlocks = Int.MaxValue)
       log.info("sending query_channel_range={}", query)
       remote ! query
@@ -473,6 +476,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       // work anymore
       val blocks = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
       log.info("sending back reply_channel_range with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
+      // there could be several reply_channel_range messages for a single query
       val replies = blocks.map(block => ReplyChannelRange(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
       replies.foreach(reply => sender ! reply)
       stay
@@ -484,9 +488,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       val missing: SortedSet[ShortChannelId] = theirShortChannelIds -- ourShortChannelIds
       log.info("received reply_channel_range, we're missing {} channel announcements/updates, format={} useGzip={}", missing.size, format, useGzip)
       val d1 = if (missing.nonEmpty) {
-        val (slice, rest) = missing.splitAt(SHORTID_WINDOW)
-        sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, format, useGzip))
-        d.copy(sync = d.sync + (remoteNodeId -> Sync(rest, missing.size)))
+        // they may send back several reply_channel_range messages for a single query_channel_range query, and we must not
+        // send another query_short_channel_ids query if they're still processing one
+        d.sync.get(remoteNodeId) match {
+          case None =>
+            // we don't have a pending query with this peer
+            val (slice, rest) = missing.splitAt(SHORTID_WINDOW)
+            sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, format, useGzip))
+            d.copy(sync = d.sync + (remoteNodeId -> Sync(rest, missing.size)))
+          case Some(sync) =>
+            // we already have a pending query with this peer, add missing ids to our "sync" state
+            d.copy(sync = d.sync + (remoteNodeId -> Sync(sync.missing ++ missing, sync.totalMissingCount + missing.size)))
+        }
       } else d
       context.system.eventStream.publish(syncProgress(d1))
       stay using d1
@@ -516,7 +529,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
           log.info(s"asking {} for the next slice of short_channel_ids", remoteNodeId)
           val (slice, rest) = sync.missing.splitAt(SHORTID_WINDOW)
           sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
-          d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
+           d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
+        case Some(sync) if sync.missing.isEmpty =>
+          // we received reply_short_channel_ids_end for our last query aand have not sent another one, we can now remove
+          // the remote peer from our map
+          d.copy(sync = d.sync - remoteNodeId)
         case _ =>
           d
       }
@@ -743,7 +760,7 @@ object Router {
     if (d.sync.isEmpty) {
       SyncProgress(1)
     } else {
-      SyncProgress(1 - d.sync.values.map(_.missing.size).sum * 1.0 / d.sync.values.map(_.count).sum)
+      SyncProgress(1 - d.sync.values.map(_.missing.size).sum * 1.0 / d.sync.values.map(_.totalMissingCount).sum)
     }
 
   /**
