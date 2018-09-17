@@ -28,7 +28,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{FundingTxAlreadySpent, FundingTxNotFound, InvalidSignature, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.{ChannelClosed, NonexistingChannel, InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
@@ -238,7 +238,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         case ValidateResult(c, Some(tx), false, None) =>
           log.warning("ignoring shortChannelId={} tx={} (funding tx already spent)", c.shortChannelId, tx.txid)
           d0.awaiting.get(c) match {
-            case Some(origins) => origins.foreach(_ ! FundingTxAlreadySpent(c))
+            case Some(origins) => origins.foreach(_ ! ChannelClosed(c))
             case _ => ()
           }
           // there may be a record if we have just restarted
@@ -248,7 +248,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
           // we couldn't find the funding tx in the blockchain, this is highly suspicious because it should have at least 6 confirmations to be announced
           log.warning("could not retrieve tx for shortChannelId={}", c.shortChannelId)
           d0.awaiting.get(c) match {
-            case Some(origins) => origins.foreach(_ ! FundingTxNotFound(c))
+            case Some(origins) => origins.foreach(_ ! NonexistingChannel(c))
             case _ => ()
           }
           false

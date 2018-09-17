@@ -97,7 +97,7 @@ class PeerSpec extends TestkitBaseClass {
 
     // let's assume that the router isn't happy with those channels because the funding tx is already spent
     for (c <- channels) {
-      router.send(peer, Peer.FundingTxAlreadySpent(c))
+      router.send(peer, Peer.ChannelClosed(c))
     }
     // peer will temporary ignore announcements coming from bob
     for (ann <- channels ++ updates) {
@@ -120,7 +120,7 @@ class PeerSpec extends TestkitBaseClass {
 
     // now let's assume that the router isn't happy with those channels because the funding tx is not found
     for (c <- channels) {
-      router.send(peer, Peer.FundingTxNotFound(c))
+      router.send(peer, Peer.NonexistingChannel(c))
     }
     // peer will temporary ignore announcements coming from bob
     for (ann <- channels ++ updates) {

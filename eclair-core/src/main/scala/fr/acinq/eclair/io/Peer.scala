@@ -305,7 +305,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           // for now we just return an error, maybe ban the peer in the future?
           transport ! Error(CHANNELID_ZERO, s"bad announcement sig! bin=$bin".getBytes())
           behavior
-        case FundingTxAlreadySpent(_) =>
+        case ChannelClosed(_) =>
           if (behavior.ignoreNetworkAnnouncement) {
             // we already are ignoring announcements, we may have additional notifications for announcements that were received right before our ban
             behavior.copy(fundingTxAlreadySpentCount = behavior.fundingTxAlreadySpentCount + 1)
@@ -317,7 +317,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
             context.system.scheduler.scheduleOnce(IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, self, ResumeAnnouncements)
             behavior.copy(fundingTxAlreadySpentCount = behavior.fundingTxAlreadySpentCount + 1, ignoreNetworkAnnouncement = true)
           }
-        case FundingTxNotFound(_) =>
+        case NonexistingChannel(_) =>
           // this should never happen, unless we are not in sync or there is a 6+ blocks reorg
           if (behavior.ignoreNetworkAnnouncement) {
             // we already are ignoring announcements, we may have additional notifications for announcements that were received right before our ban
@@ -468,8 +468,8 @@ object Peer {
 
   sealed trait BadMessage
   case class InvalidSignature(r: RoutingMessage) extends BadMessage
-  case class FundingTxAlreadySpent(c: ChannelAnnouncement) extends BadMessage
-  case class FundingTxNotFound(c: ChannelAnnouncement) extends BadMessage
+  case class ChannelClosed(c: ChannelAnnouncement) extends BadMessage
+  case class NonexistingChannel(c: ChannelAnnouncement) extends BadMessage
 
   case class Behavior(fundingTxAlreadySpentCount: Int = 0, fundingTxNotFoundCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 
