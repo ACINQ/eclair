@@ -196,8 +196,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
 
     case Event(GetRoutingState, d: Data) =>
       log.info(s"getting valid announcements for $sender")
-      val (validChannels, validNodes, validUpdates) = getValidAnnouncements(d.channels, d.nodes, d.updates)
-      sender ! RoutingState(validChannels, validUpdates, validNodes)
+      sender ! RoutingState(d.channels.values, d.updates.values, d.nodes.values)
       stay
 
     case Event(v@ValidateResult(c, _, _, _), d0) =>
@@ -338,7 +337,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
-
       stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
@@ -426,7 +424,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       } else if (db.isPruned(c.shortChannelId)) {
         sender ! TransportHandler.ReadAck(c)
         // channel was pruned and we haven't received a recent channel_update, so we have no reason to revalidate it
-        log.info("ignoring {} (was pruned)", c)
+        log.debug("ignoring {} (was pruned)", c)
         stay
       } else if (!Announcements.checkSigs(c)) {
         sender ! TransportHandler.ReadAck(c)
@@ -713,27 +711,7 @@ object Router {
     */
   def keep(firstBlockNum: Long, numberOfBlocks: Long, id: ShortChannelId, channels: Map[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Boolean = {
     val TxCoordinates(height, _, _) = ShortChannelId.coordinates(id)
-    val c = channels(id)
-    val u1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
-    val u2 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
-    height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks) && !isStale(c, u1, u2)
-  }
-
-  /**
-    * Filters announcements that we want to send to nodes asking an `initial_routing_sync`
-    *
-    * @param channels
-    * @param nodes
-    * @param updates
-    * @return
-    */
-  def getValidAnnouncements(channels: Map[ShortChannelId, ChannelAnnouncement], nodes: Map[PublicKey, NodeAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): (Iterable[ChannelAnnouncement], Iterable[NodeAnnouncement], Iterable[ChannelUpdate]) = {
-    val staleChannels = getStaleChannels(channels.values, updates)
-    val validChannels = (channels -- staleChannels).values
-    val staleUpdates = staleChannels.map(channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
-    val validUpdates = (updates -- staleUpdates).values
-    val validNodes = validChannels.foldLeft(Set.empty[NodeAnnouncement]) { case (nodesAcc, c) => nodesAcc ++ nodes.get(c.nodeId1) ++ nodes.get(c.nodeId2) } // using a set deduplicates nodes
-    (validChannels, validNodes, validUpdates)
+    height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
   }
 
   def syncProgress(d: Data): SyncProgress =
