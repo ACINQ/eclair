@@ -1,135 +1,86 @@
 package fr.acinq.eclair.router
 
-import akka.actor.{Actor, ActorRef, Props}
-import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction, TxOut}
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import akka.actor.ActorSystem
+import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{ValidateRequest, ValidateResult, WatchSpentBasic}
+import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
-import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
-import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement, RoutingMessage}
+import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
+import org.scalatest.FunSuiteLike
 import org.scalatest.junit.JUnitRunner
 
+import scala.collection.immutable.TreeMap
 import scala.concurrent.duration._
 
+
 @RunWith(classOf[JUnitRunner])
-class RoutingSyncExSpec extends TestkitBaseClass {
+class RoutingSyncExSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
+  import RoutingSyncSpec.makeFakeRoutingInfo
 
-  import RoutingSyncExSpec._
-
-  val txid = BinaryData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-
-  type FixtureParam = Tuple3[ActorRef, ActorRef, ActorRef]
-
-  val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(700)
-
-  val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
-  // A will be missing the last 100 items
-  val routingInfoA = fakeRoutingInfo.dropRight(200)
-  // and B will be missing the first 100 items
-  // and items 100 to 199 will have older timestamps
-  val routingInfoB = fakeRoutingInfo.drop(200).zipWithIndex.map {
-    case ((ca, u1, u2, na1, na2), i) if i >= 100 && i < 300 => (ca, u1.copy(timestamp = u1.timestamp - 100), u2.copy(timestamp = u2.timestamp - 100), na1, na2)
-    case (t, _) => t
-  }
-
-  class FakeWatcher extends Actor {
-    def receive = {
-      case _: WatchSpentBasic => ()
-      case ValidateRequest(ann) =>
-        val txOut = TxOut(Satoshi(1000000), Script.pay2wsh(Scripts.multiSig2of2(ann.bitcoinKey1, ann.bitcoinKey2)))
-        val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(ann.shortChannelId)
-        sender ! ValidateResult(ann, Some(Transaction(version = 0, txIn = Nil, txOut = List.fill(outputIndex + 1)(txOut), lockTime = 0)), true, None)
-      case unexpected => println(s"unexpected : $unexpected")
-    }
-  }
-
-  override def withFixture(test: OneArgTest) = {
-    val watcherA = system.actorOf(Props(new FakeWatcher()))
-    val paramsA = Alice.nodeParams
-    routingInfoA.map {
-      case (a, u1, u2, n1, n2) =>
-        paramsA.networkDb.addChannel(a, txid, Satoshi(100000))
-        paramsA.networkDb.addChannelUpdate(u1)
-        paramsA.networkDb.addChannelUpdate(u2)
-        paramsA.networkDb.addNode(n1)
-        paramsA.networkDb.addNode(n2)
-    }
-    val probe = TestProbe()
-    val switchboard = system.actorOf(Props(new Actor {
-      override def receive: Receive = {
-        case msg => probe.ref forward msg
-      }
-    }), "switchboard")
-
-    val routerA = system.actorOf(Props(new Router(paramsA, watcherA)), "routerA")
-    val idA = PrivateKey(BinaryData("01" * 32), true).publicKey
-
-    val watcherB = system.actorOf(Props(new FakeWatcher()))
-    val paramsB = Bob.nodeParams
-    routingInfoB.map {
-      case (a, u1, u2, n1, n2) =>
-        paramsB.networkDb.addChannel(a, txid, Satoshi(100000))
-        paramsB.networkDb.addChannelUpdate(u1)
-        paramsB.networkDb.addChannelUpdate(u2)
-        paramsB.networkDb.addNode(n1)
-        paramsB.networkDb.addNode(n2)
-    }
-    val routerB = system.actorOf(Props(new Router(paramsB, watcherB)), "routerB")
-    val idB = PrivateKey(BinaryData("02" * 32), true).publicKey
-
-    val pipe = system.actorOf(Props(new RoutingSyncSpec.Pipe(routerA, idA, routerB, idA)))
+  test("handle chanel range extended queries") {
+    val params = TestConstants.Alice.nodeParams
+    val router = TestFSMRef(new Router(params, TestProbe().ref))
     val sender = TestProbe()
-    awaitCond({
-      sender.send(routerA, 'channels)
-      val channelsA = sender.expectMsgType[Iterable[ChannelAnnouncement]]
-      channelsA.size == routingInfoA.size
-    }, max = 30 seconds)
+    sender.ignoreMsg { case _: TransportHandler.ReadAck => true }
+    val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
 
-    test((routerA, routerB, pipe))
+    // ask router to send a channel range query
+    sender.send(router, SendChannelQueryEx(remoteNodeId, sender.ref))
+    val QueryChannelRangeEx(chainHash, firstBlockNum, numberOfBlocks) = sender.expectMsgType[QueryChannelRangeEx]
+    sender.expectMsgType[GossipTimestampFilter]
+
+
+    val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(350)
+    val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo).map(t => t._1.shortChannelId -> t).toMap
+    val initChannels = fakeRoutingInfo.values.map(_._1).foldLeft(TreeMap.empty[ShortChannelId, ChannelAnnouncement]) { case (m, c) => m + (c.shortChannelId -> c) }
+    val initChannelUpdates = fakeRoutingInfo.values.flatMap(t => Seq(t._2, t._3)).map { u =>
+      val desc = Router.getDesc(u, initChannels(u.shortChannelId))
+      (desc) -> u
+    }.toMap
+
+    // split our anwser in 3 blocks
+    val List(block1) = ChannelRangeQueriesEx.encodeShortChannelIdAndTimestamps(firstBlockNum, numberOfBlocks, shortChannelIds.take(100), Router.getTimestamp(initChannels, initChannelUpdates), ChannelRangeQueriesEx.UNCOMPRESSED_FORMAT)
+    val List(block2) = ChannelRangeQueriesEx.encodeShortChannelIdAndTimestamps(firstBlockNum, numberOfBlocks, shortChannelIds.drop(100).take(100), Router.getTimestamp(initChannels, initChannelUpdates), ChannelRangeQueriesEx.UNCOMPRESSED_FORMAT)
+    val List(block3) = ChannelRangeQueriesEx.encodeShortChannelIdAndTimestamps(firstBlockNum, numberOfBlocks, shortChannelIds.drop(200).take(150), Router.getTimestamp(initChannels, initChannelUpdates), ChannelRangeQueriesEx.UNCOMPRESSED_FORMAT)
+
+    // send first block
+    sender.send(router, PeerRoutingMessage(remoteNodeId, ReplyChannelRangeEx(chainHash, block1.firstBlock, block1.numBlocks, 1, block1.shortChannelIdAndTimestamps)))
+    // router should ask for our first block of ids
+    val QueryShortChannelIdsEx(_, _, data1) = sender.expectMsgType[QueryShortChannelIdsEx]
+    val (_, shortChannelIds1, false) = ChannelRangeQueries.decodeShortChannelIds(data1)
+    assert(shortChannelIds1 == shortChannelIds.take(100))
+
+    // send second block
+    sender.send(router, PeerRoutingMessage(remoteNodeId, ReplyChannelRangeEx(chainHash, block2.firstBlock, block2.numBlocks, 1, block2.shortChannelIdAndTimestamps)))
+
+    // router should not ask for more ids, it already has a pending query !
+    sender.expectNoMsg(1 second)
+
+    // send the first 50 items
+    shortChannelIds1.take(50).foreach(id => {
+      val (ca, cu1, cu2, _, _) = fakeRoutingInfo(id)
+      sender.send(router, PeerRoutingMessage(remoteNodeId, ca))
+      sender.send(router, PeerRoutingMessage(remoteNodeId, cu1))
+      sender.send(router, PeerRoutingMessage(remoteNodeId, cu2))
+    })
+    sender.expectNoMsg(1 second)
+
+    // send the last 50 items
+    shortChannelIds1.drop(50).foreach(id => {
+      val (ca, cu1, cu2, _, _) = fakeRoutingInfo(id)
+      sender.send(router, PeerRoutingMessage(remoteNodeId, ca))
+      sender.send(router, PeerRoutingMessage(remoteNodeId, cu1))
+      sender.send(router, PeerRoutingMessage(remoteNodeId, cu2))
+    })
+    sender.expectNoMsg(1 second)
+
+    // now send our ReplyShortChannelIdsEnd message
+    sender.send(router, PeerRoutingMessage(remoteNodeId, ReplyShortChannelIdsEndEx(chainHash, 1.toByte)))
+
+    // router should ask for our second block of ids
+    val QueryShortChannelIdsEx(_, _, data2) = sender.expectMsgType[QueryShortChannelIdsEx]
+    val (_, shortChannelIds2, false) = ChannelRangeQueries.decodeShortChannelIds(data2)
+    assert(shortChannelIds2 == shortChannelIds.drop(100).take(100))
   }
-
-  test("initial sync") {
-    case (routerA, routerB, pipe) => {
-      Globals.blockCount.set(shortChannelIds.map(id => ShortChannelId.coordinates(id).blockHeight).max)
-
-      val sender = TestProbe()
-      routerA ! SendChannelQueryEx(Alice.nodeParams.nodeId, pipe)
-      routerB ! SendChannelQueryEx(Bob.nodeParams.nodeId, pipe)
-
-      awaitCond({
-        sender.send(routerA, 'channels)
-        val channelsA = sender.expectMsgType[Iterable[ChannelAnnouncement]]
-        sender.send(routerB, 'channels)
-        val channelsB = sender.expectMsgType[Iterable[ChannelAnnouncement]]
-        channelsA.toSet == channelsB.toSet
-      }, max = 30 seconds)
-    }
-  }
-}
-
-object RoutingSyncExSpec {
-  def makeFakeRoutingInfo(shortChannelId: ShortChannelId): (ChannelAnnouncement, ChannelUpdate, ChannelUpdate, NodeAnnouncement, NodeAnnouncement) = {
-    val (priv_a, priv_b, priv_funding_a, priv_funding_b) = (randomKey, randomKey, randomKey, randomKey)
-    val channelAnn_ab = channelAnnouncement(shortChannelId, priv_a, priv_b, priv_funding_a, priv_funding_b)
-    val TxCoordinates(blockHeight, _, _) = ShortChannelId.coordinates(shortChannelId)
-    val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, timestamp = blockHeight)
-    val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, priv_a.publicKey, shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, timestamp = blockHeight)
-    val nodeAnnouncement_a = makeNodeAnnouncement(priv_a, "a", Alice.nodeParams.color, List())
-    val nodeAnnouncement_b = makeNodeAnnouncement(priv_b, "b", Bob.nodeParams.color, List())
-    (channelAnn_ab, channelUpdate_ab, channelUpdate_ba, nodeAnnouncement_a, nodeAnnouncement_b)
-  }
-
-  class Pipe(a: ActorRef, idA: PublicKey, b: ActorRef, idB: PublicKey) extends Actor {
-    def receive = {
-      case msg: RoutingMessage if sender == a => b ! PeerRoutingMessage(idA, msg)
-      case msg: RoutingMessage if sender == b => a ! PeerRoutingMessage(idB, msg)
-    }
-  }
-
 }

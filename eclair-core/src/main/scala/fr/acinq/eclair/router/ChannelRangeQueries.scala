@@ -21,18 +21,18 @@ object ChannelRangeQueries {
     * Compressed a sequence of *sorted* short channel id.
     *
     * @param shortChannelIds must be sorted beforehand
-    * @return a sequence of encoded short channel ids
+    * @return a sequence of short channel id blocks
     */
-  def encodeShortChannelIds(firstBlockIn: Long, numBlocksIn: Long, shortChannelIds: SortedSet[ShortChannelId], format: Byte, useGzip: Boolean = false, maxCount: Option[Int] = None): List[ShortChannelIdsBlock] = {
+  def encodeShortChannelIds(firstBlockIn: Long, numBlocksIn: Long, shortChannelIds: SortedSet[ShortChannelId], format: Byte, useGzip: Boolean = false): List[ShortChannelIdsBlock] = {
     if (shortChannelIds.isEmpty) {
       // special case: reply with an "empty" block
       List(ShortChannelIdsBlock(firstBlockIn, numBlocksIn, BinaryData("00")))
     } else {
       // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
-      val count = maxCount.getOrElse(format match {
+      val count = format match {
         case UNCOMPRESSED_FORMAT => 7000
         case ZLIB_FORMAT => 12000 // TODO: do something less simplistic...
-      })
+      }
       shortChannelIds.grouped(count).map(ids => {
         val (firstBlock, numBlocks) = if (ids.isEmpty) (firstBlockIn, numBlocksIn) else {
           val firstBlock: Long = ShortChannelId.coordinates(ids.head).blockHeight

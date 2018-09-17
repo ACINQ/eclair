@@ -18,9 +18,8 @@ package fr.acinq.eclair.router
 
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
 import fr.acinq.eclair.crypto.TransportHandler
@@ -28,8 +27,8 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.{Error, QueryChannelRange}
-import fr.acinq.eclair.{ShortChannelId, TestConstants, randomKey}
+import fr.acinq.eclair.wire.Error
+import fr.acinq.eclair.{ShortChannelId, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -40,7 +39,6 @@ import scala.concurrent.duration._
   */
 @RunWith(classOf[JUnitRunner])
 class RouterSpec extends BaseRouterSpec {
-  import BaseRouterSpec._
 
   test("properly announce valid new channels and ignore invalid ones") { case (router, watcher) =>
     val eventListener = TestProbe()
@@ -233,13 +231,5 @@ class RouterSpec extends BaseRouterSpec {
     assert(state.channels.size == 4)
     assert(state.nodes.size == 6)
     assert(state.updates.size == 8)
-  }
-
-  test("channel range queries") {  case (router, _) =>
-    val sender = TestProbe()
-    sender.send(router, SendChannelQuery(TestConstants.Alice.nodeParams.nodeId, sender.ref))
-    val routinTable = ChannelRangeQueriesSpec.shortChannelIds.take(500).map(RoutingSyncSpec.makeFakeRoutingInfo)
-    val queryChannelRange = sender.expectMsgType[QueryChannelRange]
-    println(queryChannelRange)
   }
 }
