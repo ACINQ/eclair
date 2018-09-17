@@ -162,6 +162,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
               // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
               watcher ! ValidateRequest(c)
               val d1 = d.copy(awaiting = d.awaiting + (c -> Nil)) // no origin
+              // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
+              db.removeFromPruned(c.shortChannelId)
               stay using handle(u, self, d1)
             case None if d.privateChannels.contains(shortChannelId) =>
               // channel isn't announced but we already know about it, we can process the channel_update
@@ -407,7 +409,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
     case Event(PeerRoutingMessage(remoteNodeId, u: ChannelUpdate), d) =>
       sender ! TransportHandler.ReadAck(u)
       log.debug("received channel update for shortChannelId={}", u.shortChannelId)
-      stay using handle(u, sender, d)
+      stay using handle(u, sender, d, remoteNodeId_opt = Some(remoteNodeId))
 
     case Event(PeerRoutingMessage(remoteNodeId, c: ChannelAnnouncement), d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
@@ -547,7 +549,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       d
     }
 
-  def handle(u: ChannelUpdate, origin: ActorRef, d: Data): Data =
+  def handle(u: ChannelUpdate, origin: ActorRef, d: Data, remoteNodeId_opt: Option[PublicKey] = None): Data =
     if (d.channels.contains(u.shortChannelId)) {
       // related channel is already known (note: this means no related channel_update is in the stash)
       val publicChannel = true
@@ -630,8 +632,22 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       // about that channel. We can ignore this update since we will receive it again
       log.info(s"channel shortChannelId=${u.shortChannelId} is back from the dead! requesting announcements about this channel")
       db.removeFromPruned(u.shortChannelId)
-      origin ! QueryShortChannelIds(u.chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(Seq(u.shortChannelId), ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
-      d
+      remoteNodeId_opt match {
+        case Some(remoteNodeId) =>
+          d.sync.get(remoteNodeId) match {
+            case Some(sync) =>
+              // we already have a pending request to that node, let's add this channel to the list and we'll get it later
+              d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = sync.missing + u.shortChannelId)))
+            case None =>
+              // we send the query right away
+              origin ! QueryShortChannelIds(u.chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(Seq(u.shortChannelId), ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
+              d.copy(sync = d.sync + (remoteNodeId -> Sync(missing = SortedSet(u.shortChannelId), count = 1)))
+          }
+        case None =>
+          // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case)
+          // anyway, that's not really a big deal because we have removed the channel from the pruned db so next time it shows up we will revalidate it
+          d
+      }
     } else {
       log.debug("ignoring announcement {} (unknown channel)", u)
       d
