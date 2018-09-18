@@ -95,6 +95,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   when(INITIALIZING) {
     case Event(remoteInit: wire.Init, InitializingData(address_opt, transport, channels, origin_opt, localInit)) =>
       transport ! TransportHandler.ReadAck(remoteInit)
+      val localHasInitialRoutingSync = Features.hasFeature(localInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
       val remoteHasInitialRoutingSync = Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
@@ -116,12 +117,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
             router ! GetRoutingState
           }
         }
-        if (remoteHasChannelRangeQueriesExOptional || remoteHasChannelRangeQueriesExMandatory) {
-          // if they support extended channel queries, always ask for their filter
-          router ! SendChannelQueryEx(remoteNodeId, transport)
-        } else if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
-          // if they support channel queries, always ask for their filter
-          router ! SendChannelQuery(remoteNodeId, transport)
+        if (localHasInitialRoutingSync) {
+          if (remoteHasChannelRangeQueriesExOptional || remoteHasChannelRangeQueriesExMandatory) {
+            // if they support extended channel queries, always ask for their filter
+            router ! SendChannelQueryEx(remoteNodeId, transport)
+          } else if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
+            // if they support channel queries, always ask for their filter
+            router ! SendChannelQuery(remoteNodeId, transport)
+          }
         }
 
         // let's bring existing/requested channels online
