@@ -151,14 +151,17 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
     case Event(LocalChannelUpdate(_, _, shortChannelId, remoteNodeId, channelAnnouncement_opt, u, _), d: Data) =>
       d.channels.get(shortChannelId) match {
         case Some(_) =>
+          log.info("1")
           // channel has already been announced and router knows about it, we can process the channel_update
           stay using handle(u, self, d)
         case None =>
           channelAnnouncement_opt match {
             case Some(c) if d.awaiting.contains(c) =>
+              log.info("2")
               // channel is currently being verified, we can process the channel_update right away (it will be stashed)
               stay using handle(u, self, d)
             case Some(c) =>
+              log.info("3")
               // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
               watcher ! ValidateRequest(c)
               val d1 = d.copy(awaiting = d.awaiting + (c -> Nil)) // no origin
@@ -166,9 +169,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
               db.removeFromPruned(c.shortChannelId)
               stay using handle(u, self, d1)
             case None if d.privateChannels.contains(shortChannelId) =>
+              log.info("4")
               // channel isn't announced but we already know about it, we can process the channel_update
               stay using handle(u, self, d)
             case None =>
+              log.info("5")
               // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
               // let's create a corresponding private channel and process the channel_update
               log.info("adding unannounced local channel to remote={} shortChannelId={}", remoteNodeId, shortChannelId)
@@ -592,7 +597,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         origin ! InvalidSignature(u)
         d
       } else if (d.updates.contains(desc)) {
-        log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.flags, u)
+        log.info("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         db.updateChannelUpdate(u)
         // we also need to update the graph
