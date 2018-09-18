@@ -1141,9 +1141,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.info(s"processing BITCOIN_OUTPUT_SPENT with txid=${tx.txid} tx=$tx")
       val extracted = Closing.extractPreimages(d.commitments.localCommit, tx)
       extracted map { case (htlc, fulfill) =>
-        val origin = d.commitments.originChannels(fulfill.id)
-        log.warning(s"fulfilling htlc #${fulfill.id} paymentHash=${sha256(fulfill.paymentPreimage)} origin=$origin")
-        relayer ! ForwardFulfill(fulfill, origin, htlc)
+        d.commitments.originChannels.get(fulfill.id) match {
+          case Some(origin) =>
+            log.info(s"fulfilling htlc #${fulfill.id} paymentHash=${sha256(fulfill.paymentPreimage)} origin=$origin")
+            relayer ! ForwardFulfill(fulfill, origin, htlc)
+          case None =>
+            // if we don't have the origin, it means that we already have forwarded the fulfill so that's not a big deal.
+            // this can happen if they send a signature containing the fulfill, then fail the channel before we have time to sign it
+            log.info(s"cannot fulfill htlc #${fulfill.id} paymentHash=${sha256(fulfill.paymentPreimage)} (origin not found)")
+        }
       }
       val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
         val (rev1, tx_opt) = Closing.claimRevokedHtlcTxOutputs(keyManager, d.commitments, rev, tx)
@@ -1171,16 +1177,26 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           Closing.timedoutHtlcs(d.commitments.remoteCommit, Satoshi(d.commitments.remoteParams.dustLimitSatoshis), tx) ++
           d.commitments.remoteNextCommitInfo.left.toSeq.flatMap(r => Closing.timedoutHtlcs(r.nextRemoteCommit, Satoshi(d.commitments.remoteParams.dustLimitSatoshis), tx))
       timedoutHtlcs.foreach { add =>
-        val origin = d.commitments.originChannels(add.id)
-        log.warning(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
-        relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcTimedout(d.channelId), origin, None, None))
+        d.commitments.originChannels.get(add.id) match {
+          case Some(origin) =>
+            log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
+            relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcTimedout(d.channelId), origin, None, None))
+          case None =>
+            // same as for fulfilling the htlc (no big deal)
+            log.info(s"cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
+        }
       }
       // we also need to fail outgoing htlcs that we know will never reach the blockchain
       val overridenHtlcs = Closing.overriddenHtlcs(d.commitments.localCommit, d.commitments.remoteCommit, d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit), tx)
       overridenHtlcs.foreach { add =>
-        val origin = d.commitments.originChannels(add.id)
-        log.warning(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overriden by local commit")
-        relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcOverridenByLocalCommit(d.channelId), origin, None, None))
+        d.commitments.originChannels.get(add.id) match {
+          case Some(origin) =>
+            log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overriden by local commit")
+            relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcOverridenByLocalCommit(d.channelId), origin, None, None))
+          case None =>
+            // same as for fulfilling the htlc (no big deal)
+            log.info(s"cannot fail overriden htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
+        }
       }
       // then let's see if any of the possible close scenarii can be considered done
       val mutualCloseDone = d.mutualClosePublished.exists(_.txid == tx.txid) // this case is trivial, in a mutual close scenario we only need to make sure that one of the closing txes is confirmed
