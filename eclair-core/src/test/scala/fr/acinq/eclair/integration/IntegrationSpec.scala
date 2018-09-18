@@ -234,7 +234,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.expectMsgType[PaymentSucceeded]
   }
 
-  test("send an HTLC A->D with an invalid expiry delta for B") {
+  ignore("send an HTLC A->D with an invalid expiry delta for B") {
     val sender = TestProbe()
     // to simulate this, we will update B's relay params
     // first we find out the short channel id for channel B-C
