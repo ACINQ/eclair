@@ -279,6 +279,19 @@ object Helpers {
 
   object Closing {
 
+    /**
+      * Indicates whether local has anything at stake in this channel
+      *
+      * @param data
+      * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
+      */
+    def nothingAtStake(data: HasCommitments): Boolean =
+      data.commitments.localCommit.index == 0 &&
+        data.commitments.localCommit.spec.toLocalMsat == 0 &&
+        data.commitments.remoteCommit.index == 0 &&
+        data.commitments.remoteCommit.spec.toRemoteMsat == 0 &&
+        data.commitments.remoteNextCommitInfo.isRight
+
     // used only to compute tx weights and estimate fees
     lazy val dummyPublicKey = PrivateKey(BinaryData("01" * 32), true).publicKey
 
