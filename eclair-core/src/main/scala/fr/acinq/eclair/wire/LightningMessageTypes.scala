@@ -202,21 +202,65 @@ case class PerHopPayload(shortChannelId: ShortChannelId,
                          amtToForward: Long,
                          outgoingCltvValue: Long)
 
+/**
+  *
+  * @param chainHash chain hash
+  * @param data prefix + list of short channel ids, where prefix specifies how the list is encoded
+  */
 case class QueryShortChannelIds(chainHash: BinaryData,
                                 data: BinaryData) extends RoutingMessage with HasChainHash
+
+/**
+  *
+  * @param chainHash chain hash
+  * @param flag if flag == 1, don't send back channel announcements
+  * @param data prefix + list of short channel ids, where prefix specifies how the list is encoded
+  */
+case class QueryShortChannelIdsEx(chainHash: BinaryData,
+                                  flag: Byte,
+                                  data: BinaryData) extends RoutingMessage with HasChainHash
 
 case class QueryChannelRange(chainHash: BinaryData,
                              firstBlockNum: Long,
                              numberOfBlocks: Long) extends RoutingMessage with HasChainHash
 
+case class QueryChannelRangeEx(chainHash: BinaryData,
+                              firstBlockNum: Long,
+                              numberOfBlocks: Long) extends RoutingMessage with HasChainHash
+
+/**
+  *
+  * @param chainHash chain hash
+  * @param firstBlockNum first block that is found in data
+  * @param numberOfBlocks number of blocks spanned by data
+  * @param complete
+  * @param data prefix + list of short channel ids, where prefix specifies how the list is encoded
+  */
 case class ReplyChannelRange(chainHash: BinaryData,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
                              complete: Byte,
                              data: BinaryData) extends RoutingMessage with HasChainHash
 
+/**
+  *
+  * @param chainHash chain hash
+  * @param firstBlockNum first block that is found in data
+  * @param numberOfBlocks number of blocks spanned by data
+  * @param complete
+  * @param data prefix + list of (short channel id + timestamp) values, where prefix specifies how the list is encoded
+  */
+case class ReplyChannelRangeEx(chainHash: BinaryData,
+                              firstBlockNum: Long,
+                              numberOfBlocks: Long,
+                              complete: Byte,
+                              data: BinaryData) extends RoutingMessage with HasChainHash
+
 case class ReplyShortChannelIdsEnd(chainHash: BinaryData,
                                   complete: Byte) extends RoutingMessage with HasChainHash
+
+case class ReplyShortChannelIdsEndEx(chainHash: BinaryData,
+                                    complete: Byte) extends RoutingMessage with HasChainHash
 
 case class GossipTimestampFilter(chainHash: BinaryData,
                                  firstTimestamp: Long,
