@@ -1955,7 +1955,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   }
 
   override def mdc(currentMessage: Any): MDC = {
-    val id = Helpers.getChannelId(stateData)
+    val id = currentMessage match {
+      case INPUT_RESTORED(data) => data.channelId
+      case _ => Helpers.getChannelId(stateData)
+    }
     Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(id))
   }
 
