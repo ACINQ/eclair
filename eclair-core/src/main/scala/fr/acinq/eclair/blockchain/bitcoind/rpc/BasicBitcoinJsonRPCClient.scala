@@ -39,7 +39,7 @@ class BasicBitcoinJsonRPCClient(config: AsyncHttpClientConfig, host: String, por
 
   val client: AsyncHttpClient = new AsyncHttpClient(config)
 
-  implicit val formats = DefaultFormats
+  implicit val formats = DefaultFormats.withBigDecimal
 
   override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] =
     invoke(JsonRPCRequest(method = method, params = params))
@@ -58,7 +58,7 @@ class BasicBitcoinJsonRPCClient(config: AsyncHttpClientConfig, host: String, por
       .execute(new AsyncCompletionHandler[Unit] {
         override def onCompleted(response: Response): Unit =
           try {
-            val jvalue = parse(response.getResponseBody)
+            val jvalue = parse(response.getResponseBody, useBigDecimalForDouble = true)
             val jerror = jvalue \ "error"
             val result = jvalue \ "result"
             if (jerror != JNull) {

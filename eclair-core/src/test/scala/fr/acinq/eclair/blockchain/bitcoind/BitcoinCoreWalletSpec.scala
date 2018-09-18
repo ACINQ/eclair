@@ -48,7 +48,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
 
   val walletPassword = Random.alphanumeric.take(8).mkString
 
-  implicit val formats = DefaultFormats
+  implicit val formats = DefaultFormats.withBigDecimal
 
 
   override def beforeAll(): Unit = {
@@ -108,6 +108,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val sender = TestProbe()
 
     wallet.getBalance.pipeTo(sender.ref)
+    //val foo = sender.receiveOne(2 seconds)
     assert(sender.expectMsgType[Satoshi] > Satoshi(0))
 
     wallet.getFinalAddress.pipeTo(sender.ref)
