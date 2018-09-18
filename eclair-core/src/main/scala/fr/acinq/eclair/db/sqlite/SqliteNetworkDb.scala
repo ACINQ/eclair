@@ -21,7 +21,7 @@ import java.sql.Connection
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi}
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.db.NetworkDb
+import fr.acinq.eclair.db.{NetworkDb, Payment}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs.nodeAnnouncementCodec
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
@@ -42,6 +42,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, node_id_1 BLOB NOT NULL, node_id_2 BLOB NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, timestamp INTEGER NOT NULL, flags BLOB NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
   }
 
   override def addNode(n: NodeAnnouncement): Unit = {
@@ -164,4 +165,24 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
+  override def addToPruned(shortChannelId: ShortChannelId): Unit = {
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)")) { statement =>
+      statement.setLong(1, shortChannelId.toLong)
+      statement.executeUpdate()
+    }
+  }
+
+  override def removeFromPruned(shortChannelId: ShortChannelId): Unit = {
+    using(sqlite.createStatement) { statement =>
+      statement.executeUpdate(s"DELETE FROM pruned WHERE short_channel_id=${shortChannelId.toLong}")
+    }
+  }
+
+  override def isPruned(shortChannelId: ShortChannelId): Boolean = {
+    using(sqlite.prepareStatement("SELECT short_channel_id from pruned WHERE short_channel_id=?")) { statement =>
+      statement.setLong(1, shortChannelId.toLong)
+      val rs = statement.executeQuery()
+      rs.next()
+    }
+  }
 }

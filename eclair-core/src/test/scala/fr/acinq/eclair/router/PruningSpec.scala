@@ -19,13 +19,15 @@ package fr.acinq.eclair.router
 import akka.actor.{Actor, ActorRef, Props}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
+import fr.acinq.eclair.blockchain.{ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.router.RoutingSyncSpec.{FakeWatcher, makeFakeRoutingInfo}
+import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
+import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass}
+import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, TxCoordinates}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, Outcome}
@@ -35,6 +37,7 @@ import scala.concurrent.duration._
 
 @RunWith(classOf[JUnitRunner])
 class PruningSpec extends TestkitBaseClass with BeforeAndAfterAll {
+  import PruningSpec._
 
   val txid = BinaryData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
   val remoteNodeId = PrivateKey(BinaryData("01" * 32), true).publicKey
@@ -95,7 +98,7 @@ class PruningSpec extends TestkitBaseClass with BeforeAndAfterAll {
       // we don't send the first 10 channels, which are stale
       val shortChannelIds1 = shortChannelIds.drop(10)
       val reply = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1.toByte, ChannelRangeQueries.encodeShortChannelIdsSingle(shortChannelIds1, ChannelRangeQueries.ZLIB_FORMAT, false))
-      probe.send(router, PeerRoutingMessage(remoteNodeId, reply))
+      probe.send(router, PeerRoutingMessage(probe.ref, remoteNodeId, reply))
       probe.expectMsgType[QueryShortChannelIds]
 
       // router should see that it has 10 channels that we don't have, check if they're stale, and prune them
@@ -105,6 +108,19 @@ class PruningSpec extends TestkitBaseClass with BeforeAndAfterAll {
         val ourIds = channels.map(_.shortChannelId).toSet
         ourIds == shortChannelIds1
       }, max = 30 seconds)
+    }
+  }
+}
+
+object PruningSpec {
+  class FakeWatcher extends Actor {
+    def receive = {
+      case _: WatchSpentBasic => ()
+      case ValidateRequest(ann) =>
+        val txOut = TxOut(Satoshi(1000000), Script.pay2wsh(Scripts.multiSig2of2(ann.bitcoinKey1, ann.bitcoinKey2)))
+        val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(ann.shortChannelId)
+        sender ! ValidateResult(ann, Some(Transaction(version = 0, txIn = Nil, txOut = List.fill(outputIndex + 1)(txOut), lockTime = 0)), true, None)
+      case unexpected => println(s"unexpected : $unexpected")
     }
   }
 }

@@ -732,7 +732,6 @@ object Helpers {
         }).toSet.flatten
       }
 
-
     /**
       * If a local commitment tx reaches min_depth, we need to fail the outgoing htlcs that only us had signed, because
       * they will never reach the blockchain.
@@ -745,10 +744,26 @@ object Helpers {
       * @param log
       * @return
       */
-    def overriddenHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
+    def overriddenHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
+        // our commit got confirmed, so any htlc that we signed but they didn't sign will never reach the chain
+        val mostRecentRemoteCommit = nextRemoteCommit_opt.getOrElse(remoteCommit)
         // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs
-        remoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add) -- localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
+        mostRecentRemoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add) -- localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
+      } else if (remoteCommit.txid == tx.txid) {
+        // their commit got confirmed
+        nextRemoteCommit_opt match {
+          case Some(nextRemoteCommit) =>
+            // we had signed a new commitment but they committed the previous one
+            // any htlc that we signed in the new commitment that they didn't sign will never reach the chain
+            nextRemoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add) -- localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
+          case None =>
+            // their last commitment got confirmed, so no htlcs will be overriden, they will timeout or be fulfilled on chain
+            Set.empty
+        }
+      } else if (nextRemoteCommit_opt.map(_.txid) == Some(tx.txid)) {
+        // their last commitment got confirmed, so no htlcs will be overriden, they will timeout or be fulfilled on chain
+        Set.empty
       } else Set.empty
 
     /**

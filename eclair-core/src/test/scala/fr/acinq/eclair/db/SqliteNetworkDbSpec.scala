@@ -101,4 +101,19 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.updateChannelUpdate(channel_update_1)
   }
 
+  test("add/remove/test pruned channels") {
+    val sqlite = inmem
+    val db = new SqliteNetworkDb(sqlite)
+
+    db.addToPruned(ShortChannelId(1))
+    db.addToPruned(ShortChannelId(5))
+
+    assert(db.isPruned(ShortChannelId(1)))
+    assert(!db.isPruned(ShortChannelId(3)))
+    assert(db.isPruned(ShortChannelId(1)))
+
+    db.removeFromPruned(ShortChannelId(5))
+    assert(!db.isPruned(ShortChannelId(5)))
+  }
+
 }

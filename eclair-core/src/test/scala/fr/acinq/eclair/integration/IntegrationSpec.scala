@@ -36,7 +36,7 @@ import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
 import fr.acinq.eclair.payment.{LocalPaymentHandler, PaymentRequest}
-import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
+import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, ChannelDesc}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
@@ -259,19 +259,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // A will receive an error from B that include the updated channel update, then will retry the payment
     sender.expectMsgType[PaymentSucceeded](5 seconds)
     // in the meantime, the router will have updated its state
-    awaitCond({
-      sender.send(nodes("A").router, 'updates)
-      sender.expectMsgType[Iterable[ChannelUpdate]].toSeq.contains(channelUpdateBC)
-    }, max = 20 seconds, interval = 1 second)
+    sender.send(nodes("A").router, 'updatesMap)
+    assert(sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)) === channelUpdateBC)
     // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, TickRefreshChannelUpdate))
     awaitCond({
-      sender.send(nodes("A").router, 'updates)
-      val u = sender.expectMsgType[Iterable[ChannelUpdate]].toSeq
-        .find(u => u.shortChannelId == channelUpdateBC.shortChannelId && u.flags == channelUpdateBC.flags)
-          .get
+      sender.send(nodes("A").router, 'updatesMap)
+      val u = sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
       u.cltvExpiryDelta == 144
-    }, max = 20 seconds, interval = 1 second)
+    }, max = 30 seconds, interval = 1 second)
   }
 
   test("send an HTLC A->D with an amount greater than capacity of B-C") {
@@ -796,10 +792,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     // then we make the announcements
     val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))
-    announcements.foreach(ann => nodes("A").router ! PeerRoutingMessage(remoteNodeId, ann))
+    announcements.foreach(ann => nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, ann))
     // we need to send channel_update otherwise router won't validate the channels
     val updates = channels.zip(announcements).map(x => AnnouncementsBatchValidationSpec.makeChannelUpdate(x._1, x._2.shortChannelId))
-    updates.foreach(update => nodes("A").router ! PeerRoutingMessage(remoteNodeId, update))
+    updates.foreach(update => nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, update))
     awaitCond({
       sender.send(nodes("D").router, 'channels)
       sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 5 // 5 remaining channels because  D->F{1-F4} have disappeared

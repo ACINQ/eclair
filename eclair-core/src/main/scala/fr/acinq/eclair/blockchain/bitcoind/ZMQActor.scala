@@ -22,6 +22,7 @@ import fr.acinq.eclair.blockchain.{NewBlock, NewTransaction}
 import org.zeromq.ZMQ.Event
 import org.zeromq.{ZContext, ZMQ, ZMsg}
 
+import scala.annotation.tailrec
 import scala.concurrent.{ExecutionContext, Promise}
 import scala.concurrent.duration._
 import scala.util.Try
@@ -47,26 +48,33 @@ class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) exte
   implicit val ec: ExecutionContext = context.system.dispatcher
 
   // we check messages in a non-blocking manner with an interval, making sure to retrieve all messages before waiting again
-  def checkEvent: Unit = Option(Event.recv(monitor, ZMQ.DONTWAIT)) match {
+  @tailrec
+  final def checkEvent: Unit = Option(Event.recv(monitor, ZMQ.DONTWAIT)) match {
     case Some(event) =>
       self ! event
       checkEvent
-    case None =>
-      context.system.scheduler.scheduleOnce(1 second)(checkEvent)
+    case None => ()
   }
 
-  def checkMsg: Unit = Option(ZMsg.recvMsg(subscriber, ZMQ.DONTWAIT)) match {
+  @tailrec
+  final def checkMsg: Unit = Option(ZMsg.recvMsg(subscriber, ZMQ.DONTWAIT)) match {
     case Some(msg) =>
       self ! msg
       checkMsg
-    case None =>
-      context.system.scheduler.scheduleOnce(1 second)(checkMsg)
+    case None => ()
   }
 
-  checkEvent
-  checkMsg
+  self ! 'checkEvent
+  self ! 'checkMsg
 
   override def receive: Receive = {
+    case 'checkEvent =>
+      checkEvent
+      context.system.scheduler.scheduleOnce(1 second, self ,'checkEvent)
+
+    case 'checkMsg =>
+      checkMsg
+      context.system.scheduler.scheduleOnce(1 second, self, 'checkMsg)
 
     case event: Event => event.getEvent match {
       case ZMQ.EVENT_CONNECTED =>
