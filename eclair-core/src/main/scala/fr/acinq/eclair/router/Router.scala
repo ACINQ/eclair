@@ -63,16 +63,16 @@ case class Sync(missing: SortedSet[ShortChannelId], totalMissingCount: Int, outd
 case class DescEdge(desc: ChannelDesc, u: ChannelUpdate) extends DefaultWeightedEdge
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
-                  channels: SortedMap[ShortChannelId, ChannelAnnouncement],
-                  updates: Map[ChannelDesc, ChannelUpdate],
-                  stash: Stash,
-                  awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
-                  privateChannels: Map[ShortChannelId, PublicKey], // short_channel_id -> node_id
-                  privateUpdates: Map[ChannelDesc, ChannelUpdate],
-                  excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
-                  graph: DirectedWeightedPseudograph[PublicKey, DescEdge],
-                  sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query
-                                             // for which we have not yet received an 'end' message
+                channels: SortedMap[ShortChannelId, ChannelAnnouncement],
+                updates: Map[ChannelDesc, ChannelUpdate],
+                stash: Stash,
+                awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
+                privateChannels: Map[ShortChannelId, PublicKey], // short_channel_id -> node_id
+                privateUpdates: Map[ChannelDesc, ChannelUpdate],
+                excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
+                graph: DirectedWeightedPseudograph[PublicKey, DescEdge],
+                sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query
+                                           // for which we have not yet received an 'end' message
                )
 
 sealed trait State
@@ -278,6 +278,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       val filter = GossipTimestampFilter(nodeParams.chainHash, firstTimestamp = 0, timestampRange = Int.MaxValue)
       remote ! filter
 
+      // clean our sync state for this peer: we receive a SendChannelQuery just when we connect/reconnect to a peer and
+      // will start a new complete sync process
+      stay using d.copy(sync = d.sync - remoteNodeId)
+
+    case Event(SendChannelQueryEx(remoteNodeId, remote), d) =>
+      // ask for everything
+      val query = QueryChannelRangeEx(nodeParams.chainHash, firstBlockNum = 0, numberOfBlocks = Int.MaxValue)
+      log.info("sending query_channel_range_ex={}", query)
+      remote ! query
+      // we also set a pass-all filter for now (we can update it later)
+      val filter = GossipTimestampFilter(nodeParams.chainHash, firstTimestamp = 0, timestampRange = Int.MaxValue)
+      remote ! filter
       // clean our sync state for this peer: we receive a SendChannelQuery just when we connect/reconnect to a peer and
       // will start a new complete sync process
       stay using d.copy(sync = d.sync - remoteNodeId)
