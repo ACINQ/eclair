@@ -4,13 +4,13 @@ import java.net.InetSocketAddress
 
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.ResumeAnnouncements
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
-import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast, RouteCalculationSpec}
+import fr.acinq.eclair.router._
 import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, randomKey, wire}
 import org.junit.runner.RunWith
 import org.scalatest.Outcome
@@ -142,5 +142,38 @@ class PeerSpec extends TestkitBaseClass {
       router.expectMsg(Peer.PeerRoutingMessage(transport.ref, remoteNodeId, c))
     }
     transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
+  }
+
+  test("send channel queries if local feature 'initial_routing_sync' is set") { probe =>
+    val authenticator = TestProbe()
+    val watcher = TestProbe()
+    val router = TestProbe()
+    val relayer = TestProbe()
+    val connection = TestProbe()
+    val transport = TestProbe()
+    val wallet: EclairWallet = null // unused
+    val remoteNodeId = Bob.nodeParams.nodeId
+    val peer = system.actorOf(Peer.props(Alice.nodeParams.copy(localFeatures = BinaryData("8a")), remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
+    probe.send(peer, Peer.Init(None, Set()))
+    probe.send(peer, Authenticator.Authenticated(null, transport.ref, remoteNodeId, InetSocketAddress.createUnresolved("localhost", 9735), false, None))
+    probe.send(peer, wire.Init(BinaryData.empty, BinaryData("8a")))
+    router.expectMsgType[SendChannelQuery]
+  }
+
+  test("don't send channel queries if local feature 'initial_routing_sync' is not set") { probe =>
+    val authenticator = TestProbe()
+    val watcher = TestProbe()
+    val router = TestProbe()
+    val relayer = TestProbe()
+    val connection = TestProbe()
+    val transport = TestProbe()
+    val wallet: EclairWallet = null // unused
+    val remoteNodeId = Bob.nodeParams.nodeId
+    // 0x82 means that we support channel range queries and data loss protection but do not want a routing table dump
+    val peer = system.actorOf(Peer.props(Alice.nodeParams.copy(localFeatures = BinaryData("82")), remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
+    probe.send(peer, Peer.Init(None, Set()))
+    probe.send(peer, Authenticator.Authenticated(null, transport.ref, remoteNodeId, InetSocketAddress.createUnresolved("localhost", 9735), false, None))
+    probe.send(peer, wire.Init(BinaryData.empty, BinaryData("8a")))
+    router.expectNoMsg(3 second)
   }
 }
