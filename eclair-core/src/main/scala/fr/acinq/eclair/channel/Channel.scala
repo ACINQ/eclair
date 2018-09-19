@@ -806,7 +806,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(TickRefreshChannelUpdate, d: DATA_NORMAL) =>
       // periodic refresh is used as a keep alive
-      log.debug(s"sending channel_update announcement (refresh)")
+      log.info(s"sending channel_update announcement (refresh)")
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = true)
       // we use GOTO instead of stay because we want to fire transitions
       goto(NORMAL) using store(d.copy(channelUpdate = channelUpdate))
