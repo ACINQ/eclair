@@ -101,6 +101,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
       val remoteHasChannelRangeQueriesExOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesExMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY)
+      val localHasChannelRangeQueriesOptional = Features.hasFeature(localInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
+      val localHasChannelRangeQueriesMandatory = Features.hasFeature(localInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
+      val localHasChannelRangeQueriesExOptional = Features.hasFeature(localInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL)
+      val localHasChannelRangeQueriesExMandatory = Features.hasFeature(localInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY)
       log.info(s"$remoteNodeId has features: initialRoutingSync=$remoteHasInitialRoutingSync channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional channelRangeQueriesMandatory=$remoteHasChannelRangeQueriesMandatory")
       if (Features.areSupported(remoteInit.localFeatures)) {
         origin_opt.map(origin => origin ! "connected")
@@ -117,10 +121,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
             router ! GetRoutingState
           }
         }
-        if (remoteHasChannelRangeQueriesExOptional || remoteHasChannelRangeQueriesExMandatory) {
+        // TODO: this is a hack for the Android version: don't send queries if we advertise that we don't support them
+        if ((localHasChannelRangeQueriesExOptional || localHasChannelRangeQueriesExMandatory) && (remoteHasChannelRangeQueriesExOptional || remoteHasChannelRangeQueriesExMandatory)) {
           // if they support extended channel queries, always ask for their filter
           router ! SendChannelQueryEx(remoteNodeId, transport)
-        } else if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
+        } else if ((localHasChannelRangeQueriesOptional || localHasChannelRangeQueriesMandatory) && (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory)) {
           // if they support channel queries, always ask for their filter
           router ! SendChannelQuery(remoteNodeId, transport)
         }
