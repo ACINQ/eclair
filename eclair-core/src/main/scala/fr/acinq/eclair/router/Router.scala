@@ -569,18 +569,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
             // we already have a pending query with this peer, add outdated ids to our "sync" state
             d.copy(sync = d.sync + (remoteNodeId -> sync.copy(outdated = sync.outdated ++ outdated, totalOutdatedCount = sync.totalOutdatedCount + outdated.size)))
         }
-        // they may send back several reply_channel_range messages for a single query_channel_range query, and we must not
-        // send another query_short_channel_ids query if they're still processing one
-        d.sync.get(remoteNodeId) match {
-          case None =>
-            // we don't have a pending query with this peer
-            val (slice, rest) = missing.splitAt(SHORTID_WINDOW)
-            transport ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, format, useGzip = false))
-            d.copy(sync = d.sync + (remoteNodeId -> Sync(rest, missing.size)))
-          case Some(sync) =>
-            // we already have a pending query with this peer, add missing ids to our "sync" state
-            d.copy(sync = d.sync + (remoteNodeId -> Sync(sync.missing ++ missing, sync.totalMissingCount + missing.size)))
-        }
       } else d
       context.system.eventStream.publish(syncProgress(d1))
       stay using d1
