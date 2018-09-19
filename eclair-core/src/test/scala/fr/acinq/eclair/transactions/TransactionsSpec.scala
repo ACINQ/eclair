@@ -25,6 +25,7 @@ import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.Scripts.{htlcOffered, htlcReceived, toLocalDelayed}
 import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
 import fr.acinq.eclair.wire.UpdateAddHtlc
+import grizzled.slf4j.Logging
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -36,7 +37,7 @@ import scala.util.{Failure, Random, Success, Try}
   * Created by PM on 16/12/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class TransactionsSpec extends FunSuite {
+class TransactionsSpec extends FunSuite with Logging {
 
   test("encode/decode sequence and locktime (one example)") {
 
@@ -360,7 +361,7 @@ class TransactionsSpec extends FunSuite {
     assert(tests.size === 15, "there were 15 tests at ec99f893f320e8c88f564c1c8566f3454f0f1f5f")
 
     tests.foreach(test => {
-      println(s"running BOLT 2 test: '${test.name}'")
+      logger.info(s"running BOLT 2 test: '${test.name}'")
       val fee = commitTxFee(test.dustLimit, test.spec)
       assert(fee === test.expectedFee)
     })
