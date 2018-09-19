@@ -261,10 +261,16 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)) === channelUpdateBC)
     // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, TickRefreshChannelUpdate))
+    sender.send(nodes("B").register, ForwardShortId(shortIdBC, CMD_GETINFO))
+    val channelUpdateBC_new = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].channelUpdate
+    logger.info(s"channelUpdateBC=$channelUpdateBC")
+    logger.info(s"channelUpdateBC_new=$channelUpdateBC_new")
+    assert(channelUpdateBC_new.timestamp > channelUpdateBC.timestamp)
+    assert(channelUpdateBC_new.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks)
     awaitCond({
       sender.send(nodes("A").router, 'updatesMap)
       val u = sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
-      u.cltvExpiryDelta == 144
+      u.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks
     }, max = 30 seconds, interval = 1 second)
   }
 

@@ -414,7 +414,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       val query = QueryChannelRangeEx(nodeParams.chainHash, firstBlockNum = 0, numberOfBlocks = Int.MaxValue)
       log.info("sending query_channel_range_ex={}", query)
       remote ! query
-
       // we also set a pass-all filter for now (we can update it later)
       val filter = GossipTimestampFilter(nodeParams.chainHash, firstTimestamp = 0, timestampRange = Int.MaxValue)
       remote ! filter
@@ -614,7 +613,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
           log.info(s"asking {} for the next slice of short_channel_ids", remoteNodeId)
           val (slice, rest) = sync.missing.splitAt(SHORTID_WINDOW)
           transport ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
-           d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
+          d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
         case Some(sync) if sync.missing.isEmpty =>
           // we received reply_short_channel_ids_end for our last query and have not sent another one, we can now remove
           // the remote peer from our map
