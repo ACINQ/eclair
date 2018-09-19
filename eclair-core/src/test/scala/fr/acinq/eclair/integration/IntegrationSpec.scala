@@ -277,7 +277,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   }
 
   test("send an HTLC A->D with an amount greater than capacity of B-C") {
-    logger.info("===================")
     val sender = TestProbe()
     // first we retrieve a payment hash from D
     val amountMsat = MilliSatoshi(300000000L)
