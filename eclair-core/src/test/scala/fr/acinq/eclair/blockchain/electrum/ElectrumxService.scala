@@ -30,14 +30,14 @@ trait ElectrumxService extends DockerTestKit {
     DockerContainer("lukechilds/electrumx")
       .withNetworkMode("host")
       .withEnv("DAEMON_URL=http://foo:bar@localhost:28332", "COIN=BitcoinSegwit", "NET=regtest")
-      .withLogLineReceiver(LogLineReceiver(true, println))
+      //.withLogLineReceiver(LogLineReceiver(true, println))
   } else {
     // on windows or oxs, host mode is not available, but from docker 18.03 on host.docker.internal can be used instead
     // host.docker.internal is not (yet ?) available on linux though
     DockerContainer("lukechilds/electrumx")
       .withPorts(50001 -> Some(50001))
       .withEnv("DAEMON_URL=http://foo:bar@host.docker.internal:28332", "COIN=BitcoinSegwit", "NET=regtest", "TCP_PORT=50001")
-      .withLogLineReceiver(LogLineReceiver(true, println))
+      //.withLogLineReceiver(LogLineReceiver(true, println))
   }
 
   override def dockerContainers: List[DockerContainer] = electrumxContainer :: super.dockerContainers

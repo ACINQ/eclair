@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.transactions.Transactions
+import grizzled.slf4j.Logging
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -27,7 +28,7 @@ import org.scalatest.junit.JUnitRunner
 import scala.util.{Failure, Random, Success, Try}
 
 @RunWith(classOf[JUnitRunner])
-class ElectrumWalletBasicSpec extends FunSuite {
+class ElectrumWalletBasicSpec extends FunSuite with Logging {
 
   import ElectrumWallet._
   import ElectrumWalletBasicSpec._
@@ -197,7 +198,7 @@ class ElectrumWalletBasicSpec extends FunSuite {
         Try(state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, true)) match {
           case Success((state2, tx1, fee1)) => ()
           case Failure(cause) if cause.getMessage != null && cause.getMessage.contains("insufficient funds") => ()
-          case Failure(cause) => println(s"unexpected $cause")
+          case Failure(cause) => logger.error(s"unexpected $cause")
         }
       }
     }
