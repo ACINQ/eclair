@@ -43,11 +43,11 @@
     </appender-->
 
     <!--logger name="fr.acinq.eclair.channel" level="DEBUG"/-->
-    <logger name="fr.acinq.eclair.router" level="WARN"/>
+    <!--logger name="fr.acinq.eclair.router" level="WARN"/>
     <logger name="fr.acinq.eclair.channel" level="WARN"/>
-    <logger name="fr.acinq.eclair.Diagnostics" level="OFF"/>
+    <logger name="fr.acinq.eclair.Diagnostics" level="OFF"/-->
 
-    <root level="INFO">
+    <root level="OFF">
         <!--appender-ref ref="FILE"/>
         <appender-ref ref="CONSOLEWARN"/-->
         <appender-ref ref="CONSOLE"/>
