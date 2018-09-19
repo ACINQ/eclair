@@ -64,17 +64,17 @@ case class Sync(missing: SortedSet[ShortChannelId], totalMissingCount: Int)
 case class DescEdge(desc: ChannelDesc, u: ChannelUpdate) extends DefaultWeightedEdge
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
-                  channels: SortedMap[ShortChannelId, ChannelAnnouncement],
-                  updates: Map[ChannelDesc, ChannelUpdate],
-                  stash: Stash,
-                  rebroadcast: Rebroadcast,
-                  awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
-                  privateChannels: Map[ShortChannelId, PublicKey], // short_channel_id -> node_id
-                  privateUpdates: Map[ChannelDesc, ChannelUpdate],
-                  excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
-                  graph: DirectedWeightedPseudograph[PublicKey, DescEdge],
-                  sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query
-                                             // for which we have not yet received an 'end' message
+                channels: SortedMap[ShortChannelId, ChannelAnnouncement],
+                updates: Map[ChannelDesc, ChannelUpdate],
+                stash: Stash,
+                rebroadcast: Rebroadcast,
+                awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
+                privateChannels: Map[ShortChannelId, PublicKey], // short_channel_id -> node_id
+                privateUpdates: Map[ChannelDesc, ChannelUpdate],
+                excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
+                graph: DirectedWeightedPseudograph[PublicKey, DescEdge],
+                sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query
+                                           // for which we have not yet received an 'end' message
                )
 
 sealed trait State
@@ -390,7 +390,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         .recover { case t => sender ! Status.Failure(t) }
       stay
 
-    case Event(SendChannelQuery(_, remote), _) =>
+    case Event(SendChannelQuery(remoteNodeId, remote), d) =>
       // ask for everything
       // we currently send only one query_channel_range message per peer, when we just (re)connected to it, so we don't
       // have to worry about sending a new query_channel_range when another query is still in progress
@@ -401,7 +401,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       // we also set a pass-all filter for now (we can update it later)
       val filter = GossipTimestampFilter(nodeParams.chainHash, firstTimestamp = 0, timestampRange = Int.MaxValue)
       remote ! filter
-      stay
+
+      // clean our sync state for this peer: we receive a SendChannelQuery just when we connect/reconnect to a peer and
+      // will start a new complete sync process
+      stay using d.copy(sync = d.sync - remoteNodeId)
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), d) if routingMessage.chainHash != nodeParams.chainHash =>
@@ -521,7 +524,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
           log.info(s"asking {} for the next slice of short_channel_ids", remoteNodeId)
           val (slice, rest) = sync.missing.splitAt(SHORTID_WINDOW)
           transport ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
-           d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
+          d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
         case Some(sync) if sync.missing.isEmpty =>
           // we received reply_short_channel_ids_end for our last query aand have not sent another one, we can now remove
           // the remote peer from our map
