@@ -29,7 +29,7 @@ import scala.concurrent.Await
   */
 abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterEach with BeforeAndAfterAll {
 
-  override def beforeAll {
+  override def beforeEach(): Unit = {
     Globals.blockCount.set(400000)
     Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
   }
