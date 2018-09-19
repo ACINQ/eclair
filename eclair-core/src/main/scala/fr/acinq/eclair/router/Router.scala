@@ -64,17 +64,17 @@ case class Sync(missing: SortedSet[ShortChannelId], totalMissingCount: Int)
 case class DescEdge(desc: ChannelDesc, u: ChannelUpdate) extends DefaultWeightedEdge
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
-                  channels: SortedMap[ShortChannelId, ChannelAnnouncement],
-                  updates: Map[ChannelDesc, ChannelUpdate],
-                  stash: Stash,
-                  rebroadcast: Rebroadcast,
-                  awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
-                  privateChannels: Map[ShortChannelId, PublicKey], // short_channel_id -> node_id
-                  privateUpdates: Map[ChannelDesc, ChannelUpdate],
-                  excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
-                  graph: DirectedWeightedPseudograph[PublicKey, DescEdge],
-                  sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query
-                                             // for which we have not yet received an 'end' message
+                channels: SortedMap[ShortChannelId, ChannelAnnouncement],
+                updates: Map[ChannelDesc, ChannelUpdate],
+                stash: Stash,
+                rebroadcast: Rebroadcast,
+                awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
+                privateChannels: Map[ShortChannelId, PublicKey], // short_channel_id -> node_id
+                privateUpdates: Map[ChannelDesc, ChannelUpdate],
+                excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
+                graph: DirectedWeightedPseudograph[PublicKey, DescEdge],
+                sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query
+                                           // for which we have not yet received an 'end' message
                )
 
 sealed trait State
@@ -521,7 +521,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
           log.info(s"asking {} for the next slice of short_channel_ids", remoteNodeId)
           val (slice, rest) = sync.missing.splitAt(SHORTID_WINDOW)
           transport ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
-           d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
+          d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
         case Some(sync) if sync.missing.isEmpty =>
           // we received reply_short_channel_ids_end for our last query aand have not sent another one, we can now remove
           // the remote peer from our map
