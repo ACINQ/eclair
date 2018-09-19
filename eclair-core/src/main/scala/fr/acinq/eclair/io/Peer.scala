@@ -94,7 +94,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   when(INITIALIZING) {
     case Event(remoteInit: wire.Init, InitializingData(address_opt, transport, channels, origin_opt)) =>
       transport ! TransportHandler.ReadAck(remoteInit)
-      val localHasInitialRoutingSync = Features.hasFeature(nodeParams.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
       val remoteHasInitialRoutingSync = Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
@@ -111,13 +110,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
             router ! GetRoutingState
           }
         }
-        if (localHasInitialRoutingSync) {
-          // if we want a routing table dump and do not support range queries they will send it to us
-          // but if we do support range queries we have to ask, this mirrors the behaviour above
-          if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
-            // if they support channel queries, ask for their filter
-            router ! SendChannelQuery(remoteNodeId, transport)
-          }
+        if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
+          // if they support channel queries, always ask for their filter
+          router ! SendChannelQuery(remoteNodeId, transport)
         }
 
         // let's bring existing/requested channels online
