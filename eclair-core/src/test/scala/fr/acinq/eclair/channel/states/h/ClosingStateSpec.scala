@@ -20,7 +20,7 @@ import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{OutPoint, ScriptFlags, Transaction, TxIn}
-import fr.acinq.eclair.{Globals, TestkitBaseClass}
+import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -233,6 +233,8 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv BITCOIN_TX_CONFIRMED (local commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _, _) =>
     within(30 seconds) {
+      val listener = TestProbe()
+      system.eventStream.subscribe(listener.ref, classOf[LocalCommitConfirmed])
       // alice sends an htlc to bob
       val (ra1, htlca1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       crossSign(alice, bob, alice2bob, bob2alice)
@@ -252,10 +254,11 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(initialState.localCommitPublished.isDefined)
 
       // actual test starts here
-      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 0, 0)
-      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainDelayedTx), 0, 0)
-      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(htlcTimeoutTx), 0, 0)
-      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimDelayedTx), 0, 0)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 42, 0)
+      assert(listener.expectMsgType[LocalCommitConfirmed].refundAtBlock == 42 + TestConstants.Bob.channelParams.toSelfDelay)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainDelayedTx), 200, 0)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(htlcTimeoutTx), 201, 0)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimDelayedTx), 202, 0)
       awaitCond(alice.stateName == CLOSED)
     }
   }
@@ -263,26 +266,51 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BITCOIN_TX_CONFIRMED (local commit with htlcs only signed by local)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      // an error occurs and alice publishes her commit tx
-      val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
-      val aliceCommitTx = aliceData.commitments.localCommit.publishableTxs.commitTx.tx
+      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       // alice sends an htlc
       val (r, htlc) = addHtlc(4200000, alice, bob, alice2bob, bob2alice)
       // and signs it (but bob doesn't sign it)
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
       alice2bob.expectMsgType[CommitSig]
+      // note that bob doesn't receive the new sig!
       // then we make alice unilaterally close the channel
       alice ! Error("00" * 32, "oops".getBytes)
-      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx)) // commit tx
+      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
       awaitCond(alice.stateName == CLOSING)
-      val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
-      assert(initialState.localCommitPublished.isDefined)
+      val aliceData = alice.stateData.asInstanceOf[DATA_CLOSING]
+      assert(aliceData.localCommitPublished.isDefined)
       relayer.expectMsgType[LocalChannelDown]
 
       // actual test starts here
       // when the commit tx is signed, alice knows that the htlc she sent right before the unilateral close will never reach the chain
       alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 0, 0)
+      // so she fails it
+      val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
+      relayer.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverridenByLocalCommit(aliceData.channelId), origin, None, None)))
+    }
+  }
+
+  test("recv BITCOIN_TX_CONFIRMED (remote commit with htlcs only signed by local in next remote commit)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, relayer, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      // alice sends an htlc
+      val (r, htlc) = addHtlc(4200000, alice, bob, alice2bob, bob2alice)
+      // and signs it (but bob doesn't sign it)
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[CommitSig]
+      // then we make alice believe bob unilaterally close the channel
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
+      awaitCond(alice.stateName == CLOSING)
+      val aliceData = alice.stateData.asInstanceOf[DATA_CLOSING]
+      assert(aliceData.remoteCommitPublished.isDefined)
+      relayer.expectMsgType[LocalChannelDown]
+
+      // actual test starts here
+      // when the commit tx is signed, alice knows that the htlc she sent right before the unilateral close will never reach the chain
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0)
       // so she fails it
       val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
       relayer.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverridenByLocalCommit(aliceData.channelId), origin, None, None)))

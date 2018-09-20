@@ -59,7 +59,6 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
     probe.send(bitcoincli, BitcoinReq("getnewaddress"))
     val JString(address) = probe.expectMsgType[JValue]
-    println(address)
 
     probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
     val JString(txid) = probe.expectMsgType[JValue](3000 seconds)
@@ -84,7 +83,6 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
     probe.send(bitcoincli, BitcoinReq("getnewaddress"))
     val JString(address) = probe.expectMsgType[JValue]
-    println(address)
 
     probe.send(bitcoincli, BitcoinReq("dumpprivkey", address))
     val JString(wif) = probe.expectMsgType[JValue]

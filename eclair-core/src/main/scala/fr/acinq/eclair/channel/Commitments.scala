@@ -367,7 +367,7 @@ object Commitments {
         val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), remoteNextPerCommitmentPoint))
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
-        log.debug(s"built remote commit number=${remoteCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == OUT).size, spec.htlcs.filter(_.direction == IN).size, remoteCommitTx.tx)
+        log.info(s"built remote commit number=${remoteCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), remoteCommitTx.tx)
 
         // don't sign if they don't get paid
         val commitSig = CommitSig(
@@ -409,7 +409,7 @@ object Commitments {
     val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(keyManager, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
     val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath))
 
-    log.debug(s"built local commit number=${localCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == IN).size, spec.htlcs.filter(_.direction == OUT).size, localCommitTx.tx)
+    log.info(s"built local commit number=${localCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), localCommitTx.tx)
 
     // TODO: should we have optional sig? (original comment: this tx will NOT be signed if our output is empty)
 
