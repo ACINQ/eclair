@@ -41,7 +41,6 @@ import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
-import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging
@@ -324,13 +323,6 @@ trait Service extends Logging {
                           case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
                         }
 
-                        case "sentpending" =>
-                          val f: Future[Iterable[Set[DirectedHtlc]]] = for {
-                            channels_id <- (register ? 'channels).mapTo[Map[BinaryData, ActorRef]].map(_.keys)
-                            htlcs <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GET_PENDING_HTLCS).mapTo[Set[DirectedHtlc]]))
-                          } yield htlcs
-                          completeRpcFuture(req.id, f.map(_.flatten))
-
                         case "riskinfo" => req.params match {
                           case JString(payeeNodeId) :: JInt(sinceBlockHeight) :: JString(sdTimes) :: Nil => Try(PublicKey(payeeNodeId)) match {
                             case Success(pk) => completeRpcFuture(req.id, Future.successful(nodeParams.pendingPaymentDb.riskInfo(pk, sinceBlockHeight.toLong, sdTimes.toDouble)))
@@ -444,7 +436,6 @@ trait Service extends Logging {
     "receivedinfo (paymentRequest): returns extended info about received payment",
     "sentinfo (paymentHash): returns extended info about sent payment",
     "sentinfo (paymentRequest): returns extended info about sent payment",
-    "sentpending: list all outgoing payments which are pending currently, this includes sent as well as routed payments",
     "riskinfo (payeeNodeId, sinceBlockHeight, standardDeviationTimes): show a risk info about a given payee since a given blockchain height",
     "badpeers: list direct peers which did not fail our outgoing payments when they should have done that",
     "audit: list all send/received/relayed payments",

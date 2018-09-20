@@ -1445,14 +1445,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       sender ! RES_GETINFO(remoteNodeId, channelId, stateName, stateData)
       stay
 
-    case Event(CMD_GET_PENDING_HTLCS, d: HasCommitments) =>
-      sender ! d.commitments.pendingOutgoingHtlcs
-      stay
-
-    case Event(CMD_GET_PENDING_HTLCS, _) =>
-      sender ! Set.empty[DirectedHtlc]
-      stay
-
     case Event(c: CMD_ADD_HTLC, d: HasCommitments) =>
       log.info(s"rejecting htlc request in state=$stateName")
       val error = ChannelUnavailable(d.channelId)
