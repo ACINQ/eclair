@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+import fr.acinq.bitcoin.{BinaryData, Block, MilliSatoshi}
 import fr.acinq.eclair.{Globals, TestConstants}
 import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelUnavailable}
 import fr.acinq.eclair.channel.Register.ForwardShortId
@@ -205,7 +205,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   test("payment failed (Update)") { case (router, _) =>
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
