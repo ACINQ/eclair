@@ -6,9 +6,13 @@ language: scala
 scala:
  - 2.11.11
 env:
- - export LD_LIBRARY_PATH=/usr/local/lib
+  global:
+    - export LD_LIBRARY_PATH=/usr/local/lib
+  matrix:
+    - PROFILE=default
+    - PROFILE=0.17
 script:
- - mvn install
+ - mvn install -P$PROFILE
 cache:
  directories:
   - .autoconf
