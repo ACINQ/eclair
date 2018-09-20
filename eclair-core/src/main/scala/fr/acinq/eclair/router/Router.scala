@@ -660,25 +660,22 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
 
       // transport_opt will contain a valid transport only when we're handling an update that we received from a peer, not
       // when we're sending updates to ourselves
-      transport_opt match {
-        case Some(transport) =>
-          remoteNodeId_opt match {
-            case Some(remoteNodeId) =>
-              d.sync.get(remoteNodeId) match {
-                case Some(sync) =>
-                  // we already have a pending request to that node, let's add this channel to the list and we'll get it later
-                  d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = sync.missing + u.shortChannelId, totalMissingCount = sync.totalMissingCount + 1)))
-                case None =>
-                  // we send the query right away
-                  transport ! QueryShortChannelIds(u.chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(Seq(u.shortChannelId), ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
-                  d.copy(sync = d.sync + (remoteNodeId -> Sync(missing = SortedSet(u.shortChannelId), totalMissingCount = 1)))
-              }
+      (transport_opt, remoteNodeId_opt) match {
+        case (Some(transport), Some(remoteNodeId)) =>
+          d.sync.get(remoteNodeId) match {
+            case Some(sync) =>
+              // we already have a pending request to that node, let's add this channel to the list and we'll get it later
+              d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = sync.missing + u.shortChannelId, totalMissingCount = sync.totalMissingCount + 1)))
             case None =>
-              // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case)
-              // anyway, that's not really a big deal because we have removed the channel from the pruned db so next time it shows up we will revalidate it
-              d
+              // we send the query right away
+              transport ! QueryShortChannelIds(u.chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(Seq(u.shortChannelId), ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
+              d.copy(sync = d.sync + (remoteNodeId -> Sync(missing = SortedSet(u.shortChannelId), totalMissingCount = 1)))
           }
-        case None => d
+        case _ =>
+          // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case).
+          // or we don't have a transport to send our query with.
+          // anyway, that's not really a big deal because we have removed the channel from the pruned db so next time it shows up we will revalidate it
+          d
       }
     } else {
       log.debug("ignoring announcement {} (unknown channel)", u)
