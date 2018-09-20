@@ -66,7 +66,9 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     bitcoinClient.invoke("createrawtransaction", Array.empty, Map(address -> 6)).pipeTo(sender.ref)
     val JString(noinputTx) = sender.expectMsgType[JString]
     bitcoinClient.invoke("fundrawtransaction", noinputTx).pipeTo(sender.ref)
-    val JString(unsignedtx) = sender.expectMsgType[JValue] \ "hex"
+    val json = sender.expectMsgType[JValue]
+    val JString(unsignedtx) = json \ "hex"
+    val JInt(changePos) = json \ "changepos"
     bitcoinClient.invoke("signrawtransaction", unsignedtx).pipeTo(sender.ref)
     val JString(signedTx) = sender.expectMsgType[JValue] \ "hex"
     val tx = Transaction.read(signedTx)
@@ -86,25 +88,19 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     // and publish the tx a third time to test idempotence
     client.publishTransaction(tx).pipeTo(sender.ref)
     sender.expectMsg(txid)
+
     // now let's spent the output of the tx
-    // for that we lock all utxo...
-    bitcoinClient.invoke("listunspent").pipeTo(sender.ref)
-    for (utxo <- sender.expectMsgType[JArray].children) {
-      val JString(utxo_txid) = utxo \ "txid"
-      val JInt(utxo_vout) = utxo \ "vout"
-      bitcoinClient.invoke("lockunspent", false, Array(Map("txid" -> utxo_txid, "vout" -> utxo_vout))).pipeTo(sender.ref)
-      sender.expectMsgType[JValue]
+    val spendingTx = {
+      val pos = if (changePos == 0) 1 else 0
+      bitcoinClient.invoke("createrawtransaction", Array(Map("txid" -> txid, "vout" -> pos)), Map(address -> 5.99999)).pipeTo(sender.ref)
+      val JString(unsignedtx) = sender.expectMsgType[JValue]
+      bitcoinClient.invoke("signrawtransaction", unsignedtx).pipeTo(sender.ref)
+      val JString(signedTx) = sender.expectMsgType[JValue] \ "hex"
+      signedTx
     }
-    // ...except this one
-    for (vout <- 0 until tx.txOut.size) {
-      bitcoinClient.invoke("lockunspent", true, Array(Map("txid" -> txid, "vout" -> vout))).pipeTo(sender.ref)
-      sender.expectMsgType[JValue]
-    }
-    // and we spend all the outputs of the tx
-    bitcoinClient.invoke("sendtoaddress", "n4MN27Lk7Yh3pwfjCiAbRXtRVjs4Uk67fG", 10).pipeTo(sender.ref)
+    bitcoinClient.invoke("sendrawtransaction", spendingTx).pipeTo(sender.ref)
     val JString(spendingTxid) = sender.expectMsgType[JValue]
-    bitcoinClient.invoke("getrawtransaction", spendingTxid).pipeTo(sender.ref)
-    val JString(spendingTx) = sender.expectMsgType[JValue]
+
     // and publish the tx a fourth time to test idempotence
     client.publishTransaction(tx).pipeTo(sender.ref)
     sender.expectMsg(txid)
