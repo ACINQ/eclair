@@ -50,16 +50,19 @@ import scala.util.Try
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
 case class RouteRequest(source: PublicKey, target: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty)
-case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) { require(hops.size > 0, "route cannot be empty") }
+case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
+  require(hops.size > 0, "route cannot be empty")
+}
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
 case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef)
+case class SendChannelQueryEx(remoteNodeId: PublicKey, to: ActorRef)
 case object GetRoutingState
 case class RoutingState(channels: Iterable[ChannelAnnouncement], updates: Iterable[ChannelUpdate], nodes: Iterable[NodeAnnouncement])
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
-case class Sync(missing: SortedSet[ShortChannelId], totalMissingCount: Int)
+case class Sync(missing: SortedSet[ShortChannelId], totalMissingCount: Int, outdated: SortedSet[ShortChannelId] = SortedSet.empty[ShortChannelId], totalOutdatedCount: Int = 0)
 
 case class DescEdge(desc: ChannelDesc, u: ChannelUpdate) extends DefaultWeightedEdge
 
@@ -406,6 +409,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       // will start a new complete sync process
       stay using d.copy(sync = d.sync - remoteNodeId)
 
+    case Event(SendChannelQueryEx(remoteNodeId, remote), d) =>
+      // ask for everything
+      val query = QueryChannelRangeEx(nodeParams.chainHash, firstBlockNum = 0, numberOfBlocks = Int.MaxValue)
+      log.info("sending query_channel_range_ex={}", query)
+      remote ! query
+      // we also set a pass-all filter for now (we can update it later)
+      val filter = GossipTimestampFilter(nodeParams.chainHash, firstTimestamp = 0, timestampRange = Int.MaxValue)
+      remote ! filter
+      // clean our sync state for this peer: we receive a SendChannelQuery just when we connect/reconnect to a peer and
+      // will start a new complete sync process
+      stay using d.copy(sync = d.sync - remoteNodeId)
+
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), d) if routingMessage.chainHash != nodeParams.chainHash =>
       sender ! TransportHandler.ReadAck(routingMessage)
@@ -417,10 +432,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       log.debug("received channel update from {}", sender)
       stay using handle(u, sender, d)
 
-    case Event(PeerRoutingMessage(_, remoteNodeId, u: ChannelUpdate), d) =>
+    case Event(PeerRoutingMessage(transport, remoteNodeId, u: ChannelUpdate), d) =>
       sender ! TransportHandler.ReadAck(u)
       log.debug("received channel update for shortChannelId={}", u.shortChannelId)
-      stay using handle(u, sender, d, remoteNodeId_opt = Some(remoteNodeId))
+      stay using handle(u, sender, d, remoteNodeId_opt = Some(remoteNodeId), transport_opt = Some(transport))
 
     case Event(PeerRoutingMessage(_, _, c: ChannelAnnouncement), d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
@@ -476,6 +491,17 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       replies.foreach(reply => transport ! reply)
       stay
 
+    case Event(PeerRoutingMessage(transport, _, routingMessage@QueryChannelRangeEx(chainHash, firstBlockNum, numberOfBlocks)), d) =>
+      sender ! TransportHandler.ReadAck(routingMessage)
+      log.info("received query_channel_range_ex={}", routingMessage)
+      // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
+      val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
+      val blocks = ChannelRangeQueriesEx.encodeShortChannelIdAndTimestamps(firstBlockNum, numberOfBlocks, shortChannelIds, Router.getTimestamp(d.channels, d.updates), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+      log.info("sending back reply_channel_range_ex with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
+      val replies = blocks.map(block => ReplyChannelRangeEx(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIdAndTimestamps))
+      replies.foreach(reply => transport ! reply)
+      stay
+
     case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       val (format, theirShortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
@@ -499,6 +525,53 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       context.system.eventStream.publish(syncProgress(d1))
       stay using d1
 
+    case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyChannelRangeEx(chainHash, firstBlockNum, numberOfBlocks, _, data)), d) =>
+      sender ! TransportHandler.ReadAck(routingMessage)
+      val (format, theirTimestampMap) = ChannelRangeQueriesEx.decodeShortChannelIdAndTimestamps(data)
+      val theirShortChannelIds = theirTimestampMap.keySet
+      // keep our ids that match [block, block + numberOfBlocks]
+      val ourShortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(id => {
+        val TxCoordinates(height, _, _) = ShortChannelId.coordinates(id)
+        height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
+      })
+
+      // missing are the ones we don't have
+      val missing = theirShortChannelIds -- ourShortChannelIds
+
+      // outdated are the ones for which our update timestamp is older that theirs
+      val outdated = ourShortChannelIds.filter(id => {
+        theirShortChannelIds.contains(id) && Router.getTimestamp(d.channels, d.updates)(id) < theirTimestampMap(id)
+      })
+      log.info("received reply_channel_range_ex, we're missing {} channel announcements and we have {} outdated ones, format={} ", missing.size, outdated.size, format)
+      // we first sync missing channels, then outdated ones
+      val d1 = if (missing.nonEmpty) {
+        // they may send back several reply_channel_range messages for a single query_channel_range query, and we must not
+        // send another query_short_channel_ids query if they're still processing one
+        d.sync.get(remoteNodeId) match {
+          case None =>
+            // we don't have a pending query with this peer
+            val (slice, rest) = missing.splitAt(SHORTID_WINDOW)
+            transport ! QueryShortChannelIdsEx(chainHash, 1.toByte, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, format, useGzip = false))
+            d.copy(sync = d.sync + (remoteNodeId -> Sync(rest, missing.size, outdated, outdated.size)))
+          case Some(sync) =>
+            // we already have a pending query with this peer, add missing ids to our "sync" state
+            d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = sync.missing ++ missing, totalMissingCount = sync.totalMissingCount + missing.size)))
+        }
+      } else if (outdated.nonEmpty) {
+        d.sync.get(remoteNodeId) match {
+          case None =>
+            // we don't have a pending query with this peer
+            val (slice, rest) = outdated.splitAt(SHORTID_WINDOW)
+            transport ! QueryShortChannelIdsEx(chainHash, 0.toByte, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, format, useGzip = false))
+            d.copy(sync = d.sync + (remoteNodeId -> Sync(SortedSet(), 0, outdated, outdated.size)))
+          case Some(sync) =>
+            // we already have a pending query with this peer, add outdated ids to our "sync" state
+            d.copy(sync = d.sync + (remoteNodeId -> sync.copy(outdated = sync.outdated ++ outdated, totalOutdatedCount = sync.totalOutdatedCount + outdated.size)))
+        }
+      } else d
+      context.system.eventStream.publish(syncProgress(d1))
+      stay using d1
+
     case Event(PeerRoutingMessage(transport, _, routingMessage@QueryShortChannelIds(chainHash, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       val (_, shortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
@@ -515,6 +588,22 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       transport ! ReplyShortChannelIdsEnd(chainHash, 1)
       stay
 
+    case Event(PeerRoutingMessage(transport, _, routingMessage@QueryShortChannelIdsEx(chainHash, flag, data)), d) =>
+      sender ! TransportHandler.ReadAck(routingMessage)
+      val (_, shortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
+      log.info("received query_short_channel_ids_ex for {} channel announcements, useGzip={}", shortChannelIds.size, useGzip)
+      shortChannelIds.foreach(shortChannelId => {
+        d.channels.get(shortChannelId) match {
+          case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
+          case Some(ca) =>
+            if (flag == 1.toByte) transport ! ca
+            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => transport ! u)
+            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => transport ! u)
+        }
+      })
+      transport ! ReplyShortChannelIdsEndEx(chainHash, 1)
+      stay
+
     case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyShortChannelIdsEnd(chainHash, complete)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       log.info("received reply_short_channel_ids_end={}", routingMessage)
@@ -526,7 +615,32 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
           transport ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
           d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
         case Some(sync) if sync.missing.isEmpty =>
-          // we received reply_short_channel_ids_end for our last query aand have not sent another one, we can now remove
+          // we received reply_short_channel_ids_end for our last query and have not sent another one, we can now remove
+          // the remote peer from our map
+          d.copy(sync = d.sync - remoteNodeId)
+        case _ =>
+          d
+      }
+      context.system.eventStream.publish(syncProgress(d1))
+      stay using d1
+
+    case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyShortChannelIdsEndEx(chainHash, complete)), d) =>
+      sender ! TransportHandler.ReadAck(routingMessage)
+      log.info("received reply_short_channel_ids_end_ex={}", routingMessage)
+      // have we more channels to ask this peer?
+      val d1 = d.sync.get(remoteNodeId) match {
+        case Some(sync) if sync.missing.nonEmpty =>
+          log.info(s"asking {} for the next slice of missing short_channel_ids", remoteNodeId)
+          val (slice, rest) = sync.missing.splitAt(SHORTID_WINDOW)
+          transport ! QueryShortChannelIdsEx(chainHash, 1.toByte, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
+          d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = rest)))
+        case Some(sync) if sync.outdated.nonEmpty =>
+          log.info(s"asking {} for the next slice of outdated short_channel_ids", remoteNodeId)
+          val (slice, rest) = sync.outdated.splitAt(SHORTID_WINDOW)
+          transport ! QueryShortChannelIdsEx(chainHash, 0.toByte, ChannelRangeQueries.encodeShortChannelIdsSingle(slice, ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
+          d.copy(sync = d.sync + (remoteNodeId -> sync.copy(outdated = rest)))
+        case Some(sync) if sync.missing.isEmpty && sync.outdated.isEmpty =>
+          // we received reply_short_channel_ids_end for our last query and have not sent another one, we can now remove
           // the remote peer from our map
           d.copy(sync = d.sync - remoteNodeId)
         case _ =>
@@ -574,7 +688,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       d
     }
 
-  def handle(u: ChannelUpdate, origin: ActorRef, d: Data, remoteNodeId_opt: Option[PublicKey] = None): Data =
+  def handle(u: ChannelUpdate, origin: ActorRef, d: Data, remoteNodeId_opt: Option[PublicKey] = None, transport_opt: Option[ActorRef] = None): Data =
     if (d.channels.contains(u.shortChannelId)) {
       // related channel is already known (note: this means no related channel_update is in the stash)
       val publicChannel = true
@@ -657,21 +771,28 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       // about that channel. We can ignore this update since we will receive it again
       log.info(s"channel shortChannelId=${u.shortChannelId} is back from the dead! requesting announcements about this channel")
       db.removeFromPruned(u.shortChannelId)
-      remoteNodeId_opt match {
-        case Some(remoteNodeId) =>
-          d.sync.get(remoteNodeId) match {
-            case Some(sync) =>
-              // we already have a pending request to that node, let's add this channel to the list and we'll get it later
-              d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = sync.missing + u.shortChannelId, totalMissingCount = sync.totalMissingCount + 1)))
+
+      // transport_opt will contain a valid transport only when we're handling an update that we received from a peer, not
+      // when we're sending updates to ourselves
+      transport_opt match {
+        case None => d
+        case Some(transport) =>
+          remoteNodeId_opt match {
+            case Some(remoteNodeId) =>
+              d.sync.get(remoteNodeId) match {
+                case Some(sync) =>
+                  // we already have a pending request to that node, let's add this channel to the list and we'll get it later
+                  d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = sync.missing + u.shortChannelId, totalMissingCount = sync.totalMissingCount + 1)))
+                case None =>
+                  // we send the query right away
+                  transport ! QueryShortChannelIds(u.chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(Seq(u.shortChannelId), ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
+                  d.copy(sync = d.sync + (remoteNodeId -> Sync(missing = SortedSet(u.shortChannelId), totalMissingCount = 1)))
+              }
             case None =>
-              // we send the query right away
-              origin ! QueryShortChannelIds(u.chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(Seq(u.shortChannelId), ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
-              d.copy(sync = d.sync + (remoteNodeId -> Sync(missing = SortedSet(u.shortChannelId), totalMissingCount = 1)))
+              // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case)
+              // anyway, that's not really a big deal because we have removed the channel from the pruned db so next time it shows up we will revalidate it
+              d
           }
-        case None =>
-          // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case)
-          // anyway, that's not really a big deal because we have removed the channel from the pruned db so next time it shows up we will revalidate it
-          d
       }
     } else {
       log.debug("ignoring announcement {} (unknown channel)", u)
@@ -773,6 +894,27 @@ object Router {
       updates.keys.filter(desc => ignoreNodes.contains(desc.a) || ignoreNodes.contains(desc.b))
     }
     desc
+  }
+
+  /**
+    *
+    * @param channels id -> announcement map
+    * @param updates  channel updates
+    * @param id       short channel id
+    * @return the timestamp of the most recent update for this channel id, 0 if we don't have any
+    */
+  def getTimestamp(channels: SortedMap[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate])(id: ShortChannelId): Long = {
+    val ca = channels(id)
+    val opt1 = updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2))
+    val opt2 = updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1))
+    val timestamp = (opt1, opt2) match {
+      case (Some(u1), Some(u2)) => Math.max(u1.timestamp, u2.timestamp)
+      case (Some(u1), None) => u1.timestamp
+      case (None, Some(u2)) => u2.timestamp
+      case (None, None) =>
+        0L
+    }
+    timestamp
   }
 
   /**

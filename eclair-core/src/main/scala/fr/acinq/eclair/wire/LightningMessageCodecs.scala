@@ -318,6 +318,31 @@ object LightningMessageCodecs {
       ("data" | varsizebinarydata)
     ).as[ReplyChannelRange]
 
+  val queryShortChannelIdsExCodec: Codec[QueryShortChannelIdsEx] = (
+    ("chainHash" | binarydata(32)) ::
+      ("flag" | byte) ::
+      ("data" | varsizebinarydata)
+    ).as[QueryShortChannelIdsEx]
+
+  val replyShortChanelIdsEndExCodec: Codec[ReplyShortChannelIdsEndEx] = (
+    ("chainHash" | binarydata(32)) ::
+      ("complete" | byte)
+    ).as[ReplyShortChannelIdsEndEx]
+
+  val queryChannelRangeExCodec: Codec[QueryChannelRangeEx] = (
+    ("chainHash" | binarydata(32)) ::
+      ("firstBlockNum" | uint32) ::
+      ("numberOfBlocks" | uint32)
+    ).as[QueryChannelRangeEx]
+
+  val replyChannelRangeExCodec: Codec[ReplyChannelRangeEx] = (
+    ("chainHash" | binarydata(32)) ::
+      ("firstBlockNum" | uint32) ::
+      ("numberOfBlocks" | uint32) ::
+      ("complete" | byte) ::
+      ("data" | varsizebinarydata)
+    ).as[ReplyChannelRangeEx]
+
   val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
     ("chainHash" | binarydata(32)) ::
       ("firstTimestamp" | uint32) ::
@@ -353,6 +378,10 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
+    .typecase(1001, queryShortChannelIdsExCodec)
+    .typecase(1002, replyShortChanelIdsEndExCodec)
+    .typecase(1003, queryChannelRangeExCodec)
+    .typecase(1004, replyChannelRangeExCodec)
 
 
   /**
