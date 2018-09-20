@@ -1211,6 +1211,22 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv CMD_UPDATE_FEE (two in a row)") { case (alice, _, alice2bob, _, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      sender.send(alice, CMD_UPDATE_FEE(20000))
+      sender.expectMsg("ok")
+      val fee1 = alice2bob.expectMsgType[UpdateFee]
+      sender.send(alice, CMD_UPDATE_FEE(30000))
+      sender.expectMsg("ok")
+      val fee2 = alice2bob.expectMsgType[UpdateFee]
+      awaitCond(alice.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee2))))
+    }
+  }
+
   test("recv CMD_UPDATE_FEE (when fundee)") { case (_, bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -1222,6 +1238,17 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   }
 
   test("recv UpdateFee") { case (_, bob, _, _, _, _, _) =>
+    within(30 seconds) {
+      val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
+      val fee1 = UpdateFee("00" * 32, 12000)
+      bob ! fee1
+      val fee2 = UpdateFee("00" * 32, 14000)
+      bob ! fee2
+      awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee2), remoteNextHtlcId = 0)))
+    }
+  }
+
+  test("recv UpdateFee (two in a row)") { case (_, bob, _, _, _, _, _) =>
     within(30 seconds) {
       val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
       val fee = UpdateFee("00" * 32, 12000)

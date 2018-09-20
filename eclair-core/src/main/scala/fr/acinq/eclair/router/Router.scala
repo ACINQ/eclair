@@ -389,8 +389,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       findRoute(d.graph, start, end, withEdges = assistedUpdates, withoutEdges = ignoredUpdates)
-        .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
-        .recover { case t => sender ! Status.Failure(t) }
+            .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
+            .recover { case t => sender ! Status.Failure(t) }
       stay
 
     case Event(SendChannelQuery(remoteNodeId, remote), d) =>
@@ -432,10 +432,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       log.debug("received channel update from {}", sender)
       stay using handle(u, sender, d)
 
-    case Event(PeerRoutingMessage(_, remoteNodeId, u: ChannelUpdate), d) =>
+    case Event(PeerRoutingMessage(transport, remoteNodeId, u: ChannelUpdate), d) =>
       sender ! TransportHandler.ReadAck(u)
       log.debug("received channel update for shortChannelId={}", u.shortChannelId)
-      stay using handle(u, sender, d, remoteNodeId_opt = Some(remoteNodeId))
+      stay using handle(u, sender, d, remoteNodeId_opt = Some(remoteNodeId), transport_opt = Some(transport))
 
     case Event(PeerRoutingMessage(_, _, c: ChannelAnnouncement), d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
@@ -688,7 +688,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       d
     }
 
-  def handle(u: ChannelUpdate, origin: ActorRef, d: Data, remoteNodeId_opt: Option[PublicKey] = None): Data =
+  def handle(u: ChannelUpdate, origin: ActorRef, d: Data, remoteNodeId_opt: Option[PublicKey] = None, transport_opt: Option[ActorRef] = None): Data =
     if (d.channels.contains(u.shortChannelId)) {
       // related channel is already known (note: this means no related channel_update is in the stash)
       val publicChannel = true
@@ -771,19 +771,23 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       // about that channel. We can ignore this update since we will receive it again
       log.info(s"channel shortChannelId=${u.shortChannelId} is back from the dead! requesting announcements about this channel")
       db.removeFromPruned(u.shortChannelId)
-      remoteNodeId_opt match {
-        case Some(remoteNodeId) =>
+
+      // transport_opt will contain a valid transport only when we're handling an update that we received from a peer, not
+      // when we're sending updates to ourselves
+      (transport_opt, remoteNodeId_opt) match {
+        case (Some(transport), Some(remoteNodeId)) =>
           d.sync.get(remoteNodeId) match {
             case Some(sync) =>
               // we already have a pending request to that node, let's add this channel to the list and we'll get it later
               d.copy(sync = d.sync + (remoteNodeId -> sync.copy(missing = sync.missing + u.shortChannelId, totalMissingCount = sync.totalMissingCount + 1)))
             case None =>
               // we send the query right away
-              origin ! QueryShortChannelIds(u.chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(Seq(u.shortChannelId), ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
+              transport ! QueryShortChannelIds(u.chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(Seq(u.shortChannelId), ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
               d.copy(sync = d.sync + (remoteNodeId -> Sync(missing = SortedSet(u.shortChannelId), totalMissingCount = 1)))
           }
-        case None =>
-          // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case)
+        case _ =>
+          // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case).
+          // or we don't have a transport to send our query with.
           // anyway, that's not really a big deal because we have removed the channel from the pruned db so next time it shows up we will revalidate it
           d
       }
