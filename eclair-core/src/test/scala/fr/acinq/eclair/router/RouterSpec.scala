@@ -27,11 +27,13 @@ import fr.acinq.eclair.io.Peer.{InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.Error
-import fr.acinq.eclair.{ShortChannelId, randomKey}
+import fr.acinq.eclair.wire.{Error, QueryShortChannelIds}
+import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
+import scala.collection.SortedSet
+import scala.compat.Platform
 import scala.concurrent.duration._
 
 /**
@@ -231,5 +233,33 @@ class RouterSpec extends BaseRouterSpec {
     assert(state.channels.size == 4)
     assert(state.nodes.size == 6)
     assert(state.updates.size == 8)
+  }
+
+  test("ask for channels that we marked as stale for which we receive a new update") { case (router, watcher) =>
+    val blockHeight = Globals.blockCount.get().toInt - 2020
+    val channelId = ShortChannelId(blockHeight, 5, 0)
+    val announcement = channelAnnouncement(channelId, priv_a, priv_c, priv_funding_a, priv_funding_c)
+    val timestamp = Platform.currentTime / 1000 - 1209600 - 1
+    val update = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, timestamp = timestamp)
+    val probe = TestProbe()
+    probe.ignoreMsg { case _: TransportHandler.ReadAck => true }
+    probe.send(router, PeerRoutingMessage(null, remoteNodeId, announcement))
+    watcher.expectMsgType[ValidateRequest]
+    probe.send(router, PeerRoutingMessage(null, remoteNodeId, update))
+    watcher.send(router, ValidateResult(announcement, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true, None))
+
+    probe.send(router, TickPruneStaleChannels)
+    val sender = TestProbe()
+    sender.send(router, GetRoutingState)
+    val state = sender.expectMsgType[RoutingState]
+
+
+    val update1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, timestamp = Platform.currentTime / 1000)
+
+    // we want to make sure that transport receives the query
+    val transport = TestProbe()
+    probe.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, update1))
+    val query = transport.expectMsgType[QueryShortChannelIds]
+    assert(ChannelRangeQueries.decodeShortChannelIds(query.data)._2 == SortedSet(channelId))
   }
 }

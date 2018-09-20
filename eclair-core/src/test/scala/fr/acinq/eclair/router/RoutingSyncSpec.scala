@@ -21,6 +21,9 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   import RoutingSyncSpec.makeFakeRoutingInfo
 
+  val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(350)
+  val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo).map(t => t._1.shortChannelId -> t).toMap
+
   test("handle channel range queries") {
     val params = TestConstants.Alice.nodeParams
     val router = TestFSMRef(new Router(params, TestProbe().ref))
@@ -33,10 +36,6 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     sender.send(router, SendChannelQuery(remoteNodeId, sender.ref))
     val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks) = sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
-
-
-    val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(350)
-    val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo).map(t => t._1.shortChannelId -> t).toMap
 
     // split our anwser in 3 blocks
     val List(block1) = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds.take(100), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
@@ -79,6 +78,37 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val QueryShortChannelIds(_, data2) = transport.expectMsgType[QueryShortChannelIds]
     val (_, shortChannelIds2, false) = ChannelRangeQueries.decodeShortChannelIds(data2)
     assert(shortChannelIds2 == shortChannelIds.drop(100).take(100))
+  }
+
+  test("reset sync state on reconnection") {
+    val params = TestConstants.Alice.nodeParams
+    val router = TestFSMRef(new Router(params, TestProbe().ref))
+    val transport = TestProbe()
+    val sender = TestProbe()
+    sender.ignoreMsg { case _: TransportHandler.ReadAck => true }
+    val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
+
+    // ask router to send a channel range query
+    sender.send(router, SendChannelQuery(remoteNodeId, sender.ref))
+    val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks) = sender.expectMsgType[QueryChannelRange]
+    sender.expectMsgType[GossipTimestampFilter]
+
+    val List(block1) = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds.take(100), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+
+    // send first block
+    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyChannelRange(chainHash, block1.firstBlock, block1.numBlocks, 1, block1.shortChannelIds)))
+
+    // router should ask for our first block of ids
+    val QueryShortChannelIds(_, data1) = transport.expectMsgType[QueryShortChannelIds]
+    // router should think that it is mssing 100 channels
+    val Some(sync) = router.stateData.sync.get(remoteNodeId)
+    assert(sync.totalMissingCount == 100)
+
+    // simulate a re-connection
+    sender.send(router, SendChannelQuery(remoteNodeId, sender.ref))
+    sender.expectMsgType[QueryChannelRange]
+    sender.expectMsgType[GossipTimestampFilter]
+    assert(router.stateData.sync.get(remoteNodeId).isEmpty)
   }
 }
 
