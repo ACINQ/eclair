@@ -590,8 +590,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
 
     case Event(PeerRoutingMessage(transport, _, routingMessage@QueryShortChannelIdsEx(chainHash, flag, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
-      val (_, shortChannelIds, useGzip) = ChannelRangeQueries.decodeShortChannelIds(data)
-      log.info("received query_short_channel_ids_ex for {} channel announcements, useGzip={}", shortChannelIds.size, useGzip)
+      val (_, shortChannelIds, _) = ChannelRangeQueries.decodeShortChannelIds(data)
+      log.info("received query_short_channel_ids_ex for {} channel announcements, flag={}", shortChannelIds.size, flag)
       shortChannelIds.foreach(shortChannelId => {
         d.channels.get(shortChannelId) match {
           case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
