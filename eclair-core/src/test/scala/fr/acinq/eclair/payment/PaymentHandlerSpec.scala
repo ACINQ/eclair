@@ -151,6 +151,9 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
     sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee with custom expiry", expirySeconds_opt = Some(60)))
     assert(sender.expectMsgType[PaymentRequest].expiry === Some(60))
+
+    sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee with custom expiry", expirySeconds_opt = Some(60), fallbackAddress = Some("mrS8eVKXguwufwvsVe9GtgGb7fif9UQeAu")))
+    assert(sender.expectMsgType[PaymentRequest].fallbackAddress() === Some("mrS8eVKXguwufwvsVe9GtgGb7fif9UQeAu"))
   }
 
   test("Generated payment request contains the provided extra hops") {

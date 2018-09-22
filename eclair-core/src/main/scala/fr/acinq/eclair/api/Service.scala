@@ -232,7 +232,15 @@ trait Service extends Logging {
                             completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description)).mapTo[PaymentRequest].map(PaymentRequest.write))
                           case JInt(amountMsat) :: JString(description) :: JInt(expirySeconds) :: Nil =>
                             completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description, Some(expirySeconds.toLong))).mapTo[PaymentRequest].map(PaymentRequest.write))
-                          case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description] or [amount, description, expiryDuration]"))
+                          case JString(description) :: JInt(expirySeconds) :: JString(fallbackAddress) :: Nil =>
+                            val isFallbackAddressCorrect = Try(fr.acinq.eclair.addressToPublicKeyScript(fallbackAddress, nodeParams.chainHash)).isSuccess
+                            if (!isFallbackAddressCorrect) reject(RpcValidationRejection(req.id, s"invalid fallback address '$fallbackAddress'"))
+                            else completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(None, description, Some(expirySeconds.toLong), Nil, Some(fallbackAddress))).mapTo[PaymentRequest].map(PaymentRequest.write))
+                          case JInt(amountMsat) :: JString(description) :: JInt(expirySeconds) :: JString(fallbackAddress) :: Nil =>
+                            val isFallbackAddressCorrect = Try(fr.acinq.eclair.addressToPublicKeyScript(fallbackAddress, nodeParams.chainHash)).isSuccess
+                            if (!isFallbackAddressCorrect) reject(RpcValidationRejection(req.id, s"invalid fallback address '$fallbackAddress'"))
+                            else completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description, Some(expirySeconds.toLong), Nil, Some(fallbackAddress))).mapTo[PaymentRequest].map(PaymentRequest.write))
+                          case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description] or [amount, description, expiryDuration] or [description, expiryDuration, fallbackAddress] or [amount, description, expiryDuration, fallbackAddress]"))
                         }
 
                         case "checkinvoice" => req.params match {
@@ -422,6 +430,8 @@ trait Service extends Logging {
     "allupdates (nodeId): list all channels updates for this nodeId",
     "receive (amountMsat, description): generate a payment request for a given amount",
     "receive (amountMsat, description, expirySeconds): generate a payment request for a given amount with a description and a number of seconds till it expires",
+    """receive (description, expiryDuration, fallbackAddress): generate a "pay whatever yo want" payment request with a description, a number of seconds till it expires and on-chain fallback address""",
+    """receive (amount, description, expiryDuration, fallbackAddress): generate a payment request for a given amount with a description, a number of seconds till it expires and on-chain fallback address""",
     "checkinvoice (paymentRequest): returns node, amount and payment hash in an invoice/paymentRequest",
     "findroute (paymentRequest|nodeId): given a payment request or nodeID checks if there is a valid payment route returns JSON with attempts, nodes and channels of route",
     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
