@@ -29,7 +29,7 @@ import scala.concurrent.{ExecutionContext, Future}
 class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false)(implicit http: HttpClient) extends BitcoinJsonRPCClient {
 
   val scheme = if (ssl) "https" else "http"
-  implicit val formats = DefaultFormats
+  implicit val formats = DefaultFormats.withBigDecimal
 
   override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] =
     invoke(Seq(JsonRPCRequest(method = method, params = params))).map(l => jsonResponse2Exception(l.head).result)
