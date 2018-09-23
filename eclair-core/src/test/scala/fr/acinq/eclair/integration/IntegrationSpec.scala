@@ -19,7 +19,8 @@ package fr.acinq.eclair.integration
 import java.io.{File, PrintWriter}
 import java.util.Properties
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.{ActorRef, ActorSystem, Terminated}
+import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
@@ -41,7 +42,6 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, Kit, Setup}
-import gigahorse.support.asynchttpclient.Gigahorse
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
@@ -62,7 +62,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   var nodes: Map[String, Kit] = Map()
 
   implicit val formats = DefaultFormats
-  implicit val httpClient = Gigahorse.http(Gigahorse.config)
 
   override def beforeAll(): Unit = {
     startBitcoind()

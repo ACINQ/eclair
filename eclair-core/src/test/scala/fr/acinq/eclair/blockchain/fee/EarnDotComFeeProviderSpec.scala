@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain.fee
 
 import akka.util.Timeout
-import gigahorse.support.okhttp.Gigahorse
+import gigahorse.support.asynchttpclient.Gigahorse
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.junit.runner.RunWith
