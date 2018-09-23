@@ -351,7 +351,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
 
     // then alice reaches NORMAL state, and during the transition she broadcasts the channel_update
-    val channelUpdate = relayer.expectMsgType[LocalChannelUpdate].channelUpdate
+    val channelUpdate = relayer.expectMsgType[LocalChannelUpdate](10 seconds).channelUpdate
     assert(channelUpdate.feeBaseMsat === 4200)
     assert(channelUpdate.feeProportionalMillionths === 123456)
 
