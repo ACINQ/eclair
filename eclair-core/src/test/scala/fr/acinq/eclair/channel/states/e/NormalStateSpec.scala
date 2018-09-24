@@ -2024,7 +2024,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv TickRefreshChannelUpdate", Tag("channels_public")) { case (alice, bob, alice2bob, bob2alice, _, _, relayer) =>
+  test("recv TickRefreshChannelUpdate", Tag("channels_public")) { case (alice, bob, _, bob2alice, _, _, relayer) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
@@ -2034,10 +2034,30 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val update1 = relayer.expectMsgType[LocalChannelUpdate]
 
       // actual test starts here
-      Thread.sleep(1000)
+      Thread.sleep(1100)
       sender.send(alice, TickRefreshChannelUpdate)
       val update2 = relayer.expectMsgType[LocalChannelUpdate]
       assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
+    }
+  }
+
+  test("recv INPUT_DISCONNECTED", Tag("channels_public")) { case (alice, bob, _, bob2alice, _, _, relayer) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+      sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+      bob2alice.expectMsgType[AnnouncementSignatures]
+      bob2alice.forward(alice)
+      val update1 = relayer.expectMsgType[LocalChannelUpdate]
+      assert(Announcements.isEnabled(update1.channelUpdate.flags) == true)
+
+      // actual test starts here
+      Thread.sleep(1100)
+      sender.send(alice, INPUT_DISCONNECTED)
+      val update2 = relayer.expectMsgType[LocalChannelUpdate]
+      assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
+      assert(Announcements.isEnabled(update2.channelUpdate.flags) == false)
+      awaitCond(alice.stateName == OFFLINE)
     }
   }
 

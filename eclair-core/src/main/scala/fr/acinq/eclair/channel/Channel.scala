@@ -1296,6 +1296,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
       handleLocalError(HtlcTimedout(d.channelId), d, Some(c))
 
+    case Event(CMD_UPDATE_RELAY_FEE(feeBaseMsat, feeProportionalMillionths), d: DATA_NORMAL) =>
+      log.info(s"updating relay fees: prevFeeBaseMsat={} nextFeeBaseMsat={} prevFeeProportionalMillionths={} nextFeeProportionalMillionths={}", d.channelUpdate.feeBaseMsat, feeBaseMsat, d.channelUpdate.feeProportionalMillionths, feeProportionalMillionths)
+      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, enable = false)
+      // we're in OFFLINE state, we don't broadcast the new update right away, we will do that when next time we go to NORMAL state
+      stay using store(d.copy(channelUpdate = channelUpdate)) replying "ok"
+
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK | BITCOIN_FUNDING_DEEPLYBURIED, _, _), _) => stay
 
@@ -1469,13 +1475,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case _ => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), None, Some(c)), c) // we don't provide a channel_update: this will be a permanent channel failure
       }
 
-    case Event(c: CMD_CLOSE, d) => handleCommandError(CannotCloseInThisState(Helpers.getChannelId(d), stateName), c)
+    case Event(c: CMD_CLOSE, d) => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "close", stateName), c)
 
     case Event(c@CMD_FORCECLOSE, d) =>
       d match {
         case data: HasCommitments => handleLocalError(ForcedLocalCommit(data.channelId), data, Some(c)) replying "ok"
-        case _ => handleCommandError(CannotCloseInThisState(Helpers.getChannelId(d), stateName), c)
+        case _ => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "forceclose", stateName), c)
       }
+
+    case Event(c: CMD_UPDATE_RELAY_FEE, d) => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "updaterelayfee", stateName), c)
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
     case Event(CurrentBlockCount(_), _) => stay
