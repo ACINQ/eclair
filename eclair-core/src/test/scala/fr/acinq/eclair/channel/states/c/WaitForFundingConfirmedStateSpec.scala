@@ -133,7 +133,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_CLOSE(None))
-      sender.expectMsg(Failure(CannotCloseInThisState(channelId(alice), WAIT_FOR_FUNDING_CONFIRMED)))
+      sender.expectMsg(Failure(CommandUnavailableInThisState(channelId(alice), "close", WAIT_FOR_FUNDING_CONFIRMED)))
     }
   }
 
