@@ -25,9 +25,15 @@
         </encoder>
     </appender>
 
-    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+    <appender name="ROLLING" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${eclair.datadir:-${user.home}/.eclair}/eclair.log</file>
-        <append>true</append>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!-- daily rollover -->
+            <fileNamePattern>${eclair.datadir:-${user.home}/.eclair}/eclair.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <!-- keep 90 days' worth of history capped at 5 GB total size -->
+            <maxHistory>90</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+        </rollingPolicy>
         <encoder>
             <pattern>%d %-5level %logger{24} %X{nodeId}%X{channelId} - %msg%ex{24}%n</pattern>
         </encoder>
@@ -47,7 +53,7 @@
     </if>
 
     <root level="INFO">
-        <appender-ref ref="FILE"/>
+        <appender-ref ref="ROLLING"/>
     </root>
 
 </configuration>
