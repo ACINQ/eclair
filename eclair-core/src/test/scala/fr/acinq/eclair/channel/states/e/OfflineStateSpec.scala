@@ -354,7 +354,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val channelUpdate = relayer.expectMsgType[LocalChannelUpdate](10 seconds).channelUpdate
     assert(channelUpdate.feeBaseMsat === 4200)
     assert(channelUpdate.feeProportionalMillionths === 123456)
-    assert(Announcements.isEnabled(channelUpdate.flags) == false)
+    assert(Announcements.isEnabled(channelUpdate.flags) == true)
 
     // no more messages
     relayer.expectNoMsg(300 millis)
