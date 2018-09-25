@@ -53,9 +53,10 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
         case Some(b) => Future.successful(b)
         case None => rpcClient.invoke("getbestblockhash") collect { case JString(b) => b }
       }
-      (prevblockhash, txids) <- rpcClient.invoke("getblock", blockhash).map(json => ((json \ "previousblockhash").extract[String], (json \ "tx").extract[List[String]]))
-      txes <- Future.sequence(txids.map(getTransaction(_)))
-      res <- txes.find(tx => tx.txIn.exists(i => i.outPoint.txid.toString() == txid && i.outPoint.index == outputIndex)) match {
+      // with a verbosity of 0, getblock returns the raw serialized block
+      block <- rpcClient.invoke("getblock", blockhash, 0).collect { case JString(b) => Block.read(b) }
+      prevblockhash = BinaryData(block.header.hashPreviousBlock.reverse).toString
+      res <- block.tx.find(tx => tx.txIn.exists(i => i.outPoint.txid.toString() == txid && i.outPoint.index == outputIndex)) match {
         case None => lookForSpendingTx(Some(prevblockhash), txid, outputIndex)
         case Some(tx) => Future.successful(tx)
       }
@@ -66,21 +67,6 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       txids <- rpcClient.invoke("getrawmempool").map(json => json.extract[List[String]])
       txs <- Future.sequence(txids.map(getTransaction(_)))
     } yield txs
-
-  /**
-    * *used in interop test*
-    * tell bitcoind to sent bitcoins from a specific local account
-    *
-    * @param account     name of the local account to send bitcoins from
-    * @param destination destination address
-    * @param amount      amount in BTC (not milliBTC, not Satoshis !!)
-    * @param ec          execution context
-    * @return a Future[txid] where txid (a String) is the is of the tx that sends the bitcoins
-    */
-  def sendFromAccount(account: String, destination: String, amount: Double)(implicit ec: ExecutionContext): Future[String] =
-    rpcClient.invoke("sendfrom", account, destination, amount) collect {
-      case JString(txid) => txid
-    }
 
   /**
     * @param txId
@@ -94,15 +80,6 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
     getRawTransaction(txId).map(raw => Transaction.read(raw))
-
-  def getTransaction(height: Int, index: Int)(implicit ec: ExecutionContext): Future[Transaction] =
-    for {
-      hash <- rpcClient.invoke("getblockhash", height).map(json => json.extract[String])
-      json <- rpcClient.invoke("getblock", hash)
-      JArray(txs) = json \ "tx"
-      txid = txs(index).extract[String]
-      tx <- getTransaction(txid)
-    } yield tx
 
   def isTransactionOutputSpendable(txId: String, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
@@ -129,13 +106,27 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     future
   }
 
-  def publishTransaction(hex: String)(implicit ec: ExecutionContext): Future[String] =
-    rpcClient.invoke("sendrawtransaction", hex) collect {
-      case JString(txid) => txid
-    }
-
+  /**
+    * Publish a transaction on the bitcoin network.
+    *
+    * Note that this method is idempotent, meaning that if the tx was already published a long time ago, then this is
+    * considered a success even if bitcoin core rejects this new attempt.
+    *
+    * @param tx
+    * @param ec
+    * @return
+    */
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
-    publishTransaction(tx.toString())
+    rpcClient.invoke("sendrawtransaction", tx.toString()) collect {
+      case JString(txid) => txid
+    } recoverWith {
+      case JsonRPCError(Error(-27, _)) =>
+        // "transaction already in block chain (code: -27)" ignore error
+        Future.successful(tx.txid.toString())
+      case e@JsonRPCError(Error(-25, _)) =>
+        // "missing inputs (code: -25)" it may be that the tx has already been published and its output spent
+        getRawTransaction(tx.txid.toString()).map { case _ => tx.txid.toString() }.recoverWith { case _ => Future.failed[String](e) }
+    }
 
   /**
     * We need this to compute absolute timeouts expressed in number of blocks (where getBlockCount would be equivalent

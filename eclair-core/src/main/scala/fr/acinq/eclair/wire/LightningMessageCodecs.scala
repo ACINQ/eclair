@@ -19,6 +19,7 @@ package fr.acinq.eclair.wire
 import java.math.BigInteger
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 
+import com.google.common.cache.{CacheBuilder, CacheLoader}
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.{Generators, Sphinx}
@@ -26,13 +27,20 @@ import fr.acinq.eclair.wire.FixedSizeStrictCodec.bytesStrict
 import fr.acinq.eclair.{ShortChannelId, UInt64, wire}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec, Err}
+import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
+
+import scala.util.{Failure, Success, Try}
 
 
 /**
   * Created by PM on 15/11/2016.
   */
 object LightningMessageCodecs {
+
+  def attemptFromTry[T](f: => T): Attempt[T] = Try(f) match {
+    case Success(t) => Attempt.successful(t)
+    case Failure(t) => Attempt.failure(Err(s"deserialization error: ${t.getMessage}"))
+  }
 
   // this codec can be safely used for values < 2^63 and will fail otherwise
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
@@ -48,18 +56,20 @@ object LightningMessageCodecs {
 
   def ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))
 
-  def ipv6address: Codec[Inet6Address] = bytes(16).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet6Address], a => ByteVector(a.getAddress))
+  def ipv6address: Codec[Inet6Address] = bytes(16).exmap(b => attemptFromTry(Inet6Address.getByAddress(null, b.toArray, null)), a => attemptFromTry(ByteVector(a.getAddress)))
 
-  def socketaddress: Codec[InetSocketAddress] =
-    (discriminated[InetAddress].by(uint8)
-      .typecase(1, ipv4address)
-      .typecase(2, ipv6address) ~ uint16)
-      .xmap(x => new InetSocketAddress(x._1, x._2), x => (x.getAddress, x.getPort))
+  def nodeaddress: Codec[NodeAddress] =
+    discriminated[NodeAddress].by(uint8)
+      .typecase(0, provide(Padding))
+      .typecase(1, (ipv4address ~ uint16).xmap[IPv4](x => new IPv4(x._1, x._2), x => (x.ipv4, x.port)))
+      .typecase(2, (ipv6address ~ uint16).xmap[IPv6](x => new IPv6(x._1, x._2), x => (x.ipv6, x.port)))
+      .typecase(3, (binarydata(10) ~ uint16).xmap[Tor2](x => new Tor2(x._1, x._2), x => (x.tor2, x.port)))
+      .typecase(4, (binarydata(35) ~ uint16).xmap[Tor3](x => new Tor3(x._1, x._2), x => (x.tor3, x.port)))
 
   // this one is a bit different from most other codecs: the first 'len' element is * not * the number of items
   // in the list but rather the  number of bytes of the encoded list. The rationale is once we've read this
   // number of bytes we can just skip to the next field
-  def listofsocketaddresses: Codec[List[InetSocketAddress]] = variableSizeBytes(uint16, list(socketaddress))
+  def listofnodeaddresses: Codec[List[NodeAddress]] = variableSizeBytes(uint16, list(nodeaddress))
 
   def shortchannelid: Codec[ShortChannelId] = int64.xmap(l => ShortChannelId(l), s => s.toLong)
 
@@ -264,7 +274,7 @@ object LightningMessageCodecs {
       ("nodeId" | publicKey) ::
       ("rgbColor" | rgb) ::
       ("alias" | zeropaddedstring(32)) ::
-      ("addresses" | listofsocketaddresses))
+      ("addresses" | listofnodeaddresses))
 
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
     ("signature" | signature) ::
@@ -284,6 +294,35 @@ object LightningMessageCodecs {
     ("signature" | signature) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
+  val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = (
+    ("chainHash" | binarydata(32)) ::
+      ("data" | varsizebinarydata)
+    ).as[QueryShortChannelIds]
+
+  val replyShortChanelIdsEndCodec: Codec[ReplyShortChannelIdsEnd] = (
+    ("chainHash" | binarydata(32)) ::
+      ("complete" | byte)
+    ).as[ReplyShortChannelIdsEnd]
+
+  val queryChannelRangeCodec: Codec[QueryChannelRange] = (
+    ("chainHash" | binarydata(32)) ::
+      ("firstBlockNum" | uint32) ::
+      ("numberOfBlocks" | uint32)
+    ).as[QueryChannelRange]
+
+  val replyChannelRangeCodec: Codec[ReplyChannelRange] = (
+    ("chainHash" | binarydata(32)) ::
+      ("firstBlockNum" | uint32) ::
+      ("numberOfBlocks" | uint32) ::
+      ("complete" | byte) ::
+      ("data" | varsizebinarydata)
+    ).as[ReplyChannelRange]
+
+  val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
+    ("chainHash" | binarydata(32)) ::
+      ("firstTimestamp" | uint32) ::
+      ("timestampRange" | uint32)
+  ).as[GossipTimestampFilter]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
@@ -309,6 +348,36 @@ object LightningMessageCodecs {
     .typecase(257, nodeAnnouncementCodec)
     .typecase(258, channelUpdateCodec)
     .typecase(259, announcementSignaturesCodec)
+    .typecase(261, queryShortChannelIdsCodec)
+    .typecase(262, replyShortChanelIdsEndCodec)
+    .typecase(263, queryChannelRangeCodec)
+    .typecase(264, replyChannelRangeCodec)
+    .typecase(265, gossipTimestampFilterCodec)
+
+
+  /**
+    * A codec that caches serialized routing messages
+    */
+  val cachedLightningMessageCodec = new Codec[LightningMessage] {
+
+    override def sizeBound: SizeBound = lightningMessageCodec.sizeBound
+
+    val cache = CacheBuilder
+      .newBuilder
+      .weakKeys() // will cleanup values when keys are garbage collected
+      .build(new CacheLoader[LightningMessage, Attempt[BitVector]] {
+      override def load(key: LightningMessage): Attempt[BitVector] = lightningMessageCodec.encode(key)
+    })
+
+    override def encode(value: LightningMessage): Attempt[BitVector] = value match {
+      case _: ChannelAnnouncement => cache.get(value) // we only cache serialized routing messages
+      case _: NodeAnnouncement => cache.get(value) // we only cache serialized routing messages
+      case _: ChannelUpdate => cache.get(value) // we only cache serialized routing messages
+      case _ => lightningMessageCodec.encode(value)
+    }
+
+    override def decode(bits: BitVector): Attempt[DecodeResult[LightningMessage]] = lightningMessageCodec.decode(bits)
+  }
 
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::

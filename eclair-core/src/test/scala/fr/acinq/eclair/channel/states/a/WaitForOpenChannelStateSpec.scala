@@ -75,7 +75,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
       val lowFundingMsat = 100
       bob ! open.copy(fundingSatoshis = lowFundingMsat)
       val error = bob2alice.expectMsgType[Error]
-      assert(error === Error(open.temporaryChannelId, new InvalidFundingAmount(open.temporaryChannelId, lowFundingMsat, Channel.MIN_FUNDING_SATOSHIS, Channel.MAX_FUNDING_SATOSHIS).getMessage.getBytes("UTF-8")))
+      assert(error === Error(open.temporaryChannelId, new InvalidFundingAmount(open.temporaryChannelId, lowFundingMsat, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS).getMessage.getBytes("UTF-8")))
       awaitCond(bob.stateName == CLOSED)
     }
   }
@@ -86,7 +86,18 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
       val highFundingMsat = 100000000
       bob ! open.copy(fundingSatoshis = highFundingMsat)
       val error = bob2alice.expectMsgType[Error]
-      assert(error === Error(open.temporaryChannelId, new InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Channel.MIN_FUNDING_SATOSHIS, Channel.MAX_FUNDING_SATOSHIS).getMessage.getBytes("UTF-8")))
+      assert(error === Error(open.temporaryChannelId, new InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS).getMessage.getBytes("UTF-8")))
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
+  test("recv OpenChannel (invalid max accepted htlcs)") { case (bob, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val open = alice2bob.expectMsgType[OpenChannel]
+      val invalidMaxAcceptedHtlcs = Channel.MAX_ACCEPTED_HTLCS + 1
+      bob ! open.copy(maxAcceptedHtlcs = invalidMaxAcceptedHtlcs)
+      val error = bob2alice.expectMsgType[Error]
+      assert(error === Error(open.temporaryChannelId, new InvalidMaxAcceptedHtlcs(open.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).getMessage.getBytes("UTF-8")))
       awaitCond(bob.stateName == CLOSED)
     }
   }
@@ -125,16 +136,54 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     }
   }
 
-  test("recv OpenChannel (fee too low)") { case (bob, alice2bob, bob2alice, _) =>
+  test("recv OpenChannel (fee too low, but still valid)") { case (bob, alice2bob, bob2alice, _) =>
     within(30 seconds) {
       val open = alice2bob.expectMsgType[OpenChannel]
       // set a very small fee
-      val tinyFee = 100
+      val tinyFee = 253
       bob ! open.copy(feeratePerKw = tinyFee)
-      alice2bob.forward(bob)
       val error = bob2alice.expectMsgType[Error]
       // we check that the error uses the temporary channel id
-      assert(error === Error(open.temporaryChannelId, "local/remote feerates are too different: remoteFeeratePerKw=100 localFeeratePerKw=10000".getBytes("UTF-8")))
+      assert(error === Error(open.temporaryChannelId, "local/remote feerates are too different: remoteFeeratePerKw=253 localFeeratePerKw=10000".getBytes("UTF-8")))
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
+  test("recv OpenChannel (fee below absolute valid minimum)") { case (bob, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val open = alice2bob.expectMsgType[OpenChannel]
+      // set a very small fee
+      val tinyFee = 252
+      bob ! open.copy(feeratePerKw = tinyFee)
+      val error = bob2alice.expectMsgType[Error]
+      // we check that the error uses the temporary channel id
+      assert(error === Error(open.temporaryChannelId, "remote fee rate is too small: remoteFeeratePerKw=252".getBytes("UTF-8")))
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
+
+  test("recv OpenChannel (reserve below dust)") { case (bob, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val open = alice2bob.expectMsgType[OpenChannel]
+      val reserveTooSmall = open.dustLimitSatoshis - 1
+      bob ! open.copy(channelReserveSatoshis = reserveTooSmall)
+      val error = bob2alice.expectMsgType[Error]
+      // we check that the error uses the temporary channel id
+      assert(error === Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, reserveTooSmall).getMessage.getBytes("UTF-8")))
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
+  test("recv OpenChannel (toLocal + toRemote below reserve)") { case (bob, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val open = alice2bob.expectMsgType[OpenChannel]
+      val fundingSatoshis = open.channelReserveSatoshis + 499
+      val pushMsat = 500 * 1000
+      bob ! open.copy(fundingSatoshis = fundingSatoshis, pushMsat = pushMsat)
+      val error = bob2alice.expectMsgType[Error]
+      // we check that the error uses the temporary channel id
+      assert(error === Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, 500 * 1000, (open.channelReserveSatoshis - 1) * 1000, open.channelReserveSatoshis).getMessage.getBytes("UTF-8")))
       awaitCond(bob.stateName == CLOSED)
     }
   }

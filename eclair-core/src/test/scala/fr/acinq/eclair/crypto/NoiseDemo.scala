@@ -100,7 +100,6 @@ object NoiseDemo extends App {
 
     def receive = {
       case message: BinaryData =>
-        println(s"received ${new String(message)}")
         sender ! BinaryData("response to ".getBytes() ++ message)
         count = count + 1
         if (count == 5) context stop self

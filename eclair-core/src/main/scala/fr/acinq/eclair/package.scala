@@ -23,6 +23,8 @@ import fr.acinq.bitcoin.{BinaryData, _}
 import scodec.Attempt
 import scodec.bits.BitVector
 
+import scala.util.{Failure, Success, Try}
+
 package object eclair {
 
   /**
@@ -54,13 +56,56 @@ package object eclair {
   /**
     * Converts feerate in satoshi-per-bytes to feerate in satoshi-per-kw
     *
-    * @param feeratePerByte feerate in satoshi-per-bytes
+    * @param feeratePerByte fee rate in satoshi-per-bytes
     * @return feerate in satoshi-per-kw
     */
-  def feerateByte2Kw(feeratePerByte: Long): Long = feeratePerByte * 1024 / 4
+  def feerateByte2Kw(feeratePerByte: Long): Long = feerateKB2Kw(feeratePerByte * 1000)
+
+  /**
+    *
+    * @param feeratesPerKw fee rate in satoshi-per-kw
+    * @return fee rate in satoshi-per-byte
+    */
+  def feerateKw2Byte(feeratesPerKw: Long): Long = feeratesPerKw / 250
+
+  /*
+    why 253 and not 250 since feerate-per-kw is feerate-per-kb / 250 and the minimum relay fee rate is 1000 satoshi/Kb ?
+
+    because bitcoin core uses neither the actual tx size in bytes or the tx weight to check fees, but a "virtual size"
+    which is (3 * weight) / 4 ...
+    so we want :
+    fee > 1000 * virtual size
+    feerate-per-kw * weight > 1000 * (3 * weight / 4)
+    feerate_per-kw > 250 + 3000 / (4 * weight)
+    with a conservative minimum weight of 400, we get a minimum feerate_per-kw of 253
+
+    see https://github.com/ElementsProject/lightning/pull/1251
+   */
+  val MinimumFeeratePerKw = 253
+
+  /*
+    minimum relay fee rate, in satoshi per kilo
+    bitcoin core uses virtual size and not the actual size in bytes, see above
+   */
+  val MinimumRelayFeeRate = 1000
+
+  /**
+    * Converts feerate in satoshi-per-kilobytes to feerate in satoshi-per-kw
+    *
+    * @param feeratePerKB fee rate in satoshi-per-kilobytes
+    * @return feerate in satoshi-per-kw
+    */
+  def feerateKB2Kw(feeratePerKB: Long): Long = Math.max(feeratePerKB / 4, MinimumFeeratePerKw)
+
+  /**
+    *
+    * @param feeratesPerKw fee rate in satoshi-per-kw
+    * @return fee rate in satoshi-per-kilobyte
+    */
+  def feerateKw2KB(feeratesPerKw: Long): Long = feeratesPerKw * 4
 
 
-  def isPay2PubkeyHash(address: String) : Boolean = address.startsWith("1") || address.startsWith("m") || address.startsWith("n")
+  def isPay2PubkeyHash(address: String): Boolean = address.startsWith("1") || address.startsWith("m") || address.startsWith("n")
 
   /**
     * Tests whether the binary data is composed solely of printable ASCII characters (see BOLT 1)
@@ -77,4 +122,31 @@ package object eclair {
     * @return the fee (in msat) that a node should be paid to forward an HTLC of 'amount' millisatoshis
     */
   def nodeFee(baseMsat: Long, proportional: Long, msat: Long): Long = baseMsat + (proportional * msat) / 1000000
+
+  /**
+    *
+    * @param address   base58 of bech32 address
+    * @param chainHash hash of the chain we're on, which will be checked against the input address
+    * @return the public key script that matches the input address.
+    */
+
+  def addressToPublicKeyScript(address: String, chainHash: BinaryData): Seq[ScriptElt] = {
+    Try(Base58Check.decode(address)) match {
+      case Success((Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)) if chainHash == Block.TestnetGenesisBlock.hash || chainHash == Block.RegtestGenesisBlock.hash => Script.pay2pkh(pubKeyHash)
+      case Success((Base58.Prefix.PubkeyAddress, pubKeyHash)) if chainHash == Block.LivenetGenesisBlock.hash => Script.pay2pkh(pubKeyHash)
+      case Success((Base58.Prefix.ScriptAddressTestnet, scriptHash)) if chainHash == Block.TestnetGenesisBlock.hash || chainHash == Block.RegtestGenesisBlock.hash => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
+      case Success((Base58.Prefix.ScriptAddress, scriptHash)) if chainHash == Block.LivenetGenesisBlock.hash => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
+      case Success(_) => throw new IllegalArgumentException("base58 address does not match our blockchain")
+      case Failure(base58error) =>
+        Try(Bech32.decodeWitnessAddress(address)) match {
+          case Success((_, version, _)) if version != 0.toByte => throw new IllegalArgumentException(s"invalid version $version in bech32 address")
+          case Success((_, _, bin)) if bin.length != 20 && bin.length != 32 => throw new IllegalArgumentException("hash length in bech32 address must be either 20 or 32 bytes")
+          case Success(("bc", _, bin)) if chainHash == Block.LivenetGenesisBlock.hash => OP_0 :: OP_PUSHDATA(bin) :: Nil
+          case Success(("tb", _, bin)) if chainHash == Block.TestnetGenesisBlock.hash => OP_0 :: OP_PUSHDATA(bin) :: Nil
+          case Success(("bcrt", _, bin)) if chainHash == Block.RegtestGenesisBlock.hash => OP_0 :: OP_PUSHDATA(bin) :: Nil
+          case Success(_) => throw new IllegalArgumentException("bech32 address does not match our blockchain")
+          case Failure(bech32error) => throw new IllegalArgumentException(s"$address is neither a valid Base58 address ($base58error) nor a valid Bech32 address ($bech32error)")
+        }
+    }
+  }
 }

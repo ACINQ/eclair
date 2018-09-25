@@ -140,6 +140,7 @@ object PaymentRequest {
       tags = List(
         Some(PaymentHashTag(paymentHash)),
         Some(DescriptionTag(description)),
+        fallbackAddress.map(FallbackAddressTag(_)),
         expirySeconds.map(ExpiryTag)
       ).flatten ++ extraHops.map(RoutingInfoTag(_)),
       signature = BinaryData.empty)
@@ -225,8 +226,8 @@ object PaymentRequest {
     }
 
     def fromBech32Address(address: String): FallbackAddressTag = {
-      val (prefix, hash) = Bech32.decodeWitnessAddress(address)
-      FallbackAddressTag(prefix, hash)
+      val (_, version, hash) = Bech32.decodeWitnessAddress(address)
+      FallbackAddressTag(version, hash)
     }
   }
 

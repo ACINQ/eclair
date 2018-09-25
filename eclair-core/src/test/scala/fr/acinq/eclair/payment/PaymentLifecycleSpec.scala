@@ -19,13 +19,14 @@ package fr.acinq.eclair.payment
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+import fr.acinq.bitcoin.{BinaryData, Block, MilliSatoshi}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelUnavailable}
 import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.payment.PaymentLifecycle._
+import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
@@ -39,7 +40,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   val initialBlockCount = 420000
   Globals.blockCount.set(initialBlockCount)
-  
+
   val defaultAmountMsat = 142000000L
   val defaultPaymentHash = BinaryData("42" * 32)
 
@@ -130,7 +131,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val WaitingForComplete(_, _, cmd1, Nil, _, _, _, hops) = paymentFSM.stateData
 
     relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
-    sender.send(paymentFSM, Status.Failure(AddHtlcFailed("00" * 32, request.paymentHash, ChannelUnavailable("00" * 32), Local(Some(paymentFSM.underlying.self)), None)))
+    sender.send(paymentFSM, Status.Failure(AddHtlcFailed("00" * 32, request.paymentHash, ChannelUnavailable("00" * 32), Local(Some(paymentFSM.underlying.self)), None, None)))
 
     // then the payment lifecycle will ask for a new route excluding the channel
     routerForwarder.expectMsg(RouteRequest(a, d, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set(ChannelDesc(channelId_ab, a, b))))
@@ -200,6 +201,62 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.expectMsg(PaymentFailed(request.paymentHash, RemoteFailure(hops, ErrorPacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil))
   }
 
+  test("payment failed (Update)") { case (router, _) =>
+    val relayer = TestProbe()
+    val routerForwarder = TestProbe()
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref))
+    val monitor = TestProbe()
+    val sender = TestProbe()
+
+    paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
+    val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
+
+    val request = SendPayment(defaultAmountMsat, defaultPaymentHash, d, maxAttempts = 5)
+    sender.send(paymentFSM, request)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
+    val WaitingForRoute(_, _, Nil) = paymentFSM.stateData
+    routerForwarder.expectMsg(RouteRequest(a, d, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
+    routerForwarder.forward(router)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
+    val WaitingForComplete(_, _, cmd1, Nil, sharedSecrets1, _, _, hops) = paymentFSM.stateData
+    relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
+
+    // we change the cltv expiry
+    val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 42, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1)
+    val failure = IncorrectCltvExpiry(5, channelUpdate_bc_modified)
+    // and node replies with a failure containing a new channel update
+    sender.send(paymentFSM, UpdateFailHtlc("00" * 32, 0, Sphinx.createErrorPacket(sharedSecrets1.head._1, failure)))
+
+    // payment lifecycle forwards the embedded channelUpdate to the router
+    routerForwarder.expectMsg(channelUpdate_bc_modified)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
+    routerForwarder.expectMsg(RouteRequest(a, d, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
+    routerForwarder.forward(router)
+
+    // router answers with a new route, taking into account the new update
+    awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
+    val WaitingForComplete(_, _, cmd2, _, sharedSecrets2, _, _, hops2) = paymentFSM.stateData
+    relayer.expectMsg(ForwardShortId(channelId_ab, cmd2))
+
+    // we change the cltv expiry one more time
+    val channelUpdate_bc_modified_2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 43, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1)
+    val failure2 = IncorrectCltvExpiry(5, channelUpdate_bc_modified_2)
+    // and node replies with a failure containing a new channel update
+    sender.send(paymentFSM, UpdateFailHtlc("00" * 32, 0, Sphinx.createErrorPacket(sharedSecrets2.head._1, failure2)))
+
+    // this time the payment lifecycle will ask the router to temporarily exclude this channel from its route calculations
+    routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(channelUpdate_bc.shortChannelId, b, c)))
+    routerForwarder.forward(router)
+    // but it will still forward the embedded channelUpdate to the router
+    routerForwarder.expectMsg(channelUpdate_bc_modified_2)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
+    routerForwarder.expectMsg(RouteRequest(a, d, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
+    routerForwarder.forward(router)
+
+    // this time the router can't find a route: game over
+    sender.expectMsg(PaymentFailed(request.paymentHash, RemoteFailure(hops, ErrorPacket(b, failure)) :: RemoteFailure(hops2, ErrorPacket(b, failure2)) :: LocalFailure(RouteNotFound) :: Nil))
+  }
+
   test("payment failed (PermanentChannelFailure)") { case (router, _) =>
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
@@ -251,13 +308,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, UpdateFulfillHtlc("00" * 32, 0, defaultPaymentHash))
 
     val paymentOK = sender.expectMsgType[PaymentSucceeded]
-    assert(paymentOK.amountMsat > request.amountMsat)
-    val PaymentSent(MilliSatoshi(request.amountMsat), feesPaid, request.paymentHash, paymentOK.paymentPreimage) = eventListener.expectMsgType[PaymentSent]
-    assert(feesPaid.amount > 0)
+    val PaymentSent(MilliSatoshi(request.amountMsat), fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
+    assert(fee > MilliSatoshi(0))
+    assert(fee === MilliSatoshi(paymentOK.amountMsat - request.amountMsat))
   }
 
   test("filter errors properly") { case _ =>
-    val failures = LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, ErrorPacket(a, TemporaryNodeFailure)) :: LocalFailure(AddHtlcFailed("00" * 32, "00" * 32, ChannelUnavailable("00" * 32), Local(None), None)) :: LocalFailure(RouteNotFound) :: Nil
+    val failures = LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, ErrorPacket(a, TemporaryNodeFailure)) :: LocalFailure(AddHtlcFailed("00" * 32, "00" * 32, ChannelUnavailable("00" * 32), Local(None), None, None)) :: LocalFailure(RouteNotFound) :: Nil
     val filtered = PaymentLifecycle.transformForUser(failures)
     assert(filtered == LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, ErrorPacket(a, TemporaryNodeFailure)) :: LocalFailure(ChannelUnavailable("00" * 32)) :: Nil)
   }

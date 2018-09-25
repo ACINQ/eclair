@@ -23,6 +23,7 @@ import fr.acinq.eclair.blockchain.{PublishAsap, WatchEventSpent}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
@@ -191,7 +192,6 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("discover that we have a revoked commitment") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
     val sender = TestProbe()
 
-    // first let's ge
     val (ra1, htlca1) = addHtlc(250000000, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     val (ra2, htlca2) = addHtlc(100000000, alice, bob, alice2bob, bob2alice)
@@ -205,6 +205,57 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     crossSign(bob, alice, bob2alice, alice2bob)
     fulfillHtlc(htlca3.id, ra3, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // then we manually replace alice's state with an older one
+    alice.setState(OFFLINE, oldStateData)
+
+    // then we reconnect them
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
+
+    // peers exchange channel_reestablish messages
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+
+    // alice then realizes it has an old state...
+    bob2alice.forward(alice)
+    // ... and ask bob to publish its current commitment
+    val error = alice2bob.expectMsgType[Error]
+    assert(new String(error.data) === PleasePublishYourCommitment(channelId(alice)).getMessage)
+
+    // alice now waits for bob to publish its commitment
+    awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
+
+    // bob is nice and publishes its commitment
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    sender.send(alice, WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx))
+
+    // alice is able to claim its main output
+    val claimMainOutput = alice2blockchain.expectMsgType[PublishAsap].tx
+    Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+  }
+
+  test("discover that they have a more recent commit than the one we know") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+    val sender = TestProbe()
+
+    // we start by storing the current state
+    val oldStateData = alice.stateData
+    // then we add an htlc and sign it
+    val (ra1, htlca1) = addHtlc(250000000, alice, bob, alice2bob, bob2alice)
+    sender.send(alice, CMD_SIGN)
+    sender.expectMsg("ok")
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    // alice will receive neither the revocation nor the commit sig
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.expectMsgType[CommitSig]
 
     // we simulate a disconnection
     sender.send(alice, INPUT_DISCONNECTED)
@@ -265,7 +316,48 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // alice then finds out bob is lying
     bob2alice.send(alice, ba_reestablish_forged)
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data) === CommitmentSyncError(channelId(alice)).getMessage)
+    assert(new String(error.data) === InvalidRevokedCommitProof(channelId(alice), 0, 42, ba_reestablish_forged.yourLastPerCommitmentSecret.get).getMessage)
+  }
+
+  test("change relay fee while offline") { case (alice, bob, alice2bob, bob2alice, _, _, relayer) =>
+
+    val sender = TestProbe()
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // alice and bob announce that their channel is OFFLINE
+    assert(Announcements.isEnabled(relayer.expectMsgType[LocalChannelUpdate].channelUpdate.flags) == false)
+    assert(Announcements.isEnabled(relayer.expectMsgType[LocalChannelUpdate].channelUpdate.flags) == false)
+
+    // we make alice update here relay fee
+    sender.send(alice, CMD_UPDATE_RELAY_FEE(4200, 123456))
+    sender.expectMsg("ok")
+
+    // alice doesn't broadcast the new channel_update yet
+    relayer.expectNoMsg(300 millis)
+
+    // then we reconnect them
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
+
+    // peers exchange channel_reestablish messages
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    // note that we don't forward the channel_reestablish so that only alice reaches NORMAL state, it facilitates the test below
+    bob2alice.forward(alice)
+
+    // then alice reaches NORMAL state, and during the transition she broadcasts the channel_update
+    val channelUpdate = relayer.expectMsgType[LocalChannelUpdate](10 seconds).channelUpdate
+    assert(channelUpdate.feeBaseMsat === 4200)
+    assert(channelUpdate.feeProportionalMillionths === 123456)
+    assert(Announcements.isEnabled(channelUpdate.flags) == true)
+
+    // no more messages
+    relayer.expectNoMsg(300 millis)
   }
 
 }

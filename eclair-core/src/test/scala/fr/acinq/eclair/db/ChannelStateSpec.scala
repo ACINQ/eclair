@@ -17,17 +17,15 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet, MilliSatoshi, Satoshi, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Block, Crypto, DeterministicWallet, MilliSatoshi, Satoshi, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.{Local, Relayed}
-import fr.acinq.eclair.{UInt64, randomKey}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelCodecs, UpdateAddHtlc}
-import fr.acinq.eclair.wire.{ChannelCodecs, ChannelUpdate, UpdateAddHtlc}
 import fr.acinq.eclair.{ShortChannelId, UInt64, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -51,10 +49,10 @@ class ChannelStateSpec extends FunSuite {
 }
 
 object ChannelStateSpec {
-  val keyManager = new LocalKeyManager("01" * 32)
+  val keyManager = new LocalKeyManager("01" * 32, Block.RegtestGenesisBlock.hash)
   val localParams = LocalParams(
     keyManager.nodeId,
-    channelKeyPath = DeterministicWallet.KeyPath(Seq(42)),
+    channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
     dustLimitSatoshis = Satoshi(546).toLong,
     maxHtlcValueInFlightMsat = UInt64(50),
     channelReserveSatoshis = 10000,

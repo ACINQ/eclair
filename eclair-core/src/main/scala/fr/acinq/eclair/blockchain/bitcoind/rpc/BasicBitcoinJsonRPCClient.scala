@@ -38,7 +38,7 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
   val scheme = if (ssl) "https" else "http"
   val uri = Uri(s"$scheme://$host:$port")
   implicit val serialization = jackson.Serialization
-  implicit val formats = DefaultFormats
+  implicit val formats = DefaultFormats.withBigDecimal
   val log = Logging(system, classOf[BasicBitcoinJsonRPCClient])
 
   implicit val materializer = ActorMaterializer()

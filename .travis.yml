@@ -1,4 +1,6 @@
 sudo: required
+services:
+  -docker
 dist: trusty
 language: scala
 scala:
@@ -7,6 +9,10 @@ env:
  - export LD_LIBRARY_PATH=/usr/local/lib
 script:
  - mvn install
+cache:
+ directories:
+  - .autoconf
+  - $HOME/.m2
 jdk:
  - oraclejdk8
 notifications:

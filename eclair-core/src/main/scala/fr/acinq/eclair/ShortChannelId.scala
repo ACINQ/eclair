@@ -22,11 +22,14 @@ package fr.acinq.eclair
   * See BOLT 7: https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
   *
   */
-case class ShortChannelId(private val id: Long) {
+case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] {
 
   def toLong: Long = id
 
   override def toString: String = id.toHexString
+
+  // we use an unsigned long comparison here
+  override def compare(that: ShortChannelId): Int = (this.id + Long.MinValue).compareTo(that.id + Long.MinValue)
 }
 
 object ShortChannelId {

@@ -20,12 +20,13 @@ import java.net.InetSocketAddress
 
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.router.RouteResponse
+import fr.acinq.eclair.transactions.Direction
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
-import fr.acinq.eclair.wire.{Color, FailureMessage}
+import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.json4s.JsonAST._
 import org.json4s.{CustomKeySerializer, CustomSerializer}
@@ -40,6 +41,10 @@ class BinaryDataSerializer extends CustomSerializer[BinaryData](format => ({ nul
 
 class UInt64Serializer extends CustomSerializer[UInt64](format => ({ null }, {
   case x: UInt64 => JInt(x.toBigInt)
+}))
+
+class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](format => ({ null }, {
+  case x: MilliSatoshi => JInt(x.amount)
 }))
 
 class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](format => ({ null }, {
@@ -115,3 +120,15 @@ class ThrowableSerializer extends CustomSerializer[Throwable](format => ({ null 
 class FailureMessageSerializer extends CustomSerializer[FailureMessage](format => ({ null }, {
   case m: FailureMessage => JString(m.message)
 }))
+
+class NodeAddressSerializer extends CustomSerializer[NodeAddress](format => ({ null},{
+  case IPv4(a, p) => JString(HostAndPort.fromParts(a.getHostAddress, p).toString)
+  case IPv6(a, p) => JString(HostAndPort.fromParts(a.getHostAddress, p).toString)
+  case Tor2(b, p) => JString(s"${b.toString}:$p")
+  case Tor3(b, p) => JString(s"${b.toString}:$p")
+}))
+
+class DirectionSerializer extends CustomSerializer[Direction](format => ({ null },{
+  case d: Direction => JString(d.toString)
+}))
+

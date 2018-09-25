@@ -22,6 +22,7 @@ import java.nio.file.Files
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
+import com.google.common.net.InetAddresses
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.WatcherType
@@ -61,8 +62,8 @@ case class NodeParams(keyManager: KeyManager,
                       networkDb: NetworkDb,
                       pendingRelayDb: PendingRelayDb,
                       paymentsDb: PaymentsDb,
+                      auditDb: AuditDb,
                       routerBroadcastInterval: FiniteDuration,
-                      routerValidateInterval: FiniteDuration,
                       pingInterval: FiniteDuration,
                       maxFeerateMismatch: Double,
                       updateFeeMinDiffRatio: Double,
@@ -73,7 +74,8 @@ case class NodeParams(keyManager: KeyManager,
                       watcherType: WatcherType,
                       paymentRequestExpiry: FiniteDuration,
                       maxPendingPaymentRequests: Int,
-                      maxPaymentFee: Double) {
+                      maxPaymentFee: Double,
+                      minFundingSatoshis: Long) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
 }
@@ -111,25 +113,36 @@ object NodeParams {
     }
   }
 
+  def makeChainHash(chain: String): BinaryData = {
+    chain match {
+      case "regtest" => Block.RegtestGenesisBlock.hash
+      case "testnet" => Block.TestnetGenesisBlock.hash
+      case "mainnet" => Block.LivenetGenesisBlock.hash
+      case invalid => throw new RuntimeException(s"invalid chain '$invalid'")
+    }
+  }
+
   def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager): NodeParams = {
 
     datadir.mkdirs()
 
     val chain = config.getString("chain")
-    val chainHash = chain match {
-      case "test" => Block.TestnetGenesisBlock.hash
-      case "regtest" => Block.RegtestGenesisBlock.hash
-      case _ => throw new RuntimeException("only regtest and testnet are supported for now")
-    }
+    val chainHash = makeChainHash(chain)
 
-    val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "eclair.sqlite")}")
+    val chaindir = new File(datadir, chain)
+    chaindir.mkdir()
+
+    val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
     val channelsDb = new SqliteChannelsDb(sqlite)
     val peersDb = new SqlitePeersDb(sqlite)
     val pendingRelayDb = new SqlitePendingRelayDb(sqlite)
     val paymentsDb = new SqlitePaymentsDb(sqlite)
 
-    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "network.sqlite")}")
+    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "network.sqlite")}")
     val networkDb = new SqliteNetworkDb(sqliteNetwork)
+
+    val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "audit.sqlite")}")
+    val auditDb = new SqliteAuditDb(sqliteAudit)
 
     val color = BinaryData(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
@@ -151,7 +164,7 @@ object NodeParams {
       keyManager = keyManager,
       alias = config.getString("node-alias").take(32),
       color = Color(color.data(0), color.data(1), color.data(2)),
-      publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(ip, config.getInt("server.port"))),
+      publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port"))),
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),
       dustLimitSatoshis = dustLimitSatoshis,
@@ -172,8 +185,8 @@ object NodeParams {
       networkDb = networkDb,
       pendingRelayDb = pendingRelayDb,
       paymentsDb = paymentsDb,
+      auditDb = auditDb,
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
-      routerValidateInterval = FiniteDuration(config.getDuration("router-validate-interval").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
       updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
@@ -184,7 +197,8 @@ object NodeParams {
       watcherType = watcherType,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"),
-      maxPaymentFee = config.getDouble("max-payment-fee")
+      maxPaymentFee = config.getDouble("max-payment-fee"),
+      minFundingSatoshis = config.getLong("min-funding-satoshis")
     )
   }
 }

@@ -23,14 +23,17 @@ import fr.acinq.bitcoin.{Block, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.io.Peer.{InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.Error
-import fr.acinq.eclair.{ShortChannelId, randomKey}
+import fr.acinq.eclair.wire.{Error, QueryShortChannelIds}
+import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
+import scala.collection.SortedSet
+import scala.compat.Platform
 import scala.concurrent.duration._
 
 /**
@@ -61,15 +64,15 @@ class RouterSpec extends BaseRouterSpec {
     val chan_az = channelAnnouncement(ShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
     val update_az = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_z.publicKey, chan_az.shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
 
-    router ! chan_ac
-    router ! chan_ax
-    router ! chan_ay
-    router ! chan_az
+    router ! PeerRoutingMessage(null, remoteNodeId, chan_ac)
+    router ! PeerRoutingMessage(null, remoteNodeId, chan_ax)
+    router ! PeerRoutingMessage(null, remoteNodeId, chan_ay)
+    router ! PeerRoutingMessage(null, remoteNodeId, chan_az)
     // router won't validate channels before it has a recent enough channel update
-    router ! update_ac
-    router ! update_ax
-    router ! update_ay
-    router ! update_az
+    router ! PeerRoutingMessage(null, remoteNodeId, update_ac)
+    router ! PeerRoutingMessage(null, remoteNodeId, update_ax)
+    router ! PeerRoutingMessage(null, remoteNodeId, update_ay)
+    router ! PeerRoutingMessage(null, remoteNodeId, update_az)
     watcher.expectMsg(ValidateRequest(chan_ac))
     watcher.expectMsg(ValidateRequest(chan_ax))
     watcher.expectMsg(ValidateRequest(chan_ay))
@@ -113,25 +116,25 @@ class RouterSpec extends BaseRouterSpec {
     val channelId_ac = ShortChannelId(420000, 5, 0)
     val chan_ac = channelAnnouncement(channelId_ac, priv_a, priv_c, priv_funding_a, priv_funding_c)
     val buggy_chan_ac = chan_ac.copy(nodeSignature1 = chan_ac.nodeSignature2)
-    sender.send(router, buggy_chan_ac)
+    sender.send(router, PeerRoutingMessage(null, remoteNodeId, buggy_chan_ac))
     sender.expectMsg(TransportHandler.ReadAck(buggy_chan_ac))
-    sender.expectMsgType[Error]
+    sender.expectMsg(InvalidSignature(buggy_chan_ac))
   }
 
   test("handle bad signature for NodeAnnouncement") { case (router, _) =>
     val sender = TestProbe()
     val buggy_ann_a = ann_a.copy(signature = ann_b.signature, timestamp = ann_a.timestamp + 1)
-    sender.send(router, buggy_ann_a)
+    sender.send(router, PeerRoutingMessage(null, remoteNodeId, buggy_ann_a))
     sender.expectMsg(TransportHandler.ReadAck(buggy_ann_a))
-    sender.expectMsgType[Error]
+    sender.expectMsg(InvalidSignature(buggy_ann_a))
   }
 
   test("handle bad signature for ChannelUpdate") { case (router, _) =>
     val sender = TestProbe()
     val buggy_channelUpdate_ab = channelUpdate_ab.copy(signature = ann_b.signature, timestamp = channelUpdate_ab.timestamp + 1)
-    sender.send(router, buggy_channelUpdate_ab)
+    sender.send(router, PeerRoutingMessage(null, remoteNodeId, buggy_channelUpdate_ab))
     sender.expectMsg(TransportHandler.ReadAck(buggy_channelUpdate_ab))
-    sender.expectMsgType[Error]
+    sender.expectMsg(InvalidSignature(buggy_channelUpdate_ab))
   }
 
   test("route not found (unreachable target)") { case (router, _) =>
@@ -185,7 +188,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(res.hops.last.nextNodeId === d)
 
     val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, enable = false)
-    sender.send(router, channelUpdate_cd1)
+    sender.send(router, PeerRoutingMessage(null, remoteNodeId, channelUpdate_cd1))
     sender.expectMsg(TransportHandler.ReadAck(channelUpdate_cd1))
     sender.send(router, RouteRequest(a, d))
     sender.expectMsg(Failure(RouteNotFound))
@@ -232,4 +235,31 @@ class RouterSpec extends BaseRouterSpec {
     assert(state.updates.size == 8)
   }
 
+  test("ask for channels that we marked as stale for which we receive a new update") { case (router, watcher) =>
+    val blockHeight = Globals.blockCount.get().toInt - 2020
+    val channelId = ShortChannelId(blockHeight, 5, 0)
+    val announcement = channelAnnouncement(channelId, priv_a, priv_c, priv_funding_a, priv_funding_c)
+    val timestamp = Platform.currentTime / 1000 - 1209600 - 1
+    val update = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, timestamp = timestamp)
+    val probe = TestProbe()
+    probe.ignoreMsg { case _: TransportHandler.ReadAck => true }
+    probe.send(router, PeerRoutingMessage(null, remoteNodeId, announcement))
+    watcher.expectMsgType[ValidateRequest]
+    probe.send(router, PeerRoutingMessage(null, remoteNodeId, update))
+    watcher.send(router, ValidateResult(announcement, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true, None))
+
+    probe.send(router, TickPruneStaleChannels)
+    val sender = TestProbe()
+    sender.send(router, GetRoutingState)
+    val state = sender.expectMsgType[RoutingState]
+
+
+    val update1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, timestamp = Platform.currentTime / 1000)
+
+    // we want to make sure that transport receives the query
+    val transport = TestProbe()
+    probe.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, update1))
+    val query = transport.expectMsgType[QueryShortChannelIds]
+    assert(ChannelRangeQueries.decodeShortChannelIds(query.data)._2 == SortedSet(channelId))
+  }
 }
