@@ -17,16 +17,20 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint}
-import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
+import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet, OutPoint}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.db.ChannelStateSpec
 import fr.acinq.eclair.payment.{Local, Relayed}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
+import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.{UInt64, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
+import scodec.Codec
+import scodec.codecs._
 
 import scala.util.Random
 
@@ -168,8 +172,34 @@ class ChannelCodecsSpec extends FunSuite {
       OutPoint(randomBytes(32), 14502) -> randomBytes(32),
       OutPoint(randomBytes(32), 0) -> randomBytes(32),
       OutPoint(randomBytes(32), 454513) -> randomBytes(32)
-      )
+    )
     assert(spentMapCodec.decodeValue(spentMapCodec.encode(map).require).require === map)
+  }
+
+  test("backwards compatibility DATA_WAIT_FOR_FUNDING_CONFIRMED") {
+    // this is the previous version of the codec
+    final case class DATA_WAIT_FOR_FUNDING_CONFIRMED_old(commitments: Commitments, deferred: Option[FundingLocked], lastSent: Either[FundingCreated, FundingSigned])
+    val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec_old: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED_old] = (
+      ("commitments" | commitmentsCodec) ::
+        ("deferred" | optional(bool, fundingLockedCodec)) ::
+        ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED_old]
+
+    val data_old = DATA_WAIT_FOR_FUNDING_CONFIRMED_old(
+      commitments = ChannelStateSpec.commitments,
+      deferred = Some(FundingLocked(randomBytes(32), randomKey.value.toPoint)),
+      lastSent = Left(FundingCreated(randomBytes(32), randomBytes(32), 42, Crypto.encodeSignature(Crypto.sign(randomBytes(32), randomKey)) :+ 1.toByte))
+    )
+    // let's serialize it with the old codec
+    val bin_old = DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec_old.encode(data_old).require
+    // and read it with the new codec
+    val data_new = DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec.decode(bin_old).require.value
+    // and make sure the data has been preserved
+    assert(data_new.commitments === data_old.commitments)
+    assert(data_new.deferred === data_old.deferred)
+    assert(data_new.lastSent === data_old.lastSent)
+    // and new field is initialized with the correct value
+    assert(data_new.localShutdown === None)
+
   }
 
 }
