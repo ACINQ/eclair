@@ -30,6 +30,7 @@ import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 import scodec.Codec
+import scodec.bits.BitVector
 import scodec.codecs._
 
 import scala.util.Random
@@ -190,9 +191,9 @@ class ChannelCodecsSpec extends FunSuite {
       lastSent = Left(FundingCreated(randomBytes(32), randomBytes(32), 42, Crypto.encodeSignature(Crypto.sign(randomBytes(32), randomKey)) :+ 1.toByte))
     )
     // let's serialize it with the old codec
-    val bin_old = DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec_old.encode(data_old).require
+    val bin_old = DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec_old.encode(data_old).require.toByteVector // <- the .toByteVector is very important because we store data as bytes, not bits
     // and read it with the new codec
-    val data_new = DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec.decode(bin_old).require.value
+    val data_new = DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec.decode(BitVector(bin_old)).require.value
     // and make sure the data has been preserved
     assert(data_new.commitments === data_old.commitments)
     assert(data_new.deferred === data_old.deferred)
