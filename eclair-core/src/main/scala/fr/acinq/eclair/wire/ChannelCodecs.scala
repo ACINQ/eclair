@@ -225,7 +225,7 @@ object ChannelCodecs extends Logging {
     ("commitments" | commitmentsCodec) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec)) ::
-      ("localShutdown" | provide[Option[Shutdown]](None))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
+      ("localShutdown" | provide[Option[Shutdown]](None))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
 
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::
