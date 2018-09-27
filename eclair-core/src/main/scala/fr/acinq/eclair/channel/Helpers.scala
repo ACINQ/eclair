@@ -29,7 +29,9 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, ShortChannelId, addressToPublicKeyScript}
 
+import scala.compat.Platform
 import scala.concurrent.Await
+import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -215,6 +217,23 @@ object Helpers {
       val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
 
       (localSpec, localCommitTx, remoteSpec, remoteCommitTx)
+    }
+
+    /**
+      * This will return a delay, taking into account how much we already waited, and giving some slack
+      *
+      * @param now          current timet
+      * @param waitingSince we have been waiting since that time
+      * @param delay    the nominal delay that we were supposed to wait
+      * @param minDelay the minimum delay even if the nominal one has expired
+      * @return  the delay we will actually wait
+      */
+    def computeFundingTimeout(now: Long, waitingSince: Long, delay: FiniteDuration, minDelay: FiniteDuration): FiniteDuration = {
+      import scala.concurrent.duration._
+      val a = waitingSince seconds
+      val b = now seconds
+      val d = delay - (b - a)
+      d.max(minDelay)
     }
 
   }

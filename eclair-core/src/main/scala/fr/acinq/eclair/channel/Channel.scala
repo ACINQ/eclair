@@ -62,6 +62,9 @@ object Channel {
   val MIN_CLTV_EXPIRY = 9L
   val MAX_CLTV_EXPIRY = 7 * 144L // one week
 
+  // as a fundee, we will wait that much time for the funding tx to confirm (funder will rely on the funding tx being double-spent)
+  val FUNDING_TIMEOUT_FUNDEE = 5 days
+
   case object TickRefreshChannelUpdate
 
   sealed trait ChannelError
@@ -193,6 +196,19 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           // - if eclair was previously killed, it might not have had time to publish a channel_update with enable=false
           val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, normal.channelUpdate.shortChannelId, nodeParams.expiryDeltaBlocks, normal.commitments.remoteParams.htlcMinimumMsat, normal.channelUpdate.feeBaseMsat, normal.channelUpdate.feeProportionalMillionths, enable = false)
           goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate)
+
+        case funding: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
+          // TODO: should we wait for an acknowledgment from the watcher?
+          blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+          blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
+          if (!funding.commitments.localParams.isFunder) {
+            // this is a bit tricky: let's say we shut down eclair right after someone opened a channel to us, and didn't start it up before a very long time
+            // we don't want the timeout to expire right away, because the watcher could be syncing or be busy, and may only notice the funding tx after some time
+            // so we always give us 10 minutes before doing anything
+            val delay = Funding.computeFundingTimeout(Platform.currentTime / 1000, funding.waitingSince, delay = FUNDING_TIMEOUT_FUNDEE, minDelay = 10 minutes)
+            context.system.scheduler.scheduleOnce(delay, self, BITCOIN_FUNDING_TIMEOUT)
+          }
+          goto(OFFLINE) using data
 
         case _ =>
           // TODO: should we wait for an acknowledgment from the watcher?
@@ -364,6 +380,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
           blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
           val now = Platform.currentTime / 1000
+          context.system.scheduler.scheduleOnce(FUNDING_TIMEOUT_FUNDEE, self, BITCOIN_FUNDING_TIMEOUT)
           goto(WAIT_FOR_FUNDING_CONFIRMED) using store(DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, now, None, Right(fundingSigned))) sending fundingSigned
       }
 
@@ -455,13 +472,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // implementation *guarantees* that in case of BITCOIN_FUNDING_PUBLISH_FAILED, the funding tx hasn't and will never be published, so we can close the channel right away
       context.system.eventStream.publish(ChannelFailed(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc)))
       goto(CLOSED) sending error
-
-    // TODO: not implemented, users will have to manually close
-    case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      val exc = FundingTxTimedout(d.channelId)
-      val error = Error(d.channelId, exc.getMessage.getBytes)
-      context.system.eventStream.publish(ChannelFailed(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc)))
-      goto(ERR_FUNDING_TIMEOUT) sending error
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if d.commitments.announceChannel =>
       log.debug(s"received remote announcement signatures, delaying")
@@ -1505,6 +1515,18 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     // when we realize we need to update our network fees, we send a CMD_UPDATE_FEE to ourselves which may result in this error being sent back to ourselves, this can be ignored
     case Event(Status.Failure(_: CannotAffordFees), _) => stay
+
+    // this event is here because we could be in state WAIT_FOR_FUNDING_CONFIRMED/OFFLINE/SYNCING
+    case Event(BITCOIN_FUNDING_TIMEOUT, d: HasCommitments) =>
+      d match {
+        case _: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
+          log.warning(s"funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE")
+          val exc = FundingTxTimedout(d.channelId)
+          val error = Error(d.channelId, exc.getMessage.getBytes)
+          context.system.eventStream.publish(ChannelFailed(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc)))
+          goto(ERR_FUNDING_TIMEOUT) sending error
+        case _ => stay // funding tx was confirmed in time, let's just ignore this
+      }
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: HasCommitments) if tx.txid == d.commitments.localCommit.publishableTxs.commitTx.tx.txid =>
       log.warning(s"processing local commit spent in catch-all handler")

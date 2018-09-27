@@ -17,21 +17,17 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet, OutPoint}
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.db.ChannelStateSpec
 import fr.acinq.eclair.payment.{Local, Relayed}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
-import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.{UInt64, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
-import scodec.Codec
 import scodec.bits.BitVector
-import scodec.codecs._
 
 import scala.compat.Platform
 import scala.util.Random
@@ -186,7 +182,7 @@ class ChannelCodecsSpec extends FunSuite {
     // let's decode the old data (this will use the old codec that provides default values for new fields)
     val data_new = stateDataCodec.decode(BitVector(bin_old.data)).require.value
     assert(data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx === None)
-    assert(Platform.currentTime / 1000 - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince < 60) // we just set this timestamp to current time
+    assert(Platform.currentTime / 1000 - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince < 3600) // we just set this timestamp to current time
     // and re-encode it with the new codec
     val bin_new = BinaryData(stateDataCodec.encode(data_new).require.toByteVector.toArray)
     // data should now be encoded under the new format, with version=0 and type=8
