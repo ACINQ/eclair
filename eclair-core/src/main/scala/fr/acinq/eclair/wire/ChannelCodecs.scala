@@ -221,8 +221,18 @@ object ChannelCodecs extends Logging {
       ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, txCodec)) ::
       ("spent" | spentMapCodec)).as[RevokedCommitPublished]
 
+  // this is a decode-only codec compatible with versions 997acee and below, with placeholders for new fields
+  val DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
+    ("commitments" | commitmentsCodec) ::
+      ("fundingTx" | provide[Option[Transaction]](None)) ::
+      ("waitingSince" | provide(compat.Platform.currentTime / 1000)) ::
+      ("deferred" | optional(bool, fundingLockedCodec)) ::
+      ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
+
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::
+      ("fundingTx" | optional(bool, txCodec)) ::
+      ("timestamp" | int64) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
 
@@ -266,8 +276,21 @@ object ChannelCodecs extends Logging {
     ("commitments" | commitmentsCodec) ::
       ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
 
+
+  /**
+    * Order matters!!
+    *
+    * We use the fact that the discriminated codec encodes using the first suitable codec it finds in the list to handle
+    * database migration.
+    *
+    * For example, a data encoded with type 01 will be decoded using [[DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec]] and
+    * encoded to a type 08 using [[DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec]].
+    *
+    * More info here: https://github.com/scodec/scodec/issues/122
+    */
   val stateDataCodec: Codec[HasCommitments] = ("version" | constant(0x00)) ~> discriminated[HasCommitments].by(uint16)
-    .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
+    .typecase(0x08, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
+    .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec)
     .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
     .typecase(0x03, DATA_NORMAL_Codec)
     .typecase(0x04, DATA_SHUTDOWN_Codec)
