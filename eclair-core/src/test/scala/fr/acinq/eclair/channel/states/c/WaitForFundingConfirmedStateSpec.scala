@@ -129,7 +129,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     }
   }
 
-  test("recv CMD_CLOSE") { case (alice, _, _, _, _) =>
+  ignore("recv CMD_CLOSE") { case (alice, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_CLOSE(None))
