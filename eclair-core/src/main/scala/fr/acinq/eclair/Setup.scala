@@ -56,7 +56,8 @@ import scala.concurrent._
   */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
-            seed_opt: Option[BinaryData] = None)(implicit system: ActorSystem) extends Logging {
+            seed_opt: Option[BinaryData] = None,
+            electrumServerAddress: Option[InetSocketAddress] = None)(implicit system: ActorSystem) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
@@ -122,13 +123,17 @@ class Setup(datadir: File,
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
-      val addressesFile = nodeParams.chainHash match {
-        case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
-        case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
-        case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
+      val addresses = electrumServerAddress match {
+        case Some(address) => Set(address)
+        case None =>
+          val addressesFile = nodeParams.chainHash match {
+            case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
+            case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
+            case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
+          }
+          val stream = classOf[Setup].getResourceAsStream(addressesFile)
+          ElectrumClientPool.readServerAddresses(stream)
       }
-      val stream = classOf[Setup].getResourceAsStream(addressesFile)
-      val addresses = ElectrumClientPool.readServerAddresses(stream)
       val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
   }
