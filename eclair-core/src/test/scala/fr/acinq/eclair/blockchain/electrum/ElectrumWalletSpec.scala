@@ -56,6 +56,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
   override def beforeAll(): Unit = {
     logger.info("starting bitcoind")
     startBitcoind()
+    waitForBitcoindReady()
     super.beforeAll()
   }
 
@@ -159,7 +160,6 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
         TxOut(amount, fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)),
         TxOut(amount, fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash))
       ), lockTime = 0L)
-    val btcWallet = new BitcoinCoreWallet(bitcoinrpcclient)
     val future = for {
       FundTransactionResponse(tx1, pos, fee) <- btcWallet.fundTransaction(tx, false, 10000)
       SignTransactionResponse(tx2, true) <- btcWallet.signTransaction(tx1)

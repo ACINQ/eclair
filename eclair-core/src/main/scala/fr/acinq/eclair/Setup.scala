@@ -62,7 +62,7 @@ class Setup(datadir: File,
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   logger.info(s"datadir=${datadir.getCanonicalPath}")
 
-
+  val MinimumVersion = (160300, "0.16.3")
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
@@ -101,7 +101,7 @@ class Setup(datadir: File,
         blocks = (json \ "blocks").extract[Long]
         headers = (json \ "headers").extract[Long]
         chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
-        bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
+        bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => json \ "version").map(_.extract[Int])
         unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) =>
           values
             .filter(value => (value \ "spendable").extract[Boolean])
@@ -110,7 +110,8 @@ class Setup(datadir: File,
       } yield (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
       // blocking sanity checks
       val (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
-      assert(bitcoinVersion.startsWith("16"), "Eclair requires Bitcoin Core 0.16.0 or higher")
+      val (versionInt, versionStr) = MinimumVersion
+      assert(bitcoinVersion >= versionInt, s"Eclair requires Bitcoin Core $versionStr or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
         assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Make sure that all your UTXOS are segwit UTXOS and not p2pkh (check out our README for more details)")
@@ -119,7 +120,7 @@ class Setup(datadir: File,
       assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks")
       // TODO: add a check on bitcoin version?
 
-      Bitcoind(bitcoinClient)
+      Bitcoind(bitcoinClient, bitcoinVersion)
     case ELECTRUM =>
       logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
       val addressesFile = nodeParams.chainHash match {
@@ -152,7 +153,7 @@ class Setup(datadir: File,
       smoothFeerateWindow = config.getInt("smooth-feerate-window")
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
-        case (_, Bitcoind(bitcoinClient)) =>
+        case (_, Bitcoind(bitcoinClient, _)) =>
             new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
         case _ =>
           new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
@@ -168,7 +169,7 @@ class Setup(datadir: File,
       _ <- feeratesRetrieved.future
 
       watcher = bitcoin match {
-        case Bitcoind(bitcoinClient) =>
+        case Bitcoind(bitcoinClient, _) =>
           system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), Some(zmqConnected))), "zmq", SupervisorStrategy.Restart))
           system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoinClient))), "watcher", SupervisorStrategy.Resume))
         case Electrum(electrumClient) =>
@@ -177,7 +178,7 @@ class Setup(datadir: File,
       }
 
       wallet = bitcoin match {
-        case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
+        case Bitcoind(bitcoinClient, version) => new BitcoinCoreWallet(bitcoinClient, version)
         case Electrum(electrumClient) =>
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash)), "electrum-wallet")
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
@@ -263,7 +264,7 @@ class Setup(datadir: File,
 
 // @formatter:off
 sealed trait Bitcoin
-case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient) extends Bitcoin
+case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient, version: Int) extends Bitcoin
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
 // @formatter:on
 

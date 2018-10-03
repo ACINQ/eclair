@@ -26,7 +26,8 @@ import akka.testkit.{TestKitBase, TestProbe}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.integration.IntegrationSpec
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.JValue
+import org.json4s.DefaultFormats
+import org.json4s.JsonAST.{JObject, JValue}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -41,12 +42,15 @@ trait BitcoindService extends Logging {
   val INTEGRATION_TMP_DIR = s"${System.getProperty("buildDirectory")}/integration-${UUID.randomUUID().toString}"
   logger.info(s"using tmp dir: $INTEGRATION_TMP_DIR")
 
-  val PATH_BITCOIND = new File(System.getProperty("buildDirectory"), "bitcoin-0.16.3/bin/bitcoind")
+  val PATH_BITCOIND = new File(System.getProperty("buildDirectory"), s"bitcoin-${System.getProperty("bitcoin.core.main_version")}/bin/bitcoind")
   val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
 
-  var bitcoind: Process = null
-  var bitcoinrpcclient: BitcoinJsonRPCClient = null
-  var bitcoincli: ActorRef = null
+  var bitcoind: Process = _
+  var bitcoinrpcclient: BitcoinJsonRPCClient = _
+  var bitcoincli: ActorRef = _
+
+  var btcWallet: BitcoinCoreWallet = _
+  var version: Int = _
 
   case class BitcoinReq(method: String, params: Any*)
 
@@ -56,7 +60,8 @@ trait BitcoindService extends Logging {
       Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf"), new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath, StandardCopyOption.REPLACE_EXISTING)
     }
 
-    bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
+    //Bitcoin 0.17 prints to console by default when not using 'daemon'
+    bitcoind = s"$PATH_BITCOIND -printtoconsole=0 -datadir=$PATH_BITCOIND_DATADIR".run()
     bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 28332)
     bitcoincli = system.actorOf(Props(new Actor {
       override def receive: Receive = {
@@ -76,12 +81,19 @@ trait BitcoindService extends Logging {
   }
 
   def waitForBitcoindReady(): Unit = {
+    implicit val formats = DefaultFormats
     val sender = TestProbe()
     logger.info(s"waiting for bitcoind to initialize...")
+    var networkInfo: AnyRef = null
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("getnetworkinfo"))
-      sender.receiveOne(5 second).isInstanceOf[JValue]
+      networkInfo = sender.receiveOne(5 second)
+      networkInfo.isInstanceOf[JValue]
     }, max = 30 seconds, interval = 500 millis)
+
+    version = (networkInfo.asInstanceOf[JObject] \\ "version").extract[Int]
+    btcWallet = new BitcoinCoreWallet(bitcoinrpcclient, version)
+
     logger.info(s"generating initial blocks...")
     sender.send(bitcoincli, BitcoinReq("generate", 500))
     sender.expectMsgType[JValue](30 seconds)

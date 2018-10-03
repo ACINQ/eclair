@@ -48,9 +48,6 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
 
   val walletPassword = Random.alphanumeric.take(8).mkString
 
-  implicit val formats = DefaultFormats
-
-
   override def beforeAll(): Unit = {
     startBitcoind()
   }
@@ -84,7 +81,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
         }
       }
 
-      val wallet = new BitcoinCoreWallet(bitcoinClient)
+      val wallet = new BitcoinCoreWallet(bitcoinClient, version)
 
       val sender = TestProbe()
 
@@ -98,12 +95,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
   }
 
   test("create/commit/rollback funding txes") {
-    val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport"))
-    val wallet = new BitcoinCoreWallet(bitcoinClient)
+    val wallet = btcWallet
 
     val sender = TestProbe()
 
@@ -144,9 +136,12 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     sender.send(bitcoincli, BitcoinReq("getrawtransaction", fundingTxes(2).txid.toString()))
     assert(sender.expectMsgType[JString](10 seconds).s === fundingTxes(2).toString())
 
-    // NB: bitcoin core doesn't clear the locks when a tx is published
+    // Bitcoin core 0.16.x does not clear the the locks when the tx is published, but 0.17 started to
+    // do since https://github.com/bitcoin/bitcoin/pull/13160.
+    sender.send(bitcoincli, BitcoinReq("lockunspent", true))
+
     sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    assert(sender.expectMsgType[JValue](10 seconds).children.size === 2)
+    assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
 
   }
 
@@ -159,12 +154,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
   }
 
   test("unlock failed funding txes") {
-    val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport"))
-    val wallet = new BitcoinCoreWallet(bitcoinClient)
+    val wallet = btcWallet
 
     val sender = TestProbe()
 
@@ -178,15 +168,20 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     sender.send(bitcoincli, BitcoinReq("listlockunspent"))
     assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
 
-    val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
-    wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
+    // Due to https://github.com/bitcoin/bitcoin/issues/14082, makeFundingTx will not ask for walletpassphrase and will
+    // throw a 'missing key' error. To keep the test flow, we're calling a different RPC method here here.
+    wallet.getFinalAddress.map(a => sender.send(bitcoincli, BitcoinReq("dumpprivkey", a.toString)))
     assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("Please enter the wallet passphrase with walletpassphrase first."))
-
-    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
 
     sender.send(bitcoincli, BitcoinReq("walletpassphrase", walletPassword, 10))
     sender.expectMsgType[JValue]
+
+    val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
+    wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
+    sender.expectMsgType[MakeFundingTxResponse]
+
+    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
+    assert(sender.expectMsgType[JValue](10 seconds).children.size === 1)
 
     wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
     val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
