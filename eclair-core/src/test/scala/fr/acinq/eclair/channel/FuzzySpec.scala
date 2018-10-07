@@ -45,7 +45,7 @@ import scala.util.Random
 @RunWith(classOf[JUnitRunner])
 class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Logging {
 
-  type FixtureParam = Tuple7[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], ActorRef, ActorRef, ActorRef, ActorRef, ActorRef]
+  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], pipe: ActorRef, relayerA: ActorRef, relayerB: ActorRef, paymentHandlerA: ActorRef, paymentHandlerB: ActorRef)
 
   override def withFixture(test: OneArgTest) = {
     val fuzzy = test.tags.contains("fuzzy")
@@ -82,7 +82,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
     }
-    test((alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB))
+    withFixture(test.toNoArgTest(FixtureParam(alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB)))
   }
 
   class SenderActor(channel: TestFSMRef[State, Data, Channel], paymentHandler: ActorRef, latch: CountDownLatch) extends Actor with ActorLogging {
@@ -133,65 +133,65 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
 
   }
 
-  test("fuzzy test with only one party sending HTLCs", Tag("fuzzy")) {
-    case (alice, bob, _, _, _, _, paymentHandlerB) =>
-      val latch = new CountDownLatch(100)
-      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
-      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
-      awaitCond(latch.getCount == 0, max = 2 minutes)
-      assert(alice.stateName == NORMAL || alice.stateName == OFFLINE)
-      assert(bob.stateName == NORMAL || alice.stateName == OFFLINE)
+  test("fuzzy test with only one party sending HTLCs", Tag("fuzzy")) { f =>
+    import f._
+    val latch = new CountDownLatch(100)
+    system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
+    system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
+    awaitCond(latch.getCount == 0, max = 2 minutes)
+    assert(alice.stateName == NORMAL || alice.stateName == OFFLINE)
+    assert(bob.stateName == NORMAL || alice.stateName == OFFLINE)
   }
 
-  test("fuzzy test with both parties sending HTLCs", Tag("fuzzy")) {
-    case (alice, bob, _, _, _, paymentHandlerA, paymentHandlerB) =>
-      val latch = new CountDownLatch(100)
-      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
-      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
-      system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch)))
-      system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch)))
-      awaitCond(latch.getCount == 0, max = 2 minutes)
-      assert(alice.stateName == NORMAL || alice.stateName == OFFLINE)
-      assert(bob.stateName == NORMAL || alice.stateName == OFFLINE)
+  test("fuzzy test with both parties sending HTLCs", Tag("fuzzy")) { f =>
+    import f._
+    val latch = new CountDownLatch(100)
+    system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
+    system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
+    system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch)))
+    system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch)))
+    awaitCond(latch.getCount == 0, max = 2 minutes)
+    assert(alice.stateName == NORMAL || alice.stateName == OFFLINE)
+    assert(bob.stateName == NORMAL || alice.stateName == OFFLINE)
   }
 
-  test("one party sends lots of htlcs send shutdown") {
-    case (alice, _, _, _, _, _, paymentHandlerB) =>
-      val latch = new CountDownLatch(20)
-      val senders = system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) ::
-        system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) ::
-        system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) :: Nil
-      awaitCond(latch.getCount == 0, max = 2 minutes)
-      val sender = TestProbe()
-      awaitCond({
-        sender.send(alice, CMD_CLOSE(None))
-        sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure]) == "ok"
-      }, max = 30 seconds)
-      senders.foreach(_ ! 'stop)
-      awaitCond(alice.stateName == CLOSING)
-      awaitCond(alice.stateName == CLOSING)
+  test("one party sends lots of htlcs send shutdown") { f =>
+    import f._
+    val latch = new CountDownLatch(20)
+    val senders = system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) ::
+      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) ::
+      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) :: Nil
+    awaitCond(latch.getCount == 0, max = 2 minutes)
+    val sender = TestProbe()
+    awaitCond({
+      sender.send(alice, CMD_CLOSE(None))
+      sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure]) == "ok"
+    }, max = 30 seconds)
+    senders.foreach(_ ! 'stop)
+    awaitCond(alice.stateName == CLOSING)
+    awaitCond(alice.stateName == CLOSING)
   }
 
-  test("both parties send lots of htlcs send shutdown") {
-    case (alice, bob, _, _, _, paymentHandlerA, paymentHandlerB) =>
-      val latch = new CountDownLatch(30)
-      val senders = system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) ::
-        system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) ::
-        system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch))) ::
-        system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch))) :: Nil
-      awaitCond(latch.getCount == 0, max = 2 minutes)
-      val sender = TestProbe()
-      awaitCond({
-        sender.send(alice, CMD_CLOSE(None))
-        val resa = sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure])
-        sender.send(bob, CMD_CLOSE(None))
-        val resb = sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure])
-        // we only need that one of them succeeds
-        resa == "ok" || resb == "ok"
-      }, max = 30 seconds)
-      senders.foreach(_ ! 'stop)
-      awaitCond(alice.stateName == CLOSING)
-      awaitCond(alice.stateName == CLOSING)
+  test("both parties send lots of htlcs send shutdown") { f =>
+    import f._
+    val latch = new CountDownLatch(30)
+    val senders = system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) ::
+      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) ::
+      system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch))) ::
+      system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch))) :: Nil
+    awaitCond(latch.getCount == 0, max = 2 minutes)
+    val sender = TestProbe()
+    awaitCond({
+      sender.send(alice, CMD_CLOSE(None))
+      val resa = sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure])
+      sender.send(bob, CMD_CLOSE(None))
+      val resb = sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure])
+      // we only need that one of them succeeds
+      resa == "ok" || resb == "ok"
+    }, max = 30 seconds)
+    senders.foreach(_ ! 'stop)
+    awaitCond(alice.stateName == CLOSING)
+    awaitCond(alice.stateName == CLOSING)
   }
 
 }

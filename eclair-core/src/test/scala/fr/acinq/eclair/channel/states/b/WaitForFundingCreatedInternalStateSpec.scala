@@ -23,6 +23,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
+import org.scalatest.Outcome
 import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
@@ -33,9 +34,9 @@ import scala.concurrent.duration._
 @RunWith(classOf[JUnitRunner])
 class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  type FixtureParam = Tuple4[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
+  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
-  override def withFixture(test: OneArgTest) = {
+  override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
     import setup._
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
@@ -48,22 +49,20 @@ class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with State
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    }
-    test((alice, alice2bob, bob2alice, alice2blockchain))
-  }
-
-  test("recv Error") { case (bob, alice2bob, bob2alice, _) =>
-    within(30 seconds) {
-      bob ! Error("00" * 32, "oops".getBytes)
-      awaitCond(bob.stateName == CLOSED)
+      withFixture(test.toNoArgTest(FixtureParam(alice, alice2bob, bob2alice, alice2blockchain)))
     }
   }
 
-  test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, _) =>
-    within(30 seconds) {
-      alice ! CMD_CLOSE(None)
-      awaitCond(alice.stateName == CLOSED)
-    }
+  test("recv Error") { f =>
+    import f._
+    alice ! Error("00" * 32, "oops".getBytes)
+    awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv CMD_CLOSE") { f =>
+    import f._
+    alice ! CMD_CLOSE(None)
+    awaitCond(alice.stateName == CLOSED)
   }
 
 }

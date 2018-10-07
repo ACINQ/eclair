@@ -26,7 +26,7 @@ class PeerSpec extends TestkitBaseClass {
   val updates = (fakeRoutingInfo.map(_._2) ++ fakeRoutingInfo.map(_._3)).toList
   val nodes = (fakeRoutingInfo.map(_._4) ++ fakeRoutingInfo.map(_._5)).toList
 
-  override type FixtureParam = Tuple8[PublicKey, TestProbe, TestProbe, TestProbe, TestProbe, TestProbe, TestProbe, ActorRef]
+  case class FixtureParam(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: ActorRef)
 
   override protected def withFixture(test: OneArgTest): Outcome = {
     val authenticator = TestProbe()
@@ -38,7 +38,7 @@ class PeerSpec extends TestkitBaseClass {
     val wallet: EclairWallet = null // unused
     val remoteNodeId = Bob.nodeParams.nodeId
     val peer = system.actorOf(Peer.props(Alice.nodeParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
-    test((remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer))
+    withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)))
   }
 
   def connect(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: ActorRef): Unit = {
@@ -55,7 +55,8 @@ class PeerSpec extends TestkitBaseClass {
     assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
   }
 
-  test("filter gossip message (no filtering)") { case (remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer) =>
+  test("filter gossip message (no filtering)") { f =>
+    import f._
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
     val rebroadcast = Rebroadcast(channels.map(_ -> Set.empty[ActorRef]).toMap, updates.map(_ -> Set.empty[ActorRef]).toMap, nodes.map(_ -> Set.empty[ActorRef]).toMap)
@@ -65,7 +66,8 @@ class PeerSpec extends TestkitBaseClass {
     nodes.foreach(transport.expectMsg(_))
   }
 
-  test("filter gossip message (filtered by origin)") { case (remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer) =>
+  test("filter gossip message (filtered by origin)") { f =>
+    import f._
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
     val rebroadcast = Rebroadcast(
@@ -79,7 +81,8 @@ class PeerSpec extends TestkitBaseClass {
     (nodes.toSet - nodes(4)).foreach(transport.expectMsg(_))
   }
 
-  test("filter gossip message (filtered by timestamp)") { case (remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer) =>
+  test("filter gossip message (filtered by timestamp)") { f =>
+    import f._
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
     val rebroadcast = Rebroadcast(channels.map(_ -> Set.empty[ActorRef]).toMap, updates.map(_ -> Set.empty[ActorRef]).toMap, nodes.map(_ -> Set.empty[ActorRef]).toMap)
@@ -89,12 +92,13 @@ class PeerSpec extends TestkitBaseClass {
     probe.send(peer, rebroadcast)
     // peer doesn't filter channel announcements
     channels.foreach(transport.expectMsg(_))
-    // but it will only send updates and node annoucements matching the filter
+    // but it will only send updates and node announcements matching the filter
     updates.filter(u => timestamps.contains(u.timestamp)).foreach(transport.expectMsg(_))
     nodes.filter(u => timestamps.contains(u.timestamp)).foreach(transport.expectMsg(_))
   }
 
-  test("react to peer's bad behavior") { case (remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer) =>
+  test("react to peer's bad behavior") { f =>
+    import f._
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
 
