@@ -44,8 +44,6 @@ import fr.acinq.eclair.{Globals, Kit, Setup}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.concurrent.Await
@@ -55,7 +53,7 @@ import scala.concurrent.duration._
 /**
   * Created by PM on 15/03/2017.
   */
-@RunWith(classOf[JUnitRunner])
+
 class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
 
   var nodes: Map[String, Kit] = Map()

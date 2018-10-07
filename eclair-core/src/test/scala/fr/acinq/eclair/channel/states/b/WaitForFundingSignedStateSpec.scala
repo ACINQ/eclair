@@ -24,16 +24,14 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingSigned, Init, OpenChannel}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
-import org.junit.runner.RunWith
 import org.scalatest.Outcome
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 
 /**
   * Created by PM on 05/07/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)

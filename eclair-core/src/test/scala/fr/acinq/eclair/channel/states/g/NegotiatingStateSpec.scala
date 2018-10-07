@@ -29,8 +29,6 @@ import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment.Local
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
 import fr.acinq.eclair.{Globals, TestkitBaseClass}
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
 import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration._
@@ -39,7 +37,7 @@ import scala.util.Success
 /**
   * Created by PM on 05/07/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe)

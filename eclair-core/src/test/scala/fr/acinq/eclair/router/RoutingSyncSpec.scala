@@ -10,13 +10,11 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.wire._
-import org.junit.runner.RunWith
 import org.scalatest.FunSuiteLike
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 
-@RunWith(classOf[JUnitRunner])
+
 class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   import RoutingSyncSpec.makeFakeRoutingInfo

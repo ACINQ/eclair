@@ -28,16 +28,14 @@ import fr.acinq.eclair.payment.{ForwardAdd, Local, PaymentLifecycle}
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
-import org.junit.runner.RunWith
 import org.scalatest.Outcome
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 
 /**
   * Created by PM on 05/07/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayer: TestProbe)

@@ -28,16 +28,14 @@ import fr.acinq.eclair.payment.{CommandBuffer, ForwardAdd, ForwardFulfill, Local
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
-import org.junit.runner.RunWith
 import org.scalatest.Outcome
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 
 /**
   * Created by PM on 05/07/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayer: TestProbe, bobCommitTxes: List[PublishableTxs])

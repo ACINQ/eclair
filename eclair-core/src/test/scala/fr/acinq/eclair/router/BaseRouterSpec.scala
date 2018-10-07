@@ -28,9 +28,7 @@ import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestkitBaseClass, randomKey, _}
-import org.junit.runner.RunWith
 import org.scalatest.Outcome
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 
@@ -39,7 +37,7 @@ import scala.concurrent.duration._
   * It is re-used in payment FSM tests
   * Created by PM on 29/08/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 abstract class BaseRouterSpec extends TestkitBaseClass {
 
   case class FixtureParam(router: ActorRef, watcher: TestProbe)

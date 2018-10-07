@@ -31,9 +31,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
-import org.junit.runner.RunWith
 import org.scalatest.Tag
-import org.scalatest.junit.JUnitRunner
 
 import scala.collection.immutable.Nil
 import scala.concurrent.duration._
@@ -42,7 +40,7 @@ import scala.util.Random
 /**
   * Created by PM on 05/07/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Logging {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], pipe: ActorRef, relayerA: ActorRef, relayerB: ActorRef, paymentHandlerA: ActorRef, paymentHandlerB: ActorRef)

@@ -26,16 +26,14 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes, randomKey}
-import org.junit.runner.RunWith
 import org.scalatest.Outcome
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 
 /**
   * Created by PM on 29/08/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class RelayerSpec extends TestkitBaseClass {
 
   // let's reuse the existing test data

@@ -29,8 +29,6 @@ import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.QueryShortChannelIds
 import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
 
 import scala.collection.SortedSet
 import scala.compat.Platform
@@ -39,7 +37,7 @@ import scala.concurrent.duration._
 /**
   * Created by PM on 29/08/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class RouterSpec extends BaseRouterSpec {
 
   test("properly announce valid new channels and ignore invalid ones") { fixture =>

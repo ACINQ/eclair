@@ -17,12 +17,10 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.BinaryData
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 
-@RunWith(classOf[JUnitRunner])
+
 class UInt64Spec extends FunSuite {
 
   test("handle values from 0 to 2^63-1") {

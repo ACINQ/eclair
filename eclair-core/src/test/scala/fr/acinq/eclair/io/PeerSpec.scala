@@ -12,13 +12,11 @@ import fr.acinq.eclair.io.Peer.ResumeAnnouncements
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
 import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, wire}
-import org.junit.runner.RunWith
 import org.scalatest.Outcome
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 
-@RunWith(classOf[JUnitRunner])
+
 class PeerSpec extends TestkitBaseClass {
   val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(100)
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)

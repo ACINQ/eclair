@@ -28,8 +28,6 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.NoopPaymentHandler
 import fr.acinq.eclair.wire.Init
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, Matchers, Outcome, fixture}
 
 import scala.concurrent.duration._
@@ -38,7 +36,7 @@ import scala.io.Source
 /**
   * Created by PM on 30/05/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fixture.FunSuiteLike with BeforeAndAfterAll {
 
   case class FixtureParam(ref: List[String], res: List[String])

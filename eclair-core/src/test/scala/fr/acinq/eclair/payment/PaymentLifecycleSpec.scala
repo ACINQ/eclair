@@ -29,13 +29,11 @@ import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
 
 /**
   * Created by PM on 29/08/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class PaymentLifecycleSpec extends BaseRouterSpec {
 
   val initialBlockCount = 420000

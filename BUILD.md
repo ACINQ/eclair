@@ -14,10 +14,6 @@ $ mvn install
 
 #### Other build options
 
-If you don't have Docker you can skip tests that depend on it:
-```shell
-$ mvn install -DexcludedGroups=fr.acinq.eclair.blockchain.electrum.DockerTest
-```
 To skip all tests, run:
 ```shell
 $ mvn install -DskipTests
