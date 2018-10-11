@@ -17,12 +17,10 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.BinaryData
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 
-@RunWith(classOf[JUnitRunner])
+
 class ChaCha20Poly1305Spec extends FunSuite {
   test("Poly1305") {
     // from https://tools.ietf.org/html/rfc7539 ch 2.5.2

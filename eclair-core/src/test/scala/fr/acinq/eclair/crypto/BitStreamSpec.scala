@@ -16,15 +16,13 @@
 
 package fr.acinq.eclair.crypto
 
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 import org.spongycastle.util.encoders.Hex
 
 /**
   * Created by fabrice on 22/06/17.
   */
-@RunWith(classOf[JUnitRunner])
+
 class BitStreamSpec extends FunSuite {
 
   import BitStream._

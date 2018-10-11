@@ -27,14 +27,12 @@ import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelCodecs, UpdateAddHtlc}
 import fr.acinq.eclair.{ShortChannelId, UInt64, randomKey}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 /**
   * Created by fabrice on 07/02/17.
   */
-@RunWith(classOf[JUnitRunner])
+
 class ChannelStateSpec extends FunSuite {
 
   import ChannelStateSpec._

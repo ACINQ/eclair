@@ -25,9 +25,7 @@ import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{ChannelUpdate, LightningMessageCodecs, PerHopPayload}
 import fr.acinq.eclair.{ShortChannelId, TestConstants, nodeFee, randomBytes}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 import scodec.bits.BitVector
 
 import scala.util.Success
@@ -35,7 +33,7 @@ import scala.util.Success
 /**
   * Created by PM on 31/05/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class HtlcGenerationSpec extends FunSuite {
 
   test("compute fees") {

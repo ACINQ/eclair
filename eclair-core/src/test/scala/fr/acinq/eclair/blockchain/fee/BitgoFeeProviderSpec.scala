@@ -19,14 +19,12 @@ package fr.acinq.eclair.blockchain.fee
 import akka.actor.ActorSystem
 import akka.util.Timeout
 import org.json4s.DefaultFormats
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 /**
   * Created by PM on 27/01/2017.
   */
-@RunWith(classOf[JUnitRunner])
+
 class BitgoFeeProviderSpec extends FunSuite {
 
   import BitgoFeeProvider._

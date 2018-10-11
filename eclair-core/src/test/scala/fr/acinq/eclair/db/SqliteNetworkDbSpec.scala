@@ -21,15 +21,13 @@ import java.sql.DriverManager
 
 import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
-import fr.acinq.eclair.{ShortChannelId, randomKey}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.Color
-import org.junit.runner.RunWith
+import fr.acinq.eclair.{ShortChannelId, randomKey}
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 import org.sqlite.SQLiteException
 
-@RunWith(classOf[JUnitRunner])
+
 class SqliteNetworkDbSpec extends FunSuite {
 
   def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")

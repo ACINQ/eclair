@@ -26,9 +26,7 @@ import fr.acinq.eclair.transactions.Scripts.{htlcOffered, htlcReceived, toLocalD
 import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import grizzled.slf4j.Logging
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.io.Source
 import scala.util.{Failure, Random, Success, Try}
@@ -36,7 +34,7 @@ import scala.util.{Failure, Random, Success, Try}
 /**
   * Created by PM on 16/12/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class TransactionsSpec extends FunSuite with Logging {
 
   test("encode/decode sequence and locktime (one example)") {

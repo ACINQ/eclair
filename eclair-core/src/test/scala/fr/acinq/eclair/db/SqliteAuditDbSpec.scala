@@ -23,13 +23,11 @@ import fr.acinq.eclair.channel.NetworkFeePaid
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.{randomBytes, randomKey}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.compat.Platform
 
-@RunWith(classOf[JUnitRunner])
+
 class SqliteAuditDbSpec extends FunSuite {
 
   def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
