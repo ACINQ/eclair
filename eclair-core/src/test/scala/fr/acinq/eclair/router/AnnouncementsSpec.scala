@@ -21,14 +21,12 @@ import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements._
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 /**
   * Created by PM on 31/05/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class AnnouncementsSpec extends FunSuite {
 
   test("check nodeId1/nodeId2 lexical ordering") {

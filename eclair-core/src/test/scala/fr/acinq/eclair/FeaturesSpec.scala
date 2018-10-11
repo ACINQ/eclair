@@ -20,14 +20,12 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Protocol
 import fr.acinq.eclair.Features._
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 /**
   * Created by PM on 27/01/2017.
   */
-@RunWith(classOf[JUnitRunner])
+
 class FeaturesSpec extends FunSuite {
 
   test("'initial_routing_sync' feature") {

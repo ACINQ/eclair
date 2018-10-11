@@ -20,19 +20,16 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
+import fr.acinq.eclair.{ShortChannelId, randomKey}
 import org.jgrapht.graph.DirectedWeightedPseudograph
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
-import scala.compat.Platform
 import scala.util.{Failure, Success}
 
 /**
   * Created by PM on 31/05/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class RouteCalculationSpec extends FunSuite {
 
   import RouteCalculationSpec._

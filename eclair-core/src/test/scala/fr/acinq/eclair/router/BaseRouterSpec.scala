@@ -28,8 +28,7 @@ import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestkitBaseClass, randomKey, _}
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
+import org.scalatest.Outcome
 
 import scala.concurrent.duration._
 
@@ -38,12 +37,10 @@ import scala.concurrent.duration._
   * It is re-used in payment FSM tests
   * Created by PM on 29/08/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 abstract class BaseRouterSpec extends TestkitBaseClass {
 
-  import BaseRouterSpec._
-
-  type FixtureParam = Tuple2[ActorRef, TestProbe]
+  case class FixtureParam(router: ActorRef, watcher: TestProbe)
 
   val remoteNodeId = PrivateKey(BinaryData("01" * 32), compressed = true).publicKey
 
@@ -87,7 +84,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val channelUpdate_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, channelId_ef, cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8)
   val channelUpdate_fe = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_f, e, channelId_ef, cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8)
 
-  override def withFixture(test: OneArgTest) = {
+  override def withFixture(test: OneArgTest): Outcome = {
     // the network will be a --(1)--> b ---(2)--> c --(3)--> d and e --(4)--> f (we are a)
 
     within(30 seconds) {
@@ -151,7 +148,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
         nodes.size === 6 && channels.size === 4 && updates.size === 8
       }, max = 10 seconds, interval = 1 second)
 
-      test((router, watcher))
+      withFixture(test.toNoArgTest(FixtureParam(router, watcher)))
     }
   }
 }

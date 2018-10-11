@@ -20,12 +20,10 @@ import java.sql.DriverManager
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqlitePendingRelayDb}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 import org.sqlite.SQLiteException
 
-@RunWith(classOf[JUnitRunner])
+
 class SqliteChannelsDbSpec extends FunSuite {
 
   def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
