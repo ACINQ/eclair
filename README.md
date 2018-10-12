@@ -51,6 +51,24 @@ addresstype=p2sh-segwit
 ```
 deprecatedrpc=signrawtransaction
 ```
+You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network speficic, for example you could use:
+```
+testnet=1
+server=1
+txindex=1
+addresstype=p2sh-segwit
+[test]
+rpcuser=foo1
+rpcpassword=bar1
+zmqpubrawblock=tcp://127.0.0.1:29001
+zmqpubrawtx=tcp://127.0.0.1:29001
+[regtest]
+rpcuser=foo2
+rpcpassword=bar2
+zmqpubrawblock=tcp://127.0.0.1:29002
+zmqpubrawtx=tcp://127.0.0.1:29002
+```
+And yes, it's not a typo, the name of the `testnet` section really is `test` ...
 
 ### Installing Eclair
 
