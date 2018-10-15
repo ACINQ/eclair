@@ -32,6 +32,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.transactions.Transactions.{htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
 import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration._
@@ -459,6 +460,54 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.expectMsg("ok")
     val commitSig = bob2alice.expectMsgType[CommitSig]
     assert(commitSig.htlcSignatures.toSet.size == 4)
+  }
+
+  test("recv CMD_SIGN (check htlc info are persisted)") { f =>
+    import f._
+    val sender = TestProbe()
+    // for the test to be really useful we have constraint on parameters
+    assert(Alice.nodeParams.dustLimitSatoshis > Bob.nodeParams.dustLimitSatoshis)
+    // we're gonna exchange two htlcs in each direction, the goal is to have bob's commitment have 4 htlcs, and alice's
+    // commitment only have 3. We will then check that alice indeed persisted 4 htlcs, and bob only 3.
+    val aliceMinReceive = Alice.nodeParams.dustLimitSatoshis + weight2fee(TestConstants.feeratePerKw, htlcSuccessWeight).toLong
+    val aliceMinOffer = Alice.nodeParams.dustLimitSatoshis + weight2fee(TestConstants.feeratePerKw, htlcTimeoutWeight).toLong
+    val bobMinReceive = Bob.nodeParams.dustLimitSatoshis + weight2fee(TestConstants.feeratePerKw, htlcSuccessWeight).toLong
+    val bobMinOffer = Bob.nodeParams.dustLimitSatoshis + weight2fee(TestConstants.feeratePerKw, htlcTimeoutWeight).toLong
+    val a2b_1 = bobMinReceive + 10 // will be in alice and bob tx
+  val a2b_2 = bobMinReceive + 20 // will be in alice and bob tx
+  val b2a_1 = aliceMinReceive + 10 // will be in alice and bob tx
+  val b2a_2 = bobMinOffer + 10 // will be only be in bob tx
+    assert(a2b_1 > aliceMinOffer && a2b_1 > bobMinReceive)
+    assert(a2b_2 > aliceMinOffer && a2b_2 > bobMinReceive)
+    assert(b2a_1 > aliceMinReceive && b2a_1 > bobMinOffer)
+    assert(b2a_2 < aliceMinReceive && b2a_2 > bobMinOffer)
+    sender.send(alice, CMD_ADD_HTLC(a2b_1 * 1000, "11" * 32, 400144))
+    sender.expectMsg("ok")
+    alice2bob.expectMsgType[UpdateAddHtlc]
+    alice2bob.forward(bob)
+    sender.send(alice, CMD_ADD_HTLC(a2b_2 * 1000, "22" * 32, 400144))
+    sender.expectMsg("ok")
+    alice2bob.expectMsgType[UpdateAddHtlc]
+    alice2bob.forward(bob)
+    sender.send(bob, CMD_ADD_HTLC(b2a_1 * 1000, "33" * 32, 400144))
+    sender.expectMsg("ok")
+    bob2alice.expectMsgType[UpdateAddHtlc]
+    bob2alice.forward(alice)
+    sender.send(bob, CMD_ADD_HTLC(b2a_2 * 1000, "44" * 32, 400144))
+    sender.expectMsg("ok")
+    bob2alice.expectMsgType[UpdateAddHtlc]
+    bob2alice.forward(alice)
+
+    // actual test starts here
+    crossSign(alice, bob, alice2bob, bob2alice)
+    // depending on who starts signing first, there will be one or two commitments because both sides have changes
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index === 1)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index === 2)
+    assert(alice.underlyingActor.nodeParams.channelsDb.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
+    assert(alice.underlyingActor.nodeParams.channelsDb.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 2)
+    assert(alice.underlyingActor.nodeParams.channelsDb.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 2).size == 4)
+    assert(bob.underlyingActor.nodeParams.channelsDb.listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
+    assert(bob.underlyingActor.nodeParams.channelsDb.listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 3)
   }
 
   test("recv CMD_SIGN (htlcs with same pubkeyScript but different amounts)") { f =>
