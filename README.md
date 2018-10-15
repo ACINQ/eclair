@@ -58,15 +58,10 @@ server=1
 txindex=1
 addresstype=p2sh-segwit
 [test]
-rpcuser=foo1
-rpcpassword=bar1
-zmqpubrawblock=tcp://127.0.0.1:29001
-zmqpubrawtx=tcp://127.0.0.1:29001
-[regtest]
-rpcuser=foo2
-rpcpassword=bar2
-zmqpubrawblock=tcp://127.0.0.1:29002
-zmqpubrawtx=tcp://127.0.0.1:29002
+rpcuser=foo
+rpcpassword=bar
+zmqpubrawblock=tcp://127.0.0.1:29000
+zmqpubrawtx=tcp://127.0.0.1:29000
 ```
 And yes, it's not a typo, the name of the `testnet` section really is `test` ...
 
