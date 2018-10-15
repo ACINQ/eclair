@@ -51,19 +51,6 @@ addresstype=p2sh-segwit
 ```
 deprecatedrpc=signrawtransaction
 ```
-You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network speficic, for example you could use:
-```
-testnet=1
-server=1
-txindex=1
-addresstype=p2sh-segwit
-[test]
-rpcuser=foo
-rpcpassword=bar
-zmqpubrawblock=tcp://127.0.0.1:29000
-zmqpubrawtx=tcp://127.0.0.1:29000
-```
-And yes, it's not a typo, the name of the `testnet` section really is `test` ...
 
 ### Installing Eclair
 
@@ -220,15 +207,34 @@ addresstype=p2sh-segwit
 ```
 deprecatedrpc=signrawtransaction
 ```
+
+You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network speficic, so you can reasliy run your bitcoin node on both mainnet and testnet. For example you could use:
+
+```
+server=1
+txindex=1
+addresstype=p2sh-segwit
+deprecatedrpc=signrawtransaction
+[main]
+rpcuser=<your-mainnet-rpc-user-here>
+rpcpassword=<your-mainnet-rpc-password-here>
+zmqpubrawblock=tcp://127.0.0.1:29000
+zmqpubrawtx=tcp://127.0.0.1:29000
+[test]
+rpcuser=<your-testnet-rpc-user-here>
+rpcpassword=<your-testnet-rpc-password-here>
+zmqpubrawblock=tcp://127.0.0.1:29001
+zmqpubrawtx=tcp://127.0.0.1:29001
+```
+
 ### Eclair configuration
 
 ```
 eclair.chain=mainnet
 eclair.bitcoind.rpcport=8332
-eclair.bitcoind.rpcuser=<your-bitcoin-core-rpc-user-here>
-eclair.bitcoind.rpcpassword=<your-bitcoin-core-rpc-passsword-here>
+eclair.bitcoind.rpcuser=<your-mainnet-rpc-user-here>
+eclair.bitcoind.rpcpassword=<your-mainnet-rpc-password-here>
 ```
-
 
 ## Resources
 - [1] [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
