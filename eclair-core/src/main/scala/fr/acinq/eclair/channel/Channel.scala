@@ -1081,19 +1081,19 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           log.info(s"got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain")
           val localCommitPublished1 = d.localCommitPublished.map {
             case localCommitPublished =>
-              val localCommitPublished1 = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, commitments1, localCommitPublished.commitTx)
+              val localCommitPublished1 = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, commitments1, localCommitPublished.commitTx, context.system.eventStream)
               doPublish(localCommitPublished1)
               localCommitPublished1
           }
           val remoteCommitPublished1 = d.remoteCommitPublished.map {
             case remoteCommitPublished =>
-              val remoteCommitPublished1 = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx)
+              val remoteCommitPublished1 = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx, context.system.eventStream)
               doPublish(remoteCommitPublished1)
               remoteCommitPublished1
           }
           val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map {
             case remoteCommitPublished =>
-              val remoteCommitPublished1 = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx)
+              val remoteCommitPublished1 = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx, context.system.eventStream)
               doPublish(remoteCommitPublished1)
               remoteCommitPublished1
           }
@@ -1140,7 +1140,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // we can then use these preimages to fulfill origin htlcs
       log.info(s"processing BITCOIN_OUTPUT_SPENT with txid=${tx.txid} tx=$tx")
       val extracted = Closing.extractPreimages(d.commitments.localCommit, tx)
-      extracted map { case (htlc, fulfill) =>
+      extracted foreach { case (htlc, fulfill) =>
         val origin = d.commitments.originChannels(fulfill.id)
         log.warning(s"fulfilling htlc #${fulfill.id} paymentHash=${sha256(fulfill.paymentPreimage)} origin=$origin")
         relayer ! ForwardFulfill(fulfill, origin, htlc)
@@ -1155,6 +1155,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), blockHeight, _), d: DATA_CLOSING) =>
       log.info(s"txid=${tx.txid} has reached mindepth, updating closing state")
+      nodeParams.pendingPaymentDb.setDoneSettlingOnChain(tx.txid)
+
       // first we check if this tx belongs to one of the current local/remote commits and update it
       val localCommitPublished1 = d.localCommitPublished.map(Closing.updateLocalCommitPublished(_, tx))
       val remoteCommitPublished1 = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx))
@@ -1162,7 +1164,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val futureRemoteCommitPublished1 = d.futureRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx))
       val revokedCommitPublished1 = d.revokedCommitPublished.map(Closing.updateRevokedCommitPublished(_, tx))
       // if the local commitment tx just got confirmed, let's send an event telling when we will get the main output refund
-      if (localCommitPublished1.map(_.commitTx.txid) == Some(tx.txid)) {
+      if (localCommitPublished1.map(_.commitTx.txid).contains(tx.txid)) {
         context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.remoteParams.toSelfDelay))
       }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
@@ -1626,7 +1628,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     } else {
       val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
 
-      val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, d.commitments, commitTx)
+      val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, d.commitments, commitTx, context.system.eventStream)
       doPublish(localCommitPublished)
 
       val nextData = d match {
@@ -1700,7 +1702,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     log.warning(s"they published their current commit in txid=${commitTx.txid}")
     require(commitTx.txid == d.commitments.remoteCommit.txid, "txid mismatch")
 
-    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, d.commitments.remoteCommit, commitTx)
+    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, d.commitments.remoteCommit, commitTx, context.system.eventStream)
     doPublish(remoteCommitPublished)
 
     val nextData = d match {
@@ -1729,7 +1731,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     val remoteCommit = d.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit
     require(commitTx.txid == remoteCommit.txid, "txid mismatch")
 
-    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, remoteCommit, commitTx)
+    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, remoteCommit, commitTx, context.system.eventStream)
     doPublish(remoteCommitPublished)
 
     val nextData = d match {
@@ -1807,7 +1809,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     // let's try to spend our current local tx
     val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
-    val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, d.commitments, commitTx)
+    val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, d.commitments, commitTx, context.system.eventStream)
     doPublish(localCommitPublished)
 
     goto(ERR_INFORMATION_LEAK) sending error

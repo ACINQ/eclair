@@ -118,7 +118,7 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
     db.add(msg)
     assert(db.getSettlingOnChain(paymentHash1).contains(msg))
 
-    db.setDone(txid1)
+    db.setDoneSettlingOnChain(txid1)
     assert(db.getSettlingOnChain(paymentHash1).contains(msg.copy(isDone = true)))
   }
 }

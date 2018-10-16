@@ -40,5 +40,5 @@ class NoopPendingPaymentDb extends PendingPaymentDb {
 
   override def getSettlingOnChain(paymentHash: BinaryData): Option[PaymentSettlingOnChain] = None
 
-  override def setDone(txid: BinaryData): Unit = ()
+  override def setDoneSettlingOnChain(txid: BinaryData): Unit = ()
 }

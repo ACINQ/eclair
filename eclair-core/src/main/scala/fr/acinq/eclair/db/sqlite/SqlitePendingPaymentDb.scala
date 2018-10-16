@@ -155,7 +155,7 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
     }
   }
 
-  override def setDone(txid: BinaryData): Unit = {
+  override def setDoneSettlingOnChain(txid: BinaryData): Unit = {
     using (sqlite.prepareStatement("UPDATE incoming_settling_on_chain SET is_done=? WHERE tx_id=?")) { update =>
       update.setBoolean(1, true)
       update.setBytes(2, txid)
