@@ -18,6 +18,7 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.payment.PaymentSettlingOnChain
 
 /**
   * Created by anton on 12.09.18.
@@ -33,6 +34,13 @@ trait PendingPaymentDb {
   def riskInfo(targetNodeId: PublicKey, sinceBlockHeight: Long, sdTimes: Double): Option[RiskInfo]
 
   def listBadPeers(sinceBlockHeight: Long): Seq[PublicKey]
+
+
+  def add(paymentSettlingOnChain: PaymentSettlingOnChain)
+
+  def getSettlingOnChain(paymentHash: BinaryData): Option[PaymentSettlingOnChain]
+
+  def setDone(txid: BinaryData)
 }
 
 case class RiskInfo(targetNodeId: PublicKey, sinceBlockHeight: Long, total: Long, mean: Double, sdTimes: Double, delays: Seq[Long], adjusted: Seq[Long])

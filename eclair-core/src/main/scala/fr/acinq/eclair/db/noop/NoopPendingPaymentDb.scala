@@ -19,6 +19,7 @@ package fr.acinq.eclair.db.noop
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.{PendingPaymentDb, RiskInfo}
+import fr.acinq.eclair.payment.PaymentSettlingOnChain
 
 /**
   * Created by anton on 12.09.18.
@@ -34,4 +35,10 @@ class NoopPendingPaymentDb extends PendingPaymentDb {
   override def riskInfo(targetNodeId: PublicKey, sinceBlockHeight: Long, sdTimes: Double): Option[RiskInfo] = None
 
   override def listBadPeers(sinceBlockHeight: Long): Seq[PublicKey] = Nil
+
+  override def add(paymentSettlingOnChain: PaymentSettlingOnChain): Unit = ()
+
+  override def getSettlingOnChain(paymentHash: BinaryData): Option[PaymentSettlingOnChain] = None
+
+  override def setDone(txid: BinaryData): Unit = ()
 }

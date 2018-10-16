@@ -18,9 +18,10 @@ package fr.acinq.eclair.db
 
 import java.sql.DriverManager
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.sqlite.{SqlitePeersDb, SqlitePendingPaymentDb}
+import fr.acinq.eclair.payment.{PaymentEvent, PaymentSettlingOnChain}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -41,6 +42,7 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
   val paymentHash4 = BinaryData("0001020304050607080900010203040506070809000102030405060708090108")
   val paymentHash5 = BinaryData("0001020304050607080900010203040506070809000102030405060708090110")
   val paymentHash6 = BinaryData("0001020304050607080900010203040506070809000102030405060708090112")
+  val txid1 = BinaryData("0001020304050607080900010203040506070809000102030405060708090114")
 
   test("init sqlite 2 times in a row") {
     val sqlite = inmem
@@ -106,5 +108,17 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
 
     val expected = RiskInfo(targetNodeId1, 1420, 6, 6.166666666666667, 5.82141639885766, Seq(12, 3, 5, 6), Seq(12))
     assert(db.riskInfo(targetNodeId1, sinceBlockHeight = 1420, sdTimes = 2).contains(expected))
+  }
+
+  test("on-chain settling") {
+    val sqlite = inmem
+    val db = new SqlitePendingPaymentDb(sqlite)
+
+    val msg = PaymentSettlingOnChain(MilliSatoshi(100000000L), MilliSatoshi(90000000L), paymentHash1, txid1, "claim-htlc-delayed", isDone = false)
+    db.add(msg)
+    assert(db.getSettlingOnChain(paymentHash1).contains(msg))
+
+    db.setDone(txid1)
+    assert(db.getSettlingOnChain(paymentHash1).contains(msg.copy(isDone = true)))
   }
 }
