@@ -138,12 +138,15 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
     }
   }
 
-  override def getSettlingOnChain(paymentHash: BinaryData): Option[PaymentSettlingOnChain] = {
-    using(sqlite.prepareStatement("SELECT * FROM incoming_settling_on_chain WHERE payment_hash = ? ORDER BY is_done DESC")) { statement =>
-      statement.setBytes(1, paymentHash)
+  override def getSettlingOnChain(paymentHashOrTxid: BinaryData): Option[PaymentSettlingOnChain] = {
+    // We may have multiple double-spends for the same payment_hash but only one of them can end up on chain so we order by is_done = 1 first
+    using(sqlite.prepareStatement("SELECT * FROM incoming_settling_on_chain WHERE payment_hash = ? OR tx_id=? ORDER BY is_done DESC")) { statement =>
+      statement.setBytes(1, paymentHashOrTxid)
+      statement.setBytes(2, paymentHashOrTxid)
       val rs = statement.executeQuery()
       if (rs.next()) {
         val txid = rs.getBytes("tx_id")
+        val paymentHash = rs.getBytes("payment_hash")
         val refundType = rs.getString("refund_type")
         val isDone = rs.getBoolean("is_done")
         val offChainAmount = rs.getLong("off_chain_amount")

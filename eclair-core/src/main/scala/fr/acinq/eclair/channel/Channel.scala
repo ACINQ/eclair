@@ -1156,6 +1156,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), blockHeight, _), d: DATA_CLOSING) =>
       log.info(s"txid=${tx.txid} has reached mindepth, updating closing state")
       nodeParams.pendingPaymentDb.setDoneSettlingOnChain(tx.txid)
+      nodeParams.pendingPaymentDb.getSettlingOnChain(tx.txid).foreach(context.system.eventStream.publish)
 
       // first we check if this tx belongs to one of the current local/remote commits and update it
       val localCommitPublished1 = d.localCommitPublished.map(Closing.updateLocalCommitPublished(_, tx))

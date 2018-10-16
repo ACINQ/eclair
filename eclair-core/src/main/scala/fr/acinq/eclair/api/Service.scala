@@ -311,10 +311,11 @@ trait Service extends Logging {
 
                         case "receivedinfo" => req.params match {
                           case JString(identifier) :: Nil => extractPaymentHash(identifier) match {
-                            case Success(hash) => kit.nodeParams.auditDb.receivedPaymentInfo(hash) match {
-                              case Some(paymentReceived) => completeRpcFuture(req.id, Future.successful(paymentReceived))
-                              case None => completeRpcFuture(req.id, Future.failed(new IllegalArgumentException("no such payment received yet")))
-                            }
+                            case Success(hash) =>
+                              kit.nodeParams.auditDb.receivedPaymentInfo(hash) orElse kit.nodeParams.pendingPaymentDb.getSettlingOnChain(hash) match {
+                                case Some(paymentReceivedOrSettlingOnChain) => completeRpcFuture(req.id, Future.successful(paymentReceivedOrSettlingOnChain))
+                                case None => completeRpcFuture(req.id, Future.failed(new IllegalArgumentException("no such payment received yet")))
+                              }
                             case _ => completeRpcFuture(req.id, Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash")))
                           }
                           case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))

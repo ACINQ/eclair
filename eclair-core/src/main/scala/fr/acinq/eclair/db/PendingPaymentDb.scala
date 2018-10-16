@@ -38,7 +38,7 @@ trait PendingPaymentDb {
 
   def add(paymentSettlingOnChain: PaymentSettlingOnChain)
 
-  def getSettlingOnChain(paymentHash: BinaryData): Option[PaymentSettlingOnChain]
+  def getSettlingOnChain(paymentHashOrTxid: BinaryData): Option[PaymentSettlingOnChain]
 
   def setDoneSettlingOnChain(txid: BinaryData)
 }
