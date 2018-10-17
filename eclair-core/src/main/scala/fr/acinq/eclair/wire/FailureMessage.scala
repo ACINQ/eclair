@@ -18,8 +18,8 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.wire.LightningMessageCodecs.{binarydata, channelUpdateCodec, uint64}
-import scodec.Codec
 import scodec.codecs._
+import scodec.{Attempt, Codec}
 
 /**
   * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
@@ -65,7 +65,11 @@ object FailureMessageCodecs {
 
   val sha256Codec: Codec[BinaryData] = ("sha256Codec" | binarydata(32))
 
-  val channelUpdateWithLengthCodec = variableSizeBytes(uint16, channelUpdateCodec)
+  val channelUpdateCodecWithType = LightningMessageCodecs.lightningMessageCodec.narrow[ChannelUpdate](f => Attempt.successful(f.asInstanceOf[ChannelUpdate]), g => g)
+
+  // NB: for historical reasons some implementations were including/ommitting the message type (258 for ChannelUpdate)
+  // this codec supports both versions for decoding, and will encode with the message type
+  val channelUpdateWithLengthCodec = variableSizeBytes(uint16, choice(channelUpdateCodecWithType, channelUpdateCodec))
 
   val failureMessageCodec = discriminated[FailureMessage].by(uint16)
     .typecase(PERM | 1, provide(InvalidRealm))

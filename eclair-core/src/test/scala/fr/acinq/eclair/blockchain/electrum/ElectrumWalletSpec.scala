@@ -27,20 +27,14 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionRes
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JDecimal, JDouble, JString, JValue}
-import org.junit.experimental.categories.Category
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
+import org.json4s.JsonAST.{JDecimal, JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-trait DockerTest {}
 
-@RunWith(classOf[JUnitRunner])
-@Category(Array(classOf[DockerTest]))
 class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService  with BeforeAndAfterAll with Logging {
 
   import ElectrumWallet._
@@ -161,7 +155,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       ), lockTime = 0L)
     val btcWallet = new BitcoinCoreWallet(bitcoinrpcclient)
     val future = for {
-      FundTransactionResponse(tx1, pos, fee) <- btcWallet.fundTransaction(tx, false)
+      FundTransactionResponse(tx1, pos, fee) <- btcWallet.fundTransaction(tx, false, 10000)
       SignTransactionResponse(tx2, true) <- btcWallet.signTransaction(tx1)
       txid <- btcWallet.publishTransaction(tx2)
     } yield txid

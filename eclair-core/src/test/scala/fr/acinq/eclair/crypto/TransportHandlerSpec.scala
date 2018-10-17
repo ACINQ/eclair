@@ -25,8 +25,6 @@ import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.crypto.Noise.{Chacha20Poly1305CipherFunctions, CipherState}
 import fr.acinq.eclair.crypto.TransportHandler.{Encryptor, ExtendedCipherState, Listener}
 import fr.acinq.eclair.wire.LightningMessageCodecs
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.Codec
 import scodec.codecs._
@@ -34,7 +32,7 @@ import scodec.codecs._
 import scala.annotation.tailrec
 import scala.concurrent.duration._
 
-@RunWith(classOf[JUnitRunner])
+
 class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll {
 
   import TransportHandlerSpec._

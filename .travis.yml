@@ -7,8 +7,17 @@ scala:
  - 2.11.11
 env:
  - export LD_LIBRARY_PATH=/usr/local/lib
+before_install:
+ - wget http://mirror.ibcp.fr/pub/apache/maven/maven-3/3.5.4/binaries/apache-maven-3.5.4-bin.zip
+ - unzip -qq apache-maven-3.5.4-bin.zip
+ - export M2_HOME=$PWD/apache-maven-3.5.4
+ - export PATH=$M2_HOME/bin:$PATH
 script:
  - mvn install
+cache:
+ directories:
+  - .autoconf
+  - $HOME/.m2
 jdk:
  - oraclejdk8
 notifications:

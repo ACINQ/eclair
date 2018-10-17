@@ -24,15 +24,13 @@ import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.{ShortChannelId, UInt64, randomBytes, randomKey}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 
 /**
   * Created by PM on 31/05/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class LightningMessageCodecsSpec extends FunSuite {
 
   import LightningMessageCodecsSpec._

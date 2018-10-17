@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=master)](https://travis-ci.org/ACINQ/eclair)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Gitter chat](https://img.shields.io/badge/chat-on%20gitter-rose.svg)](https://gitter.im/ACINQ/eclair)
+[![Gitter chat](https://img.shields.io/badge/chat-on%20gitter-red.svg)](https://gitter.im/ACINQ/eclair)
 
 **Eclair** (french for Lightning) is a scala implementation of the Lightning Network. It can run with or without a GUI, and a JSON-RPC API is also available.
 
@@ -30,7 +30,7 @@ Please see the latest [release note](https://github.com/ACINQ/eclair/releases) f
 
 ### Configuring Bitcoin Core
 
-:warning: Eclair requires Bitcoin Core 0.16.0 or higher. If you are upgrading an existing wallet, you need to create a new address and send all your funds to that address.
+:warning: Eclair requires Bitcoin Core 0.16.3 or higher. If you are upgrading an existing wallet, you need to create a new address and send all your funds to that address.
 
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node. 
 Eclair will use any BTC it finds in the Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet.
@@ -45,6 +45,11 @@ txindex=1
 zmqpubrawblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
 addresstype=p2sh-segwit
+```
+
+:warning: If you are using Bitcoin Core 0.17.0 you need to add following line to your `bitcoin.conf`:
+```
+deprecatedrpc=signrawtransaction
 ```
 
 ### Installing Eclair
@@ -120,6 +125,14 @@ For example, to specify a different data directory you would run the following c
 java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
 ```
 
+#### Logging
+
+Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a different configuration, and override the internal logback.xml, run:
+
+```shell
+java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gui-<version>-<commit_id>.jar
+```
+
 ## JSON-RPC API
 
  method        |  params                                                                                | description
@@ -190,15 +203,38 @@ zmqpubrawtx=tcp://127.0.0.1:29000
 addresstype=p2sh-segwit
 ```
 
+:warning: If you are using Bitcoin Core 0.17.0 you need to add following line to your `bitcoin.conf`:
+```
+deprecatedrpc=signrawtransaction
+```
+
+You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network speficic, so you can reasliy run your bitcoin node on both mainnet and testnet. For example you could use:
+
+```
+server=1
+txindex=1
+addresstype=p2sh-segwit
+deprecatedrpc=signrawtransaction
+[main]
+rpcuser=<your-mainnet-rpc-user-here>
+rpcpassword=<your-mainnet-rpc-password-here>
+zmqpubrawblock=tcp://127.0.0.1:29000
+zmqpubrawtx=tcp://127.0.0.1:29000
+[test]
+rpcuser=<your-testnet-rpc-user-here>
+rpcpassword=<your-testnet-rpc-password-here>
+zmqpubrawblock=tcp://127.0.0.1:29001
+zmqpubrawtx=tcp://127.0.0.1:29001
+```
+
 ### Eclair configuration
 
 ```
 eclair.chain=mainnet
 eclair.bitcoind.rpcport=8332
-eclair.bitcoind.rpcuser=<your-bitcoin-core-rpc-user-here>
-eclair.bitcoind.rpcpassword=<your-bitcoin-core-rpc-passsword-here>
+eclair.bitcoind.rpcuser=<your-mainnet-rpc-user-here>
+eclair.bitcoind.rpcpassword=<your-mainnet-rpc-password-here>
 ```
-
 
 ## Resources
 - [1] [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja

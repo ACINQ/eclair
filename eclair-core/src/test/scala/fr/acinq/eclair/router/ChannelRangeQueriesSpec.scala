@@ -3,13 +3,11 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.wire.ReplyChannelRange
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.collection.{SortedSet, immutable}
 
-@RunWith(classOf[JUnitRunner])
+
 class ChannelRangeQueriesSpec extends FunSuite {
   import ChannelRangeQueriesSpec._
 

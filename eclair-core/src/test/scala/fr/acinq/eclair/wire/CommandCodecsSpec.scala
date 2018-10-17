@@ -18,14 +18,12 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC, Command}
 import fr.acinq.eclair.randomBytes
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 /**
   * Created by PM on 31/05/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class CommandCodecsSpec extends FunSuite {
 
   test("encode/decode all channel messages") {

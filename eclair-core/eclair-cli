@@ -80,12 +80,16 @@ case ${METHOD}_${#} in
     "receive_2")    call ${METHOD} "'$(printf '[%s,"%s"]' "${1}" "${2}")'" ;; # ${1} is numeric (amount to receive)
     "receive_3")    call ${METHOD} "'$(printf '[%s,"%s",%s]' "${1}" "${2}" "${3}")'" ;; # ${1} is numeric (amount to receive) as is ${2} for expiry in seconds
 
-    "channel_"*)    call ${METHOD} "'${PARAMS}'" "if .error != null then .error.message else .result | { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceMsat: .data.commitments.localCommit.spec.toLocalMsat, capacitySat: .data.commitments.commitInput.txOut.amount.amount } end" ;;
+    "channel_"*)    call ${METHOD} "'${PARAMS}'" "if .error != null then .error.message else .result | { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } end" ;;
 
-    "channels_"*)   call ${METHOD} "'${PARAMS}'" "if .error != null then .error.message else .result | map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceMsat: .data.commitments.localCommit.spec.toLocalMsat, capacitySat: .data.commitments.commitInput.txOut.amount.amount } ) end" ;;
+    "channels_"*)   call ${METHOD} "'${PARAMS}'" "if .error != null then .error.message else .result | map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } ) end" ;;
 
     "send_3")       call ${METHOD} "'$(printf '[%s,"%s","%s"]' "${1}" "${2}" "${3}")'" ;; # ${1} is numeric (amount of the payment)
     "send_2")       call ${METHOD} "'$(printf '["%s",%s]' "${1}" "${2}")'" ;; # ${2} is numeric (amount overriding the payment request)
+
+    "audit_2")      call ${METHOD} "'$(printf '[%s,%s]' "${1}" "${2}")'" ;; # ${1} and ${2} are numeric (unix timestamps)
+    
+    "networkfees_2")      call ${METHOD} "'$(printf '[%s,%s]' "${1}" "${2}")'" ;; # ${1} and ${2} are numeric (unix timestamps)
 
     *)              # Default case.
                     # Sends the method and, for parameters, use the JSON table containing the remaining args.
