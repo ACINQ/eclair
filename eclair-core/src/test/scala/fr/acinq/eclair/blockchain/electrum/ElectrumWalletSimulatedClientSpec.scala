@@ -23,13 +23,11 @@ import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Block, MnemonicCode, Satoshi}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ScriptHashSubscription, ScriptHashSubscriptionResponse}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
-import org.junit.runner.RunWith
 import org.scalatest.FunSuiteLike
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 
-@RunWith(classOf[JUnitRunner])
+
 class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
   val sender = TestProbe()
 

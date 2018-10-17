@@ -16,12 +16,10 @@
 
 package fr.acinq.eclair
 
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 
-@RunWith(classOf[JUnitRunner])
+
 class ShortChannelIdSpec extends FunSuite {
 
   test("handle values from 0 to 0xffffffffffff") {

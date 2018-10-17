@@ -592,7 +592,7 @@ object Helpers {
           })
 
           // we retrieve the informations needed to rebuild htlc scripts
-          val htlcInfos = db.listHtlcHtlcInfos(commitments.channelId, txnumber)
+          val htlcInfos = db.listHtlcInfos(commitments.channelId, txnumber)
           log.info(s"got htlcs=${htlcInfos.size} for txnumber=$txnumber")
           val htlcsRedeemScripts = (
             htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), cltvExpiry) } ++

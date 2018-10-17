@@ -26,17 +26,15 @@ import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTimeoutTx, HtlcT
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
 import fr.acinq.eclair.{UInt64, randomKey}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 import scodec.bits.BitVector
-
 import scala.util.Random
 
 /**
   * Created by PM on 31/05/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class ChannelCodecsSpec extends FunSuite {
 
   def randomBytes(size: Int): BinaryData = {

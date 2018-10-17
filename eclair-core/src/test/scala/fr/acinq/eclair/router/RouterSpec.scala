@@ -27,20 +27,21 @@ import fr.acinq.eclair.io.Peer.{InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.Error
-import fr.acinq.eclair.{ShortChannelId, randomKey}
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
+import fr.acinq.eclair.wire.QueryShortChannelIds
+import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
 
+import scala.collection.SortedSet
+import scala.compat.Platform
 import scala.concurrent.duration._
 
 /**
   * Created by PM on 29/08/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class RouterSpec extends BaseRouterSpec {
 
-  test("properly announce valid new channels and ignore invalid ones") { case (router, watcher) =>
+  test("properly announce valid new channels and ignore invalid ones") { fixture =>
+    import fixture._
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
 
@@ -85,7 +86,8 @@ class RouterSpec extends BaseRouterSpec {
     eventListener.expectMsg(ChannelDiscovered(chan_ac, Satoshi(1000000)))
   }
 
-  test("properly announce lost channels and nodes") { case (router, _) =>
+  test("properly announce lost channels and nodes") { fixture =>
+    import fixture._
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
 
@@ -109,7 +111,8 @@ class RouterSpec extends BaseRouterSpec {
 
   }
 
-  test("handle bad signature for ChannelAnnouncement") { case (router, _) =>
+  test("handle bad signature for ChannelAnnouncement") { fixture =>
+    import fixture._
     val sender = TestProbe()
     val channelId_ac = ShortChannelId(420000, 5, 0)
     val chan_ac = channelAnnouncement(channelId_ac, priv_a, priv_c, priv_funding_a, priv_funding_c)
@@ -119,7 +122,8 @@ class RouterSpec extends BaseRouterSpec {
     sender.expectMsg(InvalidSignature(buggy_chan_ac))
   }
 
-  test("handle bad signature for NodeAnnouncement") { case (router, _) =>
+  test("handle bad signature for NodeAnnouncement") { fixture =>
+    import fixture._
     val sender = TestProbe()
     val buggy_ann_a = ann_a.copy(signature = ann_b.signature, timestamp = ann_a.timestamp + 1)
     sender.send(router, PeerRoutingMessage(null, remoteNodeId, buggy_ann_a))
@@ -127,7 +131,8 @@ class RouterSpec extends BaseRouterSpec {
     sender.expectMsg(InvalidSignature(buggy_ann_a))
   }
 
-  test("handle bad signature for ChannelUpdate") { case (router, _) =>
+  test("handle bad signature for ChannelUpdate") { fixture =>
+    import fixture._
     val sender = TestProbe()
     val buggy_channelUpdate_ab = channelUpdate_ab.copy(signature = ann_b.signature, timestamp = channelUpdate_ab.timestamp + 1)
     sender.send(router, PeerRoutingMessage(null, remoteNodeId, buggy_channelUpdate_ab))
@@ -135,28 +140,32 @@ class RouterSpec extends BaseRouterSpec {
     sender.expectMsg(InvalidSignature(buggy_channelUpdate_ab))
   }
 
-  test("route not found (unreachable target)") { case (router, _) =>
+  test("route not found (unreachable target)") { fixture =>
+    import fixture._
     val sender = TestProbe()
     // no route a->f
     sender.send(router, RouteRequest(a, f))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
-  test("route not found (non-existing source)") { case (router, _) =>
+  test("route not found (non-existing source)") { fixture =>
+    import fixture._
     val sender = TestProbe()
     // no route a->f
     sender.send(router, RouteRequest(randomKey.publicKey, f))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
-  test("route not found (non-existing target)") { case (router, _) =>
+  test("route not found (non-existing target)") { fixture =>
+    import fixture._
     val sender = TestProbe()
     // no route a->f
     sender.send(router, RouteRequest(a, randomKey.publicKey))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
-  test("route found") { case (router, _) =>
+  test("route found") { fixture =>
+    import fixture._
     val sender = TestProbe()
     sender.send(router, RouteRequest(a, d))
     val res = sender.expectMsgType[RouteResponse]
@@ -164,7 +173,8 @@ class RouterSpec extends BaseRouterSpec {
     assert(res.hops.last.nextNodeId === d)
   }
 
-  test("route found (with extra routing info)") { case (router, _) =>
+  test("route found (with extra routing info)") { fixture =>
+    import fixture._
     val sender = TestProbe()
     val x = randomKey.publicKey
     val y = randomKey.publicKey
@@ -178,7 +188,8 @@ class RouterSpec extends BaseRouterSpec {
     assert(res.hops.last.nextNodeId === z)
   }
 
-  test("route not found (channel disabled)") { case (router, _) =>
+  test("route not found (channel disabled)") { fixture =>
+    import fixture._
     val sender = TestProbe()
     sender.send(router, RouteRequest(a, d))
     val res = sender.expectMsgType[RouteResponse]
@@ -192,7 +203,8 @@ class RouterSpec extends BaseRouterSpec {
     sender.expectMsg(Failure(RouteNotFound))
   }
 
-  test("temporary channel exclusion") { case (router, _) =>
+  test("temporary channel exclusion") { fixture =>
+    import fixture._
     val sender = TestProbe()
     sender.send(router, RouteRequest(a, d))
     sender.expectMsgType[RouteResponse]
@@ -210,7 +222,8 @@ class RouterSpec extends BaseRouterSpec {
     sender.expectMsgType[RouteResponse]
   }
 
-  test("export graph in dot format") { case (router, _) =>
+  test("export graph in dot format") { fixture =>
+    import fixture._
     val sender = TestProbe()
     sender.send(router, 'dot)
     val dot = sender.expectMsgType[String]
@@ -224,12 +237,42 @@ class RouterSpec extends BaseRouterSpec {
     Files.write(img, new File("graph.png"))*/
   }
 
-  test("send routing state") { case (router, _) =>
+  test("send routing state") { fixture =>
+    import fixture._
     val sender = TestProbe()
     sender.send(router, GetRoutingState)
     val state = sender.expectMsgType[RoutingState]
     assert(state.channels.size == 4)
     assert(state.nodes.size == 6)
     assert(state.updates.size == 8)
+  }
+
+  test("ask for channels that we marked as stale for which we receive a new update") { fixture =>
+    import fixture._
+    val blockHeight = Globals.blockCount.get().toInt - 2020
+    val channelId = ShortChannelId(blockHeight, 5, 0)
+    val announcement = channelAnnouncement(channelId, priv_a, priv_c, priv_funding_a, priv_funding_c)
+    val timestamp = Platform.currentTime / 1000 - 1209600 - 1
+    val update = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, timestamp = timestamp)
+    val probe = TestProbe()
+    probe.ignoreMsg { case _: TransportHandler.ReadAck => true }
+    probe.send(router, PeerRoutingMessage(null, remoteNodeId, announcement))
+    watcher.expectMsgType[ValidateRequest]
+    probe.send(router, PeerRoutingMessage(null, remoteNodeId, update))
+    watcher.send(router, ValidateResult(announcement, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true, None))
+
+    probe.send(router, TickPruneStaleChannels)
+    val sender = TestProbe()
+    sender.send(router, GetRoutingState)
+    val state = sender.expectMsgType[RoutingState]
+
+
+    val update1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, timestamp = Platform.currentTime / 1000)
+
+    // we want to make sure that transport receives the query
+    val transport = TestProbe()
+    probe.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, update1))
+    val query = transport.expectMsgType[QueryShortChannelIds]
+    assert(ChannelRangeQueries.decodeShortChannelIds(query.data)._2 == SortedSet(channelId))
   }
 }

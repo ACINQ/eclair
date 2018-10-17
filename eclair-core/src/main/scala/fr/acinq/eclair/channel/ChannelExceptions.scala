@@ -43,7 +43,6 @@ case class ChannelReserveNotMet                (override val channelId: BinaryDa
 case class ChannelFundingError                 (override val channelId: BinaryData) extends ChannelException(channelId, "channel funding error")
 case class NoMoreHtlcsClosingInProgress        (override val channelId: BinaryData) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")
 case class ClosingAlreadyInProgress            (override val channelId: BinaryData) extends ChannelException(channelId, "closing already in progress")
-case class CannotCloseInThisState              (override val channelId: BinaryData, state: State) extends ChannelException(channelId, s"cannot close in state=$state")
 case class CannotCloseWithUnsignedOutgoingHtlcs(override val channelId: BinaryData) extends ChannelException(channelId, "cannot close when there are unsigned outgoing htlcs")
 case class ChannelUnavailable                  (override val channelId: BinaryData) extends ChannelException(channelId, "channel is unavailable (offline or closing)")
 case class InvalidFinalScript                  (override val channelId: BinaryData) extends ChannelException(channelId, "invalid final script")
@@ -82,4 +81,5 @@ case class RevocationSyncError                 (override val channelId: BinaryDa
 case class InvalidFailureCode                  (override val channelId: BinaryData) extends ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
 case class PleasePublishYourCommitment         (override val channelId: BinaryData) extends ChannelException(channelId, "please publish your local commitment")
 case class AddHtlcFailed                       (override val channelId: BinaryData, paymentHash: BinaryData, t: Throwable, origin: Origin, channelUpdate: Option[ChannelUpdate], originalCommand: Option[CMD_ADD_HTLC]) extends ChannelException(channelId, s"cannot add htlc with origin=$origin reason=${t.getMessage}")
+case class CommandUnavailableInThisState       (override val channelId: BinaryData, command: String, state: State) extends ChannelException(channelId, s"cannot execute command=$command in state=$state")
 // @formatter:on

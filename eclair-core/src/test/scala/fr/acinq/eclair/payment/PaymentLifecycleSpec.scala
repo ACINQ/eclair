@@ -23,19 +23,18 @@ import fr.acinq.bitcoin.{BinaryData, Block, MilliSatoshi}
 import fr.acinq.eclair.{Globals, TestConstants}
 import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelUnavailable}
 import fr.acinq.eclair.channel.Register.ForwardShortId
+import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelUnavailable}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
 
 /**
   * Created by PM on 29/08/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class PaymentLifecycleSpec extends BaseRouterSpec {
 
   val initialBlockCount = 420000
@@ -45,7 +44,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   val defaultPaymentHash = BinaryData("42" * 32)
   val nodeParams = TestConstants.Alice.nodeParams
 
-  test("payment failed (route not found)") { case (router, _) =>
+  test("payment failed (route not found)") { fixture =>
+    import fixture._
     val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
@@ -59,8 +59,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     sender.expectMsg(PaymentFailed(request.paymentHash, LocalFailure(RouteNotFound) :: Nil))
   }
-
-  test("payment failed (route too expensive)") { case (router, _) =>
+  
+  test("payment failed (route too expensive)") { fixture =>
+    import fixture._
     val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
@@ -75,7 +76,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val Seq(LocalFailure(RouteTooExpensive(_, _))) = sender.expectMsgType[PaymentFailed].failures
   }
 
-  test("payment failed (unparsable failure)") { case (router, _) =>
+  test("payment failed (unparsable failure)") { fixture =>
+    import fixture._
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref, nodeParams))
@@ -112,7 +114,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.expectMsg(PaymentFailed(request.paymentHash, UnreadableRemoteFailure(hops) :: UnreadableRemoteFailure(hops) :: Nil))
   }
 
-  test("payment failed (local error)") { case (router, _) =>
+  test("payment failed (local error)") { fixture =>
+    import fixture._
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref, nodeParams))
@@ -139,7 +142,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
   }
 
-  test("payment failed (first hop returns an UpdateFailMalformedHtlc)") { case (router, _) =>
+  test("payment failed (first hop returns an UpdateFailMalformedHtlc)") { fixture =>
+    import fixture._
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref, nodeParams))
@@ -166,7 +170,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
   }
 
-  test("payment failed (TemporaryChannelFailure)") { case (router, _) =>
+  test("payment failed (TemporaryChannelFailure)") { fixture =>
+    import fixture._
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref, nodeParams))
@@ -202,7 +207,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.expectMsg(PaymentFailed(request.paymentHash, RemoteFailure(hops, ErrorPacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil))
   }
 
-  test("payment failed (Update)") { case (router, _) =>
+  test("payment failed (Update)") { fixture =>
+    import fixture._
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref, nodeParams))
@@ -258,7 +264,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.expectMsg(PaymentFailed(request.paymentHash, RemoteFailure(hops, ErrorPacket(b, failure)) :: RemoteFailure(hops2, ErrorPacket(b, failure2)) :: LocalFailure(RouteNotFound) :: Nil))
   }
 
-  test("payment failed (PermanentChannelFailure)") { case (router, _) =>
+  test("payment failed (PermanentChannelFailure)") { fixture =>
+    import fixture._
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref, nodeParams))
@@ -291,7 +298,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.expectMsg(PaymentFailed(request.paymentHash, RemoteFailure(hops, ErrorPacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil))
   }
 
-  test("payment succeeded") { case (router, _) =>
+  test("payment succeeded") { fixture =>
+    import fixture._
     val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
@@ -314,7 +322,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(fee === MilliSatoshi(paymentOK.amountMsat - request.amountMsat))
   }
 
-  test("filter errors properly") { case _ =>
+  test("filter errors properly") { fixture =>
     val failures = LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, ErrorPacket(a, TemporaryNodeFailure)) :: LocalFailure(AddHtlcFailed("00" * 32, "00" * 32, ChannelUnavailable("00" * 32), Local(None), None, None)) :: LocalFailure(RouteNotFound) :: Nil
     val filtered = PaymentLifecycle.transformForUser(failures)
     assert(filtered == LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, ErrorPacket(a, TemporaryNodeFailure)) :: LocalFailure(ChannelUnavailable("00" * 32)) :: Nil)
