@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.payment.PaymentLifecycle.{LocalFailure, PaymentFailed}
 import fr.acinq.eclair.payment.PaymentSettlingOnChain
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
@@ -389,20 +390,22 @@ object Helpers {
 
       // those are the preimages to existing received htlcs
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
-      val htlcAmounts = commitments.localCommit.spec.htlcs.map(htlc => htlc.add.paymentHash -> htlc.add.amountMsat).toMap
+      val inFlightHtlcs = commitments.localCommit.spec.htlcs.map(htlc => htlc.add.paymentHash -> htlc.add.amountMsat).toMap
+      var onChainHashes = Set.empty[BinaryData] // this is needed to collect hashes of payments which can be resolved on-chain
 
-      val successAndDelayedTxs = for {
-        HtlcTxAndSigs(txinfo@HtlcSuccessTx(_, _, paymentHash), localSig, remoteSig) <- localCommit.publishableTxs.htlcTxsAndSigs
-        if preimages.exists(r => sha256(r) == paymentHash)
+      val successDelayedHashes = for {
+        HtlcTxAndSigs(txinfo: HtlcSuccessTx, localSig, remoteSig) <- localCommit.publishableTxs.htlcTxsAndSigs
+        if preimages.exists(r => sha256(r) == txinfo.paymentHash)
 
         success <- generateTx("htlc-success")(Try {
-          val preimage = preimages.find(r => sha256(r) == paymentHash).get
+          val preimage = preimages.find(r => sha256(r) == txinfo.paymentHash).get
           Transactions.addSigs(txinfo, localSig, remoteSig, preimage)
         })
 
         delayed <- makeDelayedTx(txinfo.tx, "claim-htlc-success-delayed")
-        _ = eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(htlcAmounts(paymentHash)),
-          onChainAmount = delayed.tx.txOut.head.amount, paymentHash, delayed.tx.txid, "claim-htlc-success-delayed", isDone = false))
+        _ = eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(inFlightHtlcs(txinfo.paymentHash)),
+          onChainAmount = delayed.tx.txOut.head.amount, txinfo.paymentHash, delayed.tx.txid, "claim-htlc-success-delayed", isDone = false))
+        _ = onChainHashes += txinfo.paymentHash
       } yield success.tx -> delayed.tx
 
       val timeoutAndDelayedTxsFormLegacy = for {
@@ -411,17 +414,22 @@ object Helpers {
         delayedFromLegacy <- makeDelayedTx(txinfo.tx, "claim-htlc-timeout-delayed-legacy")
       } yield timeoutFromLegacy.tx -> delayedFromLegacy.tx
 
-      val timeoutAndDelayedTxs = for {
+      val timeoutDelayedHashes = for {
         HtlcTxAndSigs(txinfo: HtlcTimeoutTx, localSig, remoteSig) <- localCommit.publishableTxs.htlcTxsAndSigs
         timeout <- generateTx("htlc-timeout")(Try { Transactions.addSigs(txinfo, localSig, remoteSig) })
         delayed <- makeDelayedTx(txinfo.tx, "claim-htlc-timeout-delayed")
-        _ = eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(htlcAmounts(txinfo.paymentHash)),
+        _ = eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(inFlightHtlcs(txinfo.paymentHash)),
           onChainAmount = delayed.tx.txOut.head.amount, txinfo.paymentHash, delayed.tx.txid, "claim-htlc-timeout-delayed", isDone = false))
+        _ = onChainHashes += txinfo.paymentHash
       } yield timeout.tx -> delayed.tx
 
-      val (successTxs, successDelayTxs) = successAndDelayedTxs.unzip
-      val (timeoutTxs, timeoutDelayTxs) = timeoutAndDelayedTxs.unzip
       val (timeoutTxsFromLegacy, timeoutDelayTxsFromLegacy) = timeoutAndDelayedTxsFormLegacy.unzip
+      val (successTxs, successDelayTxs) = successDelayedHashes.unzip
+      val (timeoutTxs, timeoutDelayTxs) = timeoutDelayedHashes.unzip
+
+      for ((paymentHash, amountMsat) <- inFlightHtlcs -- onChainHashes) {
+        eventStream.publish(PaymentFailed(paymentHash, Seq(LocalFailure(new Throwable(s"Amount $amountMsat msat is too small for on-chain resolution")))))
+      }
 
       LocalCommitPublished(
         commitTx = tx,
@@ -457,9 +465,11 @@ object Helpers {
 
       // those are the preimages to existing received htlcs
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
+      val inFlightHtlcs = commitments.localCommit.spec.htlcs.map(htlc => htlc.add.paymentHash -> htlc.add.amountMsat).toMap
 
       // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
       var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
+      var onChainHashes = Set.empty[BinaryData] // this is needed to collect hashes of payments which can be resolved on-chain
       val txes = remoteCommit.spec.htlcs.collect {
         // incoming htlc for which we have the preimage: we spend it directly
         case DirectedHtlc(OUT, add: UpdateAddHtlc) if preimages.exists(r => sha256(r) == add.paymentHash) => generateTx("claim-htlc-success")(Try {
@@ -471,6 +481,7 @@ object Helpers {
           eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(add.amountMsat),
             onChainAmount = txinfo.tx.txOut.head.amount, add.paymentHash, txinfo.tx.txid, "claim-htlc-success", isDone = false))
 
+          onChainHashes += add.paymentHash
           Transactions.addSigs(txinfo, sig, preimage)
         })
 
@@ -485,9 +496,14 @@ object Helpers {
           eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(add.amountMsat),
             onChainAmount = txinfo.tx.txOut.head.amount, add.paymentHash, txinfo.tx.txid, "claim-htlc-timeout", isDone = false))
 
+          onChainHashes += add.paymentHash
           Transactions.addSigs(txinfo, sig)
         })
       }.toSeq.flatten
+
+      for ((paymentHash, amountMsat) <- inFlightHtlcs -- onChainHashes) {
+        eventStream.publish(PaymentFailed(paymentHash, Seq(LocalFailure(new Throwable(s"Amount $amountMsat msat is too small for on-chain resolution")))))
+      }
 
       claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx).copy(
         claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
