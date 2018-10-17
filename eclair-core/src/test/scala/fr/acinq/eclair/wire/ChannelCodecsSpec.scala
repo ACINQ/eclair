@@ -17,16 +17,19 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint}
-import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
+import fr.acinq.bitcoin.Script.write
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint, Transaction}
+import fr.acinq.eclair.channel.{HtlcTxAndSigs, LocalParams, PublishableTxs, RemoteParams}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.{Local, Relayed}
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTimeoutTx, HtlcTimeoutTxLegacy, InputInfo}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
 import fr.acinq.eclair.{UInt64, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
+import scodec.bits.BitVector
 
 import scala.util.Random
 
@@ -172,4 +175,27 @@ class ChannelCodecsSpec extends FunSuite {
     assert(spentMapCodec.decodeValue(spentMapCodec.encode(map).require).require === map)
   }
 
+  test("HtlcTimeoutTx compatibility") {
+    val tx1 = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
+    val tx2 = Transaction.read("020000000001012537488e9d066a8f3550cc9adc141a11668425e046e69e07f53bb831f3296cbf00000000000000000001bf8401000000000017a9143f398d81d3c42367b779ea869c7dd3b6826fbb7487024730440220477b961f6360ef6cb62a76898dcecbb130627c7e6a452646e3be601f04627c1f02202572313d0c0afecbfb0c7d0e47ba689427a54f3debaded6d406daa1f5da4918c01210291ed78158810ad867465377f5920036ea865a29b3a39a1b1808d0c3c351a4b4100000000")
+    val input1 = InputInfo(OutPoint(tx1, 0), tx1.txOut.head, randomBytes(32))
+    val input2 = InputInfo(OutPoint(tx2, 0), tx2.txOut.head, randomBytes(32))
+
+    val htlcTimeoutTx1 = HtlcTimeoutTx(input1, tx1, randomBytes(32))
+    val htlcTimeoutTx2 =
+      // This is an old `HtlcTimeoutTx` which should now be `HtlcTimeoutTxLegacy`
+      txWithInputInfoCodec.decodeValue(BitVector.fromHex("00030024d52085191bef26a0cc7fbf286c2bef9b85e9776155b94060120bc5d61c31b2b1000000000020bf840100000" +
+      "0000017a9143f398d81d3c42367b779ea869c7dd3b6826fbb74870020111111111111111111111111111111111111111111111111111111111111111100c00200000" +
+      "00001012537488e9d066a8f3550cc9adc141a11668425e046e69e07f53bb831f3296cbf00000000000000000001bf8401000000000017a9143f398d81d3c42367b77" +
+      "9ea869c7dd3b6826fbb7487024730440220477b961f6360ef6cb62a76898dcecbb130627c7e6a452646e3be601f04627c1f02202572313d0c0afecbfb0c7d0e47ba6" +
+      "89427a54f3debaded6d406daa1f5da4918c01210291ed78158810ad867465377f5920036ea865a29b3a39a1b1808d0c3c351a4b4100000000").get).require
+
+    val htlcTxAndSigs1 = HtlcTxAndSigs(htlcTimeoutTx1, randomBytes(64), randomBytes(64))
+    val htlcTxAndSigs2 = HtlcTxAndSigs(htlcTimeoutTx2, randomBytes(64), randomBytes(64))
+    val publishableTxs = PublishableTxs(CommitTx(input2, tx1), List(htlcTxAndSigs1, htlcTxAndSigs2))
+
+    val decoded = publishableTxsCodec.decodeValue(publishableTxsCodec.encode(publishableTxs).require).require
+    assert(decoded === publishableTxs)
+    assert(decoded.htlcTxsAndSigs(1).txinfo.isInstanceOf[HtlcTimeoutTxLegacy])
+  }
 }

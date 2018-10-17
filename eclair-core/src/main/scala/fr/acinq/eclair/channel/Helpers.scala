@@ -402,28 +402,33 @@ object Helpers {
 
         delayed <- makeDelayedTx(txinfo.tx, "claim-htlc-success-delayed")
         _ = eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(htlcAmounts(paymentHash)),
-          onChainAmount = delayed.tx.txOut.head.amount, paymentHash, delayed.tx.txid, "claim-htlc-delayed", isDone = false))
+          onChainAmount = delayed.tx.txOut.head.amount, paymentHash, delayed.tx.txid, "claim-htlc-success-delayed", isDone = false))
       } yield success.tx -> delayed.tx
+
+      val timeoutAndDelayedTxsFormLegacy = for {
+        HtlcTxAndSigs(txinfo: HtlcTimeoutTxLegacy, localSig, remoteSig) <- localCommit.publishableTxs.htlcTxsAndSigs
+        timeoutFromLegacy <- generateTx("htlc-timeout-legacy")(Try { Transactions.addSigs(txinfo, localSig, remoteSig) })
+        delayedFromLegacy <- makeDelayedTx(txinfo.tx, "claim-htlc-timeout-delayed-legacy")
+      } yield timeoutFromLegacy.tx -> delayedFromLegacy.tx
 
       val timeoutAndDelayedTxs = for {
         HtlcTxAndSigs(txinfo: HtlcTimeoutTx, localSig, remoteSig) <- localCommit.publishableTxs.htlcTxsAndSigs
-
-        timeout <- generateTx("htlc-timeout")(Try {
-          Transactions.addSigs(txinfo, localSig, remoteSig)
-        })
-
+        timeout <- generateTx("htlc-timeout")(Try { Transactions.addSigs(txinfo, localSig, remoteSig) })
         delayed <- makeDelayedTx(txinfo.tx, "claim-htlc-timeout-delayed")
+        _ = eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(htlcAmounts(txinfo.paymentHash)),
+          onChainAmount = delayed.tx.txOut.head.amount, txinfo.paymentHash, delayed.tx.txid, "claim-htlc-timeout-delayed", isDone = false))
       } yield timeout.tx -> delayed.tx
 
       val (successTxs, successDelayTxs) = successAndDelayedTxs.unzip
       val (timeoutTxs, timeoutDelayTxs) = timeoutAndDelayedTxs.unzip
+      val (timeoutTxsFromLegacy, timeoutDelayTxsFromLegacy) = timeoutAndDelayedTxsFormLegacy.unzip
 
       LocalCommitPublished(
         commitTx = tx,
         claimMainDelayedOutputTx = mainDelayedTx.map(_.tx),
         htlcSuccessTxs = successTxs,
-        htlcTimeoutTxs = timeoutTxs,
-        claimHtlcDelayedTxs = successDelayTxs ++ timeoutDelayTxs,
+        htlcTimeoutTxs = timeoutTxs ++ timeoutTxsFromLegacy,
+        claimHtlcDelayedTxs = successDelayTxs ++ timeoutDelayTxs ++ timeoutDelayTxsFromLegacy,
         irrevocablySpent = Map.empty)
     }
 
@@ -476,6 +481,10 @@ object Helpers {
           val txinfo = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, outputsAlreadyUsed, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
           outputsAlreadyUsed = outputsAlreadyUsed + txinfo.input.outPoint.index.toInt
           val sig = keyManager.sign(txinfo, keyManager.htlcPoint(localParams.channelKeyPath), remoteCommit.remotePerCommitmentPoint)
+
+          eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(add.amountMsat),
+            onChainAmount = txinfo.tx.txOut.head.amount, add.paymentHash, txinfo.tx.txid, "claim-htlc-timeout", isDone = false))
+
           Transactions.addSigs(txinfo, sig)
         })
       }.toSeq.flatten
@@ -573,7 +582,7 @@ object Helpers {
             htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), cltvExpiry) } ++
               htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash)) }
             )
-            .map(redeemScript => (Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript)))
+            .map(redeemScript => Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript))
             .toMap
 
           // and finally we steal the htlc outputs
