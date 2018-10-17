@@ -100,6 +100,20 @@ class LightningMessageCodecsSpec extends FunSuite {
       val nodeaddr2 = nodeaddress.decode(bin).require.value
       assert(nodeaddr === nodeaddr2)
     }
+    {
+      val nodeaddr = Tor2(Array.tabulate(10)(_.toByte), 4231)
+      val bin = nodeaddress.encode(nodeaddr).require
+      assert(bin === hex"03 00 01 02 03 04 05 06 07 08 09 10 87".toBitVector)
+      val nodeaddr2 = nodeaddress.decode(bin).require.value
+      assert(nodeaddr === nodeaddr2)
+    }
+    {
+      val nodeaddr = Tor3(Array.tabulate(35)(_.toByte), 4231)
+      val bin = nodeaddress.encode(nodeaddr).require
+      assert(bin === hex"04 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 10 87".toBitVector)
+      val nodeaddr2 = nodeaddress.decode(bin).require.value
+      assert(nodeaddr === nodeaddr2)
+    }
   }
 
   test("encode/decode with signature codec") {

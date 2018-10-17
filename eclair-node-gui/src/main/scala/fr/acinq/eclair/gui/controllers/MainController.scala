@@ -365,7 +365,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     bitcoinChain.setText(s"${setup.chain.toUpperCase()}")
     bitcoinChain.getStyleClass.add(setup.chain)
 
-    val nodeURI_opt = setup.nodeParams.publicAddresses.headOption.map(address => {
+    val nodeURI_opt = setup.nodeParams.nodeAddresses.headOption.map(address => {
       s"${setup.nodeParams.nodeId}@${HostAndPort.fromParts(address.getHostString, address.getPort)}"
     })
 

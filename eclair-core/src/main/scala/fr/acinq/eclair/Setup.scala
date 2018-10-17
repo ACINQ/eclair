@@ -39,6 +39,7 @@ import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
+import fr.acinq.eclair.tor.{Controller, OnionAddress, TorProtocolHandler}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 
@@ -67,15 +68,19 @@ class Setup(datadir: File,
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
+  val initialNodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
 
   // early checks
-  DBCompatChecker.checkDBCompatibility(nodeParams)
-  DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
+  DBCompatChecker.checkDBCompatibility(initialNodeParams)
+  DBCompatChecker.checkNetworkDBCompatibility(initialNodeParams)
   PortChecker.checkAvailable(config.getString("server.binding-ip"), config.getInt("server.port"))
+  if (config.getBoolean("tor.enabled")) {
+    sys.props.put("socksProxyHost", config.getString("tor.host"))
+    sys.props.put("socksProxyPort", config.getInt("tor.proxy-port").toString)
+  }
 
-  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
-  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
+  logger.info(s"nodeid=${initialNodeParams.nodeId} alias=${initialNodeParams.alias}")
+  logger.info(s"using chain=$chain chainHash=${initialNodeParams.chainHash}")
 
   logger.info(s"initializing secure random generator")
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
@@ -85,6 +90,27 @@ class Setup(datadir: File,
   implicit val timeout = Timeout(30 seconds)
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
+
+  val nodeParams = if (config.getBoolean("tor.enabled")) {
+    val promiseTorAddress = Promise[OnionAddress]()
+    val protocolHandler = system.actorOf(TorProtocolHandler.props(
+      version = config.getString("tor.version"),
+      privateKeyPath =  new File(datadir, config.getString("tor.private-key-file")).getAbsolutePath,
+      virtualPort = config.getInt("server.port"),
+      onionAdded = Some(promiseTorAddress),
+      nonce = None),
+      "tor-proto")
+
+    val controller = system.actorOf(Controller.props(
+      address = new InetSocketAddress(config.getString("tor.host"), config.getInt("tor.control-port")),
+      protocolHandler = protocolHandler), "tor")
+
+    val torAddress = await(promiseTorAddress.future, 30 seconds, "tor did not respond after 30 seconds")
+    logger.info(s"Tor address ${torAddress.toOnion}")
+    initialNodeParams.copy(torAddress = Some(torAddress))
+  } else {
+    initialNodeParams
+  }
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>

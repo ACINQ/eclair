@@ -20,6 +20,7 @@ import java.net.{Inet4Address, Inet6Address, InetSocketAddress}
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
+import fr.acinq.eclair.tor.{OnionAddress, OnionAddressV2, OnionAddressV3}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 
 /**
@@ -160,19 +161,45 @@ case class Color(r: Byte, g: Byte, b: Byte) {
 }
 
 // @formatter:off
-sealed trait NodeAddress
+sealed trait NodeAddress {
+  def getHostString: String
+  def getPort: Int
+}
 case object NodeAddress {
   def apply(inetSocketAddress: InetSocketAddress): NodeAddress = inetSocketAddress.getAddress match {
     case a: Inet4Address => IPv4(a, inetSocketAddress.getPort)
     case a: Inet6Address => IPv6(a, inetSocketAddress.getPort)
     case _ => throw new RuntimeException(s"Invalid socket address $inetSocketAddress")
   }
+  def apply(onionAddress: OnionAddress): NodeAddress = {
+    onionAddress match {
+      case _: OnionAddressV2 => Tor2(BinaryData(onionAddress.decodedOnionService), onionAddress.port)
+      case _: OnionAddressV3 => Tor3(BinaryData(onionAddress.decodedOnionService), onionAddress.port)
+    }
+  }
 }
-case object Padding extends NodeAddress
-case class IPv4(ipv4: Inet4Address, port: Int) extends NodeAddress
-case class IPv6(ipv6: Inet6Address, port: Int) extends NodeAddress
-case class Tor2(tor2: BinaryData, port: Int) extends NodeAddress { require(tor2.size == 10) }
-case class Tor3(tor3: BinaryData, port: Int) extends NodeAddress { require(tor3.size == 35) }
+case object Padding extends NodeAddress {
+  override def getHostString: String = ""
+  override def getPort: Int = 0
+}
+case class IPv4(ipv4: Inet4Address, port: Int) extends NodeAddress {
+  override def getHostString: String = ipv4.getHostAddress
+  override def getPort: Int = port
+}
+case class IPv6(ipv6: Inet6Address, port: Int) extends NodeAddress {
+  override def getHostString: String = ipv6.getHostAddress
+  override def getPort: Int = port
+}
+case class Tor2(tor2: BinaryData, port: Int) extends NodeAddress {
+  require(tor2.size == 10)
+  override def getHostString: String = tor2.toString()
+  override def getPort: Int = port
+}
+case class Tor3(tor3: BinaryData, port: Int) extends NodeAddress {
+  require(tor3.size == 35)
+  override def getHostString: String = tor3.toString()
+  override def getPort: Int = port
+}
 // @formatter:on
 
 case class NodeAnnouncement(signature: BinaryData,

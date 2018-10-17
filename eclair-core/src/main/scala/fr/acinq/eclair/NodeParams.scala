@@ -24,13 +24,14 @@ import java.util.concurrent.TimeUnit
 
 import com.google.common.net.InetAddresses
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.{BinaryData, Block}
+import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
-import fr.acinq.eclair.wire.Color
+import fr.acinq.eclair.tor.OnionAddress
+import fr.acinq.eclair.wire.{Color, NodeAddress}
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
@@ -75,9 +76,14 @@ case class NodeParams(keyManager: KeyManager,
                       paymentRequestExpiry: FiniteDuration,
                       maxPendingPaymentRequests: Int,
                       maxPaymentFee: Double,
-                      minFundingSatoshis: Long) {
-  val privateKey = keyManager.nodeKey.privateKey
-  val nodeId = keyManager.nodeId
+                      minFundingSatoshis: Long,
+                      torAddress: Option[OnionAddress] = None) {
+  val privateKey: Crypto.PrivateKey = keyManager.nodeKey.privateKey
+  val nodeId: Crypto.PublicKey = keyManager.nodeId
+  def nodeAddresses: List[NodeAddress] = torAddress
+    .map(NodeAddress(_))
+    .map(List(_))
+    .getOrElse(publicAddresses.map(NodeAddress(_)))
 }
 
 object NodeParams {

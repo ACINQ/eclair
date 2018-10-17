@@ -140,7 +140,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
 
     // on restart we update our node announcement
     // note that if we don't currently have public channels, this will be ignored
-    val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
+    val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.nodeAddresses)
     self ! nodeAnn
 
     log.info(s"initialization completed, ready to process messages")
@@ -232,7 +232,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
             // in case we just validated our first local channel, we announce the local node
             if (!d0.nodes.contains(nodeParams.nodeId) && isRelatedTo(c, nodeParams.nodeId)) {
               log.info("first local channel validated, announcing local node")
-              val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
+              val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.nodeAddresses)
               self ! nodeAnn
             }
             true

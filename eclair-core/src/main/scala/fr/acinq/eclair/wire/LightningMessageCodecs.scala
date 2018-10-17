@@ -61,10 +61,10 @@ object LightningMessageCodecs {
   def nodeaddress: Codec[NodeAddress] =
     discriminated[NodeAddress].by(uint8)
       .typecase(0, provide(Padding))
-      .typecase(1, (ipv4address ~ uint16).xmap[IPv4](x => new IPv4(x._1, x._2), x => (x.ipv4, x.port)))
-      .typecase(2, (ipv6address ~ uint16).xmap[IPv6](x => new IPv6(x._1, x._2), x => (x.ipv6, x.port)))
-      .typecase(3, (binarydata(10) ~ uint16).xmap[Tor2](x => new Tor2(x._1, x._2), x => (x.tor2, x.port)))
-      .typecase(4, (binarydata(35) ~ uint16).xmap[Tor3](x => new Tor3(x._1, x._2), x => (x.tor3, x.port)))
+      .typecase(1, (ipv4address ~ uint16).xmap[IPv4](x => IPv4(x._1, x._2), x => (x.ipv4, x.port)))
+      .typecase(2, (ipv6address ~ uint16).xmap[IPv6](x => IPv6(x._1, x._2), x => (x.ipv6, x.port)))
+      .typecase(3, (binarydata(10) ~ uint16).xmap[Tor2](x => Tor2(x._1, x._2), x => (x.tor2, x.port)))
+      .typecase(4, (binarydata(35) ~ uint16).xmap[Tor3](x => Tor3(x._1, x._2), x => (x.tor3, x.port)))
 
   // this one is a bit different from most other codecs: the first 'len' element is * not * the number of items
   // in the list but rather the  number of bytes of the encoded list. The rationale is once we've read this

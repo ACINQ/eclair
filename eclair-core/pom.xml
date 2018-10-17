@@ -165,6 +165,11 @@
             <artifactId>scodec-core_${scala.version.short}</artifactId>
             <version>1.10.3</version>
         </dependency>
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+            <version>1.9</version>
+        </dependency>
         <!-- LOGGING -->
         <dependency>
             <groupId>org.clapper</groupId>
