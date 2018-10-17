@@ -20,18 +20,14 @@ import java.sql.DriverManager
 
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.db.sqlite.{SqlitePeersDb, SqlitePendingPaymentDb}
-import fr.acinq.eclair.payment.{PaymentEvent, PaymentSettlingOnChain}
-import org.junit.runner.RunWith
+import fr.acinq.eclair.db.sqlite.SqlitePendingPaymentDb
+import fr.acinq.eclair.payment.PaymentSettlingOnChain
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 /**
   * Created by anton on 12.09.18.
   */
-@RunWith(classOf[JUnitRunner])
 class SqlitePendingPaymentDbSpec extends FunSuite {
-
   def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
   val peerNodeId = PublicKey(BinaryData("0x02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
   val targetNodeId1 = PublicKey(BinaryData("0x028f9438bfbf7feac2e108d677e3a82da596be706cc1cf342b75c7b7e22bf4e6e2"))
