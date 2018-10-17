@@ -48,7 +48,7 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
         .withContentType("application/json")
         .withAuth(user, password)
       res <- http.run(r, Gigahorse.asString)
-      jsonRpcRes = JsonMethods.parse(res).extract[Seq[JsonRPCResponse]]
+      jsonRpcRes = JsonMethods.parse(res, useBigDecimalForDouble = true).extract[Seq[JsonRPCResponse]]
     } yield jsonRpcRes
 
 }
