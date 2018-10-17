@@ -393,7 +393,7 @@ object Helpers {
       val inFlightHtlcs = commitments.localCommit.spec.htlcs.map(htlc => htlc.add.paymentHash -> htlc.add.amountMsat).toMap
       var onChainHashes = Set.empty[BinaryData] // this is needed to collect hashes of payments which can be resolved on-chain
 
-      val successDelayedHashes = for {
+      val successAndDelayedTxs = for {
         HtlcTxAndSigs(txinfo: HtlcSuccessTx, localSig, remoteSig) <- localCommit.publishableTxs.htlcTxsAndSigs
         if preimages.exists(r => sha256(r) == txinfo.paymentHash)
 
@@ -414,7 +414,7 @@ object Helpers {
         delayedFromLegacy <- makeDelayedTx(txinfo.tx, "claim-htlc-timeout-delayed-legacy")
       } yield timeoutFromLegacy.tx -> delayedFromLegacy.tx
 
-      val timeoutDelayedHashes = for {
+      val timeoutAndDelayedTxs = for {
         HtlcTxAndSigs(txinfo: HtlcTimeoutTx, localSig, remoteSig) <- localCommit.publishableTxs.htlcTxsAndSigs
         timeout <- generateTx("htlc-timeout")(Try { Transactions.addSigs(txinfo, localSig, remoteSig) })
         delayed <- makeDelayedTx(txinfo.tx, "claim-htlc-timeout-delayed")
@@ -424,8 +424,8 @@ object Helpers {
       } yield timeout.tx -> delayed.tx
 
       val (timeoutTxsFromLegacy, timeoutDelayTxsFromLegacy) = timeoutAndDelayedTxsFormLegacy.unzip
-      val (successTxs, successDelayTxs) = successDelayedHashes.unzip
-      val (timeoutTxs, timeoutDelayTxs) = timeoutDelayedHashes.unzip
+      val (successTxs, successDelayTxs) = successAndDelayedTxs.unzip
+      val (timeoutTxs, timeoutDelayTxs) = timeoutAndDelayedTxs.unzip
 
       for ((paymentHash, amountMsat) <- inFlightHtlcs -- onChainHashes) {
         eventStream.publish(PaymentFailed(paymentHash, Seq(LocalFailure(new Throwable(s"Amount $amountMsat msat is too small for on-chain resolution")))))
