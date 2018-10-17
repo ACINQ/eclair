@@ -1155,9 +1155,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), blockHeight, _), d: DATA_CLOSING) =>
       log.info(s"txid=${tx.txid} has reached mindepth, updating closing state")
-      nodeParams.pendingPaymentDb.setDoneSettlingOnChain(tx.txid)
-      nodeParams.pendingPaymentDb.getSettlingOnChain(tx.txid).foreach(context.system.eventStream.publish)
-
       // first we check if this tx belongs to one of the current local/remote commits and update it
       val localCommitPublished1 = d.localCommitPublished.map(Closing.updateLocalCommitPublished(_, tx))
       val remoteCommitPublished1 = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx))
@@ -1168,6 +1165,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       if (localCommitPublished1.map(_.commitTx.txid).contains(tx.txid)) {
         context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.remoteParams.toSelfDelay))
       }
+      // In case if this was an HTLC-refunding tx, let's send an event to notify websocket and put an updated record in a db
+      nodeParams.pendingPaymentDb.getSettlingOnChain(tx.txid).map(_.copy(isDone = true)).foreach(context.system.eventStream.publish)
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
       val timedoutHtlcs =
         Closing.timedoutHtlcs(d.commitments.localCommit, Satoshi(d.commitments.localParams.dustLimitSatoshis), tx) ++

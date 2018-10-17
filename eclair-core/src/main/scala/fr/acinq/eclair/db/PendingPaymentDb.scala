@@ -39,8 +39,6 @@ trait PendingPaymentDb {
   def add(paymentSettlingOnChain: PaymentSettlingOnChain)
 
   def getSettlingOnChain(paymentHashOrTxid: BinaryData): Option[PaymentSettlingOnChain]
-
-  def setDoneSettlingOnChain(txid: BinaryData)
 }
 
 case class RiskInfo(targetNodeId: PublicKey, sinceBlockHeight: Long, total: Long, mean: Double, sdTimes: Double, delays: Seq[Long], adjusted: Seq[Long])
