@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.payment.PaymentLifecycle.{LocalFailure, PaymentFailed}
-import fr.acinq.eclair.payment.PaymentSettlingOnChain
+import fr.acinq.eclair.payment.{PaymentLost, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -428,7 +428,7 @@ object Helpers {
       val (timeoutTxs, timeoutDelayTxs) = timeoutAndDelayedTxs.unzip
 
       for ((paymentHash, amountMsat) <- inFlightHtlcs -- onChainHashes) {
-        eventStream.publish(PaymentFailed(paymentHash, Seq(LocalFailure(new Throwable(s"Amount $amountMsat msat is too small for on-chain resolution")))))
+        eventStream.publish(PaymentLost(MilliSatoshi(amountMsat), paymentHash))
       }
 
       LocalCommitPublished(
@@ -502,7 +502,7 @@ object Helpers {
       }.toSeq.flatten
 
       for ((paymentHash, amountMsat) <- inFlightHtlcs -- onChainHashes) {
-        eventStream.publish(PaymentFailed(paymentHash, Seq(LocalFailure(new Throwable(s"Amount $amountMsat msat is too small for on-chain resolution")))))
+        eventStream.publish(PaymentLost(MilliSatoshi(amountMsat), paymentHash))
       }
 
       claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx).copy(

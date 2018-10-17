@@ -402,6 +402,7 @@ trait Service extends Logging {
 
       def receive: Receive = {
         case failed: PaymentFailed => flowInput.offer(Serialization write failed)
+        case lost: PaymentLost => flowInput.offer(Serialization write lost)
         case onchain: PaymentSettlingOnChain => flowInput.offer(Serialization write onchain)
         case received: PaymentReceived => flowInput.offer(Serialization write received)
         case relayed: PaymentRelayed => flowInput.offer(Serialization write relayed)
