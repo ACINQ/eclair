@@ -35,4 +35,4 @@ case class PaymentReceived(amount: MilliSatoshi, paymentHash: BinaryData, fromCh
 
 case class PaymentSettlingOnChain(offChainAmount: MilliSatoshi, onChainAmount: MilliSatoshi, paymentHash: BinaryData, txid: BinaryData, refundType: String, isDone: Boolean, tag: String = "PaymentSettlingOnChain") extends PaymentEvent
 
-case class PaymentLost(amount: MilliSatoshi, paymentHash: BinaryData, timestamp: Long = Platform.currentTime, tag: String = "PaymentLost") extends PaymentEvent
+case class PaymentLostOnChain(amount: MilliSatoshi, paymentHash: BinaryData, timestamp: Long = Platform.currentTime, tag: String = "PaymentLostOnChain") extends PaymentEvent
