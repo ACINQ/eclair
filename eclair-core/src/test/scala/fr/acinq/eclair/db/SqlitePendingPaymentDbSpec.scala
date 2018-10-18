@@ -21,7 +21,7 @@ import java.sql.DriverManager
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.sqlite.SqlitePendingPaymentDb
-import fr.acinq.eclair.payment.PaymentSettlingOnChain
+import fr.acinq.eclair.payment.{PaymentLostOnChain, PaymentSettlingOnChain}
 import org.scalatest.FunSuite
 
 /**
@@ -111,11 +111,15 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
     val db = new SqlitePendingPaymentDb(sqlite)
 
     val msg = PaymentSettlingOnChain(MilliSatoshi(100000000L), MilliSatoshi(90000000L), paymentHash1, txid1, "claim-htlc-delayed", isDone = false)
-    db.add(msg)
+    db.addSettlingOnChain(msg)
     assert(db.getSettlingOnChain(paymentHash1).contains(msg))
 
-    db.add(msg.copy(isDone = true))
+    db.addSettlingOnChain(msg.copy(isDone = true))
     assert(db.getSettlingOnChain(paymentHash1).contains(msg.copy(isDone = true)))
     assert(db.getSettlingOnChain(txid1).contains(msg.copy(isDone = true)))
+
+    val lost = PaymentLostOnChain(MilliSatoshi(2000000L), paymentHash1)
+    db.addLostOnChain(lost)
+    assert(db.getLostOnChain(paymentHash1).contains(lost))
   }
 }

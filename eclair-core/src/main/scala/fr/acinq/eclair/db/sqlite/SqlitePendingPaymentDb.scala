@@ -21,7 +21,7 @@ import java.sql.Connection
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.{PendingPaymentDb, RiskInfo}
-import fr.acinq.eclair.payment.PaymentSettlingOnChain
+import fr.acinq.eclair.payment.{PaymentLostOnChain, PaymentSettlingOnChain}
 
 import scala.collection.immutable.Queue
 
@@ -35,17 +35,21 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
   val DB_NAME = "pending_payments"
   val CURRENT_VERSION = 1
 
+  // amount: MilliSatoshi, paymentHash: BinaryData, timestamp: Long = Platform.currentTime
+
   using(sqlite.createStatement()) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending (payment_hash BLOB NOT NULL UNIQUE, peer_node_id BLOB NOT NULL, target_node_id BLOB NOT NULL, peer_cltv_delta INTEGER NOT NULL, added INTEGER NOT NULL, delay INTEGER NOT NULL, expiry INTEGER NOT NULL, UNIQUE (payment_hash, peer_node_id) ON CONFLICT IGNORE)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS incoming_settling_on_chain (payment_hash BLOB NOT NULL, tx_id BLOB NOT NULL, refund_type STRING NOT NULL, is_done INTEGER NOT NULL, off_chain_amount INTEGER NOT NULL, on_chain_amount INTEGER NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS lost_on_chain (payment_hash BLOB NOT NULL UNIQUE, lost_amount INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
 
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON pending(payment_hash)")
+    // pending(payment_hash) index is already there because it's unique
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS target_node_id_idx ON pending(target_node_id)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS added_idx ON pending(added)")
 
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON incoming_settling_on_chain(payment_hash)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS tx_id_idx ON incoming_settling_on_chain(tx_id)")
+    // lost_on_chain(payment_hash) index is already there because it's unique
   }
 
   override def add(paymentHash: BinaryData, peerNodeId: PublicKey, targetNodeId: PublicKey,
@@ -126,7 +130,7 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
   }
 
 
-  override def add(paymentSettlingOnChain: PaymentSettlingOnChain): Unit = {
+  override def addSettlingOnChain(paymentSettlingOnChain: PaymentSettlingOnChain): Unit = {
     using(sqlite.prepareStatement("INSERT INTO incoming_settling_on_chain VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, paymentSettlingOnChain.paymentHash)
       statement.setBytes(2, paymentSettlingOnChain.txid)
@@ -134,6 +138,15 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
       statement.setBoolean(4, paymentSettlingOnChain.isDone)
       statement.setLong(5, paymentSettlingOnChain.offChainAmount.amount)
       statement.setLong(6, paymentSettlingOnChain.onChainAmount.amount)
+      statement.executeUpdate()
+    }
+  }
+
+  override def addLostOnChain(paymentLostOnChain: PaymentLostOnChain): Unit = {
+    using(sqlite.prepareStatement("INSERT INTO lost_on_chain VALUES (?, ?, ?)")) { statement =>
+      statement.setBytes(1, paymentLostOnChain.paymentHash)
+      statement.setLong(2, paymentLostOnChain.amount.amount)
+      statement.setLong(3, paymentLostOnChain.timestamp)
       statement.executeUpdate()
     }
   }
@@ -152,6 +165,20 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
         val offChainAmount = rs.getLong("off_chain_amount")
         val onChainAmount = rs.getLong("on_chain_amount")
         Some(PaymentSettlingOnChain(MilliSatoshi(offChainAmount), MilliSatoshi(onChainAmount), paymentHash, txid, refundType, isDone))
+      } else {
+        None
+      }
+    }
+  }
+
+  override def getLostOnChain(paymentHash: BinaryData): Option[PaymentLostOnChain] = {
+    using(sqlite.prepareStatement("SELECT * FROM lost_on_chain WHERE payment_hash = ?")) { statement =>
+      statement.setBytes(1, paymentHash)
+      val rs = statement.executeQuery()
+      if (rs.next()) {
+        val amount = rs.getLong("lost_amount")
+        val timestamp = rs.getLong("timestamp")
+        Some(PaymentLostOnChain(MilliSatoshi(amount), paymentHash, timestamp))
       } else {
         None
       }

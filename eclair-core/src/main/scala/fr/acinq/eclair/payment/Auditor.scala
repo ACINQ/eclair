@@ -35,8 +35,10 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
     case e: NetworkFeePaid => nodeParams.auditDb.add(e)
 
-    // Does not exactly fit but when added here there is no need for a separate listener
-    case e: PaymentSettlingOnChain => nodeParams.pendingPaymentDb.add(e)
+    // These do not exactly fit but when added here there is no need for a separate listener
+    case e: PaymentSettlingOnChain => nodeParams.pendingPaymentDb.addSettlingOnChain(e)
+
+    case e: PaymentLostOnChain => nodeParams.pendingPaymentDb.addLostOnChain(e)
 
   }
 

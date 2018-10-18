@@ -18,7 +18,7 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.payment.PaymentSettlingOnChain
+import fr.acinq.eclair.payment.{PaymentLostOnChain, PaymentSettlingOnChain}
 
 /**
   * Created by anton on 12.09.18.
@@ -36,9 +36,14 @@ trait PendingPaymentDb {
   def listBadPeers(sinceBlockHeight: Long): Seq[PublicKey]
 
 
-  def add(paymentSettlingOnChain: PaymentSettlingOnChain)
+  def addSettlingOnChain(paymentSettlingOnChain: PaymentSettlingOnChain)
+
+  def addLostOnChain(paymentLostOnChain: PaymentLostOnChain)
 
   def getSettlingOnChain(paymentHashOrTxid: BinaryData): Option[PaymentSettlingOnChain]
+
+  def getLostOnChain(paymentHash: BinaryData): Option[PaymentLostOnChain]
+
 }
 
 case class RiskInfo(targetNodeId: PublicKey, sinceBlockHeight: Long, total: Long, mean: Double, sdTimes: Double, delays: Seq[Long], adjusted: Seq[Long])

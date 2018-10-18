@@ -312,7 +312,7 @@ trait Service extends Logging {
                         case "receivedinfo" => req.params match {
                           case JString(identifier) :: Nil => extractPaymentHash(identifier) match {
                             case Success(hash) =>
-                              kit.nodeParams.pendingPaymentDb.getSettlingOnChain(hash) orElse kit.nodeParams.auditDb.receivedPaymentInfo(hash) match {
+                              kit.nodeParams.pendingPaymentDb.getLostOnChain(hash) orElse kit.nodeParams.pendingPaymentDb.getSettlingOnChain(hash) orElse kit.nodeParams.auditDb.receivedPaymentInfo(hash) match {
                                 case Some(paymentReceivedOrSettlingOnChain) => completeRpcFuture(req.id, Future.successful(paymentReceivedOrSettlingOnChain))
                                 case None => completeRpcFuture(req.id, Future.failed(new IllegalArgumentException("no such payment received yet")))
                               }
@@ -324,7 +324,7 @@ trait Service extends Logging {
                         case "sentinfo" => req.params match {
                           case JString(identifier) :: Nil => extractPaymentHash(identifier) match {
                             case Success(hash) =>
-                              kit.nodeParams.auditDb.sentPaymentInfo(hash) orElse kit.nodeParams.pendingPaymentDb.getSettlingOnChain(hash) match {
+                              kit.nodeParams.auditDb.sentPaymentInfo(hash) orElse kit.nodeParams.pendingPaymentDb.getLostOnChain(hash) orElse kit.nodeParams.pendingPaymentDb.getSettlingOnChain(hash) match {
                                 case Some(paymentSentOrSettlingOnChain) => completeRpcFuture(req.id, Future.successful(paymentSentOrSettlingOnChain))
                                 case None => completeRpcFuture(req.id, Future.failed(new IllegalArgumentException("no such payment sent yet")))
                               }
