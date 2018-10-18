@@ -53,11 +53,12 @@ import scala.concurrent._
   * @param datadir  directory where eclair-core will write/read its data
   * @param overrideDefaults
   * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
+  * @param overrideElectrumServers_opt optional electrum server which, if set, supersedes the default list of electrum server.
   */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
             seed_opt: Option[BinaryData] = None,
-            electrumServerAddress: Option[InetSocketAddress] = None)(implicit system: ActorSystem) extends Logging {
+            overrideElectrumServers_opt: Option[InetSocketAddress] = None)(implicit system: ActorSystem) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
@@ -123,7 +124,7 @@ class Setup(datadir: File,
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
-      val addresses = electrumServerAddress match {
+      val addresses = overrideElectrumServers_opt match {
         case Some(address) => Set(address)
         case None =>
           val addressesFile = nodeParams.chainHash match {
