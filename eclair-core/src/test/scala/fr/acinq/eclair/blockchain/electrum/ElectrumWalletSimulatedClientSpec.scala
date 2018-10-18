@@ -91,7 +91,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     listener.expectMsgType[NewWalletReceiveAddress]
   }
 
-  test("don't send the same ready mnessage more then once") {
+  test("don't send the same ready message more then once") {
     // listener should be notified
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(header4))
     assert(listener.expectMsgType[WalletReady].timestamp == header4.timestamp)
