@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.payment.{CommandBuffer, ForwardAdd, ForwardFulfill, Local}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
@@ -188,6 +188,9 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv BITCOIN_OUTPUT_SPENT") { f =>
     import f._
+    val listener1 = TestProbe()
+    system.eventStream.subscribe(listener1.ref, classOf[PaymentSettlingOnChain])
+    system.eventStream.subscribe(listener1.ref, classOf[PaymentSent])
     // alice sends an htlc to bob
     val (ra1, htlca1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
@@ -195,6 +198,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // an error occurs and alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! Error("00" * 32, "oops".getBytes)
+    listener1.expectMsgType[PaymentSettlingOnChain]
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx)) // commit tx
     alice2blockchain.expectMsgType[PublishAsap] // main-delayed-output
     alice2blockchain.expectMsgType[PublishAsap] // htlc-timeout
@@ -219,14 +223,15 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val claimHtlcSuccessTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint("22" * 32, 0), signatureScript = "", sequence = 0, witness = Scripts.witnessHtlcSuccess("11" * 70, "22" * 70, ra1, "33" * 130)) :: Nil, txOut = Nil, lockTime = 0)
     alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, claimHtlcSuccessTx)
     assert(relayer.expectMsgType[ForwardFulfill].fulfill === UpdateFulfillHtlc(htlca1.channelId, htlca1.id, ra1))
-
     assert(alice.stateData == initialState) // this was a no-op
   }
 
   test("recv BITCOIN_TX_CONFIRMED (local commit)") { f =>
     import f._
+    val listener1 = TestProbe()
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[LocalCommitConfirmed])
+    system.eventStream.subscribe(listener1.ref, classOf[PaymentSettlingOnChain])
     // alice sends an htlc to bob
     val (ra1, htlca1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
@@ -234,9 +239,10 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! Error("00" * 32, "oops".getBytes)
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx)) // commit tx
-  val claimMainDelayedTx = alice2blockchain.expectMsgType[PublishAsap].tx // main-delayed-output
-  val htlcTimeoutTx = alice2blockchain.expectMsgType[PublishAsap].tx // htlc-timeout
-  val claimDelayedTx = alice2blockchain.expectMsgType[PublishAsap].tx // claim-delayed-output
+    listener1.expectMsgType[PaymentSettlingOnChain]
+    val claimMainDelayedTx = alice2blockchain.expectMsgType[PublishAsap].tx // main-delayed-output
+    val htlcTimeoutTx = alice2blockchain.expectMsgType[PublishAsap].tx // htlc-timeout
+    val claimDelayedTx = alice2blockchain.expectMsgType[PublishAsap].tx // claim-delayed-output
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(aliceCommitTx))
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event.isInstanceOf[BITCOIN_TX_CONFIRMED]) // main-delayed-output
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event.isInstanceOf[BITCOIN_TX_CONFIRMED]) // claim-delayed-output
@@ -252,6 +258,22 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(htlcTimeoutTx), 201, 0)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimDelayedTx), 202, 0)
     awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv BITCOIN_TX_CONFIRMED (local commit htlc is too small for on-chain)") { f =>
+    import f._
+    val listener1 = TestProbe()
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[LocalCommitConfirmed])
+    system.eventStream.subscribe(listener1.ref, classOf[PaymentLostOnChain])
+    // alice sends an htlc to bob
+    val (ra1, htlca1) = addHtlc(5000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    // an error occurs and alice publishes her commit tx
+    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    alice ! Error("00" * 32, "oops".getBytes)
+    alice2blockchain.expectMsg(PublishAsap(aliceCommitTx)) // commit tx
+    listener1.expectMsgType[PaymentLostOnChain]
   }
 
   test("recv BITCOIN_TX_CONFIRMED (local commit with htlcs only signed by local)") { f =>
