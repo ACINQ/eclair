@@ -40,7 +40,7 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
   using(sqlite.createStatement()) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending (payment_hash BLOB NOT NULL UNIQUE, peer_node_id BLOB NOT NULL, target_node_id BLOB NOT NULL, peer_cltv_delta INTEGER NOT NULL, added INTEGER NOT NULL, delay INTEGER NOT NULL, expiry INTEGER NOT NULL, UNIQUE (payment_hash, peer_node_id) ON CONFLICT IGNORE)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS incoming_settling_on_chain (payment_hash BLOB NOT NULL, tx_id BLOB NOT NULL, refund_type STRING NOT NULL, is_done INTEGER NOT NULL, off_chain_amount INTEGER NOT NULL, on_chain_amount INTEGER NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS incoming_settling_on_chain (payment_hash BLOB NOT NULL, tx_id BLOB NOT NULL, refund_type STRING NOT NULL, is_done INTEGER NOT NULL, off_chain_amount INTEGER NOT NULL, on_chain_amount INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS lost_on_chain (payment_hash BLOB NOT NULL UNIQUE, lost_amount INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
 
     // pending(payment_hash) index is already there because it's unique
@@ -131,13 +131,14 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
 
 
   override def addSettlingOnChain(paymentSettlingOnChain: PaymentSettlingOnChain): Unit = {
-    using(sqlite.prepareStatement("INSERT INTO incoming_settling_on_chain VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT INTO incoming_settling_on_chain VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, paymentSettlingOnChain.paymentHash)
       statement.setBytes(2, paymentSettlingOnChain.txid)
       statement.setString(3, paymentSettlingOnChain.refundType)
       statement.setBoolean(4, paymentSettlingOnChain.isDone)
       statement.setLong(5, paymentSettlingOnChain.offChainAmount.amount)
       statement.setLong(6, paymentSettlingOnChain.onChainAmount.amount)
+      statement.setLong(7, paymentSettlingOnChain.timestamp)
       statement.executeUpdate()
     }
   }
@@ -164,7 +165,8 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
         val isDone = rs.getBoolean("is_done")
         val offChainAmount = rs.getLong("off_chain_amount")
         val onChainAmount = rs.getLong("on_chain_amount")
-        Some(PaymentSettlingOnChain(MilliSatoshi(offChainAmount), MilliSatoshi(onChainAmount), paymentHash, txid, refundType, isDone))
+        val timestamp = rs.getLong("timestamp")
+        Some(PaymentSettlingOnChain(MilliSatoshi(offChainAmount), MilliSatoshi(onChainAmount), paymentHash, txid, refundType, isDone, timestamp))
       } else {
         None
       }
