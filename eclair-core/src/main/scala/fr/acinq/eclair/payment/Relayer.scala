@@ -137,7 +137,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
             case (_: ExpiryTooBig, _) => ExpiryTooFar
             case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
             case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
-            case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.channelFlags) => ChannelDisabled(channelUpdate.channelFlags, channelUpdate)
+            case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.channelFlags) => ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)
             case (_: ChannelUnavailable, None) => PermanentChannelFailure
             case (_: HtlcTimedout, _) => PermanentChannelFailure
             case _ => TemporaryNodeFailure
@@ -261,7 +261,7 @@ object Relayer {
       case None =>
         Left(CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
       case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.channelFlags) =>
-        Left(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.channelFlags, channelUpdate)), commit = true))
+        Left(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)), commit = true))
       case Some(channelUpdate) if payload.amtToForward < channelUpdate.htlcMinimumMsat =>
         Left(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) if relayPayload.expiryDelta != channelUpdate.cltvExpiryDelta =>

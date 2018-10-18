@@ -34,8 +34,8 @@ class FailureMessageCodecsSpec extends FunSuite {
     shortChannelId = ShortChannelId(12345),
     timestamp = 1234567L,
     cltvExpiryDelta = 100,
-    messageFlags = BinaryData("00"),
-    channelFlags = BinaryData("01"),
+    messageFlags = 0,
+    channelFlags = 1,
     htlcMinimumMsat = 1000,
     feeBaseMsat = 12,
     feeProportionalMillionths = 76,
@@ -53,7 +53,7 @@ class FailureMessageCodecsSpec extends FunSuite {
         InvalidOnionVersion(randomBytes(32)) :: InvalidOnionHmac(randomBytes(32)) :: InvalidOnionKey(randomBytes(32)) ::
         TemporaryChannelFailure(channelUpdate) :: PermanentChannelFailure :: RequiredChannelFeatureMissing :: UnknownNextPeer ::
         AmountBelowMinimum(123456, channelUpdate) :: FeeInsufficient(546463, channelUpdate) :: IncorrectCltvExpiry(1211, channelUpdate) :: ExpiryTooSoon(channelUpdate) ::
-        UnknownPaymentHash :: IncorrectPaymentAmount :: FinalExpiryTooSoon :: FinalIncorrectCltvExpiry(1234) :: ChannelDisabled(BinaryData("0001"), channelUpdate) :: ExpiryTooFar :: Nil
+        UnknownPaymentHash :: IncorrectPaymentAmount :: FinalExpiryTooSoon :: FinalIncorrectCltvExpiry(1234) :: ChannelDisabled(0, 1, channelUpdate) :: ExpiryTooFar :: Nil
 
     msgs.foreach {
       case msg => {
@@ -67,7 +67,7 @@ class FailureMessageCodecsSpec extends FunSuite {
   test("support encoding of channel_update with/without type in failure messages") {
     val tmp_channel_failure_notype = BinaryData("10070080cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f45782196fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008260500041300005b91b52f0003000e00000000000003e80000000100000001")
     val tmp_channel_failure_withtype = BinaryData("100700820102cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f45782196fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008260500041300005b91b52f0003000e00000000000003e80000000100000001")
-    val ref = TemporaryChannelFailure(ChannelUpdate(BinaryData("3045022100cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b022008e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f457821901"), Block.LivenetGenesisBlock.hash, ShortChannelId(0x826050004130000L), 1536275759, BinaryData("00"), BinaryData("03"), 14, 1000, 1, 1, None))
+    val ref = TemporaryChannelFailure(ChannelUpdate(BinaryData("3045022100cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b022008e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f457821901"), Block.LivenetGenesisBlock.hash, ShortChannelId(0x826050004130000L), 1536275759, 0, 3, 14, 1000, 1, 1, None))
 
     val u = FailureMessageCodecs.failureMessageCodec.decode(BitVector.apply(tmp_channel_failure_notype.data)).require.value
     assert(u === ref)

@@ -68,10 +68,10 @@ class AnnouncementsSpec extends FunSuite {
     val channelUpdate1_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node1_priv, node2_priv.publicKey, ShortChannelId(0), 0, 0, 0, 0, 500000000L, enable = false)
     val channelUpdate2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), 0, 0, 0, 0, 500000000L, enable = true)
     val channelUpdate2_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), 0, 0, 0, 0, 500000000L, enable = false)
-    assert(channelUpdate1.channelFlags == BinaryData("00")) // ....00
-    assert(channelUpdate1_disabled.channelFlags == BinaryData("02")) // ....10
-    assert(channelUpdate2.channelFlags == BinaryData("01")) // ....01
-    assert(channelUpdate2_disabled.channelFlags == BinaryData("03")) // ....11
+    assert(channelUpdate1.channelFlags == 0) // ....00
+    assert(channelUpdate1_disabled.channelFlags == 2) // ....10
+    assert(channelUpdate2.channelFlags == 1) // ....01
+    assert(channelUpdate2_disabled.channelFlags == 3) // ....11
     assert(isNode1(channelUpdate1.channelFlags))
     assert(isNode1(channelUpdate1_disabled.channelFlags))
     assert(!isNode1(channelUpdate2.channelFlags))

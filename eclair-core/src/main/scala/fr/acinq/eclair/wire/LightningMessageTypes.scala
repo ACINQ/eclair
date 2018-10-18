@@ -21,6 +21,7 @@ import java.net.{Inet4Address, Inet6Address, InetSocketAddress}
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
+import scodec.bits.BitVector
 
 /**
   * Created by PM on 15/11/2016.
@@ -192,16 +193,14 @@ case class ChannelUpdate(signature: BinaryData,
                          chainHash: BinaryData,
                          shortChannelId: ShortChannelId,
                          timestamp: Long,
-                         messageFlags: BinaryData,
-                         channelFlags: BinaryData,
+                         messageFlags: Byte,
+                         channelFlags: Byte,
                          cltvExpiryDelta: Int,
                          htlcMinimumMsat: Long,
                          feeBaseMsat: Long,
                          feeProportionalMillionths: Long,
                          htlcMaximumMsat: Option[Long]) extends RoutingMessage with HasTimestamp with HasChainHash {
-
-  if (messageFlags.headOption.exists(_ << ~0 < 0)) require(htlcMaximumMsat.isDefined,
-    "htlcMaximumMsat must be defined when messageFlags bit is set")
+  if ((messageFlags & 1) != 0) require(htlcMaximumMsat.isDefined, "htlcMaximumMsat must be defined when messageFlags bit is set")
 }
 
 case class PerHopPayload(shortChannelId: ShortChannelId,
@@ -222,7 +221,7 @@ case class ReplyChannelRange(chainHash: BinaryData,
                              data: BinaryData) extends RoutingMessage with HasChainHash
 
 case class ReplyShortChannelIdsEnd(chainHash: BinaryData,
-                                  complete: Byte) extends RoutingMessage with HasChainHash
+                                   complete: Byte) extends RoutingMessage with HasChainHash
 
 case class GossipTimestampFilter(chainHash: BinaryData,
                                  firstTimestamp: Long,

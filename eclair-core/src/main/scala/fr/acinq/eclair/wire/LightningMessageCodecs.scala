@@ -284,14 +284,14 @@ object LightningMessageCodecs {
     ("chainHash" | binarydata(32)) ::
       ("shortChannelId" | shortchannelid) ::
       ("timestamp" | uint32) ::
-      ("messageFlags" | binarydata(1)) ::
-      ("channelFlags" | binarydata(1)) ::
-      ("cltvExpiryDelta" | uint16) ::
-      ("htlcMinimumMsat" | uint64) ::
-      ("feeBaseMsat" | uint32) ::
-      ("feeProportionalMillionths" | uint32) flatAppend { parsed =>
-        "htlcMaximumMsat" | conditional(parsed(_3).headOption.exists(_ << ~0 < 0), uint64)
-      }
+      (("messageFlags" | byte) >>:~ { messageFlags =>
+        ("channelFlags" | byte) ::
+          ("cltvExpiryDelta" | uint16) ::
+          ("htlcMinimumMsat" | uint64) ::
+          ("feeBaseMsat" | uint32) ::
+          ("feeProportionalMillionths" | uint32) ::
+          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64))
+      })
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (
     ("signature" | signature) ::
