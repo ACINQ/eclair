@@ -20,16 +20,14 @@ import akka.util.Timeout
 import gigahorse.support.asynchttpclient.Gigahorse
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.Await
 
 /**
   * Created by PM on 27/01/2017.
   */
-@RunWith(classOf[JUnitRunner])
+
 class EarnDotComFeeProviderSpec extends FunSuite with Logging {
 
   import EarnDotComFeeProvider._

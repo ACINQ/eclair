@@ -21,13 +21,11 @@ import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKe
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.util.{Failure, Random, Success, Try}
 
-@RunWith(classOf[JUnitRunner])
+
 class ElectrumWalletBasicSpec extends FunSuite with Logging {
 
   import ElectrumWallet._

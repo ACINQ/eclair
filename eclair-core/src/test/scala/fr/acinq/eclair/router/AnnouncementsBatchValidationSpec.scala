@@ -17,8 +17,8 @@
 package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
-import akka.testkit.TestProbe
 import akka.pattern.pipe
+import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction}
 import fr.acinq.eclair.blockchain.ValidateResult
@@ -28,9 +28,7 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{ShortChannelId, randomKey}
 import gigahorse.support.asynchttpclient.Gigahorse
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
@@ -38,7 +36,7 @@ import scala.concurrent.{Await, ExecutionContext}
 /**
   * Created by PM on 31/05/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class AnnouncementsBatchValidationSpec extends FunSuite {
 
   import AnnouncementsBatchValidationSpec._
@@ -105,6 +103,6 @@ object AnnouncementsBatchValidationSpec {
   }
 
   def makeChannelUpdate(c: SimulatedChannel, shortChannelId: ShortChannelId): ChannelUpdate =
-    Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, c.node1Key, c.node2Key.publicKey, shortChannelId, 10, 1000, 10, 100)
+    Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, c.node1Key, c.node2Key.publicKey, shortChannelId, 10, 1000, 10, 100, 500000000L)
 
 }

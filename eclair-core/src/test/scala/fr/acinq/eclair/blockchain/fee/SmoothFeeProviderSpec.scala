@@ -1,14 +1,12 @@
 package fr.acinq.eclair.blockchain.fee
 
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 
-@RunWith(classOf[JUnitRunner])
+
 class SmoothFeeProviderSpec extends FunSuite {
   test("smooth fee rates") {
     val rates = Array(
