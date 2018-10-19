@@ -166,15 +166,21 @@ sealed trait NodeAddress {
   def getPort: Int
 }
 case object NodeAddress {
-  def apply(inetSocketAddress: InetSocketAddress): NodeAddress = inetSocketAddress.getAddress match {
-    case a: Inet4Address => IPv4(a, inetSocketAddress.getPort)
-    case a: Inet6Address => IPv6(a, inetSocketAddress.getPort)
-    case _ => throw new RuntimeException(s"Invalid socket address $inetSocketAddress")
-  }
+  def apply(inetSocketAddress: InetSocketAddress): NodeAddress =
+    OnionAddress.fromParts(inetSocketAddress.getHostString, inetSocketAddress.getPort) match {
+      case Some(OnionAddressV2(onionService, port)) => Tor2(BinaryData(OnionAddress.decodeHostname(onionService)), port)
+      case Some(OnionAddressV3(onionService, port)) => Tor3(BinaryData(OnionAddress.decodeHostname(onionService)), port)
+      case _ =>
+        inetSocketAddress.getAddress match {
+          case a: Inet4Address => IPv4(a, inetSocketAddress.getPort)
+          case a: Inet6Address => IPv6(a, inetSocketAddress.getPort)
+          case _ => throw new RuntimeException(s"Invalid socket address $inetSocketAddress")
+        }
+    }
   def apply(onionAddress: OnionAddress): NodeAddress = {
     onionAddress match {
-      case _: OnionAddressV2 => Tor2(BinaryData(onionAddress.decodedOnionService), onionAddress.port)
-      case _: OnionAddressV3 => Tor3(BinaryData(onionAddress.decodedOnionService), onionAddress.port)
+      case _: OnionAddressV2 => Tor2(BinaryData(onionAddress.decodedOnionService), onionAddress.getPort)
+      case _: OnionAddressV3 => Tor3(BinaryData(onionAddress.decodedOnionService), onionAddress.getPort)
     }
   }
 }
@@ -192,12 +198,12 @@ case class IPv6(ipv6: Inet6Address, port: Int) extends NodeAddress {
 }
 case class Tor2(tor2: BinaryData, port: Int) extends NodeAddress {
   require(tor2.size == 10)
-  override def getHostString: String = tor2.toString()
+  override def getHostString: String = OnionAddress.hostString(tor2)
   override def getPort: Int = port
 }
 case class Tor3(tor3: BinaryData, port: Int) extends NodeAddress {
   require(tor3.size == 35)
-  override def getHostString: String = tor3.toString()
+  override def getHostString: String = OnionAddress.hostString(tor3)
   override def getPort: Int = port
 }
 // @formatter:on
@@ -212,6 +218,8 @@ case class NodeAnnouncement(signature: BinaryData,
   def socketAddresses: List[InetSocketAddress] = addresses.collect {
     case IPv4(a, port) => new InetSocketAddress(a, port)
     case IPv6(a, port) => new InetSocketAddress(a, port)
+    case Tor2(a, port) => OnionAddress.fromParts(a, port).toInetSocketAddress
+    case Tor3(a, port) => OnionAddress.fromParts(a, port).toInetSocketAddress
   }
 }
 

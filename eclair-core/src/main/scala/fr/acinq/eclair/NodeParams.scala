@@ -30,8 +30,7 @@ import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
-import fr.acinq.eclair.tor.OnionAddress
-import fr.acinq.eclair.wire.{Color, NodeAddress}
+import fr.acinq.eclair.wire.Color
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
@@ -76,14 +75,9 @@ case class NodeParams(keyManager: KeyManager,
                       paymentRequestExpiry: FiniteDuration,
                       maxPendingPaymentRequests: Int,
                       maxPaymentFee: Double,
-                      minFundingSatoshis: Long,
-                      torAddress: Option[OnionAddress] = None) {
+                      minFundingSatoshis: Long) {
   val privateKey: Crypto.PrivateKey = keyManager.nodeKey.privateKey
   val nodeId: Crypto.PublicKey = keyManager.nodeId
-  def nodeAddresses: List[NodeAddress] = torAddress
-    .map(NodeAddress(_))
-    .map(List(_))
-    .getOrElse(publicAddresses.map(NodeAddress(_)))
 }
 
 object NodeParams {
@@ -128,7 +122,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, publicAddress: Option[InetSocketAddress]): NodeParams = {
 
     datadir.mkdirs()
 
@@ -170,7 +164,7 @@ object NodeParams {
       keyManager = keyManager,
       alias = config.getString("node-alias").take(32),
       color = Color(color.data(0), color.data(1), color.data(2)),
-      publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port"))),
+      publicAddresses = publicAddress.map(List(_)).getOrElse(config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port")))),
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),
       dustLimitSatoshis = dustLimitSatoshis,

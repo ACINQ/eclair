@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.router.RouteResponse
+import fr.acinq.eclair.tor.OnionAddress
 import fr.acinq.eclair.transactions.Direction
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.wire._
@@ -124,8 +125,8 @@ class FailureMessageSerializer extends CustomSerializer[FailureMessage](format =
 class NodeAddressSerializer extends CustomSerializer[NodeAddress](format => ({ null},{
   case IPv4(a, p) => JString(HostAndPort.fromParts(a.getHostAddress, p).toString)
   case IPv6(a, p) => JString(HostAndPort.fromParts(a.getHostAddress, p).toString)
-  case Tor2(b, p) => JString(s"${b.toString}:$p")
-  case Tor3(b, p) => JString(s"${b.toString}:$p")
+  case Tor2(b, p) => JString(HostAndPort.fromParts(OnionAddress.hostString(b), p).toString)
+  case Tor3(b, p) => JString(HostAndPort.fromParts(OnionAddress.hostString(b), p).toString)
 }))
 
 class DirectionSerializer extends CustomSerializer[Direction](format => ({ null },{

@@ -16,14 +16,15 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.net.{Inet4Address, Inet6Address, InetSocketAddress}
+import java.net.InetSocketAddress
 import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.PeersDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
-import fr.acinq.eclair.wire.{IPv4, IPv6, LightningMessageCodecs, NodeAddress}
+import fr.acinq.eclair.tor.OnionAddress
+import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
 
 class SqlitePeersDb(sqlite: Connection) extends PeersDb {
@@ -68,6 +69,8 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb {
         val nodeaddress = LightningMessageCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value match {
           case IPv4(ipv4, port) => new InetSocketAddress(ipv4, port)
           case IPv6(ipv6, port) => new InetSocketAddress(ipv6, port)
+          case Tor2(tor2, port) => OnionAddress.fromParts(tor2, port).toInetSocketAddress
+          case Tor3(tor3, port) => OnionAddress.fromParts(tor3, port).toInetSocketAddress
           case _ => ???
         }
         m += (nodeid -> nodeaddress)

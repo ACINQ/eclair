@@ -20,8 +20,8 @@ import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
 import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering}
-import fr.acinq.eclair.{ShortChannelId, serializationResult}
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{ShortChannelId, serializationResult}
 import scodec.bits.BitVector
 import shapeless.HNil
 
@@ -75,8 +75,9 @@ object Announcements {
     )
   }
 
-  def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], timestamp: Long = Platform.currentTime / 1000): NodeAnnouncement = {
+  def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, addresses: List[InetSocketAddress], timestamp: Long = Platform.currentTime / 1000): NodeAnnouncement = {
     require(alias.size <= 32)
+    val nodeAddresses = addresses.map(NodeAddress(_))
     val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, "", nodeAddresses)
     val sig = Crypto.encodeSignature(Crypto.sign(witness, nodeSecret)) :+ 1.toByte
     NodeAnnouncement(
