@@ -92,6 +92,6 @@ object FailureMessageCodecs {
     .typecase(PERM | 16, provide(IncorrectPaymentAmount))
     .typecase(17, provide(FinalExpiryTooSoon))
     .typecase(18, (("expiry" | uint32)).as[FinalIncorrectCltvExpiry])
-    .typecase(19, (("amountMsat" | uint32)).as[FinalIncorrectHtlcAmount])
+    .typecase(19, (("amountMsat" | uint64)).as[FinalIncorrectHtlcAmount])
     .typecase(21, provide(ExpiryTooFar))
 }
