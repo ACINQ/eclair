@@ -33,34 +33,49 @@ class Register extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[ChannelRestored])
   context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
   context.system.eventStream.subscribe(self, classOf[ShortChannelIdAssigned])
+  context.system.eventStream.subscribe(self, classOf[ChannelSignatureSent])
+  context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
-  override def receive: Receive = main(Map.empty, Map.empty, Map.empty)
+  override def receive: Receive = main(Map.empty, Map.empty, Map.empty, Map.empty)
 
-  def main(channels: Map[BinaryData, ActorRef], shortIds: Map[ShortChannelId, BinaryData], channelsTo: Map[BinaryData, PublicKey]): Receive = {
+  def main(channels: Map[BinaryData, ActorRef], shortIds: Map[ShortChannelId, BinaryData], channelsTo: Map[BinaryData, PublicKey], localBalances: Map[BinaryData, ChannelBalance]): Receive = {
     case ChannelCreated(channel, _, remoteNodeId, _, temporaryChannelId) =>
       context.watch(channel)
-      context become main(channels + (temporaryChannelId -> channel), shortIds, channelsTo + (temporaryChannelId -> remoteNodeId))
+      context become main(channels + (temporaryChannelId -> channel), shortIds, channelsTo + (temporaryChannelId -> remoteNodeId), localBalances)
 
     case ChannelRestored(channel, _, remoteNodeId, _, channelId, _) =>
       context.watch(channel)
-      context become main(channels + (channelId -> channel), shortIds, channelsTo + (channelId -> remoteNodeId))
+      context become main(channels + (channelId -> channel), shortIds, channelsTo + (channelId -> remoteNodeId), localBalances)
 
     case ChannelIdAssigned(channel, remoteNodeId, temporaryChannelId, channelId) =>
-      context become main(channels + (channelId -> channel) - temporaryChannelId, shortIds, channelsTo + (channelId -> remoteNodeId) - temporaryChannelId)
+      context become main(channels + (channelId -> channel) - temporaryChannelId, shortIds, channelsTo + (channelId -> remoteNodeId) - temporaryChannelId, localBalances)
 
     case ShortChannelIdAssigned(_, channelId, shortChannelId) =>
-      context become main(channels, shortIds + (shortChannelId -> channelId), channelsTo)
+      context become main(channels, shortIds + (shortChannelId -> channelId), channelsTo, localBalances)
 
     case Terminated(actor) if channels.values.toSet.contains(actor) =>
-      val channelId = channels.find(_._2 == actor).get._1
-      val shortChannelId = shortIds.find(_._2 == channelId).map(_._1).getOrElse(ShortChannelId(0L))
-      context become main(channels - channelId, shortIds - shortChannelId, channelsTo - channelId)
+      val channelId = channels.collectFirst { case (id, channelActor) if channelActor == actor => id }.get
+      val shortChannelId = shortIds.collectFirst { case (shortId, id) if id == channelId => shortId } getOrElse ShortChannelId(0L)
+      context become main(channels - channelId, shortIds - shortChannelId, channelsTo - channelId, localBalances - channelId)
+
+    case ChannelSignatureSent(_, commitments) =>
+      val updatedBalance = commitments.channelId -> getBalances(commitments)
+      context become main(channels, shortIds, channelsTo, localBalances + updatedBalance)
+
+    case ChannelStateChanged(_, _, _, previousState, NORMAL, d: DATA_NORMAL) if previousState != NORMAL && d.buried =>
+      val updatedBalance = d.commitments.channelId -> getBalances(d.commitments)
+      context become main(channels, shortIds, channelsTo, localBalances + updatedBalance)
+
+    case ChannelStateChanged(_, _, _, NORMAL, currentState, hasCommitments: HasCommitments) if currentState != NORMAL =>
+      context become main(channels, shortIds, channelsTo, localBalances - hasCommitments.channelId)
 
     case 'channels => sender ! channels
 
     case 'shortIds => sender ! shortIds
 
     case 'channelsTo => sender ! channelsTo
+
+    case 'localBalances => sender ! localBalances
 
     case fwd@Forward(channelId, msg) =>
       channels.get(channelId) match {
@@ -74,7 +89,16 @@ class Register extends Actor with ActorLogging {
         case None => sender ! Failure(ForwardShortIdFailure(fwd))
       }
   }
+
+  private def getBalances(cs: Commitments) = {
+    val latestRemoteCommit = cs.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(cs.remoteCommit)
+    val canReceiveWithReserve = cs.localCommit.spec.toRemoteMsat - cs.localParams.channelReserveSatoshis * 1000L
+    val canSendWithReserve = latestRemoteCommit.spec.toRemoteMsat - cs.remoteParams.channelReserveSatoshis * 1000L
+    ChannelBalance(canSendWithReserve, canReceiveWithReserve)
+  }
 }
+
+case class ChannelBalance(canSendMsat: Long, canReceiveMsat: Long)
 
 object Register {
 
