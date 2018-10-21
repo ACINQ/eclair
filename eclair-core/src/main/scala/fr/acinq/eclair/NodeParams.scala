@@ -122,7 +122,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, publicAddress: Option[InetSocketAddress]): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, torAddressOpt: Option[InetSocketAddress]): NodeParams = {
 
     datadir.mkdirs()
 
@@ -164,7 +164,7 @@ object NodeParams {
       keyManager = keyManager,
       alias = config.getString("node-alias").take(32),
       color = Color(color.data(0), color.data(1), color.data(2)),
-      publicAddresses = publicAddress.map(List(_)).getOrElse(config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port")))),
+      publicAddresses = torAddressOpt.map(List(_)).getOrElse(config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port")))),
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),
       dustLimitSatoshis = dustLimitSatoshis,

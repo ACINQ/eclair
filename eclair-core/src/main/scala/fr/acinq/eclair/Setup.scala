@@ -77,14 +77,17 @@ class Setup(datadir: File,
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
   secureRandom.nextInt()
 
-  val torPublicAddress = initTor()
+  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, initTor())
 
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, torPublicAddress)
+  // always bind the server to localhost when using Tor
+  val serverBindingAddress = new InetSocketAddress(
+    if (config.getBoolean("tor.enabled")) "127.0.0.1" else config.getString("server.binding-ip"),
+    config.getInt("server.port"))
 
   // early checks
   DBCompatChecker.checkDBCompatibility(nodeParams)
   DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
-  PortChecker.checkAvailable(config.getString("server.binding-ip"), config.getInt("server.port"))
+  PortChecker.checkAvailable(serverBindingAddress)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
@@ -199,7 +202,7 @@ class Setup(datadir: File,
       router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
-      server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port")), Some(tcpBound)), "server", SupervisorStrategy.Restart))
+      server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.nodeId, router, register), "payment-initiator", SupervisorStrategy.Restart))
 
       kit = Kit(
@@ -282,7 +285,7 @@ class Setup(datadir: File,
 
         val torAddress = await(promiseTorAddress.future, 30 seconds, "tor did not respond after 30 seconds")
         logger.info(s"Tor address ${torAddress.toOnion}")
-        Option(torAddress.toInetSocketAddress)
+        Some(torAddress.toInetSocketAddress)
       } else {
         None
       }
