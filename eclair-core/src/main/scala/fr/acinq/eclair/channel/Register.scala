@@ -62,7 +62,7 @@ class Register extends Actor with ActorLogging {
       val updatedBalance = commitments.channelId -> getBalances(commitments)
       context become main(channels, shortIds, channelsTo, localBalances + updatedBalance)
 
-    case ChannelStateChanged(_, _, _, previousState, NORMAL, d: DATA_NORMAL) if previousState != NORMAL && d.buried =>
+    case ChannelStateChanged(_, _, _, previousState, NORMAL, d: DATA_NORMAL) if previousState != NORMAL =>
       val updatedBalance = d.commitments.channelId -> getBalances(d.commitments)
       context become main(channels, shortIds, channelsTo, localBalances + updatedBalance)
 
@@ -75,7 +75,7 @@ class Register extends Actor with ActorLogging {
 
     case 'channelsTo => sender ! channelsTo
 
-    case 'localBalances => sender ! localBalances
+    case 'localBalances => sender ! localBalances.values
 
     case fwd@Forward(channelId, msg) =>
       channels.get(channelId) match {
@@ -94,11 +94,11 @@ class Register extends Actor with ActorLogging {
     val latestRemoteCommit = cs.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(cs.remoteCommit)
     val canReceiveWithReserve = cs.localCommit.spec.toRemoteMsat - cs.localParams.channelReserveSatoshis * 1000L
     val canSendWithReserve = latestRemoteCommit.spec.toRemoteMsat - cs.remoteParams.channelReserveSatoshis * 1000L
-    ChannelBalance(canSendWithReserve, canReceiveWithReserve)
+    ChannelBalance(cs.channelId, canSendWithReserve, canReceiveWithReserve)
   }
 }
 
-case class ChannelBalance(canSendMsat: Long, canReceiveMsat: Long)
+case class ChannelBalance(channelId: BinaryData, canSendMsat: Long, canReceiveMsat: Long)
 
 object Register {
 

@@ -369,7 +369,7 @@ trait Service extends Logging {
                         case "channelstats" => completeRpcFuture(req.id, Future(nodeParams.auditDb.stats))
 
                         case "localbalances" =>
-                          val res = (register ? 'channelsTo).mapTo[Map[BinaryData, ChannelBalance]]
+                          val res = (register ? 'localBalances).mapTo[Iterable[ChannelBalance]]
                           completeRpcFuture(req.id, res)
 
                         // method name was not found
