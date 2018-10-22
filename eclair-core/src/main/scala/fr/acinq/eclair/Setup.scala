@@ -122,10 +122,10 @@ class Setup(datadir: File,
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
-      val addresses = overrideDefaults.hasPath("eclair.electrum") match {
+      val addresses = config.hasPath("eclair.electrum") match {
         case true =>
-          val host = overrideDefaults.getString("eclair.electrum.host")
-          val port = overrideDefaults.getInt("eclair.electrum.port")
+          val host = config.getString("eclair.electrum.host")
+          val port = config.getInt("eclair.electrum.port")
           val address = InetSocketAddress.createUnresolved(host, port)
           logger.info(s"override electrum default with server=$address")
           Set(address)
