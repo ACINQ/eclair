@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain.fee
 
 import akka.util.Timeout
-import gigahorse.support.asynchttpclient.Gigahorse
+import com.softwaremill.sttp.asynchttpclient.future.AsyncHttpClientFutureBackend
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.scalatest.FunSuite
@@ -31,7 +31,7 @@ import scala.concurrent.Await
 class EarnDotComFeeProviderSpec extends FunSuite with Logging {
 
   import EarnDotComFeeProvider._
-  import org.json4s.jackson.JsonMethods.parse
+  import org.json4s.native.JsonMethods.parse
 
   implicit val formats = DefaultFormats
 
@@ -70,7 +70,7 @@ class EarnDotComFeeProviderSpec extends FunSuite with Logging {
   test("make sure API hasn't changed") {
     import scala.concurrent.ExecutionContext.Implicits.global
     import scala.concurrent.duration._
-    implicit val httpClient = Gigahorse.http(Gigahorse.config)
+    implicit val sttpBackend  = AsyncHttpClientFutureBackend()
     implicit val timeout = Timeout(30 seconds)
     val provider = new EarnDotComFeeProvider()
     logger.info("earn.com livenet fees: " + Await.result(provider.getFeerates, 10 seconds))

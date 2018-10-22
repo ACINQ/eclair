@@ -19,6 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.ActorSystem
 import akka.pattern.pipe
 import akka.testkit.TestProbe
+import com.softwaremill.sttp.asynchttpclient.future.AsyncHttpClientFutureBackend
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction}
 import fr.acinq.eclair.blockchain.ValidateResult
@@ -27,7 +28,6 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, Exten
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{ShortChannelId, randomKey}
-import gigahorse.support.asynchttpclient.Gigahorse
 import org.scalatest.FunSuite
 
 import scala.concurrent.duration._
@@ -45,7 +45,7 @@ class AnnouncementsBatchValidationSpec extends FunSuite {
     import scala.concurrent.ExecutionContext.Implicits.global
 
     implicit val system = ActorSystem()
-    implicit val httpClient = Gigahorse.http(Gigahorse.config)
+    implicit val sttpBackend  = AsyncHttpClientFutureBackend()
     implicit val extendedBitcoinClient = new ExtendedBitcoinClient(new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332))
 
     val channels = for (i <- 0 until 50) yield {

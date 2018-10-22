@@ -23,7 +23,7 @@ import akka.actor.{Actor, ActorRef, FSM, Props, Terminated}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import org.json4s.JsonAST.{JObject, JString}
-import org.json4s.jackson.JsonMethods
+import org.json4s.native.JsonMethods
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._

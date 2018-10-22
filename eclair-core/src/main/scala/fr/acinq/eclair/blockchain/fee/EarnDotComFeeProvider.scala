@@ -16,30 +16,30 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import gigahorse.HttpClient
-import gigahorse.support.asynchttpclient.Gigahorse
+import com.softwaremill.sttp._
+import com.softwaremill.sttp.json4s._
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JArray, JInt, JValue}
-import org.json4s.jackson.JsonMethods
 
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
   * Created by PM on 16/11/2017.
   */
-class EarnDotComFeeProvider(implicit http: HttpClient, ec: ExecutionContext) extends FeeProvider {
+class EarnDotComFeeProvider(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
 
   import EarnDotComFeeProvider._
 
   implicit val formats = DefaultFormats
 
-  val uri = "https://bitcoinfees.earn.com/api/v1/fees/list"
+  val uri = uri"https://bitcoinfees.earn.com/api/v1/fees/list"
 
   override def getFeerates: Future[FeeratesPerKB] =
     for {
-      res <- http.run(Gigahorse.url(uri).get, Gigahorse.asString)
-      json = JsonMethods.parse(res).extract[JValue]
-      feeRanges = parseFeeRanges(json)
+      json <- sttp.get(uri)
+        .response(asJson[JValue])
+        .send()
+      feeRanges = parseFeeRanges(json.unsafeBody)
     } yield extractFeerates(feeRanges)
 }
 
