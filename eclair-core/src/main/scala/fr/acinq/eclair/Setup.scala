@@ -46,19 +46,17 @@ import scala.concurrent.duration._
 import scala.concurrent._
 
 /**
-  * Setup eclair from a datadir.
+  * Setup eclair from a data directory.
   *
   * Created by PM on 25/01/2016.
   *
-  * @param datadir  directory where eclair-core will write/read its data
-  * @param overrideDefaults
+  * @param datadir  directory where eclair-core will write/read its data.
+  * @param overrideDefaults use this parameter to programmatically override the node configuration .
   * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
-  * @param overrideElectrumServers_opt optional electrum server which, if set, supersedes the default list of electrum server.
   */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
-            seed_opt: Option[BinaryData] = None,
-            overrideElectrumServers_opt: Option[InetSocketAddress] = None)(implicit system: ActorSystem) extends Logging {
+            seed_opt: Option[BinaryData] = None)(implicit system: ActorSystem) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
@@ -124,9 +122,14 @@ class Setup(datadir: File,
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
-      val addresses = overrideElectrumServers_opt match {
-        case Some(address) => Set(address)
-        case None =>
+      val addresses = overrideDefaults.hasPath("eclair.electrum") match {
+        case true =>
+          val host = overrideDefaults.getString("eclair.electrum.host")
+          val port = overrideDefaults.getInt("eclair.electrum.port")
+          val address = InetSocketAddress.createUnresolved(host, port)
+          logger.info(s"override electrum default with server=$address")
+          Set(address)
+        case false =>
           val addressesFile = nodeParams.chainHash match {
             case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
             case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
