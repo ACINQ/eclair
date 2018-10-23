@@ -46,12 +46,12 @@ import scala.concurrent.duration._
 import scala.concurrent._
 
 /**
-  * Setup eclair from a datadir.
+  * Setup eclair from a data directory.
   *
   * Created by PM on 25/01/2016.
   *
-  * @param datadir  directory where eclair-core will write/read its data
-  * @param overrideDefaults
+  * @param datadir  directory where eclair-core will write/read its data.
+  * @param overrideDefaults use this parameter to programmatically override the node configuration .
   * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
   */
 class Setup(datadir: File,
@@ -122,13 +122,22 @@ class Setup(datadir: File,
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
-      val addressesFile = nodeParams.chainHash match {
-        case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
-        case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
-        case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
+      val addresses = config.hasPath("eclair.electrum") match {
+        case true =>
+          val host = config.getString("eclair.electrum.host")
+          val port = config.getInt("eclair.electrum.port")
+          val address = InetSocketAddress.createUnresolved(host, port)
+          logger.info(s"override electrum default with server=$address")
+          Set(address)
+        case false =>
+          val addressesFile = nodeParams.chainHash match {
+            case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
+            case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
+            case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
+          }
+          val stream = classOf[Setup].getResourceAsStream(addressesFile)
+          ElectrumClientPool.readServerAddresses(stream)
       }
-      val stream = classOf[Setup].getResourceAsStream(addressesFile)
-      val addresses = ElectrumClientPool.readServerAddresses(stream)
       val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
   }
