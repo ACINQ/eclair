@@ -23,21 +23,19 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL, _}
 import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
-import org.junit.runner.RunWith
-import org.scalatest.Tag
-import org.scalatest.junit.JUnitRunner
+import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration._
 
 /**
   * Created by PM on 05/07/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  type FixtureParam = Tuple4[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
+  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
-  override def withFixture(test: OneArgTest) = {
+  override def withFixture(test: OneArgTest): Outcome = {
     val setup = if (test.tags.contains("mainnet")) {
       init(TestConstants.Alice.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), TestConstants.Bob.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash))
     } else {
@@ -52,112 +50,102 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)
-    }
-    test((alice, alice2bob, bob2alice, alice2blockchain))
-  }
-
-  test("recv AcceptChannel") { case (alice, _, bob2alice, _) =>
-    within(30 seconds) {
-      bob2alice.expectMsgType[AcceptChannel]
-      bob2alice.forward(alice)
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+      withFixture(test.toNoArgTest(FixtureParam(alice, alice2bob, bob2alice, alice2blockchain)))
     }
   }
 
-  test("recv AcceptChannel (invalid max accepted htlcs)") { case (alice, alice2bob, bob2alice, _) =>
-    within(30 seconds) {
-      val accept = bob2alice.expectMsgType[AcceptChannel]
-      // spec says max = 483
-      val invalidMaxAcceptedHtlcs = 484
-      alice ! accept.copy(maxAcceptedHtlcs = invalidMaxAcceptedHtlcs)
-      val error = alice2bob.expectMsgType[Error]
-      assert(error === Error(accept.temporaryChannelId, InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).getMessage.getBytes("UTF-8")))
-      awaitCond(alice.stateName == CLOSED)
-    }
+  test("recv AcceptChannel") { f =>
+    import f._
+    bob2alice.expectMsgType[AcceptChannel]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
   }
 
-  test("recv AcceptChannel (invalid dust limit)", Tag("mainnet")) { case (alice, alice2bob, bob2alice, _) =>
-    within(30 seconds) {
-      val accept = bob2alice.expectMsgType[AcceptChannel]
-      // we don't want their dust limit to be below 546
-      val lowDustLimitSatoshis = 545
-      alice ! accept.copy(dustLimitSatoshis = lowDustLimitSatoshis)
-      val error = alice2bob.expectMsgType[Error]
-      assert(error === Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUSTLIMIT).getMessage.getBytes("UTF-8")))
-      awaitCond(alice.stateName == CLOSED)
-    }
+  test("recv AcceptChannel (invalid max accepted htlcs)") { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    // spec says max = 483
+    val invalidMaxAcceptedHtlcs = 484
+    alice ! accept.copy(maxAcceptedHtlcs = invalidMaxAcceptedHtlcs)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error === Error(accept.temporaryChannelId, InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).getMessage.getBytes("UTF-8")))
+    awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv AcceptChannel (to_self_delay too high)") { case (alice, alice2bob, bob2alice, _) =>
-    within(30 seconds) {
-      val accept = bob2alice.expectMsgType[AcceptChannel]
-      val delayTooHigh = 10000
-      alice ! accept.copy(toSelfDelay = delayTooHigh)
-      val error = alice2bob.expectMsgType[Error]
-      assert(error === Error(accept.temporaryChannelId, ToSelfDelayTooHigh(accept.temporaryChannelId, delayTooHigh, Alice.nodeParams.maxToLocalDelayBlocks).getMessage.getBytes("UTF-8")))
-      awaitCond(alice.stateName == CLOSED)
-    }
+  test("recv AcceptChannel (invalid dust limit)", Tag("mainnet")) { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    // we don't want their dust limit to be below 546
+    val lowDustLimitSatoshis = 545
+    alice ! accept.copy(dustLimitSatoshis = lowDustLimitSatoshis)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error === Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUSTLIMIT).getMessage.getBytes("UTF-8")))
+    awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv AcceptChannel (reserve too high)") { case (alice, alice2bob, bob2alice, _) =>
-    within(30 seconds) {
-      val accept = bob2alice.expectMsgType[AcceptChannel]
-      // 30% is huge, recommended ratio is 1%
-      val reserveTooHigh = (0.3 * TestConstants.fundingSatoshis).toLong
-      alice ! accept.copy(channelReserveSatoshis = reserveTooHigh)
-      val error = alice2bob.expectMsgType[Error]
-      assert(error === Error(accept.temporaryChannelId, ChannelReserveTooHigh(accept.temporaryChannelId, reserveTooHigh, 0.3,  0.05).getMessage.getBytes("UTF-8")))
-      awaitCond(alice.stateName == CLOSED)
-    }
+  test("recv AcceptChannel (to_self_delay too high)") { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    val delayTooHigh = 10000
+    alice ! accept.copy(toSelfDelay = delayTooHigh)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error === Error(accept.temporaryChannelId, ToSelfDelayTooHigh(accept.temporaryChannelId, delayTooHigh, Alice.nodeParams.maxToLocalDelayBlocks).getMessage.getBytes("UTF-8")))
+    awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv AcceptChannel (reserve below dust limit)") { case (alice, alice2bob, bob2alice, _) =>
-    within(30 seconds) {
-      val accept = bob2alice.expectMsgType[AcceptChannel]
-      val reserveTooSmall = accept.dustLimitSatoshis - 1
-      alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
-      val error = alice2bob.expectMsgType[Error]
-      assert(error === Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, reserveTooSmall).getMessage.getBytes("UTF-8")))
-      awaitCond(alice.stateName == CLOSED)
-    }
+  test("recv AcceptChannel (reserve too high)") { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    // 30% is huge, recommended ratio is 1%
+    val reserveTooHigh = (0.3 * TestConstants.fundingSatoshis).toLong
+    alice ! accept.copy(channelReserveSatoshis = reserveTooHigh)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error === Error(accept.temporaryChannelId, ChannelReserveTooHigh(accept.temporaryChannelId, reserveTooHigh, 0.3, 0.05).getMessage.getBytes("UTF-8")))
+    awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv AcceptChannel (reserve below our dust limit)") { case (alice, alice2bob, bob2alice, _) =>
-    within(30 seconds) {
-      val accept = bob2alice.expectMsgType[AcceptChannel]
-      val open = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].lastSent
-      val reserveTooSmall = open.dustLimitSatoshis - 1
-      alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
-      val error = alice2bob.expectMsgType[Error]
-      assert(error === Error(accept.temporaryChannelId, ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, reserveTooSmall, open.dustLimitSatoshis).getMessage.getBytes("UTF-8")))
-      awaitCond(alice.stateName == CLOSED)
-    }
+  test("recv AcceptChannel (reserve below dust limit)") { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    val reserveTooSmall = accept.dustLimitSatoshis - 1
+    alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error === Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, reserveTooSmall).getMessage.getBytes("UTF-8")))
+    awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv AcceptChannel (dust limit above our reserve)") { case (alice, alice2bob, bob2alice, _) =>
-    within(30 seconds) {
-      val accept = bob2alice.expectMsgType[AcceptChannel]
-      val open = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].lastSent
-      val dustTooBig = open.channelReserveSatoshis + 1
-      alice ! accept.copy(dustLimitSatoshis = dustTooBig)
-      val error = alice2bob.expectMsgType[Error]
-      assert(error === Error(accept.temporaryChannelId, DustLimitAboveOurChannelReserve(accept.temporaryChannelId, dustTooBig, open.channelReserveSatoshis).getMessage.getBytes("UTF-8")))
-      awaitCond(alice.stateName == CLOSED)
-    }
+  test("recv AcceptChannel (reserve below our dust limit)") { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    val open = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].lastSent
+    val reserveTooSmall = open.dustLimitSatoshis - 1
+    alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error === Error(accept.temporaryChannelId, ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, reserveTooSmall, open.dustLimitSatoshis).getMessage.getBytes("UTF-8")))
+    awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv Error") { case (bob, alice2bob, bob2alice, _) =>
-    within(30 seconds) {
-      bob ! Error("00" * 32, "oops".getBytes)
-      awaitCond(bob.stateName == CLOSED)
-    }
+  test("recv AcceptChannel (dust limit above our reserve)") { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    val open = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].lastSent
+    val dustTooBig = open.channelReserveSatoshis + 1
+    alice ! accept.copy(dustLimitSatoshis = dustTooBig)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error === Error(accept.temporaryChannelId, DustLimitAboveOurChannelReserve(accept.temporaryChannelId, dustTooBig, open.channelReserveSatoshis).getMessage.getBytes("UTF-8")))
+    awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, _) =>
-    within(30 seconds) {
-      alice ! CMD_CLOSE(None)
-      awaitCond(alice.stateName == CLOSED)
-    }
+  test("recv Error") { f =>
+    import f._
+    alice ! Error("00" * 32, "oops".getBytes)
+    awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv CMD_CLOSE") { f =>
+    import f._
+    alice ! CMD_CLOSE(None)
+    awaitCond(alice.stateName == CLOSED)
   }
 
 }

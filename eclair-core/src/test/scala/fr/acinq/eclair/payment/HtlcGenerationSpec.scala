@@ -25,9 +25,7 @@ import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{ChannelUpdate, LightningMessageCodecs, PerHopPayload}
 import fr.acinq.eclair.{ShortChannelId, TestConstants, nodeFee, randomBytes}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 import scodec.bits.BitVector
 
 import scala.util.Success
@@ -35,7 +33,7 @@ import scala.util.Success
 /**
   * Created by PM on 31/05/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class HtlcGenerationSpec extends FunSuite {
 
   test("compute fees") {
@@ -156,7 +154,7 @@ object HtlcGenerationSpec {
   val (priv_a, priv_b, priv_c, priv_d, priv_e) = (TestConstants.Alice.keyManager.nodeKey, TestConstants.Bob.keyManager.nodeKey, randomExtendedPrivateKey, randomExtendedPrivateKey, randomExtendedPrivateKey)
   val (a, b, c, d, e) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey)
   val sig = Crypto.encodeSignature(Crypto.sign(Crypto.sha256(BinaryData.empty), priv_a.privateKey)) :+ 1.toByte
-  val defaultChannelUpdate = ChannelUpdate(sig, Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0, "0000", 0, 42000, 0, 0)
+  val defaultChannelUpdate = ChannelUpdate(sig, Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0, 1, 0, 0, 42000, 0, 0, Some(500000000L))
   val channelUpdate_ab = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(1), cltvExpiryDelta = 4, feeBaseMsat = 642000, feeProportionalMillionths = 7)
   val channelUpdate_bc = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(2), cltvExpiryDelta = 5, feeBaseMsat = 153000, feeProportionalMillionths = 4)
   val channelUpdate_cd = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(3), cltvExpiryDelta = 10, feeBaseMsat = 60000, feeProportionalMillionths = 1)

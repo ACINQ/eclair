@@ -46,7 +46,7 @@ case object RequiredChannelFeatureMissing extends Perm { def message = "channel 
 case object UnknownNextPeer extends Perm { def message = "processing node does not know the next peer in the route" }
 case class AmountBelowMinimum(amountMsat: Long, update: ChannelUpdate) extends Update { def message = s"payment amount was below the minimum required by the channel" }
 case class FeeInsufficient(amountMsat: Long, update: ChannelUpdate) extends Update { def message = s"payment fee was below the minimum required by the channel" }
-case class ChannelDisabled(flags: BinaryData, update: ChannelUpdate) extends Update { def message = "channel is currently disabled" }
+case class ChannelDisabled(messageFlags: Byte, channelFlags: Byte, update: ChannelUpdate) extends Update { def message = "channel is currently disabled" }
 case class IncorrectCltvExpiry(expiry: Long, update: ChannelUpdate) extends Update { def message = "payment expiry doesn't match the value in the onion" }
 case object UnknownPaymentHash extends Perm { def message = "payment hash is unknown to the final node" }
 case object IncorrectPaymentAmount extends Perm { def message = "payment amount is incorrect" }
@@ -87,11 +87,11 @@ object FailureMessageCodecs {
     .typecase(UPDATE | 12, (("amountMsat" | uint64) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[FeeInsufficient])
     .typecase(UPDATE | 13, (("expiry" | uint32) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[IncorrectCltvExpiry])
     .typecase(UPDATE | 14, (("channelUpdate" | channelUpdateWithLengthCodec)).as[ExpiryTooSoon])
-    .typecase(UPDATE | 20, (("flags" | binarydata(2)) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
+    .typecase(UPDATE | 20, (("messageFlags" | byte) :: ("channelFlags" | byte) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
     .typecase(PERM | 15, provide(UnknownPaymentHash))
     .typecase(PERM | 16, provide(IncorrectPaymentAmount))
     .typecase(17, provide(FinalExpiryTooSoon))
     .typecase(18, (("expiry" | uint32)).as[FinalIncorrectCltvExpiry])
-    .typecase(19, (("amountMsat" | uint32)).as[FinalIncorrectHtlcAmount])
+    .typecase(19, (("amountMsat" | uint64)).as[FinalIncorrectHtlcAmount])
     .typecase(21, provide(ExpiryTooFar))
 }

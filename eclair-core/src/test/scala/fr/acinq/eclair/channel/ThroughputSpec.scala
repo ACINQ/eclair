@@ -28,14 +28,12 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.payment.Relayer
 import fr.acinq.eclair.wire.{Init, UpdateAddHtlc}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 import scala.util.Random
 
-@RunWith(classOf[JUnitRunner])
+
 class ThroughputSpec extends FunSuite {
   ignore("throughput") {
     implicit val system = ActorSystem()

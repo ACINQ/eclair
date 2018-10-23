@@ -18,16 +18,14 @@ package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, BinaryData, Block, Crypto, Script}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.util.Try
 
 /**
   * Created by PM on 27/01/2017.
   */
-@RunWith(classOf[JUnitRunner])
+
 class PackageSpec extends FunSuite {
 
   test("compute long channel id") {

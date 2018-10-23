@@ -17,13 +17,10 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.eclair.channel.Helpers.Funding
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 
-@RunWith(classOf[JUnitRunner])
 class HelpersSpec extends FunSuite {
 
   test("compute funding timeout") {

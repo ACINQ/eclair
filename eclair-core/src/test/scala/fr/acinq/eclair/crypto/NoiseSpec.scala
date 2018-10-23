@@ -18,12 +18,10 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.crypto.Noise._
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 import org.spongycastle.crypto.ec.CustomNamedCurves
 
-@RunWith(classOf[JUnitRunner])
+
 class NoiseSpec extends FunSuite {
 
   import Noise._

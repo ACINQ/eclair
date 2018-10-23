@@ -107,7 +107,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def addChannelUpdate(u: ChannelUpdate): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO channel_updates VALUES (?, ?, ?)")) { statement =>
       statement.setLong(1, u.shortChannelId.toLong)
-      statement.setBoolean(2, Announcements.isNode1(u.flags))
+      statement.setBoolean(2, Announcements.isNode1(u.channelFlags))
       statement.setBytes(3, channelUpdateCodec.encode(u).require.toByteArray)
       statement.executeUpdate()
     }
@@ -117,7 +117,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     using(sqlite.prepareStatement("UPDATE channel_updates SET data=? WHERE short_channel_id=? AND node_flag=?")) { statement =>
       statement.setBytes(1, channelUpdateCodec.encode(u).require.toByteArray)
       statement.setLong(2, u.shortChannelId.toLong)
-      statement.setBoolean(3, Announcements.isNode1(u.flags))
+      statement.setBoolean(3, Announcements.isNode1(u.channelFlags))
       statement.executeUpdate()
     }
   }

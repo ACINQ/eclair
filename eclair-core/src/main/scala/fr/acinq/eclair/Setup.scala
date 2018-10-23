@@ -101,7 +101,7 @@ class Setup(datadir: File,
         blocks = (json \ "blocks").extract[Long]
         headers = (json \ "headers").extract[Long]
         chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
-        bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
+        bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[Int])
         unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) =>
           values
             .filter(value => (value \ "spendable").extract[Boolean])
@@ -110,7 +110,7 @@ class Setup(datadir: File,
       } yield (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
       // blocking sanity checks
       val (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
-      assert(bitcoinVersion.startsWith("16"), "Eclair requires Bitcoin Core 0.16.0 or higher")
+      assert(bitcoinVersion >= 160300, "Eclair requires Bitcoin Core 0.16.3 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
         assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Make sure that all your UTXOS are segwit UTXOS and not p2pkh (check out our README for more details)")

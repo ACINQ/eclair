@@ -19,11 +19,9 @@ package fr.acinq.eclair.crypto
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{BinaryData, Block}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
-@RunWith(classOf[JUnitRunner])
+
 class LocalKeyManagerSpec extends FunSuite {
   test("generate the same node id from the same seed") {
     // if this test breaks it means that we will generate a different node id  from
