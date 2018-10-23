@@ -50,7 +50,9 @@ object Transactions {
 
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class HtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: BinaryData) extends TransactionWithInputInfo
-  case class HtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
+  case class HtlcTimeoutTx(input: InputInfo, tx: Transaction, paymentHash: BinaryData) extends TransactionWithInputInfo
+  case class HtlcTimeoutTxLegacy(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
+
   case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimP2WPKHOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
@@ -227,7 +229,7 @@ object Transactions {
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0x00000000L) :: Nil,
       txOut = TxOut(amount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey))) :: Nil,
-      lockTime = htlc.expiry))
+      lockTime = htlc.expiry), htlc.paymentHash)
   }
 
   def makeHtlcSuccessTx(commitTx: Transaction, outputsAlreadyUsed: Set[Int], localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, feeratePerKw: Long, htlc: UpdateAddHtlc): HtlcSuccessTx = {
@@ -501,6 +503,11 @@ object Transactions {
   def addSigs(htlcSuccessTx: HtlcSuccessTx, localSig: BinaryData, remoteSig: BinaryData, paymentPreimage: BinaryData): HtlcSuccessTx = {
     val witness = witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, htlcSuccessTx.input.redeemScript)
     htlcSuccessTx.copy(tx = htlcSuccessTx.tx.updateWitness(0, witness))
+  }
+
+  def addSigs(htlcTimeoutTx: HtlcTimeoutTxLegacy, localSig: BinaryData, remoteSig: BinaryData): HtlcTimeoutTxLegacy = {
+    val witness = witnessHtlcTimeout(localSig, remoteSig, htlcTimeoutTx.input.redeemScript)
+    htlcTimeoutTx.copy(tx = htlcTimeoutTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(htlcTimeoutTx: HtlcTimeoutTx, localSig: BinaryData, remoteSig: BinaryData): HtlcTimeoutTx = {

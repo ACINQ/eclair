@@ -16,13 +16,14 @@
 
 package fr.acinq.eclair.channel
 
-import akka.event.LoggingAdapter
+import akka.event.{EventStream, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.payment.{PaymentLostOnChain, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -359,7 +360,7 @@ object Helpers {
       * @param commitments our commitment data, which include payment preimages
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction)(implicit log: LoggingAdapter): LocalCommitPublished = {
+    def claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, eventStream: EventStream)(implicit log: LoggingAdapter): LocalCommitPublished = {
       import commitments._
       require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
 
@@ -370,55 +371,74 @@ object Helpers {
       // no need to use a high fee rate for delayed transactions (we are the only one who can spend them)
       val feeratePerKwDelayed = Globals.feeratesPerKw.get.blocks_6
 
+      def makeDelayedTx(parent: Transaction, description: String): Option[TransactionWithInputInfo] =
+        generateTx(description)(Try {
+          val claimDelayed = Transactions.makeClaimDelayedOutputTx(
+            parent,
+            Satoshi(localParams.dustLimitSatoshis),
+            localRevocationPubkey,
+            remoteParams.toSelfDelay,
+            localDelayedPubkey,
+            localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
+          val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelKeyPath), localPerCommitmentPoint)
+          Transactions.addSigs(claimDelayed, sig)
+        })
+
       // first we will claim our main output as soon as the delay is over
-      val mainDelayedTx = generateTx("main-delayed-output")(Try {
-        val claimDelayed = Transactions.makeClaimDelayedOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
-        val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelKeyPath), localPerCommitmentPoint)
-        Transactions.addSigs(claimDelayed, sig)
-      })
+      val mainDelayedTx = makeDelayedTx(tx, "main-delayed-output")
 
       // those are the preimages to existing received htlcs
-      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
+      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => sha256(u.paymentPreimage) -> u.paymentPreimage }.toMap
+      val inFlightHtlcs = commitments.localCommit.spec.htlcs.map(htlc => htlc.add.paymentHash -> htlc.add.amountMsat).toMap
+      var onChainHashes = Set.empty[BinaryData] // this is needed to collect hashes of payments which can be resolved on-chain
 
-      val htlcTxes = localCommit.publishableTxs.htlcTxsAndSigs.collect {
-        // incoming htlc for which we have the preimage: we spend it directly
-        case HtlcTxAndSigs(txinfo@HtlcSuccessTx(_, _, paymentHash), localSig, remoteSig) if preimages.exists(r => sha256(r) == paymentHash) =>
-          generateTx("htlc-success")(Try {
-            val preimage = preimages.find(r => sha256(r) == paymentHash).get
-            Transactions.addSigs(txinfo, localSig, remoteSig, preimage)
-          })
+      val successAndDelayedTxs = for {
+        HtlcTxAndSigs(txinfo: HtlcSuccessTx, localSig, remoteSig) <- localCommit.publishableTxs.htlcTxsAndSigs if preimages.contains(txinfo.paymentHash)
+        success <- generateTx("htlc-success")(Try { Transactions.addSigs(txinfo, localSig, remoteSig, preimages(txinfo.paymentHash)) })
+        delayed <- makeDelayedTx(txinfo.tx, "claim-htlc-success-delayed")
 
-        // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
+        _ = eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(inFlightHtlcs(txinfo.paymentHash)),
+          onChainAmount = delayed.tx.txOut.head.amount, txinfo.paymentHash, delayed.tx.txid, "claim-htlc-success-delayed", isDone = false))
+        _ = onChainHashes += txinfo.paymentHash
+      } yield (success.tx, delayed.tx)
 
-        // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-        case HtlcTxAndSigs(txinfo: HtlcTimeoutTx, localSig, remoteSig) =>
-          generateTx("htlc-timeout")(Try {
-            Transactions.addSigs(txinfo, localSig, remoteSig)
-          })
-      }.flatten
+      /**
+        * Earlier version of HtlcTimeoutTx did not contain a `paymentHash` field but now it is needed to easily link off-chain hash to on-chain txid,
+        * the problem is earlier versions of Eclair store HtlcTimeoutTx without hash in `localCommit.publishableTxs`, so to get around it
+        * `HtlcTimeoutTx` without hash is now gets deserialized as `HtlcTimeoutTxLegacy`.
+        * */
 
-      // all htlc output to us are delayed, so we need to claim them as soon as the delay is over
-      val htlcDelayedTxes = htlcTxes.flatMap {
-        txinfo: TransactionWithInputInfo =>
-          generateTx("claim-htlc-delayed")(Try {
-            val claimDelayed = Transactions.makeClaimDelayedOutputTx(
-              txinfo.tx,
-              Satoshi(localParams.dustLimitSatoshis),
-              localRevocationPubkey,
-              remoteParams.toSelfDelay,
-              localDelayedPubkey,
-              localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
-            val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelKeyPath), localPerCommitmentPoint)
-            Transactions.addSigs(claimDelayed, sig)
-          })
+      val timeoutAndDelayedTxsFormLegacy = for {
+        HtlcTxAndSigs(txinfo: HtlcTimeoutTxLegacy, localSig, remoteSig) <- localCommit.publishableTxs.htlcTxsAndSigs
+        timeoutFromLegacy <- generateTx("htlc-timeout-legacy")(Try { Transactions.addSigs(txinfo, localSig, remoteSig) })
+        delayedFromLegacy <- makeDelayedTx(txinfo.tx, "claim-htlc-timeout-delayed-legacy")
+      } yield (timeoutFromLegacy.tx, delayedFromLegacy.tx)
+
+      val timeoutAndDelayedTxs = for {
+        HtlcTxAndSigs(txinfo: HtlcTimeoutTx, localSig, remoteSig) <- localCommit.publishableTxs.htlcTxsAndSigs
+        timeout <- generateTx("htlc-timeout")(Try { Transactions.addSigs(txinfo, localSig, remoteSig) })
+        delayed <- makeDelayedTx(txinfo.tx, "claim-htlc-timeout-delayed")
+
+        _ = eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(inFlightHtlcs(txinfo.paymentHash)),
+          onChainAmount = delayed.tx.txOut.head.amount, txinfo.paymentHash, delayed.tx.txid, "claim-htlc-timeout-delayed", isDone = false))
+        _ = onChainHashes += txinfo.paymentHash
+      } yield (timeout.tx, delayed.tx)
+
+      val (timeoutTxsFromLegacy, timeoutDelayTxsFromLegacy) = timeoutAndDelayedTxsFormLegacy.unzip
+      val (successTxs, successDelayTxs) = successAndDelayedTxs.unzip
+      val (timeoutTxs, timeoutDelayTxs) = timeoutAndDelayedTxs.unzip
+
+      for ((paymentHash, amountMsat) <- inFlightHtlcs -- onChainHashes) {
+        // Inform listeners about payments which are too small for on-chain settlement
+        eventStream.publish(PaymentLostOnChain(MilliSatoshi(amountMsat), paymentHash))
       }
 
       LocalCommitPublished(
         commitTx = tx,
         claimMainDelayedOutputTx = mainDelayedTx.map(_.tx),
-        htlcSuccessTxs = htlcTxes.collect { case c: HtlcSuccessTx => c.tx },
-        htlcTimeoutTxs = htlcTxes.collect { case c: HtlcTimeoutTx => c.tx },
-        claimHtlcDelayedTxs = htlcDelayedTxes.map(_.tx),
+        htlcSuccessTxs = successTxs,
+        htlcTimeoutTxs = timeoutTxs ++ timeoutTxsFromLegacy,
+        claimHtlcDelayedTxs = successDelayTxs ++ timeoutDelayTxs ++ timeoutDelayTxsFromLegacy,
         irrevocablySpent = Map.empty)
     }
 
@@ -431,7 +451,7 @@ object Helpers {
       * @param tx           the remote commitment transaction that has just been published
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
+    def claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, eventStream: EventStream)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       import commitments.{commitInput, localParams, remoteParams}
       require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
       val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
@@ -446,18 +466,24 @@ object Helpers {
       val feeratePerKwHtlc = Globals.feeratesPerKw.get.blocks_2
 
       // those are the preimages to existing received htlcs
-      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
+      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => sha256(u.paymentPreimage) -> u.paymentPreimage }.toMap
+      val inFlightHtlcs = commitments.localCommit.spec.htlcs.map(htlc => htlc.add.paymentHash -> htlc.add.amountMsat).toMap
 
       // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
       var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
+      var onChainHashes = Set.empty[BinaryData] // this is needed to collect hashes of payments which can be resolved on-chain
       val txes = remoteCommit.spec.htlcs.collect {
         // incoming htlc for which we have the preimage: we spend it directly
-        case DirectedHtlc(OUT, add: UpdateAddHtlc) if preimages.exists(r => sha256(r) == add.paymentHash) => generateTx("claim-htlc-success")(Try {
-          val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
+        case DirectedHtlc(OUT, add: UpdateAddHtlc) if preimages.contains(add.paymentHash) => generateTx("claim-htlc-success")(Try {
           val txinfo = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, outputsAlreadyUsed, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
           outputsAlreadyUsed = outputsAlreadyUsed + txinfo.input.outPoint.index.toInt
           val sig = keyManager.sign(txinfo, keyManager.htlcPoint(localParams.channelKeyPath), remoteCommit.remotePerCommitmentPoint)
-          Transactions.addSigs(txinfo, sig, preimage)
+
+          eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(add.amountMsat),
+            onChainAmount = txinfo.tx.txOut.head.amount, add.paymentHash, txinfo.tx.txid, "claim-htlc-success", isDone = false))
+          onChainHashes += add.paymentHash
+
+          Transactions.addSigs(txinfo, sig, preimages(add.paymentHash))
         })
 
         // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
@@ -467,9 +493,19 @@ object Helpers {
           val txinfo = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, outputsAlreadyUsed, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
           outputsAlreadyUsed = outputsAlreadyUsed + txinfo.input.outPoint.index.toInt
           val sig = keyManager.sign(txinfo, keyManager.htlcPoint(localParams.channelKeyPath), remoteCommit.remotePerCommitmentPoint)
+
+          eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(add.amountMsat),
+            onChainAmount = txinfo.tx.txOut.head.amount, add.paymentHash, txinfo.tx.txid, "claim-htlc-timeout", isDone = false))
+          onChainHashes += add.paymentHash
+
           Transactions.addSigs(txinfo, sig)
         })
       }.toSeq.flatten
+
+      for ((paymentHash, amountMsat) <- inFlightHtlcs -- onChainHashes) {
+        // Inform listeners about payments which are too small for on-chain settlement
+        eventStream.publish(PaymentLostOnChain(MilliSatoshi(amountMsat), paymentHash))
+      }
 
       claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx).copy(
         claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },

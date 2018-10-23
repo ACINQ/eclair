@@ -315,7 +315,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, UpdateFulfillHtlc("00" * 32, 0, defaultPaymentHash))
 
     val paymentOK = sender.expectMsgType[PaymentSucceeded]
-    val PaymentSent(MilliSatoshi(request.amountMsat), fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
+    val PaymentSent(MilliSatoshi(request.amountMsat), fee, request.paymentHash, paymentOK.paymentPreimage, _, _, _) = eventListener.expectMsgType[PaymentSent]
     assert(fee > MilliSatoshi(0))
     assert(fee === MilliSatoshi(paymentOK.amountMsat - request.amountMsat))
   }

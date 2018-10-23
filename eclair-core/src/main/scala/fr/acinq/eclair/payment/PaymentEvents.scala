@@ -27,8 +27,12 @@ sealed trait PaymentEvent {
   val paymentHash: BinaryData
 }
 
-case class PaymentSent(amount: MilliSatoshi, feesPaid: MilliSatoshi, paymentHash: BinaryData, paymentPreimage: BinaryData, toChannelId: BinaryData, timestamp: Long = Platform.currentTime) extends PaymentEvent
+case class PaymentSent(amount: MilliSatoshi, feesPaid: MilliSatoshi, paymentHash: BinaryData, paymentPreimage: BinaryData, toChannelId: BinaryData, timestamp: Long = Platform.currentTime, tag: String = "PaymentSent") extends PaymentEvent
 
-case class PaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: BinaryData, fromChannelId: BinaryData, toChannelId: BinaryData, timestamp: Long = Platform.currentTime) extends PaymentEvent
+case class PaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: BinaryData, fromChannelId: BinaryData, toChannelId: BinaryData, timestamp: Long = Platform.currentTime, tag: String = "PaymentRelayed") extends PaymentEvent
 
-case class PaymentReceived(amount: MilliSatoshi, paymentHash: BinaryData, fromChannelId: BinaryData, timestamp: Long = Platform.currentTime) extends PaymentEvent
+case class PaymentReceived(amount: MilliSatoshi, paymentHash: BinaryData, fromChannelId: BinaryData, timestamp: Long = Platform.currentTime, tag: String = "PaymentReceived") extends PaymentEvent
+
+case class PaymentSettlingOnChain(offChainAmount: MilliSatoshi, onChainAmount: MilliSatoshi, paymentHash: BinaryData, txid: BinaryData, refundType: String, isDone: Boolean, timestamp: Long = Platform.currentTime, tag: String = "PaymentSettlingOnChain") extends PaymentEvent
+
+case class PaymentLostOnChain(amount: MilliSatoshi, paymentHash: BinaryData, timestamp: Long = Platform.currentTime, tag: String = "PaymentLostOnChain") extends PaymentEvent
