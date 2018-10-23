@@ -59,6 +59,14 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: BinaryData) {
 
+
+  /**
+    * This is needed to:
+    * - check if any timed out HTLCs are present.
+    * - update block delay for HTLCs which are still in-flight.
+    * In both of these cases duplicates are not required so they are filtered out.
+    * @return a set of in-flight outgoing HTLCs without IN/OUT duplicates
+    */
   def pendingOutgoingHtlcs: Set[DirectedHtlc] = {
     val nextRemoteCommitHtlcs = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(_.direction == IN)).getOrElse(Set.empty)
     val allHtlcs = localCommit.spec.htlcs.filter(_.direction == OUT) ++ remoteCommit.spec.htlcs.filter(_.direction == IN) ++ nextRemoteCommitHtlcs

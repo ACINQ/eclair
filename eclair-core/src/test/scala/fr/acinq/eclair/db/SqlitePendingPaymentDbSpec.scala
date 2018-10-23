@@ -111,9 +111,11 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
     val db = new SqlitePendingPaymentDb(sqlite)
 
     val msg = PaymentSettlingOnChain(MilliSatoshi(100000000L), MilliSatoshi(90000000L), paymentHash1, txid1, "claim-htlc-delayed", isDone = false)
+    // Refunding transaction is unconfirmed yet
     db.addSettlingOnChain(msg)
     assert(db.getSettlingOnChain(paymentHash1).contains(msg))
 
+    // Refunding transaction is confirmed, we simply insert another record with `isDone = true` instead of updating an old one
     db.addSettlingOnChain(msg.copy(isDone = true))
     assert(db.getSettlingOnChain(paymentHash1).contains(msg.copy(isDone = true)))
     assert(db.getSettlingOnChain(txid1).contains(msg.copy(isDone = true)))

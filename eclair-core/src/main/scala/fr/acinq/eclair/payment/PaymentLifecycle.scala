@@ -62,6 +62,16 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
         stop(FSM.Normal)
       } else {
         register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
+
+        /**
+          * once payment is accepted it gets saved in PendingPaymentDb with both `delay, added = currentHeight` such that `delay - added = 0`, later an actual delay gets updated with each new block if payment stays in-flight for too long (see Channel)
+          * having this data we can later make two types of queries to `PendingPaymentDb`:
+          * 1. `riskInfo` to find out whether past payments to a given nodeId were causing any substantial delays.
+          * 2. `listBadPeers` to find out if any of our peers are responsible for payment delays.
+          *     Peer is considered responsible when delay in blocks gets past a point where peer should have failed a payment
+                (by force-closing an outgoing channel) but did not, this is also the reason direct payments to peer are omitted here via `if (hops.size > 1)`
+                since it is a special case and any peer would be considered bad (see `SqlitePendingPaymentDb.listBadPeers`).
+          */
         if (hops.size > 1) nodeParams.pendingPaymentDb.add(c.paymentHash, firstHop.nextNodeId, c.targetNodeId, firstHop.lastUpdate.cltvExpiryDelta, currentHeight, currentHeight, cmd.expiry)
         goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
       }

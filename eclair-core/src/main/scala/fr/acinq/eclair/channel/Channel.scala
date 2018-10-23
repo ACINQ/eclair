@@ -1294,12 +1294,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
       goto(SYNCING) sending channelReestablish
 
-    case Event(c@CurrentBlockCount(count), d: HasCommitments) =>
+    case Event(c: CurrentBlockCount, d: HasCommitments) =>
       // note: this can only happen if state is NORMAL or SHUTDOWN
       // -> in NEGOTIATING there are no more htlcs
       // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
-      d.commitments.pendingOutgoingHtlcs.foreach(htlc => nodeParams.pendingPaymentDb.updateDelay(htlc.add.paymentHash, d.commitments.remoteParams.nodeId, count))
-      if (d.commitments.hasTimedoutOutgoingHtlcs(count)) handleLocalError(HtlcTimedout(d.channelId), d, Some(c)) else stay
+      updateHtlcDelaysCheckTimedOut(c, d)
 
     case Event(CMD_UPDATE_RELAY_FEE(feeBaseMsat, feeProportionalMillionths), d: DATA_NORMAL) =>
       log.info(s"updating relay fees: prevFeeBaseMsat={} nextFeeBaseMsat={} prevFeeProportionalMillionths={} nextFeeProportionalMillionths={}", d.channelUpdate.feeBaseMsat, feeBaseMsat, d.channelUpdate.feeProportionalMillionths, feeProportionalMillionths)
@@ -1423,9 +1422,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         goto(NEGOTIATING) using d.copy(closingTxProposed = closingTxProposed1) sending d.localShutdown
       }
 
-    case Event(c@CurrentBlockCount(count), d: HasCommitments) =>
-      d.commitments.pendingOutgoingHtlcs.foreach(htlc => nodeParams.pendingPaymentDb.updateDelay(htlc.add.paymentHash, d.commitments.remoteParams.nodeId, count))
-      if (d.commitments.hasTimedoutOutgoingHtlcs(count)) handleLocalError(HtlcTimedout(d.channelId), d, Some(c)) else stay
+    case Event(c: CurrentBlockCount, d: HasCommitments) => updateHtlcDelaysCheckTimedOut(c, d)
 
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK | BITCOIN_FUNDING_DEEPLYBURIED, _, _), _) => stay
@@ -1943,6 +1940,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     nodeParams.channelsDb.addOrUpdateChannel(d)
     context.system.eventStream.publish(ChannelPersisted(self, remoteNodeId, d.channelId, d))
     d
+  }
+
+  def updateHtlcDelaysCheckTimedOut(c: CurrentBlockCount, d: HasCommitments): State = {
+    // when sending a payment it gets recorded in PendingPaymentDb with `delay` = "chain height at that time" (see PaymentLifecycle)
+    // if another block arrives while payment is still in-flight then we update it's `delay` here and thus we obtain an exact delay in blocks taken by each payment
+    d.commitments.pendingOutgoingHtlcs.foreach(htlc => nodeParams.pendingPaymentDb.updateDelay(htlc.add.paymentHash, d.commitments.remoteParams.nodeId, c.blockCount))
+    if (d.commitments.hasTimedoutOutgoingHtlcs(c.blockCount)) handleLocalError(HtlcTimedout(d.channelId), d, Some(c)) else stay
   }
 
   implicit def state2mystate(state: FSM.State[fr.acinq.eclair.channel.State, Data]): MyState = MyState(state)

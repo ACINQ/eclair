@@ -46,4 +46,15 @@ trait PendingPaymentDb {
 
 }
 
+/**
+  * RiskInfo returns an object with the following fields:
+  * - `total`: total number of outgoing payments since a given block height
+  * - `mean`: average block delay for all outgoing payments since a given block height
+  * - `sdTimes`: standard deviation * provided_multiplier for all outgoing payments since a given block height
+  * - `delays`: a list of delayed payments for a given payee since a given block height
+  * - `adjusted`: a list of delayed payments for a given payee since a given block height which are beyond `mean` + `sdTimes` value
+
+  * If a `total` value is small we can just look at `delays` to decide if payee is risky.
+  * If `total` value is large we better look at `adjusted` since it catches outliers which have a long payment delays compared to all other delays.
+  */
 case class RiskInfo(targetNodeId: PublicKey, sinceBlockHeight: Long, total: Long, mean: Double, sdTimes: Double, delays: Seq[Long], adjusted: Seq[Long])

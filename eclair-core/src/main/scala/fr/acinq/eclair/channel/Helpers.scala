@@ -406,13 +406,19 @@ object Helpers {
         _ = eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(inFlightHtlcs(txinfo.paymentHash)),
           onChainAmount = delayed.tx.txOut.head.amount, txinfo.paymentHash, delayed.tx.txid, "claim-htlc-success-delayed", isDone = false))
         _ = onChainHashes += txinfo.paymentHash
-      } yield success.tx -> delayed.tx
+      } yield (success.tx, delayed.tx)
+
+      /**
+        * Earlier version of HtlcTimeoutTx did not contain a `paymentHash` field but now it is needed to easily link off-chain hash to on-chain txid,
+        * the problem is earlier versions of Eclair store HtlcTimeoutTx without hash in `localCommit.publishableTxs`, so to get around it
+        * `HtlcTimeoutTx` without hash is now gets deserialized as `HtlcTimeoutTxLegacy`.
+        * */
 
       val timeoutAndDelayedTxsFormLegacy = for {
         HtlcTxAndSigs(txinfo: HtlcTimeoutTxLegacy, localSig, remoteSig) <- localCommit.publishableTxs.htlcTxsAndSigs
         timeoutFromLegacy <- generateTx("htlc-timeout-legacy")(Try { Transactions.addSigs(txinfo, localSig, remoteSig) })
         delayedFromLegacy <- makeDelayedTx(txinfo.tx, "claim-htlc-timeout-delayed-legacy")
-      } yield timeoutFromLegacy.tx -> delayedFromLegacy.tx
+      } yield (timeoutFromLegacy.tx, delayedFromLegacy.tx)
 
       val timeoutAndDelayedTxs = for {
         HtlcTxAndSigs(txinfo: HtlcTimeoutTx, localSig, remoteSig) <- localCommit.publishableTxs.htlcTxsAndSigs
@@ -421,7 +427,7 @@ object Helpers {
         _ = eventStream.publish(PaymentSettlingOnChain(offChainAmount = MilliSatoshi(inFlightHtlcs(txinfo.paymentHash)),
           onChainAmount = delayed.tx.txOut.head.amount, txinfo.paymentHash, delayed.tx.txid, "claim-htlc-timeout-delayed", isDone = false))
         _ = onChainHashes += txinfo.paymentHash
-      } yield timeout.tx -> delayed.tx
+      } yield (timeout.tx, delayed.tx)
 
       val (timeoutTxsFromLegacy, timeoutDelayTxsFromLegacy) = timeoutAndDelayedTxsFormLegacy.unzip
       val (successTxs, successDelayTxs) = successAndDelayedTxs.unzip

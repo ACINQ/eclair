@@ -50,6 +50,7 @@ object Transactions {
 
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class HtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: BinaryData) extends TransactionWithInputInfo
+  // HtlcTimeoutTxLegacy does not contain a `paymentHash` and is an earlier version of HtlcTimeoutTx (see `Helpers.claimCurrentLocalCommitTxOutputs`)
   case class HtlcTimeoutTx(input: InputInfo, tx: Transaction, paymentHash: BinaryData) extends TransactionWithInputInfo
   case class HtlcTimeoutTxLegacy(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
 

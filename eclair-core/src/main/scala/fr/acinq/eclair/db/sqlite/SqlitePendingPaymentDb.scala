@@ -131,6 +131,7 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
 
 
   override def addSettlingOnChain(paymentSettlingOnChain: PaymentSettlingOnChain): Unit = {
+    // Multiple records with a same paymentHash are allowed since we may have competing commits published on-chain with each of them containing a same off-chain payment
     using(sqlite.prepareStatement("INSERT INTO incoming_settling_on_chain VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, paymentSettlingOnChain.paymentHash)
       statement.setBytes(2, paymentSettlingOnChain.txid)
@@ -153,7 +154,7 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
   }
 
   override def getSettlingOnChain(paymentHashOrTxid: BinaryData): Option[PaymentSettlingOnChain] = {
-    // We may have multiple double-spends for the same payment_hash but only one of them can end up on chain so we order by is_done = 1 first
+    // We may have multiple double-spends for the same payment_hash but only one of them can end up confirmed on chain so we order by is_done = 1 first
     using(sqlite.prepareStatement("SELECT * FROM incoming_settling_on_chain WHERE payment_hash = ? OR tx_id=? ORDER BY is_done DESC")) { statement =>
       statement.setBytes(1, paymentHashOrTxid)
       statement.setBytes(2, paymentHashOrTxid)
