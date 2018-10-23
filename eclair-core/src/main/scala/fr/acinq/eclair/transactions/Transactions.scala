@@ -50,7 +50,9 @@ object Transactions {
 
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class HtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: BinaryData) extends TransactionWithInputInfo
-  case class HtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
+  case class HtlcTimeoutTx(input: InputInfo, tx: Transaction, paymentHash: BinaryData) extends TransactionWithInputInfo
+  case class HtlcTimeoutTxLegacy(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
+
   case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimP2WPKHOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
@@ -227,7 +229,7 @@ object Transactions {
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0x00000000L) :: Nil,
       txOut = TxOut(amount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey))) :: Nil,
-      lockTime = htlc.cltvExpiry))
+      lockTime = htlc.cltvExpiry), htlc.paymentHash)
   }
 
   def makeHtlcSuccessTx(commitTx: Transaction, outputsAlreadyUsed: Set[Int], localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, feeratePerKw: Long, htlc: UpdateAddHtlc): HtlcSuccessTx = {
@@ -281,7 +283,7 @@ object Transactions {
       throw AmountBelowDustLimit
     }
 
-    val tx1 = tx.copy(txOut = tx.txOut(0).copy(amount = amount) :: Nil)
+    val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
     ClaimHtlcSuccessTx(input, tx1)
   }
 
@@ -306,7 +308,7 @@ object Transactions {
       throw AmountBelowDustLimit
     }
 
-    val tx1 = tx.copy(txOut = tx.txOut(0).copy(amount = amount) :: Nil)
+    val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
     ClaimHtlcTimeoutTx(input, tx1)
   }
 
@@ -332,7 +334,7 @@ object Transactions {
       throw AmountBelowDustLimit
     }
 
-    val tx1 = tx.copy(txOut = tx.txOut(0).copy(amount = amount) :: Nil)
+    val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
     ClaimP2WPKHOutputTx(input, tx1)
   }
 
@@ -358,7 +360,7 @@ object Transactions {
       throw AmountBelowDustLimit
     }
 
-    val tx1 = tx.copy(txOut = tx.txOut(0).copy(amount = amount) :: Nil)
+    val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
     ClaimDelayedOutputTx(input, tx1)
   }
 
@@ -384,7 +386,7 @@ object Transactions {
       throw AmountBelowDustLimit
     }
 
-    val tx1 = tx.copy(txOut = tx.txOut(0).copy(amount = amount) :: Nil)
+    val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
     ClaimDelayedOutputPenaltyTx(input, tx1)
   }
 
@@ -410,7 +412,7 @@ object Transactions {
       throw AmountBelowDustLimit
     }
 
-    val tx1 = tx.copy(txOut = tx.txOut(0).copy(amount = amount) :: Nil)
+    val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
     MainPenaltyTx(input, tx1)
   }
 
@@ -438,7 +440,7 @@ object Transactions {
       throw AmountBelowDustLimit
     }
 
-    val tx1 = tx.copy(txOut = tx.txOut(0).copy(amount = amount) :: Nil)
+    val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
     HtlcPenaltyTx(input, tx1)
   }
 
@@ -465,7 +467,7 @@ object Transactions {
   def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: BinaryData, outputsAlreadyUsed: Set[Int], amount_opt: Option[Satoshi]): Int = {
     val outputIndex = tx.txOut
       .zipWithIndex
-      .indexWhere { case (txOut, index) => amount_opt.map(_ == txOut.amount).getOrElse(true) && txOut.publicKeyScript == pubkeyScript && !outputsAlreadyUsed.contains(index)} // it's not enough to only resolve on pubkeyScript because we may have duplicates
+      .indexWhere { case (txOut, index) => amount_opt.forall(_ == txOut.amount) && txOut.publicKeyScript == pubkeyScript && !outputsAlreadyUsed.contains(index)} // it's not enough to only resolve on pubkeyScript because we may have duplicates
     if (outputIndex >= 0) {
       outputIndex
     } else {
@@ -501,6 +503,11 @@ object Transactions {
   def addSigs(htlcSuccessTx: HtlcSuccessTx, localSig: BinaryData, remoteSig: BinaryData, paymentPreimage: BinaryData): HtlcSuccessTx = {
     val witness = witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, htlcSuccessTx.input.redeemScript)
     htlcSuccessTx.copy(tx = htlcSuccessTx.tx.updateWitness(0, witness))
+  }
+
+  def addSigs(htlcTimeoutTx: HtlcTimeoutTxLegacy, localSig: BinaryData, remoteSig: BinaryData): HtlcTimeoutTxLegacy = {
+    val witness = witnessHtlcTimeout(localSig, remoteSig, htlcTimeoutTx.input.redeemScript)
+    htlcTimeoutTx.copy(tx = htlcTimeoutTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(htlcTimeoutTx: HtlcTimeoutTx, localSig: BinaryData, remoteSig: BinaryData): HtlcTimeoutTx = {
