@@ -52,8 +52,8 @@ class SqlitePendingPaymentDb(sqlite: Connection) extends PendingPaymentDb {
     // lost_on_chain(payment_hash) index is already there because it's unique
   }
 
-  override def add(paymentHash: BinaryData, peerNodeId: PublicKey, targetNodeId: PublicKey,
-                   peerCltvDelta: Long, added: Long, delay: Long, expiry: Long): Unit = {
+  override def addPendingPayment(paymentHash: BinaryData, peerNodeId: PublicKey, targetNodeId: PublicKey,
+                                 peerCltvDelta: Long, added: Long, delay: Long, expiry: Long): Unit = {
 
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO pending VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, paymentHash)

@@ -24,8 +24,8 @@ import fr.acinq.eclair.payment.{PaymentLostOnChain, PaymentSettlingOnChain}
   * Created by anton on 12.09.18.
   */
 trait PendingPaymentDb {
-  def add(paymentHash: BinaryData, peerNodeId: PublicKey, targetNodeId: PublicKey,
-          peerCltvDelta: Long, added: Long, delay: Long, expiry: Long)
+  def addPendingPayment(paymentHash: BinaryData, peerNodeId: PublicKey, targetNodeId: PublicKey,
+                        peerCltvDelta: Long, added: Long, delay: Long, expiry: Long)
 
   def updateDelay(paymentHash: BinaryData, peerNodeId: PublicKey, delay: Long)
 

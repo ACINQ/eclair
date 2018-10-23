@@ -50,8 +50,8 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
     val sqlite = inmem
     val db = new SqlitePendingPaymentDb(sqlite)
 
-    db.add(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
-    db.add(paymentHash2, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.addPendingPayment(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.addPendingPayment(paymentHash2, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
     db.updateDelay(paymentHash1, peerNodeId, delay = 1840)
     db.updateDelay(paymentHash2, peerNodeId, delay = 1740)
 
@@ -64,8 +64,8 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
     val sqlite = inmem
     val db = new SqlitePendingPaymentDb(sqlite)
 
-    db.add(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1540, expiry = 1900)
-    db.add(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1540, delay = 1740, expiry = 2000)
+    db.addPendingPayment(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1540, expiry = 1900)
+    db.addPendingPayment(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1540, delay = 1740, expiry = 2000)
     assert(db.listDelays(targetNodeId1, 1420) == Seq(100))
 
     db.updateDelay(paymentHash2, peerNodeId, delay = 1440)
@@ -77,8 +77,8 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
     val sqlite = inmem
     val db = new SqlitePendingPaymentDb(sqlite)
 
-    db.add(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
-    db.add(paymentHash2, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.addPendingPayment(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.addPendingPayment(paymentHash2, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
     db.updateDelay(paymentHash1, peerNodeId, delay = 1840)
     db.updateDelay(paymentHash2, peerNodeId, delay = 1840)
 
@@ -89,12 +89,12 @@ class SqlitePendingPaymentDbSpec extends FunSuite {
     val sqlite = inmem
     val db = new SqlitePendingPaymentDb(sqlite)
 
-    db.add(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
-    db.add(paymentHash2, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
-    db.add(paymentHash3, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
-    db.add(paymentHash4, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
-    db.add(paymentHash5, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
-    db.add(paymentHash6, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.addPendingPayment(paymentHash1, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.addPendingPayment(paymentHash2, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.addPendingPayment(paymentHash3, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.addPendingPayment(paymentHash4, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.addPendingPayment(paymentHash5, peerNodeId, targetNodeId1, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
+    db.addPendingPayment(paymentHash6, peerNodeId, targetNodeId2, peerCltvDelta = 144, added = 1440, delay = 1440, expiry = 1900)
     db.updateDelay(paymentHash1, peerNodeId, delay = 1452) // an outlier
     db.updateDelay(paymentHash2, peerNodeId, delay = 1443)
     db.updateDelay(paymentHash3, peerNodeId, delay = 1444)

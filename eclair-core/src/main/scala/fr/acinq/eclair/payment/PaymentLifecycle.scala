@@ -72,7 +72,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
                 (by force-closing an outgoing channel) but did not, this is also the reason direct payments to peer are omitted here via `if (hops.size > 1)`
                 since it is a special case and any peer would be considered bad (see `SqlitePendingPaymentDb.listBadPeers`).
           */
-        if (hops.size > 1) nodeParams.pendingPaymentDb.add(c.paymentHash, firstHop.nextNodeId, c.targetNodeId, firstHop.lastUpdate.cltvExpiryDelta, currentHeight, currentHeight, cmd.expiry)
+        if (hops.size > 1) nodeParams.pendingPaymentDb.addPendingPayment(c.paymentHash, firstHop.nextNodeId, c.targetNodeId, firstHop.lastUpdate.cltvExpiryDelta, currentHeight, currentHeight, cmd.expiry)
         goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
       }
 
