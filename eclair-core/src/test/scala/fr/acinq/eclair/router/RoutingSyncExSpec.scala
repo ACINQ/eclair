@@ -6,15 +6,12 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.wire._
-import org.junit.runner.RunWith
 import org.scalatest.FunSuiteLike
-import org.scalatest.junit.JUnitRunner
 
 import scala.collection.immutable.TreeMap
 import scala.concurrent.duration._
 
 
-@RunWith(classOf[JUnitRunner])
 class RoutingSyncExSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
   import RoutingSyncSpec.makeFakeRoutingInfo
 

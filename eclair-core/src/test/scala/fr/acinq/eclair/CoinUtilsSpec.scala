@@ -17,11 +17,9 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.{Btc, MilliBtc, MilliSatoshi, Satoshi}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
-@RunWith(classOf[JUnitRunner])
+
 class CoinUtilsSpec  extends FunSuite {
 
   test("Convert string amount to the correct BtcAmount") {

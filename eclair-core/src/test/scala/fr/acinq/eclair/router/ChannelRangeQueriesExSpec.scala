@@ -2,18 +2,13 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.router.ChannelRangeQueriesSpec.shortChannelIds
-import fr.acinq.eclair.wire.{ReplyChannelRange, ReplyChannelRangeEx}
-import org.junit.runner.RunWith
+import fr.acinq.eclair.wire.ReplyChannelRangeEx
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.collection.immutable.SortedMap
 import scala.util.Random
 
-@RunWith(classOf[JUnitRunner])
 class ChannelRangeQueriesExSpec extends FunSuite {
-  import ChannelRangeQueriesEx._
   val random = new Random()
   val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds
   val timestamps = shortChannelIds.map(id => id -> random.nextInt(400000).toLong).toMap

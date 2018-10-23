@@ -28,14 +28,11 @@ import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, TxCoordinates}
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, Outcome}
 
 import scala.collection.{SortedSet, immutable}
 import scala.concurrent.duration._
 
-@RunWith(classOf[JUnitRunner])
 class PruningSpec extends TestkitBaseClass with BeforeAndAfterAll {
   import PruningSpec._
 

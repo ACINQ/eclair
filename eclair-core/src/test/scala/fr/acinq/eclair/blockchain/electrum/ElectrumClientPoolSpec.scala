@@ -21,14 +21,12 @@ import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import grizzled.slf4j.Logging
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.concurrent.duration._
 import scala.util.Random
 
-@RunWith(classOf[JUnitRunner])
+
 class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with Logging with BeforeAndAfterAll {
   var router: ActorRef = _
   val probe = TestProbe()

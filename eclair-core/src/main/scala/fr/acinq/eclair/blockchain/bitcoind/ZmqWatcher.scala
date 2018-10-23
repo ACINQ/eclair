@@ -190,7 +190,6 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
         import scala.concurrent.duration._
         after(3 seconds, context.system.scheduler)(Future.successful({})).map(x => publish(tx, isRetry = true))
-      case t: Throwable if t.getMessage.contains("(code: -27)") => () // "transaction already in block chain (code: -27)" ignore error
       case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=$tx")
     }
   }

@@ -23,13 +23,11 @@ import fr.acinq.eclair.channel.NetworkFeePaid
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.{randomBytes, randomKey}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.compat.Platform
 
-@RunWith(classOf[JUnitRunner])
+
 class SqliteAuditDbSpec extends FunSuite {
 
   def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
@@ -59,7 +57,7 @@ class SqliteAuditDbSpec extends FunSuite {
     db.add(e6)
 
     assert(db.listSent(from = 0L, to = Long.MaxValue).toSet === Set(e1, e5, e6))
-    assert(db.listSent(from = 100000L, to = Platform.currentTime).toList === List(e1))
+    assert(db.listSent(from = 100000L, to = Platform.currentTime + 1).toList === List(e1))
     assert(db.listReceived(from = 0L, to = Long.MaxValue).toList === List(e2))
     assert(db.listRelayed(from = 0L, to = Long.MaxValue).toList === List(e3))
     assert(db.listNetworkFees(from = 0L, to = Long.MaxValue).size === 1)

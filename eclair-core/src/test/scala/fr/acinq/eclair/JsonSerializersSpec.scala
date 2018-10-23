@@ -8,15 +8,14 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.ChannelStateSpec
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{NodeAddress, UpdateAddHtlc, UpdateFailHtlc}
-import org.junit.runner.RunWith
+import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 import upickle.default.write
 
 import scala.util.Random
 
-@RunWith(classOf[JUnitRunner])
-class JsonSerializersSpec extends FunSuite {
+class JsonSerializersSpec extends FunSuite with Logging {
   import JsonSerializers._
 
   test("deserialize Map[OutPoint, BinaryData]") {
@@ -60,7 +59,7 @@ class JsonSerializersSpec extends FunSuite {
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))
 
-    println(write(localParams))
+    logger.info(write(localParams))
 
   }
 
@@ -81,12 +80,12 @@ class JsonSerializersSpec extends FunSuite {
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))
 
-    println(write(remoteParams))
+    logger.info(write(remoteParams))
   }
 
   test("serialize CommitmentSpec") {
     val spec = CommitmentSpec(Set(DirectedHtlc(IN, UpdateAddHtlc(randomKey.publicKey.value.toBin(true), 421, 1245, randomBytes(32), 1000, BinaryData("010101")))), feeratePerKw = 1233, toLocalMsat = 100, toRemoteMsat = 200)
-    println(write(spec))
+    logger.info(write(spec))
   }
 
   test("serialize LocalChanges") {
@@ -94,7 +93,7 @@ class JsonSerializersSpec extends FunSuite {
     val add = UpdateAddHtlc(channelId, 421, 1245, randomBytes(32), 1000, BinaryData("010101"))
     val fail = UpdateFailHtlc(channelId, 42, BinaryData("0101"))
     val localChanges = LocalChanges(proposed = add :: add :: fail :: Nil, signed = add :: Nil, acked = fail :: fail :: Nil)
-    println(write(localChanges))
+    logger.info(write(localChanges))
   }
 
   test("serialize shaChain") {
@@ -103,16 +102,16 @@ class JsonSerializersSpec extends FunSuite {
     for (i <- 0 until 7) {
       receiver = receiver.addHash(ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFL - i), 0xFFFFFFFFFFFFL - i)
     }
-    println(write(receiver))
+    logger.info(write(receiver))
   }
 
   test("serialize Commitments") {
     val commitments = ChannelStateSpec.commitments
-    println(write(commitments))
+    logger.info(write(commitments))
   }
 
   test("serialize DATA_NORMAL") {
     val data = ChannelStateSpec.normal
-    println(write(data))
+    logger.info(write(data))
   }
 }

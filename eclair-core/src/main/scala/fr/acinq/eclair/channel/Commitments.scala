@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi, Transaction}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.Transactions._
@@ -290,7 +290,8 @@ object Commitments {
     }
     // let's compute the current commitment *as seen by them* with this change taken into account
     val fee = UpdateFee(commitments.channelId, cmd.feeratePerKw)
-    val commitments1 = addLocalProposal(commitments, fee)
+    // update_fee replace each other, so we can remove previous ones
+    val commitments1 = commitments.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
     val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
@@ -324,7 +325,8 @@ object Commitments {
     // (it also means that we need to check the fee of the initial commitment tx somewhere)
 
     // let's compute the current commitment *as seen by us* including this change
-    val commitments1 = addRemoteProposal(commitments, fee)
+    // update_fee replace each other, so we can remove previous ones
+    val commitments1 = commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee

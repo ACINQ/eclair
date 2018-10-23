@@ -16,15 +16,13 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.util.Random
 
-@RunWith(classOf[JUnitRunner])
+
 class FallbackFeeProviderSpec extends FunSuite {
 
   import scala.concurrent.ExecutionContext.Implicits.global

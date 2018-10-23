@@ -21,7 +21,7 @@ import java.sql.Connection
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi}
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.db.{NetworkDb, Payment}
+import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs.nodeAnnouncementCodec
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
@@ -33,16 +33,20 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   import SqliteUtils._
 
   val DB_NAME = "network"
-  val CURRENT_VERSION = 1
+  val CURRENT_VERSION = 2
 
   using(sqlite.createStatement()) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
-    statement.execute("PRAGMA foreign_keys = ON")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, node_id_1 BLOB NOT NULL, node_id_2 BLOB NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, timestamp INTEGER NOT NULL, flags BLOB NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
+    if (getVersion(statement, DB_NAME, CURRENT_VERSION) == 1) {
+      // new optional field in channel updates
+      statement.executeUpdate("ALTER TABLE channel_updates ADD COLUMN htlc_maximum_msat INTEGER DEFAULT NULL)")
+    } else {
+      statement.execute("PRAGMA foreign_keys = ON")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, node_id_1 BLOB NOT NULL, node_id_2 BLOB NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, timestamp INTEGER NOT NULL, flags BLOB NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, htlc_maximum_msat INTEGER, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
+      statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
+    }
   }
 
   override def addNode(n: NodeAnnouncement): Unit = {
@@ -118,29 +122,37 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   }
 
   override def addChannelUpdate(u: ChannelUpdate): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO channel_updates VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO channel_updates VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setLong(1, u.shortChannelId.toLong)
-      statement.setBoolean(2, Announcements.isNode1(u.flags))
+      statement.setBoolean(2, Announcements.isNode1(u.channelFlags))
       statement.setLong(3, u.timestamp)
-      statement.setBytes(4, u.flags)
+      statement.setBytes(4, Array(u.messageFlags, u.channelFlags))
       statement.setInt(5, u.cltvExpiryDelta)
       statement.setLong(6, u.htlcMinimumMsat)
       statement.setLong(7, u.feeBaseMsat)
       statement.setLong(8, u.feeProportionalMillionths)
+//      u.htlcMaximumMsat match {
+//        case Some(htlcMaximumMsat) => statement.setLong(9, htlcMaximumMsat)
+//        case None => statement.setNull(9, java.sql.Types.INTEGER)
+//      }
       statement.executeUpdate()
     }
   }
 
   override def updateChannelUpdate(u: ChannelUpdate): Unit = {
-    using(sqlite.prepareStatement("UPDATE channel_updates SET timestamp=?, flags=?, cltv_expiry_delta=?, htlc_minimum_msat=?, fee_base_msat=?, fee_proportional_millionths=? WHERE short_channel_id=? AND node_flag=?")) { statement =>
+    using(sqlite.prepareStatement("UPDATE channel_updates SET timestamp=?, flags=?, cltv_expiry_delta=?, htlc_minimum_msat=?, fee_base_msat=?, fee_proportional_millionths=?, htlc_maximum_msat=? WHERE short_channel_id=? AND node_flag=?")) { statement =>
       statement.setLong(1, u.timestamp)
-      statement.setBytes(2, u.flags)
+      statement.setBytes(2, Array(u.messageFlags, u.channelFlags))
       statement.setInt(3, u.cltvExpiryDelta)
       statement.setLong(4, u.htlcMinimumMsat)
       statement.setLong(5, u.feeBaseMsat)
       statement.setLong(6, u.feeProportionalMillionths)
-      statement.setLong(7, u.shortChannelId.toLong)
-      statement.setBoolean(8, Announcements.isNode1(u.flags))
+      u.htlcMaximumMsat match {
+        case Some(htlcMaximumMsat) => statement.setLong(7, htlcMaximumMsat)
+        case None => statement.setNull(7, java.sql.Types.INTEGER)
+      }
+      statement.setLong(8, u.shortChannelId.toLong)
+      statement.setBoolean(9, Announcements.isNode1(u.channelFlags))
       statement.executeUpdate()
     }
   }
@@ -155,11 +167,13 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
           chainHash = null,
           shortChannelId = ShortChannelId(rs.getLong("short_channel_id")),
           timestamp = rs.getLong("timestamp"),
-          flags = rs.getBytes("flags"),
+          messageFlags = rs.getBytes("flags")(0),
+          channelFlags = rs.getBytes("flags")(1),
           cltvExpiryDelta = rs.getInt("cltv_expiry_delta"),
           htlcMinimumMsat = rs.getLong("htlc_minimum_msat"),
           feeBaseMsat = rs.getLong("fee_base_msat"),
-          feeProportionalMillionths = rs.getLong("fee_proportional_millionths"))
+          feeProportionalMillionths = rs.getLong("fee_proportional_millionths"),
+          htlcMaximumMsat = Option(rs.getLong("htlc_maximum_msat")))
       }
       q
     }

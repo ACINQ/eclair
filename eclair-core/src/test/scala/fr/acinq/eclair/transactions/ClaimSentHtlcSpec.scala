@@ -19,11 +19,9 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.transactions.Scripts._
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
-@RunWith(classOf[JUnitRunner])
+
 class ClaimSentHtlcSpec extends FunSuite {
 
   object Alice {
