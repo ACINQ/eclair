@@ -1992,14 +1992,14 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     val update1 = relayer.expectMsgType[LocalChannelUpdate]
-    assert(Announcements.isEnabled(update1.channelUpdate.flags) == true)
+    assert(Announcements.isEnabled(update1.channelUpdate.channelFlags) == true)
 
     // actual test starts here
     Thread.sleep(1100)
     sender.send(alice, INPUT_DISCONNECTED)
     val update2 = relayer.expectMsgType[LocalChannelUpdate]
     assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
-    assert(Announcements.isEnabled(update2.channelUpdate.flags) == false)
+    assert(Announcements.isEnabled(update2.channelUpdate.channelFlags) == false)
     awaitCond(alice.stateName == OFFLINE)
   }
 
