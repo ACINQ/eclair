@@ -242,7 +242,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, CMD_GETINFO))
     val commitmentBC = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].commitments
     // we then forge a new channel_update for B-C...
-    val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.nodeId, shortIdBC, nodes("B").nodeParams.expiryDeltaBlocks + 1, nodes("C").nodeParams.htlcMinimumMsat, nodes("B").nodeParams.feeBaseMsat, nodes("B").nodeParams.feeProportionalMillionth)
+    val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.nodeId, shortIdBC, nodes("B").nodeParams.expiryDeltaBlocks + 1, nodes("C").nodeParams.htlcMinimumMsat, nodes("B").nodeParams.feeBaseMsat, nodes("B").nodeParams.feeProportionalMillionth, 500000000L)
     // ...and notify B's relayer
     sender.send(nodes("B").relayer, LocalChannelUpdate(system.deadLetters, commitmentBC.channelId, shortIdBC, commitmentBC.remoteParams.nodeId, None, channelUpdateBC, commitmentBC))
     // we retrieve a payment hash from D

@@ -21,6 +21,7 @@ import java.net.{Inet4Address, Inet6Address, InetSocketAddress}
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
+import scodec.bits.BitVector
 
 /**
   * Created by PM on 15/11/2016.
@@ -192,11 +193,15 @@ case class ChannelUpdate(signature: BinaryData,
                          chainHash: BinaryData,
                          shortChannelId: ShortChannelId,
                          timestamp: Long,
-                         flags: BinaryData,
+                         messageFlags: Byte,
+                         channelFlags: Byte,
                          cltvExpiryDelta: Int,
                          htlcMinimumMsat: Long,
                          feeBaseMsat: Long,
-                         feeProportionalMillionths: Long) extends RoutingMessage with HasTimestamp with HasChainHash
+                         feeProportionalMillionths: Long,
+                         htlcMaximumMsat: Option[Long]) extends RoutingMessage with HasTimestamp with HasChainHash {
+  require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
+}
 
 case class PerHopPayload(shortChannelId: ShortChannelId,
                          amtToForward: Long,
@@ -257,7 +262,7 @@ case class ReplyChannelRangeEx(chainHash: BinaryData,
                               data: BinaryData) extends RoutingMessage with HasChainHash
 
 case class ReplyShortChannelIdsEnd(chainHash: BinaryData,
-                                  complete: Byte) extends RoutingMessage with HasChainHash
+                                   complete: Byte) extends RoutingMessage with HasChainHash
 
 case class ReplyShortChannelIdsEndEx(chainHash: BinaryData,
                                     complete: Byte) extends RoutingMessage with HasChainHash

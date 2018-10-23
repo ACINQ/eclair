@@ -193,17 +193,17 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       }
 
     case ChannelUpdateReceived(channelUpdate) =>
-      log.debug(s"peer channel with id=${channelUpdate.shortChannelId} has been updated - flags: ${channelUpdate.flags} fees: ${channelUpdate.feeBaseMsat} ${channelUpdate.feeProportionalMillionths}")
+      log.debug(s"peer channel with id=${channelUpdate.shortChannelId} has been updated - flags: ${channelUpdate.channelFlags} fees: ${channelUpdate.feeBaseMsat} ${channelUpdate.feeProportionalMillionths}")
       runInGuiThread { () =>
         val idx = mainController.networkChannelsList.indexWhere(c => c.announcement.shortChannelId == channelUpdate.shortChannelId)
         if (idx >= 0) {
           val c = mainController.networkChannelsList.get(idx)
-          if (Announcements.isNode1(channelUpdate.flags)) {
-            c.isNode1Enabled = Some(Announcements.isEnabled(channelUpdate.flags))
+          if (Announcements.isNode1(channelUpdate.channelFlags)) {
+            c.isNode1Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
             c.feeBaseMsatNode1_opt = Some(channelUpdate.feeBaseMsat)
             c.feeProportionalMillionthsNode1_opt = Some(channelUpdate.feeProportionalMillionths)
           } else {
-            c.isNode2Enabled = Some(Announcements.isEnabled(channelUpdate.flags))
+            c.isNode2Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
             c.feeBaseMsatNode2_opt = Some(channelUpdate.feeBaseMsat)
             c.feeProportionalMillionthsNode2_opt = Some(channelUpdate.feeProportionalMillionths)
           }
