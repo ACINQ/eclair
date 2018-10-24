@@ -20,6 +20,7 @@ import com.softwaremill.sttp._
 import com.softwaremill.sttp.json4s._
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.JValue
+import org.json4s.jackson.Serialization
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -27,6 +28,7 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
 
   val scheme = if (ssl) "https" else "http"
   implicit val formats = DefaultFormats.withBigDecimal
+  implicit val serialization = Serialization
 
   override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] =
     invoke(Seq(JsonRPCRequest(method = method, params = params))).map(l => jsonResponse2Exception(l.head).result)

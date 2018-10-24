@@ -21,6 +21,7 @@ import com.softwaremill.sttp.json4s._
 import fr.acinq.bitcoin.{BinaryData, Block}
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JInt, JValue}
+import org.json4s.jackson.Serialization
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -29,6 +30,7 @@ class BitgoFeeProvider(chainHash: BinaryData)(implicit http: SttpBackend[Future,
   import BitgoFeeProvider._
 
   implicit val formats = DefaultFormats
+  implicit val serialization = Serialization
 
   val uri = chainHash match {
     case Block.LivenetGenesisBlock.hash => uri"https://www.bitgo.com/api/v2/btc/tx/fee"

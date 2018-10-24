@@ -31,7 +31,7 @@ import scala.concurrent.Await
 class EarnDotComFeeProviderSpec extends FunSuite with Logging {
 
   import EarnDotComFeeProvider._
-  import org.json4s.native.JsonMethods.parse
+  import org.json4s.jackson.JsonMethods.parse
 
   implicit val formats = DefaultFormats
 

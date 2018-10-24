@@ -139,11 +139,11 @@
             <version>${sttp.version}</version>
         </dependency>
         <!-- JSON -->
-        <!--dependency>
+        <dependency>
             <groupId>org.json4s</groupId>
             <artifactId>json4s-jackson_${scala.version.short}</artifactId>
             <version>3.5.3</version>
-        </dependency-->
+        </dependency>
         <dependency>
             <groupId>de.heikoseeberger</groupId>
             <artifactId>akka-http-json4s_${scala.version.short}</artifactId>

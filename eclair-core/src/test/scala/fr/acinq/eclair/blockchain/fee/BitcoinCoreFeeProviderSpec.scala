@@ -11,7 +11,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST._
-import org.json4s.native.JsonMethods
+import org.json4s.jackson.JsonMethods
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.collection.JavaConversions._

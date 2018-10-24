@@ -24,7 +24,7 @@ import akka.util.ByteString
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{Error, JsonRPCRequest, JsonRPCResponse}
 import org.json4s.JsonAST._
-import org.json4s.native.JsonMethods
+import org.json4s.jackson.JsonMethods
 import org.json4s.{DefaultFormats, JInt, JLong, JString}
 import org.spongycastle.util.encoders.Hex
 
@@ -87,7 +87,7 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
   def send(connection: ActorRef, request: JsonRPCRequest): Unit = {
     import org.json4s.JsonDSL._
     import org.json4s._
-    import org.json4s.native.JsonMethods._
+    import org.json4s.jackson.JsonMethods._
 
     log.debug(s"sending $request")
     val json = ("method" -> request.method) ~ ("params" -> request.params.map {

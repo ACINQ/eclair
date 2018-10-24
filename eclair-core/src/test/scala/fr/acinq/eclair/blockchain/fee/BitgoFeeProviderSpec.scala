@@ -28,7 +28,7 @@ import org.scalatest.FunSuite
 class BitgoFeeProviderSpec extends FunSuite {
 
   import BitgoFeeProvider._
-  import org.json4s.native.JsonMethods.parse
+  import org.json4s.jackson.JsonMethods.parse
 
   implicit val formats = DefaultFormats
 
