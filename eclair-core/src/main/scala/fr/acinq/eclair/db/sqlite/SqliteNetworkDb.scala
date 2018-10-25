@@ -33,20 +33,16 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   import SqliteUtils._
 
   val DB_NAME = "network"
-  val CURRENT_VERSION = 2
+  val CURRENT_VERSION = 1
 
   using(sqlite.createStatement()) { statement =>
-    if (getVersion(statement, DB_NAME, CURRENT_VERSION) == 1) {
-      // new optional field in channel updates
-      statement.executeUpdate("ALTER TABLE channel_updates ADD COLUMN htlc_maximum_msat INTEGER DEFAULT NULL)")
-    } else {
-      statement.execute("PRAGMA foreign_keys = ON")
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, node_id_1 BLOB NOT NULL, node_id_2 BLOB NOT NULL)")
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, timestamp INTEGER NOT NULL, flags BLOB NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, htlc_maximum_msat INTEGER, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
-      statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
-    }
+    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
+    statement.execute("PRAGMA foreign_keys = ON")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, node_id_1 BLOB NOT NULL, node_id_2 BLOB NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, timestamp INTEGER NOT NULL, flags BLOB NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, htlc_maximum_msat INTEGER, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
+    statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
   }
 
   override def addNode(n: NodeAnnouncement): Unit = {
@@ -131,10 +127,10 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
       statement.setLong(6, u.htlcMinimumMsat)
       statement.setLong(7, u.feeBaseMsat)
       statement.setLong(8, u.feeProportionalMillionths)
-//      u.htlcMaximumMsat match {
-//        case Some(htlcMaximumMsat) => statement.setLong(9, htlcMaximumMsat)
-//        case None => statement.setNull(9, java.sql.Types.INTEGER)
-//      }
+      u.htlcMaximumMsat match {
+        case Some(htlcMaximumMsat) => statement.setLong(9, htlcMaximumMsat)
+        case None => statement.setNull(9, java.sql.Types.INTEGER)
+      }
       statement.executeUpdate()
     }
   }
