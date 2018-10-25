@@ -24,7 +24,7 @@ import akka.http.scaladsl.Http
 import akka.pattern.after
 import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
-import com.softwaremill.sttp.asynchttpclient.future.AsyncHttpClientFutureBackend
+import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
@@ -83,7 +83,7 @@ class Setup(datadir: File,
   secureRandom.nextInt()
 
   implicit val ec = ExecutionContext.Implicits.global
-  implicit val sttpBackend  = AsyncHttpClientFutureBackend()
+  implicit val sttpBackend = OkHttpFutureBackend()
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>

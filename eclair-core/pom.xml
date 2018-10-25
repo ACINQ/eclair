@@ -135,7 +135,7 @@
         <!-- HTTP CLIENT -->
         <dependency>
             <groupId>com.softwaremill.sttp</groupId>
-            <artifactId>async-http-client-backend-future_${scala.version.short}</artifactId>
+            <artifactId>okhttp-backend_${scala.version.short}</artifactId>
             <version>${sttp.version}</version>
         </dependency>
         <!-- JSON -->
