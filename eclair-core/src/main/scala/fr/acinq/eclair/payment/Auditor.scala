@@ -22,20 +22,22 @@ import fr.acinq.eclair.channel.NetworkFeePaid
 
 class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
-  val db = nodeParams.auditDb
-
   context.system.eventStream.subscribe(self, classOf[PaymentEvent])
   context.system.eventStream.subscribe(self, classOf[NetworkFeePaid])
 
   override def receive: Receive = {
 
-    case e: PaymentSent => db.add(e)
+    case e: PaymentSent => nodeParams.auditDb.add(e)
 
-    case e: PaymentReceived => db.add(e)
+    case e: PaymentReceived => nodeParams.auditDb.add(e)
 
-    case e: PaymentRelayed => db.add(e)
+    case e: PaymentRelayed => nodeParams.auditDb.add(e)
 
-    case e: NetworkFeePaid => db.add(e)
+    case e: NetworkFeePaid => nodeParams.auditDb.add(e)
+
+    case e: PaymentSettlingOnChain => nodeParams.onChainRefundsDb.addSettlingOnChain(e)
+
+    case e: PaymentLostOnChain => nodeParams.onChainRefundsDb.addLostOnChain(e)
 
   }
 

@@ -63,6 +63,7 @@ case class NodeParams(keyManager: KeyManager,
                       pendingRelayDb: PendingRelayDb,
                       paymentsDb: PaymentsDb,
                       auditDb: AuditDb,
+                      onChainRefundsDb: OnChainRefundsDb,
                       routerBroadcastInterval: FiniteDuration,
                       pingInterval: FiniteDuration,
                       maxFeerateMismatch: Double,
@@ -142,6 +143,7 @@ object NodeParams {
     val networkDb = new SqliteNetworkDb(sqliteNetwork)
 
     val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "audit.sqlite")}")
+    val onChainRefundsDb = new SqliteOnChainRefundsDb(sqliteAudit)
     val auditDb = new SqliteAuditDb(sqliteAudit)
 
     val color = BinaryData(config.getString("node-color"))
@@ -186,6 +188,7 @@ object NodeParams {
       pendingRelayDb = pendingRelayDb,
       paymentsDb = paymentsDb,
       auditDb = auditDb,
+      onChainRefundsDb = onChainRefundsDb,
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
