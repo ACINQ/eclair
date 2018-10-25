@@ -28,6 +28,7 @@ import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JDecimal, JString, JValue}
+import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.concurrent.Await

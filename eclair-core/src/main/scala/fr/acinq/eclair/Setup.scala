@@ -24,6 +24,7 @@ import akka.http.scaladsl.Http
 import akka.pattern.after
 import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
+import com.softwaremill.sttp.asynchttpclient.future.AsyncHttpClientFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
@@ -81,10 +82,8 @@ class Setup(datadir: File,
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
   secureRandom.nextInt()
 
-  implicit val materializer = ActorMaterializer()
-  implicit val timeout = Timeout(30 seconds)
-  implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
+  implicit val sttpBackend  = AsyncHttpClientFutureBackend()
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>
@@ -93,6 +92,8 @@ class Setup(datadir: File,
         password = config.getString("bitcoind.rpcpassword"),
         host = config.getString("bitcoind.host"),
         port = config.getInt("bitcoind.rpcport"))
+      implicit val timeout = Timeout(30 seconds)
+      implicit val formats = org.json4s.DefaultFormats
       val future = for {
         json <- bitcoinClient.invoke("getblockchaininfo").recover { case _ => throw BitcoinRPCConnectionException }
         // Make sure wallet support is enabled in bitcoind.
@@ -192,6 +193,7 @@ class Setup(datadir: File,
         case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
         case Electrum(electrumClient) =>
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash)), "electrum-wallet")
+          implicit val timeout = Timeout(30 seconds)
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
       }
       _ = wallet.getFinalAddress.map {
@@ -233,6 +235,7 @@ class Setup(datadir: File,
       _ <- Future.firstCompletedOf(tcpBound.future :: tcpTimeout :: Nil)
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
+        implicit val materializer = ActorMaterializer()
         val api = new Service {
 
           override def scheduler = system.scheduler

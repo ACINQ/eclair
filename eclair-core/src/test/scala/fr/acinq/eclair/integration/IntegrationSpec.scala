@@ -19,7 +19,8 @@ package fr.acinq.eclair.integration
 import java.io.{File, PrintWriter}
 import java.util.Properties
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.{ActorRef, ActorSystem, Terminated}
+import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
