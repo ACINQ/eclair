@@ -68,6 +68,8 @@ case class NodeParams(keyManager: KeyManager,
                       paymentsDb: PaymentsDb,
                       auditDb: AuditDb,
                       revocationTimeout: FiniteDuration,
+                      onChainRefundsDb: OnChainRefundsDb,
+                      routerBroadcastInterval: FiniteDuration,
                       pingInterval: FiniteDuration,
                       pingTimeout: FiniteDuration,
                       pingDisconnect: Boolean,
@@ -150,6 +152,7 @@ object NodeParams {
     val networkDb = new SqliteNetworkDb(sqliteNetwork)
 
     val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "audit.sqlite")}")
+    val onChainRefundsDb = new SqliteOnChainRefundsDb(sqliteAudit)
     val auditDb = new SqliteAuditDb(sqliteAudit)
 
     val color = BinaryData(config.getString("node-color"))
@@ -179,7 +182,7 @@ object NodeParams {
       val p = PublicKey(e.getString("nodeid"))
       val gf = BinaryData(e.getString("global-features"))
       val lf = BinaryData(e.getString("local-features"))
-      (p -> (gf, lf))
+      (p, (gf, lf))
     }.toMap
 
     val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {
@@ -202,7 +205,7 @@ object NodeParams {
     NodeParams(
       keyManager = keyManager,
       alias = nodeAlias,
-      color = Color(color.data(0), color.data(1), color.data(2)),
+      color = Color(color.data.head, color.data(1), color.data(2)),
       publicAddresses = addresses,
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),
@@ -227,6 +230,8 @@ object NodeParams {
       paymentsDb = paymentsDb,
       auditDb = auditDb,
       revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
+      onChainRefundsDb = onChainRefundsDb,
+      routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
       pingDisconnect = config.getBoolean("ping-disconnect"),

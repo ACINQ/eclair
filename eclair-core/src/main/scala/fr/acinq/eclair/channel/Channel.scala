@@ -1198,6 +1198,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       if (localCommitPublished1.exists(_.commitTx.txid == tx.txid)) {
         context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.remoteParams.toSelfDelay))
       }
+      // In case if this was an HTLC-refunding tx, let's send an event which will notify a websocket and make Auditor put PaymentSettlingOnChain(isDone = true) record in a database
+      nodeParams.onChainRefundsDb.getSettlingOnChain(tx.txid).map(_.copy(isDone = true)).foreach(context.system.eventStream.publish)
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
       val timedoutHtlcs =
         Closing.timedoutHtlcs(d.commitments.localCommit, Satoshi(d.commitments.localParams.dustLimitSatoshis), tx) ++
