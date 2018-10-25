@@ -19,10 +19,10 @@ package fr.acinq.eclair.db
 import java.net.{InetAddress, InetSocketAddress}
 import java.sql.DriverManager
 
-import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, Block, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.Color
+import fr.acinq.eclair.wire.{ChannelUpdate, Color}
 import fr.acinq.eclair.{ShortChannelId, randomKey}
 import org.scalatest.FunSuite
 import org.sqlite.SQLiteException
@@ -85,7 +85,7 @@ class SqliteNetworkDbSpec extends FunSuite {
 
     val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(42), 5, 7000000, 50000, 100, 500000000L, true)
     val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(43), 5, 7000000, 50000, 100, 500000000L, true)
-    val channel_update_3 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(44), 5, 7000000, 50000, 100, 500000000L, true)
+    val channel_update_3 = ChannelUpdate(BinaryData.empty, Block.RegtestGenesisBlock.hash, ShortChannelId(44), 123456789, Announcements.makeMessageFlags(hasOptionChannelHtlcMax = false), Announcements.makeChannelFlags(isNode1 = true, enable = true), 5, 7000000, 50000, 100, None)
 
     assert(db.listChannelUpdates().toSet === Set.empty)
     db.addChannelUpdate(channel_update_1)
@@ -93,6 +93,10 @@ class SqliteNetworkDbSpec extends FunSuite {
     assert(db.listChannelUpdates().size === 1)
     intercept[SQLiteException](db.addChannelUpdate(channel_update_2))
     db.addChannelUpdate(channel_update_3)
+    assert(db.listChannelUpdates().size === 2)
+    db.addChannelUpdate(channel_update_1) // testing update
+    db.addChannelUpdate(channel_update_3) // testing update
+    assert(db.listChannelUpdates().size === 2)
     db.removeChannel(channel_3.shortChannelId)
     assert(db.listChannels().size === 1)
     assert(db.listChannelUpdates().size === 1)

@@ -127,10 +127,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
       statement.setLong(6, u.htlcMinimumMsat)
       statement.setLong(7, u.feeBaseMsat)
       statement.setLong(8, u.feeProportionalMillionths)
-      u.htlcMaximumMsat match {
-        case Some(htlcMaximumMsat) => statement.setLong(9, htlcMaximumMsat)
-        case None => statement.setNull(9, java.sql.Types.INTEGER)
-      }
+      setNullableLong(statement, 9, u.htlcMaximumMsat)
       statement.executeUpdate()
     }
   }
@@ -143,10 +140,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
       statement.setLong(4, u.htlcMinimumMsat)
       statement.setLong(5, u.feeBaseMsat)
       statement.setLong(6, u.feeProportionalMillionths)
-      u.htlcMaximumMsat match {
-        case Some(htlcMaximumMsat) => statement.setLong(7, htlcMaximumMsat)
-        case None => statement.setNull(7, java.sql.Types.INTEGER)
-      }
+      setNullableLong(statement, 7, u.htlcMaximumMsat)
       statement.setLong(8, u.shortChannelId.toLong)
       statement.setBoolean(9, Announcements.isNode1(u.channelFlags))
       statement.executeUpdate()
@@ -169,7 +163,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
           htlcMinimumMsat = rs.getLong("htlc_minimum_msat"),
           feeBaseMsat = rs.getLong("fee_base_msat"),
           feeProportionalMillionths = rs.getLong("fee_proportional_millionths"),
-          htlcMaximumMsat = Option(rs.getLong("htlc_maximum_msat")))
+          htlcMaximumMsat = getNullableLong(rs, "htlc_maximum_msat"))
       }
       q
     }
