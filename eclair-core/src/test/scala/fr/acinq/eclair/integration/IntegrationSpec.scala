@@ -44,10 +44,7 @@ import fr.acinq.eclair.{Globals, Kit, Setup}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
-import org.junit.Ignore
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import org.scalatest.{BeforeAndAfterAll, FunSuiteLike, Ignore}
 
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -56,7 +53,6 @@ import scala.concurrent.duration._
 /**
   * Created by PM on 15/03/2017.
   */
-@RunWith(classOf[JUnitRunner])
 @Ignore
 class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
 
@@ -246,7 +242,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, CMD_GETINFO))
     val commitmentBC = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].commitments
     // we then forge a new channel_update for B-C...
-    val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.nodeId, shortIdBC, nodes("B").nodeParams.expiryDeltaBlocks + 1, nodes("C").nodeParams.htlcMinimumMsat, nodes("B").nodeParams.feeBaseMsat, nodes("B").nodeParams.feeProportionalMillionth)
+    val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.nodeId, shortIdBC, nodes("B").nodeParams.expiryDeltaBlocks + 1, nodes("C").nodeParams.htlcMinimumMsat, nodes("B").nodeParams.feeBaseMsat, nodes("B").nodeParams.feeProportionalMillionth, 500000000L)
     // ...and notify B's relayer
     sender.send(nodes("B").relayer, LocalChannelUpdate(system.deadLetters, commitmentBC.channelId, shortIdBC, commitmentBC.remoteParams.nodeId, None, channelUpdateBC, commitmentBC))
     // we retrieve a payment hash from D
@@ -262,6 +258,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(nodes("A").router, 'updatesMap)
     assert(sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)) === channelUpdateBC)
     // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
+    // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
+    sender.expectNoMsg(3 seconds)
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, TickRefreshChannelUpdate))
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, CMD_GETINFO))
     val channelUpdateBC_new = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].channelUpdate
@@ -687,6 +685,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sigListener.expectMsgType[ChannelSignatureReceived]
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSucceeded]
+
     // we now send a few htlcs C->F and F->C in order to obtain a commitments with multiple htlcs
     def send(amountMsat: Long, paymentHandler: ActorRef, paymentInitiator: ActorRef) = {
       sender.send(paymentHandler, ReceivePayment(Some(MilliSatoshi(amountMsat)), "1 coffee"))
@@ -694,6 +693,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       val sendReq = SendPayment(amountMsat, pr.paymentHash, pr.nodeId)
       sender.send(paymentInitiator, sendReq)
     }
+
     val buffer = TestProbe()
     send(100000000, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
     forwardHandlerF.expectMsgType[UpdateAddHtlc]
@@ -799,12 +799,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // then we make the announcements
     val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))
     announcements.foreach(ann => nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, ann))
-    // we need to send channel_update otherwise router won't validate the channels
-    val updates = channels.zip(announcements).map(x => AnnouncementsBatchValidationSpec.makeChannelUpdate(x._1, x._2.shortChannelId))
-    updates.foreach(update => nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, update))
     awaitCond({
       sender.send(nodes("D").router, 'channels)
-      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 5 // 5 remaining channels because  D->F{1-F4} have disappeared
+      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 5 // 5 remaining channels because  D->F{1-5} have disappeared
     }, max = 120 seconds, interval = 1 second)
   }
 

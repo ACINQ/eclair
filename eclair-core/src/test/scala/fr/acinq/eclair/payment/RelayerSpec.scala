@@ -26,31 +26,29 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes, randomKey}
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
+import org.scalatest.Outcome
 
 import scala.concurrent.duration._
 
 /**
   * Created by PM on 29/08/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class RelayerSpec extends TestkitBaseClass {
 
   // let's reuse the existing test data
   import HtlcGenerationSpec._
 
-  type FixtureParam = Tuple3[ActorRef, TestProbe, TestProbe]
+  case class FixtureParam(relayer: ActorRef, register: TestProbe, paymentHandler: TestProbe)
 
-  override def withFixture(test: OneArgTest) = {
-
+  override def withFixture(test: OneArgTest): Outcome = {
     within(30 seconds) {
       val register = TestProbe()
       val paymentHandler = TestProbe()
       // we are node B in the route A -> B -> C -> ....
       //val relayer = system.actorOf(Relayer.props(TestConstants.Bob.nodeParams.copy(nodeKey = priv_b), register.ref, paymentHandler.ref))
       val relayer = system.actorOf(Relayer.props(TestConstants.Bob.nodeParams, register.ref, paymentHandler.ref))
-      test((relayer, register, paymentHandler))
+      withFixture(test.toNoArgTest(FixtureParam(relayer, register, paymentHandler)))
     }
   }
 
@@ -61,7 +59,8 @@ class RelayerSpec extends TestkitBaseClass {
     RemoteCommit(42, CommitmentSpec(Set.empty, 20000, 5000000, 100000000), "00" * 32, randomKey.toPoint),
     null, null, 0, 0, Map.empty, null, null, null, channelId)
 
-  test("relay an htlc-add") { case (relayer, register, paymentHandler) =>
+  test("relay an htlc-add") { f =>
+    import f._
     val sender = TestProbe()
 
     // we use this to build a valid onion
@@ -80,7 +79,8 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("fail to relay an htlc-add when we have no channel_update for the next channel") { case (relayer, register, paymentHandler) =>
+  test("fail to relay an htlc-add when we have no channel_update for the next channel") { f =>
+    import f._
     val sender = TestProbe()
 
     // we use this to build a valid onion
@@ -99,7 +99,8 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("fail to relay an htlc-add when register returns an error") { case (relayer, register, paymentHandler) =>
+  test("fail to relay an htlc-add when register returns an error") { f =>
+    import f._
     val sender = TestProbe()
 
     // we use this to build a valid onion
@@ -125,7 +126,8 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("fail to relay an htlc-add when the channel is advertised as unusable (down)") { case (relayer, register, paymentHandler) =>
+  test("fail to relay an htlc-add when the channel is advertised as unusable (down)") { f =>
+    import f._
     val sender = TestProbe()
 
     // check that payments are sent properly
@@ -143,7 +145,7 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
 
     // now tell the relayer that the channel is down and try again
-    relayer ! LocalChannelDown(sender.ref, channelId = channelId_bc, shortChannelId =  channelUpdate_bc.shortChannelId, remoteNodeId = TestConstants.Bob.nodeParams.nodeId)
+    relayer ! LocalChannelDown(sender.ref, channelId = channelId_bc, shortChannelId = channelUpdate_bc.shortChannelId, remoteNodeId = TestConstants.Bob.nodeParams.nodeId)
 
     val (cmd1, _) = buildCommand(finalAmountMsat, finalExpiry, "02" * 32, hops)
     val add_ab1 = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd1.amountMsat, cmd1.paymentHash, cmd1.expiry, cmd1.onion)
@@ -157,27 +159,29 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("fail to relay an htlc-add when the requested channel is disabled") { case (relayer, register, paymentHandler) =>
+  test("fail to relay an htlc-add when the requested channel is disabled") { f =>
+    import f._
     val sender = TestProbe()
 
     // we use this to build a valid onion
     val (cmd, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops)
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
-    val channelUpdate_bc_disabled = channelUpdate_bc.copy(flags = Announcements.makeFlags(Announcements.isNode1(channelUpdate_bc.flags), enable = false))
+    val channelUpdate_bc_disabled = channelUpdate_bc.copy(channelFlags = Announcements.makeChannelFlags(Announcements.isNode1(channelUpdate_bc.channelFlags), enable = false))
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc_disabled, makeCommitments(channelId_bc))
 
     sender.send(relayer, ForwardAdd(add_ab))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
-    assert(fail.reason == Right(ChannelDisabled(channelUpdate_bc_disabled.flags, channelUpdate_bc_disabled)))
+    assert(fail.reason == Right(ChannelDisabled(channelUpdate_bc_disabled.messageFlags, channelUpdate_bc_disabled.channelFlags, channelUpdate_bc_disabled)))
 
     register.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("fail to relay an htlc-add when the onion is malformed") { case (relayer, register, paymentHandler) =>
+  test("fail to relay an htlc-add when the onion is malformed") { f =>
+    import f._
     val sender = TestProbe()
 
     // we use this to build a valid onion
@@ -196,7 +200,8 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("fail to relay an htlc-add when amount is below the next hop's requirements") { case (relayer, register, paymentHandler) =>
+  test("fail to relay an htlc-add when amount is below the next hop's requirements") { f =>
+    import f._
     val sender = TestProbe()
 
     // we use this to build a valid onion
@@ -215,7 +220,8 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("fail to relay an htlc-add when expiry does not match next hop's requirements") { case (relayer, register, paymentHandler) =>
+  test("fail to relay an htlc-add when expiry does not match next hop's requirements") { f =>
+    import f._
     val sender = TestProbe()
 
     val hops1 = hops.updated(1, hops(1).copy(lastUpdate = hops(1).lastUpdate.copy(cltvExpiryDelta = 0)))
@@ -234,7 +240,8 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("fail to relay an htlc-add when relay fee isn't sufficient") { case (relayer, register, paymentHandler) =>
+  test("fail to relay an htlc-add when relay fee isn't sufficient") { f =>
+    import f._
     val sender = TestProbe()
 
     val hops1 = hops.updated(1, hops(1).copy(lastUpdate = hops(1).lastUpdate.copy(feeBaseMsat = hops(1).lastUpdate.feeBaseMsat / 2)))
@@ -253,7 +260,8 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("fail an htlc-add at the final node when amount has been modified by second-to-last node") { case (relayer, register, paymentHandler) =>
+  test("fail an htlc-add at the final node when amount has been modified by second-to-last node") { f =>
+    import f._
     val sender = TestProbe()
 
     // to simulate this we use a zero-hop route A->B where A is the 'attacker'
@@ -273,7 +281,8 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("fail an htlc-add at the final node when expiry has been modified by second-to-last node") { case (relayer, register, paymentHandler) =>
+  test("fail an htlc-add at the final node when expiry has been modified by second-to-last node") { f =>
+    import f._
     val sender = TestProbe()
 
     // to simulate this we use a zero-hop route A->B where A is the 'attacker'
@@ -293,7 +302,8 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("correctly translates errors returned by channel when attempting to add an htlc") { case (relayer, register, paymentHandler) =>
+  test("correctly translates errors returned by channel when attempting to add an htlc") { f =>
+    import f._
     val sender = TestProbe()
 
     val paymentHash = randomBytes(32)
@@ -308,9 +318,9 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, InsufficientFunds(channelId_bc, origin.amountMsatOut, 100, 0, 0), origin, Some(channelUpdate_bc), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(TemporaryChannelFailure(channelUpdate_bc)))
 
-    val channelUpdate_bc_disabled = channelUpdate_bc.copy(flags = "0002")
+    val channelUpdate_bc_disabled = channelUpdate_bc.copy(channelFlags = 2)
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, ChannelUnavailable(channelId_bc), origin, Some(channelUpdate_bc_disabled), None)))
-    assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(ChannelDisabled(channelUpdate_bc_disabled.flags, channelUpdate_bc_disabled)))
+    assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(ChannelDisabled(channelUpdate_bc_disabled.messageFlags, channelUpdate_bc_disabled.channelFlags, channelUpdate_bc_disabled)))
 
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcTimedout(channelId_bc), origin, None, None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(PermanentChannelFailure))
@@ -322,7 +332,8 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("relay an htlc-fulfill") { case (relayer, register, _) =>
+  test("relay an htlc-fulfill") { f =>
+    import f._
     val sender = TestProbe()
     val eventListener = TestProbe()
 
@@ -342,7 +353,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(paymentRelayed.copy(timestamp = 0) === PaymentRelayed(MilliSatoshi(origin.amountMsatIn), MilliSatoshi(origin.amountMsatOut), add_bc.paymentHash, channelId_ab, channelId_bc, timestamp = 0))
   }
 
-  test("relay an htlc-fail") { case (relayer, register, _) =>
+  test("relay an htlc-fail") { f =>
+    import f._
     val sender = TestProbe()
 
     // we build a fake htlc for the downstream channel

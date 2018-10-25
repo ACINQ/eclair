@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.{ResultSet, Statement}
+import java.sql.{PreparedStatement, ResultSet, Statement}
 
 import scodec.Codec
 import scodec.bits.BitVector
@@ -73,5 +73,31 @@ object SqliteUtils {
       q = q :+ codec.decode(BitVector(rs.getBytes("data"))).require.value
     }
     q
+  }
+
+  /**
+    * This helper uses the proper way to set a nullable value.
+    *
+    * @param statement
+    * @param parameterIndex
+    * @param value_opt
+    */
+  def setNullableLong(statement: PreparedStatement, parameterIndex: Int, value_opt: Option[Long]) = {
+    value_opt match {
+      case Some(value) => statement.setLong(parameterIndex, value)
+      case None => statement.setNull(parameterIndex, java.sql.Types.INTEGER)
+    }
+  }
+
+  /**
+    * This helper retrieves the value from a nullable integer column and interprets it as an option. This is needed
+    * because `rs.getLong` would return `0` for a null value.
+    *
+    * @param label
+    * @return
+    */
+  def getNullableLong(rs: ResultSet, label: String) : Option[Long] = {
+    val result = rs.getLong(label)
+    if (rs.wasNull()) None else Some(result)
   }
 }

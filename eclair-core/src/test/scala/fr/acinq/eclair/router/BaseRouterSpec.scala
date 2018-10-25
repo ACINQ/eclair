@@ -28,8 +28,7 @@ import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestkitBaseClass, randomKey, _}
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
+import org.scalatest.Outcome
 
 import scala.concurrent.duration._
 
@@ -38,12 +37,10 @@ import scala.concurrent.duration._
   * It is re-used in payment FSM tests
   * Created by PM on 29/08/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 abstract class BaseRouterSpec extends TestkitBaseClass {
 
-  import BaseRouterSpec._
-
-  type FixtureParam = Tuple2[ActorRef, TestProbe]
+  case class FixtureParam(router: ActorRef, watcher: TestProbe)
 
   val remoteNodeId = PrivateKey(BinaryData("01" * 32), compressed = true).publicKey
 
@@ -78,16 +75,16 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val chan_cd = channelAnnouncement(channelId_cd, priv_c, priv_d, priv_funding_c, priv_funding_d)
   val chan_ef = channelAnnouncement(channelId_ef, priv_e, priv_f, priv_funding_e, priv_funding_f)
 
-  val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, channelId_ab, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
-  val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, a, channelId_ab, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
-  val channelUpdate_bc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 5, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1)
-  val channelUpdate_cb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, b, channelId_bc, cltvExpiryDelta = 5, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1)
-  val channelUpdate_cd = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4)
-  val channelUpdate_dc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_d, c, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4)
-  val channelUpdate_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, channelId_ef, cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8)
-  val channelUpdate_fe = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_f, e, channelId_ef, cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8)
+  val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, channelId_ab, cltvExpiryDelta = 7, htlcMinimumMsat = 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000L)
+  val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, a, channelId_ab, cltvExpiryDelta = 7, htlcMinimumMsat = 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000L)
+  val channelUpdate_bc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 5, htlcMinimumMsat = 0, feeBaseMsat = 233000, feeProportionalMillionths = 1, htlcMaximumMsat = 500000000L)
+  val channelUpdate_cb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, b, channelId_bc, cltvExpiryDelta = 5, htlcMinimumMsat = 0, feeBaseMsat = 233000, feeProportionalMillionths = 1, htlcMaximumMsat = 500000000L)
+  val channelUpdate_cd = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, cltvExpiryDelta = 3, htlcMinimumMsat = 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000L)
+  val channelUpdate_dc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_d, c, channelId_cd, cltvExpiryDelta = 3, htlcMinimumMsat = 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000L)
+  val channelUpdate_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, channelId_ef, cltvExpiryDelta = 9, htlcMinimumMsat = 0, feeBaseMsat = 786000, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000L)
+  val channelUpdate_fe = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_f, e, channelId_ef, cltvExpiryDelta = 9, htlcMinimumMsat = 0, feeBaseMsat = 786000, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000L)
 
-  override def withFixture(test: OneArgTest) = {
+  override def withFixture(test: OneArgTest): Outcome = {
     // the network will be a --(1)--> b ---(2)--> c --(3)--> d and e --(4)--> f (we are a)
 
     within(30 seconds) {
@@ -151,7 +148,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
         channels.size === 4 && updates.size === 8
       }, max = 10 seconds, interval = 1 second)
 
-      test((router, watcher))
+      withFixture(test.toNoArgTest(FixtureParam(router, watcher)))
     }
   }
 }

@@ -19,17 +19,14 @@ package fr.acinq.eclair.crypto
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.wire._
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
-import scodec.bits.BitVector
 
 import scala.util.Success
 
 /**
   * Created by fabrice on 10/01/17.
   */
-@RunWith(classOf[JUnitRunner])
+
 class SphinxSpec extends FunSuite {
 
   import Sphinx._

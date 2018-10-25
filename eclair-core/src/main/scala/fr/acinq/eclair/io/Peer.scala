@@ -31,6 +31,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
+import scodec.Attempt
 
 import scala.concurrent.duration._
 import scala.util.Random
@@ -264,34 +265,39 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       stay
 
     case Event(rebroadcast: Rebroadcast, ConnectedData(_, transport, _, _, maybeGossipTimestampFilter, _, _)) =>
-      val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, self, maybeGossipTimestampFilter)
 
       /**
         * Send and count in a single iteration
         */
-      def sendAndCount(msgs: Iterable[RoutingMessage]): Int = msgs.foldLeft(0) {
-        case (count, msg) =>
+      def sendAndCount(msgs: Map[_ <: RoutingMessage, Set[ActorRef]]): Int = msgs.foldLeft(0) {
+        case (count, (_, origins)) if origins.contains(self) =>
+          // the announcement came from this peer, we don't send it back
+          count
+        case (count, (msg: HasTimestamp, _)) if !timestampInRange(msg, maybeGossipTimestampFilter) =>
+          // the peer has set up a filter on timestamp and this message is out of range
+          count
+        case (count, (msg, _)) =>
           transport ! msg
           count + 1
       }
 
-      val channelsSent = sendAndCount(channels1)
-      val updatesSent = sendAndCount(updates1)
-      val nodesSent = sendAndCount(nodes1)
+      val channelsSent = sendAndCount(rebroadcast.channels)
+      val updatesSent = sendAndCount(rebroadcast.updates)
+      val nodesSent = sendAndCount(rebroadcast.nodes)
 
       if (channelsSent > 0 || updatesSent > 0 || nodesSent > 0) {
-        log.debug(s"sent announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
+        log.info(s"sent announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       }
       stay
 
     case Event(msg: GossipTimestampFilter, data: ConnectedData) =>
-      // special case: time range filters are peer specific and must not be sent to
-      // the router
+      // special case: time range filters are peer specific and must not be sent to the router
       sender ! TransportHandler.ReadAck(msg)
       if (msg.chainHash != nodeParams.chainHash) {
         log.warning("received gossip_timestamp_range message for chain {}, we're on {}", msg.chainHash, nodeParams.chainHash)
         stay
       } else {
+        log.info(s"setting up gossipTimestampFilter=$msg")
         // update their timestamp filter
         stay using data.copy(gossipTimestampFilter = Some(msg))
       }
@@ -315,7 +321,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(badMessage: BadMessage, data@ConnectedData(_, transport, _, _, _, _, behavior)) =>
       val behavior1 = badMessage match {
         case InvalidSignature(r) =>
-          val bin = LightningMessageCodecs.lightningMessageCodec.encode(r)
+          val bin: String = LightningMessageCodecs.lightningMessageCodec.encode(r) match {
+            case Attempt.Successful(b) => b.toHex
+            case _ => "unknown"
+          }
           log.error(s"peer sent us a routing message with invalid sig: r=$r bin=$bin")
           // for now we just return an error, maybe ban the peer in the future?
           transport ! Error(CHANNELID_ZERO, s"bad announcement sig! bin=$bin".getBytes())
@@ -511,42 +520,18 @@ object Peer {
   }
 
   /**
-    * filter out gossip messages using the provided origin and optional timestamp range
+    * Peer may want to filter announcements based on timestamp
     *
-    * @param rebroadcast           rebroadcast message
-    * @param self                  messages which have been sent by `self` will be filtered out
-    * @param gossipTimestampFilter optional gossip timestamp range
-    * @return a filtered (channel announcements, channel updates, node announcements) tuple
+    * @param gossipTimestampFilter_opt optional gossip timestamp range
+    * @return
+    *           - true if the msg's timestamp is in the requested range, or if there is no filtering
+    *           - false otherwise
     */
-  def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimestampFilter: Option[GossipTimestampFilter]): (Iterable[ChannelAnnouncement], Iterable[ChannelUpdate], Iterable[NodeAnnouncement]) = {
-
+  def timestampInRange(msg: HasTimestamp, gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
     // check if this message has a timestamp that matches our timestamp filter
-    def checkTimestamp(routingMessage: RoutingMessage): Boolean = gossipTimestampFilter match {
+    gossipTimestampFilter_opt match {
       case None => true // no filtering
-      case Some(GossipTimestampFilter(_, firstTimestamp, timestampRange)) => routingMessage match {
-        case hts: HasTimestamp => hts.timestamp >= firstTimestamp && hts.timestamp <= firstTimestamp + timestampRange
-        case _ => true
-      }
+      case Some(GossipTimestampFilter(_, firstTimestamp, timestampRange)) => msg.timestamp >= firstTimestamp && msg.timestamp <= firstTimestamp + timestampRange
     }
-
-    // we filter out updates against their timestamp filter, and build a list of all channel ids for which we have an update
-    val (updates1, shortChannelIds) = rebroadcast.updates.foldLeft((Seq.empty[ChannelUpdate], Set.empty[ShortChannelId])) {
-      case ((channelUpdates, shortChannelIds), (a, origins)) if !origins.contains(self) && checkTimestamp(a) => (a +: channelUpdates, shortChannelIds + a.shortChannelId)
-      case ((channelUpdates, shortChannelIds), (a, origins)) => (channelUpdates, shortChannelIds)
-    }
-
-    // we filter out channels for which we don't have an update
-    val channels1 = rebroadcast.channels.foldLeft((Seq.empty[ChannelAnnouncement])) {
-      case (channelAnnouncements, (a, origins)) if !origins.contains(self) && shortChannelIds.contains(a.shortChannelId) => a +: channelAnnouncements
-      case (channelAnnouncements, (a, _)) => channelAnnouncements
-    }
-
-    // we filter out nodes against their timestamp filter
-    // TODO: we do * not * filter out nodes for which matching channel announcements were pruned above.
-    // Our rebroadcast message may sometimes include "orphan" nodes without matching channel announcements, because of
-    // the way announcements are handled in the router
-    val nodes1 = rebroadcast.nodes.collect { case (a, origins) if !origins.contains(self) && checkTimestamp(a) => a }
-
-    (channels1, updates1, nodes1)
   }
 }

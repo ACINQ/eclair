@@ -106,13 +106,27 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     future
   }
 
-  def publishTransaction(hex: String)(implicit ec: ExecutionContext): Future[String] =
-    rpcClient.invoke("sendrawtransaction", hex) collect {
-      case JString(txid) => txid
-    }
-
+  /**
+    * Publish a transaction on the bitcoin network.
+    *
+    * Note that this method is idempotent, meaning that if the tx was already published a long time ago, then this is
+    * considered a success even if bitcoin core rejects this new attempt.
+    *
+    * @param tx
+    * @param ec
+    * @return
+    */
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
-    publishTransaction(tx.toString())
+    rpcClient.invoke("sendrawtransaction", tx.toString()) collect {
+      case JString(txid) => txid
+    } recoverWith {
+      case JsonRPCError(Error(-27, _)) =>
+        // "transaction already in block chain (code: -27)" ignore error
+        Future.successful(tx.txid.toString())
+      case e@JsonRPCError(Error(-25, _)) =>
+        // "missing inputs (code: -25)" it may be that the tx has already been published and its output spent
+        getRawTransaction(tx.txid.toString()).map { case _ => tx.txid.toString() }.recoverWith { case _ => Future.failed[String](e) }
+    }
 
   /**
     * We need this to compute absolute timeouts expressed in number of blocks (where getBlockCount would be equivalent

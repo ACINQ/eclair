@@ -22,14 +22,12 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Bech32, BinaryData, Block, Btc, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.payment.PaymentRequest._
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 /**
   * Created by fabrice on 15/05/17.
   */
-@RunWith(classOf[JUnitRunner])
+
 class PaymentRequestSpec extends FunSuite {
 
   val priv = PrivateKey(BinaryData("e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734"), compressed = true)

@@ -17,11 +17,9 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.{BinaryData, Hash}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
-@RunWith(classOf[JUnitRunner])
+
 class ShaChainSpec extends FunSuite {
   val expected: List[BinaryData] = List(
     "f85a0f7f237ed2139855703db4264de380ec731f64a3d832c22a5f2ef615f1d5",
