@@ -36,15 +36,15 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     sender.expectMsgType[GossipTimestampFilter]
 
     // split our answer in 3 blocks
-    val List(block1) = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds.take(100), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
-    val List(block2) = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds.drop(100).take(100), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
-    val List(block3) = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds.drop(200).take(150), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+    val List(block1) = ShortChannelIdsBlock.encode(firstBlockNum, numberOfBlocks, shortChannelIds.take(100), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+    val List(block2) = ShortChannelIdsBlock.encode(firstBlockNum, numberOfBlocks, shortChannelIds.drop(100).take(100), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+    val List(block3) = ShortChannelIdsBlock.encode(firstBlockNum, numberOfBlocks, shortChannelIds.drop(200).take(150), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
 
     // send first block
     sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyChannelRange(chainHash, block1.firstBlock, block1.numBlocks, 1, block1.shortChannelIds)))
     // router should ask for our first block of ids
     val QueryShortChannelIds(_, data1) = transport.expectMsgType[QueryShortChannelIds]
-    val (_, shortChannelIds1, false) = ChannelRangeQueries.decodeShortChannelIds(data1)
+    val (_, shortChannelIds1, false) = ShortChannelIdsBlock.decode(data1)
     assert(shortChannelIds1 == shortChannelIds.take(100))
 
     // send second block
@@ -74,7 +74,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
     // router should ask for our second block of ids
     val QueryShortChannelIds(_, data2) = transport.expectMsgType[QueryShortChannelIds]
-    val (_, shortChannelIds2, false) = ChannelRangeQueries.decodeShortChannelIds(data2)
+    val (_, shortChannelIds2, false) = ShortChannelIdsBlock.decode(data2)
     assert(shortChannelIds2 == shortChannelIds.drop(100).take(100))
   }
 
@@ -91,7 +91,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks) = sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
 
-    val List(block1) = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds.take(100), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+    val List(block1) = ShortChannelIdsBlock.encode(firstBlockNum, numberOfBlocks, shortChannelIds.take(100), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
 
     // send first block
     sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyChannelRange(chainHash, block1.firstBlock, block1.numBlocks, 1, block1.shortChannelIds)))

@@ -225,6 +225,8 @@ case class QueryShortChannelIdsEx(chainHash: BinaryData,
                                   flag: Byte,
                                   data: BinaryData) extends RoutingMessage with HasChainHash
 
+case class QueryShortChannelIdsEx2(chainHash: BinaryData, data: BinaryData) extends RoutingMessage with HasChainHash
+
 case class QueryChannelRange(chainHash: BinaryData,
                              firstBlockNum: Long,
                              numberOfBlocks: Long) extends RoutingMessage with HasChainHash
@@ -232,6 +234,10 @@ case class QueryChannelRange(chainHash: BinaryData,
 case class QueryChannelRangeEx(chainHash: BinaryData,
                               firstBlockNum: Long,
                               numberOfBlocks: Long) extends RoutingMessage with HasChainHash
+
+case class QueryChannelRangeEx2(chainHash: BinaryData,
+                                firstBlockNum: Long,
+                                numberOfBlocks: Long) extends RoutingMessage with HasChainHash
 
 /**
   *
@@ -261,11 +267,20 @@ case class ReplyChannelRangeEx(chainHash: BinaryData,
                               complete: Byte,
                               data: BinaryData) extends RoutingMessage with HasChainHash
 
+case class ReplyChannelRangeEx2(chainHash: BinaryData,
+                                firstBlockNum: Long,
+                                numberOfBlocks: Long,
+                                complete: Byte,
+                                data: BinaryData) extends RoutingMessage with HasChainHash
+
 case class ReplyShortChannelIdsEnd(chainHash: BinaryData,
                                    complete: Byte) extends RoutingMessage with HasChainHash
 
 case class ReplyShortChannelIdsEndEx(chainHash: BinaryData,
                                     complete: Byte) extends RoutingMessage with HasChainHash
+
+case class ReplyShortChannelIdsEndEx2(chainHash: BinaryData,
+                                      complete: Byte) extends RoutingMessage with HasChainHash
 
 case class GossipTimestampFilter(chainHash: BinaryData,
                                  firstTimestamp: Long,

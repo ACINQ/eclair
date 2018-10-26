@@ -328,23 +328,47 @@ object LightningMessageCodecs {
     ).as[QueryShortChannelIdsEx]
 
   val replyShortChanelIdsEndExCodec: Codec[ReplyShortChannelIdsEndEx] = (
-    ("chainHash" | binarydata(32)) ::
-      ("complete" | byte)
-    ).as[ReplyShortChannelIdsEndEx]
+        ("chainHash" | binarydata(32)) ::
+              ("complete" | byte)
+        ).as[ReplyShortChannelIdsEndEx]
 
   val queryChannelRangeExCodec: Codec[QueryChannelRangeEx] = (
+        ("chainHash" | binarydata(32)) ::
+              ("firstBlockNum" | uint32) ::
+              ("numberOfBlocks" | uint32)
+        ).as[QueryChannelRangeEx]
+
+  val replyChannelRangeExCodec: Codec[ReplyChannelRangeEx] = (
+        ("chainHash" | binarydata(32)) ::
+              ("firstBlockNum" | uint32) ::
+              ("numberOfBlocks" | uint32) ::
+              ("complete" | byte) ::
+              ("data" | varsizebinarydata)
+        ).as[ReplyChannelRangeEx]
+
+  val queryShortChannelIdsEx2Codec: Codec[QueryShortChannelIdsEx2] = (
+        ("chainHash" | binarydata(32)) ::
+              ("data" | varsizebinarydata)
+        ).as[QueryShortChannelIdsEx2]
+
+  val replyShortChanelIdsEndEx2Codec: Codec[ReplyShortChannelIdsEndEx2] = (
+    ("chainHash" | binarydata(32)) ::
+      ("complete" | byte)
+    ).as[ReplyShortChannelIdsEndEx2]
+
+  val queryChannelRangeEx2Codec: Codec[QueryChannelRangeEx2] = (
     ("chainHash" | binarydata(32)) ::
       ("firstBlockNum" | uint32) ::
       ("numberOfBlocks" | uint32)
-    ).as[QueryChannelRangeEx]
+    ).as[QueryChannelRangeEx2]
 
-  val replyChannelRangeExCodec: Codec[ReplyChannelRangeEx] = (
+  val replyChannelRangeEx2Codec: Codec[ReplyChannelRangeEx2] = (
     ("chainHash" | binarydata(32)) ::
       ("firstBlockNum" | uint32) ::
       ("numberOfBlocks" | uint32) ::
       ("complete" | byte) ::
       ("data" | varsizebinarydata)
-    ).as[ReplyChannelRangeEx]
+    ).as[ReplyChannelRangeEx2]
 
   val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
     ("chainHash" | binarydata(32)) ::
@@ -385,6 +409,10 @@ object LightningMessageCodecs {
     .typecase(1002, replyShortChanelIdsEndExCodec)
     .typecase(1003, queryChannelRangeExCodec)
     .typecase(1004, replyChannelRangeExCodec)
+    .typecase(1011, queryShortChannelIdsEx2Codec)
+    .typecase(1012, replyShortChanelIdsEndEx2Codec)
+    .typecase(1013, queryChannelRangeEx2Codec)
+    .typecase(1014, replyChannelRangeEx2Codec)
 
 
   /**

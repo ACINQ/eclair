@@ -10,7 +10,7 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
-import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
+import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast, ShortChannelIdsBlock}
 import fr.acinq.eclair.wire.Error
 import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, wire}
 import org.scalatest.Outcome
@@ -101,7 +101,7 @@ class PeerSpec extends TestkitBaseClass {
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
 
-    val query = wire.QueryShortChannelIds(Alice.nodeParams.chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(Seq(ShortChannelId(42000)), ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
+    val query = wire.QueryShortChannelIds(Alice.nodeParams.chainHash, ShortChannelIdsBlock.encodeSingle(Seq(ShortChannelId(42000)), ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
 
     // make sure that routing messages go through
     for (ann <- channels ++ updates) {
