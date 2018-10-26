@@ -101,7 +101,8 @@ name                         | description                                      
  eclair.api.password         | API password (BASIC)                                                                  | "" (must be set if the API is enabled)
  eclair.bitcoind.rpcuser     | Bitcoin Core RPC user                                                                 | foo
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password                                                             | bar
- eclair.bitcoind.zmq         | Bitcoin Core ZMQ address                                                              | "tcp://127.0.0.1:29000"
+ eclair.bitcoind.zmqblock    | Bitcoin Core ZMQ block address                                                        | "tcp://127.0.0.1:29000"
+ eclair.bitcoind.zmqtx       | Bitcoin Core ZMQ tx address                                                           | "tcp://127.0.0.1:29000"
  eclair.gui.unit             | Unit in which amounts are displayed (possible values: msat, sat, mbtc, btc)           | btc 
 
 Quotes are not required unless the value contains special characters. Full syntax guide [here](https://github.com/lightbend/config/blob/master/HOCON.md).
