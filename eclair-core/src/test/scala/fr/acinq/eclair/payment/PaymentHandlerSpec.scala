@@ -24,7 +24,7 @@ import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UpdateAddHtlc,UnknownPaymentHash}
 import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
 import org.scalatest.FunSuiteLike
 
@@ -82,6 +82,20 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry = Globals.blockCount.get() + 3, "")
       sender.send(handler, add)
       assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(FinalExpiryTooSoon))
+      eventListener.expectNoMsg(300 milliseconds)
+      sender.send(handler, CheckPayment(pr.paymentHash))
+      assert(sender.expectMsgType[Boolean] === false)
+    }
+    {
+      sender.send(handler, ReceivePayment(Some(amountMsat), "timeout expired",Some(1L)))
+      Thread.sleep(2000) //allow request to timeout
+      val pr = sender.expectMsgType[PaymentRequest]
+      sender.send(handler, CheckPayment(pr.paymentHash))
+      assert(sender.expectMsgType[Boolean] === false)
+      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
+      sender.send(handler, add)
+      assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(UnknownPaymentHash))
+      // We chose UnknownPaymentHash on purpose. So if you have expired by 1 second or 1 hour you get the same error message.
       eventListener.expectNoMsg(300 milliseconds)
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === false)
