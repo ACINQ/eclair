@@ -12,6 +12,7 @@ import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.wire._
 import org.scalatest.FunSuiteLike
 
+import scala.compat.Platform
 import scala.concurrent.duration._
 
 
@@ -112,14 +113,28 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
 
 object RoutingSyncSpec {
+  val (priv_a, priv_b, priv_funding_a, priv_funding_b) = (randomKey, randomKey, randomKey, randomKey)
+  val (priv1, priv2) = if (Announcements.isNode1(priv_a.publicKey.toBin, priv_b.publicKey.toBin))
+    (priv_a, priv_b)
+  else
+    (priv_b, priv_a)
+
   def makeFakeRoutingInfo(shortChannelId: ShortChannelId): (ChannelAnnouncement, ChannelUpdate, ChannelUpdate, NodeAnnouncement, NodeAnnouncement) = {
-    val (priv_a, priv_b, priv_funding_a, priv_funding_b) = (randomKey, randomKey, randomKey, randomKey)
+    val timestamp = Platform.currentTime / 1000
     val channelAnn_ab = channelAnnouncement(shortChannelId, priv_a, priv_b, priv_funding_a, priv_funding_b)
     val TxCoordinates(blockHeight, _, _) = ShortChannelId.coordinates(shortChannelId)
-    val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, 500000000L, timestamp = blockHeight)
-    val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, priv_a.publicKey, shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, 500000000L, timestamp = blockHeight)
+    val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, 500000000L, timestamp = timestamp)
+    val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, priv_a.publicKey, shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, 500000000L, timestamp = timestamp)
     val nodeAnnouncement_a = makeNodeAnnouncement(priv_a, "a", Alice.nodeParams.color, List())
     val nodeAnnouncement_b = makeNodeAnnouncement(priv_b, "b", Bob.nodeParams.color, List())
     (channelAnn_ab, channelUpdate_ab, channelUpdate_ba, nodeAnnouncement_a, nodeAnnouncement_b)
+  }
+
+  def makeNewerChannelUpdate(channelUpdate: ChannelUpdate) : ChannelUpdate = {
+    val (priv, pub) = if (Announcements.isNode1(channelUpdate.channelFlags)) (priv1, priv2.publicKey) else (priv2, priv1.publicKey)
+    makeChannelUpdate(channelUpdate.chainHash, priv, pub, channelUpdate.shortChannelId,
+      channelUpdate.cltvExpiryDelta, channelUpdate.htlcMinimumMsat,
+      channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths,
+      channelUpdate.htlcMinimumMsat, Announcements.isEnabled(channelUpdate.channelFlags), channelUpdate.timestamp + 5000)
   }
 }
