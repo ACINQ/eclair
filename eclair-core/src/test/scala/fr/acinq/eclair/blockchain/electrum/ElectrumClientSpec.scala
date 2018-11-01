@@ -16,14 +16,16 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
+import java.io.FileOutputStream
 import java.net.InetSocketAddress
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction}
+import fr.acinq.bitcoin.{BinaryData, BlockHeader, Crypto, Transaction}
 import grizzled.slf4j.Logging
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
+import scala.collection.SortedMap
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
@@ -38,7 +40,9 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
   val scriptHash: BinaryData = Crypto.sha256(referenceTx.txOut(0).publicKeyScript).reverse
 
   override protected def beforeAll(): Unit = {
-    client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("testnet.qtornado.com", 51001))), "electrum-client")
+    // electrum-testnet-unlimited.criptolayer.net
+    //client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("testnet.qtornado.com", 50001))), "electrum-client")
+    client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("testnet.hsmiths.com", 53011))), "electrum-client")
   }
 
   override protected def afterAll(): Unit = {
@@ -60,6 +64,14 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.send(client, GetHeader(10000))
     val GetHeaderResponse(header) = probe.expectMsgType[GetHeaderResponse]
     assert(header.block_hash == BinaryData("000000000058b74204bb9d59128e7975b683ac73910660b6531e59523fb4a102"))
+  }
+
+  test("get headers") {
+    val start = (500000 / 2016) * 2016
+    probe.send(client, GetHeaders(start, 2016))
+    val GetHeadersResponse(start1, headers, _) = probe.expectMsgType[GetHeadersResponse]
+    assert(start1 == start)
+    assert(headers.size == 2016)
   }
 
   test("get merkle tree") {

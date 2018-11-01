@@ -44,7 +44,7 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
   var addressSubscriptions = Map.empty[String, Set[ActorRef]]
   var scriptHashSubscriptions = Map.empty[BinaryData, Set[ActorRef]]
   val headerSubscriptions = collection.mutable.HashSet.empty[ActorRef]
-  val version = ServerVersion("2.1.7", "1.1")
+  val version = ServerVersion("2.1.7", "1.2")
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
   val keepHeaders = 100
 
@@ -259,6 +259,9 @@ object ElectrumClient {
   case class GetHeader(height: Int) extends Request
   case class GetHeaderResponse(header: Header) extends Response
 
+  case class GetHeaders(start_height: Int, count: Int, cp_height: Int = 0) extends Request
+  case class GetHeadersResponse(start_height: Int, headers: Seq[BlockHeader], max: Int) extends Response
+
   case class GetMerkle(txid: BinaryData, height: Long) extends Request
   case class GetMerkleResponse(txid: BinaryData, merkle: Seq[BinaryData], block_height: Long, pos: Int) extends Response {
     lazy val root: BinaryData = {
@@ -290,7 +293,7 @@ object ElectrumClient {
   }
 
   object Header {
-    def makeHeader(height: Long, header: BlockHeader) = ElectrumClient.Header(0, header.version, header.hashPreviousBlock, header.hashMerkleRoot, header.time, header.bits, header.nonce)
+    def makeHeader(height: Long, header: BlockHeader) = ElectrumClient.Header(height, header.version, header.hashPreviousBlock, header.hashMerkleRoot, header.time, header.bits, header.nonce)
 
     val RegtestGenesisHeader = makeHeader(0, Block.RegtestGenesisBlock.header)
     val TestnetGenesisHeader = makeHeader(0, Block.TestnetGenesisBlock.header)
@@ -387,6 +390,7 @@ object ElectrumClient {
     case GetTransaction(txid: BinaryData) => JsonRPCRequest(id = reqId, method = "blockchain.transaction.get", params = txid :: Nil)
     case HeaderSubscription(_) => JsonRPCRequest(id = reqId, method = "blockchain.headers.subscribe", params = Nil)
     case GetHeader(height) => JsonRPCRequest(id = reqId, method = "blockchain.block.get_header", params = height :: Nil)
+    case GetHeaders(start_height, count, cp_height) => JsonRPCRequest(id = reqId, method = "blockchain.block.headers", params = start_height :: count :: Nil)
     case GetMerkle(txid, height) => JsonRPCRequest(id = reqId, method = "blockchain.transaction.get_merkle", params = txid :: height :: Nil)
   }
 
@@ -456,6 +460,13 @@ object ElectrumClient {
           BroadcastTransactionResponse(tx, None)
         case GetHeader(height) =>
           GetHeaderResponse(parseHeader(json.result))
+        case GetHeaders(start_height, count, cp_height) =>
+          val count = intField(json.result, "count")
+          val max = intField(json.result, "max")
+          val JString(hex) = json.result \ "hex"
+          val bin = fromHexString(hex)
+          val blockHeaders = bin.grouped(80).map(BlockHeader.read).toList
+          GetHeadersResponse(start_height, blockHeaders, max)
         case GetMerkle(txid, height) =>
           val JArray(hashes) = json.result \ "merkle"
           val leaves = hashes collect { case JString(value) => BinaryData(value) }
