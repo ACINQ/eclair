@@ -16,16 +16,14 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
-import java.io.FileOutputStream
 import java.net.InetSocketAddress
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, BlockHeader, Crypto, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction}
 import grizzled.slf4j.Logging
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
-import scala.collection.SortedMap
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
