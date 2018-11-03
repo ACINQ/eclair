@@ -24,6 +24,7 @@ import akka.http.scaladsl.Http
 import akka.pattern.after
 import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
+import com.softwaremill.sttp.asynchttpclient.future.AsyncHttpClientFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
@@ -81,10 +82,8 @@ class Setup(datadir: File,
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
   secureRandom.nextInt()
 
-  implicit val materializer = ActorMaterializer()
-  implicit val timeout = Timeout(30 seconds)
-  implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
+  implicit val sttpBackend  = AsyncHttpClientFutureBackend()
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>
@@ -93,6 +92,8 @@ class Setup(datadir: File,
         password = config.getString("bitcoind.rpcpassword"),
         host = config.getString("bitcoind.host"),
         port = config.getInt("bitcoind.rpcport"))
+      implicit val timeout = Timeout(30 seconds)
+      implicit val formats = org.json4s.DefaultFormats
       val future = for {
         json <- bitcoinClient.invoke("getblockchaininfo").recover { case _ => throw BitcoinRPCConnectionException }
         // Make sure wallet support is enabled in bitcoind.
@@ -146,7 +147,8 @@ class Setup(datadir: File,
     for {
       _ <- Future.successful(true)
       feeratesRetrieved = Promise[Boolean]()
-      zmqConnected = Promise[Boolean]()
+      zmqBlockConnected = Promise[Boolean]()
+      zmqTxConnected = Promise[Boolean]()
       tcpBound = Promise[Unit]()
 
       defaultFeerates = FeeratesPerKB(
@@ -178,10 +180,12 @@ class Setup(datadir: File,
 
       watcher = bitcoin match {
         case Bitcoind(bitcoinClient) =>
-          system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), Some(zmqConnected))), "zmq", SupervisorStrategy.Restart))
+          system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
+          system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
           system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoinClient))), "watcher", SupervisorStrategy.Resume))
         case Electrum(electrumClient) =>
-          zmqConnected.success(true)
+          zmqBlockConnected.success(true)
+          zmqTxConnected.success(true)
           system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
       }
 
@@ -189,6 +193,7 @@ class Setup(datadir: File,
         case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
         case Electrum(electrumClient) =>
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash)), "electrum-wallet")
+          implicit val timeout = Timeout(30 seconds)
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
       }
       _ = wallet.getFinalAddress.map {
@@ -221,13 +226,16 @@ class Setup(datadir: File,
         server = server,
         wallet = wallet)
 
-      zmqTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
+      zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
+      zmqTxTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
       tcpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("server.port"))))
 
-      _ <- Future.firstCompletedOf(zmqConnected.future :: zmqTimeout :: Nil)
+      _ <- Future.firstCompletedOf(zmqBlockConnected.future :: zmqBlockTimeout :: Nil)
+      _ <- Future.firstCompletedOf(zmqTxConnected.future :: zmqTxTimeout :: Nil)
       _ <- Future.firstCompletedOf(tcpBound.future :: tcpTimeout :: Nil)
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
+        implicit val materializer = ActorMaterializer()
         val api = new Service {
 
           override def scheduler = system.scheduler
