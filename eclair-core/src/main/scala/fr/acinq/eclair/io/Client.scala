@@ -23,8 +23,10 @@ import akka.event.Logging.MDC
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.{Logs, NodeParams}
 import fr.acinq.eclair.io.Client.ConnectionFailed
+import fr.acinq.eclair.tor.Socks5Connection
+import fr.acinq.eclair.tor.Socks5Connection.{Socks5Connect, Socks5Connected}
+import fr.acinq.eclair.{Logs, NodeParams}
 
 import scala.concurrent.duration._
 
@@ -32,7 +34,7 @@ import scala.concurrent.duration._
   * Created by PM on 27/10/2015.
   *
   */
-class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]) extends Actor with DiagnosticActorLogging {
+class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef], socksProxy: Option[InetSocketAddress]) extends Actor with DiagnosticActorLogging {
 
   import Tcp._
   import context.system
@@ -40,22 +42,58 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
   // we could connect directly here but this allows to take advantage of the automated mdc configuration on message reception
   self ! 'connect
 
+  private var connection: ActorRef = _
+
   def receive = {
+
     case 'connect =>
-      log.info(s"connecting to pubkey=$remoteNodeId host=${address.getHostString} port=${address.getPort}")
-      IO(Tcp) ! Connect(address, timeout = Some(5 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
+      val addressToConnect = socksProxy match {
+        case None =>
+          log.info(s"connecting to pubkey=$remoteNodeId host=${address.getHostString} port=${address.getPort}")
+          address
+        case Some(socksProxyAddress) =>
+          log.info(s"connecting to SOCKS5 proxy $socksProxyAddress")
+          socksProxyAddress
+      }
+      IO(Tcp) ! Connect(addressToConnect, timeout = Some(50 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
 
     case CommandFailed(_: Connect) =>
-      log.info(s"connection failed to $remoteNodeId@${address.getHostString}:${address.getPort}")
+      socksProxy match {
+        case None =>
+          log.info(s"connection failed to $remoteNodeId@${address.getHostString}:${address.getPort}")
+        case Some(socksProxyAddress) =>
+          log.info(s"connection failed to SOCKS5 proxy $socksProxyAddress")
+      }
+      origin_opt.map(_ ! Status.Failure(ConnectionFailed(address)))
+      context stop self
+
+    case CommandFailed(_: Socks5Connect) =>
+      log.info(s"connection failed to $remoteNodeId@${address.getHostString}:${address.getPort} via SOCKS5 ${socksProxy.map(_.toString).getOrElse("")}")
       origin_opt.map(_ ! Status.Failure(ConnectionFailed(address)))
       context stop self
 
     case Connected(remote, _) =>
-      log.info(s"connected to pubkey=$remoteNodeId host=${remote.getHostString} port=${remote.getPort}")
-      val connection = sender
-      authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = Some(remoteNodeId), address = address, origin_opt = origin_opt)
-      context watch connection
-      context become connected(connection)
+      socksProxy match {
+        case None =>
+          connection = sender()
+          context watch connection
+          log.info(s"connected to pubkey=$remoteNodeId host=${remote.getHostString} port=${remote.getPort}")
+          authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = Some(remoteNodeId), address = address, origin_opt = origin_opt)
+          context become connected(connection)
+        case Some(_) =>
+          connection = context.actorOf(Socks5Connection.props(sender()))
+          context watch connection
+          connection ! Socks5Connect(address)
+      }
+
+    case Socks5Connected(_) =>
+      socksProxy match {
+        case Some(proxyAddress) =>
+          log.info(s"connected to pubkey=$remoteNodeId host=${address.getHostString} port=${address.getPort} via SOCKS5 proxy $proxyAddress")
+          authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = Some(remoteNodeId), address = address, origin_opt = origin_opt)
+          context become connected(connection)
+        case _ =>
+      }
   }
 
   def connected(connection: ActorRef): Receive = {
@@ -70,7 +108,7 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
 
 object Client extends App {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin_opt))
+  def props(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef], socksProxy: Option[InetSocketAddress]): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin_opt, socksProxy))
 
   case class ConnectionFailed(address: InetSocketAddress) extends RuntimeException(s"connection failed to $address")
 

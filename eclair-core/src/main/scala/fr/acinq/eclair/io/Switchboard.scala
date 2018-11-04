@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import java.net.InetSocketAddress
+import java.net.{InetAddress, InetSocketAddress}
 
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -29,7 +29,7 @@ import fr.acinq.eclair.router.Rebroadcast
   * Ties network connections to peers.
   * Created by PM on 14/02/2017.
   */
-class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[InetSocketAddress]) extends Actor with ActorLogging {
 
   authenticator ! self
 
@@ -101,7 +101,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
       case Some(peer) => peer
       case None =>
         log.info(s"creating new peer current=${peers.size}")
-        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet), name = s"peer-$remoteNodeId")
+        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet, socksProxy), name = s"peer-$remoteNodeId")
         peer ! Peer.Init(previousKnownAddress, offlineChannels)
         context watch (peer)
         peer
@@ -116,6 +116,6 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
 object Switchboard {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet))
+  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[InetSocketAddress]) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet, socksProxy))
 
 }

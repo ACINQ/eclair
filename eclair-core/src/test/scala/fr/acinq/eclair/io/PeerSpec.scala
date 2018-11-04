@@ -35,7 +35,7 @@ class PeerSpec extends TestkitBaseClass {
     val transport = TestProbe()
     val wallet: EclairWallet = null // unused
     val remoteNodeId = Bob.nodeParams.nodeId
-    val peer = system.actorOf(Peer.props(Alice.nodeParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
+    val peer = system.actorOf(Peer.props(Alice.nodeParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet, None))
     withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)))
   }
 

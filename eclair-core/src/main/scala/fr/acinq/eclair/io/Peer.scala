@@ -38,7 +38,7 @@ import scala.util.Random
 /**
   * Created by PM on 26/08/2016.
   */
-class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[InetSocketAddress]) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -57,7 +57,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   when(DISCONNECTED) {
     case Event(Peer.Connect(NodeURI(_, address)), _) =>
       // even if we are in a reconnection loop, we immediately process explicit connection requests
-      context.actorOf(Client.props(nodeParams, authenticator, new InetSocketAddress(address.getHost, address.getPort), remoteNodeId, origin_opt = Some(sender())))
+      context.actorOf(Client.props(nodeParams, authenticator, new InetSocketAddress(address.getHost, address.getPort), remoteNodeId, origin_opt = Some(sender()), socksProxy))
       stay
 
     case Event(Reconnect, d@DisconnectedData(address_opt, channels, attempts)) =>
@@ -65,7 +65,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
         case _ if channels.isEmpty => stay // no-op (no more channels with this peer)
         case Some(address) =>
-          context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
+          context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None, socksProxy))
           // exponential backoff retry with a finite max
           setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, attempts), 60) seconds, repeat = false)
           stay using d.copy(attempts = attempts + 1)
@@ -431,7 +431,7 @@ object Peer {
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet: EclairWallet))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[InetSocketAddress]) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet, socksProxy))
 
   // @formatter:off
 

@@ -62,7 +62,9 @@ class Setup(datadir: File,
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   logger.info(s"datadir=${datadir.getCanonicalPath}")
-
+  logger.info(s"initializing secure random generator")
+  // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
+  secureRandom.nextInt()
 
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
@@ -73,11 +75,10 @@ class Setup(datadir: File,
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
 
-  logger.info(s"initializing secure random generator")
-  // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
-  secureRandom.nextInt()
-
   val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, initTor())
+
+  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
+  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
 
   // always bind the server to localhost when using Tor
   val serverBindingAddress = new InetSocketAddress(
@@ -88,9 +89,6 @@ class Setup(datadir: File,
   DBCompatChecker.checkDBCompatibility(nodeParams)
   DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
   PortChecker.checkAvailable(serverBindingAddress)
-
-  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
-  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>
@@ -201,7 +199,8 @@ class Setup(datadir: File,
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
       router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
-      switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
+      socksProxy = if (config.getBoolean("tor.enabled")) Some(new InetSocketAddress(config.getString("tor.host"), config.getInt("tor.socks-port"))) else None
+      switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet, socksProxy), "switchboard", SupervisorStrategy.Resume))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.nodeId, router, register), "payment-initiator", SupervisorStrategy.Restart))
 
@@ -267,8 +266,6 @@ class Setup(datadir: File,
 
   private def initTor(): Option[InetSocketAddress] = {
     if (config.getBoolean("tor.enabled")) {
-      sys.props.put("socksProxyHost", config.getString("tor.host"))
-      sys.props.put("socksProxyPort", config.getInt("tor.socks-port").toString)
       if (config.getString("tor.protocol") != "socks") {
         val promiseTorAddress = Promise[OnionAddress]()
         val protocolHandler = system.actorOf(TorProtocolHandler.props(

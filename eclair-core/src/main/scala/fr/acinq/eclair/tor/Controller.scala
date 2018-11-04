@@ -2,7 +2,7 @@ package fr.acinq.eclair.tor
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import akka.io.{IO, Tcp}
 import akka.util.ByteString
 
@@ -29,6 +29,7 @@ class Controller(address: InetSocketAddress, listener: ActorRef)
       listener ! c
       val connection = sender()
       connection ! Register(self)
+      context watch connection
       context become {
         case data: ByteString =>
           connection ! Write(data)
@@ -39,6 +40,9 @@ class Controller(address: InetSocketAddress, listener: ActorRef)
         case Received(data) =>
           listener ! data
         case _: ConnectionClosed =>
+          context stop listener
+          context stop self
+        case Terminated(actor) if actor == connection =>
           context stop listener
           context stop self
       }
