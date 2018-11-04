@@ -19,13 +19,11 @@ class Socks5Connection(underlying: ActorRef) extends Actor with ActorLogging {
       context become greetings(sender(), c)
       underlying ! Tcp.Register(self)
       underlying ! Tcp.ResumeReading
-      log.info(s"send greeting")
       underlying ! Tcp.Write(socks5Greeting)
   }
 
   def greetings(commander: ActorRef, connectCommand: Socks5Connect): Receive = {
     case Tcp.Received(data) =>
-      log.info(s"receive auth")
       try {
         if (data(0) != 0x05) {
           throw new RuntimeException("Invalid SOCKS5 proxy response")
@@ -33,7 +31,6 @@ class Socks5Connection(underlying: ActorRef) extends Actor with ActorLogging {
           throw new RuntimeException("Unrecognized SOCKS5 auth method")
         } else {
           context become connectionRequest(commander, connectCommand)
-          log.info(s"send con req")
           underlying ! Tcp.Write(socks5ConnectionRequest(connectCommand.address))
           underlying ! Tcp.ResumeReading
         }
@@ -47,7 +44,6 @@ class Socks5Connection(underlying: ActorRef) extends Actor with ActorLogging {
 
   def connectionRequest(commander: ActorRef, connectCommand: Socks5Connect): Receive = {
     case c@Tcp.Received(data) =>
-      log.info(s"receive address")
       try {
       if (data(0) != 0x05) {
         throw new RuntimeException("Invalid SOCKS5 proxy response")
