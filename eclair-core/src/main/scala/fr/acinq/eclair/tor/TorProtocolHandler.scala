@@ -2,19 +2,17 @@ package fr.acinq.eclair.tor
 
 import java.io._
 import java.nio.file.{Files, Paths}
-import java.security.SecureRandom
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash, Status}
 import akka.io.Tcp.Connected
 import akka.util.ByteString
-import fr.acinq.eclair.tor.TorProtocolHandler.ProtocolVersion
 import fr.acinq.eclair.randomBytes
+import fr.acinq.eclair.tor.TorProtocolHandler.ProtocolVersion
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import javax.xml.bind.DatatypeConverter
 
 import scala.concurrent.Promise
-import scala.util.Random
 
 case class TorException(msg: String) extends RuntimeException(msg)
 
@@ -33,11 +31,6 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
 
   private var receiver: ActorRef = _
 
-  private var protoInfo: ProtocolInfo = _
-  private var clientHash: Array[Byte] = _
-  private var keyStr: String = _
-  private var portStr: String = _
-
   private var address: Option[OnionAddress] = None
 
   private val nonce: Array[Byte] = clientNonce.getOrElse(randomBytes(32))
@@ -45,16 +38,14 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
   override def receive: Receive = {
     case Connected(_, _) =>
       receiver = sender()
+      sendCommand("PROTOCOLINFO 1")
       context become protocolInfo
-      self ! SendNextCommand
   }
 
   def protocolInfo: Receive = {
-    case SendNextCommand =>
-      sendCommand("PROTOCOLINFO 1")
     case data: ByteString => handleExceptions {
       val res = parseResponse(readResponse(data))
-      protoInfo = ProtocolInfo(
+      val protoInfo = ProtocolInfo(
         methods = res.getOrElse("METHODS", throw TorException("Tor auth methods not found")),
         cookieFile = unquote(res.getOrElse("COOKIEFILE", throw TorException("Tor cookie file not found"))),
         version = unquote(res.getOrElse("Tor", throw TorException("Tor version not found"))))
@@ -62,41 +53,33 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
       if (!protocolVersion.supportedBy(protoInfo.version)) {
         throw TorException(s"Tor version ${protoInfo.version} does not support protocol $protocolVersion")
       }
-      context become authChallenge
-      self ! SendNextCommand
+      sendCommand(s"AUTHCHALLENGE SAFECOOKIE ${hex(nonce)}")
+      context become authChallenge(protoInfo.cookieFile)
     }
   }
 
-  def authChallenge: Receive = {
-    case SendNextCommand =>
-      sendCommand(s"AUTHCHALLENGE SAFECOOKIE ${hex(nonce)}")
+  def authChallenge(cookieFile: String): Receive = {
     case data: ByteString => handleExceptions {
       val res = parseResponse(readResponse(data))
-      clientHash = computeClientHash(
+      val clientHash = computeClientHash(
         res.getOrElse("SERVERHASH", throw TorException("Tor server hash not found")),
-        res.getOrElse("SERVERNONCE", throw TorException("Tor server nonce not found"))
+        res.getOrElse("SERVERNONCE", throw TorException("Tor server nonce not found")),
+        cookieFile
       )
+      sendCommand(s"AUTHENTICATE ${hex(clientHash)}")
       context become authenticate
-      self ! SendNextCommand
     }
   }
 
   def authenticate: Receive = {
-    case SendNextCommand =>
-      sendCommand(s"AUTHENTICATE ${hex(clientHash)}")
     case data: ByteString => handleExceptions {
       readResponse(data)
-      keyStr = computeKey
-      portStr = computePort
+      sendCommand(s"ADD_ONION $computeKey $computePort")
       context become addOnion
-      self ! SendNextCommand
     }
   }
 
   def addOnion: Receive = {
-    case SendNextCommand =>
-      val cmd = s"ADD_ONION $keyStr $portStr"
-      sendCommand(cmd)
     case data: ByteString => handleExceptions {
       val res = readResponse(data)
       if (ok(res)) {
@@ -150,7 +133,7 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
     }
   }
 
-  private def computeClientHash(serverHash: String, serverNonce: String): Array[Byte] = {
+  private def computeClientHash(serverHash: String, serverNonce: String, cookieFile: String): Array[Byte] = {
     val decodedServerHash = unhex(serverHash)
     if (decodedServerHash.length != 32)
       throw TorException("Invalid server hash length")
@@ -159,7 +142,7 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
     if (decodedServerNonce.length != 32)
       throw TorException("Invalid server nonce length")
 
-    val cookie = readBytes(protoInfo.cookieFile, 32)
+    val cookie = readBytes(cookieFile, 32)
 
     val message = cookie ++ nonce ++ decodedServerNonce
 
@@ -208,17 +191,7 @@ object TorProtocolHandler {
     }
   }
 
-  case object SendNextCommand
-
   case object GetOnionAddress
-
-  case object AuthCompleted
-
-  case object AuthFailed
-
-  case class OnionAdded(onionAddress: OnionAddress)
-
-  case class Error(ex: Throwable)
 
   case class ProtocolInfo(methods: String, cookieFile: String, version: String)
 
