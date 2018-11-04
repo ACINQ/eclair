@@ -16,7 +16,7 @@ brew install tor
 
 Edit Tor configuration file `/etc/tor/torrc` (Linux) or `/usr/local/etc/tor/torrc` (Mac OS X)
 eclair requires for safe cooke authentication as well as SOCKS5 and control connections to be enabled.
-Change value of ExitPolicy parameter only if you really know what you are doing.
+Change value of `ExitPolicy` parameter only if you really know what you are doing.
 
 
 ```
@@ -58,12 +58,12 @@ need to configure Tor hidden service using `eclair.tor.protocol-version` paramet
 eclair.tor.protocol-version = "v3"
 ```
 
-There are three possible values for protocol-version:
+There are three possible values for `protocol-version`:
 
 value  | description
 -------|---------------------------------------------------------
  socks | no incoming connections allowed.
  v2    | eclair sets up a Tor hidden service version 2 end point
- v3    | eclair sets up a Tor hidden service version 3
+ v3    | eclair sets up a Tor hidden service version 3 end point
 
 Note, that bitcoind should be configured to use Tor as well.
