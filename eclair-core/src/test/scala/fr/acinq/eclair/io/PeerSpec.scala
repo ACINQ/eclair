@@ -8,9 +8,10 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.ResumeAnnouncements
+import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
+import fr.acinq.eclair.wire.Error
 import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, wire}
 import org.scalatest.Outcome
 
@@ -156,5 +157,12 @@ class PeerSpec extends TestkitBaseClass {
       router.expectMsg(Peer.PeerRoutingMessage(transport.ref, remoteNodeId, c))
     }
     transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
+
+    // let's assume that one of the sigs were invalid
+    router.send(peer, Peer.InvalidSignature(channels(0)))
+    // peer will return a connection-wide error, including the hex-encoded representation of the bad message
+    val error = transport.expectMsgType[Error]
+    assert(error.channelId === CHANNELID_ZERO)
+    assert(new String(error.data).startsWith("bad announcement sig! bin=0100"))
   }
 }

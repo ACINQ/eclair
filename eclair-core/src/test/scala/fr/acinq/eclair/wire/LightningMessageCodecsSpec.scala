@@ -19,9 +19,10 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import com.google.common.net.InetAddresses
-import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.{ShortChannelId, UInt64, randomBytes, randomKey}
 import org.scalatest.FunSuite
@@ -205,7 +206,7 @@ class LightningMessageCodecsSpec extends FunSuite {
       //BinaryData("a483677744b63d892a85fb7460fd6cb0504f802600956eb18cfaad05fbbe775328e4a7060476d2c0f3b7a6d505bb4de9377a55b27d1477baf14c367287c3de7900005abb440002dc523b9db431de52d7adb79cf81dd3d780002f4ce952706053edc9da30d9b9f702dc5256495247494e41574f4c460000000000000000000000000000000000000000000016031bb5481aa82769f4446e1002260701584473f82607"),
       //BinaryData("3ecfd85bcb3bafb5bad14ab7f6323a2df33e161c37c2897e576762fa90ffe46078d231ebbf7dce3eff4b440d091a10ea9d092e698a321bb9c6b30869e2782c9900005abbebe202dc523b9db431de52d7adb79cf81dd3d780002f4ce952706053edc9da30d9b9f702dc5256495247494e41574f4c460000000000000000000000000000000000000000000016031bb5481aa82769f4446e1002260701584473f82607"),
       //BinaryData("ad40baf5c7151777cc8896bc70ad2d0fd2afff47f4befb3883a78911b781a829441382d82625b77a47b9c2c71d201aab7187a6dc80e7d2d036dcb1186bac273c00005abffc330341f5ff2992997613aff5675d6796232a63ab7f30136219774da8aba431df37c80341f563377a6763723364776d777a7a3261652e6f6e696f6e00000000000000000000000f0317f2614763b32d9ce804fc002607")
-      )
+    )
 
     anns.foreach { ann =>
       val bin = ByteVector(ann.data.toArray).toBitVector
@@ -233,7 +234,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     val revoke_and_ack = RevokeAndAck(randomBytes(32), scalar(0), point(1))
     val channel_announcement = ChannelAnnouncement(randomSignature, randomSignature, randomSignature, randomSignature, bin(7, 9), Block.RegtestGenesisBlock.hash, ShortChannelId(1), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
     val node_announcement = NodeAnnouncement(randomSignature, bin(0, 0), 1, randomKey.publicKey, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", IPv4(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)).asInstanceOf[Inet4Address], 42000) :: Nil)
-    val channel_update = ChannelUpdate(randomSignature, Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2, bin(2, 2), 3, 4, 5, 6)
+    val channel_update = ChannelUpdate(randomSignature, Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2, 42, 0, 3, 4, 5, 6, None)
     val announcement_signatures = AnnouncementSignatures(randomBytes(32), ShortChannelId(42), randomSignature, randomSignature)
     val gossip_timestamp_filter = GossipTimestampFilter(Block.RegtestGenesisBlock.blockId, 100000, 1500)
     val query_short_channel_id = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, randomBytes(7515))
@@ -279,12 +280,13 @@ class LightningMessageCodecsSpec extends FunSuite {
     val revoke_and_ack = RevokeAndAck(randomBytes(32), scalar(0), point(1))
     val channel_announcement = ChannelAnnouncement(randomSignature, randomSignature, randomSignature, randomSignature, bin(7, 9), Block.RegtestGenesisBlock.hash, ShortChannelId(1), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
     val node_announcement = NodeAnnouncement(randomSignature, bin(0, 0), 1, randomKey.publicKey, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", IPv4(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)).asInstanceOf[Inet4Address], 42000) :: Nil)
-    val channel_update = ChannelUpdate(randomSignature, Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2, bin(2, 2), 3, 4, 5, 6)
+    val channel_update1 = ChannelUpdate(randomSignature, Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2, 1, 0, 3, 4, 5, 6, Some(50000000L))
+    val channel_update2 = ChannelUpdate(randomSignature, Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2, 0, 0, 3, 4, 5, 6, None)
     val announcement_signatures = AnnouncementSignatures(randomBytes(32), ShortChannelId(42), randomSignature, randomSignature)
     val ping = Ping(100, BinaryData("01" * 10))
     val pong = Pong(BinaryData("01" * 10))
 
-    val cached = channel_announcement :: node_announcement :: channel_update :: Nil
+    val cached = channel_announcement :: node_announcement :: channel_update1 :: channel_update2 :: Nil
     val nonCached = commit_sig :: revoke_and_ack :: announcement_signatures :: ping :: pong :: Nil
     val msgs: List[LightningMessage] = cached ::: nonCached
 
@@ -301,6 +303,17 @@ class LightningMessageCodecsSpec extends FunSuite {
     assert(cached.forall(msg => cachedKeys.contains(msg)))
     assert(nonCached.forall(msg => !cachedKeys.contains(msg)))
 
+  }
+
+  test("decode channel_update with htlc_maximum_msat") {
+    // this was generated by c-lightning
+    val bin = BinaryData("010258fff7d0e987e2cdd560e3bb5a046b4efe7b26c969c2f51da1dceec7bcb8ae1b634790503d5290c1a6c51d681cf8f4211d27ed33a257dcc1102862571bf1792306226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f0005a100000200005bc75919010100060000000000000001000000010000000a000000003a699d00")
+    val update = LightningMessageCodecs.lightningMessageCodec.decode(BitVector(bin.toArray)).require.value.asInstanceOf[ChannelUpdate]
+    assert(update === ChannelUpdate("3044022058fff7d0e987e2cdd560e3bb5a046b4efe7b26c969c2f51da1dceec7bcb8ae1b0220634790503d5290c1a6c51d681cf8f4211d27ed33a257dcc1102862571bf1792301", "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f", ShortChannelId(0x5a10000020000L), 1539791129, 1, 1, 6, 1, 1, 10, Some(980000000L)))
+    val nodeId = PublicKey("03370c9bac836e557eb4f017fe8f9cc047f44db39c1c4e410ff0f7be142b817ae4")
+    assert(Announcements.checkSig(update, nodeId))
+    val bin2 = BinaryData(LightningMessageCodecs.lightningMessageCodec.encode(update).require.toByteArray)
+    assert(bin === bin2)
   }
 
 }

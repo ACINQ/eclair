@@ -17,8 +17,7 @@
 package fr.acinq.eclair.wire
 
 import java.math.BigInteger
-import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
-
+import java.net.{Inet4Address, Inet6Address, InetAddress}
 import com.google.common.cache.{CacheBuilder, CacheLoader}
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
@@ -28,6 +27,7 @@ import fr.acinq.eclair.{ShortChannelId, UInt64, wire}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
+import shapeless.nat._
 
 import scala.util.{Failure, Success, Try}
 
@@ -280,15 +280,18 @@ object LightningMessageCodecs {
     ("signature" | signature) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
-  val channelUpdateWitnessCodec = (
+  val channelUpdateWitnessCodec =
     ("chainHash" | binarydata(32)) ::
       ("shortChannelId" | shortchannelid) ::
       ("timestamp" | uint32) ::
-      ("flags" | binarydata(2)) ::
-      ("cltvExpiryDelta" | uint16) ::
-      ("htlcMinimumMsat" | uint64) ::
-      ("feeBaseMsat" | uint32) ::
-      ("feeProportionalMillionths" | uint32))
+      (("messageFlags" | byte) >>:~ { messageFlags =>
+        ("channelFlags" | byte) ::
+          ("cltvExpiryDelta" | uint16) ::
+          ("htlcMinimumMsat" | uint64) ::
+          ("feeBaseMsat" | uint32) ::
+          ("feeProportionalMillionths" | uint32) ::
+          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64))
+      })
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (
     ("signature" | signature) ::
@@ -322,7 +325,7 @@ object LightningMessageCodecs {
     ("chainHash" | binarydata(32)) ::
       ("firstTimestamp" | uint32) ::
       ("timestampRange" | uint32)
-  ).as[GossipTimestampFilter]
+    ).as[GossipTimestampFilter]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)

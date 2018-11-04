@@ -31,6 +31,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
+import scodec.Attempt
 
 import scala.concurrent.duration._
 import scala.util.Random
@@ -305,7 +306,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(badMessage: BadMessage, data@ConnectedData(_, transport, _, _, _, behavior)) =>
       val behavior1 = badMessage match {
         case InvalidSignature(r) =>
-          val bin = LightningMessageCodecs.lightningMessageCodec.encode(r)
+          val bin: String = LightningMessageCodecs.lightningMessageCodec.encode(r) match {
+            case Attempt.Successful(b) => b.toHex
+            case _ => "unknown"
+          }
           log.error(s"peer sent us a routing message with invalid sig: r=$r bin=$bin")
           // for now we just return an error, maybe ban the peer in the future?
           transport ! Error(CHANNELID_ZERO, s"bad announcement sig! bin=$bin".getBytes())
