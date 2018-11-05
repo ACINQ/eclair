@@ -209,7 +209,7 @@ addresstype=p2sh-segwit
 deprecatedrpc=signrawtransaction
 ```
 
-You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network specific, so you can easliy run your bitcoin node on both mainnet and testnet. For example you could use:
+You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network specific, so you can easily run your bitcoin node on both mainnet and testnet. For example you could use:
 
 ```
 server=1
