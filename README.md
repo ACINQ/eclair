@@ -140,7 +140,7 @@ java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gu
  ------------- |----------------------------------------------------------------------------------------|-----------------------------------------------------------
   getinfo      |                                                                                        | return basic node information (id, chain hash, current block height) 
   connect      | nodeId, host, port                                                                     | open a secure connection to a lightning node
-  connect      | url                                                                                    | open a secure connection to a lightning node
+  connect      | uri                                                                                    | open a secure connection to a lightning node
   open         | nodeId, fundingSatoshis, pushMsat = 0, feerateSatPerByte = ?, channelFlags = 0x01      | open a channel with another lightning node, by default push = 0, feerate for the funding tx targets 6 blocks, and channel is announced
   updaterelayfee | channelId, feeBaseMsat, feeProportionalMillionths                                    | update relay fee for payments going through this channel
   peers        |                                                                                        | list existing local peers
