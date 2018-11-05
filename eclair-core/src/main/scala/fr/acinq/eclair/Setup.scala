@@ -79,9 +79,6 @@ class Setup(datadir: File,
 
   val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, initTor())
 
-  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
-  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
-
   // always bind the server to localhost when using Tor
   val serverBindingAddress = new InetSocketAddress(
     if (config.getBoolean("tor.enabled")) "127.0.0.1" else config.getString("server.binding-ip"),
@@ -91,6 +88,9 @@ class Setup(datadir: File,
   DBCompatChecker.checkDBCompatibility(nodeParams)
   DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
   PortChecker.checkAvailable(serverBindingAddress)
+
+  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
+  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>
@@ -286,7 +286,7 @@ class Setup(datadir: File,
 
   private def initTor(): Option[InetSocketAddress] = {
     if (config.getBoolean("tor.enabled")) {
-      if (config.getString("tor.protocol") != "socks") {
+      if (config.getString("tor.protocol").toLowerCase != "socks5") {
         val promiseTorAddress = Promise[OnionAddress]()
         val protocolHandler = system.actorOf(TorProtocolHandler.props(
           version = config.getString("tor.protocol"),

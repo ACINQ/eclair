@@ -58,12 +58,14 @@ need to configure Tor hidden service using `eclair.tor.protocol-version` paramet
 eclair.tor.protocol-version = "v3"
 ```
 
+eclair will create a hidden service end point and advertise it's onion address as the node's public address.
+
 There are three possible values for `protocol-version`:
 
-value  | description
--------|---------------------------------------------------------
- socks | no incoming connections allowed.
- v2    | eclair sets up a Tor hidden service version 2 end point
- v3    | eclair sets up a Tor hidden service version 3 end point
+value   | description
+--------|---------------------------------------------------------
+ socks5 | use SOCKS5 proxy for reaching peers via Tor
+ v2     | set up a Tor hidden service version 2 end point
+ v3     | set up a Tor hidden service version 3 end point
 
 Note, that bitcoind should be configured to use Tor as well.
