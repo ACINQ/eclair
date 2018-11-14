@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.states.e
 
 import akka.actor.Status.Failure
-import akka.testkit.{TestFSMRef, TestProbe}
+import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -25,14 +25,14 @@ import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Channel.TickRefreshChannelUpdate
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.transactions.Transactions.{htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
-import fr.acinq.eclair.transactions.Transactions.{htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
 import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration._
@@ -43,16 +43,16 @@ import scala.concurrent.duration._
 
 class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayer: TestProbe)
+  type FixtureParam = SetupFixture
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer, test.tags)
+      reachNormal(setup, test.tags)
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
-      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer)))
+      withFixture(test.toNoArgTest(setup))
     }
   }
 
@@ -293,6 +293,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val htlc = UpdateAddHtlc("00" * 32, 0, 150000, BinaryData("42" * 32), 400144, defaultOnion)
     bob ! htlc
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ htlc), remoteNextHtlcId = 1)))
+    // bob won't forward the add before it is cross-signed
+    relayerB.expectNoMsg()
   }
 
   test("recv UpdateAddHtlc (unexpected id)") { f =>
@@ -334,7 +336,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(new String(error.data) === HtlcValueTooSmall(channelId(bob), minimum = 1000, actual = 150).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -349,7 +351,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(new String(error.data) === InsufficientFunds(channelId(bob), amountMsat = Long.MaxValue, missingSatoshis = 9223372036083735L, reserveSatoshis = 20000, feesSatoshis = 8960).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -366,7 +368,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(new String(error.data) === InsufficientFunds(channelId(bob), amountMsat = 10000000, missingSatoshis = 11720, reserveSatoshis = 20000, feesSatoshis = 14120).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -382,7 +384,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(new String(error.data) === InsufficientFunds(channelId(bob), amountMsat = 500000000, missingSatoshis = 332400, reserveSatoshis = 20000, feesSatoshis = 12400).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -396,7 +398,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(new String(error.data) === HtlcValueTooHighInFlight(channelId(alice), maximum = 150000000, actual = 151000000).getMessage)
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
@@ -414,7 +416,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(new String(error.data) === TooManyAcceptedHtlcs(channelId(bob), maximum = 30).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -713,7 +715,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -798,7 +800,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv RevokeAndAck (one htlc received)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
 
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -811,10 +813,17 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
 
+    // at this point bob still hasn't forwarded the htlc downstream
+    relayerB.expectNoMsg()
+
     // actual test begins
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
+    // now bob will forward the htlc downstream
+    val forward = relayerB.expectMsgType[ForwardAdd]
+    assert(forward.add === htlc)
+
   }
 
   test("recv RevokeAndAck (multiple htlcs in both directions)") { f =>
@@ -891,7 +900,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
@@ -906,10 +915,68 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
+  }
+
+  test("recv RevokeAndAck (forward UpdateFailHtlc)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (_, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    sender.send(bob, CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure)))
+    sender.expectMsg("ok")
+    val fail = bob2alice.expectMsgType[UpdateFailHtlc]
+    bob2alice.forward(alice)
+    sender.send(bob, CMD_SIGN)
+    sender.expectMsg("ok")
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    // alice still hasn't forwarded the fail because it is not yet cross-signed
+    relayerA.expectNoMsg()
+
+    // actual test begins
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    // alice will forward the fail upstream
+    val forward = relayerA.expectMsgType[ForwardFail]
+    assert(forward.fail === fail)
+    assert(forward.htlc === htlc)
+  }
+
+  test("recv RevokeAndAck (forward UpdateFailMalformedHtlc)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (_, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(htlc.id, Crypto.sha256(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION))
+    sender.expectMsg("ok")
+    val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
+    bob2alice.forward(alice)
+    sender.send(bob, CMD_SIGN)
+    sender.expectMsg("ok")
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    // alice still hasn't forwarded the fail because it is not yet cross-signed
+    relayerA.expectNoMsg()
+
+    // actual test begins
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    // alice will forward the fail upstream
+    val forward = relayerA.expectMsgType[ForwardFailMalformed]
+    assert(forward.fail === fail)
+    assert(forward.htlc === htlc)
   }
 
   test("recv CMD_FULFILL_HTLC") { f =>
@@ -966,6 +1033,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill))))
+    // alice immediately propagates the fulfill upstream
+    val forward = relayerA.expectMsgType[ForwardFulfill]
+    assert(forward.fulfill === fulfill)
+    assert(forward.htlc === htlc)
   }
 
   test("recv UpdateFulfillHtlc (sender has not signed htlc)") { f =>
@@ -982,7 +1053,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
@@ -996,7 +1067,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
@@ -1007,15 +1078,15 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
+    relayerB.expectMsgType[ForwardAdd]
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
 
     // actual test begins
     sender.send(alice, UpdateFulfillHtlc("00" * 32, htlc.id, "00" * 32))
-    relayer.expectMsgType[ForwardAdd]
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout
@@ -1087,9 +1158,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateFailHtlc") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-
     sender.send(bob, CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure)))
     sender.expectMsg("ok")
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
@@ -1099,6 +1169,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))))
+    // alice won't forward the fail before it is cross-signed
+    relayerA.expectNoMsg()
   }
 
   test("recv UpdateFailMalformedHtlc") { f =>
@@ -1106,9 +1178,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
 
     // Alice sends an HTLC to Bob, which they both sign
-    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-
     // Bob fails the HTLC because he cannot parse it
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     sender.send(bob, CMD_FAIL_MALFORMED_HTLC(htlc.id, Crypto.sha256(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION))
@@ -1118,6 +1189,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))))
+    // alice won't forward the fail before it is cross-signed
+    relayerA.expectNoMsg()
 
     sender.send(bob, CMD_SIGN)
     val sig = bob2alice.expectMsgType[CommitSig]
@@ -1163,7 +1236,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
@@ -1177,7 +1250,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
@@ -1245,7 +1318,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
@@ -1263,7 +1336,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(new String(error.data) === CannotAffordFees(channelId(bob), missingSatoshis = 71620000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
     bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
     //bob2blockchain.expectMsgType[PublishAsap] // main delayed (removed because of the high fees)
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -1278,7 +1351,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(new String(error.data) === "local/remote feerates are too different: remoteFeeratePerKw=85000 localFeeratePerKw=10000")
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -1293,7 +1366,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(new String(error.data) === "remote fee rate is too small: remoteFeeratePerKw=252")
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -1307,10 +1380,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, CMD_UPDATE_RELAY_FEE(newFeeBaseMsat, newFeeProportionalMillionth))
     sender.expectMsg("ok")
 
-    val localUpdate = relayer.expectMsgType[LocalChannelUpdate]
+    val localUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(localUpdate.channelUpdate.feeBaseMsat == newFeeBaseMsat)
     assert(localUpdate.channelUpdate.feeProportionalMillionths == newFeeProportionalMillionth)
-    relayer.expectNoMsg(1 seconds)
+    relayerA.expectNoMsg(1 seconds)
   }
 
   test("recv CMD_CLOSE (no pending htlcs)") { f =>
@@ -1386,7 +1459,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[ClosingSigned]
     awaitCond(alice.stateName == NEGOTIATING)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_NEGOTIATING].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_NEGOTIATING].channelId)
   }
 
   test("recv Shutdown (with unacked sent htlcs)") { f =>
@@ -1407,7 +1480,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[Shutdown]
     awaitCond(alice.stateName == SHUTDOWN)
     // channel should be advertised as down
-    assert(relayer.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_SHUTDOWN].channelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_SHUTDOWN].channelId)
   }
 
   test("recv Shutdown (with unacked received htlcs)") { f =>
@@ -1891,7 +1964,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectNoMsg(1 second)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
     // we don't re-publish the same channel_update if there was no change
-    relayer.expectNoMsg(1 second)
+    channelUpdateListener.expectNoMsg(1 second)
   }
 
   test("recv BITCOIN_FUNDING_DEEPLYBURIED (short channel id changed)", Tag("channels_public")) { f =>
@@ -1902,8 +1975,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // public channel: we don't send the channel_update directly to the peer
     alice2bob.expectNoMsg(1 second)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
-    assert(relayer.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
-    relayer.expectNoMsg(1 second)
+    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
+    channelUpdateListener.expectNoMsg(1 second)
   }
 
   test("recv BITCOIN_FUNDING_DEEPLYBURIED (private channel)") { f =>
@@ -1914,7 +1987,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
     // we don't re-publish the same channel_update if there was no change
-    relayer.expectNoMsg(1 second)
+    channelUpdateListener.expectNoMsg(1 second)
   }
 
   test("recv BITCOIN_FUNDING_DEEPLYBURIED (private channel, short channel id changed)") { f =>
@@ -1925,8 +1998,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
     // LocalChannelUpdate should not be published
-    assert(relayer.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
-    relayer.expectNoMsg(1 second)
+    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
+    channelUpdateListener.expectNoMsg(1 second)
   }
 
   test("recv AnnouncementSignatures", Tag("channels_public")) { f =>
@@ -1945,7 +2018,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val normal = alice.stateData.asInstanceOf[DATA_NORMAL]
       normal.shortChannelId == annSigsA.shortChannelId && normal.buried && normal.channelAnnouncement == Some(channelAnn) && normal.channelUpdate.shortChannelId == annSigsA.shortChannelId
     })
-    assert(relayer.expectMsgType[LocalChannelUpdate].channelAnnouncement_opt === Some(channelAnn))
+    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelAnnouncement_opt === Some(channelAnn))
   }
 
   test("recv AnnouncementSignatures (re-send)", Tag("channels_public")) { f =>
@@ -1975,12 +2048,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
-    val update1 = relayer.expectMsgType[LocalChannelUpdate]
+    val update1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
 
     // actual test starts here
     Thread.sleep(1100)
     sender.send(alice, TickRefreshChannelUpdate)
-    val update2 = relayer.expectMsgType[LocalChannelUpdate]
+    val update2 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
   }
 
@@ -1991,13 +2064,13 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
-    val update1 = relayer.expectMsgType[LocalChannelUpdate]
+    val update1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(Announcements.isEnabled(update1.channelUpdate.channelFlags) == true)
 
     // actual test starts here
     Thread.sleep(1100)
     sender.send(alice, INPUT_DISCONNECTED)
-    val update2 = relayer.expectMsgType[LocalChannelUpdate]
+    val update2 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
     assert(Announcements.isEnabled(update2.channelUpdate.channelFlags) == false)
     awaitCond(alice.stateName == OFFLINE)

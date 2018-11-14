@@ -36,16 +36,16 @@ import scala.concurrent.duration._
 
 class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayer: TestProbe)
+  type FixtureParam = SetupFixture
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer)
+      reachNormal(setup)
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
-      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer)))
+      withFixture(test.toNoArgTest(setup))
     }
   }
 
@@ -334,15 +334,15 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(bob.stateName == OFFLINE)
 
     // alice and bob announce that their channel is OFFLINE
-    assert(Announcements.isEnabled(relayer.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags) == false)
-    assert(Announcements.isEnabled(relayer.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags) == false)
+    assert(Announcements.isEnabled(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags) == false)
+    assert(Announcements.isEnabled(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags) == false)
 
     // we make alice update here relay fee
     sender.send(alice, CMD_UPDATE_RELAY_FEE(4200, 123456))
     sender.expectMsg("ok")
 
     // alice doesn't broadcast the new channel_update yet
-    relayer.expectNoMsg(300 millis)
+    channelUpdateListener.expectNoMsg(300 millis)
 
     // then we reconnect them
     sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
@@ -355,13 +355,13 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
 
     // then alice reaches NORMAL state, and during the transition she broadcasts the channel_update
-    val channelUpdate = relayer.expectMsgType[LocalChannelUpdate](10 seconds).channelUpdate
+    val channelUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate](10 seconds).channelUpdate
     assert(channelUpdate.feeBaseMsat === 4200)
     assert(channelUpdate.feeProportionalMillionths === 123456)
     assert(Announcements.isEnabled(channelUpdate.channelFlags) == true)
 
     // no more messages
-    relayer.expectNoMsg(300 millis)
+    channelUpdateListener.expectNoMsg(300 millis)
   }
 
 }

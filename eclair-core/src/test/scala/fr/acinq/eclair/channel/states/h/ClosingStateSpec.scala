@@ -38,23 +38,25 @@ import scala.concurrent.duration._
 
 class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayer: TestProbe, bobCommitTxes: List[PublishableTxs])
+  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayerA: TestProbe, relayerB: TestProbe, channelUpdateListener: TestProbe, bobCommitTxes: List[PublishableTxs])
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
     import setup._
 
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer)
+      reachNormal(setup)
       val bobCommitTxes: List[PublishableTxs] = (for (amt <- List(100000000, 200000000, 300000000)) yield {
         val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
         crossSign(alice, bob, alice2bob, bob2alice)
-        relayer.expectMsgType[ForwardAdd]
+        relayerB.expectMsgType[ForwardAdd]
         val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs
         fulfillHtlc(htlc.id, r, bob, alice, bob2alice, alice2bob)
-        relayer.expectMsgType[ForwardFulfill]
+        // alice forwards the fulfill upstream
+        relayerA.expectMsgType[ForwardFulfill]
         crossSign(bob, alice, bob2alice, alice2bob)
-        relayer.expectMsgType[CommandBuffer.CommandAck]
+        // bob confirms that it has forwarded the fulfill to alice
+        relayerB.expectMsgType[CommandBuffer.CommandAck]
         val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs
         bobCommitTx1 :: bobCommitTx2 :: Nil
       }).flatten
@@ -70,7 +72,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // - revoked commit
       // and we want to be able to test the different scenarii.
       // Hence the NORMAL->CLOSING transition will occur in the individual tests.
-      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer, bobCommitTxes)))
+      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, bobCommitTxes)))
     }
   }
 
@@ -191,7 +193,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // alice sends an htlc to bob
     val (ra1, htlca1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    relayer.expectMsgType[ForwardAdd]
+    relayerB.expectMsgType[ForwardAdd]
     // an error occurs and alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! Error("00" * 32, "oops".getBytes)
@@ -208,17 +210,17 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(initialState.localCommitPublished.isDefined)
 
     // actual test starts here
-    relayer.expectMsgType[LocalChannelDown]
+    channelUpdateListener.expectMsgType[LocalChannelDown]
 
     // scenario 1: bob claims the htlc output from the commit tx using its preimage
     val claimHtlcSuccessFromCommitTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint("22" * 32, 0), signatureScript = "", sequence = 0, witness = Scripts.witnessClaimHtlcSuccessFromCommitTx("11" * 70, ra1, "33" * 130)) :: Nil, txOut = Nil, lockTime = 0)
     alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, claimHtlcSuccessFromCommitTx)
-    assert(relayer.expectMsgType[ForwardFulfill].fulfill === UpdateFulfillHtlc(htlca1.channelId, htlca1.id, ra1))
+    assert(relayerA.expectMsgType[ForwardFulfill].fulfill === UpdateFulfillHtlc(htlca1.channelId, htlca1.id, ra1))
 
     // scenario 2: bob claims the htlc output from his own commit tx using its preimage (let's assume both parties had published their commitment tx)
     val claimHtlcSuccessTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint("22" * 32, 0), signatureScript = "", sequence = 0, witness = Scripts.witnessHtlcSuccess("11" * 70, "22" * 70, ra1, "33" * 130)) :: Nil, txOut = Nil, lockTime = 0)
     alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, claimHtlcSuccessTx)
-    assert(relayer.expectMsgType[ForwardFulfill].fulfill === UpdateFulfillHtlc(htlca1.channelId, htlca1.id, ra1))
+    assert(relayerA.expectMsgType[ForwardFulfill].fulfill === UpdateFulfillHtlc(htlca1.channelId, htlca1.id, ra1))
 
     assert(alice.stateData == initialState) // this was a no-op
   }
@@ -271,14 +273,14 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == CLOSING)
     val aliceData = alice.stateData.asInstanceOf[DATA_CLOSING]
     assert(aliceData.localCommitPublished.isDefined)
-    relayer.expectMsgType[LocalChannelDown]
+    channelUpdateListener.expectMsgType[LocalChannelDown]
 
     // actual test starts here
     // when the commit tx is signed, alice knows that the htlc she sent right before the unilateral close will never reach the chain
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 0, 0)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
-    relayer.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverridenByLocalCommit(aliceData.channelId), origin, None, None)))
+    relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverridenByLocalCommit(aliceData.channelId), origin, None, None)))
   }
 
   test("recv BITCOIN_TX_CONFIRMED (remote commit with htlcs only signed by local in next remote commit)") { f =>
@@ -296,14 +298,14 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == CLOSING)
     val aliceData = alice.stateData.asInstanceOf[DATA_CLOSING]
     assert(aliceData.remoteCommitPublished.isDefined)
-    relayer.expectMsgType[LocalChannelDown]
+    channelUpdateListener.expectMsgType[LocalChannelDown]
 
     // actual test starts here
     // when the commit tx is signed, alice knows that the htlc she sent right before the unilateral close will never reach the chain
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
-    relayer.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverridenByLocalCommit(aliceData.channelId), origin, None, None)))
+    relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverridenByLocalCommit(aliceData.channelId), origin, None, None)))
   }
 
   test("recv BITCOIN_FUNDING_SPENT (remote commit)") { f =>
