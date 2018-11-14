@@ -16,37 +16,33 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import akka.actor.ActorSystem
-import akka.http.scaladsl.Http
-import akka.http.scaladsl.model._
-import akka.http.scaladsl.unmarshalling.Unmarshal
-import akka.stream.ActorMaterializer
-import de.heikoseeberger.akkahttpjson4s.Json4sSupport._
+import com.softwaremill.sttp._
+import com.softwaremill.sttp.json4s._
 import fr.acinq.bitcoin.{BinaryData, Block}
+import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JInt, JValue}
-import org.json4s.{DefaultFormats, jackson}
+import org.json4s.jackson.Serialization
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class BitgoFeeProvider(chainHash: BinaryData)(implicit system: ActorSystem, ec: ExecutionContext) extends FeeProvider {
+class BitgoFeeProvider(chainHash: BinaryData)(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
 
   import BitgoFeeProvider._
 
-  implicit val materializer = ActorMaterializer()
-  val httpClient = Http(system)
-  implicit val serialization = jackson.Serialization
   implicit val formats = DefaultFormats
+  implicit val serialization = Serialization
 
   val uri = chainHash match {
-    case Block.LivenetGenesisBlock.hash => Uri("https://www.bitgo.com/api/v2/btc/tx/fee")
-    case _ => Uri("https://test.bitgo.com/api/v2/tbtc/tx/fee")
+    case Block.LivenetGenesisBlock.hash => uri"https://www.bitgo.com/api/v2/btc/tx/fee"
+    case _ => uri"https://test.bitgo.com/api/v2/tbtc/tx/fee"
   }
 
   override def getFeerates: Future[FeeratesPerKB] =
     for {
-      httpRes <- httpClient.singleRequest(HttpRequest(uri = uri, method = HttpMethods.GET))
-      json <- Unmarshal(httpRes).to[JValue]
-      feeRanges = parseFeeRanges(json)
+      res <- sttp.get(uri)
+        .response(asJson[JValue])
+        .send()
+      feeRanges = parseFeeRanges(res.unsafeBody)
     } yield extractFeerates(feeRanges)
 }
 

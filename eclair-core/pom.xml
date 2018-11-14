@@ -79,10 +79,10 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.16.0/bitcoin-0.16.0-x86_64-linux-gnu.tar.gz
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.16.3/bitcoin-0.16.3-x86_64-linux-gnu.tar.gz
                 </bitcoind.url>
-                <bitcoind.md5>1375c9f908b0327d9772d4bff0d9f03f</bitcoind.md5>
-                <bitcoind.sha1>d0b05b51e1d572c44ef5b2cabbfcb662679cf7cb</bitcoind.sha1>
+                <bitcoind.md5>c371e383f024c6c45fb255d528a6beec</bitcoind.md5>
+                <bitcoind.sha1>e6d8ab1f7661a6654fd81e236b9b5fd35a3d4dcb</bitcoind.sha1>
             </properties>
         </profile>
         <profile>
@@ -93,10 +93,10 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.16.0/bitcoin-0.16.0-osx64.tar.gz
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.16.3/bitcoin-0.16.3-osx64.tar.gz
                 </bitcoind.url>
-                <bitcoind.md5>fc10d5cb12a4c3905d97df33f249eb1c</bitcoind.md5>
-                <bitcoind.sha1>3b1ab75439ca7a9b547827ec3e59c7e61c1f6fcd</bitcoind.sha1>
+                <bitcoind.md5>bacd87d0c3f65a5acd666e33d094a59e</bitcoind.md5>
+                <bitcoind.sha1>62cc5bd9ced610bb9e8d4a854396bfe2139e3d0f</bitcoind.sha1>
             </properties>
         </profile>
         <profile>
@@ -107,9 +107,9 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.16.0/bitcoin-0.16.0-win64.zip</bitcoind.url>
-                <bitcoind.md5>5b9034754752b7e1b3117eaa5434792e</bitcoind.md5>
-                <bitcoind.sha1>90d72e25782a4b454f5f507a26a3cf0f53baecef</bitcoind.sha1>
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.16.3/bitcoin-0.16.3-win64.zip</bitcoind.url>
+                <bitcoind.md5>bbde9b1206956d19298034319e9f405e</bitcoind.md5>
+                <bitcoind.sha1>85e3dc8a9c6f93b1b20cb79fa5850b5ce81da221</bitcoind.sha1>
             </properties>
         </profile>
     </profiles>
@@ -126,21 +126,33 @@
             <artifactId>akka-slf4j_${scala.version.short}</artifactId>
             <version>${akka.version}</version>
         </dependency>
+        <!-- HTTP SERVER -->
         <dependency>
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-http-core_${scala.version.short}</artifactId>
             <version>10.0.11</version>
         </dependency>
+        <!-- HTTP CLIENT -->
+        <dependency>
+            <groupId>com.softwaremill.sttp</groupId>
+            <artifactId>async-http-client-backend-future_${scala.version.short}</artifactId>
+            <version>${sttp.version}</version>
+        </dependency>
         <!-- JSON -->
         <dependency>
             <groupId>org.json4s</groupId>
             <artifactId>json4s-jackson_${scala.version.short}</artifactId>
-            <version>3.5.3</version>
+            <version>3.6.0</version>
         </dependency>
         <dependency>
             <groupId>de.heikoseeberger</groupId>
             <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
             <version>1.19.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.softwaremill.sttp</groupId>
+            <artifactId>json4s_${scala.version.short}</artifactId>
+            <version>${sttp.version}</version>
         </dependency>
         <!-- BITCOIN -->
         <dependency>

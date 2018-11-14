@@ -101,7 +101,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
               log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=${r.payload.shortChannelId} reason=${cmdFail.reason}")
               register ! Register.Forward(add.channelId, cmdFail)
             case Right(cmdAdd) =>
-              log.info(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=${r.payload.shortChannelId}")
+              log.info(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=$selectedShortChannelId")
               register ! Register.ForwardShortId(selectedShortChannelId, cmdAdd)
           }
         case Failure(t) =>
@@ -136,7 +136,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
             case (_: ExpiryTooBig, _) => ExpiryTooFar
             case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
             case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
-            case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.flags) => ChannelDisabled(channelUpdate.flags, channelUpdate)
+            case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.channelFlags) => ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)
             case (_: ChannelUnavailable, None) => PermanentChannelFailure
             case (_: HtlcTimedout, _) => PermanentChannelFailure
             case _ => TemporaryNodeFailure
@@ -147,16 +147,18 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       }
 
     case ForwardFulfill(fulfill, Local(None), add) =>
-      // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
-      context.system.eventStream.publish(PaymentSucceeded(add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil))
+      val feesPaid = MilliSatoshi(0)
+      context.system.eventStream.publish(PaymentSent(MilliSatoshi(add.amountMsat), feesPaid, add.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
+      // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the success on the event stream
+      context.system.eventStream.publish(PaymentSucceeded(add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil)) //
 
     case ForwardFulfill(fulfill, Local(Some(sender)), _) =>
       sender ! fulfill
 
-    case ForwardFulfill(fulfill, Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut), _) =>
+    case ForwardFulfill(fulfill, Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut), add) =>
       val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
       register ! Register.Forward(originChannelId, cmd)
-      context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), Crypto.sha256(fulfill.paymentPreimage)))
+      context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), add.paymentHash, fromChannelId = originChannelId, toChannelId = fulfill.channelId))
 
     case ForwardFail(_, Local(None), add) =>
       // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
@@ -255,8 +257,8 @@ object Relayer {
     channelUpdate_opt match {
       case None =>
         Left(CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
-      case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.flags) =>
-        Left(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.flags, channelUpdate)), commit = true))
+      case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.channelFlags) =>
+        Left(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)), commit = true))
       case Some(channelUpdate) if payload.amtToForward < channelUpdate.htlcMinimumMsat =>
         Left(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) if relayPayload.expiryDelta != channelUpdate.cltvExpiryDelta =>

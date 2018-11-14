@@ -16,20 +16,19 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import akka.actor.ActorSystem
 import akka.util.Timeout
+import com.softwaremill.sttp.asynchttpclient.future.AsyncHttpClientFutureBackend
+import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.Await
 
 /**
   * Created by PM on 27/01/2017.
   */
-@RunWith(classOf[JUnitRunner])
-class EarnDotComFeeProviderSpec extends FunSuite {
+
+class EarnDotComFeeProviderSpec extends FunSuite with Logging {
 
   import EarnDotComFeeProvider._
   import org.json4s.jackson.JsonMethods.parse
@@ -71,10 +70,10 @@ class EarnDotComFeeProviderSpec extends FunSuite {
   test("make sure API hasn't changed") {
     import scala.concurrent.ExecutionContext.Implicits.global
     import scala.concurrent.duration._
-    implicit val system = ActorSystem()
+    implicit val sttpBackend  = AsyncHttpClientFutureBackend()
     implicit val timeout = Timeout(30 seconds)
     val provider = new EarnDotComFeeProvider()
-    println("earn.com livenet fees: " + Await.result(provider.getFeerates, 10 seconds))
+    logger.info("earn.com livenet fees: " + Await.result(provider.getFeerates, 10 seconds))
   }
 
 }

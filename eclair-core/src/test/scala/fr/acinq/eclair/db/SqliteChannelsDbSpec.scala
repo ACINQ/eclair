@@ -20,12 +20,10 @@ import java.sql.DriverManager
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqlitePendingRelayDb}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 import org.sqlite.SQLiteException
 
-@RunWith(classOf[JUnitRunner])
+
 class SqliteChannelsDbSpec extends FunSuite {
 
   def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
@@ -56,15 +54,15 @@ class SqliteChannelsDbSpec extends FunSuite {
     db.addOrUpdateChannel(channel)
     assert(db.listChannels() === List(channel))
 
-    assert(db.listHtlcHtlcInfos(channel.channelId, commitNumber).toList == Nil)
+    assert(db.listHtlcInfos(channel.channelId, commitNumber).toList == Nil)
     db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)
     db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash2, cltvExpiry2)
-    assert(db.listHtlcHtlcInfos(channel.channelId, commitNumber).toList == List((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
-    assert(db.listHtlcHtlcInfos(channel.channelId, 43).toList == Nil)
+    assert(db.listHtlcInfos(channel.channelId, commitNumber).toList == List((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
+    assert(db.listHtlcInfos(channel.channelId, 43).toList == Nil)
 
     db.removeChannel(channel.channelId)
     assert(db.listChannels() === Nil)
-    assert(db.listHtlcHtlcInfos(channel.channelId, commitNumber).toList == Nil)
+    assert(db.listHtlcInfos(channel.channelId, commitNumber).toList == Nil)
   }
 
 }

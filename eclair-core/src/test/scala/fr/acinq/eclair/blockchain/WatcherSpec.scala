@@ -17,14 +17,12 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.Transaction
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 /**
   * Created by PM on 27/01/2017.
   */
-@RunWith(classOf[JUnitRunner])
+
 class WatcherSpec extends FunSuite {
 
   test("extract pay2wpkh pubkey script") {

@@ -18,8 +18,8 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.wire.LightningMessageCodecs.{binarydata, channelUpdateCodec, uint64}
-import scodec.Codec
 import scodec.codecs._
+import scodec.{Attempt, Codec}
 
 /**
   * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
@@ -46,7 +46,7 @@ case object RequiredChannelFeatureMissing extends Perm { def message = "channel 
 case object UnknownNextPeer extends Perm { def message = "processing node does not know the next peer in the route" }
 case class AmountBelowMinimum(amountMsat: Long, update: ChannelUpdate) extends Update { def message = s"payment amount was below the minimum required by the channel" }
 case class FeeInsufficient(amountMsat: Long, update: ChannelUpdate) extends Update { def message = s"payment fee was below the minimum required by the channel" }
-case class ChannelDisabled(flags: BinaryData, update: ChannelUpdate) extends Update { def message = "channel is currently disabled" }
+case class ChannelDisabled(messageFlags: Byte, channelFlags: Byte, update: ChannelUpdate) extends Update { def message = "channel is currently disabled" }
 case class IncorrectCltvExpiry(expiry: Long, update: ChannelUpdate) extends Update { def message = "payment expiry doesn't match the value in the onion" }
 case object UnknownPaymentHash extends Perm { def message = "payment hash is unknown to the final node" }
 case object IncorrectPaymentAmount extends Perm { def message = "payment amount is incorrect" }
@@ -65,7 +65,11 @@ object FailureMessageCodecs {
 
   val sha256Codec: Codec[BinaryData] = ("sha256Codec" | binarydata(32))
 
-  val channelUpdateWithLengthCodec = variableSizeBytes(uint16, channelUpdateCodec)
+  val channelUpdateCodecWithType = LightningMessageCodecs.lightningMessageCodec.narrow[ChannelUpdate](f => Attempt.successful(f.asInstanceOf[ChannelUpdate]), g => g)
+
+  // NB: for historical reasons some implementations were including/ommitting the message type (258 for ChannelUpdate)
+  // this codec supports both versions for decoding, and will encode with the message type
+  val channelUpdateWithLengthCodec = variableSizeBytes(uint16, choice(channelUpdateCodecWithType, channelUpdateCodec))
 
   val failureMessageCodec = discriminated[FailureMessage].by(uint16)
     .typecase(PERM | 1, provide(InvalidRealm))
@@ -83,11 +87,11 @@ object FailureMessageCodecs {
     .typecase(UPDATE | 12, (("amountMsat" | uint64) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[FeeInsufficient])
     .typecase(UPDATE | 13, (("expiry" | uint32) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[IncorrectCltvExpiry])
     .typecase(UPDATE | 14, (("channelUpdate" | channelUpdateWithLengthCodec)).as[ExpiryTooSoon])
-    .typecase(UPDATE | 20, (("flags" | binarydata(2)) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
+    .typecase(UPDATE | 20, (("messageFlags" | byte) :: ("channelFlags" | byte) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
     .typecase(PERM | 15, provide(UnknownPaymentHash))
     .typecase(PERM | 16, provide(IncorrectPaymentAmount))
     .typecase(17, provide(FinalExpiryTooSoon))
     .typecase(18, (("expiry" | uint32)).as[FinalIncorrectCltvExpiry])
-    .typecase(19, (("amountMsat" | uint32)).as[FinalIncorrectHtlcAmount])
+    .typecase(19, (("amountMsat" | uint64)).as[FinalIncorrectHtlcAmount])
     .typecase(21, provide(ExpiryTooFar))
 }

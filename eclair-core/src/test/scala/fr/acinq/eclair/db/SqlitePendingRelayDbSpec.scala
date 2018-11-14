@@ -22,11 +22,9 @@ import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULF
 import fr.acinq.eclair.db.sqlite.SqlitePendingRelayDb
 import fr.acinq.eclair.randomBytes
 import fr.acinq.eclair.wire.FailureMessageCodecs
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
-@RunWith(classOf[JUnitRunner])
+
 class SqlitePendingRelayDbSpec extends FunSuite {
 
   def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")

@@ -20,7 +20,7 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi}
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.db.NetworkDb
+import fr.acinq.eclair.db.{NetworkDb, Payment}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
@@ -40,6 +40,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, data BLOB NOT NULL, capacity_sat INTEGER NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
   }
 
   override def addNode(n: NodeAnnouncement): Unit = {
@@ -106,7 +107,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def addChannelUpdate(u: ChannelUpdate): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO channel_updates VALUES (?, ?, ?)")) { statement =>
       statement.setLong(1, u.shortChannelId.toLong)
-      statement.setBoolean(2, Announcements.isNode1(u.flags))
+      statement.setBoolean(2, Announcements.isNode1(u.channelFlags))
       statement.setBytes(3, channelUpdateCodec.encode(u).require.toByteArray)
       statement.executeUpdate()
     }
@@ -116,7 +117,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     using(sqlite.prepareStatement("UPDATE channel_updates SET data=? WHERE short_channel_id=? AND node_flag=?")) { statement =>
       statement.setBytes(1, channelUpdateCodec.encode(u).require.toByteArray)
       statement.setLong(2, u.shortChannelId.toLong)
-      statement.setBoolean(3, Announcements.isNode1(u.flags))
+      statement.setBoolean(3, Announcements.isNode1(u.channelFlags))
       statement.executeUpdate()
     }
   }
@@ -128,4 +129,24 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
+  override def addToPruned(shortChannelId: ShortChannelId): Unit = {
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)")) { statement =>
+      statement.setLong(1, shortChannelId.toLong)
+      statement.executeUpdate()
+    }
+  }
+
+  override def removeFromPruned(shortChannelId: ShortChannelId): Unit = {
+    using(sqlite.createStatement) { statement =>
+      statement.executeUpdate(s"DELETE FROM pruned WHERE short_channel_id=${shortChannelId.toLong}")
+    }
+  }
+
+  override def isPruned(shortChannelId: ShortChannelId): Boolean = {
+    using(sqlite.prepareStatement("SELECT short_channel_id from pruned WHERE short_channel_id=?")) { statement =>
+      statement.setLong(1, shortChannelId.toLong)
+      val rs = statement.executeQuery()
+      rs.next()
+    }
+  }
 }

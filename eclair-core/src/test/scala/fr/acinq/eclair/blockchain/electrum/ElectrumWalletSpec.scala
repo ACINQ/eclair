@@ -27,9 +27,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionRes
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JDouble, JString, JValue}
-import org.junit.experimental.categories.Category
-import org.junit.runner.RunWith
+import org.json4s.JsonAST.{JDecimal, JString, JValue}
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
@@ -37,10 +35,7 @@ import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-trait DockerTest {}
 
-@RunWith(classOf[JUnitRunner])
-@Category(Array(classOf[DockerTest]))
 class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService  with BeforeAndAfterAll with Logging {
 
   import ElectrumWallet._
@@ -161,7 +156,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       ), lockTime = 0L)
     val btcWallet = new BitcoinCoreWallet(bitcoinrpcclient)
     val future = for {
-      FundTransactionResponse(tx1, pos, fee) <- btcWallet.fundTransaction(tx, false)
+      FundTransactionResponse(tx1, pos, fee) <- btcWallet.fundTransaction(tx, false, 10000)
       SignTransactionResponse(tx2, true) <- btcWallet.signTransaction(tx1)
       txid <- btcWallet.publishTransaction(tx2)
     } yield txid
@@ -227,7 +222,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     val JString(address) = probe.expectMsgType[JValue]
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
     probe.send(wallet, CompleteTransaction(tx, 20000))
-    val CompleteTransactionResponse(tx1, None) = probe.expectMsgType[CompleteTransactionResponse]
+    val CompleteTransactionResponse(tx1, fee1, None) = probe.expectMsgType[CompleteTransactionResponse]
 
     // send it ourselves
     logger.info(s"sending 1 btc to $address with tx ${tx1.txid}")
@@ -239,8 +234,8 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
     awaitCond({
       probe.send(bitcoincli, BitcoinReq("getreceivedbyaddress", address))
-      val JDouble(value) = probe.expectMsgType[JValue]
-      value == 1.0
+      val JDecimal(value) = probe.expectMsgType[JValue]
+      value == BigDecimal(1.0)
     }, max = 30 seconds, interval = 1 second)
 
     awaitCond({
@@ -260,7 +255,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     val JString(address) = probe.expectMsgType[JValue]
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
     probe.send(wallet, CompleteTransaction(tx, 20000))
-    val CompleteTransactionResponse(tx1, None) = probe.expectMsgType[CompleteTransactionResponse]
+    val CompleteTransactionResponse(tx1, fee1, None) = probe.expectMsgType[CompleteTransactionResponse]
 
     // send it ourselves
     logger.info(s"sending 1 btc to $address with tx ${tx1.txid}")

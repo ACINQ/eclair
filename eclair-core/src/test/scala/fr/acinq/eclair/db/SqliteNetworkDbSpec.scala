@@ -21,15 +21,13 @@ import java.sql.DriverManager
 
 import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
-import fr.acinq.eclair.{ShortChannelId, randomKey}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.Color
-import org.junit.runner.RunWith
+import fr.acinq.eclair.{ShortChannelId, randomKey}
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 import org.sqlite.SQLiteException
 
-@RunWith(classOf[JUnitRunner])
+
 class SqliteNetworkDbSpec extends FunSuite {
 
   def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
@@ -85,9 +83,9 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.removeChannel(channel_2.shortChannelId)
     assert(db.listChannels().toSet === Set((channel_1, (txid_1, capacity)), (channel_3, (txid_3, capacity))))
 
-    val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(42), 5, 7000000, 50000, 100, true)
-    val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(43), 5, 7000000, 50000, 100, true)
-    val channel_update_3 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(44), 5, 7000000, 50000, 100, true)
+    val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(42), 5, 7000000, 50000, 100, 500000000L, true)
+    val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(43), 5, 7000000, 50000, 100, 500000000L, true)
+    val channel_update_3 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(44), 5, 7000000, 50000, 100, 500000000L, true)
 
     assert(db.listChannelUpdates().toSet === Set.empty)
     db.addChannelUpdate(channel_update_1)
@@ -99,6 +97,21 @@ class SqliteNetworkDbSpec extends FunSuite {
     assert(db.listChannels().toSet === Set((channel_1, (txid_1, capacity))))
     assert(db.listChannelUpdates().toSet === Set(channel_update_1))
     db.updateChannelUpdate(channel_update_1)
+  }
+
+  test("add/remove/test pruned channels") {
+    val sqlite = inmem
+    val db = new SqliteNetworkDb(sqlite)
+
+    db.addToPruned(ShortChannelId(1))
+    db.addToPruned(ShortChannelId(5))
+
+    assert(db.isPruned(ShortChannelId(1)))
+    assert(!db.isPruned(ShortChannelId(3)))
+    assert(db.isPruned(ShortChannelId(1)))
+
+    db.removeFromPruned(ShortChannelId(5))
+    assert(!db.isPruned(ShortChannelId(5)))
   }
 
 }

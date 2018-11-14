@@ -26,16 +26,14 @@ import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UpdateAddHtlc}
 import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuiteLike
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 
 /**
   * Created by PM on 24/03/2017.
   */
-@RunWith(classOf[JUnitRunner])
+
 class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   test("LocalPaymentHandler should reply with a fulfill/fail, emit a PaymentReceived and adds payment in DB") {
@@ -56,7 +54,8 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
-      eventListener.expectMsg(PaymentReceived(amountMsat, add.paymentHash))
+      val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
+      assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat,add.paymentHash, add.channelId, timestamp = 0))
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === true)
     }
@@ -69,7 +68,8 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
-      eventListener.expectMsg(PaymentReceived(amountMsat, add.paymentHash))
+      val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
+      assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat,add.paymentHash, add.channelId, timestamp = 0))
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === true)
     }

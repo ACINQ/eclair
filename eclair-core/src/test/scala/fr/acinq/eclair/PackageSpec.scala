@@ -18,16 +18,14 @@ package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, BinaryData, Block, Crypto, Script}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.util.Try
 
 /**
   * Created by PM on 27/01/2017.
   */
-@RunWith(classOf[JUnitRunner])
+
 class PackageSpec extends FunSuite {
 
   test("compute long channel id") {
@@ -105,5 +103,12 @@ class PackageSpec extends FunSuite {
   test("convert fee rates and enforce a minimum feerate-per-kw") {
     assert(feerateByte2Kw(1) == MinimumFeeratePerKw)
     assert(feerateKB2Kw(1000) == MinimumFeeratePerKw)
+  }
+
+  test("compare short channel ids as unsigned longs") {
+    assert(ShortChannelId(Long.MinValue - 1) < ShortChannelId(Long.MinValue))
+    assert(ShortChannelId(Long.MinValue) < ShortChannelId(Long.MinValue + 1))
+    assert(ShortChannelId(Long.MaxValue - 1) < ShortChannelId(Long.MaxValue))
+    assert(ShortChannelId(Long.MaxValue) < ShortChannelId(Long.MaxValue + 1))
   }
 }

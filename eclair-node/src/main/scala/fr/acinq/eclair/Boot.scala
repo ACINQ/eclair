@@ -18,7 +18,10 @@ package fr.acinq.eclair
 
 import java.io.File
 
+import akka.actor.ActorSystem
 import grizzled.slf4j.Logging
+
+import scala.concurrent.ExecutionContext
 
 /**
   * Created by PM on 25/01/2016.
@@ -28,7 +31,8 @@ object Boot extends App with Logging {
   val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
 
   try {
-    import scala.concurrent.ExecutionContext.Implicits.global
+    implicit val system: ActorSystem = ActorSystem("eclair-node")
+    implicit val ec: ExecutionContext = system.dispatcher
     new Setup(datadir).bootstrap onFailure {
       case t: Throwable => onError(t)
     }

@@ -19,7 +19,8 @@ package fr.acinq.eclair.integration
 import java.io.{File, PrintWriter}
 import java.util.Properties
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.{ActorRef, ActorSystem, Terminated}
+import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
@@ -28,14 +29,15 @@ import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, BinaryData, Block, Crypto,
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
-import fr.acinq.eclair.channel.Register.Forward
+import fr.acinq.eclair.channel.Channel.TickRefreshChannelUpdate
+import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
 import fr.acinq.eclair.payment.{LocalPaymentHandler, PaymentRequest}
-import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
+import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, ChannelDesc}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
@@ -43,8 +45,6 @@ import fr.acinq.eclair.{Globals, Kit, Setup}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.concurrent.Await
@@ -54,7 +54,7 @@ import scala.concurrent.duration._
 /**
   * Created by PM on 15/03/2017.
   */
-@RunWith(classOf[JUnitRunner])
+
 class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
 
   var nodes: Map[String, Kit] = Map()
@@ -95,7 +95,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       write(config.root().render())
       close
     }
-    val setup = new Setup(datadir, actorSystem = ActorSystem(s"system-$name"))
+    implicit val system = ActorSystem(s"system-$name")
+    val setup = new Setup(datadir)
     val kit = Await.result(setup.bootstrap, 10 seconds)
     nodes = nodes + (name -> kit)
   }
@@ -108,7 +109,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
   test("starting eclair nodes") {
     import collection.JavaConversions._
-    val commonConfig = ConfigFactory.parseMap(Map("eclair.chain" -> "regtest", "eclair.spv" -> false, "eclair.server.public-ips.1" -> "127.0.0.1", "eclair.bitcoind.port" -> 28333, "eclair.bitcoind.rpcport" -> 28332, "eclair.bitcoind.zmq" -> "tcp://127.0.0.1:28334", "eclair.mindepth-blocks" -> 2, "eclair.max-htlc-value-in-flight-msat" -> 100000000000L, "eclair.router-broadcast-interval" -> "2 second", "eclair.auto-reconnect" -> false))
+    val commonConfig = ConfigFactory.parseMap(Map("eclair.chain" -> "regtest", "eclair.spv" -> false, "eclair.server.public-ips.1" -> "127.0.0.1", "eclair.bitcoind.port" -> 28333, "eclair.bitcoind.rpcport" -> 28332, "eclair.bitcoind.zmqblock" -> "tcp://127.0.0.1:28334", "eclair.bitcoind.zmqtx" -> "tcp://127.0.0.1:28335", "eclair.mindepth-blocks" -> 2, "eclair.max-htlc-value-in-flight-msat" -> 100000000000L, "eclair.router-broadcast-interval" -> "2 second", "eclair.auto-reconnect" -> false))
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.delay-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel-flags" -> 0)).withFallback(commonConfig)) // A's channels are private
     instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.delay-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081)).withFallback(commonConfig))
     instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.delay-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
@@ -232,16 +233,20 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.expectMsgType[PaymentSucceeded]
   }
 
-  // TODO: reenable this test
-  ignore("send an HTLC A->D with an invalid expiry delta for B") {
+  test("send an HTLC A->D with an invalid expiry delta for B") {
     val sender = TestProbe()
     // to simulate this, we will update B's relay params
     // first we find out the short channel id for channel B-C
     sender.send(nodes("B").router, 'channels)
     val shortIdBC = sender.expectMsgType[Iterable[ChannelAnnouncement]].find(c => Set(c.nodeId1, c.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)).get.shortChannelId
-    val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.nodeId, shortIdBC, nodes("B").nodeParams.expiryDeltaBlocks + 1, nodes("C").nodeParams.htlcMinimumMsat, nodes("B").nodeParams.feeBaseMsat, nodes("B").nodeParams.feeProportionalMillionth)
-    sender.send(nodes("B").relayer, channelUpdateBC)
-    // first we retrieve a payment hash from D
+    // we also need the full commitment
+    sender.send(nodes("B").register, ForwardShortId(shortIdBC, CMD_GETINFO))
+    val commitmentBC = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].commitments
+    // we then forge a new channel_update for B-C...
+    val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.nodeId, shortIdBC, nodes("B").nodeParams.expiryDeltaBlocks + 1, nodes("C").nodeParams.htlcMinimumMsat, nodes("B").nodeParams.feeBaseMsat, nodes("B").nodeParams.feeProportionalMillionth, 500000000L)
+    // ...and notify B's relayer
+    sender.send(nodes("B").relayer, LocalChannelUpdate(system.deadLetters, commitmentBC.channelId, shortIdBC, commitmentBC.remoteParams.nodeId, None, channelUpdateBC, commitmentBC))
+    // we retrieve a payment hash from D
     val amountMsat = MilliSatoshi(4200000)
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
@@ -251,10 +256,23 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // A will receive an error from B that include the updated channel update, then will retry the payment
     sender.expectMsgType[PaymentSucceeded](5 seconds)
     // in the meantime, the router will have updated its state
+    sender.send(nodes("A").router, 'updatesMap)
+    assert(sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)) === channelUpdateBC)
+    // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
+    // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
+    sender.expectNoMsg(3 seconds)
+    sender.send(nodes("B").register, ForwardShortId(shortIdBC, TickRefreshChannelUpdate))
+    sender.send(nodes("B").register, ForwardShortId(shortIdBC, CMD_GETINFO))
+    val channelUpdateBC_new = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].channelUpdate
+    logger.info(s"channelUpdateBC=$channelUpdateBC")
+    logger.info(s"channelUpdateBC_new=$channelUpdateBC_new")
+    assert(channelUpdateBC_new.timestamp > channelUpdateBC.timestamp)
+    assert(channelUpdateBC_new.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks)
     awaitCond({
-      sender.send(nodes("A").router, 'updates)
-      sender.expectMsgType[Iterable[ChannelUpdate]].toSeq.contains(channelUpdateBC)
-    }, max = 20 seconds, interval = 1 second)
+      sender.send(nodes("A").router, 'updatesMap)
+      val u = sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
+      u.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks
+    }, max = 30 seconds, interval = 1 second)
   }
 
   test("send an HTLC A->D with an amount greater than capacity of B-C") {
@@ -668,6 +686,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sigListener.expectMsgType[ChannelSignatureReceived]
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSucceeded]
+
     // we now send a few htlcs C->F and F->C in order to obtain a commitments with multiple htlcs
     def send(amountMsat: Long, paymentHandler: ActorRef, paymentInitiator: ActorRef) = {
       sender.send(paymentHandler, ReceivePayment(Some(MilliSatoshi(amountMsat)), "1 coffee"))
@@ -675,6 +694,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       val sendReq = SendPayment(amountMsat, pr.paymentHash, pr.nodeId)
       sender.send(paymentInitiator, sendReq)
     }
+
     val buffer = TestProbe()
     send(100000000, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
     forwardHandlerF.expectMsgType[UpdateAddHtlc]
@@ -779,13 +799,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     // then we make the announcements
     val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))
-    announcements.foreach(ann => nodes("A").router ! PeerRoutingMessage(remoteNodeId, ann))
-    // we need to send channel_update otherwise router won't validate the channels
-    val updates = channels.zip(announcements).map(x => AnnouncementsBatchValidationSpec.makeChannelUpdate(x._1, x._2.shortChannelId))
-    updates.foreach(update => nodes("A").router ! PeerRoutingMessage(remoteNodeId, update))
+    announcements.foreach(ann => nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, ann))
     awaitCond({
       sender.send(nodes("D").router, 'channels)
-      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 5 // 5 remaining channels because  D->F{1-F4} have disappeared
+      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 5 // 5 remaining channels because  D->F{1-5} have disappeared
     }, max = 120 seconds, interval = 1 second)
   }
 

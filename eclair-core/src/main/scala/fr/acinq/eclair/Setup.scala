@@ -24,6 +24,7 @@ import akka.http.scaladsl.Http
 import akka.pattern.after
 import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
+import com.softwaremill.sttp.asynchttpclient.future.AsyncHttpClientFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
@@ -43,23 +44,25 @@ import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, Future, Promise}
+import scala.concurrent._
 
 /**
-  * Setup eclair from a datadir.
+  * Setup eclair from a data directory.
   *
   * Created by PM on 25/01/2016.
   *
-  * @param datadir  directory where eclair-core will write/read its data
-  * @param overrideDefaults
-  * @param actorSystem
+  * @param datadir  directory where eclair-core will write/read its data.
+  * @param overrideDefaults use this parameter to programmatically override the node configuration .
   * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
   */
-class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem(), seed_opt: Option[BinaryData] = None) extends Logging {
+class Setup(datadir: File,
+            overrideDefaults: Config = ConfigFactory.empty(),
+            seed_opt: Option[BinaryData] = None)(implicit system: ActorSystem) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   logger.info(s"datadir=${datadir.getCanonicalPath}")
+
 
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
@@ -79,11 +82,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
   secureRandom.nextInt()
 
-  implicit val system = actorSystem
-  implicit val materializer = ActorMaterializer()
-  implicit val timeout = Timeout(30 seconds)
-  implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
+  implicit val sttpBackend  = AsyncHttpClientFutureBackend()
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>
@@ -92,39 +92,53 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         password = config.getString("bitcoind.rpcpassword"),
         host = config.getString("bitcoind.host"),
         port = config.getInt("bitcoind.rpcport"))
+      implicit val timeout = Timeout(30 seconds)
+      implicit val formats = org.json4s.DefaultFormats
       val future = for {
         json <- bitcoinClient.invoke("getblockchaininfo").recover { case _ => throw BitcoinRPCConnectionException }
         // Make sure wallet support is enabled in bitcoind.
         _ <- bitcoinClient.invoke("getbalance").recover { case _ => throw BitcoinWalletDisabledException }
         progress = (json \ "verificationprogress").extract[Double]
+        blocks = (json \ "blocks").extract[Long]
+        headers = (json \ "headers").extract[Long]
         chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
-        bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
+        bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[Int])
         unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) =>
           values
             .filter(value => (value \ "spendable").extract[Boolean])
             .map(value => (value \ "address").extract[String])
         }
-      } yield (progress, chainHash, bitcoinVersion, unspentAddresses)
+      } yield (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
       // blocking sanity checks
-      val (progress, chainHash, bitcoinVersion, unspentAddresses) = Await.result(future, 30 seconds)
-      assert(bitcoinVersion.startsWith("16"), "Eclair requires Bitcoin Core 0.16.0 or higher")
+      val (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
+      assert(bitcoinVersion >= 160300, "Eclair requires Bitcoin Core 0.16.3 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
         assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Make sure that all your UTXOS are segwit UTXOS and not p2pkh (check out our README for more details)")
       }
-      assert(progress > 0.99, "bitcoind should be synchronized")
+      assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress")
+      assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks")
       // TODO: add a check on bitcoin version?
 
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
-      val addressesFile = nodeParams.chainHash match {
-        case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
-        case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
-        case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
+      val addresses = config.hasPath("eclair.electrum") match {
+        case true =>
+          val host = config.getString("eclair.electrum.host")
+          val port = config.getInt("eclair.electrum.port")
+          val address = InetSocketAddress.createUnresolved(host, port)
+          logger.info(s"override electrum default with server=$address")
+          Set(address)
+        case false =>
+          val addressesFile = nodeParams.chainHash match {
+            case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
+            case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
+            case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
+          }
+          val stream = classOf[Setup].getResourceAsStream(addressesFile)
+          ElectrumClientPool.readServerAddresses(stream)
       }
-      val stream = classOf[Setup].getResourceAsStream(addressesFile)
-      val addresses = ElectrumClientPool.readServerAddresses(stream)
       val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
   }
@@ -133,7 +147,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     for {
       _ <- Future.successful(true)
       feeratesRetrieved = Promise[Boolean]()
-      zmqConnected = Promise[Boolean]()
+      zmqBlockConnected = Promise[Boolean]()
+      zmqTxConnected = Promise[Boolean]()
       tcpBound = Promise[Unit]()
 
       defaultFeerates = FeeratesPerKB(
@@ -145,10 +160,13 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         blocks_72 = config.getLong("default-feerates.delay-blocks.72")
       )
       minFeeratePerByte = config.getLong("min-feerate")
+      smoothFeerateWindow = config.getInt("smooth-feerate-window")
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
-        case (_, Bitcoind(bitcoinClient)) => new FallbackFeeProvider(new BitgoFeeProvider(nodeParams.chainHash) :: new EarnDotComFeeProvider() :: new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
-        case _ => new FallbackFeeProvider(new BitgoFeeProvider(nodeParams.chainHash) :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+        case (_, Bitcoind(bitcoinClient)) =>
+            new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+        case _ =>
+          new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
       }
       _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
         case feerates: FeeratesPerKB =>
@@ -162,10 +180,12 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
       watcher = bitcoin match {
         case Bitcoind(bitcoinClient) =>
-          system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), Some(zmqConnected))), "zmq", SupervisorStrategy.Restart))
+          system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
+          system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
           system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoinClient))), "watcher", SupervisorStrategy.Resume))
         case Electrum(electrumClient) =>
-          zmqConnected.success(true)
+          zmqBlockConnected.success(true)
+          zmqTxConnected.success(true)
           system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
       }
 
@@ -173,12 +193,14 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
         case Electrum(electrumClient) =>
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash)), "electrum-wallet")
+          implicit val timeout = Timeout(30 seconds)
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
       }
       _ = wallet.getFinalAddress.map {
         case address => logger.info(s"initial wallet address=$address")
       }
 
+      audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
         case "local" => LocalPaymentHandler.props(nodeParams)
         case "noop" => Props[NoopPaymentHandler]
@@ -204,13 +226,16 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         server = server,
         wallet = wallet)
 
-      zmqTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
+      zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
+      zmqTxTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
       tcpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("server.port"))))
 
-      _ <- Future.firstCompletedOf(zmqConnected.future :: zmqTimeout :: Nil)
+      _ <- Future.firstCompletedOf(zmqBlockConnected.future :: zmqBlockTimeout :: Nil)
+      _ <- Future.firstCompletedOf(zmqTxConnected.future :: zmqTxTimeout :: Nil)
       _ <- Future.firstCompletedOf(tcpBound.future :: tcpTimeout :: Nil)
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
+        implicit val materializer = ActorMaterializer()
         val api = new Service {
 
           override def scheduler = system.scheduler
@@ -241,6 +266,14 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       }
     } yield kit
 
+  }
+
+  private def await[T](awaitable: Awaitable[T], atMost: Duration, messageOnTimeout: => String): T = try {
+    Await.result(awaitable, atMost)
+  } catch {
+    case e: TimeoutException =>
+      logger.error(messageOnTimeout)
+      throw e
   }
 
 }

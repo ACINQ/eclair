@@ -21,11 +21,9 @@ import java.sql.DriverManager
 
 import fr.acinq.eclair.db.sqlite.SqlitePeersDb
 import fr.acinq.eclair.randomKey
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
-@RunWith(classOf[JUnitRunner])
+
 class SqlitePeersDbSpec extends FunSuite {
 
   def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")

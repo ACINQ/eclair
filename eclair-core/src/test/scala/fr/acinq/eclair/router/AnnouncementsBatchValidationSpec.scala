@@ -17,8 +17,9 @@
 package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
-import akka.testkit.TestProbe
 import akka.pattern.pipe
+import akka.testkit.TestProbe
+import com.softwaremill.sttp.asynchttpclient.future.AsyncHttpClientFutureBackend
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction}
 import fr.acinq.eclair.blockchain.ValidateResult
@@ -27,9 +28,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, Exten
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{ShortChannelId, randomKey}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
@@ -37,7 +36,7 @@ import scala.concurrent.{Await, ExecutionContext}
 /**
   * Created by PM on 31/05/2016.
   */
-@RunWith(classOf[JUnitRunner])
+
 class AnnouncementsBatchValidationSpec extends FunSuite {
 
   import AnnouncementsBatchValidationSpec._
@@ -46,6 +45,7 @@ class AnnouncementsBatchValidationSpec extends FunSuite {
     import scala.concurrent.ExecutionContext.Implicits.global
 
     implicit val system = ActorSystem()
+    implicit val sttpBackend  = AsyncHttpClientFutureBackend()
     implicit val extendedBitcoinClient = new ExtendedBitcoinClient(new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332))
 
     val channels = for (i <- 0 until 50) yield {
@@ -78,7 +78,7 @@ object AnnouncementsBatchValidationSpec {
   def generateBlocks(numBlocks: Int)(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext) =
     Await.result(extendedBitcoinClient.rpcClient.invoke("generate", numBlocks), 10 seconds)
 
-  def simulateChannel()(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext, system: ActorSystem): SimulatedChannel = {
+  def simulateChannel()(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext): SimulatedChannel = {
     val node1Key = randomKey
     val node2Key = randomKey
     val node1BitcoinKey = randomKey
@@ -103,6 +103,6 @@ object AnnouncementsBatchValidationSpec {
   }
 
   def makeChannelUpdate(c: SimulatedChannel, shortChannelId: ShortChannelId): ChannelUpdate =
-    Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, c.node1Key, c.node2Key.publicKey, shortChannelId, 10, 1000, 10, 100)
+    Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, c.node1Key, c.node2Key.publicKey, shortChannelId, 10, 1000, 10, 100, 500000000L)
 
 }

@@ -18,11 +18,9 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
-import org.junit.runner.RunWith
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
 
-@RunWith(classOf[JUnitRunner])
+
 class CommitmentSpecSpec extends FunSuite {
   test("add, fulfill and fail htlcs from the sender side") {
     val spec = CommitmentSpec(htlcs = Set(), feeratePerKw = 1000, toLocalMsat = 5000 * 1000, toRemoteMsat = 0)
