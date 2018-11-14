@@ -35,18 +35,25 @@ import scala.util.Try
 class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 
   implicit val ec: ExecutionContext = context.system.dispatcher
-
-  context.system.scheduler.schedule(10 minutes, 10 minutes)(self ! Platform.currentTime / 1000)
+  case object PurgeExpiredRequests
+  context.system.scheduler.schedule(10 minutes, 10 minutes)(self ! PurgeExpiredRequests)
 
   override def receive: Receive = run(Map.empty)
 
+  def purgeExpiredRequests(hash2preimage: Map[BinaryData, (BinaryData, PaymentRequest)]) = hash2preimage.filter { in =>
+    purgeExpiredRequest(Some(in._2)) != None
+  }
+
+  def purgeExpiredRequest(in: Option[(BinaryData,PaymentRequest)]) =  in match {
+    case e@Some((_, pr)) if pr.expiry.isEmpty => e // requests that don't expire are kept forever
+    case e@Some((_, pr)) if pr.timestamp + pr.expiry.get > Platform.currentTime / 1000 => e // clean up expired requests
+    case _ => None
+  }
+
   def run(hash2preimage: Map[BinaryData, (BinaryData, PaymentRequest)]): Receive = {
 
-    case currentSeconds: Long =>
-      context.become(run(hash2preimage.collect {
-        case e@(_, (_, pr)) if pr.expiry.isEmpty => e // requests that don't expire are kept forever
-        case e@(_, (_, pr)) if pr.timestamp + pr.expiry.get > currentSeconds => e // clean up expired requests
-      }))
+    case PurgeExpiredRequests =>
+          context.become(run(purgeExpiredRequests(hash2preimage)))
 
     case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops) =>
       Try {
@@ -69,7 +76,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
       }
 
     case htlc: UpdateAddHtlc =>
-      hash2preimage.get(htlc.paymentHash) match {
+      purgeExpiredRequest(hash2preimage.get(htlc.paymentHash)) match {
         case Some((paymentPreimage, paymentRequest)) =>
           val minFinalExpiry = Globals.blockCount.get() + paymentRequest.minFinalCltvExpiry.getOrElse(Channel.MIN_CLTV_EXPIRY)
           // The htlc amount must be equal or greater than the requested amount. A slight overpaying is permitted, however
@@ -85,21 +92,12 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
               log.warning(s"received payment with amount too large for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
               sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectPaymentAmount), commit = true)
             case _ =>
-              paymentRequest.expiry match {
-                case Some(expiry) if (expiry + paymentRequest.timestamp <  Platform.currentTime / 1000) =>
-                  // we remove expired payment requests every 10 mins. But might still get here if request only just expired.
-                  log.warning(s"rejecting received payment where expiry time in seconds has been exceeded: paymentHash=${htlc.paymentHash} timestamp=${paymentRequest.timestamp}"+
-                    s" expiryTag=$expiry timenow=${Platform.currentTime / 1000}")
-                  // Return unknowPaymentHash so we are deterministic - as if we purged the payment request already we would have sent this.
-                  sender ! CMD_FAIL_HTLC(htlc.id, Right(UnknownPaymentHash), commit = true)
-                case _ =>
-                  log.info(s"received payment for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
-                  // amount is correct or was not specified in the payment request
-                  nodeParams.paymentsDb.addPayment(Payment(htlc.paymentHash, htlc.amountMsat, Platform.currentTime / 1000))
-                  sender ! CMD_FULFILL_HTLC(htlc.id, paymentPreimage, commit = true)
-                  context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash, htlc.channelId))
-                  context.become(run(hash2preimage - htlc.paymentHash))
-              }
+                log.info(s"received payment for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
+                // amount is correct or was not specified in the payment request
+                nodeParams.paymentsDb.addPayment(Payment(htlc.paymentHash, htlc.amountMsat, Platform.currentTime / 1000))
+                sender ! CMD_FULFILL_HTLC(htlc.id, paymentPreimage, commit = true)
+                context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash, htlc.channelId))
+                context.become(run(hash2preimage - htlc.paymentHash))
           }
         case None =>
           sender ! CMD_FAIL_HTLC(htlc.id, Right(UnknownPaymentHash), commit = true)
