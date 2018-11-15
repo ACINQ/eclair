@@ -22,8 +22,12 @@ import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Stat
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
-import fr.acinq.eclair.channel.HasCommitments
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.payment.Relayed
 import fr.acinq.eclair.router.Rebroadcast
+import fr.acinq.eclair.transactions.OUT
+import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
+import grizzled.slf4j.Logging
 
 /**
   * Ties network connections to peers.
@@ -31,13 +35,21 @@ import fr.acinq.eclair.router.Rebroadcast
   */
 class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
 
+  import Switchboard._
+
   authenticator ! self
 
   // we load peers and channels from database
   private val initialPeers = {
-    val channels = nodeParams.channelsDb.listChannels().groupBy(_.commitments.remoteParams.nodeId)
+    val channels = nodeParams.channelsDb.listChannels()
     val peers = nodeParams.peersDb.listPeers()
+    
+    val brokenHtlcs = checkBrokenHtlcsLink(channels)
+    val brokenHtlcKiller = context.actorOf(Props[HtlcReaper], name = "htlc-reaper")
+    brokenHtlcKiller ! brokenHtlcs
+
     channels
+      .groupBy(_.commitments.remoteParams.nodeId)
       .map {
         case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
       }
@@ -114,8 +126,64 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Resume }
 }
 
-object Switchboard {
+object Switchboard extends Logging {
 
   def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet))
+
+  /**
+    * If we have stopped eclair while it was forwarding HTLCs, it is possible that we are in a state were an incoming HTLC
+    * was committed by both sides, but we didn't have time to send and/or sign the corresponding HTLC to the downstream node.
+    *
+    * In that case, if we do nothing, the incoming HTLC will eventually expire and we won't lose money, but the channel will
+    * get closed, which is a major inconvenience.
+    *
+    * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
+    *
+    * @param channels
+    * @return
+    */
+  def checkBrokenHtlcsLink(channels: Seq[HasCommitments]): Seq[UpdateAddHtlc] = {
+
+    // We are interested in incoming HTLCs, that have been *cross-signed*. They signed it first, so the HTLC will first
+    // appear in our commitment tx, and later on in their commitment when we subsequently sign it.
+    // That's why we need to look in *their* commitment with direction=OUT.
+    val htlcs_in = channels
+      .flatMap(_.commitments.remoteCommit.spec.htlcs)
+      .filter(_.direction == OUT)
+      .map(_.add)
+
+    // Here we do it differently because we need the origin information.
+    val relayed_out = channels
+      .flatMap(_.commitments.originChannels.values)
+      .collect { case r: Relayed => r }
+      .toSet
+
+    val htlcs_broken = htlcs_in.filterNot(htlc_in => relayed_out.exists(r => r.originChannelId == htlc_in.channelId && r.originHtlcId == htlc_in.id))
+
+    logger.info(s"htlcs_in=${htlcs_in.size} htlcs_out=${relayed_out.size} htlcs_broken=${htlcs_broken.size}")
+
+    htlcs_broken
+  }
+
+}
+
+class HtlcReaper extends Actor with ActorLogging {
+
+  context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
+
+  override def receive: Receive = {
+    case initialHtlcs: Seq[UpdateAddHtlc] @unchecked => context become main(initialHtlcs)
+  }
+
+  def main(htlcs: Seq[UpdateAddHtlc]): Receive = {
+    case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, data: HasCommitments) =>
+      htlcs
+        .filter(_.channelId == data.channelId)
+        .map { htlc =>
+          log.info(s"failing broken htlc=$htlc")
+          channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
+        }
+  }
+
 
 }
