@@ -11,7 +11,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
-import fr.acinq.eclair.wire.Error
+import fr.acinq.eclair.wire.{Error, Ping}
 import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, wire}
 import org.scalatest.Outcome
 
@@ -36,7 +36,7 @@ class PeerSpec extends TestkitBaseClass {
     val transport = TestProbe()
     val wallet: EclairWallet = null // unused
     val remoteNodeId = Bob.nodeParams.nodeId
-    val peer = system.actorOf(Peer.props(Alice.nodeParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
+    val peer = system.actorOf(Peer.props(Alice.nodeParams.copy(pingInterval = 3 seconds), remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
     withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)))
   }
 
@@ -63,6 +63,17 @@ class PeerSpec extends TestkitBaseClass {
     channels.foreach(transport.expectMsg(_))
     updates.foreach(transport.expectMsg(_))
     nodes.foreach(transport.expectMsg(_))
+  }
+
+  test("Terminate transport if there is no Pong") { f =>
+    import f._
+    val probe = TestProbe()
+    val deathWatcher = TestProbe()
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+
+    transport.expectMsgType[Ping](max = 4 seconds)
+    deathWatcher.watch(transport.ref)
+    deathWatcher.expectTerminated(transport.ref, max = 11 seconds)
   }
 
   test("filter gossip message (filtered by origin)") { f =>

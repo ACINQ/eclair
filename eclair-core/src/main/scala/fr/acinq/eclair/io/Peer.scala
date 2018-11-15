@@ -20,19 +20,19 @@ import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
 import java.nio.ByteOrder
 
-import akka.actor.{ActorRef, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{ActorRef, Cancellable, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import scodec.Attempt
 
+import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -42,6 +42,11 @@ import scala.util.Random
 class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
+
+  implicit val ec: ExecutionContext = context.system.dispatcher
+
+  // A dummy placeholder so we can always call `disconnector.cancel()` on it
+  var disconnector: Cancellable = context.system.scheduler.scheduleOnce(1 second)((): Unit)
 
   startWith(INSTANTIATING, Nothing())
 
@@ -72,20 +77,20 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           stay using d.copy(attempts = attempts + 1)
       }
 
-    case Event(Authenticator.Authenticated(_, transport, remoteNodeId, address, outgoing, origin_opt), DisconnectedData(_, channels, _)) =>
-      log.debug(s"got authenticated connection to $remoteNodeId@${address.getHostString}:${address.getPort}")
+    case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, address, outgoing, origin_opt), DisconnectedData(_, channels, _)) =>
+      log.debug(s"got authenticated connection to $remoteNodeId1@${address.getHostString}:${address.getPort}")
       transport ! TransportHandler.Listener(self)
       context watch transport
       transport ! wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
 
       // we store the ip upon successful outgoing connection, keeping only the most recent one
       if (outgoing) {
-        nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, address)
+        nodeParams.peersDb.addOrUpdatePeer(remoteNodeId1, address)
       }
       goto(INITIALIZING) using InitializingData(if (outgoing) Some(address) else None, transport, channels, origin_opt)
 
     case Event(Terminated(actor), d@DisconnectedData(_, channels, _)) if channels.exists(_._2 == actor) =>
-      val h = channels.filter(_._2 == actor).map(_._1)
+      val h = channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${h.mkString("/")}")
       stay using d.copy(channels = channels -- h)
 
@@ -100,7 +105,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
       log.info(s"$remoteNodeId has features: initialRoutingSync=$remoteHasInitialRoutingSync channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional channelRangeQueriesMandatory=$remoteHasChannelRangeQueriesMandatory")
       if (Features.areSupported(remoteInit.localFeatures)) {
-        origin_opt.map(origin => origin ! "connected")
+        origin_opt.foreach(origin => origin ! "connected")
 
         if (remoteHasInitialRoutingSync) {
           if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
@@ -121,14 +126,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         goto(CONNECTED) using ConnectedData(address_opt, transport, remoteInit, channels.map { case (k: ChannelId, v) => (k, v) })
       } else {
         log.warning(s"incompatible features, disconnecting")
-        origin_opt.map(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
+        origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
         transport ! PoisonPill
         stay
       }
 
     case Event(Authenticator.Authenticated(connection, _, _, _, _, origin_opt), _) =>
       // two connections in parallel
-      origin_opt.map(origin => origin ! Status.Failure(new RuntimeException("there is another connection attempt in progress")))
+      origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("there is another connection attempt in progress")))
       // we kill this one
       log.warning(s"killing parallel connection $connection")
       connection ! PoisonPill
@@ -145,7 +150,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       goto(DISCONNECTED) using DisconnectedData(address_opt, channels)
 
     case Event(Terminated(actor), d@InitializingData(_, _, channels, _)) if channels.exists(_._2 == actor) =>
-      val h = channels.filter(_._2 == actor).map(_._1)
+      val h = channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${h.mkString("/")}")
       stay using d.copy(channels = channels -- h)
   }
@@ -156,6 +161,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val pingSize = Random.nextInt(1000)
       val pongSize = Random.nextInt(1000)
       transport ! wire.Ping(pongSize, BinaryData("00" * pingSize))
+      disconnector = context.system.scheduler.scheduleOnce(10 seconds, transport, PoisonPill)
       stay
 
     case Event(ping@wire.Ping(pongLength, _), ConnectedData(_, transport, _, _, _, _)) =>
@@ -170,6 +176,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       transport ! TransportHandler.ReadAck(pong)
       // TODO: compute latency for remote peer ?
       log.debug(s"received pong with ${data.length} bytes")
+      disconnector.cancel()
       stay
 
     case Event(err@wire.Error(channelId, reason), ConnectedData(_, transport, _, channels, _, _)) if channelId == CHANNELID_ZERO =>
