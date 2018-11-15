@@ -16,6 +16,9 @@
 
 package fr.acinq.eclair
 
+import com.codahale.metrics.{Meter, Metric, MetricFilter, Slf4jReporter}
+import org.slf4j.LoggerFactory
+import java.util.concurrent.TimeUnit
 import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Paths
@@ -80,11 +83,11 @@ class Setup(datadir: File,
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
+
   implicit val materializer = ActorMaterializer()
   implicit val timeout = Timeout(30 seconds)
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
-  implicit val sttpBackend = OkHttpFutureBackend()
 
   val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, initTor())
 
@@ -99,6 +102,39 @@ class Setup(datadir: File,
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
+
+  logger.info(s"initializing secure random generator")
+  // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
+  secureRandom.nextInt()
+
+  Slf4jReporter
+    .forRegistry(nodeParams.metrics)
+    .outputTo(LoggerFactory.getLogger("fr.acinq.eclair.metrics"))
+    .convertRatesTo(TimeUnit.SECONDS)
+    .convertDurationsTo(TimeUnit.MILLISECONDS)
+    .filter(MetricFilter.startsWith("router"))
+    .build
+    .start(1, TimeUnit.MINUTES)
+
+  Slf4jReporter
+    .forRegistry(nodeParams.metrics)
+    .outputTo(LoggerFactory.getLogger("fr.acinq.eclair.metrics"))
+    .convertRatesTo(TimeUnit.SECONDS)
+    .convertDurationsTo(TimeUnit.MILLISECONDS)
+    .filter(MetricFilter.startsWith("peer"))
+    .filter(new MetricFilter {
+      override def matches(s: String, metric: Metric): Boolean = {
+        metric match {
+            // only display meters if they report significant values
+          case m: Meter => m.getOneMinuteRate > 1 || m.getFiveMinuteRate > 1 || m.getFifteenMinuteRate > 1
+          case _ => true
+        }
+      }
+    })
+    .build
+    .start(1, TimeUnit.HOURS)
+
+  implicit val sttpBackend  = OkHttpFutureBackend()
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>

@@ -166,11 +166,11 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       val (dec1, plaintextMessages) = dec.decrypt()
       if (plaintextMessages.isEmpty) {
         connection ! Tcp.ResumeReading
-        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty, Queue.empty), unackedReceived = Map.empty[T, Int], unackedSent = None)
+        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[T], Queue.empty[T]), unackedReceived = Map.empty[T, Int], unackedSent = None)
       } else {
         log.debug(s"read ${plaintextMessages.size} messages, waiting for readacks")
         val unackedReceived = sendToListener(listener, plaintextMessages)
-        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty, Queue.empty), unackedReceived, unackedSent = None)
+        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[T], Queue.empty[T]), unackedReceived, unackedSent = None)
       }
   }
 
