@@ -19,9 +19,10 @@ package fr.acinq.eclair.payment
 import akka.actor.Status.Failure
 import akka.actor.{ActorSystem, Status}
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
+import fr.acinq.eclair.payment.LocalPaymentHandler.PendingPaymentRequest
 import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UnknownPaymentHash, UpdateAddHtlc}
@@ -38,7 +39,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   test("LocalPaymentHandler should reply with a fulfill/fail, emit a PaymentReceived and adds payment in DB") {
     val nodeParams = Alice.nodeParams
-    val handler = system.actorOf(LocalPaymentHandler.props(nodeParams))
+    val handler = TestActorRef[LocalPaymentHandler](LocalPaymentHandler.props(nodeParams))
     val sender = TestProbe()
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
@@ -88,8 +89,9 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     }
     {
       sender.send(handler, ReceivePayment(Some(amountMsat), "timeout expired", Some(1L)))
-      Thread.sleep(2000) //allow request to timeout
-    val pr = sender.expectMsgType[PaymentRequest]
+      //allow request to timeout
+      Thread.sleep(1001)
+      val pr = sender.expectMsgType[PaymentRequest]
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === false)
       val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
@@ -99,6 +101,14 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       eventListener.expectNoMsg(300 milliseconds)
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === false)
+      // make sure that the request is indeed pruned
+      sender.send(handler, 'requests)
+      sender.expectMsgType[Map[BinaryData, PendingPaymentRequest]].contains(pr.paymentHash)
+      sender.send(handler, LocalPaymentHandler.PurgeExpiredRequests)
+      awaitCond({
+        sender.send(handler, 'requests)
+        sender.expectMsgType[Map[BinaryData, PendingPaymentRequest]].contains(pr.paymentHash) == false
+      })
     }
   }
 

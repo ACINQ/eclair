@@ -100,6 +100,10 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         case None =>
           sender ! CMD_FAIL_HTLC(htlc.id, Right(UnknownPaymentHash), commit = true)
       }
+
+    case 'requests =>
+      // this is just for testing
+      sender ! hash2preimage
   }
 
 }
