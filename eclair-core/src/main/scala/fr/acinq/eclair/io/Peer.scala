@@ -20,13 +20,12 @@ import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
 import java.nio.ByteOrder
 
-import akka.actor.{ActorRef, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorRef, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
@@ -242,11 +241,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           c + 1
       }
 
-      log.info(s"sending all announcements to {}", remoteNodeId)
+      log.debug(s"sending all announcements to {}", remoteNodeId)
       val channelsSent = send(channels)
       val nodesSent = send(nodes)
       val updatesSent = send(updates)
-      log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
+      log.debug(s"sent all announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       stay
 
     case Event(rebroadcast: Rebroadcast, ConnectedData(_, transport, _, _, maybeGossipTimestampFilter, _)) =>
@@ -271,7 +270,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val nodesSent = sendAndCount(rebroadcast.nodes)
 
       if (channelsSent > 0 || updatesSent > 0 || nodesSent > 0) {
-        log.info(s"sent announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
+        log.debug(s"sent announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       }
       stay
 
@@ -418,6 +417,17 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   initialize()
 
   override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
+
+  val msg_in_meter = nodeParams.metrics.meter(s"peer.$remoteNodeId.msg.in")
+  //val msg_out_meter = nodeParams.metrics.meter(s"peer.$remoteNodeId.msg.out")
+
+  override def aroundReceive(receive: Actor.Receive, msg: Any): Unit = {
+    msg match {
+      case _: LightningMessage => msg_in_meter.mark()
+      case _ =>
+    }
+    super.aroundReceive(receive, msg)
+  }
 
 }
 

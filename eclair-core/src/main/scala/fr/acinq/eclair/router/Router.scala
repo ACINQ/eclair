@@ -18,7 +18,7 @@ package fr.acinq.eclair.router
 
 import java.io.StringWriter
 
-import akka.actor.{ActorRef, Props, Status}
+import akka.actor.{Actor, ActorRef, Props, Status}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.{BinaryData, Block}
@@ -28,7 +28,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{ChannelClosed, NonexistingChannel, InvalidSignature, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChannel, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
@@ -686,6 +686,28 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
     case SendChannelQuery(remoteNodeId, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
     case PeerRoutingMessage(_, remoteNodeId, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
     case _ => akka.event.Logging.emptyMDC
+  }
+
+  val msg_in_meter = nodeParams.metrics.meter(s"router.msg.in")
+  val nodes_in_meter = nodeParams.metrics.meter(s"router.nodes.in")
+  val channels_in_meter = nodeParams.metrics.meter(s"router.channels.in")
+  val updates_in_meter = nodeParams.metrics.meter(s"router.updates.in")
+  val others_in_meter = nodeParams.metrics.meter(s"router.others.in")
+  //val msg_out_meter = nodeParams.metrics.meter(s"peer.$remoteNodeId.msg.out")
+
+  override def aroundReceive(receive: Actor.Receive, msg: Any): Unit = {
+    msg match {
+      case PeerRoutingMessage(_, _, lnmsg) =>
+        msg_in_meter.mark()
+        lnmsg match {
+          case _: NodeAnnouncement => nodes_in_meter.mark()
+          case _: ChannelAnnouncement => channels_in_meter.mark()
+          case _: ChannelUpdate => updates_in_meter.mark()
+          case _ => others_in_meter.mark()
+        }
+      case _ =>
+    }
+    super.aroundReceive(receive, msg)
   }
 }
 
