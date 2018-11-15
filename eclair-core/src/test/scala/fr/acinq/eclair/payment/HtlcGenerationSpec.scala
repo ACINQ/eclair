@@ -99,7 +99,7 @@ class HtlcGenerationSpec extends FunSuite {
     val (add, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops)
 
     assert(add.amountMsat > finalAmountMsat)
-    assert(add.expiry === finalExpiry + channelUpdate_de.cltvExpiryDelta + channelUpdate_cd.cltvExpiryDelta + channelUpdate_bc.cltvExpiryDelta)
+    assert(add.cltvExpiry === finalExpiry + channelUpdate_de.cltvExpiryDelta + channelUpdate_cd.cltvExpiryDelta + channelUpdate_bc.cltvExpiryDelta)
     assert(add.paymentHash === paymentHash)
     assert(add.onion.length === Sphinx.PacketLength)
 
@@ -133,7 +133,7 @@ class HtlcGenerationSpec extends FunSuite {
     val (add, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops.take(1))
 
     assert(add.amountMsat === finalAmountMsat)
-    assert(add.expiry === finalExpiry)
+    assert(add.cltvExpiry === finalExpiry)
     assert(add.paymentHash === paymentHash)
     assert(add.onion.size === Sphinx.PacketLength)
 

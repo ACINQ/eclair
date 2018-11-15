@@ -18,13 +18,13 @@ package fr.acinq.eclair.payment
 
 import akka.actor.Status.Failure
 import akka.actor.{ActorSystem, Status}
-import akka.testkit.{TestKit, TestProbe}
+import akka.testkit.{TestActorRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UpdateAddHtlc,UnknownPaymentHash}
+import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UnknownPaymentHash, UpdateAddHtlc}
 import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
 import org.scalatest.FunSuiteLike
 
@@ -55,7 +55,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
-      assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat,add.paymentHash, add.channelId, timestamp = 0))
+      assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat, add.paymentHash, add.channelId, timestamp = 0))
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === true)
     }
@@ -69,7 +69,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
-      assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat,add.paymentHash, add.channelId, timestamp = 0))
+      assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat, add.paymentHash, add.channelId, timestamp = 0))
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === true)
     }
@@ -79,7 +79,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val pr = sender.expectMsgType[PaymentRequest]
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === false)
-      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry = Globals.blockCount.get() + 3, "")
+      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, cltvExpiry = Globals.blockCount.get() + 3, "")
       sender.send(handler, add)
       assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(FinalExpiryTooSoon))
       eventListener.expectNoMsg(300 milliseconds)
@@ -87,9 +87,9 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       assert(sender.expectMsgType[Boolean] === false)
     }
     {
-      sender.send(handler, ReceivePayment(Some(amountMsat), "timeout expired",Some(1L)))
+      sender.send(handler, ReceivePayment(Some(amountMsat), "timeout expired", Some(1L)))
       Thread.sleep(2000) //allow request to timeout
-      val pr = sender.expectMsgType[PaymentRequest]
+    val pr = sender.expectMsgType[PaymentRequest]
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === false)
       val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")

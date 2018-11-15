@@ -81,7 +81,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
           // it must not be greater than two times the requested amount.
           // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
           paymentRequest.amount match {
-            case _ if htlc.expiry < minFinalExpiry =>
+            case _ if htlc.cltvExpiry < minFinalExpiry =>
               sender ! CMD_FAIL_HTLC(htlc.id, Right(FinalExpiryTooSoon), commit = true)
             case Some(amount) if MilliSatoshi(htlc.amountMsat) < amount =>
               log.warning(s"received payment with amount too small for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
