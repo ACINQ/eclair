@@ -311,9 +311,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay
 
-    case Event(readAck: TransportHandler.ReadAck, ConnectedData(_, transport, _, _, _, _, _)) =>
+    case Event(readAck: TransportHandler.ReadAck, d: ConnectedData) =>
       // we just forward acks from router to transport
-      transport forward readAck
+      d.transport forward readAck
       stay
 
     case Event(badMessage: BadMessage, d: ConnectedData) =>
@@ -359,8 +359,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.info(s"resuming processing of network announcements for peer")
       stay using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
 
-    case Event(Disconnect, ConnectedData(_, transport, _, _, _, _, _)) =>
-      transport ! PoisonPill
+    case Event(Disconnect, d: ConnectedData) =>
+      d.transport ! PoisonPill
       stay
 
     case Event(Terminated(actor), d: ConnectedData) if actor == d.transport =>
