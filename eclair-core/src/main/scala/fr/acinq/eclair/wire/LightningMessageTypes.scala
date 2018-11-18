@@ -113,7 +113,7 @@ case class UpdateAddHtlc(channelId: BinaryData,
                          id: Long,
                          amountMsat: Long,
                          paymentHash: BinaryData,
-                         expiry: Long,
+                         cltvExpiry: Long,
                          onionRoutingPacket: BinaryData) extends HtlcMessage with UpdateMessage with HasChannelId
 
 case class UpdateFulfillHtlc(channelId: BinaryData,
