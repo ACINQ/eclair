@@ -6,48 +6,71 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import akka.io.Tcp
 import akka.util.ByteString
 
-class Socks5Connection(underlying: ActorRef) extends Actor with ActorLogging {
+class Socks5Connection(underlying: ActorRef, username: Option[String], password: Option[String]) extends Actor with ActorLogging {
+  username.foreach(x => require(x.length < 256, "username is too long"))
+  password.foreach(x => require(x.length < 256, "password is too long"))
 
   import fr.acinq.eclair.tor.Socks5Connection._
 
+  private var commander: ActorRef = _
   private var handler: ActorRef = _
 
   context watch underlying
 
+  def passwordAuth: Boolean = username.isDefined
+
   override def receive: Receive = {
     case c@Socks5Connect(address) =>
-      context become greetings(sender(), c)
+      commander = sender()
+      context become greetings(c)
       underlying ! Tcp.Register(self)
       underlying ! Tcp.ResumeReading
-      underlying ! Tcp.Write(socks5Greeting)
+      underlying ! Tcp.Write(socks5Greeting(passwordAuth))
   }
 
-  def greetings(commander: ActorRef, connectCommand: Socks5Connect): Receive = {
+  def greetings(connectCommand: Socks5Connect): Receive = {
     case Tcp.Received(data) =>
-      try {
+      handleExceptions(connectCommand) {
         if (data(0) != 0x05) {
           throw new RuntimeException("Invalid SOCKS5 proxy response")
-        } else if (data(1) != 0x00) {
+        } else if ((!passwordAuth && data(1) != NoAuth) || (passwordAuth && data(1) != PasswordAuth)) {
           throw new RuntimeException("Unrecognized SOCKS5 auth method")
         } else {
-          context become connectionRequest(commander, connectCommand)
-          underlying ! Tcp.Write(socks5ConnectionRequest(connectCommand.address))
-          underlying ! Tcp.ResumeReading
+          if (data(1) == PasswordAuth) {
+            context become authenticate(connectCommand)
+            underlying ! Tcp.Write(socks5PasswordAuthenticationRequest(
+              username.getOrElse(throw new RuntimeException("username is not defined")),
+              password.getOrElse(throw new RuntimeException("password is not defined"))))
+            underlying ! Tcp.ResumeReading
+          } else {
+            context become connectionRequest(connectCommand)
+            underlying ! Tcp.Write(socks5ConnectionRequest(connectCommand.address))
+            underlying ! Tcp.ResumeReading
+          }
         }
-      } catch {
-        case e: Throwable => handleErrors("Error connecting to SOCKS5 proxy", commander, connectCommand, e)
-      }
-    case c: Tcp.ConnectionClosed =>
-      commander ! c
-      context stop self
+      } ("Error connecting to SOCKS5 proxy")
   }
 
-  def connectionRequest(commander: ActorRef, connectCommand: Socks5Connect): Receive = {
+  def authenticate(connectCommand: Socks5Connect): Receive = {
     case c@Tcp.Received(data) =>
-      try {
-      if (data(0) != 0x05) {
-        throw new RuntimeException("Invalid SOCKS5 proxy response")
-      } else {
+      handleExceptions(connectCommand) {
+        if (data(0) != 0x01) {
+          throw new RuntimeException("Invalid SOCKS5 proxy response")
+        } else if (data(1) != 0) {
+          throw new RuntimeException("SOCKS5 authentication failed")
+        }
+        context become connectionRequest(connectCommand)
+        underlying ! Tcp.Write(socks5ConnectionRequest(connectCommand.address))
+        underlying ! Tcp.ResumeReading
+      } ("SOCKS5 authentication error")
+  }
+
+  def connectionRequest(connectCommand: Socks5Connect): Receive = {
+    case c@Tcp.Received(data) =>
+      handleExceptions(connectCommand) {
+        if (data(0) != 0x05) {
+          throw new RuntimeException("Invalid SOCKS5 proxy response")
+        } else {
           val status = data(1)
           if (status != 0) {
             throw new RuntimeException(connectErrors.getOrElse(status, s"Unknown SOCKS5 error $status"))
@@ -74,13 +97,8 @@ class Socks5Connection(underlying: ActorRef) extends Actor with ActorLogging {
           context become connected
           log.info(s"connected $connectedAddress")
           commander ! Socks5Connected(connectedAddress)
-      }
-      } catch {
-        case e: Throwable => handleErrors("Cannot establish SOCKS5 connection", commander, connectCommand, e)
-      }
-    case c: Tcp.ConnectionClosed =>
-      commander ! c
-      context stop self
+        }
+      } ("Cannot establish SOCKS5 connection")
   }
 
   def connected: Receive = {
@@ -95,11 +113,19 @@ class Socks5Connection(underlying: ActorRef) extends Actor with ActorLogging {
   }
 
   override def unhandled(message: Any): Unit = message match {
-    case Terminated(actor) if actor == underlying => context stop self
-    case _ => log.warning(s"unhandled message=$message")
+    case Terminated(actor) if actor == underlying =>
+      context stop self
+    case c: Tcp.ConnectionClosed =>
+      commander ! c
+      context stop self
+    case _ =>
+      log.warning(s"unhandled message=$message")
   }
 
-  private def handleErrors(message: String, commander: ActorRef, connectCommand: Socks5Connect, e: Throwable): Unit = {
+  private def handleExceptions[T](connectCommand: Socks5Connect)(f: => T)(message: => String): Unit = try {
+    f
+  } catch {
+    case e: Throwable =>
     log.error(e, message + " ")
     underlying ! Tcp.Close
     commander ! connectCommand.failureMessage
@@ -107,11 +133,14 @@ class Socks5Connection(underlying: ActorRef) extends Actor with ActorLogging {
 }
 
 object Socks5Connection {
-  def props(tcpConnection: ActorRef): Props = Props(new Socks5Connection(tcpConnection))
+  def props(tcpConnection: ActorRef, username: Option[String], password: Option[String]): Props = Props(new Socks5Connection(tcpConnection, username, password))
 
   case class Socks5Connected(address: InetSocketAddress) extends Tcp.Event
 
   case class Socks5Connect(address: InetSocketAddress) extends Tcp.Command
+
+  val NoAuth: Byte = 0x00
+  val PasswordAuth: Byte = 0x02
 
   val connectErrors: Map[Byte, String] = Map[Byte, String](
     (0x00, "Request granted"),
@@ -125,10 +154,18 @@ object Socks5Connection {
     (0x08, "Address type not supported")
   )
 
-  val socks5Greeting = ByteString(
+  def socks5Greeting(passwordAuth: Boolean) = ByteString(
     0x05, // SOCKS version
     0x01, // number of authentication methods supported
-    0x00) // reserved
+    if (passwordAuth) PasswordAuth else NoAuth) // auth method
+
+  def socks5PasswordAuthenticationRequest(username: String, password: String): ByteString =
+    ByteString(
+      0x01, // version of username/password authentication
+      username.length.toByte) ++
+      ByteString(username) ++
+      ByteString(password.length.toByte) ++
+      ByteString(password)
 
   def socks5ConnectionRequest(address: InetSocketAddress): ByteString = {
     ByteString(

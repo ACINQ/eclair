@@ -23,13 +23,14 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.HasCommitments
+import fr.acinq.eclair.io.Client.Socks5ProxyParams
 import fr.acinq.eclair.router.Rebroadcast
 
 /**
   * Ties network connections to peers.
   * Created by PM on 14/02/2017.
   */
-class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[InetSocketAddress]) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[Socks5ProxyParams]) extends Actor with ActorLogging {
 
   authenticator ! self
 
@@ -116,6 +117,6 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
 object Switchboard {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[InetSocketAddress]) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet, socksProxy))
+  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[Socks5ProxyParams]) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet, socksProxy))
 
 }

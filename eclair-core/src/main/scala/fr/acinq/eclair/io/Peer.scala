@@ -28,6 +28,7 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.io.Client.Socks5ProxyParams
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
@@ -39,7 +40,7 @@ import scala.util.Random
 /**
   * Created by PM on 26/08/2016.
   */
-class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[InetSocketAddress]) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[Socks5ProxyParams]) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -435,7 +436,7 @@ object Peer {
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[InetSocketAddress]) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet, socksProxy))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[Socks5ProxyParams]) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet, socksProxy))
 
   // @formatter:off
 

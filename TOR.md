@@ -68,4 +68,10 @@ value   | description
  v2     | set up a Tor hidden service version 2 end point
  v3     | set up a Tor hidden service version 3 end point
 
+To create a new Tor circuit for every connection, use `stream-isolation` parameter:
+
+```
+eclair.tor.stream-isolation = true
+```
+
 Note, that bitcoind should be configured to use Tor as well.

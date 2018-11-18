@@ -23,10 +23,12 @@ import akka.event.Logging.MDC
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.io.Client.ConnectionFailed
+import fr.acinq.eclair.io.Client.{ConnectionFailed, Socks5ProxyParams}
 import fr.acinq.eclair.tor.Socks5Connection
 import fr.acinq.eclair.tor.Socks5Connection.{Socks5Connect, Socks5Connected}
 import fr.acinq.eclair.{Logs, NodeParams}
+import fr.acinq.eclair.randomBytes
+import fr.acinq.bitcoin.toHexString
 
 import scala.concurrent.duration._
 
@@ -34,7 +36,7 @@ import scala.concurrent.duration._
   * Created by PM on 27/10/2015.
   *
   */
-class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef], socksProxy: Option[InetSocketAddress]) extends Actor with DiagnosticActorLogging {
+class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef], socksProxy: Option[Socks5ProxyParams]) extends Actor with DiagnosticActorLogging {
 
   import Tcp._
   import context.system
@@ -51,9 +53,9 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
         case None =>
           log.info(s"connecting to pubkey=$remoteNodeId host=${address.getHostString} port=${address.getPort}")
           address
-        case Some(socksProxyAddress) =>
-          log.info(s"connecting to SOCKS5 proxy $socksProxyAddress")
-          socksProxyAddress
+        case Some(socksProxy) =>
+          log.info(s"connecting to SOCKS5 proxy ${socksProxy.address}")
+          socksProxy.address
       }
       IO(Tcp) ! Connect(addressToConnect, timeout = Some(50 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
 
@@ -80,8 +82,13 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
           log.info(s"connected to pubkey=$remoteNodeId host=${remote.getHostString} port=${remote.getPort}")
           authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = Some(remoteNodeId), address = address, origin_opt = origin_opt)
           context become connected(connection)
-        case Some(_) =>
-          connection = context.actorOf(Socks5Connection.props(sender()))
+        case Some(proxyParams) =>
+          val (username, password) = if (proxyParams.randomizeCredentials)
+            // randomize credentials for every proxy connection to enable Tor stream isolation
+            (Some(toHexString(randomBytes(127))), Some(toHexString(randomBytes(127))))
+           else
+            (None, None)
+          connection = context.actorOf(Socks5Connection.props(sender(), username, password))
           context watch connection
           connection ! Socks5Connect(address)
       }
@@ -108,8 +115,10 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
 
 object Client extends App {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef], socksProxy: Option[InetSocketAddress]): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin_opt, socksProxy))
+  def props(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef], socksProxy: Option[Socks5ProxyParams]): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin_opt, socksProxy))
 
   case class ConnectionFailed(address: InetSocketAddress) extends RuntimeException(s"connection failed to $address")
+
+  case class Socks5ProxyParams(address: InetSocketAddress, randomizeCredentials: Boolean)
 
 }
