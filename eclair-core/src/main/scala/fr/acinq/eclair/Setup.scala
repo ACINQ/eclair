@@ -212,6 +212,7 @@ class Setup(datadir: File,
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port")), Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.nodeId, router, register), "payment-initiator", SupervisorStrategy.Restart))
+      paymentProbe = system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), "payment-autoprobe", SupervisorStrategy.Restart))
 
       kit = Kit(
         nodeParams = nodeParams,
