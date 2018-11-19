@@ -166,6 +166,20 @@ object Helpers {
     AnnouncementSignatures(commitments.channelId, shortChannelId, localNodeSig, localBitcoinSig)
   }
 
+  /**
+    * This indicates whether our side of the channel is above the reserve requested by our counterparty. In other words,
+    * this tells if we can use the channel to make a payment.
+    *
+    */
+  def aboveReserve(commitments: Commitments): Boolean = {
+    val toRemoteSatoshis = commitments.remoteNextCommitInfo match {
+      case Left(waitingForRevocation) => waitingForRevocation.nextRemoteCommit.spec.toRemoteMsat / 1000
+      case _ => commitments.remoteCommit.spec.toRemoteMsat / 1000
+    }
+    // NB: this is an approximation (we don't take network fees into account)
+    toRemoteSatoshis > commitments.remoteParams.channelReserveSatoshis
+  }
+
   def getFinalScriptPubKey(wallet: EclairWallet, chainHash: BinaryData): BinaryData = {
     import scala.concurrent.duration._
     val finalAddress = Await.result(wallet.getFinalAddress, 40 seconds)
