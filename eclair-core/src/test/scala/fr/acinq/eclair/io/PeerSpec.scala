@@ -70,7 +70,7 @@ class PeerSpec extends TestkitBaseClass {
     val deathWatcher = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
 
-    transport.expectMsgType[Ping](max = 4 seconds)
+    transport.expectMsgType[Ping](max = 14 seconds)
     deathWatcher.watch(transport.ref)
     deathWatcher.expectTerminated(transport.ref, max = 11 seconds)
   }

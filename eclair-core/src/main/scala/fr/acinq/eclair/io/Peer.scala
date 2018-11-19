@@ -151,8 +151,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       stay using d.copy(channels = channels -- h)
   }
 
-  when(CONNECTED, stateTimeout = nodeParams.pingInterval) {
-    case Event(StateTimeout, d: ConnectedData) =>
+  when(CONNECTED) {
+    case Event(SendPing, d: ConnectedData) =>
       // no need to use secure random here
       val pingSize = Random.nextInt(1000)
       val pongSize = Random.nextInt(1000)
@@ -180,6 +180,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         case Some(ExpectedPong(ping, disconnector, timestamp)) =>
           log.debug(s"received pong with ${data.length} bytes, was expecting for ${ping.data.length} bytes, latency is ${Platform.currentTime - timestamp}")
           disconnector.cancel
+          schedulePing()
         case None =>
           log.debug(s"received pong with ${data.length} bytes, was not expecting it")
       }
@@ -410,6 +411,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   onTransition {
     case _ -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
     case DISCONNECTED -> _ if nodeParams.autoReconnect && stateData.address_opt.isDefined => cancelTimer(RECONNECT_TIMER)
+    case _ -> CONNECTED => schedulePing()
   }
 
   def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingSatoshis: Long, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
@@ -431,6 +433,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   initialize()
 
   override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
+
+  def schedulePing(): Unit = {
+    // Reconnect in ping inteval + random value
+    val nextDelay = nodeParams.pingInterval + secureRandom.nextInt(10).seconds
+    context.system.scheduler.scheduleOnce(nextDelay, self, SendPing)(context.system.dispatcher)
+  }
 
 }
 
@@ -486,6 +494,7 @@ object Peer {
     require(fundingTxFeeratePerKw_opt.getOrElse(0L) >= 0, s"funding tx feerate must be positive")
   }
   case object GetPeerInfo
+  case object SendPing
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 
   case class PeerRoutingMessage(transport: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage)
