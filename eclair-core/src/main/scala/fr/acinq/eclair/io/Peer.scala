@@ -157,9 +157,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val pingSize = Random.nextInt(1000)
       val pongSize = Random.nextInt(1000)
       val ping = wire.Ping(pongSize, BinaryData("00" * pingSize))
-      val disconnector = context.system.scheduler.scheduleOnce(10 seconds, self, PingTimeout(ping))(context.system.dispatcher)
+      setTimer(PingTimeout.toString, PingTimeout(ping), 10 seconds, repeat = false)
       d.transport ! ping
-      stay using d.copy(expectedPong_opt = Some(ExpectedPong(ping, disconnector)))
+      stay using d.copy(expectedPong_opt = Some(ExpectedPong(ping)))
 
     case Event(PingTimeout(ping), d: ConnectedData) =>
       log.warning(s"no response to ping=$ping, closing connection")
@@ -177,12 +177,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(pong@wire.Pong(data), d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(pong)
       d.expectedPong_opt match {
-        case Some(ExpectedPong(ping, disconnector, timestamp)) =>
-          log.debug(s"received pong with ${data.length} bytes, was expecting for ${ping.data.length} bytes, latency is ${Platform.currentTime - timestamp}")
-          disconnector.cancel
+        case Some(ExpectedPong(ping, timestamp)) if ping.pongLength == data.length =>
+          // we use the pong size to correlate between pings and pongs
+          val latency = Platform.currentTime - timestamp
+          log.info(s"received pong with latency=$latency")
+          cancelTimer(PingTimeout.toString())
           schedulePing()
         case None =>
-          log.debug(s"received pong with ${data.length} bytes, was not expecting it")
+          log.debug(s"received unexpected pong with size=${data.length}")
       }
       stay using d.copy(expectedPong_opt = None)
 
@@ -336,8 +338,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
             d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1)
           } else {
             log.warning(s"peer sent us too many channel announcements with funding tx already spent (count=${d.behavior.fundingTxAlreadySpentCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
-            import scala.concurrent.ExecutionContext.Implicits.global
-            context.system.scheduler.scheduleOnce(IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, self, ResumeAnnouncements)
+            setTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, repeat = false)
             d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1, ignoreNetworkAnnouncement = true)
           }
         case NonexistingChannel(_) =>
@@ -349,8 +350,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
             d.behavior.copy(fundingTxNotFoundCount = d.behavior.fundingTxNotFoundCount + 1)
           } else {
             log.warning(s"peer sent us too many channel announcements with non-existing funding tx (count=${d.behavior.fundingTxNotFoundCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
-            import scala.concurrent.ExecutionContext.Implicits.global
-            context.system.scheduler.scheduleOnce(IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, self, ResumeAnnouncements)
+            setTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, repeat = false)
             d.behavior.copy(fundingTxNotFoundCount = d.behavior.fundingTxNotFoundCount + 1, ignoreNetworkAnnouncement = true)
           }
       }
@@ -406,6 +406,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(_: RoutingState, _) => stay // ignored
 
     case Event(_: TransportHandler.ReadAck, _) => stay // ignored
+
+    case Event(SendPing, _) => stay // we got disconnected in the meantime
+
+    case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
   }
 
   onTransition {
@@ -435,9 +439,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
 
   def schedulePing(): Unit = {
-    // Reconnect in ping inteval + random value
+    // pings are periodically with some randomization
     val nextDelay = nodeParams.pingInterval + secureRandom.nextInt(10).seconds
-    context.system.scheduler.scheduleOnce(nextDelay, self, SendPing)(context.system.dispatcher)
+    setTimer(SendPing.toString, SendPing, nextDelay, repeat = false)
   }
 
 }
@@ -472,7 +476,7 @@ object Peer {
   case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
   case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef]) extends Data
   case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
-  case class ExpectedPong(ping: Ping, timeout: Cancellable, timestamp: Long = Platform.currentTime)
+  case class ExpectedPong(ping: Ping, timestamp: Long = Platform.currentTime)
   case class PingTimeout(ping: Ping)
 
   sealed trait State

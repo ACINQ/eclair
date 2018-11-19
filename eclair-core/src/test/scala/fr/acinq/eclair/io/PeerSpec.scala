@@ -65,7 +65,7 @@ class PeerSpec extends TestkitBaseClass {
     nodes.foreach(transport.expectMsg(_))
   }
 
-  test("Terminate transport if there is no Pong") { f =>
+  test("terminate transport if there is no Pong") { f =>
     import f._
     val deathWatcher = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
