@@ -8,7 +8,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements}
+import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements, SendPing}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
 import fr.acinq.eclair.wire.{Error, Ping}
@@ -36,7 +36,7 @@ class PeerSpec extends TestkitBaseClass {
     val transport = TestProbe()
     val wallet: EclairWallet = null // unused
     val remoteNodeId = Bob.nodeParams.nodeId
-    val peer = system.actorOf(Peer.props(Alice.nodeParams.copy(pingInterval = 3 seconds), remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
+    val peer = system.actorOf(Peer.props(Alice.nodeParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
     withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)))
   }
 
@@ -70,7 +70,7 @@ class PeerSpec extends TestkitBaseClass {
     val deathWatcher = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
 
-    transport.expectMsgType[Ping](max = 14 seconds)
+    transport.expectMsgType[Ping](max = 41 seconds)
     deathWatcher.watch(transport.ref)
     deathWatcher.expectTerminated(transport.ref, max = 11 seconds)
   }
