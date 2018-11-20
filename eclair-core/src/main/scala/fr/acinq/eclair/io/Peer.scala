@@ -72,7 +72,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           stay using d.copy(attempts = attempts + 1)
       }
 
-    case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, address, outgoing, origin_opt), DisconnectedData(_, channels, _)) =>
+    case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, address, outgoing, origin_opt), d: DisconnectedData) =>
       require(remoteNodeId == remoteNodeId1, s"invalid nodeid: $remoteNodeId != $remoteNodeId1")
       log.debug(s"got authenticated connection to $remoteNodeId@${address.getHostString}:${address.getPort}")
       transport ! TransportHandler.Listener(self)
@@ -83,7 +83,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       if (outgoing) {
         nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, address)
       }
-      goto(INITIALIZING) using InitializingData(if (outgoing) Some(address) else None, transport, channels, origin_opt)
+      goto(INITIALIZING) using InitializingData(if (outgoing) Some(address) else None, transport, d.channels, origin_opt)
 
     case Event(Terminated(actor), d@DisconnectedData(_, channels, _)) if channels.exists(_._2 == actor) =>
       val h = channels.filter(_._2 == actor).keys
@@ -94,14 +94,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   when(INITIALIZING) {
-    case Event(remoteInit: wire.Init, InitializingData(address_opt, transport, channels, origin_opt)) =>
-      transport ! TransportHandler.ReadAck(remoteInit)
+    case Event(remoteInit: wire.Init, d: InitializingData) =>
+      d.transport ! TransportHandler.ReadAck(remoteInit)
       val remoteHasInitialRoutingSync = Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
       log.info(s"$remoteNodeId has features: initialRoutingSync=$remoteHasInitialRoutingSync channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional channelRangeQueriesMandatory=$remoteHasChannelRangeQueriesMandatory")
       if (Features.areSupported(remoteInit.localFeatures)) {
-        origin_opt.foreach(origin => origin ! "connected")
+        d.origin_opt.foreach(origin => origin ! "connected")
 
         if (remoteHasInitialRoutingSync) {
           if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
@@ -114,16 +114,16 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         }
         if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
-          router ! SendChannelQuery(remoteNodeId, transport)
+          router ! SendChannelQuery(remoteNodeId, d.transport)
         }
 
         // let's bring existing/requested channels online
-        channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(transport)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(CONNECTED) using ConnectedData(address_opt, transport, remoteInit, channels.map { case (k: ChannelId, v) => (k, v) })
+        d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) })
       } else {
         log.warning(s"incompatible features, disconnecting")
-        origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
-        transport ! PoisonPill
+        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
+        d.transport ! PoisonPill
         stay
       }
 
@@ -141,14 +141,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       context.system.scheduler.scheduleOnce(100 milliseconds, self, o)
       stay
 
-    case Event(Terminated(actor), InitializingData(address_opt, transport, channels, _)) if actor == transport =>
+    case Event(Terminated(actor), d: InitializingData) if actor == d.transport =>
       log.warning(s"lost connection to $remoteNodeId")
-      goto(DISCONNECTED) using DisconnectedData(address_opt, channels)
+      goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels)
 
-    case Event(Terminated(actor), d@InitializingData(_, _, channels, _)) if channels.exists(_._2 == actor) =>
-      val h = channels.filter(_._2 == actor).keys
+    case Event(Terminated(actor), d: InitializingData) if d.channels.exists(_._2 == actor) =>
+      val h = d.channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${h.mkString("/")}")
-      stay using d.copy(channels = channels -- h)
+      stay using d.copy(channels = d.channels -- h)
   }
 
   when(CONNECTED) {
