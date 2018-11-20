@@ -8,11 +8,11 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements}
+import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements, SendPing}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast, ShortChannelIdsBlock}
-import fr.acinq.eclair.wire.Error
-import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, wire}
+import fr.acinq.eclair.wire.{Error, Ping, Pong}
+import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, randomBytes, wire}
 import org.scalatest.Outcome
 
 import scala.concurrent.duration._
@@ -52,6 +52,39 @@ class PeerSpec extends TestkitBaseClass {
     router.expectNoMsg(1 second) // bob's features require no sync
     probe.send(peer, Peer.GetPeerInfo)
     assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
+  }
+
+  test("reply to ping") { f =>
+    import f._
+    val probe = TestProbe()
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+    val ping = Ping(42, randomBytes(127))
+    probe.send(peer, ping)
+    transport.expectMsg(TransportHandler.ReadAck(ping))
+    assert(transport.expectMsgType[Pong].data.size === ping.pongLength)
+  }
+
+  test("ignore malicious ping") { f =>
+    import f._
+    val probe = TestProbe()
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+    // huge requested pong length
+    val ping = Ping(Int.MaxValue, randomBytes(127))
+    probe.send(peer, ping)
+    transport.expectMsg(TransportHandler.ReadAck(ping))
+    transport.expectNoMsg()
+  }
+
+  test("disconnect if no reply to ping") { f =>
+    import f._
+    val sender = TestProbe()
+    val deathWatcher = TestProbe()
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+    // we manually trigger a ping because we don't want to wait too long in tests
+    sender.send(peer, SendPing)
+    transport.expectMsgType[Ping]
+    deathWatcher.watch(transport.ref)
+    deathWatcher.expectTerminated(transport.ref, max = 11 seconds)
   }
 
   test("filter gossip message (no filtering)") { f =>
@@ -165,4 +198,5 @@ class PeerSpec extends TestkitBaseClass {
     assert(error.channelId === CHANNELID_ZERO)
     assert(new String(error.data).startsWith("bad announcement sig! bin=0100"))
   }
+
 }

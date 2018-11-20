@@ -30,23 +30,25 @@ import scala.concurrent.duration._
 import scala.util.Try
 
 /**
+  * Simple payment handler that generates payment requests and fulfills incoming htlcs.
+  *
+  * Note that unfulfilled payment requests are kept forever if they don't have an expiry!
+  *
   * Created by PM on 17/06/2016.
   */
 class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 
-  implicit val ec: ExecutionContext = context.system.dispatcher
+  import LocalPaymentHandler._
 
-  context.system.scheduler.schedule(10 minutes, 10 minutes)(self ! Platform.currentTime / 1000)
+  implicit val ec: ExecutionContext = context.system.dispatcher
+  context.system.scheduler.schedule(10 minutes, 10 minutes)(self ! PurgeExpiredRequests)
 
   override def receive: Receive = run(Map.empty)
 
-  def run(hash2preimage: Map[BinaryData, (BinaryData, PaymentRequest)]): Receive = {
+  def run(hash2preimage: Map[BinaryData, PendingPaymentRequest]): Receive = {
 
-    case currentSeconds: Long =>
-      context.become(run(hash2preimage.collect {
-        case e@(_, (_, pr)) if pr.expiry.isEmpty => e // requests that don't expire are kept forever
-        case e@(_, (_, pr)) if pr.timestamp + pr.expiry.get > currentSeconds => e // clean up expired requests
-      }))
+    case PurgeExpiredRequests =>
+      context.become(run(hash2preimage.filterNot { case (_, pr) => hasExpired(pr) }))
 
     case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops) =>
       Try {
@@ -59,7 +61,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress = None, expirySeconds = Some(expirySeconds), extraHops = extraHops)
         log.debug(s"generated payment request=${PaymentRequest.write(paymentRequest)} from amount=$amount_opt")
         sender ! paymentRequest
-        context.become(run(hash2preimage + (paymentHash -> (paymentPreimage, paymentRequest))))
+        context.become(run(hash2preimage + (paymentHash -> PendingPaymentRequest(paymentPreimage, paymentRequest))))
       } recover { case t => sender ! Status.Failure(t) }
 
     case CheckPayment(paymentHash) =>
@@ -69,14 +71,17 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
       }
 
     case htlc: UpdateAddHtlc =>
-      hash2preimage.get(htlc.paymentHash) match {
-        case Some((paymentPreimage, paymentRequest)) =>
+      hash2preimage
+        .get(htlc.paymentHash) // we retrieve the request
+        .filterNot(hasExpired) // and filter it out if it is expired (it will be purged independently)
+      match {
+        case Some(PendingPaymentRequest(paymentPreimage, paymentRequest)) =>
           val minFinalExpiry = Globals.blockCount.get() + paymentRequest.minFinalCltvExpiry.getOrElse(Channel.MIN_CLTV_EXPIRY)
           // The htlc amount must be equal or greater than the requested amount. A slight overpaying is permitted, however
           // it must not be greater than two times the requested amount.
           // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
           paymentRequest.amount match {
-            case _ if htlc.expiry < minFinalExpiry =>
+            case _ if htlc.cltvExpiry < minFinalExpiry =>
               sender ! CMD_FAIL_HTLC(htlc.id, Right(FinalExpiryTooSoon), commit = true)
             case Some(amount) if MilliSatoshi(htlc.amountMsat) < amount =>
               log.warning(s"received payment with amount too small for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
@@ -95,9 +100,25 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         case None =>
           sender ! CMD_FAIL_HTLC(htlc.id, Right(UnknownPaymentHash), commit = true)
       }
+
+    case 'requests =>
+      // this is just for testing
+      sender ! hash2preimage
   }
+
 }
 
 object LocalPaymentHandler {
+
   def props(nodeParams: NodeParams): Props = Props(new LocalPaymentHandler(nodeParams))
+
+  case object PurgeExpiredRequests
+
+  case class PendingPaymentRequest(preimage: BinaryData, paymentRequest: PaymentRequest)
+
+  def hasExpired(pr: PendingPaymentRequest): Boolean = pr.paymentRequest.expiry match {
+    case Some(expiry) => pr.paymentRequest.timestamp + expiry <= Platform.currentTime / 1000
+    case None => false // this request will never expire
+  }
+
 }
