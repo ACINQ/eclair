@@ -168,9 +168,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(ping@wire.Ping(pongLength, _), d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(ping)
-      // TODO: (optional) check against the expected data size tat we requested when we sent ping messages
-      if (pongLength > 0) {
-        d.transport ! wire.Pong(BinaryData("00" * pongLength))
+      if (pongLength <= 65532) {
+        // see BOLT 1: we reply only if requested pong length is acceptable
+        d.transport ! wire.Pong(BinaryData(Seq.fill[Byte](pongLength)(0.toByte)))
+      } else {
+        log.warning(s"ignoring invalid ping with pongLength=${ping.pongLength}")
       }
       stay
 
@@ -180,7 +182,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         case Some(ExpectedPong(ping, timestamp)) if ping.pongLength == data.length =>
           // we use the pong size to correlate between pings and pongs
           val latency = Platform.currentTime - timestamp
-          log.info(s"received pong with latency=$latency")
+          log.debug(s"received pong with latency=$latency")
           cancelTimer(PingTimeout.toString())
           schedulePing()
         case None =>
