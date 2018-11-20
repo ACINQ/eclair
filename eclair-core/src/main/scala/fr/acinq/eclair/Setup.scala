@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair
 
-import com.codahale.metrics.{Meter, Metric, MetricFilter, Slf4jReporter}
+import com.codahale.metrics._
 import org.slf4j.LoggerFactory
 import java.util.concurrent.TimeUnit
 import java.io.File

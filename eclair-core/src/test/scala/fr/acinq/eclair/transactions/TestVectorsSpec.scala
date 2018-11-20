@@ -160,7 +160,7 @@ class TestVectorsSpec extends FunSuite with Logging {
   )
   val htlcScripts = htlcs.map(htlc => htlc.direction match {
     case OUT => Scripts.htlcOffered(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(htlc.add.paymentHash))
-    case IN => Scripts.htlcReceived(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(htlc.add.paymentHash), htlc.add.expiry)
+    case IN => Scripts.htlcReceived(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(htlc.add.paymentHash), htlc.add.cltvExpiry)
   })
 
   def dir2string(dir: Direction) = dir match {
@@ -171,7 +171,7 @@ class TestVectorsSpec extends FunSuite with Logging {
   for (i <- 0 until htlcs.length) {
     logger.info(s"htlc $i direction: ${dir2string(htlcs(i).direction)}")
     logger.info(s"htlc $i amount_msat: ${htlcs(i).add.amountMsat}")
-    logger.info(s"htlc $i expiry: ${htlcs(i).add.expiry}")
+    logger.info(s"htlc $i expiry: ${htlcs(i).add.cltvExpiry}")
     logger.info(s"htlc $i payment_preimage: ${paymentPreimages(i)}")
   }
 
