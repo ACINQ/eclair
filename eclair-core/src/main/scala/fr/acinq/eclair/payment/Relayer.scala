@@ -201,7 +201,7 @@ object Relayer {
   case class FinalPayload(add: UpdateAddHtlc, payload: PerHopPayload) extends NextPayload
   case class RelayPayload(add: UpdateAddHtlc, payload: PerHopPayload, nextPacket: Sphinx.Packet) extends NextPayload {
     val relayFeeSatoshi = add.amountMsat - payload.amtToForward
-    val expiryDelta = add.expiry - payload.outgoingCltvValue
+    val expiryDelta = add.cltvExpiry - payload.outgoingCltvValue
   }
   // @formatter:on
 
@@ -241,8 +241,8 @@ object Relayer {
     finalPayload.payload match {
       case PerHopPayload(_, finalAmountToForward, _) if finalAmountToForward > add.amountMsat =>
         Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectHtlcAmount(add.amountMsat)), commit = true))
-      case PerHopPayload(_, _, finalOutgoingCltvValue) if finalOutgoingCltvValue != add.expiry =>
-        Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectCltvExpiry(add.expiry)), commit = true))
+      case PerHopPayload(_, _, finalOutgoingCltvValue) if finalOutgoingCltvValue != add.cltvExpiry =>
+        Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectCltvExpiry(add.cltvExpiry)), commit = true))
       case _ =>
         Right(add)
     }
@@ -266,7 +266,7 @@ object Relayer {
       case Some(channelUpdate) if payload.amtToForward < channelUpdate.htlcMinimumMsat =>
         Left(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) if relayPayload.expiryDelta != channelUpdate.cltvExpiryDelta =>
-        Left(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(add.expiry, channelUpdate)), commit = true))
+        Left(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(add.cltvExpiry, channelUpdate)), commit = true))
       case Some(channelUpdate) if relayPayload.relayFeeSatoshi < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amtToForward) =>
         Left(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>

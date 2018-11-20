@@ -62,9 +62,9 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
   def hasTimedoutOutgoingHtlcs(blockheight: Long): Boolean =
-    localCommit.spec.htlcs.exists(htlc => htlc.direction == OUT && blockheight >= htlc.add.expiry) ||
-      remoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.expiry) ||
-      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.expiry)).getOrElse(false)
+    localCommit.spec.htlcs.exists(htlc => htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry) ||
+      remoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry) ||
+      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry)).getOrElse(false)
 
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
 
@@ -102,13 +102,13 @@ object Commitments {
     val blockCount = Globals.blockCount.get()
     // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
     val minExpiry = blockCount + Channel.MIN_CLTV_EXPIRY
-    if (cmd.expiry < minExpiry) {
-      return Left(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.expiry, blockCount = blockCount))
+    if (cmd.cltvExpiry < minExpiry) {
+      return Left(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockCount = blockCount))
     }
     val maxExpiry = blockCount + Channel.MAX_CLTV_EXPIRY
     // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
-    if (cmd.expiry >= maxExpiry) {
-      return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.expiry, blockCount = blockCount))
+    if (cmd.cltvExpiry >= maxExpiry) {
+      return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockCount))
     }
 
     if (cmd.amountMsat < commitments.remoteParams.htlcMinimumMsat) {
@@ -116,7 +116,7 @@ object Commitments {
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
-    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
+    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amountMsat, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     // we increment the local htlc index and add an entry to the origins map
     val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1, originChannels = commitments.originChannels + (add.id -> origin))
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
@@ -557,17 +557,17 @@ object Commitments {
        |  toLocal: ${commitments.localCommit.spec.toLocalMsat}
        |  toRemote: ${commitments.localCommit.spec.toRemoteMsat}
        |  htlcs:
-       |${commitments.localCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.expiry}").mkString("\n")}
+       |${commitments.localCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
        |remotecommit:
        |  toLocal: ${commitments.remoteCommit.spec.toLocalMsat}
        |  toRemote: ${commitments.remoteCommit.spec.toRemoteMsat}
        |  htlcs:
-       |${commitments.remoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.expiry}").mkString("\n")}
+       |${commitments.remoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
        |next remotecommit:
        |  toLocal: ${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toLocalMsat).getOrElse("N/A")}
        |  toRemote: ${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toRemoteMsat).getOrElse("N/A")}
        |  htlcs:
-       |${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.expiry}").mkString("\n")).getOrElse("N/A")}""".stripMargin
+       |${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")).getOrElse("N/A")}""".stripMargin
   }
 }
 

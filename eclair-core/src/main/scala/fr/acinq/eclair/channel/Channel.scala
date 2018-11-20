@@ -613,8 +613,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
               val trimmedHtlcs = Transactions.trimOfferedHtlcs(Satoshi(d.commitments.remoteParams.dustLimitSatoshis), nextRemoteCommit.spec) ++ Transactions.trimReceivedHtlcs(Satoshi(d.commitments.remoteParams.dustLimitSatoshis), nextRemoteCommit.spec)
               trimmedHtlcs collect {
                 case DirectedHtlc(_, u) =>
-                  log.info(s"adding paymentHash=${u.paymentHash} cltvExpiry=${u.expiry} to htlcs db for commitNumber=$nextCommitNumber")
-                  nodeParams.channelsDb.addOrUpdateHtlcInfo(d.channelId, nextCommitNumber, u.paymentHash, u.expiry)
+                  log.info(s"adding paymentHash=${u.paymentHash} cltvExpiry=${u.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
+                  nodeParams.channelsDb.addOrUpdateHtlcInfo(d.channelId, nextCommitNumber, u.paymentHash, u.cltvExpiry)
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, nextRemoteCommit.spec.toRemoteMsat)) // note that remoteCommit.toRemote == toLocal
