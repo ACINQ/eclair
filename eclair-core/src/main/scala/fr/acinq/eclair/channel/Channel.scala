@@ -621,6 +621,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
                   log.info(s"adding paymentHash=${u.paymentHash} cltvExpiry=${u.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
                   nodeParams.channelsDb.addOrUpdateHtlcInfo(d.channelId, nextCommitNumber, u.paymentHash, u.cltvExpiry)
               }
+              if (Helpers.aboveReserve(d.commitments) ^ Helpers.aboveReserve(commitments1)) {
+                // we just went above reserve (can't go below), let's refresh our channel_update to enable/disable it accordingly
+                log.info(s"updating channel_update aboveReserve=${Helpers.aboveReserve(commitments1)}")
+                self ! TickRefreshChannelUpdate
+              }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, nextRemoteCommit.spec.toRemoteMsat)) // note that remoteCommit.toRemote == toLocal
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
@@ -660,11 +665,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           log.debug(s"received a new rev, spec:\n${Commitments.specs2String(commitments1)}")
           if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
             self ! CMD_SIGN
-          }
-          if (Helpers.aboveReserve(d.commitments) ^ Helpers.aboveReserve(commitments1)) {
-            // we just went above or below reserve, let's refresh our channel_update to enable/disable it accordingly
-            log.info(s"updating channel_update aboveReserve=${Helpers.aboveReserve(commitments1)}")
-            self ! TickRefreshChannelUpdate
           }
           if (d.remoteShutdown.isDefined && !Commitments.localHasUnsignedOutgoingHtlcs(commitments1)) {
             // we were waiting for our pending htlcs to be signed before replying with our local shutdown

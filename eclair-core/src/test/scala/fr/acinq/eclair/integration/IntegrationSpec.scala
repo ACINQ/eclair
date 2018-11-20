@@ -674,6 +674,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(bitcoincli, BitcoinReq("getblockcount"))
     val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
     awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    logger.info("==================================================")
     // first we send 3 mBTC to F so that it has a balance
     val amountMsat = MilliSatoshi(300000000L)
     sender.send(paymentHandlerF, ReceivePayment(Some(amountMsat), "1 coffee"))
@@ -686,6 +687,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sigListener.expectMsgType[ChannelSignatureReceived]
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSucceeded]
+    // and we make sure that
+    logger.info("--------------------------------------------------")
 
     // we now send a few htlcs C->F and F->C in order to obtain a commitments with multiple htlcs
     def send(amountMsat: Long, paymentHandler: ActorRef, paymentInitiator: ActorRef) = {
@@ -693,6 +696,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       val pr = sender.expectMsgType[PaymentRequest]
       val sendReq = SendPayment(amountMsat, pr.paymentHash, pr.nodeId)
       sender.send(paymentInitiator, sendReq)
+      sender.expectNoMsg()
     }
 
     val buffer = TestProbe()

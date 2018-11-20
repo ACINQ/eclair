@@ -171,13 +171,16 @@ object Helpers {
     * this tells if we can use the channel to make a payment.
     *
     */
-  def aboveReserve(commitments: Commitments): Boolean = {
-    val toRemoteSatoshis = commitments.remoteNextCommitInfo match {
-      case Left(waitingForRevocation) => waitingForRevocation.nextRemoteCommit.spec.toRemoteMsat / 1000
-      case _ => commitments.remoteCommit.spec.toRemoteMsat / 1000
+  def aboveReserve(commitments: Commitments)(implicit log: LoggingAdapter): Boolean = {
+    val remoteCommit = commitments.remoteNextCommitInfo match {
+      case Left(waitingForRevocation) => waitingForRevocation.nextRemoteCommit
+      case _ => commitments.remoteCommit
     }
+    val toRemoteSatoshis = remoteCommit.spec.toRemoteMsat / 1000
     // NB: this is an approximation (we don't take network fees into account)
-    toRemoteSatoshis > commitments.remoteParams.channelReserveSatoshis
+    val result = toRemoteSatoshis > commitments.remoteParams.channelReserveSatoshis
+    log.debug(s"toRemoteSatoshis=$toRemoteSatoshis reserve=${commitments.remoteParams.channelReserveSatoshis} aboveReserve=$result for remoteCommitNumber=${remoteCommit.index}")
+    result
   }
 
   def getFinalScriptPubKey(wallet: EclairWallet, chainHash: BinaryData): BinaryData = {

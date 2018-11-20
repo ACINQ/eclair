@@ -579,6 +579,32 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo === Left(waitForRevocation.copy(reSignAsap = true)))
   }
 
+  test("recv CMD_SIGN (going above reserve)", Tag("no_push_msat")) { f =>
+    import f._
+    val sender = TestProbe()
+    // channel starts with all funds on alice's side, so channel will be initially disabled on bob's side
+    assert(Announcements.isEnabled(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags) === false)
+    // alice will send enough funds to bob to make it go above reserve
+    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r))
+    sender.expectMsg("ok")
+    bob2alice.expectMsgType[UpdateFulfillHtlc]
+    // we listen to channel_update events
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[LocalChannelUpdate])
+
+    // actual test starts here
+    // when signing the fulfill, bob will have its main output go above reserve in alice's commitment tx
+    sender.send(bob, CMD_SIGN)
+    sender.expectMsg("ok")
+    bob2alice.expectMsgType[CommitSig]
+    // it should update its channel_update
+    awaitCond(Announcements.isEnabled(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags) == true)
+    // and broadcast it
+    assert(listener.expectMsgType[LocalChannelUpdate].channelUpdate === bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)
+  }
+
   test("recv CommitSig (one htlc received)") { f =>
     import f._
     val sender = TestProbe()

@@ -75,12 +75,13 @@ trait StateTestsHelperMethods extends TestKitBase {
                   relayer: TestProbe,
                   tags: Set[String] = Set.empty): Unit = {
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
+    val pushMsat = if (tags.contains("no_push_msat")) 0 else TestConstants.pushMsat
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
     // reset global feerates (they may have been changed by previous tests)
     Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
-    alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags)
+    alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags)
     bob ! INPUT_INIT_FUNDEE("00" * 32, bobParams, bob2alice.ref, aliceInit)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
