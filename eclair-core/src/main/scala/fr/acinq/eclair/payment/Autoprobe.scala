@@ -38,7 +38,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
         case Some(targetNodeId) =>
           val paymentHash = randomBytes(32) // we don't even know the preimage (this needs to be a secure random!)
           log.info(s"sending payment probe to node=$targetNodeId payment_hash=$paymentHash")
-          paymentInitiator ! SendPayment(PAYMENT_AMOUNT_MSAT, paymentHash, targetNodeId)
+          paymentInitiator ! SendPayment(PAYMENT_AMOUNT_MSAT, paymentHash, targetNodeId, maxAttempts = 1)
         case None =>
           log.info(s"could not find a destination, re-scheduling")
           scheduleProbe()
@@ -75,8 +75,7 @@ object Autoprobe {
     // we only pick direct peers with enabled channels
     val peers = updates
       .collect {
-        case (desc, u) if desc.a == nodeId && Announcements.isEnabled(u.channelFlags) => desc.b
-        case (desc, u) if desc.b == nodeId && Announcements.isEnabled(u.channelFlags) => desc.a
+        case (desc, u) if desc.a == nodeId && Announcements.isEnabled(u.channelFlags) => desc.b // we only consider outgoing channels that are enabled
       }
     if (peers.isEmpty) {
       None
