@@ -67,7 +67,7 @@ object Autoprobe {
 
   val PROBING_INTERVAL = 20 seconds
 
-  val PAYMENT_AMOUNT_MSAT = 100 * 1000
+  val PAYMENT_AMOUNT_MSAT = 100 * 1000 // this is below dust_limit so there won't be an output in the commitment tx
 
   object TickProbe
 
