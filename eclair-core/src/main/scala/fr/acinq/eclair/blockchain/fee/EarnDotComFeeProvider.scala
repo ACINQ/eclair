@@ -16,23 +16,32 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import akka.actor.ActorSystem
-import fr.acinq.eclair.HttpHelper.get
+import com.softwaremill.sttp._
+import com.softwaremill.sttp.json4s._
+import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JArray, JInt, JValue}
+import org.json4s.jackson.Serialization
 
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
   * Created by PM on 16/11/2017.
   */
-class EarnDotComFeeProvider(implicit system: ActorSystem, ec: ExecutionContext) extends FeeProvider {
+class EarnDotComFeeProvider(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
 
   import EarnDotComFeeProvider._
 
+  implicit val formats = DefaultFormats
+  implicit val serialization = Serialization
+
+  val uri = uri"https://bitcoinfees.earn.com/api/v1/fees/list"
+
   override def getFeerates: Future[FeeratesPerKB] =
     for {
-      json <- get("https://bitcoinfees.earn.com/api/v1/fees/list")
-      feeRanges = parseFeeRanges(json)
+      json <- sttp.get(uri)
+        .response(asJson[JValue])
+        .send()
+      feeRanges = parseFeeRanges(json.unsafeBody)
     } yield extractFeerates(feeRanges)
 }
 

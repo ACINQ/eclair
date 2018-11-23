@@ -262,8 +262,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       findRoute(d.graph, start, end, withEdges = assistedUpdates, withoutEdges = ignoredUpdates)
-        .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
-        .recover { case t => sender ! Status.Failure(t) }
+            .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
+            .recover { case t => sender ! Status.Failure(t) }
       stay
 
     case Event(SendChannelQuery(remoteNodeId, remote), d) =>

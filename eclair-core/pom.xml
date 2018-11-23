@@ -126,17 +126,22 @@
             <artifactId>akka-slf4j_${scala.version.short}</artifactId>
             <version>${akka.version}</version>
         </dependency>
-        <!-- HTTP -->
+        <!-- HTTP CLIENT -->
         <dependency>
-            <groupId>com.ning</groupId>
-            <artifactId>async-http-client</artifactId>
-            <version>1.9.40</version>
+            <groupId>com.softwaremill.sttp</groupId>
+            <artifactId>okhttp-backend_${scala.version.short}</artifactId>
+            <version>${sttp.version}</version>
         </dependency>
         <!-- JSON -->
         <dependency>
             <groupId>org.json4s</groupId>
             <artifactId>json4s-jackson_${scala.version.short}</artifactId>
-            <version>3.5.3</version>
+            <version>3.6.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.softwaremill.sttp</groupId>
+            <artifactId>json4s_${scala.version.short}</artifactId>
+            <version>${sttp.version}</version>
         </dependency>
         <dependency>
             <groupId>com.lihaoyi</groupId>

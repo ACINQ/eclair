@@ -48,7 +48,6 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
 
   implicit val formats = DefaultFormats.withBigDecimal
 
-
   override def beforeAll(): Unit = {
     startBitcoind()
   }

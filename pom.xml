@@ -65,6 +65,7 @@
         <scala.version>2.11.11</scala.version>
         <scala.version.short>2.11</scala.version.short>
         <akka.version>2.3.14</akka.version>
+        <sttp.version>1.3.9</sttp.version>
         <bitcoinlib.version>0.9.17</bitcoinlib.version>
         <guava.version>24.0-android</guava.version>
     </properties>
