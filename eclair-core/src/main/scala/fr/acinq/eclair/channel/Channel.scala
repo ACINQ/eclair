@@ -164,7 +164,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           if (closing.localCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
             closing.remoteCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
             closing.nextRemoteCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
-            closing.revokedCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint))) {
+            closing.revokedCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
+            closing.futureRemoteCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint))) {
             log.info(s"funding tx has already been spent and spending tx reached mindepth, no need to put back the watch-spent")
           } else {
             // TODO: should we wait for an acknowledgment from the watcher?
@@ -176,6 +177,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           closing.remoteCommitPublished.foreach(doPublish(_))
           closing.nextRemoteCommitPublished.foreach(doPublish(_))
           closing.revokedCommitPublished.foreach(doPublish(_))
+          closing.futureRemoteCommitPublished.foreach(doPublish(_))
           // no need to go OFFLINE, we can directly switch to CLOSING
           goto(CLOSING) using closing
 
