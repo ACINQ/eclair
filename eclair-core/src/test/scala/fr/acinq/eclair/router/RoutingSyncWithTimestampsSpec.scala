@@ -16,7 +16,7 @@ import scala.collection.immutable.TreeMap
 import scala.concurrent.duration._
 
 
-class RoutingSyncEx2Spec extends TestKit(ActorSystem("test")) with FunSuiteLike {
+class RoutingSyncWithTimestampsSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   import RoutingSyncSpec.makeFakeRoutingInfo
 
@@ -51,16 +51,16 @@ class RoutingSyncEx2Spec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
 
     // ask router to send a channel range query
-    sender.send(router, SendChannelQueryEx2(remoteNodeId, sender.ref))
-    val QueryChannelRangeEx2(chainHash, firstBlockNum, numberOfBlocks) = sender.expectMsgType[QueryChannelRangeEx2]
+    sender.send(router, SendChannelQueryWithTimestamps(remoteNodeId, sender.ref))
+    val QueryChannelRangeWithTimestamps(chainHash, firstBlockNum, numberOfBlocks) = sender.expectMsgType[QueryChannelRangeWithTimestamps]
     sender.expectMsgType[GossipTimestampFilter]
 
     // send back all our ids and timestamps
     val List(block) = ShortChannelIdAndTimestampsBlock.encode(firstBlockNum, numberOfBlocks, shortChannelIds, Router.getTimestamps(initChannels, initChannelUpdates), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
-    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyChannelRangeEx2(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIdAndTimestamps)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyChannelRangeWithTimestamps(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIdAndTimestamps)))
 
     // router should ask for our first block of ids
-    val QueryShortChannelIdsEx2(_, data1) = sender.expectMsgType[QueryShortChannelIdsEx2]
+    val QueryShortChannelIdsWithTimestamps(_, data1) = sender.expectMsgType[QueryShortChannelIdsWithTimestamps]
     val (_, shortChannelIdAndFlags1) = ShortChannelIdAndFlagsBlock.decode(data1)
     assert(shortChannelIdAndFlags1.keySet == shortChannelIds.take(Router.SHORTID_WINDOW))
     assert(shortChannelIdAndFlags1.values.toSet == Set(ChannelRangeQueries.INCLUDE_ANNOUNCEMENT))
@@ -84,10 +84,10 @@ class RoutingSyncEx2Spec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     sender.expectNoMsg(1 second)
 
     // now send our ReplyShortChannelIdsEnd message
-    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndEx2(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndWithTimestamps(chainHash, 1.toByte)))
 
     // router should ask for our second block of ids
-    val QueryShortChannelIdsEx2(_, data2) = sender.expectMsgType[QueryShortChannelIdsEx2]
+    val QueryShortChannelIdsWithTimestamps(_, data2) = sender.expectMsgType[QueryShortChannelIdsWithTimestamps]
     val (_, shortChannelIdAndFlags2) = ShortChannelIdAndFlagsBlock.decode(data2)
     assert(shortChannelIdAndFlags2.keySet == shortChannelIds.drop(Router.SHORTID_WINDOW).take(Router.SHORTID_WINDOW))
 
@@ -98,10 +98,10 @@ class RoutingSyncEx2Spec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu1))
       sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu2))
     })
-    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndEx2(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndWithTimestamps(chainHash, 1.toByte)))
 
     // router should ask for our third block of ids
-    val QueryShortChannelIdsEx2(_, data3) = sender.expectMsgType[QueryShortChannelIdsEx2]
+    val QueryShortChannelIdsWithTimestamps(_, data3) = sender.expectMsgType[QueryShortChannelIdsWithTimestamps]
     val (_, shortChannelIdAndFlags3) = ShortChannelIdAndFlagsBlock.decode(data3)
     assert(shortChannelIdAndFlags3.keySet == shortChannelIds.drop(2 * Router.SHORTID_WINDOW).take(Router.SHORTID_WINDOW))
 
@@ -112,10 +112,10 @@ class RoutingSyncEx2Spec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu1))
       sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu2))
     })
-    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndEx2(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndWithTimestamps(chainHash, 1.toByte)))
 
     // router should ask for our third block of ids
-    val QueryShortChannelIdsEx2(_, data4) = sender.expectMsgType[QueryShortChannelIdsEx2]
+    val QueryShortChannelIdsWithTimestamps(_, data4) = sender.expectMsgType[QueryShortChannelIdsWithTimestamps]
     val (_, shortChannelIdAndFlags4) = ShortChannelIdAndFlagsBlock.decode(data4)
     assert(shortChannelIdAndFlags4.keySet == shortChannelIds.drop(3 * Router.SHORTID_WINDOW).take(Router.SHORTID_WINDOW))
     // send block #4
@@ -125,7 +125,7 @@ class RoutingSyncEx2Spec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu1))
       sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu2))
     })
-    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndEx2(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndWithTimestamps(chainHash, 1.toByte)))
 
     awaitCond({
       router.stateData.channels == initChannels
@@ -143,16 +143,16 @@ class RoutingSyncEx2Spec extends TestKit(ActorSystem("test")) with FunSuiteLike 
         updates.updated(desc, newUpdate)
     }
     // ask router to send a channel range query
-    sender.send(router, SendChannelQueryEx2(remoteNodeId, sender.ref))
-    val QueryChannelRangeEx2(_, firstBlockNum1, numberOfBlocks1) = sender.expectMsgType[QueryChannelRangeEx2]
+    sender.send(router, SendChannelQueryWithTimestamps(remoteNodeId, sender.ref))
+    val QueryChannelRangeWithTimestamps(_, firstBlockNum1, numberOfBlocks1) = sender.expectMsgType[QueryChannelRangeWithTimestamps]
     sender.expectMsgType[GossipTimestampFilter]
 
     // send back all our ids and timestamps
     val List(block1) = ShortChannelIdAndTimestampsBlock.encode(firstBlockNum1, numberOfBlocks1, shortChannelIds, Router.getTimestamps(initChannels, recentChannelUpdates), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
-    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyChannelRangeEx2(chainHash, block.firstBlock, block.numBlocks, 1, block1.shortChannelIdAndTimestamps)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyChannelRangeWithTimestamps(chainHash, block.firstBlock, block.numBlocks, 1, block1.shortChannelIdAndTimestamps)))
 
     // router should ask for our new channel updates
-    val QueryShortChannelIdsEx2(_, data5) = sender.expectMsgType[QueryShortChannelIdsEx2]
+    val QueryShortChannelIdsWithTimestamps(_, data5) = sender.expectMsgType[QueryShortChannelIdsWithTimestamps]
     val (_, shortChannelIdAndFlags5) = ShortChannelIdAndFlagsBlock.decode(data5)
     assert(shortChannelIdAndFlags5.keySet == updatedIds)
     assert(shortChannelIdAndFlags5.values.toSet == Set(ChannelRangeQueries.INCLUDE_CHANNEL_UPDATE_1))

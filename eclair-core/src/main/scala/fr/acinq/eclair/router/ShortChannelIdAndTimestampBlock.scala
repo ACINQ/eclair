@@ -12,6 +12,13 @@ import scala.annotation.tailrec
 import scala.collection.SortedSet
 import scala.collection.immutable.SortedMap
 
+/**
+  *
+  * README: this is an obsolete design for channel range queries, used by eclair only, and to be dropped ASAP
+  * @param firstBlock                  fist block covered by this message
+  * @param numBlocks                   number of blocks covered by this message
+  * @param shortChannelIdAndTimestamps packed list of short channel id + the most recent channel update timestamp
+  */
 case class ShortChannelIdAndTimestampBlock(val firstBlock: Long, val numBlocks: Long, shortChannelIdAndTimestamps: BinaryData)
 
 object ShortChannelIdAndTimestampBlock {

@@ -321,54 +321,54 @@ object LightningMessageCodecs {
       ("data" | varsizebinarydata)
     ).as[ReplyChannelRange]
 
-  val queryShortChannelIdsExCodec: Codec[QueryShortChannelIdsEx] = (
+  val queryShortChannelIdsProtoCodec: Codec[QueryShortChannelIdsProto] = (
     ("chainHash" | binarydata(32)) ::
       ("flag" | byte) ::
       ("data" | varsizebinarydata)
-    ).as[QueryShortChannelIdsEx]
+    ).as[QueryShortChannelIdsProto]
 
-  val replyShortChanelIdsEndExCodec: Codec[ReplyShortChannelIdsEndEx] = (
+  val replyShortChanelIdsEndProtoCodec: Codec[ReplyShortChannelIdsEndProto] = (
         ("chainHash" | binarydata(32)) ::
               ("complete" | byte)
-        ).as[ReplyShortChannelIdsEndEx]
+        ).as[ReplyShortChannelIdsEndProto]
 
-  val queryChannelRangeExCodec: Codec[QueryChannelRangeEx] = (
+  val queryChannelRangeProtoCodec: Codec[QueryChannelRangeProto] = (
         ("chainHash" | binarydata(32)) ::
               ("firstBlockNum" | uint32) ::
               ("numberOfBlocks" | uint32)
-        ).as[QueryChannelRangeEx]
+        ).as[QueryChannelRangeProto]
 
-  val replyChannelRangeExCodec: Codec[ReplyChannelRangeEx] = (
+  val replyChannelRangeProtoCodec: Codec[ReplyChannelRangeProto] = (
         ("chainHash" | binarydata(32)) ::
               ("firstBlockNum" | uint32) ::
               ("numberOfBlocks" | uint32) ::
               ("complete" | byte) ::
               ("data" | varsizebinarydata)
-        ).as[ReplyChannelRangeEx]
+        ).as[ReplyChannelRangeProto]
 
-  val queryShortChannelIdsEx2Codec: Codec[QueryShortChannelIdsEx2] = (
+  val queryShortChannelIdsWithTimestampsCodec: Codec[QueryShortChannelIdsWithTimestamps] = (
         ("chainHash" | binarydata(32)) ::
               ("data" | varsizebinarydata)
-        ).as[QueryShortChannelIdsEx2]
+        ).as[QueryShortChannelIdsWithTimestamps]
 
-  val replyShortChanelIdsEndEx2Codec: Codec[ReplyShortChannelIdsEndEx2] = (
+  val replyShortChanelIdsEndWithTimestampsCodec: Codec[ReplyShortChannelIdsEndWithTimestamps] = (
     ("chainHash" | binarydata(32)) ::
       ("complete" | byte)
-    ).as[ReplyShortChannelIdsEndEx2]
+    ).as[ReplyShortChannelIdsEndWithTimestamps]
 
-  val queryChannelRangeEx2Codec: Codec[QueryChannelRangeEx2] = (
+  val queryChannelRangeWithTimestampsCodec: Codec[QueryChannelRangeWithTimestamps] = (
     ("chainHash" | binarydata(32)) ::
       ("firstBlockNum" | uint32) ::
       ("numberOfBlocks" | uint32)
-    ).as[QueryChannelRangeEx2]
+    ).as[QueryChannelRangeWithTimestamps]
 
-  val replyChannelRangeEx2Codec: Codec[ReplyChannelRangeEx2] = (
+  val replyChannelRangeWithTimestampsCodec: Codec[ReplyChannelRangeWithTimestamps] = (
     ("chainHash" | binarydata(32)) ::
       ("firstBlockNum" | uint32) ::
       ("numberOfBlocks" | uint32) ::
       ("complete" | byte) ::
       ("data" | varsizebinarydata)
-    ).as[ReplyChannelRangeEx2]
+    ).as[ReplyChannelRangeWithTimestamps]
 
   val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
     ("chainHash" | binarydata(32)) ::
@@ -405,14 +405,14 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
-    .typecase(1001, queryShortChannelIdsExCodec)
-    .typecase(1002, replyShortChanelIdsEndExCodec)
-    .typecase(1003, queryChannelRangeExCodec)
-    .typecase(1004, replyChannelRangeExCodec)
-    .typecase(1011, queryShortChannelIdsEx2Codec)
-    .typecase(1012, replyShortChanelIdsEndEx2Codec)
-    .typecase(1013, queryChannelRangeEx2Codec)
-    .typecase(1014, replyChannelRangeEx2Codec)
+    .typecase(1001, queryShortChannelIdsProtoCodec)
+    .typecase(1002, replyShortChanelIdsEndProtoCodec)
+    .typecase(1003, queryChannelRangeProtoCodec)
+    .typecase(1004, replyChannelRangeProtoCodec)
+    .typecase(1011, queryShortChannelIdsWithTimestampsCodec)
+    .typecase(1012, replyShortChanelIdsEndWithTimestampsCodec)
+    .typecase(1013, queryChannelRangeWithTimestampsCodec)
+    .typecase(1014, replyChannelRangeWithTimestampsCodec)
 
 
   /**
