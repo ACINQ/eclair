@@ -822,7 +822,7 @@ object Router {
     * @param g
     * @param localNodeId
     * @param targetNodeId
-    * @param amount the amount that will be sent along this route
+    * @param amount       the amount that will be sent along this route
     * @param withEdges    those will be added before computing the route, and removed after so that g is left unchanged
     * @param withoutEdges those will be removed before computing the route, and added back after so that g is left unchanged
     * @return
