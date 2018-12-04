@@ -19,15 +19,18 @@ package fr.acinq.eclair.io
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.payment.Relayed
+import fr.acinq.eclair.payment.Relayer.RelayPayload
+import fr.acinq.eclair.payment.{Relayed, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.OUT
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import grizzled.slf4j.Logging
+
+import scala.util.Success
 
 /**
   * Ties network connections to peers.
@@ -44,7 +47,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     val channels = nodeParams.channelsDb.listChannels()
     val peers = nodeParams.peersDb.listPeers()
     
-    val brokenHtlcs = checkBrokenHtlcsLink(channels)
+    val brokenHtlcs = checkBrokenHtlcsLink(channels, nodeParams.privateKey)
     val brokenHtlcKiller = context.actorOf(Props[HtlcReaper], name = "htlc-reaper")
     brokenHtlcKiller ! brokenHtlcs
 
@@ -142,7 +145,7 @@ object Switchboard extends Logging {
     * @param channels
     * @return
     */
-  def checkBrokenHtlcsLink(channels: Seq[HasCommitments]): Seq[UpdateAddHtlc] = {
+  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey): Seq[UpdateAddHtlc] = {
 
     // We are interested in incoming HTLCs, that have been *cross-signed*. They signed it first, so the HTLC will first
     // appear in our commitment tx, and later on in their commitment when we subsequently sign it.
@@ -151,6 +154,8 @@ object Switchboard extends Logging {
       .flatMap(_.commitments.remoteCommit.spec.htlcs)
       .filter(_.direction == OUT)
       .map(_.add)
+      .map(Relayer.tryParsePacket(_, privateKey))
+      .collect { case Success(RelayPayload(add, _, _)) => add } // we only consider htlcs that are relayed, not the ones for which we are the final node
 
     // Here we do it differently because we need the origin information.
     val relayed_out = channels
