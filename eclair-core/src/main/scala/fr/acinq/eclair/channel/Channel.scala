@@ -1932,7 +1932,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     commitments1.remoteNextCommitInfo match {
       case Left(_) =>
-        // we expect a quick response from our peer
+        // we expect them to (re-)send the revocation immediately
         setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer = context.parent), timeout = nodeParams.revocationTimeout, repeat = false)
       case _ => ()
     }
