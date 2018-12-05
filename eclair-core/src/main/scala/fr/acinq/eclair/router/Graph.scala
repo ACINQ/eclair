@@ -31,55 +31,67 @@ object Graph {
         vertexQueue.add(NodeWithWeight(pk, Long.MaxValue))
     }
 
-    while(vertexQueue.nonEmpty){
+    var targetFound = false
+
+    while(vertexQueue.nonEmpty && !targetFound){
 
       //(next) node with the smallest distance from the source
       val current = vertexQueue.poll()
 
-      //for each neighbor
-      g.edgesOf(current.publicKey).toSet[DescEdge].foreach { edge =>
+      if(current.publicKey != targetNode) {
+        //for each neighbor
+        g.edgesOf(current.publicKey).toSet[DescEdge].foreach { edge =>
 
-        val neighbor = edge.desc.b
+          val neighbor = edge.desc.b
 
-        val newMinimumKnownDistance = distance(current.publicKey) + edgeWeightByAmount(edge, amountMsat)
+          val newMinimumKnownDistance = distance(current.publicKey) + edgeWeightByAmount(edge, amountMsat)
 
-        //if this neighbor has a shorter distance than previously known
-        if(newMinimumKnownDistance < distance(neighbor)) {
+          //if this neighbor has a shorter distance than previously known
+          if (newMinimumKnownDistance < distance(neighbor)) {
 
-          //update the visiting tree
-          prev.put(neighbor, current.publicKey)
+            //update the visiting tree
+            prev.put(neighbor, current.publicKey)
 
-          //update the queue, remove and insert
-          vertexQueue.remove(NodeWithWeight(neighbor, distance(neighbor)))
-          vertexQueue.add(NodeWithWeight(neighbor, newMinimumKnownDistance))
+            //update the queue, remove and insert
+            vertexQueue.remove(NodeWithWeight(neighbor, distance(neighbor)))
+            vertexQueue.add(NodeWithWeight(neighbor, newMinimumKnownDistance))
 
-          //update the minimum known distance array
-          distance.update(neighbor, newMinimumKnownDistance)
+            //update the minimum known distance array
+            distance.update(neighbor, newMinimumKnownDistance)
+          }
         }
+      } else { //we popped the target node from the queue, no need to search any further
+        targetFound = true
       }
     }
 
+    //transform the 'prev' map into a list of hops
+    val resultPath = prev.map { case (k,v) =>
+      g.containsEdge(v, k) match {
+        case true   => Some(Hop(v, k, g.getEdge(v, k).u))
+        case false  => None
+      }
+    }.filter(_.isDefined).map(_.get)
 
-    //build the result backward path from the visiting map
-    val resultPath = prev.map {  case (k,v) => Hop(v, k, g.getEdge(v, k).u)  }
+    //build the resulting path traversing the hop list backward from the target
     val hopPath = new mutable.MutableList[Hop]
-
     var current = targetNode
-
-    while(resultPath.exists(_.nextNodeId == current)) {
+    while(resultPath.exists(_.nextNodeId == current) ) {
 
       val Some(temp) = resultPath.find(_.nextNodeId == current)
       hopPath += temp
       current = temp.nodeId
     }
 
-    hopPath.reverse
+    //if there is a path source -> ... -> target then 'current' must be the source node at this point
+    if(current != sourceNode)
+      List.empty //path not found
+    else
+      hopPath.reverse
+
   }
 
   private def edgeWeightByAmount(edge: DescEdge, amountMsat: Long): Long = {
     nodeFee(edge.u.feeBaseMsat, edge.u.feeProportionalMillionths, amountMsat)
   }
-
-
-
 }
