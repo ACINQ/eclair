@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import org.jgrapht.graph.DirectedWeightedPseudograph
 import scala.collection.JavaConversions._
 import scala.collection.mutable
+import fr.acinq.eclair._
 
 object Graph {
 
@@ -14,10 +15,10 @@ object Graph {
 
   case class NodeWithWeight(publicKey: PublicKey, weight: Long)
 
-  def shortestPath(g: DirectedWeightedPseudograph[PublicKey, DescEdge], sourceNode: PublicKey, targetNode: PublicKey, amount: Long):Seq[Hop] = {
+  def shortestPath(g: DirectedWeightedPseudograph[PublicKey, DescEdge], sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long):Seq[Hop] = {
 
     val distance = new mutable.HashMap[PublicKey, Long]
-    val foundEdges = new mutable.HashMap[PublicKey, DescEdge]
+    val prev = new mutable.HashMap[PublicKey, PublicKey]
     val vertexQueue = new java.util.PriorityQueue[NodeWithWeight](QueueComparator)
 
     //initialize the queue with the vertices having max distance
@@ -40,13 +41,13 @@ object Graph {
 
         val neighbor = edge.desc.b
 
-        //if this neighbor has a shorter distance than previously known
-        if(distance(current.publicKey) + edgeWeightByAmount(edge, amount) < distance(neighbor)) {
+        val newMinimumKnownDistance = distance(current.publicKey) + edgeWeightByAmount(edge, amountMsat)
 
-          val newMinimumKnownDistance = distance(current.publicKey) + edgeWeightByAmount(edge, amount)
+        //if this neighbor has a shorter distance than previously known
+        if(newMinimumKnownDistance < distance(neighbor)) {
 
           //update the visiting tree
-          foundEdges.update(current.publicKey, edge)
+          prev.put(neighbor, current.publicKey)
 
           //update the queue, remove and insert
           vertexQueue.remove(NodeWithWeight(neighbor, distance(neighbor)))
@@ -54,16 +55,13 @@ object Graph {
 
           //update the minimum known distance array
           distance.update(neighbor, newMinimumKnownDistance)
-
         }
-
       }
-
     }
 
 
     //build the result backward path from the visiting map
-    val resultPath = foundEdges.values.map(edge => Hop(edge.desc.a, edge.desc.b, edge.u)).toSeq
+    val resultPath = prev.map {  case (k,v) => Hop(v, k, g.getEdge(v, k).u)  }
     val hopPath = new mutable.MutableList[Hop]
 
     var current = targetNode
@@ -73,15 +71,13 @@ object Graph {
       val Some(temp) = resultPath.find(_.nextNodeId == current)
       hopPath += temp
       current = temp.nodeId
-
     }
 
     hopPath.reverse
-
   }
 
-  def edgeWeightByAmount(edge: DescEdge, amount: Long): Long = {
-    edge.u.feeBaseMsat + (edge.u.feeProportionalMillionths * amount)
+  private def edgeWeightByAmount(edge: DescEdge, amountMsat: Long): Long = {
+    nodeFee(edge.u.feeBaseMsat, edge.u.feeProportionalMillionths, amountMsat)
   }
 
 

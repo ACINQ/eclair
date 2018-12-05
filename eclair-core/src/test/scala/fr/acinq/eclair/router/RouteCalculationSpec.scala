@@ -72,6 +72,31 @@ class RouteCalculationSpec extends FunSuite {
 
   }
 
+
+  test("calculate the shortest path") {
+
+    val (f, g, h, i) = (
+      PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //source
+      PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"),
+      PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"),
+      PublicKey("029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c")  //target
+    )
+
+    val updates = List(
+      makeUpdate(1L, f, g, 0, 0),
+      makeUpdate(2L, g, h, 0, 0),
+      makeUpdate(3L, h, i, 0, 0),
+      makeUpdate(4L, f, i, 50, 0) //direct channel, more expensive
+    ).toMap
+
+    val graph = makeGraph(updates)
+
+    val route = Router.findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT)
+    assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: Nil))
+
+  }
+
+
   test("calculate longer but cheaper route") {
 
     val updates = List(
