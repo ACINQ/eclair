@@ -15,19 +15,24 @@ object Graph {
 
   case class NodeWithWeight(publicKey: PublicKey, weight: Long)
 
-  def shortestPath(g: DirectedWeightedPseudograph[PublicKey, DescEdge], sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long):Seq[Hop] = {
+  def shortestPath(g: DirectedWeightedPseudograph[PublicKey, DescEdge], sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): Seq[Hop] = {
+    shortestPathWithCostInfo(g, sourceNode, targetNode, amountMsat)._1
+  }
 
-    val distance = new mutable.HashMap[PublicKey, Long]
+  //TBD the cost for the neighbors of the sourceNode is always 0
+  def shortestPathWithCostInfo(g: DirectedWeightedPseudograph[PublicKey, DescEdge], sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): (Seq[Hop], Long) = {
+
+    val cost = new mutable.HashMap[PublicKey, Long]
     val prev = new mutable.HashMap[PublicKey, PublicKey]
     val vertexQueue = new java.util.PriorityQueue[NodeWithWeight](QueueComparator)
 
     //initialize the queue with the vertices having max distance
     g.vertexSet().toSet[PublicKey].foreach {
       case pk if pk == sourceNode =>
-        distance += pk -> 0 // starting node has distance 0
+        cost += pk -> 0 // starting node has distance 0
         vertexQueue.add(NodeWithWeight(pk, 0))
       case pk                     =>
-        distance += pk -> Long.MaxValue
+        cost += pk -> Long.MaxValue
         vertexQueue.add(NodeWithWeight(pk, Long.MaxValue))
     }
 
@@ -39,25 +44,26 @@ object Graph {
       val current = vertexQueue.poll()
 
       if(current.publicKey != targetNode) {
+
         //for each neighbor
         g.edgesOf(current.publicKey).toSet[DescEdge].foreach { edge =>
 
           val neighbor = edge.desc.b
 
-          val newMinimumKnownDistance = distance(current.publicKey) + edgeWeightByAmount(edge, amountMsat)
+          val newMinimumKnownCost = cost(current.publicKey) + edgeWeightByAmount(edge, amountMsat)
 
           //if this neighbor has a shorter distance than previously known
-          if (newMinimumKnownDistance < distance(neighbor)) {
+          if (newMinimumKnownCost < cost(neighbor)) {
 
             //update the visiting tree
             prev.put(neighbor, current.publicKey)
 
             //update the queue, remove and insert
-            vertexQueue.remove(NodeWithWeight(neighbor, distance(neighbor)))
-            vertexQueue.add(NodeWithWeight(neighbor, newMinimumKnownDistance))
+            vertexQueue.remove(NodeWithWeight(neighbor, cost(neighbor)))
+            vertexQueue.add(NodeWithWeight(neighbor, newMinimumKnownCost))
 
             //update the minimum known distance array
-            distance.update(neighbor, newMinimumKnownDistance)
+            cost.update(neighbor, newMinimumKnownCost)
           }
         }
       } else { //we popped the target node from the queue, no need to search any further
@@ -74,20 +80,20 @@ object Graph {
     }.filter(_.isDefined).map(_.get)
 
     //build the resulting path traversing the hop list backward from the target
-    val hopPath = new mutable.MutableList[Hop]
+    val hopPath = new mutable.MutableList[(Hop, Long)]
     var current = targetNode
     while(resultPath.exists(_.nextNodeId == current) ) {
 
       val Some(temp) = resultPath.find(_.nextNodeId == current)
-      hopPath += temp
+      hopPath += ((temp, cost(current)))
       current = temp.nodeId
     }
 
     //if there is a path source -> ... -> target then 'current' must be the source node at this point
     if(current != sourceNode)
-      List.empty //path not found
+      (List.empty, 0) //path not found
     else
-      hopPath.reverse
+      (hopPath.map(_._1).reverse, hopPath.foldLeft(0L)( (acc, hopAndCost) => acc + hopAndCost._2 ))
 
   }
 

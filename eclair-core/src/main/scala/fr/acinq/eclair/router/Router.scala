@@ -814,8 +814,12 @@ object Router {
     }
   }
 
+  def findRoute(g: DirectedWeightedPseudograph[PublicKey, DescEdge], localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = {
+    findRouteWithCost(g, localNodeId, targetNodeId, amountMsat, withEdges, withoutEdges).map(_._1)
+  }
+
   /**
-    * Find a route in the graph between localNodeId and targetNodeId
+    * Find a route in the graph between localNodeId and targetNodeId, returns the route and its cost
     *
     * @param g
     * @param localNodeId
@@ -825,7 +829,7 @@ object Router {
     * @param withoutEdges those will be removed before computing the route, and added back after so that g is left unchanged
     * @return
     */
-  def findRoute(g: DirectedWeightedPseudograph[PublicKey, DescEdge], localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = Try {
+  def findRouteWithCost(g: DirectedWeightedPseudograph[PublicKey, DescEdge], localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[(Seq[Hop], Long)] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
     val workingGraph = if (withEdges.isEmpty && withoutEdges.isEmpty) {
       // no filtering, let's work on the base graph
@@ -856,8 +860,8 @@ object Router {
       clonedGraph
     }
 
-    Graph.shortestPath(prunedGraph, localNodeId, targetNodeId, amountMsat) match {
-      case Nil => throw RouteNotFound
+    Graph.shortestPathWithCostInfo(prunedGraph, localNodeId, targetNodeId, amountMsat) match {
+      case (Nil, _) => throw RouteNotFound
       case path => path
     }
 
