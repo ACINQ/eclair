@@ -30,11 +30,12 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChannel, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import org.jgrapht.WeightedGraph
 import org.jgrapht.ext._
 import org.jgrapht.graph._
+
 import scala.collection.JavaConversions._
 import scala.collection.SortedSet
 import scala.collection.immutable.{SortedMap, TreeMap}
@@ -70,9 +71,9 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                 privateChannels: Map[ShortChannelId, PublicKey], // short_channel_id -> node_id
                 privateUpdates: Map[ChannelDesc, ChannelUpdate],
                 excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
-                graph: DirectedWeightedPseudograph[PublicKey, DescEdge],
+                graph: DirectedGraph,
                 sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query
-                                           // for which we have not yet received an 'end' message
+                // for which we have not yet received an 'end' message
                )
 
 sealed trait State
@@ -109,18 +110,15 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
     val nodes = db.listNodes()
     val updates = db.listChannelUpdates()
     log.info("loaded from db: channels={} nodes={} updates={}", channels.size, nodes.size, updates.size)
-
-    // this will be used to calculate routes
-    val graph = new DirectedWeightedPseudograph[PublicKey, DescEdge](classOf[DescEdge])
-
     val initChannels = channels.keys.foldLeft(TreeMap.empty[ShortChannelId, ChannelAnnouncement]) { case (m, c) => m + (c.shortChannelId -> c) }
     val initChannelUpdates = updates.map { u =>
       val desc = getDesc(u, initChannels(u.shortChannelId))
-      addEdge(graph, desc, u)
-      (desc) -> u
+      desc -> u
     }.toMap
+    val graphEdges = initChannelUpdates.map{ case (desc, update) => GraphEdge(desc, update)}.toSeq
+    // this will be used to calculate routes
+    val graph = DirectedGraph(graphEdges)
     val initNodes = nodes.map(n => (n.nodeId -> n)).toMap
-
     // send events for remaining channels/nodes
     initChannels.values.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))
     initChannelUpdates.values.foreach(u => context.system.eventStream.publish(ChannelUpdateReceived(u)))
@@ -186,10 +184,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         val desc1 = ChannelDesc(shortChannelId, nodeParams.nodeId, remoteNodeId)
         val desc2 = ChannelDesc(shortChannelId, remoteNodeId, nodeParams.nodeId)
         // we remove the corresponding updates from the graph
-        removeEdge(d.graph, desc1)
-        removeEdge(d.graph, desc2)
+        val m = d.graph
+          .removeEdge(desc1)
+          .removeEdge(desc2)
         // and we remove the channel and channel_update from our state
-        stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates - desc1 - desc2)
+        stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates - desc1 - desc2, graph = m)
       } else {
         stay
       }
@@ -292,8 +291,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
       log.info("pruning shortChannelId={} (spent)", shortChannelId)
       db.removeChannel(shortChannelId) // NB: this also removes channel updates
       // we also need to remove updates from the graph
-      removeEdge(d.graph, ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
-      removeEdge(d.graph, ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId2, lostChannel.nodeId1))
+      val mutatedGraph = d.graph
+        .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
+        .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId2, lostChannel.nodeId1))
+
       context.system.eventStream.publish(ChannelLost(shortChannelId))
       lostNodes.foreach {
         case nodeId =>
@@ -301,7 +302,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
-      stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.shortChannelId != shortChannelId))
+      stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.shortChannelId != shortChannelId), graph = mutatedGraph)
 
     case Event(TickBroadcast, d) =>
       if (d.rebroadcast.channels.isEmpty && d.rebroadcast.updates.isEmpty && d.rebroadcast.nodes.isEmpty) {
@@ -332,18 +333,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         db.addToPruned(shortChannelId)
         context.system.eventStream.publish(ChannelLost(shortChannelId))
       }
-      // we also need to remove updates from the graph
-      staleChannels.map(d.channels).foreach { c =>
-        removeEdge(d.graph, ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
-        removeEdge(d.graph, ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
-      }
+      val (descs1, descs2) = staleChannels.map(d.channels).map { c =>
+        (ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
+      }.unzip
+      val channelUpdatesToRemove = List(descs1 ++ descs2).flatten
+      val mutatedGraph = d.graph.removeEdges(channelUpdatesToRemove)
       staleNodes.foreach {
         case nodeId =>
           log.info("pruning nodeId={} (stale)", nodeId)
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
-      stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates)
+      stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates, graph = mutatedGraph)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       val banDuration = nodeParams.channelExcludeDuration
@@ -596,17 +597,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         db.updateChannelUpdate(u)
-        // we also need to update the graph
-        removeEdge(d.graph, desc)
-        addEdge(d.graph, desc, u)
-        d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))))
+        //update the graph
+        val mutatedGraph = d.graph
+          .removeEdge(desc)
+          .addEdge(desc, u)
+        d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = mutatedGraph)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         db.addChannelUpdate(u)
         // we also need to update the graph
-        addEdge(d.graph, desc, u)
-        d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))))
+        val mutatedGraph = d.graph.addEdge(desc, u)
+        d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = mutatedGraph)
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
@@ -637,15 +639,14 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         // we also need to update the graph
-        removeEdge(d.graph, desc)
-        addEdge(d.graph, desc, u)
-        d.copy(privateUpdates = d.privateUpdates + (desc -> u))
+        val mutatedGraph = d.graph.removeEdge(desc).addEdge(desc, u)
+        d.copy(privateUpdates = d.privateUpdates + (desc -> u), graph = mutatedGraph)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         // we also need to update the graph
-        addEdge(d.graph, desc, u)
-        d.copy(privateUpdates = d.privateUpdates + (desc -> u))
+        val mutatedGraph = d.graph.addEdge(desc, u)
+        d.copy(privateUpdates = d.privateUpdates + (desc -> u), graph = mutatedGraph)
       }
     } else if (db.isPruned(u.shortChannelId) && !isStale(u)) {
       // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
@@ -781,40 +782,7 @@ object Router {
     */
   val DEFAULT_AMOUNT_MSAT = 10000000
 
-  /**
-    * Careful: this function *mutates* the graph
-    *
-    * Note that we only add the edge if the corresponding channel is enabled
-    */
-  def addEdge(g: WeightedGraph[PublicKey, DescEdge], d: ChannelDesc, u: ChannelUpdate) = {
-    if (Announcements.isEnabled(u.channelFlags)) {
-      g.addVertex(d.a)
-      g.addVertex(d.b)
-      val e = new DescEdge(d, u)
-      val weight = nodeFee(u.feeBaseMsat, u.feeProportionalMillionths, DEFAULT_AMOUNT_MSAT).toDouble
-      g.addEdge(d.a, d.b, e)
-      g.setEdgeWeight(e, weight)
-    }
-  }
-
-  /**
-    * Careful: this function *mutates* the graph
-    *
-    * NB: we don't clean up vertices
-    *
-    */
-  def removeEdge(g: WeightedGraph[PublicKey, DescEdge], d: ChannelDesc) = {
-    import scala.collection.JavaConversions._
-    Option(g.getAllEdges(d.a, d.b)) match {
-      case Some(edges) => edges.find(_.desc == d) match {
-        case Some(e) => g.removeEdge(e)
-        case None => ()
-      }
-      case None => ()
-    }
-  }
-
-  def findRoute(g: DirectedWeightedPseudograph[PublicKey, DescEdge], localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = {
+  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = {
     findRouteWithCost(g, localNodeId, targetNodeId, amountMsat, withEdges, withoutEdges).map(_._1)
   }
 
@@ -829,36 +797,20 @@ object Router {
     * @param withoutEdges those will be removed before computing the route, and added back after so that g is left unchanged
     * @return
     */
-  def findRouteWithCost(g: DirectedWeightedPseudograph[PublicKey, DescEdge], localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[(Seq[Hop], Long)] = Try {
+  def findRouteWithCost(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[(Seq[Hop], Long)] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
-    val workingGraph = if (withEdges.isEmpty && withoutEdges.isEmpty) {
-      // no filtering, let's work on the base graph
-      g
-    } else {
-      // slower but safer: we duplicate the graph and add/remove updates from the duplicated version
-      val clonedGraph = g.clone().asInstanceOf[DirectedWeightedPseudograph[PublicKey, DescEdge]]
-      withEdges.foreach { case (d, u) =>
-        removeEdge(clonedGraph, d)
-        addEdge(clonedGraph, d, u)
-      }
-      withoutEdges.foreach { d => removeEdge(clonedGraph, d) }
-      clonedGraph
-    }
+
+    val workingGraph = g.removeEdges(withoutEdges.toSeq).addEdges(withEdges.toSeq)
+
     if (!workingGraph.containsVertex(localNodeId)) throw RouteNotFound
     if (!workingGraph.containsVertex(targetNodeId)) throw RouteNotFound
 
     //remove from the the working graph out-of-range(of capacity) channels
-    val prunedGraph = {
-      val clonedGraph = workingGraph.clone().asInstanceOf[DirectedWeightedPseudograph[PublicKey, DescEdge]]
-      clonedGraph.edgeSet().toSet[DescEdge].foreach { edge =>
-        if(edge.u.htlcMaximumMsat.isDefined && amountMsat > edge.u.htlcMaximumMsat.get) {
-          removeEdge(clonedGraph, edge.desc)
-        } else if(amountMsat < edge.u.htlcMinimumMsat) {
-          removeEdge(clonedGraph, edge.desc)
-        }
+    val prunedGraph = workingGraph.filterBy { edge =>
+        edge.update.htlcMaximumMsat.isDefined && amountMsat > edge.update.htlcMaximumMsat.get
+      }.filterBy { edge =>
+        amountMsat < edge.update.htlcMinimumMsat
       }
-      clonedGraph
-    }
 
     Graph.shortestPathWithCostInfo(prunedGraph, localNodeId, targetNodeId, amountMsat) match {
       case (Nil, _) => throw RouteNotFound

@@ -19,10 +19,10 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.router.Router.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.{ShortChannelId, randomKey}
-import org.jgrapht.graph.DirectedWeightedPseudograph
 import org.scalatest.FunSuite
 import scala.util.{Failure, Success}
 
@@ -66,14 +66,13 @@ class RouteCalculationSpec extends FunSuite {
     val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
 
-    Router.removeEdge(g, ChannelDesc(ShortChannelId(3L), c, d))
-    val route2 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
+    val graphWithRemovedEdge = g.removeEdge(ChannelDesc(ShortChannelId(3L), c, d))
+    val route2 = Router.findRoute(graphWithRemovedEdge, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route2.map(hops2Ids) === Failure(RouteNotFound))
 
   }
 
-
-  test("calculate the shortest path") {
+  test("calculate the shortest path (hardcoded nodes)") {
 
     val (f, g, h, i) = (
       PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //source
@@ -95,6 +94,28 @@ class RouteCalculationSpec extends FunSuite {
     assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: Nil))
 
   }
+
+//  test("calculate the cheapest route (detailed fees)") {
+//
+//    val paymentAmount = 10000L // 10 sat
+//    val expectedCost = 110
+//
+//
+//    val updates = List(
+//      makeUpdate(1L, a, b, 10, 10000, minHtlcMsat = 1),
+//      makeUpdate(2L, b, c, 20, 20000, minHtlcMsat = 1),
+//      makeUpdate(3L, c, d, 30, 30000, minHtlcMsat = 1)
+//    ).toMap
+//
+//
+//    val graph = makeGraph(updates)
+//
+//    val Success((route, cost)) = Router.findRouteWithCost(graph, a, d, paymentAmount)
+//
+//    assert(hops2Ids(route) === 1 :: 2 :: 3 :: Nil)
+//    assert(cost === expectedCost)
+//
+//  }
 
 
   test("calculate longer but cheaper route") {
@@ -414,11 +435,8 @@ object RouteCalculationSpec {
    )
 
 
-  def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = {
-    val g = new DirectedWeightedPseudograph[PublicKey, DescEdge](classOf[DescEdge])
-    updates.foreach { case (d, u) => Router.addEdge(g, d, u) }
-    g
-  }
+  def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = DirectedGraph().addEdges(updates.toSeq)
+
 
   def hops2Ids(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId.toLong)
 

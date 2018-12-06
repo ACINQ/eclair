@@ -1,25 +1,48 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.router.Graph.UndirectedWeightedGraph
 import org.scalatest.FunSuite
 import RouteCalculationSpec._
-import fr.acinq.eclair.router.Graph.UndirectedWeightedGraph.GraphEdge
+import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
 import fr.acinq.eclair.wire.ChannelUpdate
 
 class GraphSpec extends FunSuite {
 
-  val (a, b, c, d, e) = (
+  val (a, b, c, d, e, f, g) = (
     PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //a
     PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), //b
     PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), //c
     PublicKey("029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c"), //d
-    PublicKey("02f38f4e37142cc05df44683a83e22dea608cf4691492829ff4cf99888c5ec2d3a")  //e
+    PublicKey("02f38f4e37142cc05df44683a83e22dea608cf4691492829ff4cf99888c5ec2d3a"), //e
+    PublicKey("03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc"), //f
+    PublicKey("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")  //g
   )
+
+  /**
+    *     /--> D --\
+    *   A --> B --> C
+    *         \-> E/
+    *
+    * @return
+    */
+  def makeTestGraph() = {
+
+    val updates = Seq(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, a, d, 0, 0),
+      makeUpdate(4L, d, c, 0, 0),
+      makeUpdate(5L, c, e, 0, 0),
+      makeUpdate(6L, b, e, 0, 0)
+    )
+
+    DirectedGraph().addEdges(updates)
+  }
 
   test("instantiate a graph, with vertices and then add edges") {
 
-    val graph = UndirectedWeightedGraph(a)
+    val graph = DirectedGraph(a)
       .addVertex(b)
       .addVertex(c)
       .addVertex(d)
@@ -47,14 +70,14 @@ class GraphSpec extends FunSuite {
         .addEdge(descCE, updateCE)
 
     assert(graphWithEdges.edgesOf(a).size === 2)
-    assert(graphWithEdges.edgesOf(b).size === 2)
-    assert(graphWithEdges.edgesOf(c).size === 3)
-    assert(graphWithEdges.edgesOf(d).size === 2)
-    assert(graphWithEdges.edgesOf(e).size === 1)
+    assert(graphWithEdges.edgesOf(b).size === 1)
+    assert(graphWithEdges.edgesOf(c).size === 1)
+    assert(graphWithEdges.edgesOf(d).size === 1)
+    assert(graphWithEdges.edgesOf(e).size === 0)
 
     val withRemovedEdges = graphWithEdges.removeEdge(descDC)
 
-    assert(withRemovedEdges.edgesOf(c).size === 2)
+    assert(withRemovedEdges.edgesOf(d).size === 0)
   }
 
 
@@ -67,7 +90,7 @@ class GraphSpec extends FunSuite {
     val (descCE, updateCE) = makeUpdate(5L, c, e, 0, 0)
     val (descBE, updateBE) = makeUpdate(6L, b, e, 0, 0)
 
-    val graph = UndirectedWeightedGraph(edgeAB)
+    val graph = DirectedGraph(edgeAB)
       .addEdge(descAD, updateAD)
       .addEdge(descBC, updateBC)
       .addEdge(descDC, updateDC)
@@ -75,14 +98,101 @@ class GraphSpec extends FunSuite {
       .addEdge(descBE, updateBE)
 
     assert(graph.vertexSet().size === 5)
-    assert(graph.edgesOf(c).size === 3)
+    assert(graph.edgesOf(c).size === 1)
+    assert(graph.edgeSet().size === 6)
+
+  }
+
+  test("containsEdge should return true if the graph contains that edge, false otherwise") {
+
+    val updates = Seq(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, c, d, 0, 0),
+      makeUpdate(4L, d, e, 0, 0)
+    )
+
+    val graph = DirectedGraph().addEdges(updates)
+
+    assert(graph.containsEdge(a, b))
+    assert(!graph.containsEdge(b, a))
+    assert(graph.containsEdge(b, c))
+    assert(graph.containsEdge(c, d))
+    assert(graph.containsEdge(d, e))
+    assert(graph.containsEdge(ChannelDesc(ShortChannelId(4L), d, e)))  // by channel desc
+    assert(!graph.containsEdge(ChannelDesc(ShortChannelId(4L), a, g)))  // by channel desc
+    assert(!graph.containsEdge(a, e))
+    assert(!graph.containsEdge(c, f)) // f isn't even in the graph
+  }
+
+  test("should remove a set of edges") {
+
+    val graph = makeTestGraph()
+
+    val (descBE, _) = makeUpdate(6L, b, e, 0, 0)
+    val (descAD, _) = makeUpdate(3L, a, d, 0, 0)
+    val (descDC, _) = makeUpdate(4L, d, c, 0, 0)
+
     assert(graph.edgeSet().size === 6)
 
     val withRemovedEdge = graph.removeEdge(descBE)
-
     assert(withRemovedEdge.edgeSet().size === 5)
 
+    val withRemovedList = graph.removeEdges(Seq(descAD, descDC))
+    assert(withRemovedList.edgeSet().size === 4)
   }
+
+
+
+  test("should get an edge given two vertices") {
+
+    // contains an edge A --> B
+    val updates = Seq(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0)
+    )
+
+    val graph = DirectedGraph().addEdges(updates)
+
+
+    val Some(edge) = graph.getEdge(a, b)   //there should be an edge a --> b
+    assert(edge.desc.a === a)
+    assert(edge.desc.b === b)
+
+    val bNeighbors = graph.edgesOf(b)
+    assert(bNeighbors.size === 1)
+    assert(bNeighbors.exists(_.desc.a === b))  //there should be an edge b -- c
+    assert(bNeighbors.exists(_.desc.b === c))
+
+  }
+
+  test("filterBy should remove the edges satisfying the predicate") {
+
+    val graph = makeTestGraph()
+
+    val graphNoEdgesFromA = graph.filterBy(_.desc.a == a)
+
+    assert(graphNoEdgesFromA.edgesOf(a).size === 0)
+    assert(graphNoEdgesFromA.edgesOf(b).size === 2)
+  }
+
+  test("adding a duplicate edge should replace the existing one") {
+
+    val graph = makeTestGraph()
+
+    val Some(edge) = graph.getEdge(a, b)
+
+    assert(edge.update.feeBaseMsat === 0)
+
+    //now add a new edge a -> b but with a different channel update
+    val newEdge = edgeFromDesc(makeUpdate(1L, a, b, 20, 0))
+    val mutatedGraph = graph.addEdge(newEdge.desc, newEdge.update)
+    val Some(updatedEdge) = mutatedGraph.getEdge(a, b)
+
+    assert(updatedEdge.update.feeBaseMsat === 20)
+  }
+
+
 
   def edgeFromDesc(tuple: (ChannelDesc, ChannelUpdate) ): GraphEdge = GraphEdge(tuple._1, tuple._2)
 }
