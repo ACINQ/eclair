@@ -176,20 +176,17 @@ class GraphSpec extends FunSuite {
     assert(graphNoEdgesFromA.edgesOf(b).size === 2)
   }
 
-  test("adding a duplicate edge should replace the existing one") {
+  test("there can be multiple edges between the same vertices") {
 
     val graph = makeTestGraph()
 
-    val Some(edge) = graph.getEdge(a, b)
-
-    assert(edge.update.feeBaseMsat === 0)
+    assert(graph.edgesOf(a).size == 2)
 
     //now add a new edge a -> b but with a different channel update
     val newEdge = edgeFromDesc(makeUpdate(1L, a, b, 20, 0))
     val mutatedGraph = graph.addEdge(newEdge.desc, newEdge.update)
-    val Some(updatedEdge) = mutatedGraph.getEdge(a, b)
 
-    assert(updatedEdge.update.feeBaseMsat === 20)
+    assert(mutatedGraph.edgesOf(a).size == 3)
   }
 
 

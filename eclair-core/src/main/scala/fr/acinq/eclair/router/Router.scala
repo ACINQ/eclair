@@ -598,9 +598,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         db.updateChannelUpdate(u)
         //update the graph
-        val mutatedGraph = d.graph
-          .removeEdge(desc)
-          .addEdge(desc, u)
+        val mutatedGraph = Announcements.isEnabled(u.channelFlags) match {
+          case true => d.graph.removeEdge(desc).addEdge(desc, u)
+          case false => d.graph.removeEdge(desc)                    //if the channel is now disabled, we remove it from the graph
+        }
         d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = mutatedGraph)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
@@ -792,7 +793,7 @@ object Router {
     * @param g
     * @param localNodeId
     * @param targetNodeId
-    * @param amountMsat       the amount that will be sent along this route
+    * @param amountMsat   the amount that will be sent along this route
     * @param withEdges    those will be added before computing the route, and removed after so that g is left unchanged
     * @param withoutEdges those will be removed before computing the route, and added back after so that g is left unchanged
     * @return
@@ -807,9 +808,8 @@ object Router {
 
     //remove from the the working graph out-of-range(of capacity) channels
     val prunedGraph = workingGraph.filterBy { edge =>
-        edge.update.htlcMaximumMsat.isDefined && amountMsat > edge.update.htlcMaximumMsat.get
-      }.filterBy { edge =>
-        amountMsat < edge.update.htlcMinimumMsat
+      (edge.update.htlcMaximumMsat.isDefined && amountMsat > edge.update.htlcMaximumMsat.get) ||    //exclude channels with too little capacity for this payment
+      (amountMsat < edge.update.htlcMinimumMsat)                                                    //exclude channels requiring the payment to be bigger than this payment
       }
 
     Graph.shortestPathWithCostInfo(prunedGraph, localNodeId, targetNodeId, amountMsat) match {
