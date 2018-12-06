@@ -17,12 +17,22 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import java.net.InetSocketAddress
+import java.util
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash, Terminated}
-import akka.io.{IO, Tcp}
-import akka.util.ByteString
+import akka.actor.{Actor, ActorLogging, ActorRef, PoisonPill, Stash, Terminated}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{Error, JsonRPCRequest, JsonRPCResponse}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
+import io.netty.bootstrap.Bootstrap
+import io.netty.channel._
+import io.netty.channel.nio.NioEventLoopGroup
+import io.netty.channel.socket.SocketChannel
+import io.netty.channel.socket.nio.NioSocketChannel
+import io.netty.handler.codec.string.{LineEncoder, StringDecoder}
+import io.netty.handler.codec.{LineBasedFrameDecoder, MessageToMessageDecoder, MessageToMessageEncoder}
+import io.netty.handler.ssl.SslContextBuilder
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory
+import io.netty.util.CharsetUtil
 import org.json4s.JsonAST._
 import org.json4s.jackson.JsonMethods
 import org.json4s.{DefaultFormats, JInt, JLong, JString}
@@ -32,36 +42,120 @@ import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
-class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: ExecutionContext) extends Actor with Stash with ActorLogging {
+class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec: ExecutionContext) extends Actor with Stash with ActorLogging {
 
   import ElectrumClient._
-  import context.system
 
   implicit val formats = DefaultFormats
 
-  val newline = "\n"
-  val socketOptions = Tcp.SO.KeepAlive(true) :: Nil
+  val workerGroup = new NioEventLoopGroup()
+
+  val b = new Bootstrap
+  b.group(workerGroup)
+  b.channel(classOf[NioSocketChannel])
+  b.option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
+  b.handler(new ChannelInitializer[SocketChannel]() {
+    override def initChannel(ch: SocketChannel): Unit = {
+      ssl match {
+        case SSL.OFF => ()
+        case SSL.STRICT =>
+          val sslCtx = SslContextBuilder.forClient.build
+          ch.pipeline.addLast(sslCtx.newHandler(ch.alloc(), serverAddress.getHostName, serverAddress.getPort))
+        case SSL.LOOSE =>
+          // INSECURE VERSION THAT DOESN'T CHECK CERTIFICATE
+          val sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build()
+          ch.pipeline.addLast(sslCtx.newHandler(ch.alloc(), serverAddress.getHostName, serverAddress.getPort))
+      }
+      //
+      ch.pipeline.addLast(new LineBasedFrameDecoder(Int.MaxValue, true, true)) // JSON messages are separated by a new line
+      ch.pipeline.addLast(new StringDecoder(CharsetUtil.UTF_8))
+      ch.pipeline.addLast(new ElectrumResponseDecoder)
+      ch.pipeline.addLast(new ActorHandler(self))
+      ch.pipeline.addLast(new LineEncoder)
+      ch.pipeline.addLast(new JsonRPCRequestEncoder)
+    }
+  })
+
+  /**
+    * A decoder ByteBuf -> Either[Response, JsonRPCResponse]
+    */
+  class ElectrumResponseDecoder extends MessageToMessageDecoder[String] {
+    override def decode(ctx: ChannelHandlerContext, msg: String, out: util.List[AnyRef]): Unit = {
+      val s = msg.asInstanceOf[String]
+      val r = parseResponse(s)
+      out.add(r)
+    }
+  }
+
+  /**
+    * An encoder JsonRPCRequest -> ByteBuf
+    */
+  class JsonRPCRequestEncoder extends MessageToMessageEncoder[JsonRPCRequest] {
+    override def encode(ctx: ChannelHandlerContext, request: JsonRPCRequest, out: util.List[AnyRef]): Unit = {
+      import org.json4s.JsonDSL._
+      import org.json4s._
+      import org.json4s.jackson.JsonMethods._
+
+      log.info(s"sending $request")
+      val json = ("method" -> request.method) ~ ("params" -> request.params.map {
+        case s: String => new JString(s)
+        case b: BinaryData => new JString(b.toString())
+        case t: Int => new JInt(t)
+        case t: Long => new JLong(t)
+        case t: Double => new JDouble(t)
+      }) ~ ("id" -> request.id) ~ ("jsonrpc" -> request.jsonrpc)
+      val serialized = compact(render(json))
+      out.add(serialized)
+    }
+
+  }
+
+
+  /**
+    * Forwards incoming messages to the underlying actor
+    *
+    * @param actor
+    */
+  class ActorHandler(actor: ActorRef) extends ChannelInboundHandlerAdapter {
+
+    override def channelActive(ctx: ChannelHandlerContext): Unit = {
+      actor ! ctx
+    }
+
+    override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
+      actor ! msg
+    }
+
+    override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
+      log.error(cause, "connection exception: ")
+      ctx.close
+    }
+
+    override def channelInactive(ctx: ChannelHandlerContext): Unit = {
+      log.info(s"connection to $serverAddress closed")
+      statusListeners.map(_ ! ElectrumDisconnected)
+      actor ! PoisonPill
+    }
+  }
+
+  // Start the client.
+  log.info(s"connecting to $serverAddress")
+  b.connect(serverAddress.getHostName, serverAddress.getPort)
+
   var addressSubscriptions = Map.empty[String, Set[ActorRef]]
   var scriptHashSubscriptions = Map.empty[BinaryData, Set[ActorRef]]
   val headerSubscriptions = collection.mutable.HashSet.empty[ActorRef]
-  val version = ServerVersion("2.1.7", "1.1")
+  val version = ServerVersion("2.1.7", "1.2")
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
   val keepHeaders = 100
 
-  var reqId = 0L
-
-  self ! Tcp.Connect(serverAddress, options = socketOptions)
+  var reqId = 0
 
   // we need to regularly send a ping in order not to get disconnected
   val versionTrigger = context.system.scheduler.schedule(30 seconds, 30 seconds, self, version)
 
   override def unhandled(message: Any): Unit = {
     message match {
-      case _: Tcp.ConnectionClosed =>
-        log.info(s"connection to $serverAddress closed")
-        statusListeners.map(_ ! ElectrumDisconnected)
-        context stop self
-
       case Terminated(deadActor) =>
         addressSubscriptions = addressSubscriptions.mapValues(subscribers => subscribers - deadActor)
         scriptHashSubscriptions = scriptHashSubscriptions.mapValues(subscribers => subscribers - deadActor)
@@ -78,92 +172,62 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
     }
   }
 
-
   override def postStop(): Unit = {
     versionTrigger.cancel()
     super.postStop()
   }
 
-  def send(connection: ActorRef, request: JsonRPCRequest): Unit = {
-    import org.json4s.JsonDSL._
-    import org.json4s._
-    import org.json4s.jackson.JsonMethods._
-
-    log.debug(s"sending $request")
-    val json = ("method" -> request.method) ~ ("params" -> request.params.map {
-      case s: String => new JString(s)
-      case b: BinaryData => new JString(b.toString())
-      case t: Int => new JInt(t)
-      case t: Long => new JLong(t)
-      case t: Double => new JDouble(t)
-    }) ~ ("id" -> request.id) ~ ("jsonrpc" -> request.jsonrpc)
-    val serialized = compact(render(json))
-    val bytes = (serialized + newline).getBytes
-    connection ! ByteString.fromArray(bytes)
-  }
-
   /**
     * send an electrum request to the server
-    * @param connection connection to the electrumx server
+    *
+    * @param ctx     connection to the electrumx server
     * @param request electrum request
     * @return the request id used to send the request
     */
-  def send(connection: ActorRef, request: Request): String = {
+  def send(ctx: ChannelHandlerContext, request: Request): String = {
     val electrumRequestId = "" + reqId
-    send(connection, makeRequest(request, electrumRequestId))
-    reqId  = reqId + 1
+    ctx.channel().writeAndFlush(makeRequest(request, electrumRequestId))
+    reqId = reqId + 1
     electrumRequestId
   }
 
   def receive = disconnected
 
   def disconnected: Receive = {
-    case c: Tcp.Connect =>
-      log.info(s"connecting to $c")
-      IO(Tcp) ! c
-
-    case Tcp.Connected(remote, _) =>
-      log.info(s"connected to $remote")
-      val conn = sender()
-      conn ! Tcp.Register(self)
-      val connection = context.actorOf(Props(new WriteAckSender(conn)), name = "electrum-sender")
-      send(connection, version)
-      context become waitingForVersion(connection, remote)
+    case ctx: ChannelHandlerContext =>
+      log.info(s"connected to $serverAddress")
+      send(ctx, version)
+      context become waitingForVersion(ctx)
 
     case AddStatusListener(actor) => statusListeners += actor
-
-    case Tcp.CommandFailed(Tcp.Connect(remoteAddress, _, _, _, _)) =>
-      context stop self
   }
 
-  def waitingForVersion(connection: ActorRef, remote: InetSocketAddress): Receive = {
-    case Tcp.Received(data) =>
-      val response = parseResponse(new String(data.toArray)).right.get
-      val serverVersion = parseJsonResponse(version, response)
+  def waitingForVersion(ctx: ChannelHandlerContext): Receive = {
+    case Right(json: JsonRPCResponse) =>
+      val serverVersion = parseJsonResponse(version, json)
       log.debug(s"serverVersion=$serverVersion")
-      send(connection, HeaderSubscription(self))
+      send(ctx, HeaderSubscription(self))
       headerSubscriptions += self
       log.debug("waiting for tip")
-      context become waitingForTip(connection, remote: InetSocketAddress)
+      context become waitingForTip(ctx)
 
     case AddStatusListener(actor) => statusListeners += actor
   }
 
-  def waitingForTip(connection: ActorRef, remote: InetSocketAddress): Receive = {
-    case Tcp.Received(data) =>
-      val response = parseResponse(new String(data.toArray)).right.get
-      val header = parseHeader(response.result)
+  def waitingForTip(ctx: ChannelHandlerContext): Receive = {
+    case Right(json: JsonRPCResponse) =>
+      val header = parseHeader(json.result)
       log.debug(s"connected, tip = ${header.block_hash} $header")
-      statusListeners.map(_ ! ElectrumReady(header, remote))
-      context become connected(connection, remote, header, "", Map())
+      statusListeners.map(_ ! ElectrumReady(header, serverAddress))
+      context become connected(ctx, header, "", Map())
 
     case AddStatusListener(actor) => statusListeners += actor
   }
 
-  def connected(connection: ActorRef, remoteAddress: InetSocketAddress, tip: Header, buffer: String, requests: Map[String, (Request, ActorRef)]): Receive = {
+  def connected(ctx: ChannelHandlerContext, tip: Header, buffer: String, requests: Map[String, (Request, ActorRef)]): Receive = {
     case AddStatusListener(actor) =>
       statusListeners += actor
-      actor ! ElectrumReady(tip, remoteAddress)
+      actor ! ElectrumReady(tip, serverAddress)
 
     case HeaderSubscription(actor) =>
       headerSubscriptions += actor
@@ -171,7 +235,7 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
       context watch actor
 
     case request: Request =>
-      val curReqId = send(connection, request)
+      val curReqId = send(ctx, request)
       request match {
         case AddressSubscription(address, actor) =>
           addressSubscriptions = addressSubscriptions.updated(address, addressSubscriptions.getOrElse(address, Set()) + actor)
@@ -181,16 +245,7 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
           context watch actor
         case _ => ()
       }
-      context become connected(connection, remoteAddress, tip, buffer, requests + (curReqId -> (request, sender())))
-
-    case Tcp.Received(data) =>
-      val buffer1 = buffer + new String(data.toArray)
-      val (jsons, buffer2) = buffer1.split(newline) match {
-        case chunks if buffer1.endsWith(newline) => (chunks, "")
-        case chunks => (chunks.dropRight(1), chunks.last)
-      }
-      jsons.map(parseResponse(_)).map(self ! _)
-      context become connected(connection, remoteAddress, tip, buffer2, requests)
+      context become connected(ctx, tip, buffer, requests + (curReqId -> (request, sender())))
 
     case Right(json: JsonRPCResponse) =>
       requests.get(json.id) match {
@@ -201,7 +256,7 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
         case None =>
           log.warning(s"could not find requestor for reqId=${json.id} response=$json")
       }
-      context become connected(connection, remoteAddress, tip, buffer, requests - json.id)
+      context become connected(ctx, tip, buffer, requests - json.id)
 
     case Left(response: HeaderSubscriptionResponse) => headerSubscriptions.map(_ ! response)
 
@@ -211,7 +266,7 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
 
     case HeaderSubscriptionResponse(newtip) =>
       log.info(s"new tip $newtip")
-      context become connected(connection, remoteAddress, newtip, buffer, requests)
+      context become connected(ctx, newtip, buffer, requests)
   }
 }
 
@@ -306,6 +361,13 @@ object ElectrumClient {
   sealed trait ElectrumEvent
   case class ElectrumReady(tip: Header, serverAddress: InetSocketAddress) extends ElectrumEvent
   case object ElectrumDisconnected extends ElectrumEvent
+
+  sealed trait SSL
+  object SSL {
+    case object OFF extends SSL
+    case object STRICT extends SSL
+    case object LOOSE extends SSL
+  }
 
   // @formatter:on
 

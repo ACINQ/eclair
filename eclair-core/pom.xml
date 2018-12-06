@@ -154,6 +154,12 @@
             <artifactId>json4s_${scala.version.short}</artifactId>
             <version>${sttp.version}</version>
         </dependency>
+        <!-- TCP -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+            <version>4.1.32.Final</version>
+        </dependency>
         <!-- BITCOIN -->
         <dependency>
             <groupId>fr.acinq</groupId>

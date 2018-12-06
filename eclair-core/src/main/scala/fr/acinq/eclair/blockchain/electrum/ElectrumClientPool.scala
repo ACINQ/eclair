@@ -22,6 +22,8 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorRef, FSM, Props, Terminated}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
+import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import org.json4s.JsonAST.{JObject, JString}
 import org.json4s.jackson.JsonMethods
 
@@ -29,7 +31,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.Random
 
-class ElectrumClientPool(serverAddresses: Set[InetSocketAddress])(implicit val ec: ExecutionContext) extends Actor with FSM[ElectrumClientPool.State, ElectrumClientPool.Data] {
+class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit val ec: ExecutionContext) extends Actor with FSM[ElectrumClientPool.State, ElectrumClientPool.Data] {
   import ElectrumClientPool._
 
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
@@ -95,9 +97,9 @@ class ElectrumClientPool(serverAddresses: Set[InetSocketAddress])(implicit val e
   whenUnhandled {
     case Event(Connect, _) =>
       Random.shuffle(serverAddresses.toSeq diff addresses.values.toSeq).headOption match {
-        case Some(address) =>
+        case Some(ElectrumServerAddress(address, ssl)) =>
           val resolved = new InetSocketAddress(address.getHostName, address.getPort)
-          val client = context.actorOf(Props(new ElectrumClient(resolved)))
+          val client = context.actorOf(Props(new ElectrumClient(resolved, ssl)))
           client ! ElectrumClient.AddStatusListener(self)
           // we watch each electrum client, they will stop on disconnection
           context watch client
@@ -160,13 +162,22 @@ object ElectrumClientPool {
 
   val MAX_CONNECTION_COUNT = 3
 
-  def readServerAddresses(stream: InputStream): Set[InetSocketAddress] = try {
+  case class ElectrumServerAddress(adress: InetSocketAddress, ssl: SSL)
+
+  def readServerAddresses(stream: InputStream): Set[ElectrumServerAddress] = try {
     val JObject(values) = JsonMethods.parse(stream)
     val addresses = values.flatMap {
       case (name, fields) if !name.endsWith(".onion") =>
         fields \ "t" match {
-          case JString(port) => Some(InetSocketAddress.createUnresolved(name, port.toInt))
-          case _ => None // we only support raw TCP (not SSL) connection to electrum servers for now
+          case JString(port) => Some(ElectrumServerAddress(InetSocketAddress.createUnresolved(name, port.toInt), SSL.OFF))
+          case _ => None
+        }
+        // We don't authenticate seed servers (SSL.LOOSE), because:
+        // - we don't know them so authentication doesn't really bring anything
+        // - most of them have self-signed SSL certificates so it would always fail
+        fields \ "s" match {
+          case JString(port) => Some(ElectrumServerAddress(InetSocketAddress.createUnresolved(name, port.toInt), SSL.LOOSE))
+          case _ => None
         }
       case _ => None
     }

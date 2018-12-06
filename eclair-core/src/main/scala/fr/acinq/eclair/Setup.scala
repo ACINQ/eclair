@@ -33,6 +33,8 @@ import fr.acinq.eclair.api.{GetInfoResponse, Service}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
+import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
@@ -128,9 +130,14 @@ class Setup(datadir: File,
         case true =>
           val host = config.getString("eclair.electrum.host")
           val port = config.getInt("eclair.electrum.port")
+          val ssl = config.getString("eclair.electrum.ssl") match {
+            case "off" => SSL.OFF
+            case "loose" => SSL.LOOSE
+            case _ => SSL.STRICT // strict mode is the default when we specify a custom electrum server, we don't want to be MITMed
+          }
           val address = InetSocketAddress.createUnresolved(host, port)
-          logger.info(s"override electrum default with server=$address")
-          Set(address)
+          logger.info(s"override electrum default with server=$address ssl=$ssl")
+          Set(ElectrumServerAddress(address, ssl))
         case false =>
           val addressesFile = nodeParams.chainHash match {
             case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
