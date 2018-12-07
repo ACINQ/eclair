@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
-import java.net.InetSocketAddress
+import java.net.{InetSocketAddress, SocketAddress}
 import java.util
 
 import akka.actor.{Actor, ActorLogging, ActorRef, PoisonPill, Stash, Terminated}
@@ -33,6 +33,7 @@ import io.netty.handler.codec.{LineBasedFrameDecoder, MessageToMessageDecoder, M
 import io.netty.handler.ssl.SslContextBuilder
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory
 import io.netty.util.CharsetUtil
+import io.netty.util.concurrent.{Future, GenericFutureListener}
 import org.json4s.JsonAST._
 import org.json4s.jackson.JsonMethods
 import org.json4s.{DefaultFormats, JInt, JLong, JString}
@@ -66,15 +67,58 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
           val sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build()
           ch.pipeline.addLast(sslCtx.newHandler(ch.alloc(), serverAddress.getHostName, serverAddress.getPort))
       }
-      //
+      // inbound handlers
       ch.pipeline.addLast(new LineBasedFrameDecoder(Int.MaxValue, true, true)) // JSON messages are separated by a new line
       ch.pipeline.addLast(new StringDecoder(CharsetUtil.UTF_8))
       ch.pipeline.addLast(new ElectrumResponseDecoder)
       ch.pipeline.addLast(new ActorHandler(self))
+      // outbound handlers
       ch.pipeline.addLast(new LineEncoder)
       ch.pipeline.addLast(new JsonRPCRequestEncoder)
+      // error handler
+      ch.pipeline().addLast(new ExceptionHandler)
     }
   })
+
+  // Start the client.
+  log.info(s"connecting to $serverAddress")
+  val channelFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
+
+  def errorHandler(t: Throwable) = {
+    log.error(t, s"connection error: ")
+    statusListeners.map(_ ! ElectrumDisconnected)
+    context stop self
+  }
+
+  /**
+    * This error handler catches all exceptions and kill the actor
+    * See https://stackoverflow.com/questions/30994095/how-to-catch-all-exception-in-netty
+    */
+  class ExceptionHandler extends ChannelDuplexHandler {
+    override def connect(ctx: ChannelHandlerContext, remoteAddress: SocketAddress, localAddress: SocketAddress, promise: ChannelPromise): Unit = {
+      ctx.connect(remoteAddress, localAddress, promise.addListener(new ChannelFutureListener() {
+        override def operationComplete(future: ChannelFuture): Unit = {
+          if (!future.isSuccess) {
+            errorHandler(future.cause())
+          }
+        }
+      }))
+    }
+
+    override def write(ctx: ChannelHandlerContext, msg: scala.Any, promise: ChannelPromise): Unit = {
+      ctx.write(msg, promise.addListener(new ChannelFutureListener() {
+        override def operationComplete(future: ChannelFuture): Unit = {
+          if (!future.isSuccess) {
+            errorHandler(future.cause())
+          }
+        }
+      }))
+    }
+
+    override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
+      errorHandler(cause)
+    }
+  }
 
   /**
     * A decoder ByteBuf -> Either[Response, JsonRPCResponse]
@@ -125,22 +169,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       actor ! msg
     }
-
-    override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
-      log.error(cause, "connection exception: ")
-      ctx.close
-    }
-
-    override def channelInactive(ctx: ChannelHandlerContext): Unit = {
-      log.info(s"connection to $serverAddress closed")
-      statusListeners.map(_ ! ElectrumDisconnected)
-      actor ! PoisonPill
-    }
   }
-
-  // Start the client.
-  log.info(s"connecting to $serverAddress")
-  b.connect(serverAddress.getHostName, serverAddress.getPort)
 
   var addressSubscriptions = Map.empty[String, Set[ActorRef]]
   var scriptHashSubscriptions = Map.empty[BinaryData, Set[ActorRef]]
