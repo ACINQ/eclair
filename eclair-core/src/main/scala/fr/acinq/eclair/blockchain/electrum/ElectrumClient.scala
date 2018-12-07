@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.electrum
 import java.net.{InetSocketAddress, SocketAddress}
 import java.util
 
-import akka.actor.{Actor, ActorLogging, ActorRef, PoisonPill, Stash, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{Error, JsonRPCRequest, JsonRPCResponse}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
@@ -33,7 +33,6 @@ import io.netty.handler.codec.{LineBasedFrameDecoder, MessageToMessageDecoder, M
 import io.netty.handler.ssl.SslContextBuilder
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory
 import io.netty.util.CharsetUtil
-import io.netty.util.concurrent.{Future, GenericFutureListener}
 import org.json4s.JsonAST._
 import org.json4s.jackson.JsonMethods
 import org.json4s.{DefaultFormats, JInt, JLong, JString}

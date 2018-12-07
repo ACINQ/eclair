@@ -42,7 +42,7 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
   // terminate if they cannot connect
   (0 until MAX_CONNECTION_COUNT) foreach (_ => self ! Connect)
 
-  log.info(s"serverAddresses=$serverAddresses")
+  log.debug(s"starting electrum pool with serverAddresses={}", serverAddresses)
 
   startWith(Disconnected, DisconnectedData)
 
