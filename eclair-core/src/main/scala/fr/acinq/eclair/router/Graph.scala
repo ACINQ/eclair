@@ -1,7 +1,6 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import scala.collection.JavaConversions._
 import scala.collection.mutable
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
@@ -24,7 +23,7 @@ object Graph {
 
     val cost = new mutable.HashMap[PublicKey, Long]
     val prev = new mutable.HashMap[PublicKey, PublicKey]
-    val vertexQueue = new java.util.PriorityQueue[NodeWithWeight](QueueComparator)
+    val vertexQueue = new mutable.TreeSet[NodeWithWeight] //a sorted tree is used to have the remove operation
 
     //initialize the queue with the vertices having max distance
     g.vertexSet().foreach {
@@ -41,7 +40,8 @@ object Graph {
     while(vertexQueue.nonEmpty && !targetFound){
 
       //(next) node with the smallest distance from the source
-      val current = vertexQueue.poll()
+      val current = vertexQueue.firstKey
+      vertexQueue.remove(current)
 
       if(current.publicKey != targetNode) {
 
