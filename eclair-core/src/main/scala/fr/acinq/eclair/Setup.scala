@@ -125,11 +125,11 @@ class Setup(datadir: File,
 
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
-      val addresses = config.hasPath("eclair.electrum") match {
+      val addresses = config.hasPath("electrum") match {
         case true =>
-          val host = config.getString("eclair.electrum.host")
-          val port = config.getInt("eclair.electrum.port")
-          val ssl = config.getString("eclair.electrum.ssl") match {
+          val host = config.getString("electrum.host")
+          val port = config.getInt("electrum.port")
+          val ssl = config.getString("electrum.ssl") match {
             case "off" => SSL.OFF
             case "loose" => SSL.LOOSE
             case _ => SSL.STRICT // strict mode is the default when we specify a custom electrum server, we don't want to be MITMed
