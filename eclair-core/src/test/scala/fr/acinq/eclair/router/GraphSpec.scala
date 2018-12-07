@@ -200,7 +200,15 @@ class GraphSpec extends FunSuite {
     assert(mutatedGraph2.getEdge(edgeForTheSameChannel).get.update.feeBaseMsat === 30)
   }
 
+  test("find the two cheapest routes in the graph") {
 
+
+    val graph = makeTestGraph()
+
+
+
+
+  }
 
   def edgeFromDesc(tuple: (ChannelDesc, ChannelUpdate) ): GraphEdge = GraphEdge(tuple._1, tuple._2)
 }

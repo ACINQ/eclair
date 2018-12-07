@@ -8,31 +8,78 @@ import fr.acinq.eclair.wire.ChannelUpdate
 
 object Graph {
 
-  implicit object QueueComparator extends Ordering[NodeWithWeight] {
-    override def compare(x: NodeWithWeight, y: NodeWithWeight): Int = x.weight.compareTo(y.weight)
+  import DirectedGraph._
+
+  implicit object QueueComparator extends Ordering[WeightedNode] {
+    override def compare(x: WeightedNode, y: WeightedNode): Int = x.weight.compareTo(y.weight)
   }
 
-  case class NodeWithWeight(publicKey: PublicKey, weight: Long)
+  implicit object PathComparator extends Ordering[WeightedPath] {
+    override def compare(x: WeightedPath, y: WeightedPath): Int = x.cost.compareTo(y.cost)
+  }
 
+  case class WeightedNode(publicKey: PublicKey, weight: Long)
+  case class WeightedPath(hops: Seq[Hop], cost: Long)
+
+  /**
+    * Finds the shortest path in the graph, Dijsktra's algorithm
+    * @param g
+    * @param sourceNode
+    * @param targetNode
+    * @param amountMsat
+    * @return
+    */
   def shortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): Seq[Hop] = {
-    shortestPathWithCostInfo(g, sourceNode, targetNode, amountMsat)._1
+    shortestPathWithCostInfo(g, sourceNode, targetNode, amountMsat).map(graphEdgeToHop)
   }
+
+//  def kShortestPaths(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, K: Int): Set[WeightedPath] = {
+//
+//    //Ordered set where we store all the computed paths
+//    val A = new Array[Seq[Hop]](2000)//new mutable.TreeSet[Seq[Hop]]
+//    A(0) = shortestPathWithCostInfo(g, sourceNode, targetNode, amountMsat)
+//
+//    for(k <- 0 to K) {
+//
+//      for(i <- 0 to A(k - 1).size - 2){
+//
+//        val spurNode = A(k - 1)(i)  //select the spur node as the i-th element of the k-th previous shortest path (k -1)
+//
+//        val rootPath = A(k - 1).take(i) // select the subpath from the source to the spur node of the k-th previous shortest path
+//
+//        for(p <- A) {
+//          if(rootPath == p.take(i)){
+//           // rootPath.head.
+//          }
+//
+//
+//
+//        }
+//
+//      }
+//
+//
+//    }
+//
+//    ???
+//  }
+
 
   //TBD the cost for the neighbors of the sourceNode is always 0
-  def shortestPathWithCostInfo(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): (Seq[Hop], Long) = {
+  def shortestPathWithCostInfo(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): Seq[GraphEdge] = {
 
     val cost = new mutable.HashMap[PublicKey, Long]
     val prev = new mutable.HashMap[PublicKey, PublicKey]
-    val vertexQueue = new mutable.TreeSet[NodeWithWeight] //a sorted tree is used to have the remove operation
+    val vertexQueue = new mutable.TreeSet[WeightedNode] //a sorted tree is used to have the remove operation
 
     //initialize the queue with the vertices having max distance
     g.vertexSet().foreach {
       case pk if pk == sourceNode =>
         cost += pk -> 0 // starting node has distance 0
-        vertexQueue.add(NodeWithWeight(pk, 0))
+        vertexQueue.add(WeightedNode(pk, 0))
       case pk                     =>
         cost += pk -> Long.MaxValue
-        vertexQueue.add(NodeWithWeight(pk, Long.MaxValue))
+        vertexQueue.add(WeightedNode(pk, Long.MaxValue))
     }
 
     var targetFound = false
@@ -46,7 +93,7 @@ object Graph {
       if(current.publicKey != targetNode) {
 
         //for each neighbor
-        g.edgesOf(current.publicKey).toSet[GraphEdge].foreach { edge =>
+        g.edgesOf(current.publicKey).foreach { edge =>
 
           val neighbor = edge.desc.b
 
@@ -59,8 +106,8 @@ object Graph {
             prev.put(neighbor, current.publicKey)
 
             //update the queue, remove and insert
-            vertexQueue.remove(NodeWithWeight(neighbor, cost(neighbor)))
-            vertexQueue.add(NodeWithWeight(neighbor, newMinimumKnownCost))
+            vertexQueue.remove(WeightedNode(neighbor, cost(neighbor)))
+            vertexQueue.add(WeightedNode(neighbor, newMinimumKnownCost))
 
             //update the minimum known distance array
             cost.update(neighbor, newMinimumKnownCost)
@@ -71,27 +118,28 @@ object Graph {
       }
     }
 
-    //transform the 'prev' map into a list of hops
-    val resultPath = prev.flatMap { case (k,v) =>
-      g.getEdgesBetween(v, k).map(edge => Hop(v, k, edge.update))
+    //transform the 'prev' map into a list of edges
+    //FIXME optimize this
+    val resultEdges = prev.flatMap { case (k,v) =>
+      g.getEdgesBetween(v, k)
     }
 
     //build the resulting path traversing the hop list backward from the target
-    val hopPath = new mutable.MutableList[(Hop, Long)]
+    val hopPath = new mutable.MutableList[GraphEdge]
     var current = targetNode
-    while(resultPath.exists(_.nextNodeId == current) ) {
 
-      val Some(temp) = resultPath.find(_.nextNodeId == current)
-      hopPath += ((temp, cost(current)))
-      current = temp.nodeId
+    while(resultEdges.exists(_.desc.b == current) ) {
+
+      val Some(temp) = resultEdges.find(_.desc.b == current)
+      hopPath += temp
+      current = temp.desc.a
     }
 
     //if there is a path source -> ... -> target then 'current' must be the source node at this point
     if(current != sourceNode)
-      (List.empty, 0) //path not found
+      Seq.empty  //path not found
     else
-      (hopPath.map(_._1).reverse, hopPath.foldLeft(0L)( (acc, hopAndCost) => acc + hopAndCost._2 ))
-
+      hopPath.reverse
   }
 
   private def edgeWeightByAmount(edge: GraphEdge, amountMsat: Long): Long = {
@@ -260,6 +308,9 @@ object Graph {
       def apply(edges: Seq[GraphEdge]): DirectedGraph = {
         edges.foldLeft(new DirectedGraph( Map() ))((acc, edge) => acc.addEdge(edge.desc, edge.update))
       }
+
+
+      def graphEdgeToHop(graphEdge: GraphEdge): Hop = Hop(graphEdge.desc.a, graphEdge.desc.b, graphEdge.update)
     }
   }
 }
