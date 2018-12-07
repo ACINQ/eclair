@@ -139,13 +139,13 @@ class Setup(datadir: File,
           logger.info(s"override electrum default with server=$address ssl=$ssl")
           Set(ElectrumServerAddress(address, ssl))
         case false =>
-          val addressesFile = nodeParams.chainHash match {
-            case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
-            case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
-            case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
+          val (addressesFile, sslEnabled) = nodeParams.chainHash match {
+            case Block.RegtestGenesisBlock.hash => ("/electrum/servers_regtest.json", false) // in regtest we connect in plaintext
+            case Block.TestnetGenesisBlock.hash => ("/electrum/servers_testnet.json", true)
+            case Block.LivenetGenesisBlock.hash => ("/electrum/servers_mainnet.json", true)
           }
           val stream = classOf[Setup].getResourceAsStream(addressesFile)
-          ElectrumClientPool.readServerAddresses(stream)
+          ElectrumClientPool.readServerAddresses(stream, sslEnabled)
       }
       val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)

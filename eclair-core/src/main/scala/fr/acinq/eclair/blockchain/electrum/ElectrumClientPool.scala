@@ -42,6 +42,8 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
   // terminate if they cannot connect
   (0 until MAX_CONNECTION_COUNT) foreach (_ => self ! Connect)
 
+  log.info(s"serverAddresses=$serverAddresses")
+
   startWith(Disconnected, DisconnectedData)
 
   when(Disconnected) {
@@ -164,22 +166,34 @@ object ElectrumClientPool {
 
   case class ElectrumServerAddress(adress: InetSocketAddress, ssl: SSL)
 
-  def readServerAddresses(stream: InputStream): Set[ElectrumServerAddress] = try {
+  /**
+    * Parses default electrum server list and extract addresses
+    *
+    * @param stream
+    * @param sslEnabled select plaintext/ssl ports
+    * @return
+    */
+  def readServerAddresses(stream: InputStream, sslEnabled: Boolean): Set[ElectrumServerAddress] = try {
     val JObject(values) = JsonMethods.parse(stream)
-    val addresses = values.flatMap {
-      case (name, fields) if !name.endsWith(".onion") =>
-        fields \ "t" match {
-          case JString(port) => Some(ElectrumServerAddress(InetSocketAddress.createUnresolved(name, port.toInt), SSL.OFF))
-          case _ => None
+    val addresses = values
+        .toMap
+        .filterKeys(!_.endsWith(".onion"))
+        .flatMap {
+      case (name, fields)  =>
+        if (sslEnabled) {
+          // We don't authenticate seed servers (SSL.LOOSE), because:
+          // - we don't know them so authentication doesn't really bring anything
+          // - most of them have self-signed SSL certificates so it would always fail
+          fields \ "s" match {
+            case JString(port) => Some(ElectrumServerAddress(InetSocketAddress.createUnresolved(name, port.toInt), SSL.LOOSE))
+            case _ => None
+          }
+        } else {
+          fields \ "t" match {
+            case JString(port) => Some(ElectrumServerAddress(InetSocketAddress.createUnresolved(name, port.toInt), SSL.OFF))
+            case _ => None
+          }
         }
-        // We don't authenticate seed servers (SSL.LOOSE), because:
-        // - we don't know them so authentication doesn't really bring anything
-        // - most of them have self-signed SSL certificates so it would always fail
-        fields \ "s" match {
-          case JString(port) => Some(ElectrumServerAddress(InetSocketAddress.createUnresolved(name, port.toInt), SSL.LOOSE))
-          case _ => None
-        }
-      case _ => None
     }
     addresses.toSet
   } finally {
