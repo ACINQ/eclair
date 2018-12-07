@@ -154,10 +154,11 @@ class GraphSpec extends FunSuite {
 
     val graph = DirectedGraph().addEdges(updates)
 
+    val edgesAB = graph.getEdgesBetween(a, b)
 
-    val Some(edge) = graph.getEdge(a, b)   //there should be an edge a --> b
-    assert(edge.desc.a === a)
-    assert(edge.desc.b === b)
+    assert(edgesAB.size === 1)          //there should be an edge a --> b
+    assert(edgesAB.head.desc.a === a)
+    assert(edgesAB.head.desc.b === b)
 
     val bNeighbors = graph.edgesOf(b)
     assert(bNeighbors.size === 1)
@@ -180,13 +181,23 @@ class GraphSpec extends FunSuite {
 
     val graph = makeTestGraph()
 
+    // A --> B , A --> D
     assert(graph.edgesOf(a).size == 2)
 
-    //now add a new edge a -> b but with a different channel update
-    val newEdge = edgeFromDesc(makeUpdate(1L, a, b, 20, 0))
-    val mutatedGraph = graph.addEdge(newEdge.desc, newEdge.update)
+    //now add a new edge a -> b but with a different channel update and a different ShortChannelId
+    val newEdgeForNewChannel = edgeFromDesc(makeUpdate(15L, a, b, 20, 0))
+    val mutatedGraph = graph.addEdge(newEdgeForNewChannel)
 
     assert(mutatedGraph.edgesOf(a).size == 3)
+
+    //if the ShortChannelId is the same we replace the edge and the update, this edge have an update with a different 'feeBaseMsat'
+    val edgeForTheSameChannel = edgeFromDesc(makeUpdate(15L, a, b, 30, 0))
+    val mutatedGraph2 = mutatedGraph.addEdge(edgeForTheSameChannel)
+
+    assert(mutatedGraph2.edgesOf(a).size == 3) // A --> B , A --> B , A --> D
+    assert(mutatedGraph2.getEdgesBetween(a, b).size === 2)
+
+    assert(mutatedGraph2.getEdge(edgeForTheSameChannel).get.update.feeBaseMsat === 30)
   }
 
 

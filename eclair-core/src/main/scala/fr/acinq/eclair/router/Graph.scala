@@ -72,9 +72,9 @@ object Graph {
     }
 
     //transform the 'prev' map into a list of hops
-    val resultPath = prev.map { case (k,v) =>
-      g.getEdge(v, k).map( edge => Hop(v, k, edge.update))
-    }.filter(_.isDefined).map(_.get)
+    val resultPath = prev.flatMap { case (k,v) =>
+      g.getEdgesBetween(v, k).map(edge => Hop(v, k, edge.update))
+    }
 
     //build the resulting path traversing the hop list backward from the target
     val hopPath = new mutable.MutableList[(Hop, Long)]
@@ -104,9 +104,20 @@ object Graph {
     */
   object GraphStructure {
 
+    /**
+      * Representation of an edge of the graph
+      * @param desc
+      * @param update
+      */
     case class GraphEdge(desc: ChannelDesc, update: ChannelUpdate)
 
     case class DirectedGraph(private val vertices: Map[PublicKey, Seq[GraphEdge]]) {
+
+      def addEdge(d: ChannelDesc, u: ChannelUpdate): DirectedGraph = addEdge(GraphEdge(d, u))
+
+      def addEdges( edges: Seq[(ChannelDesc, ChannelUpdate)]): DirectedGraph = {
+        edges.foldLeft(this)( (acc, edge) => acc.addEdge(edge._1, edge._2))
+      }
 
       /**
         * Adds and edge to the graph, if one of the two vertices is not found, it will be created
@@ -116,58 +127,70 @@ object Graph {
         * @param weight the weight of this edge
         * @return a new graph containing this edge
         */
-      def addEdge(d: ChannelDesc, u: ChannelUpdate): DirectedGraph = {
-        val vertexIn = d.a
-        val vertexOut = d.b
-
-        val edge = GraphEdge(d, u)
+      def addEdge(edge: GraphEdge): DirectedGraph = {
+        val vertexIn = edge.desc.a
+        val vertexOut = edge.desc.b
 
         //the graph is allowed to have multiple edges between the same vertices but only one per channel
-        if(getEdge(d).map(_.update.shortChannelId == u.shortChannelId).isDefined) {
-          return removeEdge(d).addEdge(d, u)
+        if(containsEdge(edge.desc)) {
+          return removeEdge(edge.desc).addEdge(edge)
         }
 
         //if vertices does not contain vertexIn/vertexOut, we create it first
         (vertices.contains(vertexIn), vertices.contains(vertexOut)) match {
           case (false, false) =>  //none of the vertices of this edge exists, create them and add the edge
-            addVertex(vertexIn).addVertex(vertexOut).addEdge(d, u)
+            addVertex(vertexIn).addVertex(vertexOut).addEdge(edge)
           case (false, true) =>
-            addVertex(vertexIn).addEdge(d, u)
+            addVertex(vertexIn).addEdge(edge)
           case (true, false) =>
-            addVertex(vertexOut).addEdge(d, u)
+            addVertex(vertexOut).addEdge(edge)
           case (true, true) =>
             DirectedGraph(vertices.updated(vertexIn, vertices(vertexIn) :+ edge))
         }
       }
 
-      def addEdges( edges: Seq[(ChannelDesc, ChannelUpdate)]): DirectedGraph = {
-        edges.foldLeft(this)( (acc, edge) => acc.addEdge(edge._1, edge._2))
-      }
-
       /**
-        * Removes the edge corresponding to the given channel desc
+        * Removes the edge corresponding to the given pair channel-desc/channel-update
         * @param d
         * @return
         */
-      def removeEdge(d: ChannelDesc): DirectedGraph = {
-        containsEdge(d) match {
-          case true => DirectedGraph(vertices.updated(d.a, vertices(d.a).filterNot(_.desc == d)))
+      def removeEdge(desc: ChannelDesc): DirectedGraph = {
+        containsEdge(desc) match {
+          case true => DirectedGraph(vertices.updated(desc.a, vertices(desc.a).filterNot { neighbor =>
+            neighbor.desc == desc && neighbor.desc.shortChannelId == desc.shortChannelId
+          }))
           case false => this
         }
       }
 
-      def removeEdgesByGraphEdgesList( edgeList: Seq[GraphEdge] ): DirectedGraph = {
-        removeEdges(edgeList.map(_.desc))
-      }
+      def removeEdge(edge: GraphEdge): DirectedGraph = removeEdge(edge.desc)
+
+      def removeEdgesByGraphEdgesList( edgeList: Seq[GraphEdge] ): DirectedGraph = removeEdges(edgeList.map(_.desc))
 
       def removeEdges(descList: Seq[ChannelDesc]): DirectedGraph = {
         descList.foldLeft(this)( (acc, edge ) => acc.removeEdge(edge) )
       }
 
-      def getEdge(d: ChannelDesc): Option[GraphEdge] = getEdge(d.a, d.b)
+      /**
+        * @param edge
+        * @return For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
+        */
+      def getEdge(edge: GraphEdge): Option[GraphEdge] = getEdge(edge.desc)
 
-      def getEdge(keyA: PublicKey, keyB: PublicKey): Option[GraphEdge] = {
-        vertices.get(keyA).map( adj => adj.find(_.desc.b == keyB)).flatten
+      def getEdge(desc: ChannelDesc): Option[GraphEdge] = vertices.get(desc.a).flatMap { adj =>
+        adj.find(e => e.desc.b == desc.b && e.desc.shortChannelId == desc.shortChannelId)
+      }
+
+      /**
+        * @param keyA
+        * @param keyB
+        * @return all the edges going from keyA --> keyB (there might be more than one if it refers to different shortChannelId)
+        */
+      def getEdgesBetween(keyA: PublicKey, keyB: PublicKey): Seq[GraphEdge] = {
+        vertices.get(keyA) match {
+          case None => Seq.empty
+          case Some(adj) => adj.filter(e => e.desc.b == keyB)
+        }
       }
 
       /**
@@ -199,10 +222,22 @@ object Graph {
         */
       def containsVertex(key: PublicKey): Boolean = vertices.contains(key)
 
-      def containsEdge(desc: ChannelDesc): Boolean = {
-        containsEdge(desc.a, desc.b)
+      /**
+        * @param edge
+        * @return true if this edge is in the graph. For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
+        */
+      def containsEdge(edge: GraphEdge): Boolean = containsEdge(edge.desc)
+
+      def containsEdge(desc: ChannelDesc): Boolean = vertices.exists { case (key, adj) =>
+         key == desc.a && adj.exists(neighbor => neighbor.desc.b == desc.b && neighbor.desc.shortChannelId == desc.shortChannelId)
       }
 
+      /**
+        * Checks for the existence of at least one edge between the given two vertices
+        * @param vertexA
+        * @param vertexB
+        * @return
+        */
       def containsEdge(vertexA: PublicKey, vertexB: PublicKey): Boolean = {
         vertices.exists { case (key, adj) => key == vertexA && adj.exists(_.desc.b == vertexB) }
       }
