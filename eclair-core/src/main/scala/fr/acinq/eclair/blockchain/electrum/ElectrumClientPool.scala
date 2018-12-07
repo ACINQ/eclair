@@ -96,8 +96,7 @@ class ElectrumClientPool(serverAddresses: Set[InetSocketAddress])(implicit val e
     case Event(Connect, _) =>
       Random.shuffle(serverAddresses.toSeq diff addresses.values.toSeq).headOption match {
         case Some(address) =>
-          val resolved = new InetSocketAddress(address.getHostName, address.getPort)
-          val client = context.actorOf(Props(new ElectrumClient(resolved)))
+          val client = context.actorOf(Props(new ElectrumClient(address)))
           client ! ElectrumClient.AddStatusListener(self)
           // we watch each electrum client, they will stop on disconnection
           context watch client
@@ -165,7 +164,9 @@ object ElectrumClientPool {
     val addresses = values.flatMap {
       case (name, fields) if !name.endsWith(".onion") =>
         fields \ "t" match {
-          case JString(port) => Some(InetSocketAddress.createUnresolved(name, port.toInt))
+          case JString(port) =>
+            // don't resolve address now, it's expensive and will cause problems on Android
+            Some(InetSocketAddress.createUnresolved(name, port.toInt))
           case _ => None // we only support raw TCP (not SSL) connection to electrum servers for now
         }
       case _ => None

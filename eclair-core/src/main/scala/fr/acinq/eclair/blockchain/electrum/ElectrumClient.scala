@@ -50,7 +50,9 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
 
   var reqId = 0L
 
-  self ! Tcp.Connect(serverAddress, options = socketOptions)
+  // resolve address just before we connect
+  val resolved = new InetSocketAddress(serverAddress.getHostName, serverAddress.getPort)
+  self ! Tcp.Connect(resolved, options = socketOptions)
 
   // we need to regularly send a ping in order not to get disconnected
   val versionTrigger = context.system.scheduler.schedule(30 seconds, 30 seconds, self, version)
