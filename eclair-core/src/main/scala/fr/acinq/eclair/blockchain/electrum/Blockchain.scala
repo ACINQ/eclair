@@ -36,9 +36,9 @@ import scala.util.control.TailCalls.TailRec
 case class Blockchain(chainhash: BinaryData, headers: Map[BinaryData, Blockchain.BlockIndex], bestChain: Vector[Blockchain.BlockIndex], orphans: Map[BinaryData, BlockHeader], checkpoints: Vector[CheckPoint]) {
   require(chainhash == Block.RegtestGenesisBlock.hash || chainhash == Block.TestnetGenesisBlock.hash || chainhash == Block.LivenetGenesisBlock.hash, s"invalid chain hash $chainhash")
 
-  val first = bestChain.head
+  def first = bestChain.head
 
-  val tip = bestChain.last
+  def tip = bestChain.last
 
   /**
     *
@@ -99,8 +99,9 @@ object Blockchain extends Logging {
     */
   def fromCheckpoints(chainhash: BinaryData, checkpoints: Vector[CheckPoint], checkPointHeader: BlockHeader): Blockchain = {
     require(checkPointHeader.hashPreviousBlock == checkpoints.last.hash, "header hash does not match last checkpoint")
-    require(checkPointHeader.bits == encodeCompact(checkpoints.last.target.bigInteger), "header difficulty does not match last checkpoint")
-
+    if (chainhash == Block.LivenetGenesisBlock.hash) {
+      require(checkPointHeader.bits == encodeCompact(checkpoints.last.target.bigInteger), "header difficulty does not match last checkpoint")
+    }
     val checkpointHeight = checkpoints.size * 2016 - 1
     val chainwork = checkpoints.dropRight(1).map(t => BigInt(2016) * Blockchain.chainWork(t.target)).sum
     val blockIndex = BlockIndex(checkPointHeader, checkpointHeight + 1, None, chainwork + chainWork(checkPointHeader))
@@ -147,6 +148,9 @@ object Blockchain extends Logging {
       }
 
       blockchain.headers.get(header.hashPreviousBlock) match {
+        case None if blockchain.headers.isEmpty && header.hashPreviousBlock == blockchain.checkpoints.last.hash =>
+          val blockchain1 = Blockchain.fromCheckpoints(blockchain.chainhash, blockchain.checkpoints, header)
+          TailCalls.tailcall(addOrphans(blockchain1.copy(orphans = blockchain.orphans)))
         case None =>
           // no parent found
           logger.debug(s"adding block ${header.blockId} to orphans")

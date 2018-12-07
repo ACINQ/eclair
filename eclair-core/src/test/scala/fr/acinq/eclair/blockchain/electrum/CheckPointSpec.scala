@@ -16,11 +16,12 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
+import fr.acinq.bitcoin.Block
 import org.scalatest.FunSuite
 
 class CheckPointSpec extends FunSuite {
   test("load checkpoint") {
-    val checkpoints = CheckPoint.load
+    val checkpoints = CheckPoint.load(Block.LivenetGenesisBlock.hash)
     assert(!checkpoints.isEmpty)
   }
 }

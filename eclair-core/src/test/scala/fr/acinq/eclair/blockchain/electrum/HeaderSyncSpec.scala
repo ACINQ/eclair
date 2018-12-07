@@ -45,7 +45,7 @@ class HeaderSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
   }
 
   test("build from checkpoints") {
-    val checkpoints = CheckPoint.load
+    val checkpoints = CheckPoint.load(Block.LivenetGenesisBlock.hash)
     val checkpointHeight = checkpoints.size * 2016 - 1
 
     // get the first header after the last checkpoint
@@ -72,7 +72,7 @@ class HeaderSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
   }
 
   test("initial header download") {
-    val checkpoints = CheckPoint.load
+    val checkpoints = CheckPoint.load(Block.LivenetGenesisBlock.hash)
     val checkpointHeight = checkpoints.size * 2016 - 1
 
     // get the first header after the last checkpoint

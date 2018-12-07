@@ -16,7 +16,9 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
-import fr.acinq.bitcoin.BinaryData
+import java.io.InputStream
+
+import fr.acinq.bitcoin.{BinaryData, Block, BlockHeader}
 import org.json4s.JsonAST.{JArray, JInt, JString}
 import org.json4s.jackson.JsonMethods
 
@@ -36,8 +38,13 @@ object CheckPoint {
     * we're on the right chain and to validate proof-of-work by checking the difficulty target
     * @return an ordered list of checkpoints, with one checkpoint every 2016 blocks
     */
-  def load: Vector[CheckPoint] = {
-    val stream = classOf[CheckPoint].getResourceAsStream("/electrum/checkpoints.json")
+  def load(chainHash: BinaryData): Vector[CheckPoint] = chainHash match {
+    case Block.LivenetGenesisBlock.hash => load(classOf[CheckPoint].getResourceAsStream("/electrum/checkpoints_mainnet.json"))
+    case Block.TestnetGenesisBlock.hash => load(classOf[CheckPoint].getResourceAsStream("/electrum/checkpoints_testnet.json"))
+    case Block.RegtestGenesisBlock.hash => Vector(CheckPoint(Block.RegtestGenesisBlock.blockId, 0))
+  }
+
+  def load(stream: InputStream): Vector[CheckPoint] = {
     val JArray(values) = JsonMethods.parse(stream)
     val checkpoints = values.collect {
       case JArray(JString(a) :: JInt(b) :: Nil) => CheckPoint(BinaryData(a).reverse, b)
