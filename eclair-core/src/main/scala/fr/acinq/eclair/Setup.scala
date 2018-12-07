@@ -125,7 +125,6 @@ class Setup(datadir: File,
 
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
-      logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
       val addresses = config.hasPath("eclair.electrum") match {
         case true =>
           val host = config.getString("eclair.electrum.host")
