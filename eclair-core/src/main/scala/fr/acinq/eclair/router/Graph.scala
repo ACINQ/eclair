@@ -33,43 +33,11 @@ object Graph {
     shortestPathWithCostInfo(g, sourceNode, targetNode, amountMsat).map(graphEdgeToHop)
   }
 
-//  def kShortestPaths(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, K: Int): Set[WeightedPath] = {
-//
-//    //Ordered set where we store all the computed paths
-//    val A = new Array[Seq[Hop]](2000)//new mutable.TreeSet[Seq[Hop]]
-//    A(0) = shortestPathWithCostInfo(g, sourceNode, targetNode, amountMsat)
-//
-//    for(k <- 0 to K) {
-//
-//      for(i <- 0 to A(k - 1).size - 2){
-//
-//        val spurNode = A(k - 1)(i)  //select the spur node as the i-th element of the k-th previous shortest path (k -1)
-//
-//        val rootPath = A(k - 1).take(i) // select the subpath from the source to the spur node of the k-th previous shortest path
-//
-//        for(p <- A) {
-//          if(rootPath == p.take(i)){
-//           // rootPath.head.
-//          }
-//
-//
-//
-//        }
-//
-//      }
-//
-//
-//    }
-//
-//    ???
-//  }
-
-
   //TBD the cost for the neighbors of the sourceNode is always 0
   def shortestPathWithCostInfo(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): Seq[GraphEdge] = {
 
     val cost = new mutable.HashMap[PublicKey, Long]
-    val prev = new mutable.HashMap[PublicKey, PublicKey]
+    val prev = new mutable.HashMap[GraphEdge, PublicKey]
     val vertexQueue = new mutable.TreeSet[WeightedNode] //a sorted tree is used to have the remove operation
 
     //initialize the queue with the vertices having max distance
@@ -103,7 +71,14 @@ object Graph {
           if (newMinimumKnownCost < cost(neighbor)) {
 
             //update the visiting tree
-            prev.put(neighbor, current.publicKey)
+            prev.find(_._1.desc.b == neighbor) match {
+              // if there was already a pointer to that node we need to remove it before adding the new edge
+              case Some( (desc, _) ) =>
+                prev.remove(desc)
+                prev.put(edge, current.publicKey)
+              case None =>
+                prev.put(edge, current.publicKey)
+            }
 
             //update the queue, remove and insert
             vertexQueue.remove(WeightedNode(neighbor, cost(neighbor)))
@@ -118,20 +93,14 @@ object Graph {
       }
     }
 
-    //transform the 'prev' map into a list of edges
-    //FIXME optimize this
-    val resultEdges = prev.flatMap { case (k,v) =>
-      g.getEdgesBetween(v, k)
-    }
-
-    //build the resulting path traversing the hop list backward from the target
-    val hopPath = new mutable.MutableList[GraphEdge]
+    //we traverse the list of "previous" backward building the final list of edges that make the shortest path
+    val edgePath = new mutable.MutableList[GraphEdge]
     var current = targetNode
 
-    while(resultEdges.exists(_.desc.b == current) ) {
+    while( prev.exists(_._1.desc.b == current) ) {
 
-      val Some(temp) = resultEdges.find(_.desc.b == current)
-      hopPath += temp
+      val Some( (temp, _) ) = prev.find(_._1.desc.b == current)
+      edgePath += temp
       current = temp.desc.a
     }
 
@@ -139,7 +108,7 @@ object Graph {
     if(current != sourceNode)
       Seq.empty  //path not found
     else
-      hopPath.reverse
+      edgePath.reverse
   }
 
   private def edgeWeightByAmount(edge: GraphEdge, amountMsat: Long): Long = {

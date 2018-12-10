@@ -95,28 +95,27 @@ class RouteCalculationSpec extends FunSuite {
 
   }
 
-//  test("calculate the cheapest route (detailed fees)") {
-//
-//    val paymentAmount = 10000L // 10 sat
-//    val expectedCost = 110
-//
-//
-//    val updates = List(
-//      makeUpdate(1L, a, b, 10, 10000, minHtlcMsat = 1),
-//      makeUpdate(2L, b, c, 20, 20000, minHtlcMsat = 1),
-//      makeUpdate(3L, c, d, 30, 30000, minHtlcMsat = 1)
-//    ).toMap
-//
-//
-//    val graph = makeGraph(updates)
-//
-//    val Success((route, cost)) = Router.findRouteWithCost(graph, a, d, paymentAmount)
-//
-//    assert(hops2Ids(route) === 1 :: 2 :: 3 :: Nil)
-//    assert(cost === expectedCost)
-//
-//  }
+  test("if there are multiple channels between the same node, select the cheapest") {
 
+    val (f, g, h, i) = (
+      PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //F source
+      PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), //G
+      PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), //H
+      PublicKey("029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c")  //I target
+    )
+
+    val updates = List(
+      makeUpdate(1L, f, g, 0, 0),
+      makeUpdate(2L, g, h, 5, 5), //expensive  g -> h channel
+      makeUpdate(6L, g, h, 0, 0), //cheap      g -> h channel
+      makeUpdate(3L, h, i, 0, 0)
+    ).toMap
+
+    val graph = makeGraph(updates)
+
+    val route = Router.findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT)
+    assert(route.map(hops2Ids) === Success(1 :: 6 :: 3 :: Nil))
+  }
 
   test("calculate longer but cheaper route") {
 
