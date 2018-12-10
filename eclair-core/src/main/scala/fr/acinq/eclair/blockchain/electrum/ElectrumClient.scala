@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
-import io.netty.channel.socket.SocketChannel
+import io.netty.channel.socket.{SocketChannel, SocketChannelConfig}
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.handler.codec.string.{LineEncoder, StringDecoder}
 import io.netty.handler.codec.{LineBasedFrameDecoder, MessageToMessageDecoder, MessageToMessageEncoder}
@@ -54,6 +54,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   b.group(workerGroup)
   b.channel(classOf[NioSocketChannel])
   b.option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
+  b.option[java.lang.Integer](ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
   b.handler(new ChannelInitializer[SocketChannel]() {
     override def initChannel(ch: SocketChannel): Unit = {
       ssl match {
@@ -88,6 +89,14 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
     statusListeners.map(_ ! ElectrumDisconnected)
     context stop self
   }
+
+  channelFuture.addListeners(new ChannelFutureListener {
+    override def operationComplete(future: ChannelFuture): Unit = {
+      if (!future.isSuccess) {
+        errorHandler(future.cause())
+      }
+    }
+  })
 
   /**
     * This error handler catches all exceptions and kill the actor
