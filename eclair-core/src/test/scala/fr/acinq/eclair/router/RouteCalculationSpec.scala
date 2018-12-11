@@ -35,7 +35,7 @@ class RouteCalculationSpec extends FunSuite {
 
   import RouteCalculationSpec._
 
-  val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+  val (a, b, c, d, e, f) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
 
   test("calculate simple route") {
 
@@ -419,7 +419,7 @@ class RouteCalculationSpec extends FunSuite {
     * +---+            +---+            +---+
     *
     */
-  test("find the k-shortest paths in a graph, k=3") {
+  test("find the k-shortest paths in a graph, k=4") {
 
     val (a, b, c, d, e, f, g) = (
       PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //a
@@ -450,9 +450,67 @@ class RouteCalculationSpec extends FunSuite {
     assert(hops2Ids(twoShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
     assert(hops2Ids(twoShortestPaths(1).path.map(graphEdgeToHop)) === 1 :: 3 :: 5 :: Nil) // D -> A -> E -> F
     assert(hops2Ids(twoShortestPaths(2).path.map(graphEdgeToHop)) === 2 :: 4 :: 6 :: 7 :: Nil) // D -> E -> B -> C -> F
-    assert(hops2Ids(twoShortestPaths(3).path.map(graphEdgeToHop)) === 1 :: 3 :: 4 :: 6 :: 7 :: Nil) // D -> E -> B -> C -> F
+    assert(hops2Ids(twoShortestPaths(3).path.map(graphEdgeToHop)) === 1 :: 3 :: 4 :: 6 :: 7 :: Nil) // D -> A -> E -> B -> C -> F
+  }
+
+  test("find the k shortest path (wikipedia example)") {
+    val (c, d, e, f, g, h, i) = (
+      PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //c
+      PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), //d
+      PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), //e
+      PublicKey("029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c"), //f
+      PublicKey("02f38f4e37142cc05df44683a83e22dea608cf4691492829ff4cf99888c5ec2d3a"), //g
+      PublicKey("03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc"), //h
+      PublicKey("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")  //i
+    )
 
 
+    val edges = Seq(
+      makeUpdate(10L, c, e, 2, 0),
+      makeUpdate(20L, c, d, 3, 0),
+      makeUpdate(30L, d, f, 4, 0),
+      makeUpdate(40L, e, d, 1, 0),
+      makeUpdate(50L, e, f, 2, 0),
+      makeUpdate(60L, e, g, 3, 0),
+      makeUpdate(70L, f, g, 2, 0),
+      makeUpdate(80L, f, h, 1, 0),
+      makeUpdate(90L, g, h, 2, 0)
+    )
+
+    val graph = DirectedGraph().addEdges(edges)
+
+    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, K = 2)
+
+    assert(twoShortestPaths.size === 2)
+    val shortest = twoShortestPaths(0)
+    assert(hops2Ids(shortest.path.map(graphEdgeToHop)) === 10 :: 50 :: 80 :: Nil) // C -> E -> F -> H
+    assert(shortest.cost === 5)
+
+    val secondShortest = twoShortestPaths(1)
+    assert(hops2Ids(secondShortest.path.map(graphEdgeToHop)) === 10 :: 60 :: 90 :: Nil) // C -> E -> G -> H
+    assert(secondShortest.cost === 7)
+  }
+
+  test("terminate looking for k-shortest path if there are no more alternative paths than k"){
+
+    //simple graph with only 2 possible paths from A to F
+    val edges = Seq(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, c, f, 0, 0),
+      makeUpdate(4L, c, d, 0, 0),
+      makeUpdate(5L, d, e, 0, 0),
+      makeUpdate(6L, e, f, 0, 0)
+    )
+
+    val graph = DirectedGraph().addEdges(edges)
+
+    //we ask for 3 shortest paths but only 2 can be found
+    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, K = 3)
+
+    assert(foundPaths.size === 2)
+    assert(hops2Ids(foundPaths(0).path.map(graphEdgeToHop)) === 1 :: 2 :: 3 :: Nil) // A -> B -> C -> F
+    assert(hops2Ids(foundPaths(1).path.map(graphEdgeToHop)) === 1 :: 2 :: 4 :: 5 :: 6 :: Nil) // A -> B -> C -> D -> E -> F
   }
 
 }

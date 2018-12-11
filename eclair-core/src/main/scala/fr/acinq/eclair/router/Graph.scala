@@ -15,7 +15,7 @@ object Graph {
   }
 
   implicit object PathComparator extends Ordering[WeightedPath] {
-    override def compare(x: WeightedPath, y: WeightedPath): Int = x.cost.compareTo(y.cost)
+    override def compare(x: WeightedPath, y: WeightedPath): Int = y.cost.compareTo(x.cost)
   }
 
   case class WeightedNode(publicKey: PublicKey, weight: Long)
@@ -35,58 +35,73 @@ object Graph {
 
   def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, K: Int): Seq[WeightedPath] = {
 
-    //A stores the k shortest path
-    val A = new mutable.MutableList[WeightedPath]
-    A += dijkstraShortestPathWithCost(graph, sourceNode, targetNode, amountMsat)
+    var allSpurPathsFound = false
 
-    //B stores the candidates for k(K +1) shortest paths, sorted by path cost
-    val B = new mutable.PriorityQueue[WeightedPath]
+    //A stores the k shortest path
+    val shortestPaths = new mutable.MutableList[WeightedPath]
+    shortestPaths += dijkstraShortestPathWithCost(graph, sourceNode, targetNode, amountMsat)
+
+    //stores the candidates for k(K +1) shortest paths, sorted by path cost
+    val candidate = new mutable.PriorityQueue[WeightedPath]
 
     //main loop
     for(k <- 1 until K) {
 
-      //for every edge in the path
-      for(i <- 0 to (A(k - 1).path.size - 1) ){
+      if ( !allSpurPathsFound ) {
 
-        //select the spur edge as the i-th element of the k-th previous shortest path (k -1)
-        val spurEdge = A(k - 1).path(i)
+        //for every edge in the path
+        for (i <- 0 to shortestPaths(k - 1).path.size - 1) {
 
-        // select the subpath from the source to the spur node of the k-th previous shortest path
-        val rootPath = A(k - 1).path.subList(0, i + 1)
+          //select the spur node as the i-th element of the k-th previous shortest path (k -1)
+          val spurEdge = shortestPaths(k - 1).path(i)
 
-        //subgraph NOT containing the links that are part of the previous shortest path and which share the same root path
-        val mutatedGraph = A.foldLeft(graph) { (acc, p) =>
-          if(p.path.subList(0, i + 1) == rootPath) {
-            acc.removeEdgesList(p.path.subList(i, i + 1))
-          } else {
-            acc
+          // select the subpath from the source to the spur node of the k-th previous shortest path
+          val rootPathEdges = shortestPaths(k - 1).path.subList(0, i).toList
+
+          //subgraph NOT containing the links that are part of the previous shortest path and which share the same root path
+          val mutatedGraph = shortestPaths.foldLeft(graph) { (acc, p) =>
+            if (p.path.subList(0, i) == rootPathEdges) {
+              acc.removeEdge(p.path(i))
+            } else {
+              acc
+            }
+          }
+
+          //find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
+          val spurPath = dijkstraShortestPathWithCost(mutatedGraph, spurEdge.desc.a, targetNode, amountMsat)
+
+          //candidate shortest path is made of the rootPath and the new spurPath
+          val totalPath = concat(rootPathEdges, spurPath.path.toList)
+          val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat))
+
+          if (spurPath.path.nonEmpty) {
+            candidate.enqueue(candidatePath)
           }
         }
-
-        //now remove from the graph the vertices from the rootPath except the spur node
-        //val subGraph = mutatedGraph.filterByVertex { v => rootPath.exists(_.desc.a == v) && v == spurEdge.desc.b }
-        //val subGraph = mutatedGraph.filterBy { e => rootPath.exists(_ == e) && e == spurEdge }
-
-        val spurPath = dijkstraShortestPathWithCost(mutatedGraph, spurEdge.desc.a, targetNode, amountMsat)
-
-        //candidate shortest path is made of the rootPath and the new spurPath
-        val totalPath = rootPath ++ spurPath.path
-        val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat))
-
-        B.enqueue(candidatePath)
       }
 
-      if(B.isEmpty) {
-        throw new NotImplementedError("Wait for it!")
+      if(candidate.isEmpty) {
+        //handles the case of having exhausted all possible spur paths and it's impossible to reach the target from the source
+        allSpurPathsFound = true
+      } else {
+        //move the best candidate from in the container A
+        shortestPaths += candidate.dequeue()
       }
-
-      //sort B!
-
-      //move the candidate from in the container A
-      A += B.dequeue()
     }
 
-    A
+    shortestPaths
+  }
+
+  def concat(rootPath: List[GraphEdge], spurPath: List[GraphEdge]): List[GraphEdge] = (rootPath, spurPath) match {
+    case (Nil, _) => spurPath
+    case (_, Nil) => rootPath
+    case (root :: otherRoot, spurHead :: _ ) => if(root.desc.a == spurHead.desc.a) concat(otherRoot, spurPath) else rootPath ++ spurPath
+  }
+
+  def edgeListToVertexList(edges: Seq[GraphEdge]): Seq[PublicKey] = edges.toList match {
+    case Nil => Seq.empty
+    case last :: Nil => Seq(last.desc.a, last.desc.b)
+    case edge :: tail => edge.desc.a +: edgeListToVertexList(tail)
   }
 
   def pathCost(path: Seq[GraphEdge], amountMsat: Long): Long = {
