@@ -148,6 +148,12 @@
             <artifactId>upickle_2.11</artifactId>
             <version>0.6.6</version>
         </dependency>
+        <!-- TCP -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+            <version>4.1.32.Final</version>
+        </dependency>
         <!-- BITCOIN -->
         <dependency>
             <groupId>fr.acinq</groupId>
@@ -214,13 +220,13 @@
         <dependency>
             <groupId>com.whisk</groupId>
             <artifactId>docker-testkit-scalatest_${scala.version.short}</artifactId>
-            <version>0.9.5</version>
+            <version>0.9.8</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.whisk</groupId>
             <artifactId>docker-testkit-impl-spotify_${scala.version.short}</artifactId>
-            <version>0.9.5</version>
+            <version>0.9.8</version>
             <scope>test</scope>
         </dependency>
         <dependency>

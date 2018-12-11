@@ -38,7 +38,7 @@ import scala.collection.SortedSet
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.Try
 
 // @formatter:off
@@ -87,7 +87,7 @@ case object TickPruneStaleChannels
   * Created by PM on 24/05/2016.
   */
 
-class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticActorLogging[State, Data] {
+class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Unit]] = None) extends FSMDiagnosticActorLogging[State, Data] {
 
   import Router._
 
@@ -121,6 +121,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
     }.toMap
 
     log.info(s"initialization completed, ready to process messages")
+    Try(initialized.map(_.success(())))
     startWith(NORMAL, Data(Map.empty, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
   }
 
@@ -680,7 +681,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSMDiagnosticAct
 
 object Router {
 
-  def props(nodeParams: NodeParams, watcher: ActorRef) = Props(new Router(nodeParams, watcher))
+  def props(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Unit]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
   def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
   // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
