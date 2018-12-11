@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
+import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.router.Router.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.{ShortChannelId, randomKey}
@@ -401,6 +402,56 @@ class RouteCalculationSpec extends FunSuite {
       ChannelDesc(ShortChannelId(3L), c, d),
       ChannelDesc(ShortChannelId(8L), i, j)
     ))
+
+  }
+
+
+  /**
+    *
+    * +---+            +---+            +---+
+    * | A +-----+      | B +----------> | C |
+    * +-+-+     |      +-+-+            +-+-+
+    * ^       |        ^                |
+    * |       |        |                |
+    * |       v----> + |                |
+    * +-+-+            <-+-+            +-+-+
+    * | D +----------> | E +----------> | F |
+    * +---+            +---+            +---+
+    *
+    */
+  test("find the k-shortest paths in a graph, k=3") {
+
+    val (a, b, c, d, e, f, g) = (
+      PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //a
+      PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), //b
+      PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), //c
+      PublicKey("029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c"), //d
+      PublicKey("02f38f4e37142cc05df44683a83e22dea608cf4691492829ff4cf99888c5ec2d3a"), //e
+      PublicKey("03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc"), //f
+      PublicKey("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")  //g
+    )
+
+
+    val edges = Seq(
+      makeUpdate(1L, d, a, 0, 0),
+      makeUpdate(2L, d, e, 0, 0),
+      makeUpdate(3L, a, e, 0, 0),
+      makeUpdate(4L, e, b, 0, 0),
+      makeUpdate(5L, e, f, 0, 0),
+      makeUpdate(6L, b, c, 0, 0),
+      makeUpdate(7L, c, f, 0, 0)
+    )
+
+    val graph = DirectedGraph().addEdges(edges)
+
+    val twoShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, K = 4)
+
+    assert(twoShortestPaths.size === 4)
+    assert(hops2Ids(twoShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
+    assert(hops2Ids(twoShortestPaths(1).path.map(graphEdgeToHop)) === 1 :: 3 :: 5 :: Nil) // D -> A -> E -> F
+    assert(hops2Ids(twoShortestPaths(2).path.map(graphEdgeToHop)) === 2 :: 4 :: 6 :: 7 :: Nil) // D -> E -> B -> C -> F
+    assert(hops2Ids(twoShortestPaths(3).path.map(graphEdgeToHop)) === 1 :: 3 :: 4 :: 6 :: 7 :: Nil) // D -> E -> B -> C -> F
+
 
   }
 

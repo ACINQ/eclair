@@ -200,14 +200,18 @@ class GraphSpec extends FunSuite {
     assert(mutatedGraph2.getEdge(edgeForTheSameChannel).get.update.feeBaseMsat === 30)
   }
 
-  test("find the two cheapest routes in the graph") {
-
+  test("remove a vertex and a list of vertices from the graph") {
 
     val graph = makeTestGraph()
 
+    assert(graph.vertexSet().size === 5)
 
+    val mutatedGraph = graph.removeVertex(a)
+    assert(mutatedGraph.vertexSet().size === 4)
 
-
+    val withRemovedList = graph.removeVertices(Seq(a,b,c))
+    assert(withRemovedList.vertexSet().size === 2)
+    assert(withRemovedList.getEdgesBetween(c,d).size === 0)
   }
 
   def edgeFromDesc(tuple: (ChannelDesc, ChannelUpdate) ): GraphEdge = GraphEdge(tuple._1, tuple._2)

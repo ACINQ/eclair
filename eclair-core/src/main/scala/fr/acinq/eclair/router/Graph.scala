@@ -19,7 +19,7 @@ object Graph {
   }
 
   case class WeightedNode(publicKey: PublicKey, weight: Long)
-  case class WeightedPath(hops: Seq[Hop], cost: Long)
+  case class WeightedPath(path: Seq[GraphEdge], cost: Long)
 
   /**
     * Finds the shortest path in the graph, Dijsktra's algorithm
@@ -30,11 +30,86 @@ object Graph {
     * @return
     */
   def shortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): Seq[Hop] = {
-    shortestPathWithCostInfo(g, sourceNode, targetNode, amountMsat).map(graphEdgeToHop)
+    dijkstraShortestPath(g, sourceNode, targetNode, amountMsat).map(graphEdgeToHop)
+  }
+
+  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, K: Int): Seq[WeightedPath] = {
+
+    //A stores the k shortest path
+    val A = new mutable.MutableList[WeightedPath]
+    A += dijkstraShortestPathWithCost(graph, sourceNode, targetNode, amountMsat)
+
+    //B stores the candidates for k(K +1) shortest paths, sorted by path cost
+    val B = new mutable.PriorityQueue[WeightedPath]
+
+    //main loop
+    for(k <- 1 until K) {
+
+      //for every edge in the path
+      for(i <- 0 to (A(k - 1).path.size - 1) ){
+
+        //select the spur edge as the i-th element of the k-th previous shortest path (k -1)
+        val spurEdge = A(k - 1).path(i)
+
+        // select the subpath from the source to the spur node of the k-th previous shortest path
+        val rootPath = A(k - 1).path.subList(0, i + 1)
+
+        //subgraph NOT containing the links that are part of the previous shortest path and which share the same root path
+        val mutatedGraph = A.foldLeft(graph) { (acc, p) =>
+          if(p.path.subList(0, i + 1) == rootPath) {
+            acc.removeEdgesList(p.path.subList(i, i + 1))
+          } else {
+            acc
+          }
+        }
+
+        //now remove from the graph the vertices from the rootPath except the spur node
+        //val subGraph = mutatedGraph.filterByVertex { v => rootPath.exists(_.desc.a == v) && v == spurEdge.desc.b }
+        //val subGraph = mutatedGraph.filterBy { e => rootPath.exists(_ == e) && e == spurEdge }
+
+        val spurPath = dijkstraShortestPathWithCost(mutatedGraph, spurEdge.desc.a, targetNode, amountMsat)
+
+        //candidate shortest path is made of the rootPath and the new spurPath
+        val totalPath = rootPath ++ spurPath.path
+        val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat))
+
+        B.enqueue(candidatePath)
+      }
+
+      if(B.isEmpty) {
+        throw new NotImplementedError("Wait for it!")
+      }
+
+      //sort B!
+
+      //move the candidate from in the container A
+      A += B.dequeue()
+    }
+
+    A
+  }
+
+  def pathCost(path: Seq[GraphEdge], amountMsat: Long): Long = {
+    path.foldLeft(0L)( (acc, edge) => acc + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountMsat) )
+  }
+
+  implicit class ListSubSequence[T](list: Seq[T]) {
+    def subList(from: Int, to: Int): Seq[T] = {
+      if(from == 0 && to == 0) {
+        list.head :: Nil
+      } else {
+        list.slice(from, to)
+      }
+    }
+  }
+
+  def dijkstraShortestPathWithCost(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): WeightedPath = {
+    val path = dijkstraShortestPath(g, sourceNode, targetNode, amountMsat)
+    WeightedPath(path, pathCost(path, amountMsat))
   }
 
   //TBD the cost for the neighbors of the sourceNode is always 0
-  def shortestPathWithCostInfo(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): Seq[GraphEdge] = {
+  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): Seq[GraphEdge] = {
 
     val cost = new mutable.HashMap[PublicKey, Long]
     val prev = new mutable.HashMap[GraphEdge, PublicKey]
@@ -182,7 +257,7 @@ object Graph {
 
       def removeEdge(edge: GraphEdge): DirectedGraph = removeEdge(edge.desc)
 
-      def removeEdgesByGraphEdgesList( edgeList: Seq[GraphEdge] ): DirectedGraph = removeEdges(edgeList.map(_.desc))
+      def removeEdgesList(edgeList: Seq[GraphEdge] ): DirectedGraph = removeEdges(edgeList.map(_.desc))
 
       def removeEdges(descList: Seq[ChannelDesc]): DirectedGraph = {
         descList.foldLeft(this)( (acc, edge ) => acc.removeEdge(edge) )
@@ -208,6 +283,22 @@ object Graph {
           case None => Seq.empty
           case Some(adj) => adj.filter(e => e.desc.b == keyB)
         }
+      }
+
+      /**
+        * Removes a vertex and all it's associated edges
+        * @param key
+        * @return
+        */
+      def removeVertex( key: PublicKey ): DirectedGraph = {
+        vertices.get(key) match {
+          case None => this
+          case Some(_) => DirectedGraph(vertices - key)
+        }
+      }
+
+      def removeVertices(keys: Seq[PublicKey]): DirectedGraph = {
+        keys.foldLeft(this)( (acc, vertex) => acc.removeVertex(vertex) )
       }
 
       /**
@@ -264,7 +355,11 @@ object Graph {
         * @return a subset of this graph with only edges satisfying the predicate
         */
       def filterBy( predicate: GraphEdge => Boolean ): DirectedGraph = {
-        removeEdgesByGraphEdgesList(edgeSet().filter(predicate).toSeq)
+        removeEdgesList(edgeSet().filter(predicate).toSeq)
+      }
+
+      def filterByVertex( predicate: PublicKey => Boolean ): DirectedGraph = {
+        removeVertices(vertexSet().filter(predicate).toSeq)
       }
     }
 
