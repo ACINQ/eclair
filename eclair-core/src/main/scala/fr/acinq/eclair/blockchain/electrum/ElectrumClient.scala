@@ -85,7 +85,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   val channelFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
 
   def errorHandler(t: Throwable) = {
-    log.error(t, s"connection error: ")
+    log.info(s"connection error (reason=${t.getMessage})")
     statusListeners.map(_ ! ElectrumDisconnected)
     context stop self
   }
