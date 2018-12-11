@@ -66,7 +66,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
     case ElectrumClient.HeaderSubscriptionResponse(newtip) if tip == newtip => ()
 
     case ElectrumClient.HeaderSubscriptionResponse(newtip) =>
-      log.info(s"new tip: ${newtip.block_hash} $newtip")
+      log.info(s"new tip: ${newtip.block_id} $newtip")
       watches collect {
         case watch: WatchConfirmed =>
           val scriptHash = computeScriptHash(watch.publicKeyScript)

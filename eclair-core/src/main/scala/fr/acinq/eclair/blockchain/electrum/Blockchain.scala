@@ -36,6 +36,10 @@ import scala.util.control.TailCalls.TailRec
 case class Blockchain(chainhash: BinaryData, headers: Map[BinaryData, Blockchain.BlockIndex], bestChain: Vector[Blockchain.BlockIndex], orphans: Map[BinaryData, BlockHeader], checkpoints: Vector[CheckPoint]) {
   require(chainhash == Block.RegtestGenesisBlock.hash || chainhash == Block.TestnetGenesisBlock.hash || chainhash == Block.LivenetGenesisBlock.hash, s"invalid chain hash $chainhash")
 
+  def isEmpty = headers.isEmpty
+
+  def height = if (bestChain.isEmpty) 0 else tip.height
+
   def first = bestChain.head
 
   def tip = bestChain.last
@@ -89,6 +93,17 @@ object Blockchain extends Logging {
 
 
   /**
+    * Build an empty blockchain from a series of checkpoints
+    *
+    * @param chainhash   chain we're on
+    * @param checkpoints list of checkpoints
+    * @return a blockchain instance
+    */
+  def fromCheckpoints(chainhash: BinaryData, checkpoints: Vector[CheckPoint]): Blockchain = {
+    Blockchain(chainhash, Map(), Vector(), Map.empty[BinaryData, BlockHeader], checkpoints)
+  }
+
+  /**
     * Build a blockchain from a series of checkpoints and a header. We check that the header is valid i.e. its hash and
     * difficulty match the last checkpoint
     *
@@ -106,6 +121,11 @@ object Blockchain extends Logging {
     val chainwork = checkpoints.dropRight(1).map(t => BigInt(2016) * Blockchain.chainWork(t.target)).sum
     val blockIndex = BlockIndex(checkPointHeader, checkpointHeight + 1, None, chainwork + chainWork(checkPointHeader))
     Blockchain(chainhash, Map(blockIndex.hash -> blockIndex), Vector(blockIndex), Map.empty[BinaryData, BlockHeader], checkpoints)
+  }
+
+  def fromGenesisBlock(chainhash: BinaryData, genesis: BlockHeader): Blockchain = {
+    val blockIndex = BlockIndex(genesis, 0, None, decodeCompact(genesis.bits)._1)
+    Blockchain(chainhash, Map(blockIndex.hash -> blockIndex), Vector(blockIndex), Map(), Vector())
   }
 
   /**
@@ -139,9 +159,11 @@ object Blockchain extends Logging {
       TailCalls.done(blockchain)
     } else {
       // check that the header hash does match its difficulty field
+      // this checks that the header is not lying about its difficulty target, but not that this target is what
+      // we expect (see below)
       BlockHeader.checkProofOfWork(header)
 
-      // check that the header difficulty is consistent with its supposed height
+      // check that the header difficulty is consistent with its height
       def checkDifficulty(parent: BlockIndex) = blockchain.chainhash match {
         case Block.LivenetGenesisBlock.hash => require(header.bits == blockchain.getDifficulty(parent.height + 1))
         case _ => () // we don't check difficulty on regtest or testnet

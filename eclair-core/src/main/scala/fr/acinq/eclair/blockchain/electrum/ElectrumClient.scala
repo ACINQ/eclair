@@ -76,7 +76,8 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
 
       case _: ServerVersionResponse => () // we just ignore these messages, they are used as pings
 
-      case _ => log.warning(s"unhandled $message")
+      case _ =>
+        log.warning(s"unhandled $message")
     }
   }
 
@@ -262,6 +263,7 @@ object ElectrumClient {
   case class GetHeaderResponse(header: Header) extends Response
 
   case class GetHeaders(start_height: Int, count: Int, cp_height: Int = 0) extends Request
+
   case class GetHeadersResponse(start_height: Int, headers: Seq[BlockHeader], max: Int) extends Response
 
   case class GetMerkle(txid: BinaryData, height: Long) extends Request
@@ -290,12 +292,13 @@ object ElectrumClient {
 
   case class Header(block_height: Long, version: Long, prev_block_hash: BinaryData, merkle_root: BinaryData, timestamp: Long, bits: Long, nonce: Long) {
     def blockHeader = BlockHeader(version, prev_block_hash.reverse, merkle_root.reverse, timestamp, bits, nonce)
-    lazy val block_id: BinaryData = blockHeader.hash
-    lazy val block_hash: BinaryData = block_id.reverse
+
+    lazy val block_hash: BinaryData = blockHeader.hash
+    lazy val block_id: BinaryData = block_hash.reverse
   }
 
   object Header {
-    def makeHeader(height: Long, header: BlockHeader) = ElectrumClient.Header(height, header.version, header.hashPreviousBlock, header.hashMerkleRoot, header.time, header.bits, header.nonce)
+    def makeHeader(height: Long, header: BlockHeader) = ElectrumClient.Header(height, header.version, header.hashPreviousBlock.reverse, header.hashMerkleRoot.reverse, header.time, header.bits, header.nonce)
 
     val RegtestGenesisHeader = makeHeader(0, Block.RegtestGenesisBlock.header)
     val TestnetGenesisHeader = makeHeader(0, Block.TestnetGenesisBlock.header)

@@ -17,12 +17,14 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import java.net.InetSocketAddress
+import java.sql.DriverManager
 
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Block, MnemonicCode, Satoshi}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ScriptHashSubscription, ScriptHashSubscriptionResponse}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
+import fr.acinq.eclair.db.sqlite.SqliteWalletDb
 import org.scalatest.FunSuiteLike
 
 import scala.concurrent.duration._
@@ -43,24 +45,26 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
 
   val listener = TestProbe()
   system.eventStream.subscribe(listener.ref, classOf[WalletEvent])
-  val wallet = TestFSMRef(new ElectrumWallet(seed, system.actorOf(Props(new SimulatedClient())), WalletParameters(Block.RegtestGenesisBlock.hash, minimumFee = Satoshi(5000))))
+  val wallet = TestFSMRef(new ElectrumWallet(seed, system.actorOf(Props(new SimulatedClient())), WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = Satoshi(5000))))
 
   // wallet sends a receive address notification as soon as it is created
   listener.expectMsgType[NewWalletReceiveAddress]
 
-  val genesis = ElectrumClient.Header(1, 1, Block.RegtestGenesisBlock.hash, BinaryData("01" * 32), timestamp = 12346L, bits = 0, nonce = 0)
+  val genesis = ElectrumClient.Header.makeHeader(1, Block.RegtestGenesisBlock.header)
   val header1 = makeHeader(genesis, 12345L)
   val header2 = makeHeader(header1, 12346L)
   val header3 = makeHeader(header2, 12347L)
   val header4 = makeHeader(header3, 12348L)
 
-  def makeHeader(previousHeader: ElectrumClient.Header, timestamp: Long): ElectrumClient.Header = ElectrumClient.Header(previousHeader.block_height + 1, 1, previousHeader.block_hash, BinaryData("01" * 32), timestamp = timestamp, bits = 0, nonce = 0)
+  def makeHeader(previousHeader: ElectrumClient.Header, timestamp: Long): ElectrumClient.Header = ElectrumClient.Header(previousHeader.block_height + 1, 1, previousHeader.block_id, BinaryData("01" * 32), timestamp = timestamp, bits = 0, nonce = 0)
 
 
   test("wait until wallet is ready") {
     sender.send(wallet, ElectrumClient.ElectrumReady(header1, InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(header1))
-    awaitCond(wallet.stateName == ElectrumWallet.RUNNING)
+    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(header3))
+    awaitCond(wallet.stateName == ElectrumWallet.SYNCING)
+    sender.send(wallet, ElectrumClient.GetHeadersResponse(header1.block_height.toInt, Seq(header1.blockHeader), 2016))
+    sender.send(wallet, ElectrumClient.GetHeadersResponse(header1.block_height.toInt, Seq(), 2016))
     assert(listener.expectMsgType[WalletReady].timestamp == header1.timestamp)
     listener.expectMsgType[NewWalletReceiveAddress]
     listener.send(wallet, GetXpub)
@@ -82,22 +86,22 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
 
     // reconnect wallet
-    sender.send(wallet, ElectrumClient.ElectrumReady(header3, InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(header3))
+    sender.send(wallet, ElectrumClient.ElectrumReady(header2, InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
+    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(header2))
     awaitCond(wallet.stateName == ElectrumWallet.RUNNING)
 
     // listener should be notified
-    assert(listener.expectMsgType[WalletReady].timestamp == header3.timestamp)
+    assert(listener.expectMsgType[WalletReady].timestamp == header2.timestamp)
     listener.expectMsgType[NewWalletReceiveAddress]
   }
 
   test("don't send the same ready message more then once") {
     // listener should be notified
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(header4))
-    assert(listener.expectMsgType[WalletReady].timestamp == header4.timestamp)
+    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(header3))
+    assert(listener.expectMsgType[WalletReady].timestamp == header3.timestamp)
     listener.expectMsgType[NewWalletReceiveAddress]
 
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(header4))
+    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(header3))
     listener.expectNoMsg(500 milliseconds)
   }
 }

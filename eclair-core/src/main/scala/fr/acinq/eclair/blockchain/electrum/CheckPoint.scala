@@ -41,7 +41,7 @@ object CheckPoint {
   def load(chainHash: BinaryData): Vector[CheckPoint] = chainHash match {
     case Block.LivenetGenesisBlock.hash => load(classOf[CheckPoint].getResourceAsStream("/electrum/checkpoints_mainnet.json"))
     case Block.TestnetGenesisBlock.hash => load(classOf[CheckPoint].getResourceAsStream("/electrum/checkpoints_testnet.json"))
-    case Block.RegtestGenesisBlock.hash => Vector(CheckPoint(Block.RegtestGenesisBlock.blockId, 0))
+    case Block.RegtestGenesisBlock.hash => Vector.empty[CheckPoint] // no checkpoints on regtest
   }
 
   def load(stream: InputStream): Vector[CheckPoint] = {

@@ -107,6 +107,10 @@ class ElectrumClientPool(serverAddresses: Set[InetSocketAddress])(implicit val e
 
     case Event(ElectrumClient.ElectrumDisconnected, _) =>
       stay // ignored, we rely on Terminated messages to detect disconnections
+
+    case Event(message, _) =>
+      log.warning(s"unhandled $message")
+      stay()
   }
 
   onTransition {

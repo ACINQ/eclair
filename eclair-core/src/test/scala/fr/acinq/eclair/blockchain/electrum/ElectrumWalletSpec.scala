@@ -18,6 +18,7 @@ package fr.acinq.eclair.blockchain.electrum
 
 
 import java.net.InetSocketAddress
+import java.sql.DriverManager
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
@@ -26,6 +27,7 @@ import fr.acinq.bitcoin.{BinaryData, Block, Btc, DeterministicWallet, MnemonicCo
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse}
+import fr.acinq.eclair.db.sqlite.SqliteWalletDb
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JDecimal, JString, JValue}
 import org.scalatest.junit.JUnitRunner
@@ -86,7 +88,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   test("wait until wallet is ready") {
     electrumClient = system.actorOf(Props(new ElectrumClientPool(Set(new InetSocketAddress("localhost", 50001)))))
-    wallet = system.actorOf(Props(new ElectrumWallet(seed, electrumClient, WalletParameters(Block.RegtestGenesisBlock.hash, minimumFee = Satoshi(5000)))), "wallet")
+    wallet = system.actorOf(Props(new ElectrumWallet(seed, electrumClient, WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = Satoshi(5000)))), "wallet")
     val probe = TestProbe()
     awaitCond({
       probe.send(wallet, GetData)

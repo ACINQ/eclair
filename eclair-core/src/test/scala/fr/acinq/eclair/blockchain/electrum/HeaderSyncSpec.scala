@@ -46,29 +46,30 @@ class HeaderSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
 
   test("build from checkpoints") {
     val checkpoints = CheckPoint.load(Block.LivenetGenesisBlock.hash)
-    val checkpointHeight = checkpoints.size * 2016 - 1
+    val blockchain = Blockchain.fromCheckpoints(Block.LivenetGenesisBlock.hash, checkpoints)
 
     // get the first header after the last checkpoint
+    val checkpointHeight = checkpoints.size * 2016 - 1
     probe.send(client, GetHeader(checkpointHeight + 1))
     val GetHeaderResponse(checkPointHeader) = probe.expectMsgType[GetHeaderResponse]
-    val blockchain = Blockchain.fromCheckpoints(Block.LivenetGenesisBlock.hash, checkpoints, checkPointHeader.blockHeader)
+    val blockchain1 = Blockchain.addHeader(blockchain, checkPointHeader.blockHeader)
 
     // get the next chunks of headers
-    probe.send(client, GetHeaders(blockchain.tip.height + 1, 2016))
+    probe.send(client, GetHeaders(blockchain1.tip.height + 1, 2016))
     val GetHeadersResponse(start1, headers1, _) = probe.expectMsgType[GetHeadersResponse]
     probe.send(client, GetHeaders(start1 + headers1.length, 2016))
     val GetHeadersResponse(start2, headers2, _) = probe.expectMsgType[GetHeadersResponse]
 
     // check that we can add our headers
-    val blockchain1 = Blockchain.addHeaders(blockchain, headers1)
-    val blockchain2 = Blockchain.addHeaders(blockchain1, headers2)
-    assert(blockchain2.bestChain.length == 1 + 2016 + 2016)
+    val blockchain2 = Blockchain.addHeaders(blockchain1, headers1)
+    val blockchain3 = Blockchain.addHeaders(blockchain2, headers2)
+    assert(blockchain3.bestChain.length == 1 + 2016 + 2016)
 
     // check that we handle orphan blocks properly
-    val blockchain3 = Blockchain.addHeaders(blockchain, headers1.drop(100))
-    assert(blockchain3.orphans.size == headers1.size - 100)
-    val blockchain4 = Blockchain.addHeaders(blockchain3, headers1.take(100))
-    assert(blockchain4.bestChain.length == 1 + headers1.size)
+    val blockchain4 = Blockchain.addHeaders(blockchain1, headers1.drop(100))
+    assert(blockchain4.orphans.size == headers1.size - 100)
+    val blockchain5 = Blockchain.addHeaders(blockchain4, headers1.take(100))
+    assert(blockchain5.bestChain.length == 1 + headers1.size)
   }
 
   test("initial header download") {

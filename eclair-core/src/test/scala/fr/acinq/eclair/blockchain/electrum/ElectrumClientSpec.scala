@@ -61,7 +61,7 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
   test("get header") {
     probe.send(client, GetHeader(10000))
     val GetHeaderResponse(header) = probe.expectMsgType[GetHeaderResponse]
-    assert(header.block_hash == BinaryData("000000000058b74204bb9d59128e7975b683ac73910660b6531e59523fb4a102"))
+    assert(header.block_id == BinaryData("000000000058b74204bb9d59128e7975b683ac73910660b6531e59523fb4a102"))
   }
 
   test("get headers") {
