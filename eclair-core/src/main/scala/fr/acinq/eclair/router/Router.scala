@@ -373,9 +373,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! (d.updates ++ d.privateUpdates)
       stay
 
-    case Event('dot, d) =>
-      graph2dot(d.nodes, d.channels) pipeTo sender
-      stay
 
     case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels), d) =>
       // we convert extra routing info provided in the payment request to fake channel_update
@@ -818,38 +815,5 @@ object Router {
       case path => path
     }
 
-  }
-
-  def graph2dot(nodes: Map[PublicKey, NodeAnnouncement], channels: Map[ShortChannelId, ChannelAnnouncement])(implicit ec: ExecutionContext): Future[String] = Future {
-    case class DescEdge(shortChannelId: ShortChannelId) extends DefaultEdge
-    val g = new SimpleGraph[PublicKey, DescEdge](classOf[DescEdge])
-    channels.foreach(d => {
-      g.addVertex(d._2.nodeId1)
-      g.addVertex(d._2.nodeId2)
-      g.addEdge(d._2.nodeId1, d._2.nodeId2, new DescEdge(d._1))
-    })
-    val vertexIDProvider = new ComponentNameProvider[PublicKey]() {
-      override def getName(nodeId: PublicKey): String = "\"" + nodeId.toString() + "\""
-    }
-    val edgeLabelProvider = new ComponentNameProvider[DescEdge]() {
-      override def getName(e: DescEdge): String = e.shortChannelId.toString
-    }
-    val vertexAttributeProvider = new ComponentAttributeProvider[PublicKey]() {
-
-      override def getComponentAttributes(nodeId: PublicKey): java.util.Map[String, String] =
-
-        nodes.get(nodeId) match {
-          case Some(ann) => Map("label" -> ann.alias, "color" -> ann.rgbColor.toString)
-          case None => Map.empty[String, String]
-        }
-    }
-    val exporter = new DOTExporter[PublicKey, DescEdge](vertexIDProvider, null, edgeLabelProvider, vertexAttributeProvider, null)
-    val writer = new StringWriter()
-    try {
-      exporter.exportGraph(g, writer)
-      writer.toString
-    } finally {
-      writer.close()
-    }
   }
 }

@@ -223,21 +223,6 @@ class RouterSpec extends BaseRouterSpec {
     sender.expectMsgType[RouteResponse]
   }
 
-  test("export graph in dot format") { fixture =>
-    import fixture._
-    val sender = TestProbe()
-    sender.send(router, 'dot)
-    val dot = sender.expectMsgType[String]
-    /*Files.write(dot.getBytes(), new File("graph.dot"))
-
-    import scala.sys.process._
-    val input = new ByteArrayInputStream(dot.getBytes)
-    val output = new ByteArrayOutputStream()
-    "dot -Tpng" #< input #> output !
-    val img = output.toByteArray
-    Files.write(img, new File("graph.png"))*/
-  }
-
   test("send routing state") { fixture =>
     import fixture._
     val sender = TestProbe()
