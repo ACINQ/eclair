@@ -273,9 +273,9 @@ object Graph {
 
       /**
         * @param predicate
-        * @return a subset of this graph with only edges satisfying the predicate
+        * @return a subset of this graph with only edges NOT satisfying the predicate
         */
-      def filterBy( predicate: GraphEdge => Boolean ): DirectedGraph = {
+      def filterNot(predicate: GraphEdge => Boolean ): DirectedGraph = {
         removeEdgesList(edgeSet().filter(predicate).toSeq)
       }
 

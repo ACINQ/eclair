@@ -171,7 +171,7 @@ class GraphSpec extends FunSuite {
 
     val graph = makeTestGraph()
 
-    val graphNoEdgesFromA = graph.filterBy(_.desc.a == a)
+    val graphNoEdgesFromA = graph.filterNot(_.desc.a == a)
 
     assert(graphNoEdgesFromA.edgesOf(a).size === 0)
     assert(graphNoEdgesFromA.edgesOf(b).size === 2)

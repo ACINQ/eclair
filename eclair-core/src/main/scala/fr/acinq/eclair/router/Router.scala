@@ -788,25 +788,23 @@ object Router {
     * @param localNodeId
     * @param targetNodeId
     * @param amountMsat   the amount that will be sent along this route
-    * @param withEdges    those will be added before computing the route, and removed after so that g is left unchanged
-    * @param withoutEdges those will be removed before computing the route, and added back after so that g is left unchanged
+    * @param withEdges    a set of extra edges we want to consider during the search
+    * @param withoutEdges a set of extra edges we want to ignore during the search
     * @return
     */
   def findRouteWithCost(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    val workingGraph = g.removeEdges(withoutEdges.toSeq).addEdges(withEdges.toSeq)
+    val workingGraph = g.filterNot { edge =>
+      withoutEdges.exists(_ == edge.desc) ||                                                       //exclude channels we want to ignore
+     (edge.update.htlcMaximumMsat.isDefined && amountMsat > edge.update.htlcMaximumMsat.get) ||    //exclude channels with too little capacity for this payment
+     (amountMsat < edge.update.htlcMinimumMsat)                                                    //exclude channels requiring the payment to be bigger than this payment
+    }.addEdges(withEdges.toSeq)                                                                    //add the extra channel we want to consider
 
     if (!workingGraph.containsVertex(localNodeId)) throw RouteNotFound
     if (!workingGraph.containsVertex(targetNodeId)) throw RouteNotFound
 
-    //remove from the the working graph out-of-range(of capacity) channels
-    val prunedGraph = workingGraph.filterBy { edge =>
-      (edge.update.htlcMaximumMsat.isDefined && amountMsat > edge.update.htlcMaximumMsat.get) ||    //exclude channels with too little capacity for this payment
-      (amountMsat < edge.update.htlcMinimumMsat)                                                    //exclude channels requiring the payment to be bigger than this payment
-      }
-
-    Graph.shortestPath(prunedGraph, localNodeId, targetNodeId, amountMsat) match {
+    Graph.shortestPath(workingGraph, localNodeId, targetNodeId, amountMsat) match {
       case Nil => throw RouteNotFound
       case path => path
     }
