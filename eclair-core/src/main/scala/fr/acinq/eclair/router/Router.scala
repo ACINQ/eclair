@@ -33,8 +33,6 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import org.jgrapht.ext._
-import org.jgrapht.graph._
 
 import scala.collection.JavaConversions._
 import scala.collection.SortedSet
@@ -59,8 +57,6 @@ case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnno
 case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
 case class Sync(missing: SortedSet[ShortChannelId], totalMissingCount: Int)
-
-case class DescEdge(desc: ChannelDesc, u: ChannelUpdate) extends DefaultWeightedEdge
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                 channels: SortedMap[ShortChannelId, ChannelAnnouncement],
