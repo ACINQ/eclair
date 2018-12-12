@@ -258,7 +258,7 @@ object Graph {
       def containsEdge(edge: GraphEdge): Boolean = containsEdge(edge.desc)
 
       def containsEdge(desc: ChannelDesc): Boolean = vertices.exists { case (key, adj) =>
-         key == desc.a && adj.exists(neighbor => neighbor.desc.b == desc.b && neighbor.desc.shortChannelId == desc.shortChannelId)
+         key == desc.a && adj.exists(neighbor => neighbor.desc.shortChannelId == desc.shortChannelId && neighbor.desc.b == desc.b)
       }
 
       /**
