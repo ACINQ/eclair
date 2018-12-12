@@ -784,10 +784,6 @@ object Router {
     */
   val DEFAULT_AMOUNT_MSAT = 10000000
 
-  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = {
-    findRouteWithCost(g, localNodeId, targetNodeId, amountMsat, withEdges, withoutEdges)
-  }
-
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route and its cost
     *
@@ -799,7 +795,7 @@ object Router {
     * @param withoutEdges those will be removed before computing the route, and added back after so that g is left unchanged
     * @return
     */
-  def findRouteWithCost(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = Try {
+  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
     val workingGraph = g.removeEdges(withoutEdges.toSeq).addEdges(withEdges.toSeq)
@@ -811,13 +807,12 @@ object Router {
     val prunedGraph = workingGraph.filterBy { edge =>
       (edge.update.htlcMaximumMsat.isDefined && amountMsat > edge.update.htlcMaximumMsat.get) ||    //exclude channels with too little capacity for this payment
       (amountMsat < edge.update.htlcMinimumMsat)                                                    //exclude channels requiring the payment to be bigger than this payment
-      }
+    }
 
     Graph.shortestPath(prunedGraph, localNodeId, targetNodeId, amountMsat) match {
       case Nil => throw RouteNotFound
       case path => path
     }
-
   }
 
   def graph2dot(nodes: Map[PublicKey, NodeAnnouncement], channels: Map[ShortChannelId, ChannelAnnouncement])(implicit ec: ExecutionContext): Future[String] = Future {

@@ -33,7 +33,17 @@ object Graph {
     dijkstraShortestPath(g, sourceNode, targetNode, amountMsat).map(graphEdgeToHop)
   }
 
-  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, K: Int): Seq[WeightedPath] = {
+  /**
+    * Yen's algorithm to find the k-shortest (loopless) paths in a graph, uses dijkstra as search algo. Is guaranteed to terminate finding
+    * at most @numbersOfPathsToFind paths sorted by cost (the cheapest is in position 0).
+    * @param graph
+    * @param sourceNode
+    * @param targetNode
+    * @param amountMsat
+    * @param numberOfPathsToFind
+    * @return
+    */
+  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, numberOfPathsToFind: Int): Seq[WeightedPath] = {
 
     var allSpurPathsFound = false
 
@@ -45,7 +55,7 @@ object Graph {
     val candidate = new mutable.PriorityQueue[WeightedPath]
 
     //main loop
-    for(k <- 1 until K) {
+    for(k <- 1 until numberOfPathsToFind) {
 
       if ( !allSpurPathsFound ) {
 
@@ -56,11 +66,11 @@ object Graph {
           val spurEdge = shortestPaths(k - 1).path(i)
 
           // select the subpath from the source to the spur node of the k-th previous shortest path
-          val rootPathEdges = shortestPaths(k - 1).path.subList(0, i).toList
+          val rootPathEdges = subList(shortestPaths(k - 1).path, 0, i).toList
 
           //subgraph NOT containing the links that are part of the previous shortest path and which share the same root path
           val mutatedGraph = shortestPaths.foldLeft(graph) { (acc, p) =>
-            if (p.path.subList(0, i) == rootPathEdges) {
+            if (subList(p.path, 0, i) == rootPathEdges) {
               acc.removeEdge(p.path(i))
             } else {
               acc
@@ -92,6 +102,7 @@ object Graph {
     shortestPaths
   }
 
+  //smart concatenation of paths given the edge lists, if the rootPath begins with the same vertex then discard that
   def concat(rootPath: List[GraphEdge], spurPath: List[GraphEdge]): List[GraphEdge] = (rootPath, spurPath) match {
     case (Nil, _) => spurPath
     case (_, Nil) => rootPath
@@ -108,13 +119,13 @@ object Graph {
     path.foldLeft(0L)( (acc, edge) => acc + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountMsat) )
   }
 
-  implicit class ListSubSequence[T](list: Seq[T]) {
-    def subList(from: Int, to: Int): Seq[T] = {
-      if(from == 0 && to == 0) {
-        list.head :: Nil
-      } else {
-        list.slice(from, to)
-      }
+  //helper function implementing the subList function for "Seq[T]" that will return the list with the
+  //first element if indices 0 are used
+  def subList[T](list: Seq[T], from: Int, to: Int): Seq[T] = {
+    if(from == 0 && to == 0) {
+      list.head :: Nil
+    } else {
+      list.slice(from, to)
     }
   }
 
