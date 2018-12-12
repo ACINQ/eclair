@@ -205,7 +205,7 @@ object Graph {
       }
 
       /**
-        * Removes a vertex and all it's associated edges
+        * Removes a vertex and all it's associated edges (both incoming and outgoing)
         * @param key
         * @return
         */
@@ -214,7 +214,7 @@ object Graph {
       }
 
       def removeVertices(keys: Seq[PublicKey]): DirectedGraph = {
-        DirectedGraph(vertices -- keys)
+        keys.foldLeft(this)( (acc, vertex) => acc.removeVertex(vertex) )
       }
 
       /**
