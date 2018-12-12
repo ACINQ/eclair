@@ -162,12 +162,12 @@ object NodeParams {
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
 
-    val overrideFeatures: Map[PublicKey, (BinaryData, BinaryData)] = config.getConfigList("override-features").map {e =>
-        val p = PublicKey(e.getString("nodeid"))
-        val gf = BinaryData(e.getString("global-features"))
-        val lf = BinaryData(e.getString("local-features"))
+    val overrideFeatures: Map[PublicKey, (BinaryData, BinaryData)] = config.getConfigList("override-features").map { e =>
+      val p = PublicKey(e.getString("nodeid"))
+      val gf = BinaryData(e.getString("global-features"))
+      val lf = BinaryData(e.getString("local-features"))
       (p -> (gf, lf))
-      }.toMap
+    }.toMap
 
     NodeParams(
       keyManager = keyManager,
