@@ -77,7 +77,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.debug(s"got authenticated connection to $remoteNodeId@${address.getHostString}:${address.getPort}")
       transport ! TransportHandler.Listener(self)
       context watch transport
-      val localInit = wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
+      val localInit = nodeParams.overrideFeatures.get(remoteNodeId) match {
+        case Some((gf, lf)) => wire.Init(globalFeatures = gf, localFeatures = lf)
+        case None => wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
+      }
+      log.info(s"using globalFeatures=${localInit.globalFeatures} and localFeatures=${localInit.localFeatures}")
       transport ! localInit
 
       // we store the ip upon successful outgoing connection, keeping only the most recent one
