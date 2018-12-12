@@ -18,12 +18,13 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{ActorRef, Status}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes, randomKey}
 import org.scalatest.Outcome
@@ -57,7 +58,7 @@ class RelayerSpec extends TestkitBaseClass {
 
   def makeCommitments(channelId: BinaryData) = Commitments(null, null, 0.toByte, null,
     RemoteCommit(42, CommitmentSpec(Set.empty, 20000, 5000000, 100000000), "00" * 32, randomKey.toPoint),
-    null, null, 0, 0, Map.empty, null, null, null, channelId)
+    null, null, 0, 0, Map.empty, null, InputInfo(null, TxOut(Satoshi(5000 + 100000), Seq.empty), Seq.empty), null, channelId)
 
   test("relay an htlc-add") { f =>
     import f._

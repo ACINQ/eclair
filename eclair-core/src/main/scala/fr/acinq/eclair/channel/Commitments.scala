@@ -64,13 +64,15 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
   def hasTimedoutOutgoingHtlcs(blockheight: Long): Boolean =
     localCommit.spec.htlcs.exists(htlc => htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry) ||
       remoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry) ||
-      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry)).getOrElse(false)
+      remoteNextCommitInfo.left.exists(_.nextRemoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry))
 
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
   def announceChannel: Boolean = (channelFlags & 0x01) != 0
+
+  val totalFundsMsat: MilliSatoshi = commitInput.txOut.amount
 }
 
 object Commitments {

@@ -19,7 +19,8 @@ package fr.acinq.eclair.router
 import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
-import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering}
+import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, Satoshi}
+import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.{ShortChannelId, serializationResult}
 import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
@@ -122,7 +123,12 @@ object Announcements {
 
   def makeChannelFlags(isNode1: Boolean, enable: Boolean): Byte = BitVector.bits(!enable :: !isNode1 :: Nil).padLeft(8).toByte()
 
-  def makeChannelUpdate(chainHash: BinaryData, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Long, enable: Boolean = true, timestamp: Long = Platform.currentTime / 1000): ChannelUpdate = {
+  def makeChannelUpdate(chainHash: BinaryData, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, commitments: Commitments, enable: Boolean = true, timestamp: Long = Platform.currentTime / 1000): ChannelUpdate = {
+    val routableAmountMsat = commitments.totalFundsMsat - Satoshi(commitments.localParams.channelReserveSatoshis + commitments.remoteParams.channelReserveSatoshis) // should commit tx fee be also subtracted here?
+    makeChannelUpdate(chainHash, nodeSecret, remoteNodeId, shortChannelId, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, routableAmountMsat.amount, enable, timestamp)
+  }
+
+  def makeChannelUpdate(chainHash: BinaryData, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Long, enable: Boolean, timestamp: Long): ChannelUpdate = {
     val messageFlags = makeMessageFlags(hasOptionChannelHtlcMax = true) // NB: we always support option_channel_htlc_max
     val channelFlags = makeChannelFlags(isNode1 = isNode1(nodeSecret.publicKey.toBin, remoteNodeId.toBin), enable = enable)
     val htlcMaximumMsatOpt = Some(htlcMaximumMsat)

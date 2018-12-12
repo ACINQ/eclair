@@ -30,9 +30,7 @@ case object OUT extends Direction { def opposite = IN }
 
 case class DirectedHtlc(direction: Direction, add: UpdateAddHtlc)
 
-final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocalMsat: Long, toRemoteMsat: Long) {
-  val totalFunds = toLocalMsat + toRemoteMsat + htlcs.toSeq.map(_.add.amountMsat).sum
-}
+final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocalMsat: Long, toRemoteMsat: Long)
 
 object CommitmentSpec {
   def removeHtlc(changes: List[UpdateMessage], id: Long): List[UpdateMessage] = changes.filterNot(_ match {
