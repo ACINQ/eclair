@@ -150,39 +150,29 @@ object Graph {
 
         //the graph is allowed to have multiple edges between the same vertices but only one per channel
         if(containsEdge(edge.desc)) {
-          return removeEdge(edge.desc).addEdge(edge)
+          removeEdge(edge.desc).addEdge(edge)
+        } else {
+          val withVertices = addVertex(vertexIn).addVertex(vertexOut)
+          DirectedGraph(withVertices.vertices.updated(vertexIn, withVertices.vertices(vertexIn) :+ edge))
         }
-
-        //if vertices does not contain vertexIn/vertexOut, we create it first
-        (vertices.contains(vertexIn), vertices.contains(vertexOut)) match {
-          case (false, false) =>  //none of the vertices of this edge exists, create them and add the edge
-            addVertex(vertexIn).addVertex(vertexOut).addEdge(edge)
-          case (false, true) =>
-            addVertex(vertexIn).addEdge(edge)
-          case (true, false) =>
-            addVertex(vertexOut).addEdge(edge)
-          case (true, true) =>
-            DirectedGraph(vertices.updated(vertexIn, vertices(vertexIn) :+ edge))
-        }
-      }
+              }
 
       /**
-        * Removes the edge corresponding to the given pair channel-desc/channel-update
+        * Removes the edge corresponding to the given pair channel-desc/channel-update,
+        * NB: this operation does NOT remove any vertex
         * @param d
         * @return
         */
       def removeEdge(desc: ChannelDesc): DirectedGraph = {
         containsEdge(desc) match {
-          case true => DirectedGraph(vertices.updated(desc.a, vertices(desc.a).filterNot { neighbor =>
-            neighbor.desc == desc && neighbor.desc.shortChannelId == desc.shortChannelId
-          }))
+          case true => DirectedGraph(vertices.updated(desc.a, vertices(desc.a).filterNot(_.desc == desc)))
           case false => this
         }
       }
 
       def removeEdge(edge: GraphEdge): DirectedGraph = removeEdge(edge.desc)
 
-      def removeEdgesByGraphEdgesList( edgeList: Seq[GraphEdge] ): DirectedGraph = removeEdges(edgeList.map(_.desc))
+      def removeEdgesList( edgeList: Seq[GraphEdge] ): DirectedGraph = removeEdges(edgeList.map(_.desc))
 
       def removeEdges(descList: Seq[ChannelDesc]): DirectedGraph = {
         descList.foldLeft(this)( (acc, edge ) => acc.removeEdge(edge) )
@@ -210,12 +200,34 @@ object Graph {
         }
       }
 
+      def getIncomingEdgesOf(keyA: PublicKey): Seq[GraphEdge] = {
+        edgeSet().filter(_.desc.b == keyA).toSeq
+      }
+
+      /**
+        * Removes a vertex and all it's associated edges
+        * @param key
+        * @return
+        */
+      def removeVertex( key: PublicKey ): DirectedGraph = {
+        DirectedGraph(removeEdgesList(getIncomingEdgesOf(key)).vertices - key)
+      }
+
+      def removeVertices(keys: Seq[PublicKey]): DirectedGraph = {
+        DirectedGraph(vertices -- keys)
+      }
+
       /**
         * Adds a new vertex to the graph, starting with no edges
         * @param key
         * @return
         */
-      def addVertex(key: PublicKey): DirectedGraph = DirectedGraph(vertices + (key -> Seq.empty))
+      def addVertex(key: PublicKey): DirectedGraph = {
+        vertices.get(key) match {
+          case None => DirectedGraph(vertices + (key -> Seq.empty))
+          case _    => this
+        }
+      }
 
       /**
         * @param key
@@ -264,7 +276,11 @@ object Graph {
         * @return a subset of this graph with only edges satisfying the predicate
         */
       def filterBy( predicate: GraphEdge => Boolean ): DirectedGraph = {
-        removeEdgesByGraphEdgesList(edgeSet().filter(predicate).toSeq)
+        removeEdgesList(edgeSet().filter(predicate).toSeq)
+      }
+
+      def filterByVertex( predicate: PublicKey => Boolean ): DirectedGraph = {
+        removeVertices(vertexSet().filter(predicate).toSeq)
       }
     }
 
