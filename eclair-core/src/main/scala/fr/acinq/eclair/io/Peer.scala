@@ -57,12 +57,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   when(DISCONNECTED) {
-    case Event(Peer.Connect(NodeURI(_, address), init), d: DisconnectedData) =>
+    case Event(Peer.Connect(NodeURI(_, address)), d: DisconnectedData) =>
       // even if we are in a reconnection loop, we immediately process explicit connection requests
       context.actorOf(Client.props(nodeParams, authenticator, new InetSocketAddress(address.getHost, address.getPort), remoteNodeId, origin_opt = Some(sender())))
-      stay using d.copy(localInit = init)
+      stay
 
-    case Event(Reconnect, d@DisconnectedData(address_opt, channels, attempts, _)) =>
+    case Event(Reconnect, d@DisconnectedData(address_opt, channels, attempts)) =>
       address_opt match {
         case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
         case _ if channels.isEmpty => stay // no-op (no more channels with this peer)
@@ -78,7 +78,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.debug(s"got authenticated connection to $remoteNodeId@${address.getHostString}:${address.getPort}")
       transport ! TransportHandler.Listener(self)
       context watch transport
-      val localInit = d.localInit.getOrElse(wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures))
+      val localInit = nodeParams.overrideFeatures.get(remoteNodeId) match {
+        case Some((gf, lf)) => wire.Init(globalFeatures = gf, localFeatures = lf)
+        case None => wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
+      }
+      log.info(s"using globalFeatures=${localInit.globalFeatures} and localFeatures=${localInit.localFeatures}")
       transport ! localInit
 
       // we store the ip upon successful outgoing connection, keeping only the most recent one
@@ -133,7 +137,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         }
 
         // let's bring existing/requested channels online
-        d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+        d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport, d.localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) })
       } else {
         log.warning(s"incompatible features, disconnecting")
@@ -486,7 +490,7 @@ object Peer {
     def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
   }
   case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
-  case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0, localInit: Option[wire.Init] = None) extends Data
+  case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
   case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef], localInit: wire.Init) extends Data
   case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
   case class ExpectedPong(ping: Ping, timestamp: Long = Platform.currentTime)
@@ -499,7 +503,7 @@ object Peer {
   case object CONNECTED extends State
 
   case class Init(previousKnownAddress: Option[InetSocketAddress], storedChannels: Set[HasCommitments])
-  case class Connect(uri: NodeURI, init: Option[wire.Init] = None)
+  case class Connect(uri: NodeURI)
   case object Reconnect
   case object Disconnect
   case object ResumeAnnouncements
