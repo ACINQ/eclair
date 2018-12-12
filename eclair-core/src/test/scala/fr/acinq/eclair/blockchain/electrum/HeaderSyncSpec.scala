@@ -35,7 +35,7 @@ class HeaderSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
   val probe = TestProbe()
 
   override protected def beforeAll(): Unit = {
-    client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("qtornado.com", 50001))), "electrum-client")
+    client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("qtornado.com", 50002), SSL.LOOSE)), "electrum-client")
     probe.send(client, AddStatusListener(probe.ref))
     probe.expectMsgType[ElectrumReady](15 seconds)
   }

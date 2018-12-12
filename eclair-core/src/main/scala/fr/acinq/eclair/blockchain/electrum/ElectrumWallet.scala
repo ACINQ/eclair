@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey, hardened}
 import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{GetTransaction, GetTransactionResponse, TransactionHistoryItem, computeScriptHash}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.db.WalletDb
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
@@ -86,6 +86,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
   startWith(DISCONNECTED, {
     val checkpoints = CheckPoint.load(params.chainHash)
+    // regtest is a special case, there are no checkpoints and we start with a single header (
     val blockchain = params.chainHash match {
       case Block.RegtestGenesisBlock.hash => Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header)
       case _ => Blockchain.fromCheckpoints(params.chainHash, checkpoints)
@@ -122,6 +123,8 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       goto(WAITING_FOR_FIRST_HEADER) using data.copy(lastReadyMessage = None)
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(header), data) if header.blockHeader == data.blockchain.tip.header =>
+      data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
+      data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
       goto(RUNNING) using notifyReady(data.copy(lastReadyMessage = None))
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(header), data) =>
@@ -168,6 +171,17 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           }
           client ! ElectrumClient.GetHeaders(blockchain1.tip.height + 1, 2016)
           goto(SYNCING) using data.copy(blockchain = blockchain1)
+        case Failure(error) =>
+          log.error(s"elextrumx server sent bad header, disconnecting", error)
+          sender ! PoisonPill
+          goto(DISCONNECTED) using data
+      }
+
+    case Event(ElectrumClient.HeaderSubscriptionResponse(header), data) =>
+      Try(Blockchain.addHeader(data.blockchain, header.blockHeader)) match {
+        case Success(blockchain1) =>
+          params.db.addHeader(header)
+          stay using data.copy(blockchain = blockchain1)
         case Failure(error) =>
           log.error(s"elextrumx server sent bad header, disconnecting", error)
           sender ! PoisonPill
@@ -251,6 +265,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         case ((heights, hashes), item) if !data.transactions.contains(item.tx_hash) && !data.pendingTransactionRequests.contains(item.tx_hash) =>
           // we retrieve the tx if we don't have it and haven't yet requested it
           client ! GetTransaction(item.tx_hash)
+          client ! GetMerkle(item.tx_hash, item.height)
           (heights + (item.tx_hash -> item.height), hashes + item.tx_hash)
         case ((heights, hashes), item) =>
           // otherwise we just update the height
@@ -293,6 +308,12 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           val data1 = data.copy(pendingTransactions = data.pendingTransactions :+ tx)
           stay using notifyReady(data1)
       }
+
+    case Event(response@GetMerkleResponse(txid, merkle, height, pos), data) =>
+      val blockchain = data.blockchain
+      val root = response.root
+      println(root)
+      stay
 
     case Event(CompleteTransaction(tx, feeRatePerKw), data) =>
       Try(data.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, allowSpendUnconfirmed)) match {

@@ -38,9 +38,7 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
   val scriptHash: BinaryData = Crypto.sha256(referenceTx.txOut(0).publicKeyScript).reverse
 
   override protected def beforeAll(): Unit = {
-    // electrum-testnet-unlimited.criptolayer.net
-    //client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("testnet.qtornado.com", 50001))), "electrum-client")
-    client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("testnet.hsmiths.com", 53011))), "electrum-client")
+    client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("testnet.qtornado.com", 51002), SSL.LOOSE)), "electrum-client")
   }
 
   override protected def afterAll(): Unit = {

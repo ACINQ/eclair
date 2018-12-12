@@ -152,7 +152,7 @@ object Blockchain extends Logging {
   def addHeader(blockchain: Blockchain, header: BlockHeader): Blockchain = {
     addHeaderInternal(blockchain, header).result
   }
-  
+
   private def addHeaderInternal(blockchain: Blockchain, header: BlockHeader): TailRec[Blockchain] = {
     if (blockchain.headers.contains(header.hash)) {
       logger.debug(s"already have block ${header.blockId}")

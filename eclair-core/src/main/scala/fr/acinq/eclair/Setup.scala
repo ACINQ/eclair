@@ -34,6 +34,8 @@ import fr.acinq.eclair.api.{GetInfoResponse, Service}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
+import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
@@ -125,22 +127,26 @@ class Setup(datadir: File,
 
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
-      logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
-      val addresses = config.hasPath("eclair.electrum") match {
+      val addresses = config.hasPath("electrum") match {
         case true =>
-          val host = config.getString("eclair.electrum.host")
-          val port = config.getInt("eclair.electrum.port")
+          val host = config.getString("electrum.host")
+          val port = config.getInt("electrum.port")
+          val ssl = config.getString("electrum.ssl") match {
+            case "off" => SSL.OFF
+            case "loose" => SSL.LOOSE
+            case _ => SSL.STRICT // strict mode is the default when we specify a custom electrum server, we don't want to be MITMed
+          }
           val address = InetSocketAddress.createUnresolved(host, port)
-          logger.info(s"override electrum default with server=$address")
-          Set(address)
+          logger.info(s"override electrum default with server=$address ssl=$ssl")
+          Set(ElectrumServerAddress(address, ssl))
         case false =>
-          val addressesFile = nodeParams.chainHash match {
-            case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
-            case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
-            case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
+          val (addressesFile, sslEnabled) = nodeParams.chainHash match {
+            case Block.RegtestGenesisBlock.hash => ("/electrum/servers_regtest.json", false) // in regtest we connect in plaintext
+            case Block.TestnetGenesisBlock.hash => ("/electrum/servers_testnet.json", true)
+            case Block.LivenetGenesisBlock.hash => ("/electrum/servers_mainnet.json", true)
           }
           val stream = classOf[Setup].getResourceAsStream(addressesFile)
-          ElectrumClientPool.readServerAddresses(stream)
+          ElectrumClientPool.readServerAddresses(stream, sslEnabled)
       }
       val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)

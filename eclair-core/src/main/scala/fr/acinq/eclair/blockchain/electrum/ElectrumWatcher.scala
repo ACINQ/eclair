@@ -211,7 +211,7 @@ object ElectrumWatcher extends App {
   import scala.concurrent.ExecutionContext.Implicits.global
 
   class Root extends Actor with ActorLogging {
-    val client = context.actorOf(Props(new ElectrumClient(new InetSocketAddress("localhost", 51000))), "client")
+    val client = context.actorOf(Props(new ElectrumClient(new InetSocketAddress("localhost", 51000), ssl = SSL.OFF)), "client")
     client ! ElectrumClient.AddStatusListener(self)
 
     override def unhandled(message: Any): Unit = {
