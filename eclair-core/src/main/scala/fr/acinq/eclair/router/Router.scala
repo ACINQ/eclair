@@ -777,10 +777,6 @@ object Router {
     */
   val DEFAULT_AMOUNT_MSAT = 10000000
 
-  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = {
-    findRouteWithCost(g, localNodeId, targetNodeId, amountMsat, withEdges, withoutEdges)
-  }
-
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route and its cost
     *
@@ -792,7 +788,7 @@ object Router {
     * @param withoutEdges a set of extra edges we want to ignore during the search
     * @return
     */
-  def findRouteWithCost(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = Try {
+  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
     val workingGraph = g.filterNot { edge =>

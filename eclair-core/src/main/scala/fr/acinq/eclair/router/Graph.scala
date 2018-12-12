@@ -3,7 +3,7 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.PublicKey
 import scala.collection.mutable
 import fr.acinq.eclair._
-import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire.ChannelUpdate
 
 object Graph {
@@ -14,12 +14,7 @@ object Graph {
     override def compare(x: WeightedNode, y: WeightedNode): Int = x.weight.compareTo(y.weight)
   }
 
-  implicit object PathComparator extends Ordering[WeightedPath] {
-    override def compare(x: WeightedPath, y: WeightedPath): Int = x.cost.compareTo(y.cost)
-  }
-
   case class WeightedNode(publicKey: PublicKey, weight: Long)
-  case class WeightedPath(hops: Seq[Hop], cost: Long)
 
   /**
     * Finds the shortest path in the graph, Dijsktra's algorithm
@@ -30,15 +25,15 @@ object Graph {
     * @return
     */
   def shortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): Seq[Hop] = {
-    shortestPathWithCostInfo(g, sourceNode, targetNode, amountMsat).map(graphEdgeToHop)
+    dijkstraShortestPath(g, sourceNode, targetNode, amountMsat).map(graphEdgeToHop)
   }
 
   //TBD the cost for the neighbors of the sourceNode is always 0
-  def shortestPathWithCostInfo(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): Seq[GraphEdge] = {
+  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): Seq[GraphEdge] = {
 
     val cost = new mutable.HashMap[PublicKey, Long]
     val prev = new mutable.HashMap[GraphEdge, PublicKey]
-    val vertexQueue = new mutable.TreeSet[WeightedNode] //a sorted tree is used to have the remove operation
+    val vertexQueue = new java.util.PriorityQueue[WeightedNode](QueueComparator)
 
     //initialize the queue with the vertices having max distance
     g.vertexSet().foreach {
@@ -47,16 +42,15 @@ object Graph {
         vertexQueue.add(WeightedNode(pk, 0))
       case pk                     =>
         cost += pk -> Long.MaxValue
-        vertexQueue.add(WeightedNode(pk, Long.MaxValue))
+        vertexQueue.add(WeightedNode(pk, Long.MaxValue)) //elements are overwritten in the integration test??
     }
 
     var targetFound = false
 
-    while(vertexQueue.nonEmpty && !targetFound){
+    while(!vertexQueue.isEmpty && !targetFound){
 
       //(next) node with the smallest distance from the source
-      val current = vertexQueue.firstKey
-      vertexQueue.remove(current)
+      val current = vertexQueue.poll()
 
       if(current.publicKey != targetNode) {
 
@@ -281,6 +275,12 @@ object Graph {
 
       def filterByVertex( predicate: PublicKey => Boolean ): DirectedGraph = {
         removeVertices(vertexSet().filter(predicate).toSeq)
+      }
+
+      def prettyPrint(): String = {
+        vertices.foldLeft("") { case (acc, (vertex, adj)) =>
+          acc + s"[${vertex.toString().take(5)}]: ${ adj.map("-> " + _.desc.b.toString().take(5))} \n"
+        }
       }
     }
 
