@@ -49,6 +49,9 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  def aliceInit = Init(TestConstants.Alice.nodeParams.globalFeatures, TestConstants.Alice.nodeParams.localFeatures)
+  def bobInit = Init(TestConstants.Bob.nodeParams.globalFeatures, TestConstants.Bob.nodeParams.localFeatures)
+
   /**
     * This test checks the case where a disconnection occurs *right before* the counterparty receives a new sig
     */
@@ -69,8 +72,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(bob, INPUT_DISCONNECTED)
     awaitCond(alice.stateName == OFFLINE)
     awaitCond(bob.stateName == OFFLINE)
-    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
-    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
 
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
@@ -153,8 +156,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(bob, INPUT_DISCONNECTED)
     awaitCond(alice.stateName == OFFLINE)
     awaitCond(bob.stateName == OFFLINE)
-    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
-    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
 
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
@@ -218,8 +221,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice.setState(OFFLINE, oldStateData)
 
     // then we reconnect them
-    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
-    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
 
     // peers exchange channel_reestablish messages
     alice2bob.expectMsgType[ChannelReestablish]
@@ -270,8 +273,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice.setState(OFFLINE, oldStateData)
 
     // then we reconnect them
-    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
-    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
 
     // peers exchange channel_reestablish messages
     alice2bob.expectMsgType[ChannelReestablish]
@@ -307,8 +310,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(bob.stateName == OFFLINE)
 
     // then we reconnect them
-    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
-    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
 
     // peers exchange channel_reestablish messages
     alice2bob.expectMsgType[ChannelReestablish]
@@ -345,8 +348,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     relayer.expectNoMsg(300 millis)
 
     // then we reconnect them
-    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
-    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
 
     // peers exchange channel_reestablish messages
     alice2bob.expectMsgType[ChannelReestablish]

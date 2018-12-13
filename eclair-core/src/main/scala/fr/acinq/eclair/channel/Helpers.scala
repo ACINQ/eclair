@@ -44,7 +44,7 @@ object Helpers {
     * Depending on the state, returns the current temporaryChannelId or channelId
     *
     * @param stateData
-    * @return
+    * @return the long identifier of the channel
     */
   def getChannelId(stateData: Data): BinaryData = stateData match {
     case Nothing => BinaryData("00" * 32)
@@ -54,6 +54,27 @@ object Helpers {
     case d: DATA_WAIT_FOR_FUNDING_CREATED => d.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.channelId
     case d: HasCommitments => d.channelId
+  }
+
+  /**
+    * We update local/global features at reconnection
+    *
+    * @param data
+    * @return
+    */
+  def updateFeatures(data: HasCommitments, localInit: Init, remoteInit: Init): HasCommitments = {
+    val commitments1 = data.commitments.copy(
+      localParams = data.commitments.localParams.copy(globalFeatures = localInit.globalFeatures, localFeatures = localInit.localFeatures),
+      remoteParams = data.commitments.remoteParams.copy(globalFeatures = remoteInit.globalFeatures, localFeatures = remoteInit.localFeatures))
+    data match {
+      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = commitments1)
+      case d: DATA_WAIT_FOR_FUNDING_LOCKED => d.copy(commitments = commitments1)
+      case d: DATA_NORMAL => d.copy(commitments = commitments1)
+      case d: DATA_SHUTDOWN => d.copy(commitments = commitments1)
+      case d: DATA_NEGOTIATING => d.copy(commitments = commitments1)
+      case d: DATA_CLOSING => d.copy(commitments = commitments1)
+      case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = commitments1)
+    }
   }
 
   /**

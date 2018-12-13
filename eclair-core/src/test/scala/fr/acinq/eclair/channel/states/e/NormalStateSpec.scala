@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel.states.e
 
+import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.Scalar
@@ -24,15 +25,16 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
-import fr.acinq.eclair.channel.Channel.TickRefreshChannelUpdate
+import fr.acinq.eclair.channel.Channel.{RevocationTimeout, TickRefreshChannelUpdate}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
+import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.transactions.Transactions.{htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
-import fr.acinq.eclair.transactions.Transactions.{htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
 import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration._
@@ -90,8 +92,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val sender = TestProbe()
     val h = BinaryData("42" * 32)
-    val originHtlc = UpdateAddHtlc(channelId = "42" * 32, id = 5656, amountMsat = 50000000, expiry = 400144, paymentHash = h, onionRoutingPacket = "00" * 1254)
-    val cmd = CMD_ADD_HTLC(originHtlc.amountMsat - 10000, h, originHtlc.expiry - 7, upstream_opt = Some(originHtlc))
+    val originHtlc = UpdateAddHtlc(channelId = "42" * 32, id = 5656, amountMsat = 50000000, cltvExpiry = 400144, paymentHash = h, onionRoutingPacket = "00" * 1254)
+    val cmd = CMD_ADD_HTLC(originHtlc.amountMsat - 10000, h, originHtlc.cltvExpiry - 7, upstream_opt = Some(originHtlc))
     sender.send(alice, cmd)
     sender.expectMsg("ok")
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -108,7 +110,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(500000000, "11" * 42, expiry = 400144)
+    val add = CMD_ADD_HTLC(500000000, "11" * 42, cltvExpiry = 400144)
     sender.send(alice, add)
     val error = InvalidPaymentHash(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
@@ -121,7 +123,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val currentBlockCount = Globals.blockCount.get
     val expiryTooSmall = currentBlockCount + 3
-    val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = expiryTooSmall)
+    val add = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = expiryTooSmall)
     sender.send(alice, add)
     val error = ExpiryTooSmall(channelId(alice), currentBlockCount + Channel.MIN_CLTV_EXPIRY, expiryTooSmall, currentBlockCount)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
@@ -134,7 +136,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val currentBlockCount = Globals.blockCount.get
     val expiryTooBig = currentBlockCount + Channel.MAX_CLTV_EXPIRY + 1
-    val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = expiryTooBig)
+    val add = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = expiryTooBig)
     sender.send(alice, add)
     val error = ExpiryTooBig(channelId(alice), maximum = currentBlockCount + Channel.MAX_CLTV_EXPIRY, actual = expiryTooBig, blockCount = currentBlockCount)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
@@ -257,7 +259,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined && !alice.stateData.asInstanceOf[DATA_NORMAL].remoteShutdown.isDefined)
 
     // actual test starts here
-    val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 400144)
+    val add = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = 400144)
     sender.send(alice, add)
     val error = NoMoreHtlcsClosingInProgress(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
@@ -269,14 +271,14 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     // let's make alice send an htlc
-    val add1 = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 400144)
+    val add1 = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = 400144)
     sender.send(alice, add1)
     sender.expectMsg("ok")
     // at the same time bob initiates a closing
     sender.send(bob, CMD_CLOSE(None))
     sender.expectMsg("ok")
     // this command will be received by alice right after having received the shutdown
-    val add2 = CMD_ADD_HTLC(100000000, "22" * 32, expiry = 300000)
+    val add2 = CMD_ADD_HTLC(100000000, "22" * 32, cltvExpiry = 300000)
     // messages cross
     alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
@@ -328,7 +330,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (value too small)") { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val htlc = UpdateAddHtlc("00" * 32, 0, 150, BinaryData("42" * 32), expiry = 400144, defaultOnion)
+    val htlc = UpdateAddHtlc("00" * 32, 0, 150, BinaryData("42" * 32), cltvExpiry = 400144, defaultOnion)
     alice2bob.forward(bob, htlc)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data) === HtlcValueTooSmall(channelId(bob), minimum = 1000, actual = 150).getMessage)
@@ -910,6 +912,23 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
+  }
+
+  test("recv RevocationTimeout") { f =>
+    import f._
+    val sender = TestProbe()
+    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+
+    sender.send(alice, CMD_SIGN)
+    sender.expectMsg("ok")
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+
+    // actual test begins
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isLeft)
+    val peer = TestProbe()
+    sender.send(alice, RevocationTimeout(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.index, peer.ref))
+    peer.expectMsg(Peer.Disconnect)
   }
 
   test("recv CMD_FULFILL_HTLC") { f =>
@@ -2000,6 +2019,21 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val update2 = relayer.expectMsgType[LocalChannelUpdate]
     assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
     assert(Announcements.isEnabled(update2.channelUpdate.channelFlags) == false)
+    awaitCond(alice.stateName == OFFLINE)
+  }
+
+  test("recv INPUT_DISCONNECTED (with pending unsigned htlcs)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (_, htlc1) = addHtlc(10000, alice, bob, alice2bob, bob2alice)
+    val (_, htlc2) = addHtlc(10000, alice, bob, alice2bob, bob2alice)
+    val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(aliceData.commitments.localChanges.proposed.size == 2)
+
+    // actual test starts here
+    sender.send(alice, INPUT_DISCONNECTED)
+    assert(relayer.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc1.paymentHash)
+    assert(relayer.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc2.paymentHash)
     awaitCond(alice.stateName == OFFLINE)
   }
 

@@ -27,7 +27,7 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
   * Created by PM on 26/04/2016.
   */
-class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinClient(new BasicBitcoinJsonRPCClient("", "", "", 0)) {
+class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinClient(new BasicBitcoinJsonRPCClient("", "", "", 0)(http = null)) {
 
   import scala.concurrent.ExecutionContext.Implicits.global
 

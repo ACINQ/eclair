@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Gitter chat](https://img.shields.io/badge/chat-on%20gitter-red.svg)](https://gitter.im/ACINQ/eclair)
 
-**Eclair** (french for Lightning) is a scala implementation of the Lightning Network. It can run with or without a GUI, and a JSON-RPC API is also available.
+**Eclair** (French for Lightning) is a Scala implementation of the Lightning Network. It can run with or without a GUI, and a JSON-RPC API is also available.
 
 This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [c-lightning](https://github.com/ElementsProject/lightning) and [lnd](https://github.com/LightningNetwork/lnd).
  
@@ -101,7 +101,8 @@ name                         | description                                      
  eclair.api.password         | API password (BASIC)                                                                  | "" (must be set if the API is enabled)
  eclair.bitcoind.rpcuser     | Bitcoin Core RPC user                                                                 | foo
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password                                                             | bar
- eclair.bitcoind.zmq         | Bitcoin Core ZMQ address                                                              | "tcp://127.0.0.1:29000"
+ eclair.bitcoind.zmqblock    | Bitcoin Core ZMQ block address                                                        | "tcp://127.0.0.1:29000"
+ eclair.bitcoind.zmqtx       | Bitcoin Core ZMQ tx address                                                           | "tcp://127.0.0.1:29000"
  eclair.gui.unit             | Unit in which amounts are displayed (possible values: msat, sat, mbtc, btc)           | btc 
 
 Quotes are not required unless the value contains special characters. Full syntax guide [here](https://github.com/lightbend/config/blob/master/HOCON.md).
@@ -208,7 +209,7 @@ addresstype=p2sh-segwit
 deprecatedrpc=signrawtransaction
 ```
 
-You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network speficic, so you can reasliy run your bitcoin node on both mainnet and testnet. For example you could use:
+You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network specific, so you can easily run your bitcoin node on both mainnet and testnet. For example you could use:
 
 ```
 server=1

@@ -106,7 +106,7 @@ class ChannelCodecsSpec extends FunSuite {
       channelId = randomBytes(32),
       id = Random.nextInt(Int.MaxValue),
       amountMsat = Random.nextInt(Int.MaxValue),
-      expiry = Random.nextInt(Int.MaxValue),
+      cltvExpiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes(32),
       onionRoutingPacket = randomBytes(Sphinx.PacketLength))
     val htlc1 = DirectedHtlc(direction = IN, add = add)
@@ -120,14 +120,14 @@ class ChannelCodecsSpec extends FunSuite {
       channelId = randomBytes(32),
       id = Random.nextInt(Int.MaxValue),
       amountMsat = Random.nextInt(Int.MaxValue),
-      expiry = Random.nextInt(Int.MaxValue),
+      cltvExpiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes(32),
       onionRoutingPacket = randomBytes(Sphinx.PacketLength))
     val add2 = UpdateAddHtlc(
       channelId = randomBytes(32),
       id = Random.nextInt(Int.MaxValue),
       amountMsat = Random.nextInt(Int.MaxValue),
-      expiry = Random.nextInt(Int.MaxValue),
+      cltvExpiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes(32),
       onionRoutingPacket = randomBytes(Sphinx.PacketLength))
     val htlc1 = DirectedHtlc(direction = IN, add = add1)

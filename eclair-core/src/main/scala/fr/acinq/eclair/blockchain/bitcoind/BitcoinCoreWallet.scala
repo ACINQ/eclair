@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.blockchain.bitcoind
 
-import akka.actor.ActorSystem
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -30,10 +29,9 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
   * Created by PM on 06/07/2017.
   */
-class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorSystem, ec: ExecutionContext) extends EclairWallet with Logging {
+class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext) extends EclairWallet with Logging {
 
   import BitcoinCoreWallet._
-
 
   def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = {
     val feeRatePerKB = BigDecimal(feerateKw2KB(feeRatePerKw))
