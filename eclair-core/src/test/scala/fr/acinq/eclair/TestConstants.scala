@@ -51,6 +51,7 @@ object TestConstants {
       publicAddresses = new InetSocketAddress("localhost", 9731) :: Nil,
       globalFeatures = "",
       localFeatures = "00",
+      overrideFeatures = Map.empty,
       dustLimitSatoshis = 1100,
       maxHtlcValueInFlightMsat = UInt64(150000000),
       maxAcceptedHtlcs = 100,
@@ -70,6 +71,7 @@ object TestConstants {
       pendingRelayDb = new SqlitePendingRelayDb(sqlite),
       paymentsDb = new SqlitePaymentsDb(sqlite),
       auditDb = new SqliteAuditDb(sqlite),
+      revocationTimeout = 20 seconds,
       routerBroadcastInterval = 60 seconds,
       pingInterval = 30 seconds,
       maxFeerateMismatch = 1.5,
@@ -106,6 +108,7 @@ object TestConstants {
       publicAddresses = new InetSocketAddress("localhost", 9732) :: Nil,
       globalFeatures = "",
       localFeatures = "00", // no announcement
+      overrideFeatures = Map.empty,
       dustLimitSatoshis = 1000,
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
@@ -125,6 +128,7 @@ object TestConstants {
       pendingRelayDb = new SqlitePendingRelayDb(sqlite),
       paymentsDb = new SqlitePaymentsDb(sqlite),
       auditDb = new SqliteAuditDb(sqlite),
+      revocationTimeout = 20 seconds,
       routerBroadcastInterval = 60 seconds,
       pingInterval = 30 seconds,
       maxFeerateMismatch = 1.0,

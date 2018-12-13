@@ -25,6 +25,8 @@ import java.util.concurrent.TimeUnit
 import com.google.common.net.InetAddresses
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
@@ -44,6 +46,7 @@ case class NodeParams(keyManager: KeyManager,
                       publicAddresses: List[InetSocketAddress],
                       globalFeatures: BinaryData,
                       localFeatures: BinaryData,
+                      overrideFeatures: Map[PublicKey, (BinaryData, BinaryData)],
                       dustLimitSatoshis: Long,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
@@ -63,6 +66,7 @@ case class NodeParams(keyManager: KeyManager,
                       pendingRelayDb: PendingRelayDb,
                       paymentsDb: PaymentsDb,
                       auditDb: AuditDb,
+                      revocationTimeout: FiniteDuration,
                       routerBroadcastInterval: FiniteDuration,
                       pingInterval: FiniteDuration,
                       maxFeerateMismatch: Double,
@@ -160,6 +164,13 @@ object NodeParams {
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
 
+    val overrideFeatures: Map[PublicKey, (BinaryData, BinaryData)] = config.getConfigList("override-features").map { e =>
+      val p = PublicKey(e.getString("nodeid"))
+      val gf = BinaryData(e.getString("global-features"))
+      val lf = BinaryData(e.getString("local-features"))
+      (p -> (gf, lf))
+    }.toMap
+
     NodeParams(
       keyManager = keyManager,
       alias = config.getString("node-alias").take(32),
@@ -167,6 +178,7 @@ object NodeParams {
       publicAddresses = torAddressOpt.map(List(_)).getOrElse(config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port")))),
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),
+      overrideFeatures = overrideFeatures,
       dustLimitSatoshis = dustLimitSatoshis,
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),
       maxAcceptedHtlcs = maxAcceptedHtlcs,
@@ -186,6 +198,7 @@ object NodeParams {
       pendingRelayDb = pendingRelayDb,
       paymentsDb = paymentsDb,
       auditDb = auditDb,
+      revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
