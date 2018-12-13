@@ -308,7 +308,21 @@ object Graph {
 			def apply(edge: GraphEdge): DirectedGraph = new DirectedGraph(Map()).addEdge(edge.desc, edge.update)
 
 			def apply(edges: Seq[GraphEdge]): DirectedGraph = {
-				edges.foldLeft(new DirectedGraph(Map()))((acc, edge) => acc.addEdge(edge.desc, edge.update))
+				DirectedGraph(edges.map(e => e.desc -> e.update).toMap)
+			}
+
+			//optimized constructor
+			def apply(descAndUpdates: Map[ChannelDesc, ChannelUpdate]): DirectedGraph = {
+				val mutableMap = new mutable.HashMap[PublicKey, Seq[GraphEdge]]()
+
+				//add all the vertices and edges in one go
+				descAndUpdates.foreach { case (desc, update) =>
+					mutableMap += desc.a -> Seq.empty[GraphEdge]
+					mutableMap += desc.b -> Seq.empty[GraphEdge]
+					mutableMap.update(desc.a, mutableMap(desc.a) :+ GraphEdge(desc, update))
+				}
+
+				new DirectedGraph(mutableMap.toMap)
 			}
 
 			def graphEdgeToHop(graphEdge: GraphEdge): Hop = Hop(graphEdge.desc.a, graphEdge.desc.b, graphEdge.update)
