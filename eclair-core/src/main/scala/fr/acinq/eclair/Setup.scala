@@ -21,13 +21,14 @@ import org.slf4j.LoggerFactory
 import java.util.concurrent.TimeUnit
 import java.io.File
 import java.net.InetSocketAddress
+import java.util.concurrent.TimeUnit
 
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.http.scaladsl.Http
 import akka.pattern.after
 import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
-import com.softwaremill.sttp.asynchttpclient.future.AsyncHttpClientFutureBackend
+import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
@@ -35,6 +36,8 @@ import fr.acinq.eclair.api.{GetInfoResponse, Service}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
+import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
@@ -113,7 +116,7 @@ class Setup(datadir: File,
     .start(1, TimeUnit.HOURS)
 
   implicit val ec = ExecutionContext.Implicits.global
-  implicit val sttpBackend  = AsyncHttpClientFutureBackend()
+  implicit val sttpBackend = OkHttpFutureBackend()
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>
@@ -152,22 +155,26 @@ class Setup(datadir: File,
 
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
-      logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
-      val addresses = config.hasPath("eclair.electrum") match {
+      val addresses = config.hasPath("electrum") match {
         case true =>
-          val host = config.getString("eclair.electrum.host")
-          val port = config.getInt("eclair.electrum.port")
+          val host = config.getString("electrum.host")
+          val port = config.getInt("electrum.port")
+          val ssl = config.getString("electrum.ssl") match {
+            case "off" => SSL.OFF
+            case "loose" => SSL.LOOSE
+            case _ => SSL.STRICT // strict mode is the default when we specify a custom electrum server, we don't want to be MITMed
+          }
           val address = InetSocketAddress.createUnresolved(host, port)
-          logger.info(s"override electrum default with server=$address")
-          Set(address)
+          logger.info(s"override electrum default with server=$address ssl=$ssl")
+          Set(ElectrumServerAddress(address, ssl))
         case false =>
-          val addressesFile = nodeParams.chainHash match {
-            case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
-            case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
-            case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
+          val (addressesFile, sslEnabled) = nodeParams.chainHash match {
+            case Block.RegtestGenesisBlock.hash => ("/electrum/servers_regtest.json", false) // in regtest we connect in plaintext
+            case Block.TestnetGenesisBlock.hash => ("/electrum/servers_testnet.json", true)
+            case Block.LivenetGenesisBlock.hash => ("/electrum/servers_mainnet.json", true)
           }
           val stream = classOf[Setup].getResourceAsStream(addressesFile)
-          ElectrumClientPool.readServerAddresses(stream)
+          ElectrumClientPool.readServerAddresses(stream, sslEnabled)
       }
       val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
@@ -180,6 +187,7 @@ class Setup(datadir: File,
       zmqBlockConnected = Promise[Boolean]()
       zmqTxConnected = Promise[Boolean]()
       tcpBound = Promise[Unit]()
+      routerInitialized = Promise[Unit]()
 
       defaultFeerates = FeeratesPerKB(
         block_1 = config.getLong("default-feerates.delay-blocks.1"),
@@ -219,6 +227,10 @@ class Setup(datadir: File,
           system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
       }
 
+      router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, Some(routerInitialized)), "router", SupervisorStrategy.Resume))
+      routerTimeout = after(FiniteDuration(config.getDuration("router-init-timeout").getSeconds, TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
+      _ <- Future.firstCompletedOf(routerInitialized.future :: routerTimeout :: Nil)
+
       wallet = bitcoin match {
         case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
         case Electrum(electrumClient) =>
@@ -237,7 +249,6 @@ class Setup(datadir: File,
       }, "payment-handler", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
-      router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port")), Some(tcpBound)), "server", SupervisorStrategy.Restart))

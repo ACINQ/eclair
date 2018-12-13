@@ -27,6 +27,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
+import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
@@ -61,7 +62,11 @@ object Channel {
   val MIN_CLTV_EXPIRY = 9L
   val MAX_CLTV_EXPIRY = 7 * 144L // one week
 
+  val REFRESH_CHANNEL_UPDATE_INTERVAL = 7 days
+
   case object TickRefreshChannelUpdate
+
+  case class RevocationTimeout(remoteCommitNumber: Long, peer: ActorRef) // we will receive this message when we waited too long for a revocation for that commit number (NB: we explicitely specify the peer to allow for testing)
 
   sealed trait ChannelError
 
@@ -86,7 +91,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   // this will be used to make sure the current commitment fee is up-to-date
   context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
   // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
-  setTimer(TickRefreshChannelUpdate.toString, TickRefreshChannelUpdate, 7 days, repeat = true)
+  setTimer(TickRefreshChannelUpdate.toString, TickRefreshChannelUpdate, timeout = REFRESH_CHANNEL_UPDATE_INTERVAL, repeat = true)
 
   /*
           8888888 888b    888 8888888 88888888888
@@ -164,7 +169,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           if (closing.localCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
             closing.remoteCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
             closing.nextRemoteCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
-            closing.revokedCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint))) {
+            closing.revokedCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
+            closing.futureRemoteCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint))) {
             log.info(s"funding tx has already been spent and spending tx reached mindepth, no need to put back the watch-spent")
           } else {
             // TODO: should we wait for an acknowledgment from the watcher?
@@ -176,6 +182,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           closing.remoteCommitPublished.foreach(doPublish(_))
           closing.nextRemoteCommitPublished.foreach(doPublish(_))
           closing.revokedCommitPublished.foreach(doPublish(_))
+          closing.futureRemoteCommitPublished.foreach(doPublish(_))
           // no need to go OFFLINE, we can directly switch to CLOSING
           goto(CLOSING) using closing
 
@@ -622,6 +629,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, nextRemoteCommit.spec.toRemoteMsat)) // note that remoteCommit.toRemote == toLocal
+              // we expect a quick response from our peer
+              setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer = context.parent), timeout = nodeParams.revocationTimeout, repeat = false)
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
             case Failure(cause) => handleCommandError(cause, c)
           }
@@ -649,6 +658,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // => all our changes have been acked
       Try(Commitments.receiveRevocation(d.commitments, revocation)) match {
         case Success(commitments1) =>
+          cancelTimer(RevocationTimeout.toString)
           // we forward HTLCs only when they have been committed by both sides
           // it always happen when we receive a revocation, because, we always sign our changes before they sign them
           d.commitments.remoteChanges.signed.collect {
@@ -671,6 +681,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           }
         case Failure(cause) => handleLocalError(cause, d, Some(revocation))
       }
+
+    case Event(r: RevocationTimeout, d: DATA_NORMAL) => handleRevocationTimeout(r, d)
 
     case Event(c@CMD_CLOSE(localScriptPubKey_opt), d: DATA_NORMAL) =>
       val localScriptPubKey = localScriptPubKey_opt.getOrElse(d.commitments.localParams.defaultFinalScriptPubKey)
@@ -940,6 +952,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
                 case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
+              // we expect a quick response from our peer
+              setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer = context.parent), timeout = nodeParams.revocationTimeout, repeat = false)
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
             case Failure(cause) => handleCommandError(cause, c)
           }
@@ -979,6 +993,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // => all our changes have been acked including the shutdown message
       Try(Commitments.receiveRevocation(commitments, revocation)) match {
         case Success(commitments1) if commitments1.hasNoPendingHtlcs =>
+          cancelTimer(RevocationTimeout.toString)
           log.debug(s"received a new rev, switching to NEGOTIATING spec:\n${Commitments.specs2String(commitments1)}")
           if (d.commitments.localParams.isFunder) {
             // we are funder, need to initiate the negotiation by sending the first closing_signed
@@ -989,6 +1004,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None))
           }
         case Success(commitments1) =>
+          cancelTimer(RevocationTimeout.toString)
           // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
           d.commitments.remoteChanges.signed.collect {
             case htlc: UpdateAddHtlc =>
@@ -1002,6 +1018,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           stay using store(d.copy(commitments = commitments1))
         case Failure(cause) => handleLocalError(cause, d, Some(revocation))
       }
+
+    case Event(r: RevocationTimeout, d: DATA_SHUTDOWN) => handleRevocationTimeout(r, d)
 
     case Event(c@CurrentBlockCount(count), d: DATA_SHUTDOWN) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
       handleLocalError(HtlcTimedout(d.channelId), d, Some(c))
@@ -1246,7 +1264,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(e: Error, d: DATA_CLOSING) => handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED | INPUT_RECONNECTED(_), _) => stay // we don't really care at this point
+    case Event(INPUT_DISCONNECTED | INPUT_RECONNECTED(_, _, _), _) => stay // we don't really care at this point
   })
 
   when(CLOSED)(handleExceptions {
@@ -1270,15 +1288,16 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   })
 
   when(OFFLINE)(handleExceptions {
-    case Event(INPUT_RECONNECTED(r), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) =>
+    case Event(INPUT_RECONNECTED(r, localInit, remoteInit), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) =>
       forwarder ! r
       // they already proved that we have an outdated commitment
       // there isn't much to do except asking them again to publish their current commitment by sending an error
       val exc = PleasePublishYourCommitment(d.channelId)
       val error = Error(d.channelId, exc.getMessage.getBytes)
-      goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) sending error
+      val d1 = Helpers.updateFeatures(d, localInit, remoteInit)
+      goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using d1 sending error
 
-    case Event(INPUT_RECONNECTED(r), d: HasCommitments) =>
+    case Event(INPUT_RECONNECTED(r, localInit, remoteInit), d: HasCommitments) =>
       forwarder ! r
 
       val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).getOrElse(Sphinx zeroes 32)
@@ -1292,7 +1311,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         myCurrentPerCommitmentPoint = Some(myCurrentPerCommitmentPoint)
       )
 
-      goto(SYNCING) sending channelReestablish
+      // we update local/remote connection-local global/local features, we don't persist it right now
+      val d1 = Helpers.updateFeatures(d, localInit, remoteInit)
+
+      goto(SYNCING) using d1 sending channelReestablish
 
     case Event(c@CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
       // note: this can only happen if state is NORMAL or SHUTDOWN
@@ -1489,6 +1511,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(c: CMD_UPDATE_RELAY_FEE, d) => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "updaterelayfee", stateName), c)
 
+    // we only care about this event in NORMAL and SHUTDOWN state, and there may be cases where the task is not cancelled
+    case Event(_: RevocationTimeout, _) => stay
+
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
     case Event(CurrentBlockCount(_), _) => stay
 
@@ -1518,6 +1543,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       if (nextState == CLOSED) {
         // channel is closed, scheduling this actor for self destruction
         context.system.scheduler.scheduleOnce(10 seconds, self, 'shutdown)
+      }
+
+      if (nextState == OFFLINE) {
+        // we can cancel the timer, we are not expecting anything when disconnected
+        cancelTimer(RevocationTimeout.toString)
       }
 
       // if channel is private, we send the channel_update directly to remote
@@ -1581,6 +1611,16 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       case _ => log.error(cause, s"msg=$cmd stateData=$stateData ")
     }
     stay replying Status.Failure(cause)
+  }
+
+  def handleRevocationTimeout(revocationTimeout: RevocationTimeout, d: HasCommitments) = {
+    d.commitments.remoteNextCommitInfo match {
+      case Left(waitingForRevocation) if revocationTimeout.remoteCommitNumber + 1 == waitingForRevocation.nextRemoteCommit.index =>
+        log.warning(s"waited for too long for a revocation to remoteCommitNumber=${revocationTimeout.remoteCommitNumber}, disconnecting")
+        revocationTimeout.peer ! Peer.Disconnect
+      case _ => ()
+    }
+    stay
   }
 
   def handleLocalError(cause: Throwable, d: Data, msg: Option[Any]) = {
@@ -1869,7 +1909,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     }
 
     // re-sending sig/rev (in the right order)
-    val htlcsIn = commitments1.remoteNextCommitInfo match {
+    commitments1.remoteNextCommitInfo match {
       case Left(waitingForRevocation) if waitingForRevocation.nextRemoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber =>
         // we had sent a new sig and were waiting for their revocation
         // they had received the new sig but their revocation was lost during the disconnection
@@ -1894,6 +1934,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         // there wasn't any sig in-flight when the disconnection occurred
         resendRevocation
       case _ => throw CommitmentSyncError(d.channelId)
+    }
+
+    commitments1.remoteNextCommitInfo match {
+      case Left(_) =>
+        // we expect them to (re-)send the revocation immediately
+        setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer = context.parent), timeout = nodeParams.revocationTimeout, repeat = false)
+      case _ => ()
     }
 
     // let's now fail all pending htlc for which we are the final payee

@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.ActorSystem
 import akka.pattern.pipe
 import akka.testkit.TestProbe
-import com.softwaremill.sttp.asynchttpclient.future.AsyncHttpClientFutureBackend
+import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction}
 import fr.acinq.eclair.blockchain.ValidateResult
@@ -45,7 +45,7 @@ class AnnouncementsBatchValidationSpec extends FunSuite {
     import scala.concurrent.ExecutionContext.Implicits.global
 
     implicit val system = ActorSystem()
-    implicit val sttpBackend  = AsyncHttpClientFutureBackend()
+    implicit val sttpBackend  = OkHttpFutureBackend()
     implicit val extendedBitcoinClient = new ExtendedBitcoinClient(new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332))
 
     val channels = for (i <- 0 until 50) yield {

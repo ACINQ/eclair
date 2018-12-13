@@ -77,13 +77,18 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.debug(s"got authenticated connection to $remoteNodeId@${address.getHostString}:${address.getPort}")
       transport ! TransportHandler.Listener(self)
       context watch transport
-      transport ! wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
+      val localInit = nodeParams.overrideFeatures.get(remoteNodeId) match {
+        case Some((gf, lf)) => wire.Init(globalFeatures = gf, localFeatures = lf)
+        case None => wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
+      }
+      log.info(s"using globalFeatures=${localInit.globalFeatures} and localFeatures=${localInit.localFeatures}")
+      transport ! localInit
 
       // we store the ip upon successful outgoing connection, keeping only the most recent one
       if (outgoing) {
         nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, address)
       }
-      goto(INITIALIZING) using InitializingData(if (outgoing) Some(address) else None, transport, d.channels, origin_opt)
+      goto(INITIALIZING) using InitializingData(if (outgoing) Some(address) else None, transport, d.channels, origin_opt, localInit)
 
     case Event(Terminated(actor), d@DisconnectedData(_, channels, _)) if channels.exists(_._2 == actor) =>
       val h = channels.filter(_._2 == actor).keys
@@ -118,8 +123,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         }
 
         // let's bring existing/requested channels online
-        d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) })
+        d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport, d.localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) })
       } else {
         log.warning(s"incompatible features, disconnecting")
         d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
@@ -489,8 +494,8 @@ object Peer {
   }
   case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
   case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
-  case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef]) extends Data
-  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
+  case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef], localInit: wire.Init) extends Data
+  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
   case class ExpectedPong(ping: Ping, timestamp: Long = Platform.currentTime)
   case class PingTimeout(ping: Ping)
 

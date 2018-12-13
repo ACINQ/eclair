@@ -23,6 +23,8 @@ import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Base58, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
+import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.{WatchConfirmed, WatchEventConfirmed, WatchEventSpent, WatchSpent}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
 import grizzled.slf4j.Logging
@@ -48,9 +50,11 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     TestKit.shutdownActorSystem(system)
   }
 
+  val electrumAddress = ElectrumServerAddress(new InetSocketAddress("localhost", 50001), SSL.OFF)
+
   test("watch for confirmed transactions") {
     val probe = TestProbe()
-    val electrumClient = system.actorOf(Props(new ElectrumClientPool(Set(new InetSocketAddress("localhost", 50001)))))
+    val electrumClient = system.actorOf(Props(new ElectrumClientPool(Set(electrumAddress))))
     val watcher = system.actorOf(Props(new ElectrumWatcher(electrumClient)))
 
     probe.send(bitcoincli, BitcoinReq("getnewaddress"))
@@ -74,7 +78,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
   test("watch for spent transactions") {
     val probe = TestProbe()
-    val electrumClient = system.actorOf(Props(new ElectrumClientPool(Set(new InetSocketAddress("localhost", 50001)))))
+    val electrumClient = system.actorOf(Props(new ElectrumClientPool(Set(electrumAddress))))
     val watcher = system.actorOf(Props(new ElectrumWatcher(electrumClient)))
 
     probe.send(bitcoincli, BitcoinReq("getnewaddress"))
