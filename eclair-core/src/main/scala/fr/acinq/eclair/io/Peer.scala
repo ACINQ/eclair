@@ -20,7 +20,7 @@ import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
 import java.nio.ByteOrder
 
-import akka.actor.{ActorRef, Cancellable, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{ActorRef, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
@@ -158,13 +158,18 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
   when(CONNECTED) {
     case Event(SendPing, d: ConnectedData) =>
-      // no need to use secure random here
-      val pingSize = Random.nextInt(1000)
-      val pongSize = Random.nextInt(1000)
-      val ping = wire.Ping(pongSize, BinaryData("00" * pingSize))
-      setTimer(PingTimeout.toString, PingTimeout(ping), 10 seconds, repeat = false)
-      d.transport ! ping
-      stay using d.copy(expectedPong_opt = Some(ExpectedPong(ping)))
+      if (d.expectedPong_opt.isEmpty) {
+        // no need to use secure random here
+        val pingSize = Random.nextInt(1000)
+        val pongSize = Random.nextInt(1000)
+        val ping = wire.Ping(pongSize, BinaryData("00" * pingSize))
+        setTimer(PingTimeout.toString, PingTimeout(ping), nodeParams.pingTimeout, repeat = false)
+        d.transport ! ping
+        stay using d.copy(expectedPong_opt = Some(ExpectedPong(ping)))
+      } else {
+        log.warning(s"already have one ping in flight")
+        stay
+      }
 
     case Event(PingTimeout(ping), d: ConnectedData) =>
       log.warning(s"no response to ping=$ping, closing connection")
@@ -189,7 +194,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           val latency = Platform.currentTime - timestamp
           log.debug(s"received pong with latency=$latency")
           cancelTimer(PingTimeout.toString())
-          schedulePing()
+          // pings are sent periodically with some randomization
+          val nextDelay = nodeParams.pingInterval + secureRandom.nextInt(10).seconds
+          setTimer(SendPing.toString, SendPing, nextDelay, repeat = false)
         case None =>
           log.debug(s"received unexpected pong with size=${data.length}")
       }
@@ -422,7 +429,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   onTransition {
     case _ -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
     case DISCONNECTED -> _ if nodeParams.autoReconnect && stateData.address_opt.isDefined => cancelTimer(RECONNECT_TIMER)
-    case _ -> CONNECTED => schedulePing()
+    case _ -> CONNECTED => setTimer(SendPing.toString, SendPing, 1 minute, repeat = false) // the first ping is sent a minute after connection
   }
 
   def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingSatoshis: Long, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
@@ -444,12 +451,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   initialize()
 
   override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
-
-  def schedulePing(): Unit = {
-    // pings are periodically with some randomization
-    val nextDelay = nodeParams.pingInterval + secureRandom.nextInt(10).seconds
-    setTimer(SendPing.toString, SendPing, nextDelay, repeat = false)
-  }
 
 }
 
