@@ -110,7 +110,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 			desc -> u
 		}.toMap
 		// this will be used to calculate routes
-		val graph = DirectedGraph(initChannelUpdates)
+		val graph = DirectedGraph.makeGraph(initChannelUpdates)
 		val initNodes = nodes.map(n => (n.nodeId -> n)).toMap
 		// send events for remaining channels/nodes
 		initChannels.values.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))

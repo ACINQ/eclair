@@ -308,12 +308,16 @@ object Graph {
 			def apply(edge: GraphEdge): DirectedGraph = new DirectedGraph(Map()).addEdge(edge.desc, edge.update)
 
 			def apply(edges: Seq[GraphEdge]): DirectedGraph = {
-				DirectedGraph(edges.map(e => e.desc -> e.update).toMap)
+				makeGraph(edges.map(e => e.desc -> e.update).toMap)
 			}
 
 			//optimized constructor
-			def apply(descAndUpdates: Map[ChannelDesc, ChannelUpdate]): DirectedGraph = {
-				val mutableMap = new mutable.HashMap[PublicKey, Seq[GraphEdge]]()
+			def makeGraph(descAndUpdates: Map[ChannelDesc, ChannelUpdate]): DirectedGraph = {
+
+				//initialize the map with the appropriate size to avoid resizing during the graph initialization
+				val mutableMap = new {} with mutable.HashMap[PublicKey, Seq[GraphEdge]] {
+					override def initialSize: Int = descAndUpdates.size + 1
+				}
 
 				//add all the vertices and edges in one go
 				descAndUpdates.foreach { case (desc, update) =>
