@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
-import io.netty.channel.socket.{SocketChannel, SocketChannelConfig}
+import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.handler.codec.string.{LineEncoder, StringDecoder}
 import io.netty.handler.codec.{LineBasedFrameDecoder, MessageToMessageDecoder, MessageToMessageEncoder}
@@ -84,16 +84,12 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   log.info(s"connecting to $serverAddress")
   val channelFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
 
-  def errorHandler(t: Throwable) = {
-    log.info(s"connection error (reason=${t.getMessage})")
-    statusListeners.map(_ ! ElectrumDisconnected)
-    context stop self
-  }
+  case class ConnectionError(t: Throwable)
 
   channelFuture.addListeners(new ChannelFutureListener {
     override def operationComplete(future: ChannelFuture): Unit = {
       if (!future.isSuccess) {
-        errorHandler(future.cause())
+        self ! ConnectionError(future.cause())
       }
     }
   })
@@ -107,7 +103,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       ctx.connect(remoteAddress, localAddress, promise.addListener(new ChannelFutureListener() {
         override def operationComplete(future: ChannelFuture): Unit = {
           if (!future.isSuccess) {
-            errorHandler(future.cause())
+            self ! ConnectionError(future.cause())
           }
         }
       }))
@@ -117,14 +113,14 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       ctx.write(msg, promise.addListener(new ChannelFutureListener() {
         override def operationComplete(future: ChannelFuture): Unit = {
           if (!future.isSuccess) {
-            errorHandler(future.cause())
+            self ! ConnectionError(future.cause())
           }
         }
       }))
     }
 
     override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
-      errorHandler(cause)
+      self ! ConnectionError(cause)
     }
   }
 
@@ -162,7 +158,6 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
   }
 
-
   /**
     * Forwards incoming messages to the underlying actor
     *
@@ -193,6 +188,11 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
   override def unhandled(message: Any): Unit = {
     message match {
+      case ConnectionError(t) =>
+        log.info(s"connection error (reason=${t.getMessage})")
+        statusListeners.map(_ ! ElectrumDisconnected)
+        context stop self
+
       case Terminated(deadActor) =>
         addressSubscriptions = addressSubscriptions.mapValues(subscribers => subscribers - deadActor)
         scriptHashSubscriptions = scriptHashSubscriptions.mapValues(subscribers => subscribers - deadActor)

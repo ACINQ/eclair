@@ -20,8 +20,8 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
 
-import akka.pattern.after
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
+import akka.pattern.after
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
