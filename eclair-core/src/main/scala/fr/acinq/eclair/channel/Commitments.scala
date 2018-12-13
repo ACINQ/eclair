@@ -72,7 +72,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def announceChannel: Boolean = (channelFlags & 0x01) != 0
 
-  val totalFundsMsat: MilliSatoshi = commitInput.txOut.amount
+  val totalFunds: MilliSatoshi = commitInput.txOut.amount
 }
 
 object Commitments {

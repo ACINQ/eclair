@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -185,6 +186,12 @@ object Helpers {
     val features = BinaryData.empty // empty features for now
     val (localNodeSig, localBitcoinSig) = nodeParams.keyManager.signChannelAnnouncement(commitments.localParams.channelKeyPath, nodeParams.chainHash, shortChannelId, commitments.remoteParams.nodeId, commitments.remoteParams.fundingPubKey, features)
     AnnouncementSignatures(commitments.channelId, shortChannelId, localNodeSig, localBitcoinSig)
+  }
+
+  def makeChannelUpdate(nodeParams: NodeParams, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, commitments: Commitments, enable: Boolean = true): ChannelUpdate = {
+    // Channel balance can't exceed top and bottom boundaries imposed by local and remote reserves and this directly affects a total routable amount
+    val routableAmountMsat = commitments.totalFunds - Satoshi(commitments.localParams.channelReserveSatoshis + commitments.remoteParams.channelReserveSatoshis)
+    Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, routableAmountMsat.amount, enable)
   }
 
   def getFinalScriptPubKey(wallet: EclairWallet, chainHash: BinaryData): BinaryData = {

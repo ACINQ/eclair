@@ -23,8 +23,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements._
 import org.scalatest.FunSuite
 
-import scala.compat.Platform
-
 /**
   * Created by PM on 31/05/2016.
   */
@@ -55,7 +53,7 @@ class AnnouncementsSpec extends FunSuite {
   }
 
   test("create valid signed channel update announcement") {
-    val ann = makeChannelUpdate(Block.RegtestGenesisBlock.hash, Alice.nodeParams.privateKey, randomKey.publicKey, ShortChannelId(45561L), Alice.nodeParams.expiryDeltaBlocks, Alice.nodeParams.htlcMinimumMsat, Alice.nodeParams.feeBaseMsat, Alice.nodeParams.feeProportionalMillionth, 500000000L, enable = true, timestamp = Platform.currentTime / 1000L)
+    val ann = makeChannelUpdate(Block.RegtestGenesisBlock.hash, Alice.nodeParams.privateKey, randomKey.publicKey, ShortChannelId(45561L), Alice.nodeParams.expiryDeltaBlocks, Alice.nodeParams.htlcMinimumMsat, Alice.nodeParams.feeBaseMsat, Alice.nodeParams.feeProportionalMillionth, 500000000L)
     assert(checkSig(ann, Alice.nodeParams.nodeId))
     assert(checkSig(ann, randomKey.publicKey) === false)
   }
@@ -66,10 +64,10 @@ class AnnouncementsSpec extends FunSuite {
     // NB: node1 < node2 (public keys)
     assert(isNode1(node1_priv.publicKey.toBin, node2_priv.publicKey.toBin))
     assert(!isNode1(node2_priv.publicKey.toBin, node1_priv.publicKey.toBin))
-    val channelUpdate1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node1_priv, node2_priv.publicKey, ShortChannelId(0), 0, 0, 0, 0, 500000000L, enable = true, timestamp = Platform.currentTime / 1000L)
-    val channelUpdate1_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node1_priv, node2_priv.publicKey, ShortChannelId(0), 0, 0, 0, 0, 500000000L, enable = false, timestamp = Platform.currentTime / 1000L)
-    val channelUpdate2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), 0, 0, 0, 0, 500000000L, enable = true, timestamp = Platform.currentTime / 1000L)
-    val channelUpdate2_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), 0, 0, 0, 0, 500000000L, enable = false, timestamp = Platform.currentTime / 1000L)
+    val channelUpdate1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node1_priv, node2_priv.publicKey, ShortChannelId(0), 0, 0, 0, 0, 500000000L)
+    val channelUpdate1_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node1_priv, node2_priv.publicKey, ShortChannelId(0), 0, 0, 0, 0, 500000000L, enable = false)
+    val channelUpdate2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), 0, 0, 0, 0, 500000000L)
+    val channelUpdate2_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), 0, 0, 0, 0, 500000000L, enable = false)
     assert(channelUpdate1.channelFlags == 0) // ....00
     assert(channelUpdate1_disabled.channelFlags == 2) // ....10
     assert(channelUpdate2.channelFlags == 1) // ....01

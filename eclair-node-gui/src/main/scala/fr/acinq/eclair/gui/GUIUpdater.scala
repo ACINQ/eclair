@@ -91,9 +91,9 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
   }
 
   def updateBalance(channelPaneController: ChannelPaneController, commitments: Commitments) = {
-    channelPaneController.capacity.setText(CoinUtils.formatAmountInUnit(commitments.totalFundsMsat, FxApp.getUnit, withUnit = true))
+    channelPaneController.capacity.setText(CoinUtils.formatAmountInUnit(commitments.totalFunds, FxApp.getUnit, withUnit = true))
     channelPaneController.amountUs.setText(CoinUtils.formatAmountInUnit(MilliSatoshi(commitments.localCommit.spec.toLocalMsat), FxApp.getUnit, withUnit = true))
-    channelPaneController.balanceBar.setProgress(commitments.localCommit.spec.toLocalMsat.toDouble / commitments.totalFundsMsat.amount)
+    channelPaneController.balanceBar.setProgress(commitments.localCommit.spec.toLocalMsat.toDouble / commitments.totalFunds.amount)
   }
 
   def main(m: Map[ActorRef, ChannelPaneController]): Receive = {
