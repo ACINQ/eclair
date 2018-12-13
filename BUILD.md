@@ -18,10 +18,6 @@ To skip all tests, run:
 ```shell
 $ mvn install -DskipTests
 ```
-To run only a specific test:
-```shell
-$ mvn test -pl eclair-core -Dsuites='fr.acinq.example.TestName'
-```
 To only build the `eclair-node` module
 ```shell
 $ mvn install -pl eclair-node -am -DskipTests
