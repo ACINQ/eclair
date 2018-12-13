@@ -149,4 +149,6 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
       rs.next()
     }
   }
+
+  override def close: Unit = sqlite.close
 }

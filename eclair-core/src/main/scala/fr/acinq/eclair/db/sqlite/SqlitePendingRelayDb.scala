@@ -60,4 +60,5 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
     }
   }
 
+  override def close: Unit = sqlite.close()
 }
