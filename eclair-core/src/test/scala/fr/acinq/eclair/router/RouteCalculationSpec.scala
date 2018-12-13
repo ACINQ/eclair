@@ -403,9 +403,7 @@ class RouteCalculationSpec extends FunSuite {
       ChannelDesc(ShortChannelId(3L), c, d),
       ChannelDesc(ShortChannelId(8L), i, j)
     ))
-
   }
-
 }
 
 object RouteCalculationSpec {

@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.router
 
-import java.io.StringWriter
-
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
@@ -33,13 +31,11 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-
-import scala.collection.JavaConversions._
 import scala.collection.SortedSet
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.Try
 
 // @formatter:off

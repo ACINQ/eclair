@@ -100,7 +100,6 @@ class GraphSpec extends FunSuite {
     assert(graph.vertexSet().size === 5)
     assert(graph.edgesOf(c).size === 1)
     assert(graph.edgeSet().size === 6)
-
   }
 
   test("containsEdge should return true if the graph contains that edge, false otherwise") {
@@ -130,6 +129,7 @@ class GraphSpec extends FunSuite {
     val graph = makeTestGraph()
 
     val (descBE, _) = makeUpdate(6L, b, e, 0, 0)
+    val (descCE, _) = makeUpdate(5L, c, e, 0, 0)
     val (descAD, _) = makeUpdate(3L, a, d, 0, 0)
     val (descDC, _) = makeUpdate(4L, d, c, 0, 0)
 
@@ -140,6 +140,10 @@ class GraphSpec extends FunSuite {
 
     val withRemovedList = graph.removeEdges(Seq(descAD, descDC))
     assert(withRemovedList.edgeSet().size === 4)
+
+    val withoutAnyIncomingEdgeInE = graph.removeEdges(Seq(descBE, descCE))
+    assert(withoutAnyIncomingEdgeInE.containsVertex(e))
+    assert(withoutAnyIncomingEdgeInE.getIncomingEdgesOf(e).size == 0)
   }
 
 
@@ -164,7 +168,6 @@ class GraphSpec extends FunSuite {
     assert(bNeighbors.size === 1)
     assert(bNeighbors.exists(_.desc.a === b))  //there should be an edge b -- c
     assert(bNeighbors.exists(_.desc.b === c))
-
   }
 
   test("filterBy should remove the edges satisfying the predicate") {
