@@ -78,7 +78,7 @@ case class INPUT_INIT_FUNDER(temporaryChannelId: BinaryData, fundingSatoshis: Lo
 case class INPUT_INIT_FUNDEE(temporaryChannelId: BinaryData, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
 case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_DISCONNECTED
-case class INPUT_RECONNECTED(remote: ActorRef)
+case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)
 case class INPUT_RESTORED(data: HasCommitments)
 
 sealed trait BitcoinEvent
@@ -134,7 +134,7 @@ sealed trait Data
 
 case object Nothing extends Data
 
-trait HasCommitments extends Data {
+sealed trait HasCommitments extends Data {
   def commitments: Commitments
   def channelId = commitments.channelId
 }
