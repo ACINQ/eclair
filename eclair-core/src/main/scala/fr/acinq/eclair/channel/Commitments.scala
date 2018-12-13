@@ -122,16 +122,16 @@ object Commitments {
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val remoteCommit1 = commitments1.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments1.remoteCommit)
     val reduced = CommitmentSpec.reduce(remoteCommit1.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
+    // the HTLC we are about to create is outgoing, but from their point of view it is incoming
+    val outgoingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
-    val htlcValueInFlight = UInt64(reduced.htlcs.map(_.add.amountMsat).sum)
+    val htlcValueInFlight = UInt64(outgoingHtlcs.map(_.add.amountMsat).sum)
     if (htlcValueInFlight > commitments1.remoteParams.maxHtlcValueInFlightMsat) {
       // TODO: this should be a specific UPDATE error
       return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
     }
 
-    // the HTLC we are about to create is outgoing, but from their point of view it is incoming
-    val acceptedHtlcs = reduced.htlcs.count(_.direction == IN)
-    if (acceptedHtlcs > commitments1.remoteParams.maxAcceptedHtlcs) {
+    if (outgoingHtlcs.size > commitments1.remoteParams.maxAcceptedHtlcs) {
       return Left(TooManyAcceptedHtlcs(commitments.channelId, maximum = commitments1.remoteParams.maxAcceptedHtlcs))
     }
 
@@ -162,14 +162,14 @@ object Commitments {
     // let's compute the current commitment *as seen by us* including this change
     val commitments1 = addRemoteProposal(commitments, add).copy(remoteNextHtlcId = commitments.remoteNextHtlcId + 1)
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
+    val incomingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
-    val htlcValueInFlight = UInt64(reduced.htlcs.map(_.add.amountMsat).sum)
+    val htlcValueInFlight = UInt64(incomingHtlcs.map(_.add.amountMsat).sum)
     if (htlcValueInFlight > commitments1.localParams.maxHtlcValueInFlightMsat) {
       throw HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
     }
 
-    val acceptedHtlcs = reduced.htlcs.count(_.direction == IN)
-    if (acceptedHtlcs > commitments1.localParams.maxAcceptedHtlcs) {
+    if (incomingHtlcs.size > commitments1.localParams.maxAcceptedHtlcs) {
       throw TooManyAcceptedHtlcs(commitments.channelId, maximum = commitments1.localParams.maxAcceptedHtlcs)
     }
 
