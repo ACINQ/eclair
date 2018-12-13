@@ -24,19 +24,20 @@ object Graph {
     * @param amountMsat
     * @return
     */
-  def shortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): Seq[Hop] = {
-    dijkstraShortestPath(g, sourceNode, targetNode, amountMsat).map(graphEdgeToHop)
+  def shortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Seq[ChannelDesc], extraEdges: Seq[GraphEdge]): Seq[Hop] = {
+    dijkstraShortestPath(g, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges).map(graphEdgeToHop)
   }
 
   //TBD the cost for the neighbors of the sourceNode is always 0
-  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long): Seq[GraphEdge] = {
+  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Seq[ChannelDesc], extraEdges: Seq[GraphEdge]): Seq[GraphEdge] = {
 
     val cost = new mutable.HashMap[PublicKey, Long]
     val prev = new mutable.HashMap[GraphEdge, PublicKey]
     val vertexQueue = new java.util.PriorityQueue[WeightedNode](QueueComparator)
 
     //initialize the queue with the vertices having max distance
-    g.vertexSet().foreach {
+    val graphVerticesWithExtra = g.vertexSet() ++ (extraEdges.map(_.desc.a)).toSet ++ (extraEdges.map(_.desc.b)).toSet
+    graphVerticesWithExtra.foreach {
       case pk if pk == sourceNode =>
         cost += pk -> 0 // starting node has distance 0
         vertexQueue.add(WeightedNode(pk, 0))
@@ -44,6 +45,10 @@ object Graph {
         cost += pk -> Long.MaxValue
         vertexQueue.add(WeightedNode(pk, Long.MaxValue)) //elements are overwritten in the integration test??
     }
+
+    //the graph does not contain source/destination nodes
+    if (!graphVerticesWithExtra.exists(_ == sourceNode)) return Seq.empty
+    if (!graphVerticesWithExtra.exists(_ == targetNode)) return Seq.empty
 
     var targetFound = false
 
@@ -54,8 +59,15 @@ object Graph {
 
       if(current.publicKey != targetNode) {
 
+        //neighbors of current vertex (node) filtered with specific ignored edges and by htlc-min/max
+        val filteredNeighborSet = g.edgesOf(current.publicKey).filterNot { edge =>
+          ignoredEdges.exists(_ == edge.desc) ||
+            (edge.update.htlcMaximumMsat.isDefined && amountMsat > edge.update.htlcMaximumMsat.get) ||
+            amountMsat < edge.update.htlcMinimumMsat
+        } ++ (extraEdges.filter(_.desc.a == current.publicKey))
+
         //for each neighbor
-        g.edgesOf(current.publicKey).foreach { edge =>
+        filteredNeighborSet.foreach { edge =>
 
           val neighbor = edge.desc.b
 
@@ -271,10 +283,6 @@ object Graph {
         */
       def filterNot(predicate: GraphEdge => Boolean ): DirectedGraph = {
         removeEdgesList(edgeSet().filter(predicate).toSeq)
-      }
-
-      def filterByVertex( predicate: PublicKey => Boolean ): DirectedGraph = {
-        removeVertices(vertexSet().filter(predicate).toSeq)
       }
 
       def prettyPrint(): String = {

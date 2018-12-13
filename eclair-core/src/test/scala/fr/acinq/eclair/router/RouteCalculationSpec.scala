@@ -19,11 +19,12 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.router.Router.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.{ShortChannelId, randomKey}
 import org.scalatest.FunSuite
+
 import scala.util.{Failure, Success}
 
 /**
@@ -330,7 +331,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, withoutEdges = ChannelDesc(ShortChannelId(3L), c, d) :: Nil)
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, ignoredEdges = ChannelDesc(ShortChannelId(3L), c, d) :: Nil)
     assert(route1.map(hops2Ids) === Failure(RouteNotFound))
 
     // verify that we left the graph untouched
@@ -357,7 +358,8 @@ class RouteCalculationSpec extends FunSuite {
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
     assert(route1.get.head.lastUpdate.feeBaseMsat == 10)
 
-    val route2 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, withEdges = Map(makeUpdate(1L, a, b, 5, 5)))
+    val extraGraphEdge = Map(makeUpdate(1L, a, b, 5, 5))
+    val route2 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, extraEdges = extraGraphEdge.map { case (d, u) => GraphEdge(d, u) }.toSeq)
     assert(route2.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
     assert(route2.get.head.lastUpdate.feeBaseMsat == 5)
   }

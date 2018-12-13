@@ -378,7 +378,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       // TODO: in case of duplicates, d.updates will be overridden by assistedUpdates even if they are more recent!
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
-      findRoute(d.graph, start, end, amount, withEdges = assistedUpdates, withoutEdges = ignoredUpdates)
+      val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSeq
+      findRoute(d.graph, start, end, amount, extraEdges = extraEdges, ignoredEdges = ignoredUpdates)
             .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
             .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -784,26 +785,16 @@ object Router {
     * @param localNodeId
     * @param targetNodeId
     * @param amountMsat   the amount that will be sent along this route
-    * @param withEdges    a set of extra edges we want to consider during the search
-    * @param withoutEdges a set of extra edges we want to ignore during the search
+    * @param extraEdges   a set of extra edges we want to CONSIDER during the search
+    * @param ignoredEdges a set of extra edges we want to IGNORE during the search
     * @return
     */
-  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = Try {
+  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, extraEdges: Seq[GraphEdge] = Seq.empty, ignoredEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    val workingGraph = g.filterNot { edge =>
-      withoutEdges.exists(_ == edge.desc) ||                                                       //exclude channels we want to ignore
-     (edge.update.htlcMaximumMsat.isDefined && amountMsat > edge.update.htlcMaximumMsat.get) ||    //exclude channels with too little capacity for this payment
-     (amountMsat < edge.update.htlcMinimumMsat)                                                    //exclude channels requiring the payment to be bigger than this payment
-    }.addEdges(withEdges.toSeq)                                                                    //add the extra channel we want to consider
-
-    if (!workingGraph.containsVertex(localNodeId)) throw RouteNotFound
-    if (!workingGraph.containsVertex(targetNodeId)) throw RouteNotFound
-
-    Graph.shortestPath(workingGraph, localNodeId, targetNodeId, amountMsat) match {
+    Graph.shortestPath(g, localNodeId, targetNodeId, amountMsat, ignoredEdges.toSeq, extraEdges) match {
       case Nil => throw RouteNotFound
       case path => path
     }
-
   }
 }
