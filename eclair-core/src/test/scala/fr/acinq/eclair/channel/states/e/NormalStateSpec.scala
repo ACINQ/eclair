@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel.states.e
 
+import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.Scalar
@@ -26,7 +27,10 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Channel.TickRefreshChannelUpdate
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.Channel.{RevocationTimeout, TickRefreshChannelUpdate}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.channel.{Data, State, _}
+import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
@@ -977,6 +981,23 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val forward = relayerA.expectMsgType[ForwardFailMalformed]
     assert(forward.fail === fail)
     assert(forward.htlc === htlc)
+  }
+
+  test("recv RevocationTimeout") { f =>
+    import f._
+    val sender = TestProbe()
+    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+
+    sender.send(alice, CMD_SIGN)
+    sender.expectMsg("ok")
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+
+    // actual test begins
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isLeft)
+    val peer = TestProbe()
+    sender.send(alice, RevocationTimeout(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.index, peer.ref))
+    peer.expectMsg(Peer.Disconnect)
   }
 
   test("recv CMD_FULFILL_HTLC") { f =>
@@ -2073,6 +2094,21 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val update2 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
     assert(Announcements.isEnabled(update2.channelUpdate.channelFlags) == false)
+    awaitCond(alice.stateName == OFFLINE)
+  }
+
+  test("recv INPUT_DISCONNECTED (with pending unsigned htlcs)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (_, htlc1) = addHtlc(10000, alice, bob, alice2bob, bob2alice)
+    val (_, htlc2) = addHtlc(10000, alice, bob, alice2bob, bob2alice)
+    val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(aliceData.commitments.localChanges.proposed.size == 2)
+
+    // actual test starts here
+    sender.send(alice, INPUT_DISCONNECTED)
+    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc1.paymentHash)
+    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc2.paymentHash)
     awaitCond(alice.stateName == OFFLINE)
   }
 

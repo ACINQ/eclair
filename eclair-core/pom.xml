@@ -135,7 +135,7 @@
         <!-- HTTP CLIENT -->
         <dependency>
             <groupId>com.softwaremill.sttp</groupId>
-            <artifactId>async-http-client-backend-future_${scala.version.short}</artifactId>
+            <artifactId>okhttp-backend_${scala.version.short}</artifactId>
             <version>${sttp.version}</version>
         </dependency>
         <!-- JSON -->
@@ -153,6 +153,12 @@
             <groupId>com.softwaremill.sttp</groupId>
             <artifactId>json4s_${scala.version.short}</artifactId>
             <version>${sttp.version}</version>
+        </dependency>
+        <!-- TCP -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+            <version>4.1.32.Final</version>
         </dependency>
         <!-- BITCOIN -->
         <dependency>
@@ -220,13 +226,13 @@
         <dependency>
             <groupId>com.whisk</groupId>
             <artifactId>docker-testkit-scalatest_${scala.version.short}</artifactId>
-            <version>0.9.5</version>
+            <version>0.9.8</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.whisk</groupId>
             <artifactId>docker-testkit-impl-spotify_${scala.version.short}</artifactId>
-            <version>0.9.5</version>
+            <version>0.9.8</version>
             <scope>test</scope>
         </dependency>
         <dependency>

@@ -359,8 +359,10 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // then we manually replace alice's state with an older one
     alice.setState(OFFLINE, oldStateData)
     // then we reconnect them
-    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
-    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
+    val aliceInit = Init(TestConstants.Alice.nodeParams.globalFeatures, TestConstants.Alice.nodeParams.localFeatures)
+    val bobInit = Init(TestConstants.Bob.nodeParams.globalFeatures, TestConstants.Bob.nodeParams.localFeatures)
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
     // peers exchange channel_reestablish messages
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
