@@ -374,6 +374,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! (d.updates ++ d.privateUpdates)
       stay
 
+    case Event('data, d) =>
+      sender ! d
+      stay
+
     case Event('dot, d) =>
       graph2dot(d.nodes, d.channels) pipeTo sender
       stay

@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentResult, RemoteFailure, SendPayment}
 import fr.acinq.eclair.{NodeParams, randomBytes, secureRandom}
-import fr.acinq.eclair.router.{Announcements, ChannelDesc}
+import fr.acinq.eclair.router.{Announcements, ChannelDesc, Data}
 import fr.acinq.eclair.wire.{ChannelUpdate, UnknownPaymentHash}
 
 import scala.concurrent.duration._
@@ -21,20 +21,20 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
   import scala.concurrent.ExecutionContext.Implicits.global
 
   // refresh our map of channel_updates regularly from the router
-  context.system.scheduler.schedule(0 seconds, UPDATES_REFRESH_INTERVAL, router, 'updatesMap)
+  context.system.scheduler.schedule(0 seconds, ROUTING_TABLE_REFRESH_INTERVAL, router, 'data)
 
   override def receive: Receive = {
-    case updates: Map[ChannelDesc, ChannelUpdate]@unchecked =>
+    case routingData: Data =>
       scheduleProbe()
-      context become main(updates)
+      context become main(routingData)
   }
 
-  def main(updates: Map[ChannelDesc, ChannelUpdate]): Receive = {
-    case updates: Map[ChannelDesc, ChannelUpdate]@unchecked =>
-      context become main(updates)
+  def main(routingData: Data): Receive = {
+    case routingData: Data =>
+      context become main(routingData)
 
     case TickProbe =>
-      pickPaymentDestination(nodeParams.nodeId, updates) match {
+      pickPaymentDestination(nodeParams.nodeId, routingData) match {
         case Some(targetNodeId) =>
           val paymentHash = randomBytes(32) // we don't even know the preimage (this needs to be a secure random!)
           log.info(s"sending payment probe to node=$targetNodeId payment_hash=$paymentHash")
@@ -63,7 +63,7 @@ object Autoprobe {
 
   def props(nodeParams: NodeParams, router: ActorRef, paymentInitiator: ActorRef) = Props(classOf[Autoprobe], nodeParams, router, paymentInitiator)
 
-  val UPDATES_REFRESH_INTERVAL = 10 minutes
+  val ROUTING_TABLE_REFRESH_INTERVAL = 10 minutes
 
   val PROBING_INTERVAL = 20 seconds
 
@@ -71,11 +71,11 @@ object Autoprobe {
 
   object TickProbe
 
-  def pickPaymentDestination(nodeId: PublicKey, updates: Map[ChannelDesc, ChannelUpdate]): Option[PublicKey] = {
-    // we only pick direct peers with enabled channels
-    val peers = updates
+  def pickPaymentDestination(nodeId: PublicKey, routingData: Data): Option[PublicKey] = {
+    // we only pick direct peers with enabled public channels
+    val peers = routingData.updates
       .collect {
-        case (desc, u) if desc.a == nodeId && Announcements.isEnabled(u.channelFlags) => desc.b // we only consider outgoing channels that are enabled
+        case (desc, u) if desc.a == nodeId && Announcements.isEnabled(u.channelFlags) && routingData.channels.contains(u.shortChannelId) => desc.b // we only consider outgoing channels that are enabled and announced
       }
     if (peers.isEmpty) {
       None
