@@ -25,6 +25,3 @@ target/
 project/target
 DeleteMe*.*
 *~
-
-#JMH benchmark projects
-eclair_graph_benchmark/

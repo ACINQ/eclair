@@ -194,7 +194,7 @@ object Graph {
 			def getEdge(edge: GraphEdge): Option[GraphEdge] = getEdge(edge.desc)
 
 			def getEdge(desc: ChannelDesc): Option[GraphEdge] = vertices.get(desc.a).flatMap { adj =>
-				adj.find(e => e.desc.b == desc.b && e.desc.shortChannelId == desc.shortChannelId)
+				adj.find(e => e.desc.shortChannelId == desc.shortChannelId && e.desc.b == desc.b)
 			}
 
 			/**
@@ -268,19 +268,9 @@ object Graph {
 				*/
 			def containsEdge(edge: GraphEdge): Boolean = containsEdge(edge.desc)
 
-			def containsEdge(desc: ChannelDesc): Boolean = vertices.exists { case (key, adj) =>
-				key == desc.a && adj.exists(neighbor => neighbor.desc.shortChannelId == desc.shortChannelId && neighbor.desc.b == desc.b)
-			}
-
-			/**
-				* Checks for the existence of at least one edge between the given two vertices
-				*
-				* @param vertexA
-				* @param vertexB
-				* @return
-				*/
-			def containsEdge(vertexA: PublicKey, vertexB: PublicKey): Boolean = {
-				vertices.exists { case (key, adj) => key == vertexA && adj.exists(_.desc.b == vertexB) }
+			def containsEdge(desc: ChannelDesc): Boolean = vertices.get(desc.a) match {
+				case None => false
+				case Some(adj) => adj.exists(neighbor => neighbor.desc.shortChannelId == desc.shortChannelId && neighbor.desc.b == desc.b)
 			}
 
 			/**
@@ -321,9 +311,12 @@ object Graph {
 
 				//add all the vertices and edges in one go
 				descAndUpdates.foreach { case (desc, update) =>
-					mutableMap += desc.a -> Seq.empty[GraphEdge]
-					mutableMap += desc.b -> Seq.empty[GraphEdge]
-					mutableMap.update(desc.a, mutableMap(desc.a) :+ GraphEdge(desc, update))
+					//create or update vertex (desc.a) and update its neighbor
+					mutableMap.put(desc.a, mutableMap.getOrElse(desc.a, Seq.empty[GraphEdge]) :+ GraphEdge(desc, update))
+					mutableMap.get(desc.b) match {
+						case None => mutableMap += desc.b -> Seq.empty[GraphEdge]
+						case _ =>
+					}
 				}
 
 				new DirectedGraph(mutableMap.toMap)

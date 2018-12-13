@@ -37,7 +37,7 @@ class GraphSpec extends FunSuite {
 			makeUpdate(6L, b, e, 0, 0)
 		)
 
-		DirectedGraph().addEdges(updates)
+		DirectedGraph.makeGraph(updates.toMap)
 	}
 
 	test("instantiate a graph, with vertices and then add edges") {
@@ -112,15 +112,15 @@ class GraphSpec extends FunSuite {
 
 		val graph = DirectedGraph().addEdges(updates)
 
-		assert(graph.containsEdge(a, b))
-		assert(!graph.containsEdge(b, a))
-		assert(graph.containsEdge(b, c))
-		assert(graph.containsEdge(c, d))
-		assert(graph.containsEdge(d, e))
+		assert(graph.containsEdge(edgeFromNodes(1, a, b)))
+		assert(!graph.containsEdge(edgeFromNodes(5, b, a)))
+		assert(graph.containsEdge(edgeFromNodes(2, b, c)))
+		assert(graph.containsEdge(edgeFromNodes(3, c, d)))
+		assert(graph.containsEdge(edgeFromNodes(4, d, e)))
 		assert(graph.containsEdge(ChannelDesc(ShortChannelId(4L), d, e))) // by channel desc
 		assert(!graph.containsEdge(ChannelDesc(ShortChannelId(4L), a, g))) // by channel desc
-		assert(!graph.containsEdge(a, e))
-		assert(!graph.containsEdge(c, f)) // f isn't even in the graph
+		assert(!graph.containsEdge(edgeFromNodes(50, a, e)))
+		assert(!graph.containsEdge(edgeFromNodes(66, c, f))) // f isn't even in the graph
 	}
 
 	test("should remove a set of edges") {
@@ -205,17 +205,22 @@ class GraphSpec extends FunSuite {
 
 		assert(graph.vertexSet().size === 5)
 		assert(graph.containsVertex(e))
-		assert(graph.containsEdge(c, e))
-		assert(graph.containsEdge(b, e))
+		assert(graph.containsEdge(edgeFromNodes(5, c, e)))
+		assert(graph.containsEdge(edgeFromNodes(6, b, e)))
 
 		//E has 2 incoming edges
 		val withoutE = graph.removeVertex(e)
 
 		assert(withoutE.vertexSet().size === 4)
 		assert(!withoutE.containsVertex(e))
-		assert(!withoutE.containsEdge(c, e))
-		assert(!withoutE.containsEdge(b, e))
+		assert(!withoutE.containsEdge(edgeFromNodes(5, c, e)))
+		assert(!withoutE.containsEdge(edgeFromNodes(6, b, e)))
 	}
 
 	def edgeFromDesc(tuple: (ChannelDesc, ChannelUpdate)): GraphEdge = GraphEdge(tuple._1, tuple._2)
+
+	def edgeFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): GraphEdge = {
+		edgeFromDesc(makeUpdate(shortChannelId, a, b, 0, 0))
+	}
+
 }

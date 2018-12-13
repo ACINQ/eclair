@@ -334,7 +334,7 @@ class RouteCalculationSpec extends FunSuite {
 		assert(route1.map(hops2Ids) === Failure(RouteNotFound))
 
 		// verify that we left the graph untouched
-		assert(g.containsEdge(c, d))
+		assert(g.containsEdge(makeUpdate(3L, c, d, 0, 0)._1)) // c -> d
 		assert(g.containsVertex(c))
 		assert(g.containsVertex(d))
 
