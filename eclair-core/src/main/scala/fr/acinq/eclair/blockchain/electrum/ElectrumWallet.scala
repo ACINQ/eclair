@@ -93,7 +93,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
     }
     val headers = params.db.getHeaders(blockchain.checkpoints.size * 2016)
     log.info(s"loading ${headers.size} from db")
-    val blockchain1 = Blockchain.addHeaders(blockchain, headers.map(_.blockHeader))
+    val blockchain1 = Blockchain.addHeaders(blockchain, headers.map(_._2))
     val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
     val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
     val data = Data(params, blockchain1, firstAccountKeys, firstChangeKeys)
@@ -310,9 +310,9 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       }
 
     case Event(response@GetMerkleResponse(txid, merkle, height, pos), data) =>
+      // TODO: check merkle root 
       val blockchain = data.blockchain
       val root = response.root
-      println(root)
       stay
 
     case Event(CompleteTransaction(tx, feeRatePerKw), data) =>

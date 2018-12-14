@@ -364,7 +364,7 @@ object ElectrumClient {
     lazy val root: BinaryData = {
       @tailrec
       def loop(pos: Int, hashes: Seq[BinaryData]): BinaryData = {
-        if (hashes.length == 1) hashes(0).reverse
+        if (hashes.length == 1) hashes(0)
         else {
           val h = if (pos % 2 == 1) Crypto.hash256(hashes(1) ++ hashes(0)) else Crypto.hash256(hashes(0) ++ hashes(1))
           loop(pos / 2, h +: hashes.drop(2))

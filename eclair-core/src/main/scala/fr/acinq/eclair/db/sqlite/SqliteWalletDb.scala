@@ -3,7 +3,7 @@ package fr.acinq.eclair.db.sqlite
 import java.sql.Connection
 
 import fr.acinq.bitcoin.{BinaryData, BlockHeader}
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient
+import fr.acinq.eclair.blockchain.electrum.CheckPoint
 import fr.acinq.eclair.db.WalletDb
 
 import scala.collection.immutable.Queue
@@ -19,33 +19,37 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
   override def addHeader(height: Int, header: BlockHeader): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO headers VALUES (?, ?, ?)")) { statement =>
       statement.setBytes(1, header.hash)
-      statement.setLong(2, height)
+      statement.setInt(2, height)
       statement.setBytes(3, BlockHeader.write(header))
       statement.executeUpdate()
     }
   }
 
-  override def getHeader(blockHash: BinaryData): Option[ElectrumClient.Header] = {
-    using(sqlite.prepareStatement("SELECT block_hash, height, header FROM headers WHERE block_hash = ?")) { statement =>
+  override def getHeader(blockHash: BinaryData): Option[(Int, BlockHeader)] = {
+    using(sqlite.prepareStatement("SELECT height, header FROM headers WHERE block_hash = ?")) { statement =>
       statement.setBytes(1, blockHash)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Some(ElectrumClient.Header.makeHeader(rs.getLong("height"), BlockHeader.read(rs.getBytes("header"))))
+        Some((rs.getInt("height"), BlockHeader.read(rs.getBytes("header"))))
       } else {
         None
       }
     }
   }
 
-  override def getHeaders(minimumHeight: Int): Seq[ElectrumClient.Header] = {
-    using(sqlite.prepareStatement("SELECT block_hash, height, header FROM headers WHERE height >= ? ORDER BY height")) { statement =>
-      statement.setLong(1, minimumHeight)
+  override def getHeaders(minimumHeight: Int): Seq[(Int, BlockHeader)] = {
+    using(sqlite.prepareStatement("SELECT height, header FROM headers WHERE height >= ? ORDER BY height")) { statement =>
+      statement.setInt(1, minimumHeight)
       val rs = statement.executeQuery()
-      var q: Queue[ElectrumClient.Header] = Queue()
+      var q: Queue[(Int, BlockHeader)] = Queue()
       while (rs.next()) {
-        q = q :+ ElectrumClient.Header.makeHeader(rs.getLong("height"), BlockHeader.read(rs.getBytes("header")))
+        q = q :+ (rs.getInt("height"), BlockHeader.read(rs.getBytes("header")))
       }
       q
     }
   }
+
+  override def addCheckpoint(height: Int, checkPoint: CheckPoint): Unit = ???
+
+  override def getCheckpoints(): Seq[CheckPoint] = ???
 }

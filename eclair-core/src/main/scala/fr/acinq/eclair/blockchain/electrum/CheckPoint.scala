@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.io.InputStream
 
-import fr.acinq.bitcoin.{BinaryData, Block, BlockHeader}
+import fr.acinq.bitcoin.{BinaryData, Block, encodeCompact}
 import org.json4s.JsonAST.{JArray, JInt, JString}
 import org.json4s.jackson.JsonMethods
 
@@ -27,7 +27,7 @@ import org.json4s.jackson.JsonMethods
   * @param hash block hash
   * @param target difficulty target for the next block
   */
-case class CheckPoint(hash: BinaryData, target: BigInt) {
+case class CheckPoint(hash: BinaryData, nextBits: Long) {
   require(hash.length == 32)
 }
 
@@ -47,7 +47,7 @@ object CheckPoint {
   def load(stream: InputStream): Vector[CheckPoint] = {
     val JArray(values) = JsonMethods.parse(stream)
     val checkpoints = values.collect {
-      case JArray(JString(a) :: JInt(b) :: Nil) => CheckPoint(BinaryData(a).reverse, b)
+      case JArray(JString(a) :: JInt(b) :: Nil) => CheckPoint(BinaryData(a).reverse, encodeCompact(b.bigInteger))
     }
     checkpoints.toVector
   }

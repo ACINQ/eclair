@@ -1,11 +1,16 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.{BinaryData, BlockHeader}
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient
+import fr.acinq.eclair.blockchain.electrum.{CheckPoint, ElectrumClient}
 
 trait WalletDb {
   def addHeader(height: Int, header: BlockHeader): Unit
-  def addHeader(header: ElectrumClient.Header): Unit = addHeader(header.block_height.toInt, header.blockHeader)
-  def getHeader(blockHash: BinaryData) : Option[ElectrumClient.Header]
-  def getHeaders(minimumHeight: Int) : Seq[ElectrumClient.Header]
+
+  def getHeader(blockHash: BinaryData): Option[(Int, BlockHeader)]
+
+  def getHeaders(minimumHeight: Int): Seq[(Int, BlockHeader)]
+
+  def addCheckpoint(height: Int, checkPoint: CheckPoint): Unit
+
+  def getCheckpoints(): Seq[CheckPoint]
 }

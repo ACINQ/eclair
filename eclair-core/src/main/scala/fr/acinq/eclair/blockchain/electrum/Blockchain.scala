@@ -60,7 +60,7 @@ case class Blockchain(chainhash: BinaryData, headers: Map[BinaryData, Blockchain
     case value if value < 2016 * (checkpoints.length + 1) =>
       // we're within our checkpoints
       val checkpoint = checkpoints(height / 2016 - 1)
-      encodeCompact(checkpoint.target.bigInteger)
+      checkpoint.nextBits
     case value if value % 2016 != 0 =>
       // we're not at a retargeting height, difficulty is the same as for the previous block
       getHeader(height - 1).bits
@@ -115,10 +115,10 @@ object Blockchain extends Logging {
   def fromCheckpoints(chainhash: BinaryData, checkpoints: Vector[CheckPoint], checkPointHeader: BlockHeader): Blockchain = {
     require(checkPointHeader.hashPreviousBlock == checkpoints.last.hash, "header hash does not match last checkpoint")
     if (chainhash == Block.LivenetGenesisBlock.hash) {
-      require(checkPointHeader.bits == encodeCompact(checkpoints.last.target.bigInteger), "header difficulty does not match last checkpoint")
+      require(checkPointHeader.bits == checkpoints.last.nextBits, "header difficulty does not match last checkpoint")
     }
     val checkpointHeight = checkpoints.size * 2016 - 1
-    val chainwork = checkpoints.dropRight(1).map(t => BigInt(2016) * Blockchain.chainWork(t.target)).sum
+    val chainwork = checkpoints.dropRight(1).map(t => BigInt(2016) * Blockchain.chainWork(t.nextBits)).sum
     val blockIndex = BlockIndex(checkPointHeader, checkpointHeight + 1, None, chainwork + chainWork(checkPointHeader))
     Blockchain(chainhash, Map(blockIndex.hash -> blockIndex), Vector(blockIndex), Map.empty[BinaryData, BlockHeader], checkpoints)
   }
