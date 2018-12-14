@@ -58,8 +58,8 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   test("get header") {
     probe.send(client, GetHeader(10000))
-    val GetHeaderResponse(header) = probe.expectMsgType[GetHeaderResponse]
-    assert(header.block_id == BinaryData("000000000058b74204bb9d59128e7975b683ac73910660b6531e59523fb4a102"))
+    val GetHeaderResponse(height, header) = probe.expectMsgType[GetHeaderResponse]
+    assert(header.blockId == BinaryData("000000000058b74204bb9d59128e7975b683ac73910660b6531e59523fb4a102"))
   }
 
   test("get headers") {
@@ -82,8 +82,8 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
   test("header subscription") {
     val probe1 = TestProbe()
     probe1.send(client, HeaderSubscription(probe1.ref))
-    val HeaderSubscriptionResponse(header) = probe1.expectMsgType[HeaderSubscriptionResponse]
-    logger.info(s"received header for block ${header.block_hash}")
+    val HeaderSubscriptionResponse(_, header) = probe1.expectMsgType[HeaderSubscriptionResponse]
+    logger.info(s"received header for block ${header.blockId}")
   }
 
   test("scripthash subscription") {

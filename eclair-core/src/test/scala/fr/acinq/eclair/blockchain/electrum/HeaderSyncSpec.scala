@@ -51,8 +51,8 @@ class HeaderSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
     // get the first header after the last checkpoint
     val checkpointHeight = checkpoints.size * 2016 - 1
     probe.send(client, GetHeader(checkpointHeight + 1))
-    val GetHeaderResponse(checkPointHeader) = probe.expectMsgType[GetHeaderResponse]
-    val blockchain1 = Blockchain.addHeader(blockchain, checkPointHeader.blockHeader)
+    val GetHeaderResponse(_, checkPointHeader) = probe.expectMsgType[GetHeaderResponse]
+    val blockchain1 = Blockchain.addHeader(blockchain, checkPointHeader)
 
     // get the next chunks of headers
     probe.send(client, GetHeaders(blockchain1.tip.height + 1, 2016))
@@ -72,27 +72,25 @@ class HeaderSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
     assert(blockchain5.bestChain.length == 1 + headers1.size)
   }
 
-  test("initial header download") {
+  ignore("initial header download") {
     val checkpoints = CheckPoint.load(Block.LivenetGenesisBlock.hash)
     val checkpointHeight = checkpoints.size * 2016 - 1
 
     // get the first header after the last checkpoint
     probe.send(client, GetHeader(checkpointHeight + 1))
-    val GetHeaderResponse(checkPointHeader) = probe.expectMsgType[GetHeaderResponse]
-    var blockchain = Blockchain.fromCheckpoints(Block.LivenetGenesisBlock.hash, checkpoints, checkPointHeader.blockHeader)
+    val GetHeaderResponse(_, checkPointHeader) = probe.expectMsgType[GetHeaderResponse]
+    var blockchain = Blockchain.fromCheckpoints(Block.LivenetGenesisBlock.hash, checkpoints, checkPointHeader)
 
     // get the remote server tip
     val dummy = TestProbe()
     probe.send(client, HeaderSubscription(dummy.ref))
-    val HeaderSubscriptionResponse(tip) = dummy.expectMsgType[HeaderSubscriptionResponse]
+    val HeaderSubscriptionResponse(height, tip) = dummy.expectMsgType[HeaderSubscriptionResponse]
 
     // download headers
-    while (blockchain.tip.height < tip.block_height) {
+    while (blockchain.tip.height < height) {
       probe.send(client, GetHeaders(blockchain.tip.height + 1, 2016))
       val GetHeadersResponse(start_height, headers, _) = probe.expectMsgType[GetHeadersResponse]
       blockchain = Blockchain.addHeaders(blockchain, headers)
     }
-
-    println(blockchain.tip)
   }
 }

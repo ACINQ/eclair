@@ -73,8 +73,8 @@ class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteL
   test("header subscription") {
     val probe1 = TestProbe()
     probe1.send(pool, HeaderSubscription(probe1.ref))
-    val HeaderSubscriptionResponse(header) = probe1.expectMsgType[HeaderSubscriptionResponse]
-    logger.info(s"received header for block ${header.block_hash}")
+    val HeaderSubscriptionResponse(_, header) = probe1.expectMsgType[HeaderSubscriptionResponse]
+    logger.info(s"received header for block ${header.blockId}")
   }
 
   test("scripthash subscription") {

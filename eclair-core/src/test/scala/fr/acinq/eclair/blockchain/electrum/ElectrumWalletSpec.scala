@@ -31,7 +31,6 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddr
 import fr.acinq.eclair.db.sqlite.SqliteWalletDb
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JDecimal, JString, JValue}
-import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.concurrent.Await
