@@ -48,8 +48,6 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
   implicit val formats = DefaultFormats
 
-  val workerGroup = new NioEventLoopGroup()
-
   val b = new Bootstrap
   b.group(workerGroup)
   b.channel(classOf[NioSocketChannel])
@@ -308,6 +306,10 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 }
 
 object ElectrumClient {
+
+  // this is expensive and shared with all clients
+  val workerGroup = new NioEventLoopGroup()
+
   /**
     * Utility function to converts a publicKeyScript to electrum's scripthash
     *
