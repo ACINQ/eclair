@@ -105,13 +105,12 @@ object Graph {
 		//FIXME expensive
 		val edgePath = new mutable.MutableList[GraphEdge]
 		var current = targetNode
-		val prevScala = prev.asScala
 
-		while (prevScala.exists(_._2._1.desc.b == current)) {
+		while (prev.containsKey(current)) {
 
-			val Some((_, (temp, _))) = prevScala.find(_._2._1.desc.b == current)
-			edgePath += temp
-			current = temp.desc.a
+			val temp = prev.get(current)
+			edgePath += temp._1
+			current = temp._1.desc.a
 		}
 
 		//if there is a path source -> ... -> target then 'current' must be the source node at this point
