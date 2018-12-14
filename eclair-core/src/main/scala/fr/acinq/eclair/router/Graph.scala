@@ -32,12 +32,21 @@ object Graph {
 	//TBD the cost for the neighbors of the sourceNode is always 0
 	def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Seq[ChannelDesc], extraEdges: Seq[GraphEdge]): Seq[GraphEdge] = {
 
-		val cost = new java.util.HashMap[PublicKey, Long]
+		//optionally add the extra edges to the graph
+		val graphVerticesWithExtra = extraEdges.nonEmpty match {
+			case true => g.vertexSet() ++ extraEdges.map(_.desc.a).toSet ++ extraEdges.map(_.desc.b).toSet
+			case false => g.vertexSet()
+		}
+
+		//the graph does not contain source/destination nodes
+		if (!graphVerticesWithExtra.contains(sourceNode)) return Seq.empty
+		if (!graphVerticesWithExtra.contains(targetNode)) return Seq.empty
+
+		val maxMapSize = graphVerticesWithExtra.size + 1
+
+		val cost = new java.util.HashMap[PublicKey, Long](maxMapSize)
 		val prev = new mutable.HashMap[GraphEdge, PublicKey]
 		val vertexQueue = new java.util.PriorityQueue[WeightedNode](QueueComparator)
-
-		//optionally add the extra edges to the graph
-		val graphVerticesWithExtra = g.vertexSet() ++ extraEdges.map(_.desc.a).toSet ++ extraEdges.map(_.desc.b).toSet
 
 		//initialize the queue with the vertices having max distance
 		graphVerticesWithExtra.foreach {
@@ -48,10 +57,6 @@ object Graph {
 				cost.put(pk, Long.MaxValue)
 				vertexQueue.add(WeightedNode(pk, Long.MaxValue))
 		}
-
-		//the graph does not contain source/destination nodes
-		if (!graphVerticesWithExtra.contains(sourceNode)) return Seq.empty
-		if (!graphVerticesWithExtra.contains(targetNode)) return Seq.empty
 
 		var targetFound = false
 
@@ -72,7 +77,7 @@ object Graph {
 				currentNeighbors.foreach { edge =>
 
 					// test here for ignored edges
-					if (!((edge.update.htlcMaximumMsat.isDefined && amountMsat > edge.update.htlcMaximumMsat.get) ||
+					if (!(edge.update.htlcMaximumMsat.exists(_ < amountMsat) ||
 						amountMsat < edge.update.htlcMinimumMsat ||
 						ignoredEdges.contains(edge.desc))
 					) {
