@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
-import io.netty.channel.socket.{SocketChannel, SocketChannelConfig}
+import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.handler.codec.string.{LineEncoder, StringDecoder}
 import io.netty.handler.codec.{LineBasedFrameDecoder, MessageToMessageDecoder, MessageToMessageEncoder}
@@ -47,8 +47,6 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   import ElectrumClient._
 
   implicit val formats = DefaultFormats
-
-  val workerGroup = new NioEventLoopGroup()
 
   val b = new Bootstrap
   b.group(workerGroup)
@@ -308,6 +306,10 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 }
 
 object ElectrumClient {
+
+  // this is expensive and shared with all clients
+  val workerGroup = new NioEventLoopGroup()
+
   /**
     * Utility function to converts a publicKeyScript to electrum's scripthash
     *
