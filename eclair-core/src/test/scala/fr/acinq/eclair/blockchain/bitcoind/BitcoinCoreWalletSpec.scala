@@ -141,10 +141,10 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     sender.send(bitcoincli, BitcoinReq("getrawtransaction", fundingTxes(2).txid.toString()))
     assert(sender.expectMsgType[JString](10 seconds).s === fundingTxes(2).toString())
 
-    // NB: bitcoin core doesn't clear the locks when a tx is published
+    // NB: bitcoin core before 0.17.0 doesn't clear the locks when a tx is published
     sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    assert(sender.expectMsgType[JValue](10 seconds).children.size === 2)
-
+    val expectedLocks = if (bitcoinVersion >= 170000) 0 else 2
+    assert(sender.expectMsgType[JValue](10 seconds).children.size === expectedLocks)
   }
 
   test("encrypt wallet") {
@@ -177,7 +177,11 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
 
     val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
     wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
-    assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("Please enter the wallet passphrase with walletpassphrase first."))
+    val error = sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error
+    // behaviour has changed, bitcoin core will now return a more generic error
+    if (bitcoinVersion < 170000) {
+      assert(error.message.contains("Please enter the wallet passphrase with walletpassphrase first."))
+    }
 
     sender.send(bitcoincli, BitcoinReq("listlockunspent"))
     assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
