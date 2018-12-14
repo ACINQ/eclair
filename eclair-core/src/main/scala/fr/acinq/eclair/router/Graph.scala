@@ -5,6 +5,7 @@ import scala.collection.mutable
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire.ChannelUpdate
+import scala.collection.JavaConverters._
 
 object Graph {
 
@@ -39,7 +40,7 @@ object Graph {
 		val maxMapSize = graphVerticesWithExtra.size + 1
 
 		val cost = new java.util.HashMap[PublicKey, Long](maxMapSize)
-		val prev = new mutable.HashMap[GraphEdge, PublicKey]
+		val prev = new java.util.HashMap[PublicKey, (GraphEdge, PublicKey)]
 		val vertexQueue = new PriorityQueue[PublicKey](maxMapSize)
 
 		//initialize the queue with the vertices having max distance
@@ -84,15 +85,8 @@ object Graph {
 						//if this neighbor has a shorter distance than previously known
 						if (newMinimumKnownCost < neighborCost) {
 
-							//update the visiting tree //FIXME expensive
-							prev.find(_._1.desc.b == neighbor) match {
-								// if there was already a pointer to that node we need to remove it before adding the new edge
-								case Some((desc, _)) =>
-									prev.remove(desc)
-									prev.put(edge, current)
-								case None =>
-									prev.put(edge, current)
-							}
+							//update the visiting tree
+							prev.put(neighbor, (edge, current))
 
 							//update the queue
 							vertexQueue.enqueueOrUpdate(neighbor, newMinimumKnownCost) //O(log(n))
@@ -108,12 +102,14 @@ object Graph {
 		}
 
 		//we traverse the list of "previous" backward building the final list of edges that make the shortest path
+		//FIXME expensive
 		val edgePath = new mutable.MutableList[GraphEdge]
 		var current = targetNode
+		val prevScala = prev.asScala
 
-		while (prev.exists(_._1.desc.b == current)) {
+		while (prevScala.exists(_._2._1.desc.b == current)) {
 
-			val Some((temp, _)) = prev.find(_._1.desc.b == current)
+			val Some((_, (temp, _))) = prevScala.find(_._2._1.desc.b == current)
 			edgePath += temp
 			current = temp.desc.a
 		}
@@ -199,6 +195,8 @@ object Graph {
 				* @return For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
 				*/
 			def getEdge(edge: GraphEdge): Option[GraphEdge] = getEdge(edge.desc)
+
+			def getEdge(shortChannelId: Long): Option[GraphEdge] = edgeSet().find(_.desc.shortChannelId.toLong == shortChannelId)
 
 			def getEdge(desc: ChannelDesc): Option[GraphEdge] = vertices.get(desc.a).flatMap { adj =>
 				adj.find(e => e.desc.shortChannelId == desc.shortChannelId && e.desc.b == desc.b)
