@@ -32,67 +32,76 @@ object Graph {
 	//TBD the cost for the neighbors of the sourceNode is always 0
 	def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Seq[ChannelDesc], extraEdges: Seq[GraphEdge]): Seq[GraphEdge] = {
 
-		val cost = new mutable.HashMap[PublicKey, Long]
+		val cost = new java.util.HashMap[PublicKey, Long]
 		val prev = new mutable.HashMap[GraphEdge, PublicKey]
 		val vertexQueue = new java.util.PriorityQueue[WeightedNode](QueueComparator)
 
+		//optionally add the extra edges to the graph
+		val graphVerticesWithExtra = g.vertexSet() ++ extraEdges.map(_.desc.a).toSet ++ extraEdges.map(_.desc.b).toSet
+
 		//initialize the queue with the vertices having max distance
-		val graphVerticesWithExtra = g.vertexSet() ++ (extraEdges.map(_.desc.a)).toSet ++ (extraEdges.map(_.desc.b)).toSet
 		graphVerticesWithExtra.foreach {
 			case pk if pk == sourceNode =>
-				cost += pk -> 0 // starting node has distance 0
+				cost.put(pk, 0) // starting node has distance 0
 				vertexQueue.add(WeightedNode(pk, 0))
 			case pk =>
-				cost += pk -> Long.MaxValue
-				vertexQueue.add(WeightedNode(pk, Long.MaxValue)) //elements are overwritten in the integration test??
+				cost.put(pk, Long.MaxValue)
+				vertexQueue.add(WeightedNode(pk, Long.MaxValue))
 		}
 
 		//the graph does not contain source/destination nodes
-		if (!graphVerticesWithExtra.exists(_ == sourceNode)) return Seq.empty
-		if (!graphVerticesWithExtra.exists(_ == targetNode)) return Seq.empty
+		if (!graphVerticesWithExtra.contains(sourceNode)) return Seq.empty
+		if (!graphVerticesWithExtra.contains(targetNode)) return Seq.empty
 
 		var targetFound = false
 
 		while (!vertexQueue.isEmpty && !targetFound) {
 
 			//(next) node with the smallest distance from the source
-			val current = vertexQueue.poll()
+			val current = vertexQueue.poll() //O(log(n))
 
 			if (current.publicKey != targetNode) {
 
-				//neighbors of current vertex (node) filtered with specific ignored edges and by htlc-min/max
-				val filteredNeighborSet = g.edgesOf(current.publicKey).filterNot { edge =>
-					ignoredEdges.exists(_ == edge.desc) ||
-						(edge.update.htlcMaximumMsat.isDefined && amountMsat > edge.update.htlcMaximumMsat.get) ||
-						amountMsat < edge.update.htlcMinimumMsat
-				} ++ (extraEdges.filter(_.desc.a == current.publicKey))
+				//build the neighbors with optional extra edges
+				val currentNeighbors = extraEdges.isEmpty match {
+					case true => g.edgesOf(current.publicKey)
+					case false => g.edgesOf(current.publicKey) ++ extraEdges.filter(_.desc.a == current.publicKey)
+				}
 
 				//for each neighbor
-				filteredNeighborSet.foreach { edge =>
+				currentNeighbors.foreach { edge =>
 
-					val neighbor = edge.desc.b
+					// test here for ignored edges
+					if (!((edge.update.htlcMaximumMsat.isDefined && amountMsat > edge.update.htlcMaximumMsat.get) ||
+						amountMsat < edge.update.htlcMinimumMsat ||
+						ignoredEdges.contains(edge.desc))
+					) {
 
-					val newMinimumKnownCost = cost(current.publicKey) + edgeWeightByAmount(edge, amountMsat)
+						val neighbor = edge.desc.b
 
-					//if this neighbor has a shorter distance than previously known
-					if (newMinimumKnownCost < cost(neighbor)) {
+						val newMinimumKnownCost = cost.get(current.publicKey) + edgeWeightByAmount(edge, amountMsat)
 
-						//update the visiting tree
-						prev.find(_._1.desc.b == neighbor) match {
-							// if there was already a pointer to that node we need to remove it before adding the new edge
-							case Some((desc, _)) =>
-								prev.remove(desc)
-								prev.put(edge, current.publicKey)
-							case None =>
-								prev.put(edge, current.publicKey)
+						val neighborCost = cost.get(neighbor)
+						//if this neighbor has a shorter distance than previously known
+						if (newMinimumKnownCost < neighborCost) {
+
+							//update the visiting tree //FIXME expensive
+							prev.find(_._1.desc.b == neighbor) match {
+								// if there was already a pointer to that node we need to remove it before adding the new edge
+								case Some((desc, _)) =>
+									prev.remove(desc)
+									prev.put(edge, current.publicKey)
+								case None =>
+									prev.put(edge, current.publicKey)
+							}
+
+							//update the queue, remove and insert
+							vertexQueue.remove(WeightedNode(neighbor, neighborCost)) //O(n) //FIXME expensive
+							vertexQueue.add(WeightedNode(neighbor, newMinimumKnownCost)) //O(log(n))
+
+							//update the minimum known distance array
+							cost.put(neighbor, newMinimumKnownCost)
 						}
-
-						//update the queue, remove and insert
-						vertexQueue.remove(WeightedNode(neighbor, cost(neighbor)))
-						vertexQueue.add(WeightedNode(neighbor, newMinimumKnownCost))
-
-						//update the minimum known distance array
-						cost.update(neighbor, newMinimumKnownCost)
 					}
 				}
 			} else { //we popped the target node from the queue, no need to search any further
