@@ -10,12 +10,6 @@ object Graph {
 
 	import DirectedGraph._
 
-	implicit object QueueComparator extends Ordering[WeightedNode] {
-		override def compare(x: WeightedNode, y: WeightedNode): Int = x.weight.compareTo(y.weight)
-	}
-
-	case class WeightedNode(publicKey: PublicKey, weight: Long)
-
 	/**
 		* Finds the shortest path in the graph, Dijsktra's algorithm
 		*
@@ -46,16 +40,16 @@ object Graph {
 
 		val cost = new java.util.HashMap[PublicKey, Long](maxMapSize)
 		val prev = new mutable.HashMap[GraphEdge, PublicKey]
-		val vertexQueue = new java.util.PriorityQueue[WeightedNode](QueueComparator)
+		val vertexQueue = new PriorityQueue[PublicKey](maxMapSize)
 
 		//initialize the queue with the vertices having max distance
 		graphVerticesWithExtra.foreach {
 			case pk if pk == sourceNode =>
 				cost.put(pk, 0) // starting node has distance 0
-				vertexQueue.add(WeightedNode(pk, 0))
+				vertexQueue.enqueue(pk, 0)
 			case pk =>
 				cost.put(pk, Long.MaxValue)
-				vertexQueue.add(WeightedNode(pk, Long.MaxValue))
+				vertexQueue.enqueue(pk, Long.MaxValue)
 		}
 
 		var targetFound = false
@@ -63,14 +57,14 @@ object Graph {
 		while (!vertexQueue.isEmpty && !targetFound) {
 
 			//(next) node with the smallest distance from the source
-			val current = vertexQueue.poll() //O(log(n))
+			val current = vertexQueue.dequeue() //O(log(n))
 
-			if (current.publicKey != targetNode) {
+			if (current != targetNode) {
 
 				//build the neighbors with optional extra edges
 				val currentNeighbors = extraEdges.isEmpty match {
-					case true => g.edgesOf(current.publicKey)
-					case false => g.edgesOf(current.publicKey) ++ extraEdges.filter(_.desc.a == current.publicKey)
+					case true => g.edgesOf(current)
+					case false => g.edgesOf(current) ++ extraEdges.filter(_.desc.a == current)
 				}
 
 				//for each neighbor
@@ -84,7 +78,7 @@ object Graph {
 
 						val neighbor = edge.desc.b
 
-						val newMinimumKnownCost = cost.get(current.publicKey) + edgeWeightByAmount(edge, amountMsat)
+						val newMinimumKnownCost = cost.get(current) + edgeWeightByAmount(edge, amountMsat)
 
 						val neighborCost = cost.get(neighbor)
 						//if this neighbor has a shorter distance than previously known
@@ -95,14 +89,13 @@ object Graph {
 								// if there was already a pointer to that node we need to remove it before adding the new edge
 								case Some((desc, _)) =>
 									prev.remove(desc)
-									prev.put(edge, current.publicKey)
+									prev.put(edge, current)
 								case None =>
-									prev.put(edge, current.publicKey)
+									prev.put(edge, current)
 							}
 
-							//update the queue, remove and insert
-							vertexQueue.remove(WeightedNode(neighbor, neighborCost)) //O(n) //FIXME expensive
-							vertexQueue.add(WeightedNode(neighbor, newMinimumKnownCost)) //O(log(n))
+							//update the queue
+							vertexQueue.enqueueOrUpdate(neighbor, newMinimumKnownCost) //O(log(n))
 
 							//update the minimum known distance array
 							cost.put(neighbor, newMinimumKnownCost)
@@ -339,6 +332,115 @@ object Graph {
 			def graphEdgeToHop(graphEdge: GraphEdge): Hop = Hop(graphEdge.desc.a, graphEdge.desc.b, graphEdge.update)
 		}
 
+	}
+
+	case class PriorityElem[T](data: T, weight: Double)
+	/**
+		* A stateful priority queue using efficient binary heap and providing decrease/increase priority operations (log(n))
+		*/
+	class PriorityQueue[T](var heap: Array[PriorityElem[T]], var indexes: java.util.HashMap[T, Int], var lastIndex: Int) {
+		//Constructor allocating an array of size + 1
+		def this(size: Int) = this(new Array[PriorityElem[T]](size + 1), new java.util.HashMap[T, Int](size), 0)
+
+		def this() = this(new Array[PriorityElem[T]](100 + 1), new java.util.HashMap[T, Int](100 + 1), 0)
+
+		def isEmpty(): Boolean = lastIndex == 0
+
+		//Enqueue an element, the new element is added as last leaf of the binary heap and then moved up to the proper level (weight)
+		def enqueue(data: T, weight: Double): Unit = {
+			//if the heap is full, double the array size
+			if (lastIndex == heap.length - 1) {
+				val newHeap = new Array[PriorityElem[T]](heap.length * 2)
+				System.arraycopy(heap, 0, newHeap, 0, lastIndex)
+				heap = newHeap
+			}
+			//insert the new element as leaf in the heap
+			lastIndex += 1
+			heap(lastIndex) = PriorityElem(data, weight)
+			indexes.put(data, lastIndex)
+			moveUp(lastIndex)
+		}
+
+		//Extracts the root of the tree (heap), replaces it with the last leaf and then moves it down
+		def dequeue(): T = {
+			if (isEmpty()) throw new IllegalArgumentException("Empty queue!")
+			val ris = heap(1).data
+			val lastLeaf = heap(lastIndex)
+			heap(lastIndex) = null
+			lastIndex -= 1
+			if (lastIndex > 0) {
+				heap(1) = lastLeaf
+				moveDown(1)
+			}
+			ris
+		}
+
+		//Deletes an element from the queue, after removal the tree is rebalanced
+		def remove(value: T): Unit = {
+			val index = indexes.get(value)
+			//edge case: the element is in the last position
+			if (index == lastIndex) {
+				heap(lastIndex) = null
+				lastIndex -= 1
+				return
+			}
+			//overwrite the node containing @data with the last leaf
+			heap(index) = heap(lastIndex)
+			lastIndex -= 1
+			moveDown(index)
+			moveUp(index)
+		}
+
+		//Updates the weight of an element or enqueues it
+		def enqueueOrUpdate(value: T, weight: Double): Unit = {
+			indexes.containsKey(value) match {
+				case false => enqueue(value, weight)
+				case true =>
+					val targetIndex = indexes.get(value)
+					heap(targetIndex) = PriorityElem(value, weight)
+					moveDown(targetIndex)
+					moveUp(targetIndex)
+			}
+		}
+
+		//moves up the element at @index, until the correct level is reached
+		private def moveUp(index: Int): Unit = {
+			var i = index
+			if (i < 1 || i > lastIndex) throw new IllegalArgumentException(s"Index $i not found")
+			val tmp = heap(i)
+			while (i > 1 && tmp.weight < heap(i / 2).weight) {
+				heap(i) = heap(i / 2)
+				indexes.put(heap(i).data, i) //update the position
+				i = i / 2 //one level up
+			}
+			indexes.put(tmp.data, i)
+			heap(i) = tmp
+		}
+
+		//moves an element down to the correct level according to its weight
+		private def moveDown(index: Int): Unit = {
+			var i = index
+			if (i > lastIndex) throw new IllegalArgumentException(s"Index $i not found")
+			val tmp = heap(i)
+			var j = i * 2
+			var found = false
+			while (!found && j < lastIndex) {
+				if (j + 1 <= lastIndex && heap(j + 1).weight < heap(j).weight) {
+					//j is now the smaller of the children
+					j += 1
+				}
+				if (tmp.weight <= heap(j).weight) {
+					found = true
+				} else {
+					heap(i) = heap(j)
+					indexes.put(heap(i).data, i)
+					i = j
+					j = i * 2 //go one level deeper
+				}
+			}
+			indexes.put(tmp.data, i)
+			heap(i) = tmp
+		}
 	}
 
 }
