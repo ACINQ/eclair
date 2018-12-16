@@ -49,26 +49,27 @@ case class Blockchain(chainhash: BinaryData, headers: Map[BinaryData, Blockchain
     * @param height blockchain height
     * @return the header at this height in our best chain
     */
-  def getHeader(height: Int) = bestChain(height - first.height).header
+  def getHeader(height: Int): Option[BlockHeader] = if (!bestChain.isEmpty && height >= first.height && height - first.height < bestChain.size) Some(bestChain(height - first.height).header) else None
 
   /**
     *
     * @param height block height
     * @return the encoded difficulty that a block at this height should have
     */
-  def getDifficulty(height: Int): Long = height match {
+  def getDifficulty(height: Int): Option[Long] = height match {
     case value if value < 2016 * (checkpoints.length + 1) =>
       // we're within our checkpoints
       val checkpoint = checkpoints(height / 2016 - 1)
-      checkpoint.nextBits
+      Some(checkpoint.nextBits)
     case value if value % 2016 != 0 =>
       // we're not at a retargeting height, difficulty is the same as for the previous block
-      getHeader(height - 1).bits
+      getHeader(height - 1).map(_.bits)
     case _ =>
       // difficulty retargeting
-      val previous = getHeader(height - 1)
-      val firstBlock = getHeader(height - 2016)
-      BlockHeader.calculateNextWorkRequired(previous, firstBlock.time)
+      for {
+        previous <- getHeader(height - 1)
+        firstBlock <- getHeader(height - 2016)
+      } yield BlockHeader.calculateNextWorkRequired(previous, firstBlock.time)
   }
 }
 
@@ -165,7 +166,7 @@ object Blockchain extends Logging {
 
       // check that the header difficulty is consistent with its height
       def checkDifficulty(parent: BlockIndex) = blockchain.chainhash match {
-        case Block.LivenetGenesisBlock.hash => require(header.bits == blockchain.getDifficulty(parent.height + 1))
+        case Block.LivenetGenesisBlock.hash => require(blockchain.getDifficulty(parent.height + 1) == Some(header.bits))
         case _ => () // we don't check difficulty on regtest or testnet
       }
 

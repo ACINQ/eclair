@@ -20,8 +20,9 @@ class SqliteWalletDbSpec extends FunSuite {
 
   test("add/get/list headers") {
     val db = new SqliteWalletDb(inmem)
-    val headers = makeHeaders(100)
-    headers.zipWithIndex.map { case (b, i) => db.addHeader(i, b) }
+    val headers = makeHeaders(2016)
+    val heightsAndHeaders = headers.zipWithIndex.map(_.swap)
+    db.addHeaders(heightsAndHeaders)
 
     val headers1 = db.getHeaders(0)
     assert(headers1.map(_._2) === headers)

@@ -14,6 +14,7 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
 
   using(sqlite.createStatement()) { statement =>
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS headers (block_hash BLOB NOT NULL PRIMARY KEY, height INTEGER NOT NULL, header BLOB NOT NULL)")
+    statement.executeUpdate("CREATE INDEX IF NOT EXISTS headers_height_idx ON headers(height)")
   }
 
   override def addHeader(height: Int, header: BlockHeader): Unit = {
@@ -22,6 +23,20 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
       statement.setInt(2, height)
       statement.setBytes(3, BlockHeader.write(header))
       statement.executeUpdate()
+    }
+  }
+
+  override def addHeaders(headers: Seq[(Int, BlockHeader)]): Array[Int] = {
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO headers VALUES (?, ?, ?)"), disableAutoCommit = true) { statement =>
+      headers.foreach {
+        case (height, header) =>
+          statement.setBytes(1, header.hash)
+          statement.setInt(2, height)
+          statement.setBytes(3, BlockHeader.write(header))
+          statement.addBatch()
+      }
+      val result= statement.executeBatch()
+      result
     }
   }
 

@@ -31,10 +31,12 @@ object SqliteUtils {
     * @param statement
     * @param block
     */
-  def using[T <: Statement, U](statement: T)(block: T => U): U = {
+  def using[T <: Statement, U](statement: T, disableAutoCommit: Boolean = false)(block: T => U): U = {
     try {
+      if (disableAutoCommit) statement.getConnection.setAutoCommit(false)
       block(statement)
     } finally {
+      if (disableAutoCommit) statement.getConnection.setAutoCommit(true)
       if (statement != null) statement.close()
     }
   }
