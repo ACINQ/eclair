@@ -166,9 +166,9 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
     case Event(ElectrumClient.GetHeadersResponse(start, headers, maxHeaders), data) =>
       Try(Blockchain.addHeaders(data.blockchain, headers)) match {
         case Success(blockchain1) =>
-          for (i <- 0 until headers.size) {
-            params.db.addHeader(start + i, headers(i))
-          }
+          val headers1 = headers.zipWithIndex.map { case (b, i) => (start + i, b)}
+          params.db.addHeaders(headers1)
+          log.info(s"requesting new headers chunk at ${blockchain1.tip.height}")
           client ! ElectrumClient.GetHeaders(blockchain1.tip.height + 1, 2016)
           goto(SYNCING) using data.copy(blockchain = blockchain1)
         case Failure(error) =>
@@ -312,7 +312,11 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
     case Event(response@GetMerkleResponse(txid, merkle, height, pos), data) =>
       // TODO: check merkle root 
       val blockchain = data.blockchain
-      val root = response.root
+      blockchain.getHeader(height) match {
+        case Some(header) if header.hashMerkleRoot == response.root =>
+          log.info(s"transaction $txid has been verified")
+        case _ => log.warning(s"cannot verify tx")
+      }
       stay
 
     case Event(CompleteTransaction(tx, feeRatePerKw), data) =>

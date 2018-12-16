@@ -329,7 +329,7 @@ object ElectrumClient {
   case class ServerVersionResponse(clientName: String, protocolVersion: String) extends Response
 
   case class GetAddressHistory(address: String) extends Request
-  case class TransactionHistoryItem(height: Long, tx_hash: BinaryData)
+  case class TransactionHistoryItem(height: Int, tx_hash: BinaryData)
   case class GetAddressHistoryResponse(address: String, history: Seq[TransactionHistoryItem]) extends Response
 
   case class GetScriptHashHistory(scriptHash: BinaryData) extends Request
@@ -359,8 +359,8 @@ object ElectrumClient {
   case class GetHeaders(start_height: Int, count: Int, cp_height: Int = 0) extends Request
   case class GetHeadersResponse(start_height: Int, headers: Seq[BlockHeader], max: Int) extends Response
 
-  case class GetMerkle(txid: BinaryData, height: Long) extends Request
-  case class GetMerkleResponse(txid: BinaryData, merkle: Seq[BinaryData], block_height: Long, pos: Int) extends Response {
+  case class GetMerkle(txid: BinaryData, height: Int) extends Request
+  case class GetMerkleResponse(txid: BinaryData, merkle: Seq[BinaryData], block_height: Int, pos: Int) extends Response {
     lazy val root: BinaryData = {
       @tailrec
       def loop(pos: Int, hashes: Seq[BinaryData]): BinaryData = {
@@ -523,7 +523,7 @@ object ElectrumClient {
           val JArray(jitems) = json.result
           val items = jitems.map(jvalue => {
             val JString(tx_hash) = jvalue \ "tx_hash"
-            val height = longField(jvalue, "height")
+            val height = intField(jvalue, "height")
             TransactionHistoryItem(height, tx_hash)
           })
           GetAddressHistoryResponse(address, items)
@@ -531,7 +531,7 @@ object ElectrumClient {
           val JArray(jitems) = json.result
           val items = jitems.map(jvalue => {
             val JString(tx_hash) = jvalue \ "tx_hash"
-            val height = longField(jvalue, "height")
+            val height = intField(jvalue, "height")
             TransactionHistoryItem(height, tx_hash)
           })
           GetScriptHashHistoryResponse(scripthash, items)
@@ -540,7 +540,7 @@ object ElectrumClient {
           val items = jitems.map(jvalue => {
             val JString(tx_hash) = jvalue \ "tx_hash"
             val tx_pos = intField(jvalue, "tx_pos")
-            val height = longField(jvalue, "height")
+            val height = intField(jvalue, "height")
             val value = longField(jvalue, "value")
             UnspentItem(tx_hash, tx_pos, value, height)
           })
@@ -583,7 +583,7 @@ object ElectrumClient {
         case GetMerkle(txid, height) =>
           val JArray(hashes) = json.result \ "merkle"
           val leaves = hashes collect { case JString(value) => BinaryData(value) }
-          val blockHeight = longField(json.result, "block_height")
+          val blockHeight = intField(json.result, "block_height")
           val JInt(pos) = json.result \ "pos"
           GetMerkleResponse(txid, leaves, blockHeight, pos.toInt)
       }
