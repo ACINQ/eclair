@@ -1,10 +1,12 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
+
 import scala.collection.mutable
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire.ChannelUpdate
+import it.unimi.dsi.fastutil.objects.{Object2LongArrayMap, Object2ObjectAVLTreeMap, Object2ObjectArrayMap}
 
 object Graph {
 
@@ -50,16 +52,16 @@ object Graph {
 
 		val cost = new java.util.HashMap[PublicKey, Long](maxMapSize)
 		val prev = new java.util.HashMap[PublicKey, (GraphEdge, PublicKey)](maxMapSize)
-		val vertexQueue = new java.util.TreeMap[WeightedNode, Long](QueueComparator)
+		val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](QueueComparator)
 
 		//initialize the queue with the vertices having max distance
 		graphVerticesWithExtra.foreach {
 			case pk if pk == sourceNode =>
 				cost.put(pk, 0) // starting node has distance 0
-				vertexQueue.put(WeightedNode(pk, 0), 0)
+				vertexQueue.insert(WeightedNode(pk, 0))
 			case pk =>
 				cost.put(pk, Long.MaxValue)
-				vertexQueue.put(WeightedNode(pk, Long.MaxValue), 0)
+				vertexQueue.insert(WeightedNode(pk, Long.MaxValue))
 		}
 
 		var targetFound = false
@@ -67,8 +69,7 @@ object Graph {
 		while (!vertexQueue.isEmpty && !targetFound) {
 
 			//(next) node with the smallest distance from the source
-			val current = vertexQueue.firstKey() //O(log(n))
-			vertexQueue.remove(current)
+			val current = vertexQueue.deleteMin().getKey //O(log(n))
 
 			if (current.key != targetNode) {
 
@@ -99,8 +100,7 @@ object Graph {
 							prev.put(neighbor, (edge, current.key))
 
 							//update the queue
-							vertexQueue.remove(WeightedNode(neighbor, neighborCost))
-							vertexQueue.put(WeightedNode(neighbor, newMinimumKnownCost), newMinimumKnownCost)
+							vertexQueue.insert(WeightedNode(neighbor, newMinimumKnownCost)) // O(1)
 
 							//update the minimum known distance array
 							cost.put(neighbor, newMinimumKnownCost)
@@ -113,7 +113,7 @@ object Graph {
 		}
 
 		//we traverse the list of "previous" backward building the final list of edges that make the shortest path
-		val edgePath = new mutable.MutableList[GraphEdge]
+		val edgePath = new mutable.ArrayBuffer[GraphEdge](21) //max path length is 20!
 		var current = prev.get(targetNode) //targetNode
 		var previousNode = current
 
