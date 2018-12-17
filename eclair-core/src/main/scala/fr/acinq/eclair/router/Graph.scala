@@ -5,7 +5,6 @@ import scala.collection.mutable
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire.ChannelUpdate
-import scala.collection.JavaConverters._
 
 object Graph {
 
@@ -14,7 +13,11 @@ object Graph {
 	case class WeightedNode(key: PublicKey, weight: Long)
 
 	object QueueComparator extends Ordering[WeightedNode] {
-		override def compare(x: WeightedNode, y: WeightedNode): Int = x.weight.compareTo(y.weight)
+		override def compare(x: WeightedNode, y: WeightedNode): Int = {
+			val weightCmp = x.weight.compareTo(y.weight)
+			if (weightCmp == 0) x.key.toString().compareTo(y.key.toString())
+			else weightCmp
+		}
 	}
 
 	/**
@@ -47,16 +50,16 @@ object Graph {
 
 		val cost = new java.util.HashMap[PublicKey, Long](maxMapSize)
 		val prev = new java.util.HashMap[PublicKey, (GraphEdge, PublicKey)](maxMapSize)
-		val vertexQueue = new java.util.PriorityQueue[WeightedNode](QueueComparator)
+		val vertexQueue = new java.util.TreeMap[WeightedNode, Long](QueueComparator)
 
 		//initialize the queue with the vertices having max distance
 		graphVerticesWithExtra.foreach {
 			case pk if pk == sourceNode =>
 				cost.put(pk, 0) // starting node has distance 0
-				vertexQueue.add(WeightedNode(pk, 0))
+				vertexQueue.put(WeightedNode(pk, 0), 0)
 			case pk =>
 				cost.put(pk, Long.MaxValue)
-				vertexQueue.add(WeightedNode(pk, Long.MaxValue))
+				vertexQueue.put(WeightedNode(pk, Long.MaxValue), 0)
 		}
 
 		var targetFound = false
@@ -64,7 +67,8 @@ object Graph {
 		while (!vertexQueue.isEmpty && !targetFound) {
 
 			//(next) node with the smallest distance from the source
-			val current = vertexQueue.poll() //O(log(n))
+			val current = vertexQueue.firstKey() //O(log(n))
+			vertexQueue.remove(current)
 
 			if (current.key != targetNode) {
 
@@ -96,7 +100,7 @@ object Graph {
 
 							//update the queue
 							vertexQueue.remove(WeightedNode(neighbor, neighborCost))
-							vertexQueue.add(WeightedNode(neighbor, newMinimumKnownCost))
+							vertexQueue.put(WeightedNode(neighbor, newMinimumKnownCost), newMinimumKnownCost)
 
 							//update the minimum known distance array
 							cost.put(neighbor, newMinimumKnownCost)
