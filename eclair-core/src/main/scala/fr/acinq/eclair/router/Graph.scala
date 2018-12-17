@@ -11,6 +11,12 @@ object Graph {
 
 	import DirectedGraph._
 
+	case class WeightedNode(key: PublicKey, weight: Long)
+
+	object QueueComparator extends Ordering[WeightedNode] {
+		override def compare(x: WeightedNode, y: WeightedNode): Int = x.weight.compareTo(y.weight)
+	}
+
 	/**
 		* Finds the shortest path in the graph, Dijsktra's algorithm
 		*
@@ -40,17 +46,17 @@ object Graph {
 		val maxMapSize = graphVerticesWithExtra.size + 1
 
 		val cost = new java.util.HashMap[PublicKey, Long](maxMapSize)
-		val prev = new java.util.HashMap[PublicKey, (GraphEdge, PublicKey)]
-		val vertexQueue = new PriorityQueue[PublicKey](maxMapSize)
+		val prev = new java.util.HashMap[PublicKey, (GraphEdge, PublicKey)](maxMapSize)
+		val vertexQueue = new java.util.PriorityQueue[WeightedNode](QueueComparator)
 
 		//initialize the queue with the vertices having max distance
 		graphVerticesWithExtra.foreach {
 			case pk if pk == sourceNode =>
 				cost.put(pk, 0) // starting node has distance 0
-				vertexQueue.enqueue(pk, 0)
+				vertexQueue.add(WeightedNode(pk, 0))
 			case pk =>
 				cost.put(pk, Long.MaxValue)
-				vertexQueue.enqueue(pk, Long.MaxValue)
+				vertexQueue.add(WeightedNode(pk, Long.MaxValue))
 		}
 
 		var targetFound = false
@@ -58,14 +64,14 @@ object Graph {
 		while (!vertexQueue.isEmpty && !targetFound) {
 
 			//(next) node with the smallest distance from the source
-			val current = vertexQueue.dequeue() //O(log(n))
+			val current = vertexQueue.poll() //O(log(n))
 
-			if (current != targetNode) {
+			if (current.key != targetNode) {
 
 				//build the neighbors with optional extra edges
 				val currentNeighbors = extraEdges.isEmpty match {
-					case true => g.edgesOf(current)
-					case false => g.edgesOf(current) ++ extraEdges.filter(_.desc.a == current)
+					case true => g.edgesOf(current.key)
+					case false => g.edgesOf(current.key) ++ extraEdges.filter(_.desc.a == current.key)
 				}
 
 				//for each neighbor
@@ -79,17 +85,18 @@ object Graph {
 
 						val neighbor = edge.desc.b
 
-						val newMinimumKnownCost = cost.get(current) + edgeWeightByAmount(edge, amountMsat)
+						val newMinimumKnownCost = cost.get(current.key) + edgeWeightByAmount(edge, amountMsat)
 
 						val neighborCost = cost.get(neighbor)
 						//if this neighbor has a shorter distance than previously known
 						if (newMinimumKnownCost < neighborCost) {
 
 							//update the visiting tree
-							prev.put(neighbor, (edge, current))
+							prev.put(neighbor, (edge, current.key))
 
 							//update the queue
-							vertexQueue.enqueueOrUpdate(neighbor, newMinimumKnownCost) //O(log(n))
+							vertexQueue.remove(WeightedNode(neighbor, neighborCost))
+							vertexQueue.add(WeightedNode(neighbor, newMinimumKnownCost))
 
 							//update the minimum known distance array
 							cost.put(neighbor, newMinimumKnownCost)
