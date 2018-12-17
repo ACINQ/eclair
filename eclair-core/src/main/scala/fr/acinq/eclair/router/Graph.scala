@@ -102,19 +102,19 @@ object Graph {
 		}
 
 		//we traverse the list of "previous" backward building the final list of edges that make the shortest path
-		//FIXME expensive
 		val edgePath = new mutable.MutableList[GraphEdge]
-		var current = targetNode
+		var current = prev.get(targetNode) //targetNode
+		var previousNode = current
 
-		while (prev.containsKey(current)) {
+		while (current != null) {
 
-			val temp = prev.get(current)
-			edgePath += temp._1
-			current = temp._1.desc.a
+			edgePath += current._1
+			previousNode = current
+			current = prev.get(current._1.desc.a)
 		}
 
 		//if there is a path source -> ... -> target then 'current' must be the source node at this point
-		if (current != sourceNode)
+		if (previousNode == null || previousNode._1.desc.a != sourceNode)
 			Seq.empty //path not found
 		else
 			edgePath.reverse
