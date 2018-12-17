@@ -6,7 +6,6 @@ import scala.collection.mutable
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire.ChannelUpdate
-import it.unimi.dsi.fastutil.objects.{Object2LongArrayMap, Object2ObjectAVLTreeMap, Object2ObjectArrayMap}
 
 object Graph {
 
