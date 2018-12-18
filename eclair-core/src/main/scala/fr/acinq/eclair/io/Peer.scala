@@ -424,6 +424,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(SendPing, _) => stay // we got disconnected in the meantime
 
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
+
+    case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
+
+    case Event(_: Terminated, _) => stay // this channel got closed before having a commitment and we got disconnected (e.g. a funding error occured)
   }
 
   onTransition {
