@@ -57,7 +57,7 @@ object Graph {
 		val prev = new java.util.HashMap[PublicKey, (GraphEdge, PublicKey)](maxMapSize)
 		val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](QueueComparator)
 
-		//initialize the queue with the vertices having max distance
+		//initialize the queue and cost array
 		cost.put(sourceNode, 0)
 		vertexQueue.insert(WeightedNode(sourceNode, 0))
 
@@ -65,7 +65,7 @@ object Graph {
 
 		while (!vertexQueue.isEmpty && !targetFound) {
 
-			//(next) node with the smallest distance from the source
+			//node with the smallest distance from the source
 			val current = vertexQueue.deleteMin().getKey //O(log(n))
 
 			if (current.key != targetNode) {
@@ -79,7 +79,7 @@ object Graph {
 				//for each neighbor
 				currentNeighbors.foreach { edge =>
 
-					// test here for ignored edges
+					// test for ignored edges
 					if (!(edge.update.htlcMaximumMsat.exists(_ < amountMsat) ||
 						amountMsat < edge.update.htlcMinimumMsat ||
 						ignoredEdges.contains(edge.desc))
