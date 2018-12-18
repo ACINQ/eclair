@@ -161,6 +161,33 @@ class RouteCalculationSpec extends FunSuite {
 		assert(route.map(hops2Ids) === Failure(RouteNotFound))
 	}
 
+	test("route not found (source node not connected)") {
+
+		val updates = List(
+			makeUpdate(2L, b, c, 0, 0),
+			makeUpdate(4L, d, e, 0, 0)
+		).toMap
+
+		val g = makeGraph(updates).addVertex(a)
+
+		val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
+		assert(route.map(hops2Ids) === Failure(RouteNotFound))
+	}
+
+	test("route not found (target node not connected)") {
+
+		val updates = List(
+			makeUpdate(1L, a, b, 0, 0),
+			makeUpdate(2L, b, c, 0, 0),
+			makeUpdate(3L, c, d, 0, 0)
+		).toMap
+
+		val g = makeGraph(updates)
+
+		val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
+		assert(route.map(hops2Ids) === Failure(RouteNotFound))
+	}
+
 	test("route not found (unknown destination)") {
 
 		val updates = List(
