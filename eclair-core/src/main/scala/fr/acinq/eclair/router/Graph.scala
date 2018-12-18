@@ -54,7 +54,7 @@ object Graph {
 		val maxMapSize = graphVerticesWithExtra.size + 1
 
 		val cost = new java.util.HashMap[PublicKey, Long](maxMapSize)
-		val prev = new java.util.HashMap[PublicKey, (GraphEdge, PublicKey)](maxMapSize)
+		val prev = new java.util.HashMap[PublicKey, GraphEdge](maxMapSize)
 		val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](QueueComparator)
 
 		//initialize the queue and cost array
@@ -87,6 +87,7 @@ object Graph {
 
 						val neighbor = edge.desc.b
 
+						//note: the default value here will never be used, as there is always an entry for the current in the 'cost' map
 						val newMinimumKnownCost = cost.getOrDefault(current.key, Long.MaxValue) + edgeWeightByAmount(edge, amountMsat)
 
 						val neighborCost = cost.getOrDefault(neighbor, Long.MaxValue)
@@ -94,7 +95,7 @@ object Graph {
 						if (newMinimumKnownCost < neighborCost) {
 
 							//update the visiting tree
-							prev.put(neighbor, (edge, current.key))
+							prev.put(neighbor, edge)
 
 							//update the queue
 							vertexQueue.insert(WeightedNode(neighbor, newMinimumKnownCost)) // O(1)
@@ -116,13 +117,13 @@ object Graph {
 
 		while (current != null) {
 
-			edgePath += current._1
+			edgePath += current
 			previousNode = current
-			current = prev.get(current._1.desc.a)
+			current = prev.get(current.desc.a)
 		}
 
 		//if there is a path source -> ... -> target then 'current' must be the source node at this point
-		if (previousNode == null || previousNode._1.desc.a != sourceNode)
+		if (previousNode == null || previousNode.desc.a != sourceNode)
 			Seq.empty //path not found
 		else
 			edgePath.reverse

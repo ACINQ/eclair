@@ -353,9 +353,9 @@ class RouteCalculationSpec extends FunSuite {
 
 		val g = makeGraph(updates)
 
-		//val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
-		//assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
-		//assert(route1.get.head.lastUpdate.feeBaseMsat == 10)
+		val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
+		assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+		assert(route1.get.head.lastUpdate.feeBaseMsat == 10)
 
 		val extraUpdate = makeUpdate(1L, a, b, 5, 5)
 
