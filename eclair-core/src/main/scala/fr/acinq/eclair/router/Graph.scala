@@ -13,6 +13,10 @@ object Graph {
 
 	case class WeightedNode(key: PublicKey, weight: Long)
 
+	/**
+		* This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
+		* the same weight we distinguish them by their public key. See https://docs.oracle.com/javase/8/docs/api/java/util/Comparator.html
+		*/
 	object QueueComparator extends Ordering[WeightedNode] {
 		override def compare(x: WeightedNode, y: WeightedNode): Int = {
 			val weightCmp = x.weight.compareTo(y.weight)
