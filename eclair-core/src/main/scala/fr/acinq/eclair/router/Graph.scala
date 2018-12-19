@@ -38,27 +38,27 @@ object Graph {
     dijkstraShortestPath(g, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges).map(graphEdgeToHop)
   }
 
-  //TBD the cost for the neighbors of the sourceNode is always 0
+  // TBD the cost for the neighbors of the sourceNode is always 0
   def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Seq[ChannelDesc], extraEdges: Seq[GraphEdge]): Seq[GraphEdge] = {
 
-    //optionally add the extra edges to the graph
+    // optionally add the extra edges to the graph
     val graphVerticesWithExtra = extraEdges.nonEmpty match {
       case true => g.vertexSet() ++ extraEdges.map(_.desc.a).toSet ++ extraEdges.map(_.desc.b).toSet
       case false => g.vertexSet()
     }
 
-    //the graph does not contain source/destination nodes
+    //  the graph does not contain source/destination nodes
     if (!graphVerticesWithExtra.contains(sourceNode)) return Seq.empty
     if (!graphVerticesWithExtra.contains(targetNode)) return Seq.empty
 
     val maxMapSize = graphVerticesWithExtra.size + 1
 
-    //this is not the actual optimal size for the maps, because we only put in there all the vertices in the worst case scenario.
+    //  this is not the actual optimal size for the maps, because we only put in there all the vertices in the worst case scenario.
     val cost = new java.util.HashMap[PublicKey, Long](maxMapSize)
     val prev = new java.util.HashMap[PublicKey, GraphEdge](maxMapSize)
     val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](QueueComparator)
 
-    //initialize the queue and cost array
+    //  initialize the queue and cost array
     cost.put(sourceNode, 0)
     vertexQueue.insert(WeightedNode(sourceNode, 0))
 
@@ -66,21 +66,21 @@ object Graph {
 
     while (!vertexQueue.isEmpty && !targetFound) {
 
-      //node with the smallest distance from the source
-      val current = vertexQueue.deleteMin().getKey //O(log(n))
+      // node with the smallest distance from the source
+      val current = vertexQueue.deleteMin().getKey // O(log(n))
 
       if (current.key != targetNode) {
 
-        //build the neighbors with optional extra edges
+        // build the neighbors with optional extra edges
         val currentNeighbors = extraEdges.isEmpty match {
           case true => g.edgesOf(current.key)
           case false => g.edgesOf(current.key) ++ extraEdges.filter(_.desc.a == current.key)
         }
 
-        //for each neighbor
+        // for each neighbor
         currentNeighbors.foreach { edge =>
 
-          // test for ignored edges
+          //  test for ignored edges
           if (!(edge.update.htlcMaximumMsat.exists(_ < amountMsat) ||
             amountMsat < edge.update.htlcMinimumMsat ||
             ignoredEdges.contains(edge.desc))
@@ -88,37 +88,37 @@ object Graph {
 
             val neighbor = edge.desc.b
 
-            //note: the default value here will never be used, as there is always an entry for the current in the 'cost' map
+            // note: the default value here will never be used, as there is always an entry for the current in the 'cost' map
             val newMinimumKnownCost = cost.get(current.key) + edgeWeightByAmount(edge, amountMsat)
 
-            //we call containsKey first becaue "getOrDefault" is not available in JDK7
+            // we call containsKey first becaue "getOrDefault" is not available in JDK7
             val neighborCost = cost.containsKey(neighbor) match {
               case false => Long.MaxValue
               case true => cost.get(neighbor)
             }
 
-            //if this neighbor has a shorter distance than previously known
+            // if this neighbor has a shorter distance than previously known
             if (newMinimumKnownCost < neighborCost) {
 
-              //update the visiting tree
+              // update the visiting tree
               prev.put(neighbor, edge)
 
-              //update the queue
-              vertexQueue.insert(WeightedNode(neighbor, newMinimumKnownCost)) // O(1)
+              // update the queue
+              vertexQueue.insert(WeightedNode(neighbor, newMinimumKnownCost)) //  O(1)
 
-              //update the minimum known distance array
+              // update the minimum known distance array
               cost.put(neighbor, newMinimumKnownCost)
             }
           }
         }
-      } else { //we popped the target node from the queue, no need to search any further
+      } else { // we popped the target node from the queue, no need to search any further
         targetFound = true
       }
     }
 
-    //we traverse the list of "previous" backward building the final list of edges that make the shortest path
-    val edgePath = new mutable.ArrayBuffer[GraphEdge](21) //max path length is 20!
-    var current = prev.get(targetNode) //targetNode
+    // we traverse the list of "previous" backward building the final list of edges that make the shortest path
+    val edgePath = new mutable.ArrayBuffer[GraphEdge](21) // max path length is 20!
+    var current = prev.get(targetNode) // targetNode
     var previousNode = current
 
     while (current != null) {
@@ -128,9 +128,9 @@ object Graph {
       current = prev.get(current.desc.a)
     }
 
-    //if there is a path source -> ... -> target then 'current' must be the source node at this point
+    // if there is a path source -> ... -> target then 'current' must be the source node at this point
     if (previousNode == null || previousNode.desc.a != sourceNode)
-      Seq.empty //path not found
+      Seq.empty // path not found
     else
       edgePath.reverse
   }
@@ -173,7 +173,7 @@ object Graph {
         val vertexIn = edge.desc.a
         val vertexOut = edge.desc.b
 
-        //the graph is allowed to have multiple edges between the same vertices but only one per channel
+        // the graph is allowed to have multiple edges between the same vertices but only one per channel
         if (containsEdge(edge.desc)) {
           removeEdge(edge.desc).addEdge(edge)
         } else {
@@ -309,7 +309,7 @@ object Graph {
 
     object DirectedGraph {
 
-      //convenience constructors
+      // convenience constructors
       def apply(): DirectedGraph = new DirectedGraph(Map())
 
       def apply(key: PublicKey): DirectedGraph = new DirectedGraph(Map((key -> Seq.empty)))
@@ -320,17 +320,17 @@ object Graph {
         makeGraph(edges.map(e => e.desc -> e.update).toMap)
       }
 
-      //optimized constructor
+      // optimized constructor
       def makeGraph(descAndUpdates: Map[ChannelDesc, ChannelUpdate]): DirectedGraph = {
 
-        //initialize the map with the appropriate size to avoid resizing during the graph initialization
+        // initialize the map with the appropriate size to avoid resizing during the graph initialization
         val mutableMap = new {} with mutable.HashMap[PublicKey, Seq[GraphEdge]] {
           override def initialSize: Int = descAndUpdates.size + 1
         }
 
-        //add all the vertices and edges in one go
+        // add all the vertices and edges in one go
         descAndUpdates.foreach { case (desc, update) =>
-          //create or update vertex (desc.a) and update its neighbor
+          // create or update vertex (desc.a) and update its neighbor
           mutableMap.put(desc.a, mutableMap.getOrElse(desc.a, Seq.empty[GraphEdge]) :+ GraphEdge(desc, update))
           mutableMap.get(desc.b) match {
             case None => mutableMap += desc.b -> Seq.empty[GraphEdge]

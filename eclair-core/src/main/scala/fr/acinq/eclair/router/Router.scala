@@ -588,10 +588,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         db.updateChannelUpdate(u)
-        //update the graph
+        // update the graph
         val mutatedGraph = Announcements.isEnabled(u.channelFlags) match {
           case true => d.graph.removeEdge(desc).addEdge(desc, u)
-          case false => d.graph.removeEdge(desc) //if the channel is now disabled, we remove it from the graph
+          case false => d.graph.removeEdge(desc) // if the channel is now disabled, we remove it from the graph
         }
         d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = mutatedGraph)
       } else {
