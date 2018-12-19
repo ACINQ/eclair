@@ -770,7 +770,7 @@ object Router {
   }
 
   /**
-    * Routing fee have a variable part, as a simplification we compute fees using a default constant value for the amount
+    * Routing fee have a variable part, this value will be used as a default if none is provided when search for a route
     */
   val DEFAULT_AMOUNT_MSAT = 10000000
 
@@ -783,7 +783,7 @@ object Router {
     * @param amountMsat   the amount that will be sent along this route
     * @param extraEdges   a set of extra edges we want to CONSIDER during the search
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
-    * @return
+    * @return the computed route to the destination @targetNodeId
     */
   def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, extraEdges: Seq[GraphEdge] = Seq.empty, ignoredEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
