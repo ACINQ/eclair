@@ -117,23 +117,22 @@ object Graph {
       }
     }
 
-    // we traverse the list of "previous" backward building the final list of edges that make the shortest path
-    val edgePath = new mutable.ArrayBuffer[GraphEdge](21) // max path length is 20!
-    var current = prev.get(targetNode) // targetNode
-    var previousNode = current
+    targetFound match {
+      case false => Seq.empty[GraphEdge]
+      case true => {
+        // we traverse the list of "previous" backward building the final list of edges that make the shortest path
+        val edgePath = new mutable.ArrayBuffer[GraphEdge](21) // max path length is 20! https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
+        var current = prev.get(targetNode)
 
-    while (current != null) {
+        while (current != null) {
 
-      edgePath += current
-      previousNode = current
-      current = prev.get(current.desc.a)
+          edgePath += current
+          current = prev.get(current.desc.a)
+        }
+
+        edgePath.reverse
+      }
     }
-
-    // if there is a path source -> ... -> target then 'current' must be the source node at this point
-    if (previousNode == null || previousNode.desc.a != sourceNode)
-      Seq.empty // path not found
-    else
-      edgePath.reverse
   }
 
   private def edgeWeightByAmount(edge: GraphEdge, amountMsat: Long): Long = {
