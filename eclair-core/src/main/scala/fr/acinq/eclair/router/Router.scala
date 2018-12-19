@@ -28,10 +28,11 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChannel, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import scala.collection.SortedSet
+
+import scala.collection.{SortedSet, mutable}
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -327,11 +328,14 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         db.addToPruned(shortChannelId)
         context.system.eventStream.publish(ChannelLost(shortChannelId))
       }
-      val (descs1, descs2) = staleChannels.map(d.channels).map { c =>
-        (ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
-      }.unzip
-      val channelUpdatesToRemove = List(descs1 ++ descs2).flatten
-      val mutatedGraph = d.graph.removeEdges(channelUpdatesToRemove)
+
+      val staleChannelsToRemove = new mutable.MutableList[ChannelDesc]
+      staleChannels.map(d.channels).foreach( ca => {
+        staleChannelsToRemove += ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)
+        staleChannelsToRemove += ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)
+      })
+
+      val mutatedGraph = d.graph.removeEdges(staleChannelsToRemove)
       staleNodes.foreach {
         case nodeId =>
           log.info("pruning nodeId={} (stale)", nodeId)
