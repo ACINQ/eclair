@@ -77,7 +77,6 @@ class Setup(datadir: File,
     for {
       _ <- Future.successful(true)
       feeratesRetrieved = Promise[Boolean]()
-      routerInitialized = Promise[Unit]()
 
       bitcoin = nodeParams.watcherType match {
         case ELECTRUM =>
@@ -137,9 +136,7 @@ class Setup(datadir: File,
         case _ => ???
       }
 
-      router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, Some(routerInitialized)), "router", SupervisorStrategy.Resume))
-      routerTimeout = after(FiniteDuration(config.getDuration("router-init-timeout", TimeUnit.SECONDS), TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
-      _ <- Future.firstCompletedOf(routerInitialized.future :: routerTimeout :: Nil)
+      router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, None), "router", SupervisorStrategy.Resume))
 
       wallet = bitcoin match {
         case Electrum(electrumClient) =>
