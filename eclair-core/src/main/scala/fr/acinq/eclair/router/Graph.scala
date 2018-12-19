@@ -89,9 +89,14 @@ object Graph {
             val neighbor = edge.desc.b
 
             //note: the default value here will never be used, as there is always an entry for the current in the 'cost' map
-            val newMinimumKnownCost = cost.getOrDefault(current.key, Long.MaxValue) + edgeWeightByAmount(edge, amountMsat)
+            val newMinimumKnownCost = cost.get(current.key) + edgeWeightByAmount(edge, amountMsat)
 
-            val neighborCost = cost.getOrDefault(neighbor, Long.MaxValue)
+            //we call containsKey first becaue "getOrDefault" is not available in JDK7
+            val neighborCost = cost.containsKey(neighbor) match {
+              case false => Long.MaxValue
+              case true => cost.get(neighbor)
+            }
+
             //if this neighbor has a shorter distance than previously known
             if (newMinimumKnownCost < neighborCost) {
 
