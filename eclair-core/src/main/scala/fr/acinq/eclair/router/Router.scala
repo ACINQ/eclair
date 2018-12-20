@@ -286,7 +286,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       log.info("pruning shortChannelId={} (spent)", shortChannelId)
       db.removeChannel(shortChannelId) // NB: this also removes channel updates
     // we also need to remove updates from the graph
-    val mutatedGraph = d.graph
+    val graph1 = d.graph
       .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
       .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId2, lostChannel.nodeId1))
 
@@ -297,7 +297,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
-      stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.shortChannelId != shortChannelId), graph = mutatedGraph)
+      stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.shortChannelId != shortChannelId), graph = graph1)
 
     case Event(TickBroadcast, d) =>
       if (d.rebroadcast.channels.isEmpty && d.rebroadcast.updates.isEmpty && d.rebroadcast.nodes.isEmpty) {
@@ -335,14 +335,14 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         staleChannelsToRemove += ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)
       })
 
-      val mutatedGraph = d.graph.removeEdges(staleChannelsToRemove)
+      val graph1 = d.graph.removeEdges(staleChannelsToRemove)
       staleNodes.foreach {
         case nodeId =>
           log.info("pruning nodeId={} (stale)", nodeId)
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
-      stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates, graph = mutatedGraph)
+      stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates, graph = graph1)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       val banDuration = nodeParams.channelExcludeDuration
@@ -593,18 +593,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         db.updateChannelUpdate(u)
         // update the graph
-        val mutatedGraph = Announcements.isEnabled(u.channelFlags) match {
+        val graph1 = Announcements.isEnabled(u.channelFlags) match {
           case true => d.graph.removeEdge(desc).addEdge(desc, u)
           case false => d.graph.removeEdge(desc) // if the channel is now disabled, we remove it from the graph
         }
-        d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = mutatedGraph)
+        d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         db.addChannelUpdate(u)
         // we also need to update the graph
-        val mutatedGraph = d.graph.addEdge(desc, u)
-        d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = mutatedGraph)
+        val graph1 = d.graph.addEdge(desc, u)
+        d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
@@ -635,14 +635,14 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         // we also need to update the graph
-        val mutatedGraph = d.graph.removeEdge(desc).addEdge(desc, u)
-        d.copy(privateUpdates = d.privateUpdates + (desc -> u), graph = mutatedGraph)
+        val graph1 = d.graph.removeEdge(desc).addEdge(desc, u)
+        d.copy(privateUpdates = d.privateUpdates + (desc -> u), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         // we also need to update the graph
-        val mutatedGraph = d.graph.addEdge(desc, u)
-        d.copy(privateUpdates = d.privateUpdates + (desc -> u), graph = mutatedGraph)
+        val graph1 = d.graph.addEdge(desc, u)
+        d.copy(privateUpdates = d.privateUpdates + (desc -> u), graph = graph1)
       }
     } else if (db.isPruned(u.shortChannelId) && !isStale(u)) {
       // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
