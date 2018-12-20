@@ -378,7 +378,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
-      findRoute(d.graph, start, end, amount, extraEdges = extraEdges, ignoredEdges = ignoredUpdates)
+      findRoute(d.graph, start, end, amount, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -788,10 +788,10 @@ object Router {
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
     * @return the computed route to the destination @targetNodeId
     */
-  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = Try {
+  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    Graph.shortestPath(g, localNodeId, targetNodeId, amountMsat, ignoredEdges.toSeq, extraEdges) match {
+    Graph.shortestPath(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges) match {
       case Nil => throw RouteNotFound
       case path => path
     }

@@ -357,7 +357,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, ignoredEdges = ChannelDesc(ShortChannelId(3L), c, d) :: Nil)
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, ignoredEdges = Set(ChannelDesc(ShortChannelId(3L), c, d)))
     assert(route1.map(hops2Ids) === Failure(RouteNotFound))
 
     // verify that we left the graph untouched
