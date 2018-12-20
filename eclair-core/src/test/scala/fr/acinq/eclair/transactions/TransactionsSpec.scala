@@ -165,6 +165,7 @@ class TransactionsSpec extends FunSuite with Logging {
   }
 
   test("generate valid commitment and htlc transactions") {
+
     val localFundingPriv = PrivateKey(BinaryData("a1" * 32) :+ 1.toByte)
     val remoteFundingPriv = PrivateKey(BinaryData("a2" * 32) :+ 1.toByte)
     val localRevocationPriv = PrivateKey(BinaryData("a3" * 32) :+ 1.toByte)
@@ -311,6 +312,61 @@ class TransactionsSpec extends FunSuite with Logging {
       assert(checkSpendable(signed).isSuccess)
     }
 
+  }
+
+  test("sort the htlc outputs using BIP39") {
+
+    val localFundingPriv = PrivateKey(BinaryData("a1" * 32) :+ 1.toByte)
+    val remoteFundingPriv = PrivateKey(BinaryData("a2" * 32) :+ 1.toByte)
+    val localRevocationPriv = PrivateKey(BinaryData("a3" * 32) :+ 1.toByte)
+    val localPaymentPriv = PrivateKey(BinaryData("a4" * 32) :+ 1.toByte)
+    val localDelayedPaymentPriv = PrivateKey(BinaryData("a5" * 32) :+ 1.toByte)
+    val remotePaymentPriv = PrivateKey(BinaryData("a6" * 32) :+ 1.toByte)
+    val localHtlcPriv = PrivateKey(BinaryData("a7" * 32) :+ 1.toByte)
+    val remoteHtlcPriv = PrivateKey(BinaryData("a8" * 32) :+ 1.toByte)
+    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(BinaryData("a9" * 32), true).publicKey))
+    val commitInput = Funding.makeFundingInputInfo(BinaryData("a0" * 32), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+    val toLocalDelay = 144
+    val localDustLimit = Satoshi(546)
+    val feeratePerKw = 22000
+
+
+    // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
+    // htlc2 and htlc3 have the same amounts and should be sorted according to their pubkey
+    val paymentPreimage1 = BinaryData("11" * 32)
+    val paymentPreimage2 = BinaryData("22" * 32)
+    val paymentPreimage3 = BinaryData("33" * 32)
+    val htlc1 = UpdateAddHtlc("00" * 32, 0, millibtc2satoshi(MilliBtc(100)).amount * 1000, sha256(paymentPreimage1), 300, BinaryData.empty)
+    val htlc2 = UpdateAddHtlc("00" * 32, 1, millibtc2satoshi(MilliBtc(200)).amount * 1000, sha256(paymentPreimage2), 300, BinaryData.empty)
+    val htlc3 = UpdateAddHtlc("00" * 32, 1, millibtc2satoshi(MilliBtc(200)).amount * 1000, sha256(paymentPreimage3), 300, BinaryData.empty)
+    val spec = CommitmentSpec(
+      htlcs = Set(
+        DirectedHtlc(IN, htlc1),
+        DirectedHtlc(IN, htlc2),
+        DirectedHtlc(IN, htlc3)
+      ),
+      feeratePerKw = feeratePerKw,
+      toLocalMsat = millibtc2satoshi(MilliBtc(400)).amount * 1000,
+      toRemoteMsat = millibtc2satoshi(MilliBtc(300)).amount * 1000)
+
+    val commitTxNumber = 0x404142434446L
+    val commitTx = {
+      val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
+      val localSig = Transactions.sign(txinfo, localPaymentPriv)
+      val remoteSig = Transactions.sign(txinfo, remotePaymentPriv)
+      Transactions.addSigs(txinfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
+    }
+
+    val htlcOut1 :: htlcOut2 :: htlcOut3 :: tail = commitTx.tx.txOut
+
+    assert(htlcOut1.amount.amount == 10000000) // htlc1 first because of the smallest amount (BIP39)
+    assert(htlcOut2.amount.amount == 20000000) // htlc2 and htlc3 have the same amount
+    assert(htlcOut3.amount.amount == 20000000)
+
+    //htlc2 comes first because its pubKeyScript is lexicographically smaller than htlc3's
+    assert(htlcOut2.publicKeyScript.toString() < htlcOut3.publicKeyScript.toString())
+    assert(htlcOut2.publicKeyScript.toString() == "002001ced9e8dad97b85eb0b7d101f7a79587fa890b79ffa7cf98cff1812444b8fe8")
+    assert(htlcOut3.publicKeyScript.toString() == "0020d9a3e115fe05f3438f2ca36668f63567488c4ff940abebd674e68f4effa6cf73")
   }
 
   def checkSuccessOrFailTest[T](input: Try[T]) = input match {
