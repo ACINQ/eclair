@@ -386,7 +386,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val extraUpdate = makeUpdate(1L, a, b, 5, 5)
 
-    val extraGraphEdges = Seq(GraphEdge(extraUpdate._1, extraUpdate._2))
+    val extraGraphEdges = Set(GraphEdge(extraUpdate._1, extraUpdate._2))
 
     val route2 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, extraEdges = extraGraphEdges)
     assert(route2.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
