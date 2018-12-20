@@ -92,7 +92,7 @@ object Graph {
             // note: the default value here will never be used, as there is always an entry for the current in the 'cost' map
             val newMinimumKnownCost = cost.get(current.key) + edgeWeightByAmount(edge, amountMsat)
 
-            // we call containsKey first becaue "getOrDefault" is not available in JDK7
+            // we call containsKey first because "getOrDefault" is not available in JDK7
             val neighborCost = cost.containsKey(neighbor) match {
               case false => Long.MaxValue
               case true => cost.get(neighbor)
