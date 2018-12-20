@@ -112,15 +112,15 @@ class GraphSpec extends FunSuite {
 
 		val graph = DirectedGraph().addEdges(updates)
 
-		assert(graph.containsEdge(edgeFromNodes(1, a, b)))
-		assert(!graph.containsEdge(edgeFromNodes(5, b, a)))
-		assert(graph.containsEdge(edgeFromNodes(2, b, c)))
-		assert(graph.containsEdge(edgeFromNodes(3, c, d)))
-		assert(graph.containsEdge(edgeFromNodes(4, d, e)))
+		assert(graph.containsEdge(descFromNodes(1, a, b)))
+		assert(!graph.containsEdge(descFromNodes(5, b, a)))
+		assert(graph.containsEdge(descFromNodes(2, b, c)))
+		assert(graph.containsEdge(descFromNodes(3, c, d)))
+		assert(graph.containsEdge(descFromNodes(4, d, e)))
 		assert(graph.containsEdge(ChannelDesc(ShortChannelId(4L), d, e))) // by channel desc
 		assert(!graph.containsEdge(ChannelDesc(ShortChannelId(4L), a, g))) // by channel desc
-		assert(!graph.containsEdge(edgeFromNodes(50, a, e)))
-		assert(!graph.containsEdge(edgeFromNodes(66, c, f))) // f isn't even in the graph
+		assert(!graph.containsEdge(descFromNodes(50, a, e)))
+		assert(!graph.containsEdge(descFromNodes(66, c, f))) // f isn't even in the graph
 	}
 
 	test("should remove a set of edges") {
@@ -167,16 +167,6 @@ class GraphSpec extends FunSuite {
 		assert(bNeighbors.exists(_.desc.b === c))
 	}
 
-	test("filterBy should remove the edges satisfying the predicate") {
-
-		val graph = makeTestGraph()
-
-		val graphNoEdgesFromA = graph.filterNot(_.desc.a == a)
-
-		assert(graphNoEdgesFromA.edgesOf(a).size === 0)
-		assert(graphNoEdgesFromA.edgesOf(b).size === 2)
-	}
-
 	test("there can be multiple edges between the same vertices") {
 
 		val graph = makeTestGraph()
@@ -205,19 +195,23 @@ class GraphSpec extends FunSuite {
 
 		assert(graph.vertexSet().size === 5)
 		assert(graph.containsVertex(e))
-		assert(graph.containsEdge(edgeFromNodes(5, c, e)))
-		assert(graph.containsEdge(edgeFromNodes(6, b, e)))
+		assert(graph.containsEdge(descFromNodes(5, c, e)))
+		assert(graph.containsEdge(descFromNodes(6, b, e)))
 
 		//E has 2 incoming edges
 		val withoutE = graph.removeVertex(e)
 
 		assert(withoutE.vertexSet().size === 4)
 		assert(!withoutE.containsVertex(e))
-		assert(!withoutE.containsEdge(edgeFromNodes(5, c, e)))
-		assert(!withoutE.containsEdge(edgeFromNodes(6, b, e)))
+		assert(!withoutE.containsEdge(descFromNodes(5, c, e)))
+		assert(!withoutE.containsEdge(descFromNodes(6, b, e)))
 	}
 
 	def edgeFromDesc(tuple: (ChannelDesc, ChannelUpdate)): GraphEdge = GraphEdge(tuple._1, tuple._2)
+
+	def descFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): ChannelDesc = {
+		makeUpdate(shortChannelId, a, b, 0, 0)._1
+	}
 
 	def edgeFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): GraphEdge = {
 		edgeFromDesc(makeUpdate(shortChannelId, a, b, 0, 0))

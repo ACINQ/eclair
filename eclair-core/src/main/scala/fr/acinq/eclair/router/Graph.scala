@@ -194,10 +194,6 @@ object Graph {
         }
       }
 
-      def removeEdge(edge: GraphEdge): DirectedGraph = removeEdge(edge.desc)
-
-      def removeEdgesList(edgeList: Seq[GraphEdge]): DirectedGraph = removeEdges(edgeList.map(_.desc))
-
       def removeEdges(descList: Seq[ChannelDesc]): DirectedGraph = {
         descList.foldLeft(this)((acc, edge) => acc.removeEdge(edge))
       }
@@ -207,8 +203,6 @@ object Graph {
         * @return For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
         */
       def getEdge(edge: GraphEdge): Option[GraphEdge] = getEdge(edge.desc)
-
-      def getEdge(shortChannelId: Long): Option[GraphEdge] = edgeSet().find(_.desc.shortChannelId.toLong == shortChannelId)
 
       def getEdge(desc: ChannelDesc): Option[GraphEdge] = vertices.get(desc.a).flatMap { adj =>
         adj.find(e => e.desc.shortChannelId == desc.shortChannelId && e.desc.b == desc.b)
@@ -237,11 +231,7 @@ object Graph {
         * @return
         */
       def removeVertex(key: PublicKey): DirectedGraph = {
-        DirectedGraph(removeEdgesList(getIncomingEdgesOf(key)).vertices - key)
-      }
-
-      def removeVertices(keys: Seq[PublicKey]): DirectedGraph = {
-        keys.foldLeft(this)((acc, vertex) => acc.removeVertex(vertex))
+        DirectedGraph(removeEdges(getIncomingEdgesOf(key).map(_.desc)).vertices - key)
       }
 
       /**
@@ -280,22 +270,12 @@ object Graph {
       def containsVertex(key: PublicKey): Boolean = vertices.contains(key)
 
       /**
-        * @param edge
-        * @return true if this edge is in the graph. For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
+        * @param desc
+        * @return true if this edge desc is in the graph. For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
         */
-      def containsEdge(edge: GraphEdge): Boolean = containsEdge(edge.desc)
-
       def containsEdge(desc: ChannelDesc): Boolean = vertices.get(desc.a) match {
         case None => false
         case Some(adj) => adj.exists(neighbor => neighbor.desc.shortChannelId == desc.shortChannelId && neighbor.desc.b == desc.b)
-      }
-
-      /**
-        * @param predicate
-        * @return a subset of this graph with only edges NOT satisfying the predicate
-        */
-      def filterNot(predicate: GraphEdge => Boolean): DirectedGraph = {
-        removeEdgesList(edgeSet().filter(predicate).toSeq)
       }
 
       def prettyPrint(): String = {
