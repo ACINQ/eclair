@@ -127,7 +127,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     initChannels.values.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))
     initChannelUpdates.values.foreach(u => context.system.eventStream.publish(ChannelUpdateReceived(u)))
     initNodes.values.foreach(n => context.system.eventStream.publish(NodeDiscovered(n)))
-    initChannelUpdates.values.foreach(u => context.system.eventStream.publish(ChannelUpdateReceived(u)))
 
     // watch the funding tx of all these channels
     // note: some of them may already have been spent, in that case we will receive the watch event immediately

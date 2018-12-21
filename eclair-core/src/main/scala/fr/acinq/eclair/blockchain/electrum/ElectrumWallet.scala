@@ -65,6 +65,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
   /**
     * Send a notification if the wallet is ready and its ready message has not
     * already been sent
+    *
     * @param data wallet data
     * @return the input data with an updated 'last ready message' if needed
     */
@@ -85,15 +86,26 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
   }
 
   startWith(DISCONNECTED, {
-    val checkpoints = CheckPoint.load(params.chainHash)
-    // regtest is a special case, there are no checkpoints and we start with a single header (
     val blockchain = params.chainHash match {
+      // regtest is a special case, there are no checkpoints and we start with a single header (
       case Block.RegtestGenesisBlock.hash => Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header)
-      case _ => Blockchain.fromCheckpoints(params.chainHash, checkpoints)
+      case _ =>
+        val checkpoints = CheckPoint.load(params.chainHash)
+        val checkpoints1 = db.getTip match {
+          case Some((height, header)) =>
+            val newcheckpoints = for {h <- checkpoints.size * 2016 - 1 + 2016 to height - 2016 by 2016} yield {
+              val cpheader = db.getHeader(h).get
+              val nextDiff = db.getHeader(h + 1).get.bits
+              CheckPoint(cpheader.hash, nextDiff)
+            }
+            checkpoints ++ newcheckpoints
+          case None => checkpoints
+        }
+        Blockchain.fromCheckpoints(params.chainHash, checkpoints1)
     }
-    val headers = params.db.getHeaders(blockchain.checkpoints.size * 2016)
+    val headers = params.db.getHeaders(blockchain.checkpoints.size * 2016, None)
     log.info(s"loading ${headers.size} from db")
-    val blockchain1 = Blockchain.addHeaders(blockchain, headers.map(_._2))
+    val blockchain1 = Blockchain.addHeadersChunk(blockchain, blockchain.checkpoints.size * 2016, headers)
     val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
     val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
     val data = Data(params, blockchain1, firstAccountKeys, firstChangeKeys)
@@ -114,13 +126,12 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       sender ! PoisonPill
       goto(DISCONNECTED) using data
 
-    case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) if data.blockchain.isEmpty =>
+    case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) if data.blockchain.bestchain.isEmpty =>
       log.info("perfoming full sync")
       // now ask for the first header after our latest checkpoint
-      val checkpointHeight = data.blockchain.checkpoints.size * 2016 - 1
-      client ! ElectrumClient.GetHeader(checkpointHeight + 1)
+      client ! ElectrumClient.GetHeaders(data.blockchain.checkpoints.size * 2016, 2016)
       // make sure there is not last ready message
-      goto(WAITING_FOR_FIRST_HEADER) using data.copy(lastReadyMessage = None)
+      goto(SYNCING) using data.copy(lastReadyMessage = None)
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) if header == data.blockchain.tip.header =>
       data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
@@ -137,24 +148,6 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       goto(DISCONNECTED) using data
   }
 
-  when(WAITING_FOR_FIRST_HEADER) {
-    case Event(ElectrumClient.GetHeaderResponse(firstHeight, firstHeader), data) =>
-      Try(Blockchain.addHeader(data.blockchain, firstHeader)) match {
-        case Success(blockchain1) =>
-          params.db.addHeader(firstHeight, firstHeader)
-          client ! ElectrumClient.GetHeaders(blockchain1.tip.height + 1, 2016)
-          goto(SYNCING) using data.copy(blockchain = blockchain1)
-        case Failure(error) =>
-          log.error(s"elextrumx server sent bad header, disconnecting", error)
-          sender ! PoisonPill
-          goto(DISCONNECTED) using data
-      }
-
-    case Event(ElectrumClient.ElectrumDisconnected, data) =>
-      log.info(s"wallet got disconnected")
-      goto(DISCONNECTED) using data
-  }
-
   when(SYNCING) {
     case Event(ElectrumClient.GetHeadersResponse(start, headers, maxHeaders), data) if headers.isEmpty =>
       // ok, we're all sync now
@@ -163,22 +156,43 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
       goto(RUNNING) using notifyReady(data)
 
-    case Event(ElectrumClient.GetHeadersResponse(start, headers, maxHeaders), data) =>
-      Try(Blockchain.addHeaders(data.blockchain, headers)) match {
+    case Event(ElectrumClient.GetHeadersResponse(start, headers, maxHeaders), data) if start % 2016 == 0 =>
+      Try(Blockchain.addHeadersChunk(data.blockchain, start, headers)) match {
         case Success(blockchain1) =>
-          val headers1 = headers.zipWithIndex.map { case (b, i) => (start + i, b)}
-          params.db.addHeaders(headers1)
+          val blockchain2 = if (blockchain1.bestchain.size >= 2 * 2016) {
+            val saveme = blockchain1.bestchain.take(2016)
+            params.db.addHeaders(saveme.head.height, saveme.map(_.header))
+            val headersMap1 = blockchain1.headersMap -- saveme.map(_.hash)
+            val bestchain1 = blockchain1.bestchain.drop(2016)
+            val checkpoints1 = blockchain1.checkpoints :+ CheckPoint(saveme.last.hash, bestchain1.head.header.bits)
+            blockchain1.copy(headersMap = headersMap1, bestchain = bestchain1, checkpoints = checkpoints1)
+          } else {
+            blockchain1
+          }
+          log.info(s"requesting new headers chunk at ${blockchain2.tip.height}")
+          client ! ElectrumClient.GetHeaders(blockchain2.tip.height + 1, 2016)
+          goto(SYNCING) using data.copy(blockchain = blockchain2)
+        case Failure(error) =>
+          log.error("elextrumx server sent bad header chunk, disconnecting, {}", error)
+          sender ! PoisonPill
+          goto(DISCONNECTED) using data
+      }
+
+    case Event(ElectrumClient.GetHeadersResponse(start, headers, maxHeaders), data) =>
+      Try(Blockchain.addHeaders(data.blockchain, start, headers)) match {
+        case Success(blockchain1) =>
+          params.db.addHeaders(start, headers)
           log.info(s"requesting new headers chunk at ${blockchain1.tip.height}")
           client ! ElectrumClient.GetHeaders(blockchain1.tip.height + 1, 2016)
           goto(SYNCING) using data.copy(blockchain = blockchain1)
         case Failure(error) =>
-          log.error(s"elextrumx server sent bad header, disconnecting", error)
+          log.error("elextrumx server sent bad headers, disconnecting, {}", error)
           sender ! PoisonPill
           goto(DISCONNECTED) using data
       }
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) =>
-      Try(Blockchain.addHeader(data.blockchain, header)) match {
+      Try(Blockchain.addHeader(data.blockchain, height, header)) match {
         case Success(blockchain1) =>
           params.db.addHeader(height, header)
           stay using data.copy(blockchain = blockchain1)
@@ -198,7 +212,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) =>
       log.info(s"got new tip ${header.blockId} at ${height}")
-      Try(Blockchain.addHeader(data.blockchain, header)) match {
+      Try(Blockchain.addHeader(data.blockchain, height, header)) match {
         case Success(blockchain1) =>
           params.db.addHeader(height, header)
           data.heights.collect {
@@ -311,8 +325,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(response@GetMerkleResponse(txid, merkle, height, pos), data) =>
       // TODO: check merkle root 
-      val blockchain = data.blockchain
-      blockchain.getHeader(height) match {
+      data.blockchain.getHeader(height).orElse(params.db.getHeader(height)) match {
         case Some(header) if header.hashMerkleRoot == response.root =>
           log.info(s"transaction $txid has been verified")
         case _ => log.warning(s"cannot verify tx")
@@ -587,7 +600,7 @@ object ElectrumWallet {
                   pendingTransactionRequests: Set[BinaryData],
                   pendingTransactions: Seq[Transaction],
                   lastReadyMessage: Option[WalletReady]) extends Logging {
-    def chainHash = blockchain.chainhash
+    def chainHash = blockchain.chainHash
 
     lazy val accountKeyMap = accountKeys.map(key => computeScriptHashFromPublicKey(key.publicKey) -> key).toMap
 

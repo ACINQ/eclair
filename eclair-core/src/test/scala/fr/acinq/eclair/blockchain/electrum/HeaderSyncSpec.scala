@@ -44,42 +44,28 @@ class HeaderSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
     TestKit.shutdownActorSystem(system)
   }
 
-  test("build from checkpoints") {
+  ignore("build from checkpoints") {
     val checkpoints = CheckPoint.load(Block.LivenetGenesisBlock.hash)
     val blockchain = Blockchain.fromCheckpoints(Block.LivenetGenesisBlock.hash, checkpoints)
 
     // get the first header after the last checkpoint
     val checkpointHeight = checkpoints.size * 2016 - 1
-    probe.send(client, GetHeader(checkpointHeight + 1))
-    val GetHeaderResponse(_, checkPointHeader) = probe.expectMsgType[GetHeaderResponse]
-    val blockchain1 = Blockchain.addHeader(blockchain, checkPointHeader)
 
     // get the next chunks of headers
-    probe.send(client, GetHeaders(blockchain1.tip.height + 1, 2016))
+    probe.send(client, GetHeaders(checkpoints.size * 2016, 2016))
     val GetHeadersResponse(start1, headers1, _) = probe.expectMsgType[GetHeadersResponse]
     probe.send(client, GetHeaders(start1 + headers1.length, 2016))
     val GetHeadersResponse(start2, headers2, _) = probe.expectMsgType[GetHeadersResponse]
 
     // check that we can add our headers
-    val blockchain2 = Blockchain.addHeaders(blockchain1, headers1)
-    val blockchain3 = Blockchain.addHeaders(blockchain2, headers2)
-    assert(blockchain3.bestChain.length == 1 + 2016 + 2016)
-
-    // check that we handle orphan blocks properly
-    val blockchain4 = Blockchain.addHeaders(blockchain1, headers1.drop(100))
-    assert(blockchain4.orphans.size == headers1.size - 100)
-    val blockchain5 = Blockchain.addHeaders(blockchain4, headers1.take(100))
-    assert(blockchain5.bestChain.length == 1 + headers1.size)
+    val blockchain2 = Blockchain.addHeadersChunk(blockchain, start1, headers1)
+    val blockchain3 = Blockchain.addHeadersChunk(blockchain2, start2, headers2)
+    assert(blockchain3.height == 1 + 2016 + 2016)
   }
 
   ignore("initial header download") {
     val checkpoints = CheckPoint.load(Block.LivenetGenesisBlock.hash)
-    val checkpointHeight = checkpoints.size * 2016 - 1
-
-    // get the first header after the last checkpoint
-    probe.send(client, GetHeader(checkpointHeight + 1))
-    val GetHeaderResponse(_, checkPointHeader) = probe.expectMsgType[GetHeaderResponse]
-    var blockchain = Blockchain.fromCheckpoints(Block.LivenetGenesisBlock.hash, checkpoints, checkPointHeader)
+    var blockchain = Blockchain.fromCheckpoints(Block.LivenetGenesisBlock.hash, checkpoints)
 
     // get the remote server tip
     val dummy = TestProbe()
@@ -90,7 +76,7 @@ class HeaderSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
     while (blockchain.tip.height < height) {
       probe.send(client, GetHeaders(blockchain.tip.height + 1, 2016))
       val GetHeadersResponse(start_height, headers, _) = probe.expectMsgType[GetHeadersResponse]
-      blockchain = Blockchain.addHeaders(blockchain, headers)
+      blockchain = Blockchain.addHeadersChunk(blockchain, start_height, headers)
     }
   }
 }
