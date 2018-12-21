@@ -313,7 +313,7 @@ class TransactionsSpec extends FunSuite with Logging {
 
   }
 
-  test("sort the htlc outputs using BIP39") {
+  test("sort the htlc outputs using BIP69") {
 
     // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
     // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey
@@ -343,7 +343,7 @@ class TransactionsSpec extends FunSuite with Logging {
 
     val htlcOut1 :: htlcOut2 :: htlcOut3 :: tail = commitTx.tx.txOut
 
-    assert(htlcOut1.amount.amount == 10000000) // htlc1 first because of the smallest amount (BIP39)
+    assert(htlcOut1.amount.amount == 10000000) // htlc1 first because of the smallest amount (BIP69)
     assert(htlcOut2.amount.amount == 20000000) // htlc2 and htlc3 have the same amount
     assert(htlcOut3.amount.amount == 20000000)
 

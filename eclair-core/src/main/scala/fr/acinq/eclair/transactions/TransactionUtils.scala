@@ -45,7 +45,7 @@ object TransactionUtils {
     */
   def sort(tx: Transaction): Transaction = LexicographicalOrdering.sort(tx)
 
-  def sortByBIP39AndCLTV(tx: Transaction, offeredHtlcAndCltv:Seq[(TxOut,Long)]): Transaction = {
+  def sortByBIP69AndCLTV(tx: Transaction, offeredHtlcAndCltv:Seq[(TxOut,Long)]): Transaction = {
 
     // transaction outputs with optionally a CLTV value attached, only outputs corresponding to offered HTLCs will have it.
     val txOutsAndCLTV_opt = tx.txOut.map { out =>

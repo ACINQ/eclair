@@ -212,7 +212,7 @@ object Transactions {
       txIn = TxIn(commitTxInput.outPoint, Array.emptyByteArray, sequence = sequence) :: Nil,
       txOut = toLocalDelayedOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ htlcOfferedOutputsAndCltv.map(_._1) ++ htlcReceivedOutputs,
       lockTime = locktime)
-    CommitTx(commitTxInput, TransactionUtils.sortByBIP39AndCLTV(tx, htlcOfferedOutputsAndCltv))
+    CommitTx(commitTxInput, TransactionUtils.sortByBIP69AndCLTV(tx, htlcOfferedOutputsAndCltv))
   }
 
   def makeHtlcTimeoutTx(commitTx: Transaction, outputsAlreadyUsed: Set[Int], localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, feeratePerKw: Long, htlc: UpdateAddHtlc): HtlcTimeoutTx = {
@@ -461,7 +461,7 @@ object Transactions {
       txIn = TxIn(commitTxInput.outPoint, Array.emptyByteArray, sequence = 0xffffffffL) :: Nil,
       txOut = toLocalOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ Nil,
       lockTime = 0)
-    ClosingTx(commitTxInput, TransactionUtils.sort(tx)) // NB uses only the BIP39 ordering!
+    ClosingTx(commitTxInput, TransactionUtils.sort(tx)) // NB uses only the BIP69 ordering!
   }
 
   def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: BinaryData, outputsAlreadyUsed: Set[Int], amount_opt: Option[Satoshi]): Int = {

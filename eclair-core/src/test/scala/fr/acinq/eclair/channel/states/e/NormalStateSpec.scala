@@ -778,7 +778,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
 
-  test("recv CommitSig (with signatures ordered as htlc ordering BIP39+CLTV)") { f =>
+  test("recv CommitSig (with signatures ordered as htlc ordering BIP69+CLTV)") { f =>
     import f._
     val sender = TestProbe()
 
