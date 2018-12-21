@@ -111,14 +111,16 @@ trait StateTestsHelperMethods extends TestKitBase {
     relayer.expectMsgType[LocalChannelUpdate]
   }
 
-  def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (BinaryData, UpdateAddHtlc) = {
-    val R: BinaryData = Array.fill[Byte](32)(0)
-    Random.nextBytes(R)
+  def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe, cltvExpiry: Long = 400144L, preimage: Option[BinaryData] = None): (BinaryData, UpdateAddHtlc) = {
+    val R: BinaryData = preimage.getOrElse {
+      val tempR = Array.fill[Byte](32)(0)
+      Random.nextBytes(tempR)
+      tempR
+    }
     val H: BinaryData = Crypto.sha256(R)
     val sender = TestProbe()
     val receiverPubkey = r.underlyingActor.nodeParams.nodeId
-    val expiry = 400144
-    val cmd = PaymentLifecycle.buildCommand(amountMsat, expiry, H, Hop(null, receiverPubkey, null) :: Nil)._1.copy(commit = false)
+    val cmd = PaymentLifecycle.buildCommand(amountMsat, cltvExpiry, H, Hop(null, receiverPubkey, null) :: Nil)._1.copy(commit = false)
     sender.send(s, cmd)
     sender.expectMsg("ok")
     val htlc = s2r.expectMsgType[UpdateAddHtlc]

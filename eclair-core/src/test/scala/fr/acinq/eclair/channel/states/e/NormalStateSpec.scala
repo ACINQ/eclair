@@ -778,6 +778,32 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
 
+  test("recv CommitSig (with signatures ordered as htlc ordering BIP39+CLTV)") { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we add 2 HTLC with same amount and same preimage but different CLTV value then we check that the receiving
+    // party (bob) could correctly verify the htlc_sigs against the htlc-timeout
+
+    val commonHtlcPreimage = BinaryData("00" * 32)
+    val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice, cltvExpiry = 400148, preimage = Some(commonHtlcPreimage))
+    val (r2, htlc2) = addHtlc(50000000, alice, bob, alice2bob, bob2alice, cltvExpiry = 400147, preimage = Some(commonHtlcPreimage))
+
+    assert(htlc1.amountMsat == htlc2.amountMsat) // amounts are the same
+    assert(r1 == r2 && htlc1.paymentHash == htlc2.paymentHash) // preimages & paymentHash are the same
+    assert(htlc1.cltvExpiry != htlc2.cltvExpiry) // CLTVs are different!
+
+    sender.send(alice, CMD_SIGN)
+    sender.expectMsg("ok")
+    alice2bob.expectMsgType[CommitSig]
+
+    // now bob's channel receives it
+    alice2bob.forward(bob)
+
+    // bob successfully checked the sigs and sent back a revoke_and_ack, the commit_sig had
+    // the correct order of the signatures for 2nd stage htlc transactions
+    bob2alice.expectMsgType[RevokeAndAck]
+  }
 
   test("recv RevokeAndAck (one htlc sent)") { f =>
     import f._
