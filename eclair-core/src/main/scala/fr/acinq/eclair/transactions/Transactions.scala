@@ -197,13 +197,12 @@ object Transactions {
     val toLocalDelayedOutput_opt = if (toLocalAmount >= localDustLimit) Some(TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)))) else None
     val toRemoteOutput_opt = if (toRemoteAmount >= localDustLimit) Some(TxOut(toRemoteAmount, pay2wpkh(remotePaymentPubkey))) else None
 
-    val htlcOfferedOutputs = trimOfferedHtlcs(localDustLimit, spec)
-      .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash)))))
-    val htlcReceivedOutputsAndRedeem = trimReceivedHtlcs(localDustLimit, spec)
-      .map(htlc => {
-        val redeemScript = htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash), htlc.add.cltvExpiry)
-        (TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(redeemScript)), redeemScript) //return a tuple with the redeem scripts for the p2wsh, it will be used to extract the CLTV if needed as tie breaker for sorting
-      })
+    val htlcOfferedOutputsAndCltv = trimOfferedHtlcs(localDustLimit, spec)
+      .map(htlc =>
+        // (htlcOfferedOut, htlc-timeout-tx-cltv): (TxOut, Long)
+        (TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash)))), htlc.add.cltvExpiry))
+    val htlcReceivedOutputs = trimReceivedHtlcs(localDustLimit, spec)
+      .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash), htlc.add.cltvExpiry))))
 
     val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, locktime) = encodeTxNumber(txnumber)
@@ -211,9 +210,9 @@ object Transactions {
     val tx = Transaction(
       version = 2,
       txIn = TxIn(commitTxInput.outPoint, Array.emptyByteArray, sequence = sequence) :: Nil,
-      txOut = toLocalDelayedOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ htlcOfferedOutputs ++ htlcReceivedOutputsAndRedeem.map(_._1),
+      txOut = toLocalDelayedOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ htlcOfferedOutputsAndCltv.map(_._1) ++ htlcReceivedOutputs,
       lockTime = locktime)
-    CommitTx(commitTxInput, TransactionUtils.sortByBIP39AndCLTV(tx, htlcReceivedOutputsAndRedeem.map(_._2).toList))
+    CommitTx(commitTxInput, TransactionUtils.sortByBIP39AndCLTV(tx, htlcOfferedOutputsAndCltv))
   }
 
   def makeHtlcTimeoutTx(commitTx: Transaction, outputsAlreadyUsed: Set[Int], localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, feeratePerKw: Long, htlc: UpdateAddHtlc): HtlcTimeoutTx = {

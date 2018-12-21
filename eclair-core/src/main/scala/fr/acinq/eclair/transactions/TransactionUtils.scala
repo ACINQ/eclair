@@ -1,7 +1,6 @@
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.Protocol.varint
-import fr.acinq.bitcoin.{Crypto, LexicographicalOrdering, OP_CHECKLOCKTIMEVERIFY, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptElt, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{Crypto, LexicographicalOrdering, OutPoint, Satoshi, Script, ScriptElt, Transaction, TxIn, TxOut}
 
 import scala.annotation.tailrec
 
@@ -14,12 +13,17 @@ object TransactionUtils {
 
   def isLessThan(a: TxIn, b: TxIn): Boolean = isLessThan(a.outPoint, b.outPoint)
 
-  def isLessOrCLTV(a: (TxOut, Option[List[ScriptElt]]), b: (TxOut, Option[List[ScriptElt]])): Boolean = {
+  def isLessOrCLTV(a: (TxOut, Option[Long]), b: (TxOut, Option[Long])): Boolean = {
     val amountComparison = compareAmounts(a._1.amount, b._1.amount)
     if(amountComparison != 0){
       amountComparison < 0
     } else {
-      lexicographicalOrder(a._1.publicKeyScript, b._1.publicKeyScript) < 0
+      val lexicographicalComparison = lexicographicalOrder(a._1.publicKeyScript, b._1.publicKeyScript)
+      if(lexicographicalComparison == 0 && a._2.isDefined && b._2.isDefined) {
+        a._2.get < b._2.get // compare the CLTVs
+      } else {
+        lexicographicalComparison < 0
+      }
     }
   }
 
@@ -41,24 +45,19 @@ object TransactionUtils {
     */
   def sort(tx: Transaction): Transaction = LexicographicalOrdering.sort(tx)
 
-  def sortByBIP39AndCLTV(tx: Transaction, receivedHtlcRedeemScripts: List[List[ScriptElt]]): Transaction = {
+  def sortByBIP39AndCLTV(tx: Transaction, offeredHtlcAndCltv:Seq[(TxOut,Long)]): Transaction = {
 
-    val txOutAndRedeems: Seq[(TxOut, Option[List[ScriptElt]])] = tx.txOut.map { txOut =>
-
-      //https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#p2wsh
-      val scriptHash = txOut.publicKeyScript.drop(1) // the script hash in p2wsh is right after the first elem OP_0
-      val redeemOpt = receivedHtlcRedeemScripts.find(redeem => {
-        val rawRedeem = Script.write(redeem)
-        Crypto.sha256(rawRedeem) == scriptHash
-      })
-
-      (txOut, redeemOpt)
+    // transaction outputs with optionally a CLTV value attached, only outputs corresponding to offered HTLCs will have it.
+    val txOutsAndCLTV_opt = tx.txOut.map { out =>
+      offeredHtlcAndCltv.find(_._1.publicKeyScript == out.publicKeyScript) match {
+        case Some((txOut, cltv)) => (txOut, Some(cltv))
+        case None                => (out, None)
+      }
     }
-
 
     tx.copy(
       txIn = tx.txIn.sortWith(isLessThan),
-      txOut = txOutAndRedeems.sortWith(isLessOrCLTV).map(_._1)
+      txOut = txOutsAndCLTV_opt.sortWith(isLessOrCLTV).map(_._1)
     )
   }
 

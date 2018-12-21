@@ -37,6 +37,20 @@ import scala.util.{Failure, Random, Success, Try}
 
 class TransactionsSpec extends FunSuite with Logging {
 
+  val localFundingPriv = PrivateKey(BinaryData("a1" * 32) :+ 1.toByte)
+  val remoteFundingPriv = PrivateKey(BinaryData("a2" * 32) :+ 1.toByte)
+  val localRevocationPriv = PrivateKey(BinaryData("a3" * 32) :+ 1.toByte)
+  val localPaymentPriv = PrivateKey(BinaryData("a4" * 32) :+ 1.toByte)
+  val localDelayedPaymentPriv = PrivateKey(BinaryData("a5" * 32) :+ 1.toByte)
+  val remotePaymentPriv = PrivateKey(BinaryData("a6" * 32) :+ 1.toByte)
+  val localHtlcPriv = PrivateKey(BinaryData("a7" * 32) :+ 1.toByte)
+  val remoteHtlcPriv = PrivateKey(BinaryData("a8" * 32) :+ 1.toByte)
+  val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(BinaryData("a9" * 32), true).publicKey))
+  val commitInput = Funding.makeFundingInputInfo(BinaryData("a0" * 32), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+  val toLocalDelay = 144
+  val localDustLimit = Satoshi(546)
+  val feeratePerKw = 22000
+
   test("encode/decode sequence and locktime (one example)") {
 
     val txnumber = 0x11F71FB268DL
@@ -165,21 +179,6 @@ class TransactionsSpec extends FunSuite with Logging {
   }
 
   test("generate valid commitment and htlc transactions") {
-
-    val localFundingPriv = PrivateKey(BinaryData("a1" * 32) :+ 1.toByte)
-    val remoteFundingPriv = PrivateKey(BinaryData("a2" * 32) :+ 1.toByte)
-    val localRevocationPriv = PrivateKey(BinaryData("a3" * 32) :+ 1.toByte)
-    val localPaymentPriv = PrivateKey(BinaryData("a4" * 32) :+ 1.toByte)
-    val localDelayedPaymentPriv = PrivateKey(BinaryData("a5" * 32) :+ 1.toByte)
-    val remotePaymentPriv = PrivateKey(BinaryData("a6" * 32) :+ 1.toByte)
-    val localHtlcPriv = PrivateKey(BinaryData("a7" * 32) :+ 1.toByte)
-    val remoteHtlcPriv = PrivateKey(BinaryData("a8" * 32) :+ 1.toByte)
-    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(BinaryData("a9" * 32), true).publicKey))
-    val commitInput = Funding.makeFundingInputInfo(BinaryData("a0" * 32), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
-    val toLocalDelay = 144
-    val localDustLimit = Satoshi(546)
-    val feeratePerKw = 22000
-
 
     // htlc1 and htlc2 are regular IN/OUT htlcs
     val paymentPreimage1 = BinaryData("11" * 32)
@@ -316,23 +315,8 @@ class TransactionsSpec extends FunSuite with Logging {
 
   test("sort the htlc outputs using BIP39") {
 
-    val localFundingPriv = PrivateKey(BinaryData("a1" * 32) :+ 1.toByte)
-    val remoteFundingPriv = PrivateKey(BinaryData("a2" * 32) :+ 1.toByte)
-    val localRevocationPriv = PrivateKey(BinaryData("a3" * 32) :+ 1.toByte)
-    val localPaymentPriv = PrivateKey(BinaryData("a4" * 32) :+ 1.toByte)
-    val localDelayedPaymentPriv = PrivateKey(BinaryData("a5" * 32) :+ 1.toByte)
-    val remotePaymentPriv = PrivateKey(BinaryData("a6" * 32) :+ 1.toByte)
-    val localHtlcPriv = PrivateKey(BinaryData("a7" * 32) :+ 1.toByte)
-    val remoteHtlcPriv = PrivateKey(BinaryData("a8" * 32) :+ 1.toByte)
-    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(BinaryData("a9" * 32), true).publicKey))
-    val commitInput = Funding.makeFundingInputInfo(BinaryData("a0" * 32), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
-    val toLocalDelay = 144
-    val localDustLimit = Satoshi(546)
-    val feeratePerKw = 22000
-
-
     // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
-    // htlc2 and htlc3 have the same amounts and should be sorted according to their pubkey
+    // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey
     val paymentPreimage1 = BinaryData("11" * 32)
     val paymentPreimage2 = BinaryData("22" * 32)
     val paymentPreimage3 = BinaryData("33" * 32)
