@@ -35,8 +35,8 @@ object ChannelRangeQueries {
       }
       shortChannelIds.grouped(count).map(ids => {
         val (firstBlock, numBlocks) = if (ids.isEmpty) (firstBlockIn, numBlocksIn) else {
-          val firstBlock: Long = ShortChannelId.coordinates(ids.head).blockHeight
-          val numBlocks: Long = ShortChannelId.coordinates(ids.last).blockHeight - firstBlock + 1
+          val firstBlock: Long = ids.head.txCoordinates.blockHeight
+          val numBlocks: Long = ids.last.txCoordinates.blockHeight - firstBlock + 1
           (firstBlock, numBlocks)
         }
         val encoded = encodeShortChannelIdsSingle(ids, format, useGzip)

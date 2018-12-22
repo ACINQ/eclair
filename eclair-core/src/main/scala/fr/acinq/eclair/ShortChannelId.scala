@@ -30,6 +30,8 @@ case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] 
 
   // we use an unsigned long comparison here
   override def compare(that: ShortChannelId): Int = (this.id + Long.MinValue).compareTo(that.id + Long.MinValue)
+
+  lazy val txCoordinates = TxCoordinates(((id >> 40) & 0xFFFFFF).toInt, ((id >> 16) & 0xFFFFFF).toInt, (id & 0xFFFF).toInt)
 }
 
 object ShortChannelId {
@@ -39,8 +41,6 @@ object ShortChannelId {
   def apply(blockHeight: Int, txIndex: Int, outputIndex: Int): ShortChannelId = ShortChannelId(toShortId(blockHeight, txIndex, outputIndex))
 
   def toShortId(blockHeight: Int, txIndex: Int, outputIndex: Int): Long = ((blockHeight & 0xFFFFFFL) << 40) | ((txIndex & 0xFFFFFFL) << 16) | (outputIndex & 0xFFFFL)
-
-  def coordinates(shortChannelId: ShortChannelId): TxCoordinates = TxCoordinates(((shortChannelId.id >> 40) & 0xFFFFFF).toInt, ((shortChannelId.id >> 16) & 0xFFFFFF).toInt, (shortChannelId.id & 0xFFFF).toInt)
 }
 
 case class TxCoordinates(blockHeight: Int, txIndex: Int, outputIndex: Int)

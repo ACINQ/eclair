@@ -35,7 +35,7 @@ class ShortChannelIdSpec extends FunSuite {
     )
     for ((coord, shortChannelId) <- expected) {
       assert(shortChannelId == ShortChannelId(coord.blockHeight, coord.txIndex, coord.outputIndex))
-      assert(coord == ShortChannelId.coordinates(shortChannelId))
+      assert(coord == shortChannelId.txCoordinates)
     }
   }
 

@@ -17,7 +17,6 @@
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.TxCoordinates
 import fr.acinq.eclair.blockchain.ValidateResult
 import fr.acinq.eclair.wire.ChannelAnnouncement
@@ -125,7 +124,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
         Future.successful(tx.txid.toString())
       case e@JsonRPCError(Error(-25, _)) =>
         // "missing inputs (code: -25)" it may be that the tx has already been published and its output spent
-        getRawTransaction(tx.txid.toString()).map { case _ => tx.txid.toString() }.recoverWith { case _ => Future.failed[String](e) }
+        getRawTransaction(tx.txid.toString()).map { _ => tx.txid.toString() }.recoverWith { case _ => Future.failed[String](e) }
     }
 
   /**
@@ -141,12 +140,12 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     }
 
   def validate(c: ChannelAnnouncement)(implicit ec: ExecutionContext): Future[ValidateResult] = {
-    val TxCoordinates(blockHeight, txIndex, outputIndex) = coordinates(c.shortChannelId)
+    val TxCoordinates(blockHeight, txIndex, outputIndex) = c.shortChannelId.txCoordinates
 
     for {
       blockHash: String <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOrElse[String]("00" * 32))
       txid: String <- rpcClient.invoke("getblock", blockHash).map {
-        case json => Try {
+        json => Try {
           val JArray(txs) = json \ "tx"
           txs(txIndex).extract[String]
         } getOrElse ("00" * 32)
@@ -155,6 +154,6 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
     } yield ValidateResult(c, Some(Transaction.read(tx)), unspent, None)
 
-  } recover { case t: Throwable => ValidateResult(c, None, false, Some(t)) }
+  } recover { case t: Throwable => ValidateResult(c, None, unspent = false, Some(t)) }
 
 }
