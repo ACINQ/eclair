@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 
 import scala.collection.mutable
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire.ChannelUpdate
 
@@ -90,7 +91,7 @@ object Graph {
             val neighbor = edge.desc.b
 
             // note: the default value here will never be used, as there is always an entry for the current in the 'cost' map
-            val newMinimumKnownCost = cost.get(current.key) + edgeWeightByAmount(edge, amountMsat)
+            val newMinimumKnownCost = cost.get(current.key) + edgeWeightByAmountAgeCapacity(edge, amountMsat)
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
             val neighborCost = cost.containsKey(neighbor) match {
@@ -133,10 +134,6 @@ object Graph {
         edgePath.reverse
       }
     }
-  }
-
-  private def edgeWeightByAmount(edge: GraphEdge, amountMsat: Long): Long = {
-    nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountMsat)
   }
 
   /**
@@ -286,6 +283,24 @@ object Graph {
     }
 
     object DirectedGraph {
+      private[this] val maxFundingMsat = Channel.MAX_FUNDING_SATOSHIS * 1000L
+
+      def edgeWeightByAmountAgeCapacity(edge: GraphEdge, amountMsat: Long): Long = {
+        val blockFactor = edge.desc.shortChannelId.txCoordinates.blockHeight // Every edge is weighted down by funding block height, but older blocks add less weight
+        val capFactor = edge.update.htlcMaximumMsat.map(maxFundingMsat - _).getOrElse(maxFundingMsat) // Every edge is weighted down by channel capacity, but larger channels add less weight
+        val feeFactor = nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountMsat)
+
+        /*
+        * Example:
+        * calculated node fee = 10 000 MSat
+        * funding block height = 590 000 = 0.59% of calculated fee
+        * channel capacity = 5 000 000 000 MSat = 0.5% of calculated fee
+        *
+        * The larger the fee the less influential other factors are
+        * */
+
+        feeFactor * 100000000L + capFactor + blockFactor * 10000L
+      }
 
       // convenience constructors
       def apply(): DirectedGraph = new DirectedGraph(Map())
