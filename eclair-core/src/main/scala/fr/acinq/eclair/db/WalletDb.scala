@@ -1,7 +1,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.{BinaryData, BlockHeader, Transaction}
-import fr.acinq.eclair.blockchain.electrum.{CheckPoint, ElectrumClient}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
 
 trait HeaderDb {
   def addHeader(height: Int, header: BlockHeader): Unit
@@ -16,10 +16,14 @@ trait HeaderDb {
   def getHeaders(startHeight: Int, maxCount: Option[Int]): Seq[BlockHeader]
 
   def getTip: Option[(Int, BlockHeader)]
-
-  def addCheckpoint(height: Int, checkPoint: CheckPoint): Unit
-
-  def getCheckpoints(): Seq[CheckPoint]
 }
 
-trait WalletDb extends HeaderDb
+trait TransactionDb {
+  def addTransaction(tx: Transaction, proof: GetMerkleResponse): Unit
+
+  def getTransaction(txid: BinaryData): Option[(Transaction, GetMerkleResponse)]
+
+  def getTransactions(): Seq[(Transaction, GetMerkleResponse)]
+}
+
+trait WalletDb extends HeaderDb with TransactionDb

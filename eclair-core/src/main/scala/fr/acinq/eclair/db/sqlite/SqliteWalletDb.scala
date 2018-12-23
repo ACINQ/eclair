@@ -2,8 +2,9 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
 
-import fr.acinq.bitcoin.{BinaryData, BlockHeader}
-import fr.acinq.eclair.blockchain.electrum.CheckPoint
+import fr.acinq.bitcoin.{BinaryData, BlockHeader, Transaction}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
 import fr.acinq.eclair.db.WalletDb
 
 import scala.collection.immutable.Queue
@@ -15,7 +16,7 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
   using(sqlite.createStatement()) { statement =>
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS headers (height INTEGER NOT NULL PRIMARY KEY, block_hash BLOB NOT NULL, header BLOB NOT NULL)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS headers_hash_idx ON headers(block_hash)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS checkpoints (height INTEGER NOT NULL PRIMARY KEY, block_hash BLOB NOT NULL, next_bits INTEGER NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS transactions (tx_hash BLOB PRIMARY KEY, tx BLOB NOT NULL, proof BLOB NOT NULL)")
   }
 
   override def addHeader(height: Int, header: BlockHeader): Unit = {
@@ -90,23 +91,52 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
     }
   }
 
-  override def addCheckpoint(height: Int, checkPoint: CheckPoint): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO checkpoints VALUES (?, ?, ?)")) { statement =>
-      statement.setInt(1, height)
-      statement.setBytes(2, checkPoint.hash)
-      statement.setLong(3, checkPoint.nextBits)
+  override def addTransaction(tx: Transaction, proof: ElectrumClient.GetMerkleResponse): Unit = {
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transactions VALUES (?, ?, ?)")) { statement =>
+      statement.setBytes(1, tx.hash)
+      statement.setBytes(2, Transaction.write(tx))
+      statement.setBytes(3, SqliteWalletDb.serialize(proof))
       statement.executeUpdate()
     }
   }
 
-  override def getCheckpoints(): Seq[CheckPoint] = {
-    using(sqlite.prepareStatement("SELECT height, block_hash, next_bits FROM checkpoints ORDER BY height")) { statement =>
+  override def getTransaction(tx_hash: BinaryData): Option[(Transaction, ElectrumClient.GetMerkleResponse)] = {
+    using(sqlite.prepareStatement("SELECT tx, proof FROM transactions WHERE tx_hash = ?")) { statement =>
+      statement.setBytes(1, tx_hash)
       val rs = statement.executeQuery()
-      var q: Queue[CheckPoint] = Queue()
+      if (rs.next()) {
+        Some((Transaction.read(rs.getBytes("tx")), SqliteWalletDb.deserialize((rs.getBytes("proof")))))
+      } else {
+        None
+      }
+    }
+  }
+
+  override def getTransactions(): Seq[(Transaction, ElectrumClient.GetMerkleResponse)] = {
+    using(sqlite.prepareStatement("SELECT tx, proof FROM transactions")) { statement =>
+      val rs = statement.executeQuery()
+      var q: Queue[(Transaction, ElectrumClient.GetMerkleResponse)] = Queue()
       while (rs.next()) {
-        q = q :+ CheckPoint(rs.getBytes("block_hash"), rs.getLong("next_bits"))
+        q = q :+ (Transaction.read(rs.getBytes("tx")), SqliteWalletDb.deserialize(rs.getBytes("proof")))
       }
       q
     }
   }
+}
+
+object SqliteWalletDb {
+  import fr.acinq.eclair.wire.LightningMessageCodecs.binarydata
+  import scodec.Codec
+  import scodec.bits.BitVector
+  import scodec.codecs._
+
+  val proofCodec: Codec[GetMerkleResponse] = (
+    ("txid" | binarydata(32)) ::
+      ("merkle" | listOfN(uint16, binarydata(32))) ::
+      ("block_height" | uint24) ::
+      ("pos" | uint24)).as[GetMerkleResponse]
+
+  def serialize(proof: GetMerkleResponse) : BinaryData = proofCodec.encode(proof).require.toByteArray
+
+  def deserialize(bin: BinaryData) : GetMerkleResponse = proofCodec.decode(BitVector(bin.toArray)).require.value
 }

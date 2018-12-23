@@ -145,16 +145,23 @@ object Blockchain extends Logging {
       // check that the first header in the chunk matches our checkpoint
       val checkpoint = blockchain.checkpoints(cpindex)
       require(headers(0).hashPreviousBlock == checkpoint.hash)
-      require(headers(0).bits == checkpoint.nextBits)
+      blockchain.chainHash match {
+        case Block.LivenetGenesisBlock.hash => require(headers(0).bits == checkpoint.nextBits)
+        case _ => ()
+      }
     }
 
     // if we have a checkpoint after this chunk, check that it is also satisfied
     if (cpindex < blockchain.checkpoints.length - 1) {
       require(headers.length == 2016)
-      val diff = BlockHeader.calculateNextWorkRequired(headers.last, headers.head.time)
       val nextCheckpoint = blockchain.checkpoints(cpindex + 1)
       require(headers.last.hash == nextCheckpoint.hash)
-      require(diff == nextCheckpoint.nextBits)
+      blockchain.chainHash match {
+        case Block.LivenetGenesisBlock.hash =>
+          val diff = BlockHeader.calculateNextWorkRequired(headers.last, headers.head.time)
+          require(diff == nextCheckpoint.nextBits)
+        case _ => ()
+      }
     }
   }
 
@@ -199,6 +206,7 @@ object Blockchain extends Logging {
 
   def addHeader(blockchain: Blockchain, height: Int, header: BlockHeader): Blockchain = {
     BlockHeader.checkProofOfWork(header)
+    // TODO: check difficulty target
     blockchain.headersMap.get(header.hashPreviousBlock) match {
       case Some(parent) if parent.height == height - 1 =>
         val blockIndex = BlockIndex(header, height, Some(parent), parent.chainwork + Blockchain.chainWork(header))

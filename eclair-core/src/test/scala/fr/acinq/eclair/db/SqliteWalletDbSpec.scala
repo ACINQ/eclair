@@ -3,7 +3,8 @@ package fr.acinq.eclair.db
 import java.sql.DriverManager
 import java.util.Random
 
-import fr.acinq.bitcoin.{Block, BlockHeader}
+import fr.acinq.bitcoin.{BinaryData, Block, BlockHeader, Transaction}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
 import fr.acinq.eclair.db.sqlite.SqliteWalletDb
 import org.scalatest.FunSuite
 
@@ -39,5 +40,16 @@ class SqliteWalletDbSpec extends FunSuite {
       assert(header2 == header)
       height = height + 1
     })
+  }
+
+  test("add/get/list transactions") {
+    val db = new SqliteWalletDb(inmem)
+    val tx = Transaction.read("0100000001b021a77dcaad3a2da6f1611d2403e1298a902af8567c25d6e65073f6b52ef12d000000006a473044022056156e9f0ad7506621bc1eb963f5133d06d7259e27b13fcb2803f39c7787a81c022056325330585e4be39bcf63af8090a2deff265bc29a3fb9b4bf7a31426d9798150121022dfb538041f111bb16402aa83bd6a3771fa8aa0e5e9b0b549674857fafaf4fe0ffffffff0210270000000000001976a91415c23e7f4f919e9ff554ec585cb2a67df952397488ac3c9d1000000000001976a9148982824e057ccc8d4591982df71aa9220236a63888ac00000000")
+    val proof = GetMerkleResponse(tx.hash, List(BinaryData("01" * 32), BinaryData("02" * 32)), 100000, 15)
+    db.addTransaction(tx, proof)
+
+    val Some((tx1, proof1)) = db.getTransaction(tx.hash)
+    assert(tx1 == tx)
+    assert(proof1 == proof)
   }
 }

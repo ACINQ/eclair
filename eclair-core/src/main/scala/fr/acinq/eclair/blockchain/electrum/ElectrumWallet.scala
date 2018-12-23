@@ -90,6 +90,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       // regtest is a special case, there are no checkpoints and we start with a single header (
       case Block.RegtestGenesisBlock.hash => Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header)
       case _ =>
+        // TODO: move this into Blockchain
         val checkpoints = CheckPoint.load(params.chainHash)
         val checkpoints1 = db.getTip match {
           case Some((height, header)) =>
@@ -108,7 +109,8 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
     val blockchain1 = Blockchain.addHeadersChunk(blockchain, blockchain.checkpoints.size * 2016, headers)
     val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
     val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
-    val data = Data(params, blockchain1, firstAccountKeys, firstChangeKeys)
+    val txs = db.getTransactions().map(_._1).map(tx => tx.txid -> tx).toMap
+    val data = Data(params, blockchain1, firstAccountKeys, firstChangeKeys).copy(transactions = txs)
     context.system.eventStream.publish(NewWalletReceiveAddress(data.currentReceiveAddress))
     data
   })
@@ -324,11 +326,21 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       }
 
     case Event(response@GetMerkleResponse(txid, merkle, height, pos), data) =>
-      // TODO: check merkle root 
       data.blockchain.getHeader(height).orElse(params.db.getHeader(height)) match {
         case Some(header) if header.hashMerkleRoot == response.root =>
           log.info(s"transaction $txid has been verified")
-        case _ => log.warning(s"cannot verify tx")
+          data.transactions.get(txid).orElse(data.pendingTransactions.find(_.txid == txid)) match {
+            case Some(tx) =>
+              log.info(s"saving ${tx.txid} to our db")
+              db.addTransaction(tx, response)
+            case None => ()
+          }
+        case Some(header) =>
+          log.error(s"server sent an invalid proof for $txid, disconnecting")
+        case None =>
+          // this is probably because the tx is old and within our checkpoints => request the whole header chunk
+          val start = (height / 2016) * 2016
+          client ! GetHeaders(start, 2016)
       }
       stay
 

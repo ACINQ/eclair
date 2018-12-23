@@ -360,7 +360,7 @@ object ElectrumClient {
   case class GetHeadersResponse(start_height: Int, headers: Seq[BlockHeader], max: Int) extends Response
 
   case class GetMerkle(txid: BinaryData, height: Int) extends Request
-  case class GetMerkleResponse(txid: BinaryData, merkle: Seq[BinaryData], block_height: Int, pos: Int) extends Response {
+  case class GetMerkleResponse(txid: BinaryData, merkle: List[BinaryData], block_height: Int, pos: Int) extends Response {
     lazy val root: BinaryData = {
       @tailrec
       def loop(pos: Int, hashes: Seq[BinaryData]): BinaryData = {
