@@ -37,8 +37,8 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
     // split our answer in 3 blocks
     val List(block1) = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds.take(100), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
-    val List(block2) = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds.drop(100).take(100), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
-    val List(block3) = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds.drop(200).take(150), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+    val List(block2) = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds.slice(100, 200), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+    val List(block3) = ChannelRangeQueries.encodeShortChannelIds(firstBlockNum, numberOfBlocks, shortChannelIds.slice(200, 350), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
 
     // send first block
     sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyChannelRange(chainHash, block1.firstBlock, block1.numBlocks, 1, block1.shortChannelIds)))
@@ -75,7 +75,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     // router should ask for our second block of ids
     val QueryShortChannelIds(_, data2) = transport.expectMsgType[QueryShortChannelIds]
     val (_, shortChannelIds2, false) = ChannelRangeQueries.decodeShortChannelIds(data2)
-    assert(shortChannelIds2 == shortChannelIds.drop(100).take(100))
+    assert(shortChannelIds2 == shortChannelIds.slice(100, 200))
   }
 
   test("reset sync state on reconnection") {

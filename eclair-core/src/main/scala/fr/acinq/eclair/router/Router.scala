@@ -45,7 +45,7 @@ case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKe
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
 case class RouteRequest(source: PublicKey, target: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
-  require(hops.size > 0, "route cannot be empty")
+  require(hops.nonEmpty, "route cannot be empty")
 }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
@@ -112,7 +112,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     }.toMap
     // this will be used to calculate routes
     val graph = DirectedGraph.makeGraph(initChannelUpdates)
-    val initNodes = nodes.map(n => (n.nodeId -> n)).toMap
+    val initNodes = nodes.map(n => (n.nodeId, n)).toMap
     // send events for remaining channels/nodes
     initChannels.values.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))
     initChannelUpdates.values.foreach(u => context.system.eventStream.publish(ChannelUpdateReceived(u)))
@@ -198,49 +198,49 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       }
       log.info("got validation result for shortChannelId={} (awaiting={} stash.nodes={} stash.updates={})", c.shortChannelId, d0.awaiting.size, d0.stash.nodes.size, d0.stash.updates.size)
       val success = v match {
-        case ValidateResult(c, _, _, Some(t)) =>
-          log.warning("validation failure for shortChannelId={} reason={}", c.shortChannelId, t.getMessage)
+        case ValidateResult(c1, _, _, Some(t)) =>
+          log.warning("validation failure for shortChannelId={} reason={}", c1.shortChannelId, t.getMessage)
           false
-        case ValidateResult(c, Some(tx), true, None) =>
-          val outputIndex = c.shortChannelId.txCoordinates.outputIndex
+        case ValidateResult(c1, Some(tx), true, None) =>
+          val outputIndex = c1.shortChannelId.txCoordinates.outputIndex
           // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
-          val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+          val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c1.bitcoinKey1), PublicKey(c1.bitcoinKey2))))
           if (tx.txOut.size < outputIndex + 1) {
-            log.error("invalid script for shortChannelId={}: txid={} does not have outputIndex={} ann={}", c.shortChannelId, tx.txid, outputIndex, c)
+            log.error("invalid script for shortChannelId={}: txid={} does not have outputIndex={} ann={}", c1.shortChannelId, tx.txid, outputIndex, c1)
             false
           } else if (fundingOutputScript != tx.txOut(outputIndex).publicKeyScript) {
-            log.error("invalid script for shortChannelId={} txid={} ann={}", c.shortChannelId, tx.txid, c)
+            log.error("invalid script for shortChannelId={} txid={} ann={}", c1.shortChannelId, tx.txid, c1)
             false
           } else {
-            watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
+            watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c1.shortChannelId))
             // TODO: check feature bit set
-            log.debug("added channel channelId={}", c.shortChannelId)
+            log.debug("added channel channelId={}", c1.shortChannelId)
             val capacity = tx.txOut(outputIndex).amount
-            context.system.eventStream.publish(ChannelDiscovered(c, capacity))
-            db.addChannel(c, tx.txid, capacity)
+            context.system.eventStream.publish(ChannelDiscovered(c1, capacity))
+            db.addChannel(c1, tx.txid, capacity)
 
             // in case we just validated our first local channel, we announce the local node
-            if (!d0.nodes.contains(nodeParams.nodeId) && isRelatedTo(c, nodeParams.nodeId)) {
+            if (!d0.nodes.contains(nodeParams.nodeId) && isRelatedTo(c1, nodeParams.nodeId)) {
               log.info("first local channel validated, announcing local node")
               val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
               self ! nodeAnn
             }
             true
           }
-        case ValidateResult(c, Some(tx), false, None) =>
-          log.warning("ignoring shortChannelId={} tx={} (funding tx already spent)", c.shortChannelId, tx.txid)
-          d0.awaiting.get(c) match {
-            case Some(origins) => origins.foreach(_ ! ChannelClosed(c))
+        case ValidateResult(c1, Some(tx), false, None) =>
+          log.warning("ignoring shortChannelId={} tx={} (funding tx already spent)", c1.shortChannelId, tx.txid)
+          d0.awaiting.get(c1) match {
+            case Some(origins) => origins.foreach(_ ! ChannelClosed(c1))
             case _ => ()
           }
           // there may be a record if we have just restarted
-          db.removeChannel(c.shortChannelId)
+          db.removeChannel(c1.shortChannelId)
           false
-        case ValidateResult(c, None, _, None) =>
+        case ValidateResult(c1, None, _, None) =>
           // we couldn't find the funding tx in the blockchain, this is highly suspicious because it should have at least 6 confirmations to be announced
-          log.warning("could not retrieve tx for shortChannelId={}", c.shortChannelId)
-          d0.awaiting.get(c) match {
-            case Some(origins) => origins.foreach(_ ! NonexistingChannel(c))
+          log.warning("could not retrieve tx for shortChannelId={}", c1.shortChannelId)
+          d0.awaiting.get(c1) match {
+            case Some(origins) => origins.foreach(_ ! NonexistingChannel(c1))
             case _ => ()
           }
           false
@@ -264,10 +264,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
           awaiting = awaiting1)
         // we only reprocess updates and nodes if validation succeeded
         val d2 = reprocessUpdates.foldLeft(d1) {
-          case (d, (u, origins)) => origins.foldLeft(d) { case (d, origin) => handle(u, origin, d) } // we reprocess the same channel_update for every origin (to preserve origin information)
+          case (d, (u, origins)) => origins.foldLeft(d) { case (data, origin) => handle(u, origin, data) } // we reprocess the same channel_update for every origin (to preserve origin information)
         }
         val d3 = reprocessNodes.foldLeft(d2) {
-          case (d, (n, origins)) => origins.foldLeft(d) { case (d, origin) => handle(n, origin, d) } // we reprocess the same node_announcement for every origins (to preserve origin information)
+          case (d, (n, origins)) => origins.foldLeft(d) { case (data, origin) => handle(n, origin, data) } // we reprocess the same node_announcement for every origins (to preserve origin information)
         }
         stay using d3
       } else {
@@ -290,7 +290,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
       context.system.eventStream.publish(ChannelLost(shortChannelId))
       lostNodes.foreach {
-        case nodeId =>
+        nodeId =>
           log.info("pruning nodeId={} (spent)", nodeId)
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
@@ -335,7 +335,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
       val graph1 = d.graph.removeEdges(staleChannelsToRemove)
       staleNodes.foreach {
-        case nodeId =>
+        nodeId =>
           log.info("pruning nodeId={} (stale)", nodeId)
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
@@ -399,7 +399,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       stay using d.copy(sync = d.sync - remoteNodeId)
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
-    case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), d) if routingMessage.chainHash != nodeParams.chainHash =>
+    case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
       sender ! TransportHandler.ReadAck(routingMessage)
       log.warning("message {} for wrong chain {}, we're on {}", routingMessage, routingMessage.chainHash, nodeParams.chainHash)
       stay
@@ -500,14 +500,14 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
           case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
           case Some(ca) =>
             transport ! ca
-            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => transport ! u)
-            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => transport ! u)
+            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).foreach(u => transport ! u)
+            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).foreach(u => transport ! u)
         }
       })
       transport ! ReplyShortChannelIdsEnd(chainHash, 1)
       stay
 
-    case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyShortChannelIdsEnd(chainHash, complete)), d) =>
+    case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyShortChannelIdsEnd(chainHash, _)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       log.info("received reply_short_channel_ids_end={}", routingMessage)
       // have we more channels to ask this peer?
@@ -695,7 +695,7 @@ object Router {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
     val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
     extraRoute.zip(nextNodeIds).map {
-      case (extraHop: ExtraHop, nextNodeId) => (ChannelDesc(extraHop.shortChannelId, extraHop.nodeId, nextNodeId) -> toFakeUpdate(extraHop))
+      case (extraHop: ExtraHop, nextNodeId) => (ChannelDesc(extraHop.shortChannelId, extraHop.nodeId, nextNodeId), toFakeUpdate(extraHop))
     }.toMap
   }
 
