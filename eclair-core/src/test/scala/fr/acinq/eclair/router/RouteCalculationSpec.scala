@@ -73,7 +73,7 @@ class RouteCalculationSpec extends FunSuite {
 
   }
 
-  test("calculate the shortest path (hardcoded nodes)") {
+  test("calculate the safest path (hardcoded nodes with small fees)") {
 
     val (f, g, h, i) = (
       PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //source
@@ -87,6 +87,28 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(2L, g, h, 0, 0, DEFAULT_AMOUNT_MSAT, Some(16000000000L)),
       makeUpdate(3L, h, i, 0, 0, DEFAULT_AMOUNT_MSAT, Some(16000000000L)),
       makeUpdate(4L, f, i, 50, 0, DEFAULT_AMOUNT_MSAT, Some(16000000000L)) //direct channel, more expensive
+    ).toMap
+
+    val graph = makeGraph(updates)
+
+    val route = Router.findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT)
+    assert(route.map(hops2Ids) === Success(4 :: Nil))
+  }
+
+  test("calculate the shortest path (hardcoded nodes with larger fees)") {
+
+    val (f, g, h, i) = (
+      PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //source
+      PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"),
+      PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"),
+      PublicKey("029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c") //target
+    )
+
+    val updates = List(
+      makeUpdate(1L, f, g, 1000, 100, DEFAULT_AMOUNT_MSAT, Some(16000000000L)),
+      makeUpdate(2L, g, h, 1000, 100, DEFAULT_AMOUNT_MSAT, Some(16000000000L)),
+      makeUpdate(3L, h, i, 1000, 100, DEFAULT_AMOUNT_MSAT, Some(16000000000L)),
+      makeUpdate(4L, f, i, 5000, 500, DEFAULT_AMOUNT_MSAT, Some(16000000000L)) //direct channel, more expensive
     ).toMap
 
     val graph = makeGraph(updates)
@@ -166,6 +188,43 @@ class RouteCalculationSpec extends FunSuite {
     assert(route.map(hops2Ids) === Success(1 :: 6 :: 3 :: Nil))
   }
 
+  test("select different route after it has proven to be successful, forget it's success when not used") {
+
+    val (a, b, c, d) = (
+      PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //source
+      PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"),
+      PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"),
+      PublicKey("029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c") //target
+    )
+
+    val updates = List(
+      makeUpdate(1L, a, b, 1000, 100, DEFAULT_AMOUNT_MSAT, Some(100000000L)),
+      makeUpdate(2L, a, c, 990, 100, DEFAULT_AMOUNT_MSAT, Some(100000000L)),
+      makeUpdate(3L, b, d, 1000, 100, DEFAULT_AMOUNT_MSAT, Some(100000000L)),
+      makeUpdate(4L, c, d, 990, 100, DEFAULT_AMOUNT_MSAT, Some(100000000L))
+    ).toMap
+
+    val graph = makeGraph(updates)
+
+    // Cheaper route is selected all other things being equal
+    val route = Router.findRoute(graph, a, d, DEFAULT_AMOUNT_MSAT)
+    assert(route.map(hops2Ids) === Success(2 :: 4 :: Nil))
+
+    // More expensive route has proven to be successful, elevate success factor for each involved hop
+    DirectedGraph.updateSuccessFactors(Set(ShortChannelId(1L), ShortChannelId(3L)))
+
+    // More expensive route is selected because it was successful in past
+    val route1 = Router.findRoute(graph, a, d, DEFAULT_AMOUNT_MSAT)
+    assert(route1.map(hops2Ids) == Success(1 :: 3 :: Nil))
+
+    // Slowly forget the past success when route is not used
+    for (_ <- 1 to 6) DirectedGraph.updateSuccessFactors(Set.empty)
+
+    // Cheaper route is selected again
+    val route2 = Router.findRoute(graph, a, d, DEFAULT_AMOUNT_MSAT)
+    assert(route2.map(hops2Ids) === Success(2 :: 4 :: Nil))
+  }
+
   test("calculate longer but cheaper route") {
 
     val updates = List(
@@ -173,7 +232,7 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(2L, b, c, 0, 0, DEFAULT_AMOUNT_MSAT, Some(16000000000L)),
       makeUpdate(3L, c, d, 0, 0, DEFAULT_AMOUNT_MSAT, Some(16000000000L)),
       makeUpdate(4L, d, e, 0, 0, DEFAULT_AMOUNT_MSAT, Some(16000000000L)),
-      makeUpdate(5L, a, e, 10, 10, DEFAULT_AMOUNT_MSAT, Some(16000000000L))
+      makeUpdate(5L, a, e, 100, 10, DEFAULT_AMOUNT_MSAT, Some(16000000000L))
     ).toMap
 
     val g = makeGraph(updates)

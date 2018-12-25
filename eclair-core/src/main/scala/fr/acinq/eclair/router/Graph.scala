@@ -283,23 +283,48 @@ object Graph {
     }
 
     object DirectedGraph {
+      private[this] val DEFAULT_SUCCESS_FACTOR = 5000000000L
+
+      private[this] val successFactors = mutable.Map.empty[ShortChannelId, Long]
+
       private[this] val maxFundingMsat = Channel.MAX_FUNDING_SATOSHIS * 1000L
+
+      def ease(finalCorrection: Double => Double)(target: Long, current: Long, factor: Double) = finalCorrection(current - (target - current) / -factor).toLong
+
+      def easeUp(current: Long) = ease(_.ceil)(DEFAULT_SUCCESS_FACTOR, current, 8.5D)
+
+      def easeDown(current: Long) = ease(_.floor)(0L, current, 2.5D)
+
+      def updateSuccessFactors(shortChanIds: Set[ShortChannelId]): Unit = {
+        // First fill in missing slots with default value
+        for (shortChanId <- shortChanIds if !successFactors.contains(shortChanId)) {
+          successFactors(shortChanId) = DEFAULT_SUCCESS_FACTOR
+        }
+
+        // Update values, remove every slot whose value has become a default to keep it sparse
+        for ((shortChanId, currentFactor) <- successFactors) {
+          val currentFactor1 = if (shortChanIds.contains(shortChanId)) easeDown(currentFactor) else easeUp(currentFactor)
+          if (currentFactor1 == DEFAULT_SUCCESS_FACTOR) successFactors.remove(shortChanId) else successFactors(shortChanId) = currentFactor1
+        }
+      }
 
       def edgeWeightByAmountAgeCapacity(edge: GraphEdge, amountMsat: Long): Long = {
         val blockFactor = edge.desc.shortChannelId.txCoordinates.blockHeight // Every edge is weighted down by funding block height, but older blocks add less weight
         val capFactor = edge.update.htlcMaximumMsat.map(maxFundingMsat - _).getOrElse(maxFundingMsat) // Every edge is weighted down by channel capacity, but larger channels add less weight
+        val successFactor = successFactors.getOrElse(edge.desc.shortChannelId, DEFAULT_SUCCESS_FACTOR) // Every edge is weighted down by success factor, but successful channels have smaller factor which adds less weight
         val feeFactor = nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountMsat)
 
         /*
         * Example:
         * calculated node fee = 10 000 MSat
-        * funding block height = 590 000 = 0.59% of calculated fee
-        * channel capacity = 5 000 000 000 MSat = 0.5% of calculated fee
+        * funding block height = 590 000 = 0.59% of scaled up fee
+        * channel capacity = 5 000 000 000 MSat = 0.5% of scaled up fee
+        * default success factor is 5 000 000 000 = 0.5% of scaled up fee
         *
         * The larger the fee the less influential other factors are
         * */
 
-        feeFactor * 100000000L + capFactor + blockFactor * 10000L
+        feeFactor * 100000000L + capFactor + blockFactor * 10000L + successFactor
       }
 
       // convenience constructors

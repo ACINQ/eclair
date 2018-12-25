@@ -18,8 +18,6 @@ package fr.acinq.eclair.router
 
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
-import akka.pattern.pipe
-import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -27,6 +25,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChannel, PeerRoutingMessage}
+import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.transactions.Scripts
@@ -91,6 +90,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
+
+  context.system.eventStream.subscribe(self, classOf[PaymentSucceeded])
+  context.system.eventStream.subscribe(self, classOf[PaymentFailed])
 
   setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerBroadcastInterval, repeat = true)
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
@@ -193,7 +195,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
     case Event(v@ValidateResult(c, _, _, _), d0) =>
       d0.awaiting.get(c) match {
-        case Some(origin +: others) => origin ! TransportHandler.ReadAck(c) // now we can acknowledge the message, we only need to do it for the first peer that sent us the announcement
+        case Some(origin +: _) => origin ! TransportHandler.ReadAck(c) // now we can acknowledge the message, we only need to do it for the first peer that sent us the announcement
         case _ => ()
       }
       log.info("got validation result for shortChannelId={} (awaiting={} stash.nodes={} stash.updates={})", c.shortChannelId, d0.awaiting.size, d0.stash.nodes.size, d0.stash.updates.size)
@@ -526,6 +528,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       }
       context.system.eventStream.publish(syncProgress(d1))
       stay using d1
+
+    case Event(ps: PaymentSucceeded, _) =>
+      // Elevate success factors for involved channels, decrease success factors for all other channels
+      DirectedGraph.updateSuccessFactors(ps.route.map(_.lastUpdate.shortChannelId).toSet)
+      stay
+
+    case Event(ps: PaymentFailed, _) =>
+      // Decrease success factors for all channels
+      DirectedGraph.updateSuccessFactors(Set.empty)
+      stay
   }
 
   initialize()
