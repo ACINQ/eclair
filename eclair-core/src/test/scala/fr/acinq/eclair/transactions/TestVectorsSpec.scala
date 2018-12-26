@@ -181,7 +181,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     logger.info(s"local_feerate_per_kw: ${spec.feeratePerKw}")
 
     val commitTx = {
-      val tx = Transactions.makeCommitTx(
+      val (tx, _) = Transactions.makeCommitTx(
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,
@@ -211,7 +211,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     })
 
     {
-      val tx = Transactions.makeCommitTx(
+      val (tx, _) = Transactions.makeCommitTx(
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,

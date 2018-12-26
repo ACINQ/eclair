@@ -45,12 +45,28 @@ object TransactionUtils {
     */
   def sort(tx: Transaction): Transaction = LexicographicalOrdering.sort(tx)
 
-  def sortByBIP69AndCLTV(tx: Transaction, outputsWithHtlcCltvInfo:Seq[(TxOut, Option[Long])]): Transaction = {
+  /**
+    * Returns a tuple with: sorted_transaction and a map of htlc output index and their cltv - applies only to outputs of offered HTLCs
+    *
+    * @param tx
+    * @param outputsWithHtlcCltvInfo the complete list of the outputs of this transaction, enriched with htlc_cltv info
+    * @return
+    */
+  def sortByBIP69AndCLTV(tx: Transaction, outputsWithHtlcCltvInfo:Seq[(TxOut, Option[Long])]): (Transaction, Map[Int, Long])= {
+    assert(tx.txOut.size == outputsWithHtlcCltvInfo.size, "Unable to sort with incomplete information")
 
-    tx.copy(
+    val sortedOutputsAndCltv = outputsWithHtlcCltvInfo.sortWith(isLessOrCLTV)
+
+    val indexCltv = sortedOutputsAndCltv.filter(_._2.isDefined).zipWithIndex.map {
+      case ((_, Some(cltv)), index) => (index, cltv) // non exhaustive pattern matching (safe because previously filtered)
+    }.toMap
+
+    val sortedTx = tx.copy(
       txIn = tx.txIn.sortWith(isLessThan),
-      txOut = outputsWithHtlcCltvInfo.sortWith(isLessOrCLTV).map(_._1)
+      txOut = sortedOutputsAndCltv.map(_._1)
     )
+
+    (sortedTx, indexCltv)
   }
 
 

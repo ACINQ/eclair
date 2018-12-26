@@ -33,6 +33,8 @@ import scala.util.Try
 object Transactions {
 
   // @formatter:off
+  type HtlcTimeoutTxInputInfo = Map[Int, Long]
+
   case class InputInfo(outPoint: OutPoint, txOut: TxOut, redeemScript: BinaryData)
   object InputInfo {
     def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]) = new InputInfo(outPoint, txOut, Script.write(redeemScript))
@@ -185,7 +187,7 @@ object Transactions {
 
   def decodeTxNumber(sequence: Long, locktime: Long): Long = ((sequence & 0xffffffL) << 24) + (locktime & 0xffffffL)
 
-  def makeCommitTx(commitTxInput: InputInfo, commitTxNumber: Long, localPaymentBasePoint: Point, remotePaymentBasePoint: Point, localIsFunder: Boolean, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, remotePaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec): CommitTx = {
+  def makeCommitTx(commitTxInput: InputInfo, commitTxNumber: Long, localPaymentBasePoint: Point, remotePaymentBasePoint: Point, localIsFunder: Boolean, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, remotePaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec): (CommitTx, HtlcTimeoutTxInputInfo)= {
     val commitFee = commitTxFee(localDustLimit, spec)
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
@@ -216,16 +218,18 @@ object Transactions {
     val tx = Transaction(
       version = 2,
       txIn = TxIn(commitTxInput.outPoint, Array.emptyByteArray, sequence = sequence) :: Nil,
-      txOut = toLocalDelayedOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ htlcOfferedOutputsAndCltv.map(_._1) ++ htlcReceivedOutputs,
+      txOut = outputsWithHtlcCltvInfo.map(_._1),
       lockTime = locktime)
-    CommitTx(commitTxInput, TransactionUtils.sortByBIP69AndCLTV(tx, outputsWithHtlcCltvInfo))
+
+    val (sortedTx, htlcInputIndexToCltv) = TransactionUtils.sortByBIP69AndCLTV(tx, outputsWithHtlcCltvInfo)
+    (CommitTx(commitTxInput, sortedTx), htlcInputIndexToCltv)
   }
 
-  def makeHtlcTimeoutTx(commitTx: Transaction, outputsAlreadyUsed: Set[Int], localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, feeratePerKw: Long, htlc: UpdateAddHtlc): HtlcTimeoutTx = {
+  def makeHtlcTimeoutTx(commitTx: Transaction, htlcOutputInfo: HtlcTimeoutTxInputInfo, outputsAlreadyUsed: Set[Int], localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, feeratePerKw: Long, htlc: UpdateAddHtlc): HtlcTimeoutTx = {
     val fee = weight2fee(feeratePerKw, htlcTimeoutWeight)
     val redeemScript = htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.paymentHash))
     val pubkeyScript = write(pay2wsh(redeemScript))
-    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(Satoshi(htlc.amountMsat / 1000)))
+    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(Satoshi(htlc.amountMsat / 1000)), cltv_opt = Some(htlc.cltvExpiry), htlcTimeoutTxInputInfo = htlcOutputInfo)
     val amount = MilliSatoshi(htlc.amountMsat) - fee
     if (amount < localDustLimit) {
       throw AmountBelowDustLimit
@@ -255,10 +259,10 @@ object Transactions {
       lockTime = 0), htlc.paymentHash)
   }
 
-  def makeHtlcTxs(commitTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+  def makeHtlcTxs(commitTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec, htlcOutInfo: HtlcTimeoutTxInputInfo = Map.empty): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
     val htlcTimeoutTxs = trimOfferedHtlcs(localDustLimit, spec).map { htlc =>
-      val htlcTx = makeHtlcTimeoutTx(commitTx, outputsAlreadyUsed, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec.feeratePerKw, htlc.add)
+      val htlcTx = makeHtlcTimeoutTx(commitTx, htlcOutInfo, outputsAlreadyUsed, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec.feeratePerKw, htlc.add)
       outputsAlreadyUsed = outputsAlreadyUsed + htlcTx.input.outPoint.index.toInt
       htlcTx
     }
@@ -450,6 +454,22 @@ object Transactions {
     HtlcPenaltyTx(input, tx1)
   }
 
+  def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: BinaryData, outputsAlreadyUsed: Set[Int], amount_opt: Option[Satoshi], cltv_opt: Option[Long] = None, htlcTimeoutTxInputInfo: HtlcTimeoutTxInputInfo = Map.empty): Int = {
+    val outputIndex = tx.txOut
+      .zipWithIndex
+      .indexWhere { case (txOut, index) =>
+        amount_opt.map(_ == txOut.amount).getOrElse(true) &&
+        txOut.publicKeyScript == pubkeyScript &&
+        cltv_opt.map(cltv => htlcTimeoutTxInputInfo.get(index).map(_ == cltv).getOrElse(true)).getOrElse(true) &&
+        !outputsAlreadyUsed.contains(index)  // it's not enough to only resolve on pubkeyScript because we may have duplicates
+      }
+    if (outputIndex >= 0) {
+      outputIndex
+    } else {
+      throw OutputNotFound
+    }
+  }
+
   def makeClosingTx(commitTxInput: InputInfo, localScriptPubKey: BinaryData, remoteScriptPubKey: BinaryData, localIsFunder: Boolean, dustLimit: Satoshi, closingFee: Satoshi, spec: CommitmentSpec): ClosingTx = {
     require(spec.htlcs.isEmpty, "there shouldn't be any pending htlcs")
 
@@ -468,17 +488,6 @@ object Transactions {
       txOut = toLocalOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ Nil,
       lockTime = 0)
     ClosingTx(commitTxInput, TransactionUtils.sort(tx)) // NB uses only the BIP69 ordering!
-  }
-
-  def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: BinaryData, outputsAlreadyUsed: Set[Int], amount_opt: Option[Satoshi]): Int = {
-    val outputIndex = tx.txOut
-      .zipWithIndex
-      .indexWhere { case (txOut, index) => amount_opt.map(_ == txOut.amount).getOrElse(true) && txOut.publicKeyScript == pubkeyScript && !outputsAlreadyUsed.contains(index)} // it's not enough to only resolve on pubkeyScript because we may have duplicates
-    if (outputIndex >= 0) {
-      outputIndex
-    } else {
-      throw OutputNotFound
-    }
   }
 
 
