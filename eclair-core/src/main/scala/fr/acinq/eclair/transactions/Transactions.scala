@@ -33,6 +33,8 @@ import scala.util.Try
 object Transactions {
 
   // @formatter:off
+
+  // this map carries around the input index of the htlc output AND the cltv of the htlc-timeout transaction
   type HtlcTimeoutTxInputInfo = Map[Int, Long]
 
   case class InputInfo(outPoint: OutPoint, txOut: TxOut, redeemScript: BinaryData)
@@ -229,7 +231,7 @@ object Transactions {
     val fee = weight2fee(feeratePerKw, htlcTimeoutWeight)
     val redeemScript = htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.paymentHash))
     val pubkeyScript = write(pay2wsh(redeemScript))
-    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(Satoshi(htlc.amountMsat / 1000)), cltv_opt = Some(htlc.cltvExpiry), htlcTimeoutTxInputInfo = htlcOutputInfo)
+    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(Satoshi(htlc.amountMsat / 1000)), cltv_opt = Some(htlc.cltvExpiry), htlcOutputInfo = htlcOutputInfo)
     val amount = MilliSatoshi(htlc.amountMsat) - fee
     if (amount < localDustLimit) {
       throw AmountBelowDustLimit
@@ -259,10 +261,10 @@ object Transactions {
       lockTime = 0), htlc.paymentHash)
   }
 
-  def makeHtlcTxs(commitTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec, htlcOutInfo: HtlcTimeoutTxInputInfo = Map.empty): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+  def makeHtlcTxs(commitTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec, htlcOutputInfo: HtlcTimeoutTxInputInfo = Map.empty): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
     val htlcTimeoutTxs = trimOfferedHtlcs(localDustLimit, spec).map { htlc =>
-      val htlcTx = makeHtlcTimeoutTx(commitTx, htlcOutInfo, outputsAlreadyUsed, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec.feeratePerKw, htlc.add)
+      val htlcTx = makeHtlcTimeoutTx(commitTx, htlcOutputInfo, outputsAlreadyUsed, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec.feeratePerKw, htlc.add)
       outputsAlreadyUsed = outputsAlreadyUsed + htlcTx.input.outPoint.index.toInt
       htlcTx
     }
@@ -454,13 +456,23 @@ object Transactions {
     HtlcPenaltyTx(input, tx1)
   }
 
-  def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: BinaryData, outputsAlreadyUsed: Set[Int], amount_opt: Option[Satoshi], cltv_opt: Option[Long] = None, htlcTimeoutTxInputInfo: HtlcTimeoutTxInputInfo = Map.empty): Int = {
+  /**
+    * Finds the index of a txOut in a transaction, given the pubKeyScript and some optional metadata
+    * @param tx
+    * @param pubkeyScript
+    * @param outputsAlreadyUsed
+    * @param amount_opt
+    * @param cltv_opt the cltv of the htlc-timeout-tx the is going to spend @param pubKeyScript
+    * @param htlcOutputInfo a map containing the correct index of the htlc output and it's 2nd stage cltv
+    * @return
+    */
+  def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: BinaryData, outputsAlreadyUsed: Set[Int], amount_opt: Option[Satoshi], cltv_opt: Option[Long] = None, htlcOutputInfo: HtlcTimeoutTxInputInfo = Map.empty): Int = {
     val outputIndex = tx.txOut
       .zipWithIndex
       .indexWhere { case (txOut, index) =>
-        amount_opt.map(_ == txOut.amount).getOrElse(true) &&
+        amount_opt.forall(_ == txOut.amount) &&
         txOut.publicKeyScript == pubkeyScript &&
-        cltv_opt.map(cltv => htlcTimeoutTxInputInfo.get(index).map(_ == cltv).getOrElse(true)).getOrElse(true) &&
+        cltv_opt.forall(cltv => htlcOutputInfo.get(index).forall(_ == cltv)) && //
         !outputsAlreadyUsed.contains(index)  // it's not enough to only resolve on pubkeyScript because we may have duplicates
       }
     if (outputIndex >= 0) {
