@@ -45,19 +45,11 @@ object TransactionUtils {
     */
   def sort(tx: Transaction): Transaction = LexicographicalOrdering.sort(tx)
 
-  def sortByBIP69AndCLTV(tx: Transaction, offeredHtlcAndCltv:Seq[(TxOut,Long)]): Transaction = {
-
-    // transaction outputs with optionally a CLTV value attached, only outputs corresponding to offered HTLCs will have it.
-    val txOutsAndCLTV_opt = tx.txOut.map { out =>
-      offeredHtlcAndCltv.find(_._1.publicKeyScript == out.publicKeyScript) match {
-        case Some((txOut, cltv)) => (txOut, Some(cltv))
-        case None                => (out, None)
-      }
-    }
+  def sortByBIP69AndCLTV(tx: Transaction, outputsWithHtlcCltvInfo:Seq[(TxOut, Option[Long])]): Transaction = {
 
     tx.copy(
       txIn = tx.txIn.sortWith(isLessThan),
-      txOut = txOutsAndCLTV_opt.sortWith(isLessOrCLTV).map(_._1)
+      txOut = outputsWithHtlcCltvInfo.sortWith(isLessOrCLTV).map(_._1)
     )
   }
 

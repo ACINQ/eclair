@@ -207,12 +207,18 @@ object Transactions {
     val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, locktime) = encodeTxNumber(txnumber)
 
+    val outputsWithHtlcCltvInfo =
+      toLocalDelayedOutput_opt.toSeq.map((_, None)) ++
+        toRemoteOutput_opt.toSeq.map((_, None)) ++
+        htlcOfferedOutputsAndCltv.map( el => (el._1, Some(el._2))) ++  // only the offered htlc outputs need to have their cltv value passed around
+        htlcReceivedOutputs.map((_, None))
+
     val tx = Transaction(
       version = 2,
       txIn = TxIn(commitTxInput.outPoint, Array.emptyByteArray, sequence = sequence) :: Nil,
       txOut = toLocalDelayedOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ htlcOfferedOutputsAndCltv.map(_._1) ++ htlcReceivedOutputs,
       lockTime = locktime)
-    CommitTx(commitTxInput, TransactionUtils.sortByBIP69AndCLTV(tx, htlcOfferedOutputsAndCltv))
+    CommitTx(commitTxInput, TransactionUtils.sortByBIP69AndCLTV(tx, outputsWithHtlcCltvInfo))
   }
 
   def makeHtlcTimeoutTx(commitTx: Transaction, outputsAlreadyUsed: Set[Int], localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, feeratePerKw: Long, htlc: UpdateAddHtlc): HtlcTimeoutTx = {
