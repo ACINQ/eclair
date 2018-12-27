@@ -136,7 +136,12 @@ object Blockchain extends Logging {
       case (previous, current) =>
         require(BlockHeader.checkProofOfWork(current))
         require(current.hashPreviousBlock == previous.hash)
-        require(current.bits == previous.bits)
+        // on mainnet all blocks with a re-targeting window have the same difficulty target
+        // on testnet it doesn't hold, there can be a drop in difficulty if there are no blocks for 20 minutes
+        blockchain.chainHash match {
+          case Block.LivenetGenesisBlock => require(current.bits == previous.bits)
+          case _ => ()
+        }
         current
     }
 
