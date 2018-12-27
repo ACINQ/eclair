@@ -34,7 +34,7 @@ object Transactions {
 
   // @formatter:off
 
-  // this map carries around the input index of the htlc output AND the cltv of the htlc-timeout transaction
+  // type alias for the map that carries around the input index of the htlc output AND the cltv of the htlc-timeout transaction
   type HtlcTimeoutTxInputInfo = Map[Int, Long]
 
   case class InputInfo(outPoint: OutPoint, txOut: TxOut, redeemScript: BinaryData)
@@ -463,7 +463,7 @@ object Transactions {
     * @param outputsAlreadyUsed
     * @param amount_opt
     * @param cltv_opt the cltv of the htlc-timeout-tx the is going to spend @param pubKeyScript
-    * @param htlcOutputInfo a map containing the correct index of the htlc output and it's 2nd stage cltv
+    * @param htlcOutputInfo a map containing the correct index of the input for htlc output and it's 2nd stage cltv
     * @return
     */
   def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: BinaryData, outputsAlreadyUsed: Set[Int], amount_opt: Option[Satoshi], cltv_opt: Option[Long] = None, htlcOutputInfo: HtlcTimeoutTxInputInfo = Map.empty): Int = {
@@ -472,7 +472,7 @@ object Transactions {
       .indexWhere { case (txOut, index) =>
         amount_opt.forall(_ == txOut.amount) &&
         txOut.publicKeyScript == pubkeyScript &&
-        cltv_opt.forall(cltv => htlcOutputInfo.get(index).forall(_ == cltv)) && //
+        cltv_opt.forall(cltv => htlcOutputInfo.get(index).forall(_ == cltv)) &&
         !outputsAlreadyUsed.contains(index)  // it's not enough to only resolve on pubkeyScript because we may have duplicates
       }
     if (outputIndex >= 0) {
