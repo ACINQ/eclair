@@ -57,9 +57,10 @@ object TransactionUtils {
 
     val sortedOutputsAndCltv = outputsWithHtlcCltvInfo.sortWith(isLessOrCLTV)
 
-    val indexCltv = sortedOutputsAndCltv.filter(_._2.isDefined).zipWithIndex.map {
-      case ((_, Some(cltv)), index) => (index, cltv) // non exhaustive pattern matching (safe because previously filtered)
-    }.toMap
+    val indexCltv = sortedOutputsAndCltv.zipWithIndex.map {
+      case ((_, Some(cltv)), index) => (index, cltv)
+      case ((_, None), index) => (index, -1L)
+    }.filterNot(_._2 == -1L).toMap
 
     val sortedTx = tx.copy(
       txIn = tx.txIn.sortWith(isLessThan),
