@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.transactions
 
+import java.io.{ByteArrayOutputStream, OutputStream}
+
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -481,5 +483,33 @@ class TestVectorsSpec extends FunSuite with Logging {
 
     val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
     assert(htlcTxs.map(_.tx).toSet == check)
+  }
+
+  // NOT IN THE SPEC YET
+  test("HTLCs second-stage ordered with BIP69+CLTV") {
+    val expectedHtlcTransactionsOrdered = List(
+      "02000000000101fa3e2061686b008dc9e8a887fa6d08ba8957a5615b33c747cb398fb1eaf5d5c10000000000000000000137030000000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e050047304402200a16b20a51f44ed3b3d278bdd27745eafaab8c76071552ad18ca23eb7af9a0a202201047af2d13ef67da49413242d859cc08b1de1eae686de4f551dcc967b18abc64014730440220085e8c05ac4935f26b2ce59d0cca609c7d128d6222b457e0c75ef76265091b8902204f39ae4df178590526ee5c3bafcc554b6fbf5cf01410bc0a023f8bbb11393a74012000000000000000000000000000000000000000000000000000000000000000008a76a91414011f7254d96b819c76986c277d115efce6f7b58763ac67210394854aa6eab5b2a8122cc726e9dded053a2184d88256816826d6231c068d4a5b7c8201208763a914b8bcb07f6344b42ab04250c86a6e8b75d3fdbbc688527c21030d417a46946384f88d5f3337267c5e579765875dc4daca813e21734b140639e752ae677502f401b175ac686800000000",
+      "02000000000101fa3e2061686b008dc9e8a887fa6d08ba8957a5615b33c747cb398fb1eaf5d5c10100000000000000000129070000000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0500483045022100f15728b1b68e9d1e6f09a7fb66256b29d02530a20f4acdc36e17dc03664277d20220751d484ab536e2017dd767c44ab8b5fba469c007b12a5aa8c64ddab891b17b6401483045022100ef170b5fd02495e74458e063cdaecc37ce9570a839d5f61320e72c7e6deef32802206ae737902b459c4e7e6001e4ce59c6db25d20a72362d184b3f38c31256aeb4cf01008576a91414011f7254d96b819c76986c277d115efce6f7b58763ac67210394854aa6eab5b2a8122cc726e9dded053a2184d88256816826d6231c068d4a5b7c820120876475527c21030d417a46946384f88d5f3337267c5e579765875dc4daca813e21734b140639e752ae67a914b8bcb07f6344b42ab04250c86a6e8b75d3fdbbc688ac6868f6010000",
+      "02000000000101fa3e2061686b008dc9e8a887fa6d08ba8957a5615b33c747cb398fb1eaf5d5c10200000000000000000129070000000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e050047304402207c32fb1a3daa73a6af77839d7d17e0dfaeaedd7c6e8d0e088f2bf0f2ccfa4ea002202e763f52b403c421bad0ba78961aae11f1426b67602b7ada7b2b9e2e5799f48f0147304402206a68d875bd2a630220b13c212313ce06c5b9d322de5dc332fe6eb0557e9437d502204a063b55af42783401c0c95293557d20d9298f51e478477dccfa49858bc276c401008576a91414011f7254d96b819c76986c277d115efce6f7b58763ac67210394854aa6eab5b2a8122cc726e9dded053a2184d88256816826d6231c068d4a5b7c820120876475527c21030d417a46946384f88d5f3337267c5e579765875dc4daca813e21734b140639e752ae67a914b8bcb07f6344b42ab04250c86a6e8b75d3fdbbc688ac6868f7010000"
+    )
+
+    val preimage = paymentPreimages.head
+
+    val someHtlc = Seq(
+      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Crypto.sha256(preimage), 500, BinaryData.empty)),
+      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(2000000).amount, Crypto.sha256(preimage), 502, BinaryData.empty)),
+      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(2000000).amount, Crypto.sha256(preimage), 503, BinaryData.empty))
+    )
+
+    val spec = CommitmentSpec(htlcs = someHtlc.toSet, feeratePerKw = 253, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    val (commitTx, htlcTxs) = run(spec)
+
+    val rawHtlcTxs = htlcTxs.map(htlcTx => Transaction.write(htlcTx.tx).toString)
+
+    assert(commitTx.tx.txOut.length == 5)
+    assert(rawHtlcTxs.size == 3) // one htlc-success-tx + two htlc-timeout-tx
+    assert(rawHtlcTxs == expectedHtlcTransactionsOrdered)
+
   }
 }
