@@ -163,6 +163,10 @@ object NodeParams {
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
 
+    val maxToLocalCLTV = config.getInt("max-to-local-delay-blocks")
+    val offeredCLTV = config.getInt("to-remote-delay-blocks")
+    require(maxToLocalCLTV < 2016 && offeredCLTV < 2016, "CLTV delay values too high, max is 2016")
+
     val overrideFeatures: Map[PublicKey, (BinaryData, BinaryData)] = config.getConfigList("override-features").map { e =>
       val p = PublicKey(e.getString("nodeid"))
       val gf = BinaryData(e.getString("global-features"))
