@@ -154,10 +154,10 @@ object Graph {
 
     case class DirectedGraph(private val vertices: Map[PublicKey, List[GraphEdge]]) {
 
-      def addEdge(d: ChannelDesc, u: ChannelUpdate): DirectedGraph = addEdge(GraphEdge(d, u))
+      def addEdge(d: ChannelDesc, u: ChannelUpdate, reverse: Boolean = false): DirectedGraph = addEdge(GraphEdge(d, u), reverse)
 
-      def addEdges(edges: Seq[(ChannelDesc, ChannelUpdate)]): DirectedGraph = {
-        edges.foldLeft(this)((acc, edge) => acc.addEdge(edge._1, edge._2))
+      def addEdges(edges: Seq[(ChannelDesc, ChannelUpdate)], reverse: Boolean): DirectedGraph = {
+        edges.foldLeft(this)((acc, edge) => acc.addEdge(edge._1, edge._2, reverse))
       }
 
       /**
@@ -166,17 +166,19 @@ object Graph {
         * @param edge the edge that is going to be added to the graph
         * @return a new graph containing this edge
         */
-      def addEdge(edge: GraphEdge): DirectedGraph = {
+      def addEdge(edge: GraphEdge, reverse: Boolean): DirectedGraph = {
 
-        val vertexIn = edge.desc.a
-        val vertexOut = edge.desc.b
+        val finalEdge = if(reverse) edge.copy(desc = reverseDesc(edge.desc)) else edge
+
+        val vertexIn = finalEdge.desc.a
+        val vertexOut = finalEdge.desc.b
 
         // the graph is allowed to have multiple edges between the same vertices but only one per channel
-        if (containsEdge(edge.desc)) {
-          removeEdge(edge.desc).addEdge(edge)
+        if (containsEdge(finalEdge.desc)) {
+          removeEdge(finalEdge.desc).addEdge(edge, reverse) // the recursive call will have the original params
         } else {
           val withVertices = addVertex(vertexIn).addVertex(vertexOut)
-          DirectedGraph(withVertices.vertices.updated(vertexIn, edge +: withVertices.vertices(vertexIn)))
+          DirectedGraph(withVertices.vertices.updated(vertexIn, finalEdge +: withVertices.vertices(vertexIn)))
         }
       }
 
@@ -187,9 +189,11 @@ object Graph {
         * @param desc the channel description associated to the edge that will be removed
         * @return
         */
-      def removeEdge(desc: ChannelDesc): DirectedGraph = {
-        containsEdge(desc) match {
-          case true => DirectedGraph(vertices.updated(desc.a, vertices(desc.a).filterNot(_.desc == desc)))
+      def removeEdge(desc: ChannelDesc, reverse: Boolean = false): DirectedGraph = {
+        val someDesc = if(reverse) reverseDesc(desc) else desc
+
+        containsEdge(someDesc) match {
+          case true => DirectedGraph(vertices.updated(someDesc.a, vertices(someDesc.a).filterNot(_.desc == someDesc)))
           case false => this
         }
       }
@@ -273,9 +277,13 @@ object Graph {
         * @param desc
         * @return true if this edge desc is in the graph. For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
         */
-      def containsEdge(desc: ChannelDesc): Boolean = vertices.get(desc.a) match {
-        case None => false
-        case Some(adj) => adj.exists(neighbor => neighbor.desc.shortChannelId == desc.shortChannelId && neighbor.desc.b == desc.b)
+      def containsEdge(desc: ChannelDesc, reverse: Boolean = false): Boolean = {
+        val someDesc = if(reverse) reverseDesc(desc) else desc
+
+        vertices.get(someDesc.a) match {
+          case None => false
+          case Some(adj) => adj.exists(neighbor => neighbor.desc.shortChannelId == someDesc.shortChannelId && neighbor.desc.b == someDesc.b)
+        }
       }
 
       def prettyPrint(): String = {
@@ -299,7 +307,7 @@ object Graph {
       }
 
       // optimized constructor
-      def makeGraph(descAndUpdates: Map[ChannelDesc, ChannelUpdate]): DirectedGraph = {
+      def makeGraph(descAndUpdates: Map[ChannelDesc, ChannelUpdate], reverse: Boolean = false): DirectedGraph = {
 
         // initialize the map with the appropriate size to avoid resizing during the graph initialization
         val mutableMap = new {} with mutable.HashMap[PublicKey, List[GraphEdge]] {
@@ -308,16 +316,20 @@ object Graph {
 
         // add all the vertices and edges in one go
         descAndUpdates.foreach { case (desc, update) =>
+          val someDesc = if(reverse) reverseDesc(desc) else desc
+
           // create or update vertex (desc.a) and update its neighbor
-          mutableMap.put(desc.a, GraphEdge(desc, update) +: mutableMap.getOrElse(desc.a, List.empty[GraphEdge]))
-          mutableMap.get(desc.b) match {
-            case None => mutableMap += desc.b -> List.empty[GraphEdge]
+          mutableMap.put(someDesc.a, GraphEdge(someDesc, update) +: mutableMap.getOrElse(someDesc.a, List.empty[GraphEdge]))
+          mutableMap.get(someDesc.b) match {
+            case None => mutableMap += someDesc.b -> List.empty[GraphEdge]
             case _ =>
           }
         }
 
         new DirectedGraph(mutableMap.toMap)
       }
+
+      def reverseDesc(desc: ChannelDesc): ChannelDesc = desc.copy(a = desc.b, b = desc.a)
 
       def graphEdgeToHop(graphEdge: GraphEdge): Hop = Hop(graphEdge.desc.a, graphEdge.desc.b, graphEdge.update)
     }
