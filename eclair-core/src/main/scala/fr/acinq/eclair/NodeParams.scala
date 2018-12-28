@@ -165,7 +165,7 @@ object NodeParams {
 
     val maxToLocalCLTV = config.getInt("max-to-local-delay-blocks")
     val offeredCLTV = config.getInt("to-remote-delay-blocks")
-    require(maxToLocalCLTV < 2016 && offeredCLTV < 2016, "CLTV delay values too high, max is 2016")
+    require(maxToLocalCLTV <= 2016 && offeredCLTV <= 2016, "CLTV delay values too high, max is 2016")
 
     val overrideFeatures: Map[PublicKey, (BinaryData, BinaryData)] = config.getConfigList("override-features").map { e =>
       val p = PublicKey(e.getString("nodeid"))
