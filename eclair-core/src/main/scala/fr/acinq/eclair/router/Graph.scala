@@ -36,11 +36,14 @@ object Graph {
     * @param extraEdges a list of extra edges we want to consider but are not currently in the graph
     * @return
     */
-  def shortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[Hop] = {
-    dijkstraShortestPath(g, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges).map(graphEdgeToHop)
+  def shortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], reverse: Boolean = false): Seq[Hop] = {
+    dijkstraShortestPath(g, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, reverse).map(edge => reverse match {
+      case false => Hop(edge.desc.a, edge.desc.b, edge.update)
+      case true  => Hop(edge.desc.b, edge.desc.a, edge.update)
+    })
   }
 
-  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[GraphEdge] = {
+  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], reverse: Boolean = false): Seq[GraphEdge] = {
 
     // optionally add the extra edges to the graph
     val graphVerticesWithExtra = extraEdges.nonEmpty match {
@@ -130,7 +133,8 @@ object Graph {
           current = prev.get(current.desc.a)
         }
 
-        edgePath.reverse
+        // if we are searching "backward" the resulting edgePath is already reversed
+        if(!reverse) edgePath.reverse else edgePath
       }
     }
   }
