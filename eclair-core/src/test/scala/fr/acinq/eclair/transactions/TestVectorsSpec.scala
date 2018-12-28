@@ -238,8 +238,8 @@ class TestVectorsSpec extends FunSuite with Logging {
       Local.revocation_pubkey,
       Local.toSelfDelay, Local.delayed_payment_privkey.publicKey,
       Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
-      spec,
-      htlcOutputInfo
+      htlcOutputInfo,
+      spec
     )
 
     logger.info(s"num_htlcs: ${(unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).length}")
