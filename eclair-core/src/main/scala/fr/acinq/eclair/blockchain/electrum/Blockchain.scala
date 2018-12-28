@@ -270,4 +270,17 @@ object Blockchain extends Logging {
   }
 
   def chainWork(header: BlockHeader): BigInt = chainWork(header.bits)
+
+  @tailrec
+  def optimize(blockchain: Blockchain, acc: Vector[BlockIndex] = Vector.empty[BlockIndex]) : (Blockchain, Vector[BlockIndex]) = {
+    if (blockchain.bestchain.size >= 2 * 2016) {
+      val saveme = blockchain.bestchain.take(2016)
+      val headersMap1 = blockchain.headersMap -- saveme.map(_.hash)
+      val bestchain1 = blockchain.bestchain.drop(2016)
+      val checkpoints1 = blockchain.checkpoints :+ CheckPoint(saveme.last.hash, bestchain1.head.header.bits)
+      optimize(blockchain.copy(headersMap = headersMap1, bestchain = bestchain1, checkpoints = checkpoints1), acc ++ saveme)
+    } else {
+      (blockchain, acc)
+    }
+  }
 }

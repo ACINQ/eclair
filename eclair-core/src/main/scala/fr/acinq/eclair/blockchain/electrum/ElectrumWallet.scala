@@ -161,16 +161,8 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
     case Event(ElectrumClient.GetHeadersResponse(start, headers, maxHeaders), data) if start % 2016 == 0 =>
       Try(Blockchain.addHeadersChunk(data.blockchain, start, headers)) match {
         case Success(blockchain1) =>
-          val blockchain2 = if (blockchain1.bestchain.size >= 2 * 2016) {
-            val saveme = blockchain1.bestchain.take(2016)
-            params.db.addHeaders(saveme.head.height, saveme.map(_.header))
-            val headersMap1 = blockchain1.headersMap -- saveme.map(_.hash)
-            val bestchain1 = blockchain1.bestchain.drop(2016)
-            val checkpoints1 = blockchain1.checkpoints :+ CheckPoint(saveme.last.hash, bestchain1.head.header.bits)
-            blockchain1.copy(headersMap = headersMap1, bestchain = bestchain1, checkpoints = checkpoints1)
-          } else {
-            blockchain1
-          }
+          val (blockchain2, saveme) = Blockchain.optimize(blockchain1)
+          saveme.grouped(2016).foreach(chunk => params.db.addHeaders(chunk.head.height, chunk.map(_.header)))
           log.info(s"requesting new headers chunk at ${blockchain2.tip.height}")
           client ! ElectrumClient.GetHeaders(blockchain2.tip.height + 1, 2016)
           goto(SYNCING) using data.copy(blockchain = blockchain2)
@@ -183,10 +175,11 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
     case Event(ElectrumClient.GetHeadersResponse(start, headers, maxHeaders), data) =>
       Try(Blockchain.addHeaders(data.blockchain, start, headers)) match {
         case Success(blockchain1) =>
-          params.db.addHeaders(start, headers)
-          log.info(s"requesting new headers chunk at ${blockchain1.tip.height}")
-          client ! ElectrumClient.GetHeaders(blockchain1.tip.height + 1, 2016)
-          goto(SYNCING) using data.copy(blockchain = blockchain1)
+          val (blockchain2, saveme) = Blockchain.optimize(blockchain1)
+          saveme.grouped(2016).foreach(chunk => params.db.addHeaders(chunk.head.height, chunk.map(_.header)))
+          log.info(s"requesting new headers chunk at ${blockchain2.tip.height}")
+          client ! ElectrumClient.GetHeaders(blockchain2.tip.height + 1, 2016)
+          goto(SYNCING) using data.copy(blockchain = blockchain2)
         case Failure(error) =>
           log.error("elextrumx server sent bad headers, disconnecting, {}", error)
           sender ! PoisonPill
@@ -196,7 +189,6 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) =>
       Try(Blockchain.addHeader(data.blockchain, height, header)) match {
         case Success(blockchain1) =>
-          params.db.addHeader(height, header)
           stay using data.copy(blockchain = blockchain1)
         case Failure(error) =>
           log.error(s"elextrumx server sent bad header, disconnecting", error)
@@ -216,13 +208,14 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       log.info(s"got new tip ${header.blockId} at ${height}")
       Try(Blockchain.addHeader(data.blockchain, height, header)) match {
         case Success(blockchain1) =>
-          params.db.addHeader(height, header)
           data.heights.collect {
             case (txid, txheight) if txheight > 0 =>
               val confirmations = computeDepth(height, txheight)
               context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
           }
-          stay using notifyReady(data.copy(blockchain = blockchain1))
+          val (blockchain2, saveme) = Blockchain.optimize(blockchain1)
+          saveme.grouped(2016).foreach(chunk => params.db.addHeaders(chunk.head.height, chunk.map(_.header)))
+          stay using notifyReady(data.copy(blockchain = blockchain2))
         case Failure(error) =>
           log.error(s"elextrumx server sent bad header, disconnecting", error)
           sender ! PoisonPill
