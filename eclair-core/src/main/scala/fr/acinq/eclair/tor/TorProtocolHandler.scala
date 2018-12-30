@@ -1,7 +1,8 @@
 package fr.acinq.eclair.tor
 
 import java.io._
-import java.nio.file.{Files, Paths}
+import java.nio.file.attribute.PosixFilePermissions
+import java.nio.file.{FileSystems, Files, Paths}
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash, Status}
 import akka.io.Tcp.Connected
@@ -110,7 +111,10 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
   private def processOnionResponse(res: Map[String, String]): String = {
     val serviceId = res.getOrElse("ServiceID", throw TorException("Tor service ID not found"))
     val privateKey = res.get("PrivateKey")
-    privateKey.foreach(writeString(privateKeyPath, _))
+    privateKey.foreach { pk =>
+      writeString(privateKeyPath, pk)
+      setPersissions(privateKeyPath, "rw-------")
+    }
     serviceId
   }
 
@@ -233,6 +237,11 @@ object TorProtocolHandler {
     } finally {
       w.close()
     }
+  }
+
+  def setPersissions(filename: String, permissionString: String): Unit = {
+    val path = FileSystems.getDefault.getPath(filename)
+    Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(permissionString))
   }
 
   def unquote(s: String): String = s

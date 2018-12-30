@@ -175,7 +175,9 @@ object NodeParams {
       keyManager = keyManager,
       alias = config.getString("node-alias").take(32),
       color = Color(color.data(0), color.data(1), color.data(2)),
-      publicAddresses = torAddressOpt.map(List(_)).getOrElse(config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port")))),
+      publicAddresses = config.getStringList("server.public-ips").toList
+        .map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port")))
+        ++ torAddressOpt.map(List(_)).getOrElse(List()),
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),
       overrideFeatures = overrideFeatures,

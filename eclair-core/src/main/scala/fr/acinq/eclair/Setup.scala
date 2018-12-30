@@ -83,9 +83,8 @@ class Setup(datadir: File,
 
   val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, initTor())
 
-  // always bind the server to localhost when using Tor
   val serverBindingAddress = new InetSocketAddress(
-    if (config.getBoolean("tor.enabled")) "127.0.0.1" else config.getString("server.binding-ip"),
+    config.getString("server.binding-ip"),
     config.getInt("server.port"))
 
   // early checks
@@ -228,9 +227,12 @@ class Setup(datadir: File,
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
-      socksProxy = if (config.getBoolean("tor.enabled")) Some(Socks5ProxyParams(
-        new InetSocketAddress(config.getString("tor.host"), config.getInt("tor.socks-port")),
-        config.getBoolean("tor.stream-isolation")
+      socksProxy = if (config.getBoolean("socks5.enabled")) Some(Socks5ProxyParams(
+        new InetSocketAddress(config.getString("socks5.host"), config.getInt("socks5.port")),
+        config.getBoolean("tor.stream-isolation"),
+        config.getBoolean("socks5.use-for-ipv4"),
+        config.getBoolean("socks5.use-for-ipv6"),
+        config.getBoolean("socks5.use-for-tor")
       )) else None
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet, socksProxy), "switchboard", SupervisorStrategy.Resume))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
@@ -312,7 +314,7 @@ class Setup(datadir: File,
           "tor-proto")
 
         val controller = system.actorOf(Controller.props(
-          address = new InetSocketAddress(config.getString("tor.host"), config.getInt("tor.control-port")),
+          address = new InetSocketAddress(config.getString("tor.host"), config.getInt("tor.port")),
           protocolHandler = protocolHandler), "tor")
 
         val torAddress = await(promiseTorAddress.future, 30 seconds, "tor did not respond after 30 seconds")
