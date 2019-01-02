@@ -47,13 +47,10 @@ class RouteCalculationSpec extends FunSuite {
     ).toMap
 
     val g = makeGraph(updates)
-    val g1 = makeGraph(updates, reverse = false)
 
     val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
-    val route1 = Router.findRoute(g1, a, e, DEFAULT_AMOUNT_MSAT, reverseSearch = false)
 
     assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
-    assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
   test("calculate route considering the direct channel pays no fees") {
@@ -66,13 +63,9 @@ class RouteCalculationSpec extends FunSuite {
     ).toMap
 
     val g = makeGraph(updates)
-    val g1 = makeGraph(updates, reverse = false)
-
     val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
-    val route1 = Router.findRoute(g1, a, e, DEFAULT_AMOUNT_MSAT, reverseSearch = false)
 
     assert(route.map(hops2Ids) === Success(2 :: 5 :: Nil))
-    assert(route === route1)
   }
 
   test("calculate simple route (add and remove edges") {
@@ -89,7 +82,7 @@ class RouteCalculationSpec extends FunSuite {
     val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
 
-    val graphWithRemovedEdge = g.removeEdge(ChannelDesc(ShortChannelId(3L), c, d), reverse = true)
+    val graphWithRemovedEdge = g.removeEdge(ChannelDesc(ShortChannelId(3L), c, d))
     val route2 = Router.findRoute(graphWithRemovedEdge, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route2.map(hops2Ids) === Failure(RouteNotFound))
 
@@ -405,7 +398,7 @@ class RouteCalculationSpec extends FunSuite {
     assert(route1.map(hops2Ids) === Failure(RouteNotFound))
 
     // verify that we left the graph untouched
-    assert(g.containsEdge(makeUpdate(3L, c, d, 0, 0)._1, reverse = true)) // c -> d
+    assert(g.containsEdge(makeUpdate(3L, c, d, 0, 0)._1)) // c -> d
     assert(g.containsVertex(c))
     assert(g.containsVertex(d))
 
@@ -477,29 +470,6 @@ class RouteCalculationSpec extends FunSuite {
       ChannelDesc(ShortChannelId(8L), i, j)
     ))
   }
-
-  test("backward search for a route in a reversed and non-reversed graph") {
-    val (f, g, h, i) = (
-      PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), // source
-      PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"),
-      PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"),
-      PublicKey("029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c") // target
-    )
-
-    val updates = List(
-      makeUpdate(1L, f, g, 0, 0),
-      makeUpdate(2L, g, h, 0, 0),
-      makeUpdate(3L, h, i, 0, 0)
-    ).toMap
-
-    val graph = DirectedGraph.makeGraph(updates, reverse = false)
-    val reversedGraph = DirectedGraph.makeGraph(updates, reverse = true)
-
-    val Success(route) = Router.findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, reverseSearch = false)
-    val Success(route1) = Router.findRoute(reversedGraph, f, i, DEFAULT_AMOUNT_MSAT)
-
-    assert(route === route1)
-  }
 }
 
 object RouteCalculationSpec {
@@ -529,7 +499,7 @@ object RouteCalculationSpec {
       htlcMaximumMsat = maxHtlcMsat
     )
 
-  def makeGraph(updates: Map[ChannelDesc, ChannelUpdate], reverse: Boolean = true) = DirectedGraph.makeGraph(updates, reverse)
+  def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = DirectedGraph.makeGraph(updates)
 
   def hops2Ids(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId.toLong)
 

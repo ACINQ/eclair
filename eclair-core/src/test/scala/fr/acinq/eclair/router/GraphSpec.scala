@@ -37,7 +37,7 @@ class GraphSpec extends FunSuite {
       makeUpdate(6L, b, e, 0, 0)
     )
 
-    DirectedGraph.makeGraph(updates.toMap, reverse = false)
+    DirectedGraph.makeGraph(updates.toMap)
   }
 
   test("instantiate a graph, with vertices and then add edges") {
@@ -55,7 +55,6 @@ class GraphSpec extends FunSuite {
     assert(otherGraph.vertexSet().size === 5)
 
     // add some edges to the graph
-
     val (descAB, updateAB) = makeUpdate(1L, a, b, 0, 0)
     val (descBC, updateBC) = makeUpdate(2L, b, c, 0, 0)
     val (descAD, updateAD) = makeUpdate(3L, a, d, 0, 0)
@@ -69,13 +68,13 @@ class GraphSpec extends FunSuite {
       .addEdge(descDC, updateDC)
       .addEdge(descCE, updateCE)
 
-    assert(graphWithEdges.edgesOf(a).size === 2)
-    assert(graphWithEdges.edgesOf(b).size === 1)
-    assert(graphWithEdges.edgesOf(c).size === 1)
-    assert(graphWithEdges.edgesOf(d).size === 1)
-    assert(graphWithEdges.edgesOf(e).size === 0)
+    assert(graphWithEdges.getIncomingEdgesOf(a).size === 2)
+    assert(graphWithEdges.getIncomingEdgesOf(b).size === 1)
+    assert(graphWithEdges.getIncomingEdgesOf(c).size === 1)
+    assert(graphWithEdges.getIncomingEdgesOf(d).size === 1)
+    assert(graphWithEdges.getIncomingEdgesOf(e).size === 0)
 
-    val withRemovedEdges = graphWithEdges.removeEdge(descDC)
+    val withRemovedEdges = graphWithEdges.removeEdge(descAD)
 
     assert(withRemovedEdges.edgesOf(d).size === 0)
   }
@@ -97,7 +96,7 @@ class GraphSpec extends FunSuite {
       .addEdge(descBE, updateBE)
 
     assert(graph.vertexSet().size === 5)
-    assert(graph.edgesOf(c).size === 1)
+    assert(graph.getIncomingEdgesOf(c).size === 1)
     assert(graph.edgeSet().size === 6)
   }
 
@@ -110,7 +109,7 @@ class GraphSpec extends FunSuite {
       makeUpdate(4L, d, e, 0, 0)
     )
 
-    val graph = DirectedGraph().addEdges(updates, reverse = false)
+    val graph = DirectedGraph().addEdges(updates)
 
     assert(graph.containsEdge(descFromNodes(1, a, b)))
     assert(!graph.containsEdge(descFromNodes(5, b, a)))
@@ -142,7 +141,7 @@ class GraphSpec extends FunSuite {
 
     val withoutAnyIncomingEdgeInE = graph.removeEdges(Seq(descBE, descCE))
     assert(withoutAnyIncomingEdgeInE.containsVertex(e))
-    assert(withoutAnyIncomingEdgeInE.getIncomingEdgesOf(e).size == 0)
+    assert(withoutAnyIncomingEdgeInE.edgesOf(e).size == 0)
   }
 
   test("should get an edge given two vertices") {
@@ -153,18 +152,18 @@ class GraphSpec extends FunSuite {
       makeUpdate(2L, b, c, 0, 0)
     )
 
-    val graph = DirectedGraph().addEdges(updates, reverse = false)
+    val graph = DirectedGraph().addEdges(updates)
 
-    val edgesAB = graph.getEdgesBetween(a, b)
+    val edgesAB = graph.getEdgesBetween(b, a)
 
     assert(edgesAB.size === 1) //there should be an edge a --> b
-    assert(edgesAB.head.desc.a === a)
-    assert(edgesAB.head.desc.b === b)
+    assert(edgesAB.head.desc.a === b)
+    assert(edgesAB.head.desc.b === a)
 
-    val bNeighbors = graph.edgesOf(b)
+    val bNeighbors = graph.getIncomingEdgesOf(b)
     assert(bNeighbors.size === 1)
-    assert(bNeighbors.exists(_.desc.a === b)) //there should be an edge b -- c
-    assert(bNeighbors.exists(_.desc.b === c))
+    assert(bNeighbors.exists(_.desc.a === c)) //there should be an edge b -- c
+    assert(bNeighbors.exists(_.desc.b === b))
   }
 
   test("there can be multiple edges between the same vertices") {
@@ -172,20 +171,20 @@ class GraphSpec extends FunSuite {
     val graph = makeTestGraph()
 
     // A --> B , A --> D
-    assert(graph.edgesOf(a).size == 2)
+    assert(graph.getIncomingEdgesOf(a).size == 2)
 
     //now add a new edge a -> b but with a different channel update and a different ShortChannelId
     val newEdgeForNewChannel = edgeFromDesc(makeUpdate(15L, a, b, 20, 0))
-    val mutatedGraph = graph.addEdge(newEdgeForNewChannel, reverse = false)
+    val mutatedGraph = graph.addEdge(newEdgeForNewChannel)
 
-    assert(mutatedGraph.edgesOf(a).size == 3)
+    assert(mutatedGraph.getIncomingEdgesOf(a).size == 3)
 
     //if the ShortChannelId is the same we replace the edge and the update, this edge have an update with a different 'feeBaseMsat'
     val edgeForTheSameChannel = edgeFromDesc(makeUpdate(15L, a, b, 30, 0))
-    val mutatedGraph2 = mutatedGraph.addEdge(edgeForTheSameChannel, reverse = false)
+    val mutatedGraph2 = mutatedGraph.addEdge(edgeForTheSameChannel)
 
-    assert(mutatedGraph2.edgesOf(a).size == 3) // A --> B , A --> B , A --> D
-    assert(mutatedGraph2.getEdgesBetween(a, b).size === 2)
+    assert(mutatedGraph2.getIncomingEdgesOf(a).size == 3) // A --> B , A --> B , A --> D
+    assert(mutatedGraph2.getEdgesBetween(b, a).size === 2)
 
     assert(mutatedGraph2.getEdge(edgeForTheSameChannel).get.update.feeBaseMsat === 30)
   }
@@ -205,58 +204,6 @@ class GraphSpec extends FunSuite {
     assert(!withoutE.containsVertex(e))
     assert(!withoutE.containsEdge(descFromNodes(5, c, e)))
     assert(!withoutE.containsEdge(descFromNodes(6, b, e)))
-  }
-
-  test("create the graph and add the edged reversed") {
-
-    val (descAB, updateAB) = makeUpdate(1L, a, b, 0, 0)
-    val (descBC, updateBC) = makeUpdate(2L, b, c, 0, 0)
-    val (descAD, updateAD) = makeUpdate(3L, a, d, 0, 0)
-    val (descDC, updateDC) = makeUpdate(4L, d, c, 0, 0)
-    val (descCE, updateCE) = makeUpdate(5L, c, e, 0, 0)
-    val (descBE, updateBE) = makeUpdate(6L, b, e, 0, 0)
-
-    val graph = DirectedGraph()
-      .addEdge(descAB, updateAB, reverse = true)
-      .addEdge(descAD, updateAD, reverse = true)
-      .addEdge(descBC, updateBC, reverse = true)
-      .addEdge(descDC, updateDC, reverse = true)
-      .addEdge(descCE, updateCE, reverse = true)
-      .addEdge(descBE, updateBE, reverse = true)
-
-    assert(graph.vertexSet().size == 5)
-    assert(graph.edgeSet().size == 6)
-
-    val descBA = descAB.copy(a = descAB.b, b = descAB.a)
-    assert(graph.getEdge(descAB).isEmpty)
-    assert(graph.getEdge(descBA).isDefined)
-
-    // update AB reversed (BA)
-    val (updatedDescAB, newUpdateAB) = makeUpdate(1L, a, b, 10, 15)
-    val graph1 = graph.addEdge(updatedDescAB, newUpdateAB, reverse = true)
-
-    assert(graph1.edgesOf(a).isEmpty)
-    assert(graph1.getIncomingEdgesOf(a).size == 2)
-    assert(!graph1.containsEdge(descAB))
-    assert(graph1.containsEdge(descAB, reverse = true))
-  }
-
-  test("initialize the graph with reversed edges") {
-    val updates = Seq(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, a, d, 0, 0),
-      makeUpdate(4L, d, c, 0, 0),
-      makeUpdate(5L, c, e, 0, 0),
-      makeUpdate(6L, b, e, 0, 0)
-    ).toMap
-
-    val reversedGraph = DirectedGraph.makeGraph(updates, reverse = true)
-
-    assert(reversedGraph.edgesOf(a).isEmpty)
-    assert(reversedGraph.getIncomingEdgesOf(a).size == 2)
-    assert(reversedGraph.edgesOf(e).size == 2)
-    assert(reversedGraph.getIncomingEdgesOf(e).isEmpty)
   }
 
   def edgeFromDesc(tuple: (ChannelDesc, ChannelUpdate)): GraphEdge = GraphEdge(tuple._1, tuple._2)

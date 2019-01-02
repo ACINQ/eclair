@@ -36,14 +36,11 @@ object Graph {
     * @param extraEdges a list of extra edges we want to consider but are not currently in the graph
     * @return
     */
-  def shortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], reverse: Boolean = false): Seq[Hop] = {
-    dijkstraShortestPath(g, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, reverse).map(edge => reverse match {
-      case false => Hop(edge.desc.a, edge.desc.b, edge.update)
-      case true  => Hop(edge.desc.b, edge.desc.a, edge.update)
-    })
+  def shortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[Hop] = {
+    dijkstraShortestPath(g, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges).map(edge => Hop(edge.desc.b, edge.desc.a, edge.update))
   }
 
-  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], reverse: Boolean = false): Seq[GraphEdge] = {
+  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[GraphEdge] = {
 
     // optionally add the extra edges to the graph
     val graphVerticesWithExtra = extraEdges.nonEmpty match {
@@ -95,8 +92,7 @@ object Graph {
             // note: the default value here will never be used, as there is always an entry for the current in the 'cost' map
             // note: when searching on a reversed graph we consider 0 the weight of the edge of the target-neighboring node
             // this is because it will be a direct channel to the source and it pays no fees
-            val isDirectChannel = if(reverse) neighbor == targetNode else neighbor == sourceNode
-            val newMinimumKnownCost = cost.get(current.key) + edgeWeightByAmount(edge, amountMsat, isNeighborTarget = isDirectChannel)
+            val newMinimumKnownCost = cost.get(current.key) + edgeWeightByAmount(edge, amountMsat, neighbor == targetNode)
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
             val neighborCost = cost.containsKey(neighbor) match {
@@ -137,7 +133,7 @@ object Graph {
         }
 
         // if we are searching "backward" the resulting edgePath is already reversed
-        if(!reverse) edgePath.reverse else edgePath
+        edgePath
       }
     }
   }
@@ -155,7 +151,7 @@ object Graph {
   }
 
   /**
-    * A graph data structure that uses the adjacency lists
+    * A graph data structure that uses the adjacency lists, stores the edges in reversed order
     */
   object GraphStructure {
 
@@ -169,10 +165,10 @@ object Graph {
 
     case class DirectedGraph(private val vertices: Map[PublicKey, List[GraphEdge]]) {
 
-      def addEdge(d: ChannelDesc, u: ChannelUpdate, reverse: Boolean = false): DirectedGraph = addEdge(GraphEdge(d, u), reverse)
+      def addEdge(d: ChannelDesc, u: ChannelUpdate): DirectedGraph = addEdge(GraphEdge(d, u))
 
-      def addEdges(edges: Seq[(ChannelDesc, ChannelUpdate)], reverse: Boolean): DirectedGraph = {
-        edges.foldLeft(this)((acc, edge) => acc.addEdge(edge._1, edge._2, reverse))
+      def addEdges(edges: Seq[(ChannelDesc, ChannelUpdate)]): DirectedGraph = {
+        edges.foldLeft(this)((acc, edge) => acc.addEdge(edge._1, edge._2))
       }
 
       /**
@@ -181,16 +177,16 @@ object Graph {
         * @param edge the edge that is going to be added to the graph
         * @return a new graph containing this edge
         */
-      def addEdge(edge: GraphEdge, reverse: Boolean): DirectedGraph = {
+      def addEdge(edge: GraphEdge): DirectedGraph = {
 
-        val finalEdge = if(reverse) edge.copy(desc = reverseDesc(edge.desc)) else edge
+        val finalEdge = edge.copy(desc = reverseDesc(edge.desc))
 
         val vertexIn = finalEdge.desc.a
         val vertexOut = finalEdge.desc.b
 
         // the graph is allowed to have multiple edges between the same vertices but only one per channel
-        if (containsEdge(finalEdge.desc)) {
-          removeEdge(finalEdge.desc).addEdge(edge, reverse) // the recursive call will have the original params
+        if (containsEdge(edge.desc)) {
+          removeEdge(edge.desc).addEdge(edge) // the recursive call will have the original params
         } else {
           val withVertices = addVertex(vertexIn).addVertex(vertexOut)
           DirectedGraph(withVertices.vertices.updated(vertexIn, finalEdge +: withVertices.vertices(vertexIn)))
@@ -204,10 +200,10 @@ object Graph {
         * @param desc the channel description associated to the edge that will be removed
         * @return
         */
-      def removeEdge(desc: ChannelDesc, reverse: Boolean = false): DirectedGraph = {
-        val someDesc = if(reverse) reverseDesc(desc) else desc
+      def removeEdge(desc: ChannelDesc): DirectedGraph = {
+        val someDesc = reverseDesc(desc)
 
-        containsEdge(someDesc) match {
+        containsEdge(desc) match {
           case true => DirectedGraph(vertices.updated(someDesc.a, vertices(someDesc.a).filterNot(_.desc == someDesc)))
           case false => this
         }
@@ -223,8 +219,11 @@ object Graph {
         */
       def getEdge(edge: GraphEdge): Option[GraphEdge] = getEdge(edge.desc)
 
-      def getEdge(desc: ChannelDesc): Option[GraphEdge] = vertices.get(desc.a).flatMap { adj =>
-        adj.find(e => e.desc.shortChannelId == desc.shortChannelId && e.desc.b == desc.b)
+      def getEdge(desc: ChannelDesc): Option[GraphEdge] = {
+        val someDesc = reverseDesc(desc)
+        vertices.get(someDesc.a).flatMap { adj =>
+          adj.find(e => e.desc.shortChannelId == someDesc.shortChannelId && e.desc.b == someDesc.b)
+        }
       }
 
       /**
@@ -292,8 +291,8 @@ object Graph {
         * @param desc
         * @return true if this edge desc is in the graph. For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
         */
-      def containsEdge(desc: ChannelDesc, reverse: Boolean = false): Boolean = {
-        val someDesc = if(reverse) reverseDesc(desc) else desc
+      def containsEdge(desc: ChannelDesc): Boolean = {
+        val someDesc = reverseDesc(desc)
 
         vertices.get(someDesc.a) match {
           case None => false
@@ -322,7 +321,7 @@ object Graph {
       }
 
       // optimized constructor
-      def makeGraph(descAndUpdates: Map[ChannelDesc, ChannelUpdate], reverse: Boolean = true): DirectedGraph = {
+      def makeGraph(descAndUpdates: Map[ChannelDesc, ChannelUpdate]): DirectedGraph = {
 
         // initialize the map with the appropriate size to avoid resizing during the graph initialization
         val mutableMap = new {} with mutable.HashMap[PublicKey, List[GraphEdge]] {
@@ -331,7 +330,7 @@ object Graph {
 
         // add all the vertices and edges in one go
         descAndUpdates.foreach { case (desc, update) =>
-          val someDesc = if(reverse) reverseDesc(desc) else desc
+          val someDesc = reverseDesc(desc)
 
           // create or update vertex (desc.a) and update its neighbor
           mutableMap.put(someDesc.a, GraphEdge(someDesc, update) +: mutableMap.getOrElse(someDesc.a, List.empty[GraphEdge]))
