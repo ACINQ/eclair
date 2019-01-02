@@ -39,4 +39,8 @@ class ShortChannelIdSpec extends FunSuite {
     }
   }
 
+  test("human readable format as per spec") {
+    assert(ShortChannelId(0x0000a41000001b0003L).toString == "42000x27x3")
+  }
+
 }
