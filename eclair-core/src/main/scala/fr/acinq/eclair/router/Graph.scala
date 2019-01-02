@@ -93,7 +93,10 @@ object Graph {
             val neighbor = edge.desc.b
 
             // note: the default value here will never be used, as there is always an entry for the current in the 'cost' map
-            val newMinimumKnownCost = cost.get(current.key) + edgeWeightByAmount(edge, amountMsat)
+            // note: when searching on a reversed graph we consider 0 the weight of the edge of the target-neighboring node
+            // this is because it will be a direct channel to the source and it pays no fees
+            val isDirectChannel = if(reverse) neighbor == targetNode else neighbor == sourceNode
+            val newMinimumKnownCost = cost.get(current.key) + edgeWeightByAmount(edge, amountMsat, isNeighborTarget = isDirectChannel)
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
             val neighborCost = cost.containsKey(neighbor) match {
@@ -139,8 +142,16 @@ object Graph {
     }
   }
 
-  private def edgeWeightByAmount(edge: GraphEdge, amountMsat: Long): Long = {
-    nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountMsat)
+  /**
+    *
+    * @param edge
+    * @param amountMsat
+    * @param isNeighborTarget true if the receiving vertex of this edge is the source/target node, which has cost 0
+    * @return
+    */
+  private def edgeWeightByAmount(edge: GraphEdge, amountMsat: Long, isNeighborTarget: Boolean): Long = isNeighborTarget match {
+    case false => nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountMsat)
+    case true => 0
   }
 
   /**
@@ -311,7 +322,7 @@ object Graph {
       }
 
       // optimized constructor
-      def makeGraph(descAndUpdates: Map[ChannelDesc, ChannelUpdate], reverse: Boolean = false): DirectedGraph = {
+      def makeGraph(descAndUpdates: Map[ChannelDesc, ChannelUpdate], reverse: Boolean = true): DirectedGraph = {
 
         // initialize the map with the appropriate size to avoid resizing during the graph initialization
         val mutableMap = new {} with mutable.HashMap[PublicKey, List[GraphEdge]] {
