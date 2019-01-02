@@ -55,6 +55,6 @@ trait NetworkDb {
 
   def isPruned(shortChannelId: ShortChannelId): Boolean
 
-  def close: Unit
+  def close(): Unit
 
 }

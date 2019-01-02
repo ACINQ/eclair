@@ -150,5 +150,5 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
-  override def close: Unit = sqlite.close
+  override def close(): Unit = sqlite.close
 }

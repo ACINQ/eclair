@@ -76,5 +76,5 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb {
     }
   }
 
-  override def close: Unit = sqlite.close()
+  override def close(): Unit = sqlite.close()
 }

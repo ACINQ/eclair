@@ -28,6 +28,6 @@ trait PeersDb {
 
   def listPeers(): Map[PublicKey, InetSocketAddress]
 
-  def close: Unit
+  def close(): Unit
 
 }

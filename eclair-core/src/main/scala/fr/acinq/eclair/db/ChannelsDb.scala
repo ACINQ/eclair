@@ -31,6 +31,6 @@ trait ChannelsDb {
 
   def listHtlcInfos(channelId: BinaryData, commitmentNumber: Long): Seq[(BinaryData, Long)]
 
-  def close: Unit
+  def close(): Unit
 
 }

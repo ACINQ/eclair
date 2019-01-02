@@ -202,5 +202,5 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
       q
     }
 
-  override def close: Unit = sqlite.close()
+  override def close(): Unit = sqlite.close()
 }
