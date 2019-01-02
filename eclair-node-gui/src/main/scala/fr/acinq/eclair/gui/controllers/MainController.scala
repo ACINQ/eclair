@@ -245,11 +245,11 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     // feeProportionalMillionths is fee per satoshi in millionths of a satoshi
     networkChannelsFeeProportionalMillionthsNode1Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
       def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(
-        pc.getValue.feeProportionalMillionthsNode1_opt.map(f => s"${CoinUtils.COIN_FORMAT.format(f.toDouble / 1000000 * 100)}%").getOrElse("?"))
+        pc.getValue.feeProportionalMillionthsNode1_opt.map(f => s"${NumberFormat.getInstance().format(f.toDouble / 1000000 * 100)}%").getOrElse("?"))
     })
     networkChannelsFeeProportionalMillionthsNode2Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
       def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(
-        pc.getValue.feeProportionalMillionthsNode2_opt.map(f => s"${CoinUtils.COIN_FORMAT.format(f.toDouble / 1000000 * 100)}%").getOrElse("?"))
+        pc.getValue.feeProportionalMillionthsNode2_opt.map(f => s"${NumberFormat.getInstance().format(f.toDouble / 1000000 * 100)}%").getOrElse("?"))
     })
     networkChannelsCapacityColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
       def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(

@@ -103,7 +103,7 @@ name                         | description                                      
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password                                                             | bar
  eclair.bitcoind.zmqblock    | Bitcoin Core ZMQ block address                                                        | "tcp://127.0.0.1:29000"
  eclair.bitcoind.zmqtx       | Bitcoin Core ZMQ tx address                                                           | "tcp://127.0.0.1:29000"
- eclair.gui.unit             | Unit in which amounts are displayed (possible values: msat, sat, mbtc, btc)           | btc 
+ eclair.gui.unit             | Unit in which amounts are displayed (possible values: msat, sat, bits, mbtc, btc)     | btc
 
 Quotes are not required unless the value contains special characters. Full syntax guide [here](https://github.com/lightbend/config/blob/master/HOCON.md).
 

@@ -89,10 +89,11 @@ class FxApp extends Application with Logging {
           val unitConf = setup.config.getString("gui.unit")
           FxApp.unit = Try(CoinUtils.getUnitFromString(unitConf)) match {
             case Failure(_) =>
-              logger.warn(s"$unitConf is not a valid gui unit, must be msat, sat, mbtc or btc. Defaulting to btc.")
+              logger.warn(s"$unitConf is not a valid gui unit, must be msat, sat, bits, mbtc or btc. Defaulting to btc.")
               BtcUnit
             case Success(u) => u
           }
+          CoinUtils.setCoinPattern(CoinUtils.getPatternFromUnit(FxApp.unit))
 
           val guiUpdater = system.actorOf(SimpleSupervisor.props(Props(classOf[GUIUpdater], controller), "gui-updater", SupervisorStrategy.Resume))
           system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
