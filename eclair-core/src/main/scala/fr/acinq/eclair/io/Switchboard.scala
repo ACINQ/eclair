@@ -46,10 +46,13 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   private val initialPeers = {
     val channels = nodeParams.channelsDb.listChannels()
     val peers = nodeParams.peersDb.listPeers()
-    
-    val brokenHtlcs = checkBrokenHtlcsLink(channels, nodeParams.privateKey)
-    val brokenHtlcKiller = context.actorOf(Props[HtlcReaper], name = "htlc-reaper")
-    brokenHtlcKiller ! brokenHtlcs
+
+    checkBrokenHtlcsLink(channels, nodeParams.privateKey) match {
+      case Nil => ()
+      case brokenHtlcs =>
+        val brokenHtlcKiller = context.actorOf(Props[HtlcReaper], name = "htlc-reaper")
+        brokenHtlcKiller ! brokenHtlcs
+    }
 
     channels
       .groupBy(_.commitments.remoteParams.nodeId)
@@ -177,7 +180,7 @@ class HtlcReaper extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
   override def receive: Receive = {
-    case initialHtlcs: Seq[UpdateAddHtlc] @unchecked => context become main(initialHtlcs)
+    case initialHtlcs: Seq[UpdateAddHtlc]@unchecked => context become main(initialHtlcs)
   }
 
   def main(htlcs: Seq[UpdateAddHtlc]): Receive = {
