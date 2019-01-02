@@ -33,12 +33,11 @@ class ChannelPaneController(val theirNodeIdValue: String) extends Logging {
 
   @FXML var root: VBox = _
   @FXML var channelId: TextField = _
+  @FXML var shortChannelId: TextField = _
   @FXML var txId: TextField = _
   @FXML var balanceBar: ProgressBar = _
-  @FXML var amountUs: TextField = _
+  @FXML var amountUs: Label = _
   @FXML var nodeId: TextField = _
-  @FXML var capacity: TextField = _
-  @FXML var funder: TextField = _
   @FXML var state: TextField = _
   @FXML var close: Button = _
   @FXML var forceclose: Button = _
@@ -57,8 +56,6 @@ class ChannelPaneController(val theirNodeIdValue: String) extends Logging {
         channelId.setContextMenu(contextMenu)
         amountUs.setContextMenu(contextMenu)
         nodeId.setContextMenu(contextMenu)
-        capacity.setContextMenu(contextMenu)
-        funder.setContextMenu(contextMenu)
         state.setContextMenu(contextMenu)
       }
     })
@@ -80,7 +77,7 @@ class ChannelPaneController(val theirNodeIdValue: String) extends Logging {
     if (contextMenu != null) contextMenu.hide()
   }
 
-  def updateRemoteNodeAlias(alias: String) {
-    Option(nodeId).map((n: TextField) => n.setText(s"$theirNodeIdValue ($alias)"))
+  def updateRemoteNode(alias_opt: Option[String]) {
+    Option(nodeId).foreach((n: TextField) => n.setText(s"With ${alias_opt.map(alias => s"<${alias.take(16)}${if (alias.length > 16) "..." else ""}> ").getOrElse("")}$theirNodeIdValue"))
   }
 }

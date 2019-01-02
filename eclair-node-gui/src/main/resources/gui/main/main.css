@@ -50,16 +50,20 @@
 }
 
 .channel .grid {
-    -fx-padding: 10px;
+    -fx-padding: 14px;
     -fx-vgap: 3px;
-    -fx-hgap: 5px;
+    -fx-hgap: 1em;
     -fx-font-size: 12px;
 }
 
 .channel-separator {
-	-fx-background-color: rgb(220,220,220);
+	-fx-background-color: rgb(190,200,210);
 	-fx-pref-height: 1px;
 	-fx-padding: 0 -.25em;
+}
+
+.channel-balance-separator {
+	-fx-background-color: rgb(225,230,235);
 }
 
 .channels-info {
