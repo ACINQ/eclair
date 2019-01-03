@@ -134,7 +134,7 @@ object Helpers {
     if (accept.dustLimitSatoshis > accept.channelReserveSatoshis) throw DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, accept.channelReserveSatoshis)
 
     // if minimum_depth is unreasonably large:
-    // MAY reject the channel. max CLTV is 2016
+    // MAY reject the channel.
     if (accept.toSelfDelay > Channel.MAX_MAIN_CLTV || accept.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
 
     // if channel_reserve_satoshis is less than dust_limit_satoshis within the open_channel message:
