@@ -132,6 +132,12 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       val channelPaneController = m(actor)
       log.debug(s"channel=${channelPaneController.channelId.getText} to be removed from gui")
       runInGuiThread(() => mainController.channelBox.getChildren.remove(channelPaneController.root))
+      val m1 = m - actor
+      val totalBalance = MilliSatoshi(m1.values.map(_.getBalance.amount).sum)
+      runInGuiThread(() => {
+        mainController.refreshTotalBalance(totalBalance)
+      })
+      context.become(main(m1))
 
     case NodeDiscovered(nodeAnnouncement) =>
       log.debug(s"peer node discovered with node id=${nodeAnnouncement.nodeId}")
