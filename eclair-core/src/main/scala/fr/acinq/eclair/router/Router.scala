@@ -788,12 +788,16 @@ object Router {
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
     * @return the computed route to the destination @targetNodeId
     */
-  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Hop]] = Try {
+  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Hop]] = {
+    findRoutes(g, localNodeId, targetNodeId, amountMsat, 1, extraEdges.map(edge => edge.copy(desc = reverseDesc(edge.desc))), ignoredEdges.map(reverseDesc)).map(_.head)
+  }
+
+  def findRoutes(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Seq[Hop]]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    Graph.shortestPath(g, targetNodeId, localNodeId, amountMsat, ignoredEdges.map(reverseDesc), extraEdges.map(edge => edge.copy(desc = reverseDesc(edge.desc)))) match {
+    Graph.yenKshortestPaths(g, targetNodeId, localNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes) match {
       case Nil => throw RouteNotFound
-      case path => path
+      case paths => paths.map(_.path).map(_.map(graphEdgeToHop))
     }
   }
 }

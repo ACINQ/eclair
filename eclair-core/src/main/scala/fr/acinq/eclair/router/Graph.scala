@@ -12,6 +12,7 @@ object Graph {
   import DirectedGraph._
 
   case class WeightedNode(key: PublicKey, weight: Long)
+  case class WeightedPath(path: Seq[GraphEdge], weight: Long)
 
   /**
     * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
@@ -25,6 +26,108 @@ object Graph {
     }
   }
 
+  implicit object PathComparator extends Ordering[WeightedPath] {
+    override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.compareTo(x.weight)
+  }
+  /**
+    * Yen's algorithm to find the k-shortest (loopless) paths in a graph, uses dijkstra as search algo. Is guaranteed to terminate finding
+    * at most @numbersOfPathsToFind paths sorted by cost (the cheapest is in position 0).
+    * @param graph
+    * @param sourceNode
+    * @param targetNode
+    * @param amountMsat
+    * @param numberOfPathsToFind
+    * @return
+    */
+  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], numberOfPathsToFind: Int): Seq[WeightedPath] = {
+
+    var allSpurPathsFound = false
+
+    // stores the k shortest path
+    val shortestPaths = new mutable.MutableList[WeightedPath]
+    shortestPaths += dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges)
+
+    // stores the candidates for k(K +1) shortest paths, sorted by path cost
+    val candidate = new mutable.PriorityQueue[WeightedPath]
+
+    // main loop
+    for(k <- 1 until numberOfPathsToFind) {
+
+      if ( !allSpurPathsFound ) {
+
+        // for every edge in the path
+        for (i <- 0 to shortestPaths(k - 1).path.size - 1) {
+
+          // select the spur node as the i-th element of the k-th previous shortest path (k -1)
+          val spurEdge = shortestPaths(k - 1).path(i)
+
+          // select the subpath from the source to the spur node of the k-th previous shortest path
+          val rootPathEdges = subList(shortestPaths(k - 1).path, 0, i).toList
+
+          // subgraph NOT containing the links that are part of the previous shortest path and which share the same root path
+          val mutatedGraph = shortestPaths.foldLeft(graph) { (acc, p) =>
+            if (subList(p.path, 0, i) == rootPathEdges) {
+              acc.removeEdge(p.path(i).desc)
+            } else {
+              acc
+            }
+          }
+
+          // find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
+          val spurPath = dijkstraShortestPath(mutatedGraph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges, extraEdges)
+
+          // candidate shortest path is made of the rootPath and the new spurPath
+          val totalPath = concat(rootPathEdges, spurPath.path.toList)
+          val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat))
+
+          if (spurPath.path.nonEmpty) {
+            candidate.enqueue(candidatePath)
+          }
+        }
+      }
+
+      if(candidate.isEmpty) {
+        // handles the case of having exhausted all possible spur paths and it's impossible to reach the target from the source
+        allSpurPathsFound = true
+      } else {
+        // move the best candidate from in the container A
+        shortestPaths += candidate.dequeue()
+      }
+    }
+
+    shortestPaths
+  }
+
+  // smart concatenation of paths given the edge lists, if the rootPath begins with the same vertex then discard that
+  def concat(rootPath: List[GraphEdge], spurPath: List[GraphEdge]): List[GraphEdge] = (rootPath, spurPath) match {
+    case (Nil, _) => spurPath
+    case (_, Nil) => rootPath
+    case (root :: otherRoot, spurHead :: _ ) => if(root.desc.a == spurHead.desc.a) concat(otherRoot, spurPath) else rootPath ++ spurPath
+  }
+
+  def edgeListToVertexList(edges: Seq[GraphEdge]): Seq[PublicKey] = edges.toList match {
+    case Nil => Seq.empty
+    case last :: Nil => Seq(last.desc.a, last.desc.b)
+    case edge :: tail => edge.desc.a +: edgeListToVertexList(tail)
+  }
+
+  // Calculates the cost of a path, direct channels with the source will have a cost of 0 (pay no fees), only the first
+  // edge in the list is a direct channel
+  def pathCost(path: Seq[GraphEdge], amountMsat: Long): Long = {
+    path.zipWithIndex.foldLeft(0L) { case (acc, (edge, index)) => acc + edgeWeightByAmount(edge, amountMsat, index == 0) }
+  }
+
+  //helper function implementing the subList function for "Seq[T]" that will return the list with the
+  //first element if indices 0 are used
+  def subList[T](list: Seq[T], from: Int, to: Int): Seq[T] = {
+    if(from == 0 && to == 0 && list.nonEmpty) {
+      list.head :: Nil
+    } else {
+      list.slice(from, to)
+    }
+  }
+
+
   /**
     * Finds the shortest path in the graph, Dijsktra's algorithm
     *
@@ -36,11 +139,7 @@ object Graph {
     * @param extraEdges a list of extra edges we want to consider but are not currently in the graph
     * @return
     */
-  def shortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[Hop] = {
-    dijkstraShortestPath(g, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges).map(graphEdgeToHop)
-  }
-
-  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[GraphEdge] = {
+  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): WeightedPath = {
 
     // optionally add the extra edges to the graph
     val graphVerticesWithExtra = extraEdges.nonEmpty match {
@@ -49,8 +148,8 @@ object Graph {
     }
 
     //  the graph does not contain source/destination nodes
-    if (!graphVerticesWithExtra.contains(sourceNode)) return Seq.empty
-    if (!graphVerticesWithExtra.contains(targetNode)) return Seq.empty
+    if (!graphVerticesWithExtra.contains(sourceNode)) return WeightedPath(Seq.empty, 0L)
+    if (!graphVerticesWithExtra.contains(targetNode)) return WeightedPath(Seq.empty, 0L)
 
     val maxMapSize = graphVerticesWithExtra.size + 1
 
@@ -120,7 +219,7 @@ object Graph {
     }
 
     targetFound match {
-      case false => Seq.empty[GraphEdge]
+      case false => WeightedPath(Seq.empty[GraphEdge], 0L)
       case true => {
         // we traverse the list of "previous" backward building the final list of edges that make the shortest path
         val edgePath = new mutable.ArrayBuffer[GraphEdge](21) // max path length is 20! https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
@@ -132,7 +231,7 @@ object Graph {
           current = prev.get(current.desc.a)
         }
 
-        edgePath
+        WeightedPath(edgePath, pathCost(edgePath, amountMsat))
       }
     }
   }
