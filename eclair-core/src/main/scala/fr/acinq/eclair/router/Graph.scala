@@ -37,7 +37,7 @@ object Graph {
     * @return
     */
   def shortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[Hop] = {
-    dijkstraShortestPath(g, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges).map(edge => Hop(edge.desc.b, edge.desc.a, edge.update))
+    dijkstraShortestPath(g, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges).map(graphEdgeToHop)
   }
 
   def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[GraphEdge] = {
@@ -132,7 +132,6 @@ object Graph {
           current = prev.get(current.desc.a)
         }
 
-        // if we are searching "backward" the resulting edgePath is already reversed
         edgePath
       }
     }
@@ -142,7 +141,7 @@ object Graph {
     *
     * @param edge
     * @param amountMsat
-    * @param isNeighborTarget true if the receiving vertex of this edge is the source/target node, which has cost 0
+    * @param isNeighborTarget true if the receiving vertex of this edge is the target node (source in a reversed graph), which has cost 0
     * @return
     */
   private def edgeWeightByAmount(edge: GraphEdge, amountMsat: Long, isNeighborTarget: Boolean): Long = isNeighborTarget match {
@@ -172,7 +171,8 @@ object Graph {
       }
 
       /**
-        * Adds and edge to the graph, if one of the two vertices is not found, it will be created
+        * Adds and edge to the graph, if one of the two vertices is not found, it will be created.
+        * Edges are added as "reversed" swapping the starting vertex with the final.
         *
         * @param edge the edge that is going to be added to the graph
         * @return a new graph containing this edge
@@ -197,6 +197,8 @@ object Graph {
         * Removes the edge corresponding to the given pair channel-desc/channel-update,
         * NB: this operation does NOT remove any vertex
         *
+        * Edges are removed as "reversed" swapping the starting vertex with the final.
+        *
         * @param desc the channel description associated to the edge that will be removed
         * @return
         */
@@ -214,6 +216,8 @@ object Graph {
       }
 
       /**
+        * Edges are NOT reversed when performing this operation
+        *
         * @param edge
         * @return For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
         */
@@ -288,6 +292,8 @@ object Graph {
       def containsVertex(key: PublicKey): Boolean = vertices.contains(key)
 
       /**
+        * Edges are checked in as "reversed" swapping the starting vertex with the final.
+        *
         * @param desc
         * @return true if this edge desc is in the graph. For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
         */
@@ -320,7 +326,7 @@ object Graph {
         makeGraph(edges.map(e => e.desc -> e.update).toMap)
       }
 
-      // optimized constructor
+      // optimized constructor, builds the graph with reversed edges
       def makeGraph(descAndUpdates: Map[ChannelDesc, ChannelUpdate]): DirectedGraph = {
 
         // initialize the map with the appropriate size to avoid resizing during the graph initialization
@@ -345,7 +351,7 @@ object Graph {
 
       def reverseDesc(desc: ChannelDesc): ChannelDesc = desc.copy(a = desc.b, b = desc.a)
 
-      def graphEdgeToHop(graphEdge: GraphEdge): Hop = Hop(graphEdge.desc.a, graphEdge.desc.b, graphEdge.update)
+      def graphEdgeToHop(graphEdge: GraphEdge): Hop = Hop(graphEdge.desc.b, graphEdge.desc.a, graphEdge.update)
     }
 
   }
