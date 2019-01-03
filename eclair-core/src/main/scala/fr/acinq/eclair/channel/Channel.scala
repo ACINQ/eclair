@@ -62,6 +62,9 @@ object Channel {
   val MIN_CLTV_EXPIRY = 9L
   val MAX_CLTV_EXPIRY = 7 * 144L // one week
 
+  //  since BOLTv1.1
+  val MAX_MAIN_CLTV = 2016L
+
   val REFRESH_CHANNEL_UPDATE_INTERVAL = 7 days
 
   case object TickRefreshChannelUpdate
