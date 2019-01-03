@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
-import fr.acinq.eclair.transactions.OUT
+import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import grizzled.slf4j.Logging
 
@@ -185,12 +185,19 @@ class HtlcReaper extends Actor with ActorLogging {
 
   def main(htlcs: Seq[UpdateAddHtlc]): Receive = {
     case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, data: HasCommitments) =>
-      htlcs
-        .filter(_.channelId == data.channelId)
-        .map { htlc =>
+      val acked = htlcs
+        .filter(_.channelId == data.channelId) // only consider htlcs related to this channel
+        .filter {
+        case htlc if Commitments.getHtlcCrossSigned(data.commitments, IN, htlc.id).isDefined =>
+          // this htlc is cross signed in the current commitment, we can fail it
           log.info(s"failing broken htlc=$htlc")
           channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
-        }
+          false // the channel may very well be disconnected before we sign (=ack) the fail, so we keep it for now
+        case _ =>
+          true // the htlc has already been failed, we can forget about it now
+      }
+      acked.foreach(htlc => log.info(s"forgetting htlc id=${htlc.id} channelId=${htlc.channelId}"))
+      context become main(htlcs diff acked)
   }
 
 
