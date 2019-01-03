@@ -63,7 +63,7 @@ object Channel {
   val MAX_CLTV_EXPIRY = 7 * 144L // one week
 
   // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx
-  val MAX_MAIN_CLTV = 2016L
+  val MAX_TO_SELF_DELAY = 2016L
 
   val REFRESH_CHANNEL_UPDATE_INTERVAL = 7 days
 
