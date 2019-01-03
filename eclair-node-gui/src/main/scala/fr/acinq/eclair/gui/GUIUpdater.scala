@@ -63,7 +63,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
   def createChannelPanel(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, channelId: BinaryData): (ChannelPaneController, VBox) = {
     log.info(s"new channel: $channel")
     val loader = new FXMLLoader(getClass.getResource("/gui/main/channelPane.fxml"))
-    val channelPaneController = new ChannelPaneController(s"$remoteNodeId")
+    val channelPaneController = new ChannelPaneController(channel, remoteNodeId.toString())
     loader.setController(channelPaneController)
     val root = loader.load[VBox]
     channelPaneController.updateRemoteNode(None)
@@ -78,21 +78,6 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     (channelPaneController, root)
   }
 
-  def updateBalance(channelPaneController: ChannelPaneController, commitments: Commitments) = {
-    val spec = commitments.localCommit.spec
-    val balance = CoinUtils.formatAmountInUnit(MilliSatoshi(spec.toLocalMsat), FxApp.getUnit, withUnit = false)
-    val capacity = CoinUtils.formatAmountInUnit(MilliSatoshi(spec.totalFunds), FxApp.getUnit, withUnit = true)
-    channelPaneController.amountUs.setText(s"$balance / $capacity")
-    channelPaneController.balanceBar.setProgress(spec.toLocalMsat.toDouble / spec.totalFunds)
-  }
-
-  def getBalanceFromData(data: Data): String = {
-    data match {
-      case c: HasCommitments => CoinUtils.formatAmountInUnit(MilliSatoshi(c.commitments.localCommit.spec.toLocalMsat), FxApp.getUnit, withUnit = true)
-      case _ => "N/A"
-    }
-  }
-
   def main(m: Map[ActorRef, ChannelPaneController]): Receive = {
 
     case ChannelCreated(channel, peer, remoteNodeId, isFunder, temporaryChannelId) =>
@@ -104,12 +89,16 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     case ChannelRestored(channel, peer, remoteNodeId, isFunder, channelId, currentData) =>
       context.watch(channel)
       val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, channelId)
+      channelPaneController.updateBalance(currentData.commitments)
+      val m1 = m + (channel -> channelPaneController)
+      val totalBalance = MilliSatoshi(m1.values.map(_.getBalance.amount).sum)
       runInGuiThread(() => {
-        updateBalance(channelPaneController, currentData.commitments)
+        channelPaneController.refreshBalance()
+        mainController.refreshTotalBalance(totalBalance)
         channelPaneController.txId.setText(currentData.commitments.commitInput.outPoint.txid.toString())
         mainController.channelBox.getChildren.addAll(root)
       })
-      context.become(main(m + (channel -> channelPaneController)))
+      context.become(main(m1))
 
     case ShortChannelIdAssigned(channel, channelId, shortChannelId) if m.contains(channel) =>
       val channelPaneController = m(channel)
@@ -126,49 +115,6 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
           case (WAIT_FOR_FUNDING_CONFIRMED, d: HasCommitments) => channelPaneController.txId.setText(d.commitments.commitInput.outPoint.txid.toString())
           case _ => {}
         }
-
-        val channelDetails =
-          s"""
-            |Channel details:
-            |---
-            |Id: ${channelPaneController.channelId.getText().substring(0, 18)}...
-            |Peer: ${remoteNodeId.toString().substring(0, 18)}...
-            |Balance: ${getBalanceFromData(currentData)}
-            |State: $currentState
-          """
-
-        channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
-          override def handle(event: ActionEvent) = {
-            val alert = new Alert(AlertType.CONFIRMATION,
-              s"""
-                |Are you sure you want to close this channel?
-                |
-                |$channelDetails
-              """.stripMargin, ButtonType.YES, ButtonType.NO)
-            alert.showAndWait
-            if (alert.getResult eq ButtonType.YES) {
-              channel ! CMD_CLOSE(scriptPubKey = None)
-            }
-          }
-        })
-
-        channelPaneController.forceclose.setOnAction(new EventHandler[ActionEvent] {
-          override def handle(event: ActionEvent) = {
-            val alert = new Alert(AlertType.WARNING,
-              s"""
-                |Careful: force-close is more expensive than a regular close and will incur a delay before funds are spendable.
-                |
-                |Are you sure you want to forcibly close this channel?
-                |
-                |$channelDetails
-              """.stripMargin, ButtonType.YES, ButtonType.NO)
-            alert.showAndWait
-            if (alert.getResult eq ButtonType.YES) {
-              channel ! CMD_FORCECLOSE
-            }
-          }
-        })
-
         channelPaneController.close.setVisible(STATE_MUTUAL_CLOSE.contains(currentState))
         channelPaneController.forceclose.setVisible(STATE_FORCE_CLOSE.contains(currentState))
         channelPaneController.state.setText(currentState.toString)
@@ -176,7 +122,12 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
     case ChannelSignatureReceived(channel, commitments) if m.contains(channel) =>
       val channelPaneController = m(channel)
-      runInGuiThread(() => updateBalance(channelPaneController, commitments))
+      channelPaneController.updateBalance(commitments)
+      val totalBalance = MilliSatoshi(m.values.map(_.getBalance.amount).sum)
+      runInGuiThread(() => {
+        channelPaneController.refreshBalance()
+        mainController.refreshTotalBalance(totalBalance)
+      })
 
     case Terminated(actor) if m.contains(actor) =>
       val channelPaneController = m(actor)

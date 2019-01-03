@@ -20,6 +20,17 @@ import java.text.NumberFormat
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+import com.google.common.net.HostAndPort
+import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
+import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
+import fr.acinq.eclair.gui.stages._
+import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
+import fr.acinq.eclair.gui.{FxApp, Handlers}
+import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
+import fr.acinq.eclair.{CoinUtils, Setup}
+import grizzled.slf4j.Logging
 import javafx.animation.{FadeTransition, ParallelTransition, SequentialTransition, TranslateTransition}
 import javafx.application.{HostServices, Platform}
 import javafx.beans.property._
@@ -36,20 +47,8 @@ import javafx.scene.layout.{AnchorPane, HBox, StackPane, VBox}
 import javafx.scene.paint.Color
 import javafx.scene.shape.Rectangle
 import javafx.scene.text.Text
-import javafx.stage.FileChooser.ExtensionFilter
 import javafx.stage._
 import javafx.util.{Callback, Duration}
-
-import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
-import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
-import fr.acinq.eclair.gui.stages._
-import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
-import fr.acinq.eclair.gui.{FxApp, Handlers}
-import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
-import fr.acinq.eclair.{CoinUtils, Setup}
-import grizzled.slf4j.Logging
 
 case class ChannelInfo(announcement: ChannelAnnouncement,
                        var feeBaseMsatNode1_opt: Option[Long], var feeBaseMsatNode2_opt: Option[Long],
@@ -82,6 +81,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
 
   // status bar elements
   @FXML var labelNodeId: Label = _
+  @FXML var statusBalanceLabel: Label = _
   @FXML var rectRGB: Rectangle = _
   @FXML var labelAlias: Label = _
   @FXML var labelApi: Label = _
@@ -240,7 +240,6 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     networkChannelsFeeBaseMsatNode2Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
       def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(
         pc.getValue.feeBaseMsatNode2_opt.map(f => CoinUtils.formatAmountInUnit(MilliSatoshi(f), FxApp.getUnit, withUnit = true)).getOrElse("?"))
-//        CoinUtils.formatAmountInUnit(MilliSatoshi(pc.getValue.feeBaseMsatNode2), FxApp.getUnit, withUnit = true))
     })
     // feeProportionalMillionths is fee per satoshi in millionths of a satoshi
     networkChannelsFeeProportionalMillionthsNode1Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
@@ -571,5 +570,9 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   def positionAtCenter(childStage: Stage): Unit = {
     childStage.setX(getWindow.map(w => w.getX + w.getWidth / 2 - childStage.getWidth / 2).getOrElse(0))
     childStage.setY(getWindow.map(w => w.getY + w.getHeight / 2 - childStage.getHeight / 2).getOrElse(0))
+  }
+
+  def refreshTotalBalance(total: MilliSatoshi): Unit = {
+    statusBalanceLabel.setText(CoinUtils.formatAmountInUnit(total, FxApp.getUnit, withUnit = true))
   }
 }

@@ -33,7 +33,7 @@
         <URL value="@../commons/globals.css" />
         <URL value="@./main.css" />
     </stylesheets>
-    <GridPane prefWidth="400.0" styleClass="grid">
+    <GridPane prefWidth="600.0" styleClass="grid">
         <columnConstraints>
             <ColumnConstraints hgrow="SOMETIMES" maxWidth="380.0" minWidth="100.0" prefWidth="100.0" />
             <ColumnConstraints hgrow="NEVER" maxWidth="1.0" minWidth="1.0" prefWidth="1.0" />
