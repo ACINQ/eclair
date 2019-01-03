@@ -65,11 +65,13 @@ object Graph {
           val rootPathEdges = subList(shortestPaths(k - 1).path, 0, i).toList
 
           // subgraph NOT containing the links that are part of the previous shortest path and which share the same root path
-          val mutatedGraph = shortestPaths.foldLeft(graph) { (acc, p) =>
-            if (subList(p.path, 0, i) == rootPathEdges) {
-              acc.removeEdge(p.path(i).desc)
+          val mutatedGraph = shortestPaths.foldLeft(graph) { (g, weightedPath) =>
+            if (subList(weightedPath.path, 0, i) == rootPathEdges) {
+              println(s"k=$k i=$i removing edge ${weightedPath.path(i).desc.shortChannelId} from ${weightedPath.path.map(_.desc.shortChannelId)}")
+
+              g.removeEdge(reverseDesc(weightedPath.path(i).desc))
             } else {
-              acc
+              g
             }
           }
 
@@ -114,13 +116,13 @@ object Graph {
   // Calculates the cost of a path, direct channels with the source will have a cost of 0 (pay no fees), only the first
   // edge in the list is a direct channel
   def pathCost(path: Seq[GraphEdge], amountMsat: Long): Long = {
-    path.zipWithIndex.foldLeft(0L) { case (acc, (edge, index)) => acc + edgeWeightByAmount(edge, amountMsat, index == 0) }
+    path.zipWithIndex.foldLeft(0L) { case (acc, (edge, index)) => acc + edgeWeightByAmount(edge, amountMsat, false) }
   }
 
   //helper function implementing the subList function for "Seq[T]" that will return the list with the
   //first element if indices 0 are used
   def subList[T](list: Seq[T], from: Int, to: Int): Seq[T] = {
-    if(from == 0 && to == 0 && list.nonEmpty) {
+    if(from == 0 && to == 0) {
       list.head :: Nil
     } else {
       list.slice(from, to)

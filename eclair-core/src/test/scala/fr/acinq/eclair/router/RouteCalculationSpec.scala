@@ -509,13 +509,13 @@ class RouteCalculationSpec extends FunSuite {
 
     val graph = DirectedGraph.makeGraph(edges)
 
-    val twoShortestPaths = Graph.yenKshortestPaths(graph, f, d, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, numberOfPathsToFind = 4)
+    val fourShortestPaths = Graph.yenKshortestPaths(graph, f, d, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, numberOfPathsToFind = 4)
 
-//    assert(twoShortestPaths.size === 4)
-    assert(hops2Ids(twoShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
-    assert(hops2Ids(twoShortestPaths(1).path.map(graphEdgeToHop)) === 1 :: 3 :: 5 :: Nil) // D -> A -> E -> F
-    assert(hops2Ids(twoShortestPaths(2).path.map(graphEdgeToHop)) === 2 :: 4 :: 6 :: 7 :: Nil) // D -> E -> B -> C -> F
-    assert(hops2Ids(twoShortestPaths(3).path.map(graphEdgeToHop)) === 1 :: 3 :: 4 :: 6 :: 7 :: Nil) // D -> A -> E -> B -> C -> F
+    assert(fourShortestPaths.size === 4)
+    assert(hops2Ids(fourShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
+    assert(hops2Ids(fourShortestPaths(1).path.map(graphEdgeToHop)) === 1 :: 3 :: 5 :: Nil) // D -> A -> E -> F
+    assert(hops2Ids(fourShortestPaths(2).path.map(graphEdgeToHop)) === 2 :: 4 :: 6 :: 7 :: Nil) // D -> E -> B -> C -> F
+    assert(hops2Ids(fourShortestPaths(3).path.map(graphEdgeToHop)) === 1 :: 3 :: 4 :: 6 :: 7 :: Nil) // D -> A -> E -> B -> C -> F
   }
 
   test("find the k shortest path (wikipedia example)") {
