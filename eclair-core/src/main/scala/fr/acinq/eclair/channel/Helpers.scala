@@ -87,7 +87,7 @@ object Helpers {
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (open.pushMsat > 1000 * open.fundingSatoshis) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat, 1000 * open.fundingSatoshis)
 
-    // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large. Hard limit is 2016.
+    // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
     if (open.toSelfDelay > Channel.MAX_MAIN_CLTV || open.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
 
     // BOLT #2: The receiving node MUST fail the channel if: max_accepted_htlcs is greater than 483.
