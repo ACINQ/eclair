@@ -93,8 +93,6 @@ case object BtcUnit extends CoinUnit {
 
 object CoinUtils extends Logging {
 
-  var COIN_FORMAT: NumberFormat = NumberFormat.getInstance()
-
   // msat pattern, no decimals allowed
   val MILLI_SAT_PATTERN = "#,###,###,###,###,###,##0"
 
@@ -107,8 +105,10 @@ object CoinUtils extends Logging {
   // milli btc pattern always shows 5 decimals (msat optional)
   val MILLI_BTC_PATTERN = "##,###,###,##0.00000###"
 
-  // btc pattern always shows 8 decimals (msat optional)
+  // btc pattern always shows 8 decimals (msat optional). This is the default pattern.
   val BTC_PATTERN = "##,###,##0.00000000###"
+
+  var COIN_FORMAT: NumberFormat = new DecimalFormat(BTC_PATTERN)
 
   def setCoinPattern(pattern: String): Unit = {
     COIN_FORMAT = new DecimalFormat(pattern)
