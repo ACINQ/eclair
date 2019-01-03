@@ -60,7 +60,11 @@
             </ProgressBar>
         </VBox>
 
-        <TextField fx:id="nodeId" editable="false" focusTraversable="false" styleClass="noteditable, text-strong, text-md" text="N/A" GridPane.columnIndex="2" GridPane.columnSpan="3" GridPane.rowIndex="0" GridPane.valignment="BOTTOM" />
+        <HBox alignment="BOTTOM_LEFT" spacing="5" GridPane.columnIndex="2" GridPane.columnSpan="3" GridPane.rowIndex="0" GridPane.valignment="BOTTOM">
+            <Label styleClass="text-strong, text-md" text="With" />
+            <Label fx:id="nodeAlias" maxWidth="120.0" styleClass="text-md, channel-peer-alias" visible="false"/>
+            <TextField fx:id="nodeId" editable="false" focusTraversable="false" styleClass="noteditable, text-strong, text-md" text="N/A" HBox.hgrow="ALWAYS" />
+        </HBox>
 
         <HBox alignment="CENTER_RIGHT" spacing="5" GridPane.columnIndex="5" GridPane.halignment="RIGHT" GridPane.rowIndex="0" HBox.hgrow="NEVER">
             <Button fx:id="close" mnemonicParsing="false" styleClass="close-channel" text="Close" visible="false" />

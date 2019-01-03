@@ -66,6 +66,12 @@
 	-fx-background-color: rgb(225,230,235);
 }
 
+.channel-peer-alias {
+    -fx-background-color: rgb(232,233,235);
+    -fx-background-radius: 2;
+    -fx-label-padding: 0 3px;
+}
+
 .channels-info {
 	-fx-padding: 4em 0 0 0;
 }

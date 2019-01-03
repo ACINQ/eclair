@@ -17,6 +17,7 @@
 package fr.acinq.eclair.gui.controllers
 
 import akka.actor.ActorRef
+import com.google.common.base.Strings
 import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.channel.{CMD_CLOSE, CMD_FORCECLOSE, Commitments}
@@ -35,7 +36,7 @@ import javafx.scene.control.Alert.AlertType
 /**
   * Created by DPA on 23/09/2016.
   */
-class ChannelPaneController(val channelRef: ActorRef, val theirNodeIdValue: String) extends Logging {
+class ChannelPaneController(val channelRef: ActorRef, val peerNodeId: String) extends Logging {
 
   @FXML var root: VBox = _
   @FXML var channelId: TextField = _
@@ -43,6 +44,7 @@ class ChannelPaneController(val channelRef: ActorRef, val theirNodeIdValue: Stri
   @FXML var txId: TextField = _
   @FXML var balanceBar: ProgressBar = _
   @FXML var amountUs: Label = _
+  @FXML var nodeAlias: Label = _
   @FXML var nodeId: TextField = _
   @FXML var state: TextField = _
   @FXML var funder: TextField = _
@@ -58,7 +60,7 @@ class ChannelPaneController(val channelRef: ActorRef, val theirNodeIdValue: Stri
       override def run() = {
         contextMenu = ContextMenuUtils.buildCopyContext(List(
           CopyAction("Copy channel id", channelId.getText),
-          CopyAction("Copy peer pubkey", theirNodeIdValue),
+          CopyAction("Copy peer pubkey", peerNodeId),
           CopyAction("Copy tx id", txId.getText())
         ))
         contextMenu.getStyleClass.add("context-channel")
@@ -77,6 +79,8 @@ class ChannelPaneController(val channelRef: ActorRef, val theirNodeIdValue: Stri
     channelId.textProperty.addListener(new ChangeListener[String] {
       override def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String) = buildChannelContextMenu()
     })
+    nodeId.setText(peerNodeId)
+    nodeAlias.managedProperty.bind(nodeAlias.visibleProperty)
     close.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = {
         val alert = new Alert(AlertType.CONFIRMATION,
@@ -119,8 +123,9 @@ class ChannelPaneController(val channelRef: ActorRef, val theirNodeIdValue: Stri
     if (contextMenu != null) contextMenu.hide()
   }
 
-  def updateRemoteNode(alias_opt: Option[String]) {
-    Option(nodeId).foreach((n: TextField) => n.setText(s"With ${alias_opt.map(alias => s"<${alias.take(16)}${if (alias.length > 16) "..." else ""}> ").getOrElse("")}$theirNodeIdValue"))
+  def updateRemoteNodeAlias(alias: String) {
+    nodeAlias.setText(alias)
+    nodeAlias.setVisible(!Strings.isNullOrEmpty(alias))
   }
 
   def updateBalance(commitments: Commitments) {
@@ -142,7 +147,7 @@ class ChannelPaneController(val channelRef: ActorRef, val theirNodeIdValue: Stri
       |Channel details:
       |---
       |Id: ${channelId.getText().substring(0, 18)}...
-      |Peer: ${theirNodeIdValue.toString().substring(0, 18)}...
+      |Peer: ${peerNodeId.toString().substring(0, 18)}...
       |Balance: ${CoinUtils.formatAmountInUnit(getBalance, FxApp.getUnit, withUnit = true)}
       |State: ${state.getText}
       |"""

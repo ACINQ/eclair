@@ -66,14 +66,13 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     val channelPaneController = new ChannelPaneController(channel, remoteNodeId.toString())
     loader.setController(channelPaneController)
     val root = loader.load[VBox]
-    channelPaneController.updateRemoteNode(None)
     channelPaneController.channelId.setText(channelId.toString())
     channelPaneController.funder.setText(if (isFunder) "Yes" else "No")
 
     // set the node alias if the node has already been announced
     mainController.networkNodesList
       .find(na => na.nodeId.toString.equals(remoteNodeId.toString))
-      .map(na => channelPaneController.updateRemoteNode(Some(na.alias)))
+      .foreach(na => channelPaneController.updateRemoteNodeAlias(na.alias))
 
     (channelPaneController, root)
   }
@@ -139,8 +138,8 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       runInGuiThread { () =>
         if (!mainController.networkNodesList.exists(na => na.nodeId == nodeAnnouncement.nodeId)) {
           mainController.networkNodesList.add(nodeAnnouncement)
-          m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.theirNodeIdValue)) {
-            f._2.updateRemoteNode(Some(nodeAnnouncement.alias))
+          m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.peerNodeId)) {
+            f._2.updateRemoteNodeAlias(nodeAnnouncement.alias)
           })
         }
       }
@@ -159,8 +158,8 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
         val idx = mainController.networkNodesList.indexWhere(na => na.nodeId == nodeAnnouncement.nodeId)
         if (idx >= 0) {
           mainController.networkNodesList.update(idx, nodeAnnouncement)
-          m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.theirNodeIdValue)) {
-            f._2.updateRemoteNode(Some(nodeAnnouncement.alias))
+          m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.peerNodeId)) {
+            f._2.updateRemoteNodeAlias(nodeAnnouncement.alias)
           })
         }
       }
