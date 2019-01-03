@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.RouteResponse
 import fr.acinq.eclair.transactions.Direction
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
@@ -132,3 +133,17 @@ class DirectionSerializer extends CustomSerializer[Direction](format => ({ null 
   case d: Direction => JString(d.toString)
 }))
 
+class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format => ({ null },{
+  case p: PaymentRequest => JObject(JField("prefix",JString(p.prefix) ) ::
+      JField("amount",JLong(p.amount.getOrElse(MilliSatoshi(-1L)).toLong) ) ::
+      JField("timestamp",JLong(p.timestamp) ) ::
+      JField("nodeId",JString(p.nodeId.toString()) ) ::
+      JField("description",JString(
+          p.description match{ case Left(l) => l.toString()
+                               case Right(r) => r.toString() }
+          ) ) ::
+      JField("paymentHash",JString(p.paymentHash.toString()) ) ::
+      JField("expiry",JLong(p.expiry.getOrElse(-1L)) ) ::
+      JField("minFinalCltvExpiry",JLong(p.minFinalCltvExpiry.getOrElse(-1L)) ) ::
+      Nil)
+}))
