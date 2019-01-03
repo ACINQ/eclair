@@ -197,6 +197,7 @@ object PaymentLifecycle {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
   case class CheckPayment(paymentHash: BinaryData)
+  case class CheckPaymentDetailed(paymentHash: BinaryData)
 
   sealed trait PaymentResult
   case class PaymentSucceeded(amountMsat: Long, paymentHash: BinaryData, paymentPreimage: BinaryData, route: Seq[Hop]) extends PaymentResult // note: the amount includes fees

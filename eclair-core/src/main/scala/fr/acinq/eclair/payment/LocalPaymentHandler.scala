@@ -20,14 +20,15 @@ import akka.actor.{Actor, ActorLogging, Props, Status}
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.Payment
-import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment}
+import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment, CheckPaymentDetailed}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, randomBytes}
+import fr.acinq.eclair.api.CheckPaymentDetailedResponse
 
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
-import scala.util.Try
+import scala.util.{Try,Success,Failure}
 
 /**
   * Simple payment handler that generates payment requests and fulfills incoming htlcs.
@@ -69,6 +70,9 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         case Some(_) => sender ! true
         case _ => sender ! false
       }
+
+    case CheckPaymentDetailed(paymentHash) =>
+      sender ! CheckPaymentDetailedResponse(nodeParams.paymentsDb.findByPaymentHash(paymentHash))
 
     case htlc: UpdateAddHtlc =>
       hash2preimage
