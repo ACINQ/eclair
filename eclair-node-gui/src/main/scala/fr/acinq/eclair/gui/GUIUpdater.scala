@@ -68,6 +68,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     val root = loader.load[VBox]
     channelPaneController.updateRemoteNode(None)
     channelPaneController.channelId.setText(channelId.toString())
+    channelPaneController.funder.setText(if (isFunder) "Yes" else "No")
 
     // set the node alias if the node has already been announced
     mainController.networkNodesList

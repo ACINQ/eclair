@@ -35,10 +35,11 @@
     </stylesheets>
     <GridPane prefWidth="400.0" styleClass="grid">
         <columnConstraints>
-            <ColumnConstraints hgrow="SOMETIMES" maxWidth="380.0" minWidth="120.0" prefWidth="120.0" />
+            <ColumnConstraints hgrow="SOMETIMES" maxWidth="380.0" minWidth="100.0" prefWidth="100.0" />
             <ColumnConstraints hgrow="NEVER" maxWidth="1.0" minWidth="1.0" prefWidth="1.0" />
             <ColumnConstraints hgrow="NEVER" maxWidth="90.0" minWidth="90.0" prefWidth="90.0" />
-            <ColumnConstraints hgrow="SOMETIMES" />
+            <ColumnConstraints hgrow="SOMETIMES" prefWidth="100.0" />
+            <ColumnConstraints hgrow="NEVER" maxWidth="50.0" minWidth="50.0" prefWidth="50.0" />
             <ColumnConstraints hgrow="NEVER" />
         </columnConstraints>
         <rowConstraints>
@@ -59,24 +60,27 @@
             </ProgressBar>
         </VBox>
 
-        <TextField fx:id="nodeId" editable="false" focusTraversable="false" styleClass="noteditable, text-strong, text-md" text="N/A" GridPane.columnIndex="2" GridPane.columnSpan="2" GridPane.rowIndex="0" GridPane.valignment="BOTTOM" />
+        <TextField fx:id="nodeId" editable="false" focusTraversable="false" styleClass="noteditable, text-strong, text-md" text="N/A" GridPane.columnIndex="2" GridPane.columnSpan="3" GridPane.rowIndex="0" GridPane.valignment="BOTTOM" />
 
-        <Label styleClass="text-muted" text="State" GridPane.columnIndex="2" GridPane.rowIndex="1" />
-        <TextField fx:id="state" editable="false" focusTraversable="false" styleClass="noteditable" text="N/A" GridPane.columnIndex="3" GridPane.columnSpan="2" GridPane.rowIndex="1" />
-
-        <HBox alignment="CENTER_RIGHT" spacing="5" GridPane.columnIndex="4" GridPane.halignment="RIGHT" GridPane.rowIndex="0" HBox.hgrow="NEVER">
+        <HBox alignment="CENTER_RIGHT" spacing="5" GridPane.columnIndex="5" GridPane.halignment="RIGHT" GridPane.rowIndex="0" HBox.hgrow="NEVER">
             <Button fx:id="close" mnemonicParsing="false" styleClass="close-channel" text="Close" visible="false" />
             <Button fx:id="forceclose" mnemonicParsing="false" styleClass="forceclose-channel" text="Force close" visible="false" />
         </HBox>
 
-        <Label styleClass="text-muted" text="Channel id" GridPane.columnIndex="2" GridPane.rowIndex="2" />
-        <TextField fx:id="channelId" editable="false" focusTraversable="false" styleClass="noteditable" text="N/A" GridPane.columnIndex="3" GridPane.columnSpan="2" GridPane.rowIndex="2" />
+        <Label styleClass="text-muted" text="State" GridPane.columnIndex="2" GridPane.rowIndex="1" />
+        <TextField fx:id="state" editable="false" focusTraversable="false" styleClass="noteditable" text="N/A" GridPane.columnIndex="3" GridPane.columnSpan="3" GridPane.rowIndex="1" />
 
-        <Label styleClass="text-muted" text="Short Channel id" GridPane.columnIndex="2" GridPane.rowIndex="3" />
-        <TextField fx:id="shortChannelId" editable="false" focusTraversable="false" styleClass="noteditable" text="N/A" GridPane.columnIndex="3" GridPane.columnSpan="2" GridPane.rowIndex="3" />
+        <Label styleClass="text-muted" text="Funder" GridPane.columnIndex="4" GridPane.halignment="RIGHT" GridPane.rowIndex="4" />
+        <TextField fx:id="funder" editable="false" focusTraversable="false" styleClass="noteditable" text="N/A" GridPane.columnIndex="5" GridPane.rowIndex="4" />
+
+        <Label styleClass="text-muted" text="Channel id" GridPane.columnIndex="2" GridPane.rowIndex="2" />
+        <TextField fx:id="channelId" editable="false" focusTraversable="false" styleClass="noteditable" text="N/A" GridPane.columnIndex="3" GridPane.columnSpan="3" GridPane.rowIndex="2" />
+
+        <Label styleClass="text-muted" text="Short channel id" GridPane.columnIndex="2" GridPane.rowIndex="3" />
+        <TextField fx:id="shortChannelId" editable="false" focusTraversable="false" styleClass="noteditable" text="N/A" GridPane.columnIndex="3" GridPane.columnSpan="3" GridPane.rowIndex="3" />
 
         <Label styleClass="text-muted" text="Funding tx id" GridPane.columnIndex="2" GridPane.rowIndex="4" />
-        <TextField fx:id="txId" editable="false" focusTraversable="false" styleClass="noteditable" text="N/A" GridPane.columnIndex="3" GridPane.columnSpan="2" GridPane.rowIndex="4" />
+        <TextField fx:id="txId" editable="false" focusTraversable="false" styleClass="noteditable" text="N/A" GridPane.columnIndex="3" GridPane.rowIndex="4" />
 
         <HBox prefHeight="100.0" prefWidth="1.0" styleClass="channel-balance-separator" GridPane.columnIndex="1" GridPane.rowSpan="2147483647" />
 
