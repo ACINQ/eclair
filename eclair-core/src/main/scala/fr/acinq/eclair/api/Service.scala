@@ -235,7 +235,8 @@ trait Service extends Logging {
                         case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description] or [amount, description, expiryDuration]"))
                       }
 
-                      case "checkinvoice" => req.params match {
+                      // checkinvoice deprecated.
+                      case "parseinvoice" | "checkinvoice" => req.params match {
                         case JString(paymentRequest) :: Nil => Try(PaymentRequest.read(paymentRequest)) match {
                           case Success(pr) => completeRpc(req.id,pr)
                           case Failure(t) => reject(RpcValidationRejection(req.id, s"invalid payment request ${t.getMessage}"))
@@ -379,7 +380,7 @@ trait Service extends Logging {
     "allupdates (nodeId): list all channels updates for this nodeId",
     "receive (amountMsat, description): generate a payment request for a given amount",
     "receive (amountMsat, description, expirySeconds): generate a payment request for a given amount with a description and a number of seconds till it expires",
-    "checkinvoice (paymentRequest): returns node, amount and payment hash in an invoice/paymentRequest",
+    "parseinvoice (paymentRequest): returns node, amount and payment hash in an invoice/paymentRequest",
     "findroute (paymentRequest|nodeId): given a payment request or nodeID checks if there is a valid payment route returns JSON with attempts, nodes and channels of route",
     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
     "send (paymentRequest): send a payment to a lightning node using a BOLT11 payment request",
