@@ -423,15 +423,10 @@ object ElectrumClient {
   case object ElectrumDisconnected extends ElectrumEvent
 
   sealed trait SSL
-
   object SSL {
-
     case object OFF extends SSL
-
     case object STRICT extends SSL
-
     case object LOOSE extends SSL
-
   }
 
   // @formatter:on

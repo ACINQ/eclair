@@ -18,12 +18,11 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.math.BigInteger
 
-import fr.acinq.bitcoin.{BinaryData, Block, BlockHeader, decodeCompact, encodeCompact}
+import fr.acinq.bitcoin.{BinaryData, Block, BlockHeader, decodeCompact}
+import ElectrumWallet.RETARGETING_PERIOD
 import grizzled.slf4j.Logging
 
 import scala.annotation.tailrec
-import scala.util.control.TailCalls
-import scala.util.control.TailCalls.TailRec
 
 case class Blockchain(chainHash: BinaryData,
                       checkpoints: Vector[CheckPoint],
@@ -60,18 +59,18 @@ case class Blockchain(chainHash: BinaryData,
     * @return the encoded difficulty that a block at this height should have
     */
   def getDifficulty(height: Int): Option[Long] = height match {
-    case value if value < 2016 * (checkpoints.length + 1) =>
+    case value if value < RETARGETING_PERIOD * (checkpoints.length + 1) =>
       // we're within our checkpoints
-      val checkpoint = checkpoints(height / 2016 - 1)
+      val checkpoint = checkpoints(height / RETARGETING_PERIOD - 1)
       Some(checkpoint.nextBits)
-    case value if value % 2016 != 0 =>
+    case value if value % RETARGETING_PERIOD != 0 =>
       // we're not at a retargeting height, difficulty is the same as for the previous block
       getHeader(height - 1).map(_.bits)
     case _ =>
       // difficulty retargeting
       for {
         previous <- getHeader(height - 1)
-        firstBlock <- getHeader(height - 2016)
+        firstBlock <- getHeader(height - RETARGETING_PERIOD)
       } yield BlockHeader.calculateNextWorkRequired(previous, firstBlock.time)
   }
 
@@ -127,10 +126,7 @@ object Blockchain extends Logging {
   def validateHeadersChunk(blockchain: Blockchain, height: Int, headers: Seq[BlockHeader]): Unit = {
     if (headers.isEmpty) return
 
-    if (height % 2016 != 0) {
-      println("duh")
-    }
-    require(height % 2016 == 0, s"header chunk height $height not a multiple of 2016")
+    require(height % RETARGETING_PERIOD == 0, s"header chunk height $height not a multiple of 2016")
     require(BlockHeader.checkProofOfWork(headers.head))
     headers.tail.foldLeft(headers.head) {
       case (previous, current) =>
@@ -145,7 +141,7 @@ object Blockchain extends Logging {
         current
     }
 
-    val cpindex = (height / 2016) - 1
+    val cpindex = (height / RETARGETING_PERIOD) - 1
     if (cpindex < blockchain.checkpoints.length) {
       // check that the first header in the chunk matches our checkpoint
       val checkpoint = blockchain.checkpoints(cpindex)
@@ -158,7 +154,7 @@ object Blockchain extends Logging {
 
     // if we have a checkpoint after this chunk, check that it is also satisfied
     if (cpindex < blockchain.checkpoints.length - 1) {
-      require(headers.length == 2016)
+      require(headers.length == RETARGETING_PERIOD)
       val nextCheckpoint = blockchain.checkpoints(cpindex + 1)
       require(headers.last.hash == nextCheckpoint.hash)
       blockchain.chainHash match {
@@ -171,28 +167,28 @@ object Blockchain extends Logging {
   }
 
   def addHeadersChunk(blockchain: Blockchain, height: Int, headers: Seq[BlockHeader]): Blockchain = {
-    if (headers.length > 2016) {
-      val blockchain1 = Blockchain.addHeadersChunk(blockchain, height, headers.take(2016))
-      return Blockchain.addHeadersChunk(blockchain1, height + 2016, headers.drop(2016))
+    if (headers.length > RETARGETING_PERIOD) {
+      val blockchain1 = Blockchain.addHeadersChunk(blockchain, height, headers.take(RETARGETING_PERIOD))
+      return Blockchain.addHeadersChunk(blockchain1, height + RETARGETING_PERIOD, headers.drop(RETARGETING_PERIOD))
     }
     if (headers.isEmpty) return blockchain
     validateHeadersChunk(blockchain, height, headers)
 
     height match {
-      case _ if height == blockchain.checkpoints.length * 2016 =>
+      case _ if height == blockchain.checkpoints.length * RETARGETING_PERIOD =>
         // append after our last checkpoint
 
         // checkpoints are (block hash, * next * difficulty target), this is why:
         // - we duplicate the first checkpoints because all headers in the first chunks on mainnet had the same difficulty target
         // - we drop the last checkpoint
-        val chainwork = (blockchain.checkpoints(0) +: blockchain.checkpoints.dropRight(1)).map(t => BigInt(2016) * Blockchain.chainWork(t.nextBits)).sum
+        val chainwork = (blockchain.checkpoints(0) +: blockchain.checkpoints.dropRight(1)).map(t => BigInt(RETARGETING_PERIOD) * Blockchain.chainWork(t.nextBits)).sum
         val blockIndex = BlockIndex(headers.head, height, None, chainwork + Blockchain.chainWork(headers.head))
         val bestchain1 = headers.tail.foldLeft(Vector(blockIndex)) {
           case (indexes, header) => indexes :+ BlockIndex(header, indexes.last.height + 1, Some(indexes.last), indexes.last.chainwork + Blockchain.chainWork(header))
         }
         val headersMap1 = blockchain.headersMap ++ bestchain1.map(bi => bi.hash -> bi)
         blockchain.copy(bestchain = bestchain1, headersMap = headersMap1)
-      case _ if height < blockchain.checkpoints.length * 2016 =>
+      case _ if height < blockchain.checkpoints.length * RETARGETING_PERIOD =>
         blockchain
       case _ if height == blockchain.height + 1 =>
         // attach at our bestchain
@@ -217,7 +213,7 @@ object Blockchain extends Logging {
         val blockIndex = BlockIndex(header, height, Some(parent), parent.chainwork + Blockchain.chainWork(header))
         val headersMap1 = blockchain.headersMap + (blockIndex.hash -> blockIndex)
         val bestChain1 = if (parent == blockchain.bestchain.last) {
-          // simplest case: we ad to our current best chain
+          // simplest case: we add to our current best chain
           logger.info(s"new tip at $blockIndex")
           blockchain.bestchain :+ blockIndex
         } else if (blockIndex.chainwork > blockchain.bestchain.last.chainwork) {
@@ -236,7 +232,9 @@ object Blockchain extends Logging {
   }
 
   def addHeaders(blockchain: Blockchain, height: Int, headers: Seq[BlockHeader]): Blockchain = {
-    if (headers.isEmpty) blockchain else {
+    if (headers.isEmpty) blockchain
+    else if (height % RETARGETING_PERIOD == 0) addHeadersChunk(blockchain, height, headers)
+    else {
       @tailrec
       def loop(bc: Blockchain, h: Int, hs: Seq[BlockHeader]): Blockchain = if (hs.isEmpty) bc else {
         loop(Blockchain.addHeader(bc, h, hs.head), h + 1, hs.tail)
@@ -273,10 +271,10 @@ object Blockchain extends Logging {
 
   @tailrec
   def optimize(blockchain: Blockchain, acc: Vector[BlockIndex] = Vector.empty[BlockIndex]) : (Blockchain, Vector[BlockIndex]) = {
-    if (blockchain.bestchain.size >= 2 * 2016) {
-      val saveme = blockchain.bestchain.take(2016)
+    if (blockchain.bestchain.size >= 2 * RETARGETING_PERIOD) {
+      val saveme = blockchain.bestchain.take(RETARGETING_PERIOD)
       val headersMap1 = blockchain.headersMap -- saveme.map(_.hash)
-      val bestchain1 = blockchain.bestchain.drop(2016)
+      val bestchain1 = blockchain.bestchain.drop(RETARGETING_PERIOD)
       val checkpoints1 = blockchain.checkpoints :+ CheckPoint(saveme.last.hash, bestchain1.head.header.bits)
       optimize(blockchain.copy(headersMap = headersMap1, bestchain = bestchain1, checkpoints = checkpoints1), acc ++ saveme)
     } else {
