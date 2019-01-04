@@ -21,7 +21,7 @@ import java.sql.DriverManager
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey}
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.db.sqlite.SqliteWalletDb
+import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite

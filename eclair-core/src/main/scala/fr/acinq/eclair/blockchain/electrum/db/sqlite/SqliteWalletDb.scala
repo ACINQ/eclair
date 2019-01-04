@@ -1,11 +1,12 @@
-package fr.acinq.eclair.db.sqlite
+package fr.acinq.eclair.blockchain.electrum.db.sqlite
 
 import java.sql.Connection
 
 import fr.acinq.bitcoin.{BinaryData, BlockHeader, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
-import fr.acinq.eclair.db.WalletDb
+import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+import fr.acinq.eclair.db.sqlite.SqliteUtils
 
 import scala.collection.immutable.Queue
 

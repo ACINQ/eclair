@@ -1,4 +1,4 @@
-package fr.acinq.eclair.db
+package fr.acinq.eclair.blockchain.electrum.db
 
 import fr.acinq.bitcoin.{BinaryData, BlockHeader, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse

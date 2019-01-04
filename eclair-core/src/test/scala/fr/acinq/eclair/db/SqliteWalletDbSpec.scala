@@ -5,7 +5,7 @@ import java.util.Random
 
 import fr.acinq.bitcoin.{BinaryData, Block, BlockHeader, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
-import fr.acinq.eclair.db.sqlite.SqliteWalletDb
+import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import org.scalatest.FunSuite
 
 class SqliteWalletDbSpec extends FunSuite {

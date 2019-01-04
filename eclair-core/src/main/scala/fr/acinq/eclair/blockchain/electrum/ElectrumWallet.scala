@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKe
 import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
-import fr.acinq.eclair.db.WalletDb
+import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 

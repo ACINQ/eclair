@@ -24,7 +24,7 @@ import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Block, BlockHeader, MnemonicCode, Satoshi}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ScriptHashSubscription, ScriptHashSubscriptionResponse}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
-import fr.acinq.eclair.db.sqlite.SqliteWalletDb
+import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import org.scalatest.FunSuiteLike
 
 import scala.concurrent.duration._
