@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.{ResultSet, Statement}
+import java.sql.{Connection, ResultSet, Statement}
 
 import scodec.Codec
 import scodec.bits.BitVector
@@ -75,5 +75,21 @@ object SqliteUtils {
       q = q :+ codec.decode(BitVector(rs.getBytes("data"))).require.value
     }
     q
+  }
+
+  /**
+    * Obtain an exclusive lock on a sqlite database. This is useful when we want to make sure that only one process
+    * accesses the database file (see https://www.sqlite.org/pragma.html).
+    *
+    * The lock will be kept until the database is closed, or if the locking mode is explicitely reset.
+    *
+    * @param sqlite
+    */
+  def obtainExclusiveLock(sqlite: Connection){
+    val statement = sqlite.createStatement()
+    statement.execute("PRAGMA locking_mode = EXCLUSIVE")
+    // we have to make a write to actually obtain the lock
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS dummy_table_for_locking (a INTEGER NOT NULL)")
+    statement.executeUpdate("INSERT INTO dummy_table_for_locking VALUES (42)")
   }
 }
