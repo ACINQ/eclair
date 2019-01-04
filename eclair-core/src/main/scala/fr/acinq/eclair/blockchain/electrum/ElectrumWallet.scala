@@ -191,7 +191,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         case Success(blockchain1) =>
           stay using data.copy(blockchain = blockchain1)
         case Failure(error) =>
-          log.error(s"elextrumx server sent bad header, disconnecting", error)
+          log.error(s"electrumx server sent bad header, disconnecting", error)
           sender ! PoisonPill
           goto(DISCONNECTED) using data
       }
