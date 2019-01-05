@@ -319,6 +319,21 @@ trait Service extends Logging {
                             relayed = nodeParams.auditDb.listRelayed(from, to))
                           ))
 
+                        case "auditgetpayment" => req.params match {
+                          case JString(identifier) :: Nil => completeRpcFuture(req.id, for {
+                            paymentHash <- Try(PaymentRequest.read(identifier)) match {
+                              case Success(pr) => Future.successful(pr.paymentHash)
+                              case _ => Try(BinaryData(identifier)) match {
+                                case Success(s) => Future.successful(s)
+                                case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
+                              }
+                            }
+                            found <- Future(nodeParams.auditDb.getPaymentInfo(paymentHash))
+                          } yield found)
+                          case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
+                        }
+
+
                         case "networkfees" =>
                           val (from, to) = req.params match {
                             case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
@@ -391,6 +406,7 @@ trait Service extends Logging {
     "checkpayment (paymentRequest): returns true if the payment has been received, false otherwise",
     "audit: list all send/received/relayed payments",
     "audit (from, to): list send/received/relayed payments in that interval (from <= timestamp < to)",
+    "auditgetpayment (paymentHash|paymentRequest): returns null if nothing in audit else details of sent or received payment from audit database",
     "networkfees: list all network fees paid to the miners, by transaction",
     "networkfees (from, to): list network fees paid to the miners, by transaction, in that interval (from <= timestamp < to)",
     "getinfo: returns info about the blockchain and this node",

@@ -89,6 +89,34 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
       statement.executeUpdate()
     }
 
+  override def getPaymentInfo(paymentHash: BinaryData): Option[Either[PaymentSent,PaymentReceived]] =
+    using(sqlite.prepareStatement("SELECT * FROM sent WHERE payment_hash = ?")) { statement =>
+      statement.setBytes(1, paymentHash)
+      val rs = statement.executeQuery()
+      if(rs.next())
+        Some(Left(PaymentSent(
+          amount = MilliSatoshi(rs.getLong("amount_msat")),
+          feesPaid = MilliSatoshi(rs.getLong("fees_msat")),
+          paymentHash = BinaryData(rs.getBytes("payment_hash")),
+          paymentPreimage = BinaryData(rs.getBytes("payment_preimage")),
+          toChannelId = BinaryData(rs.getBytes("to_channel_id")),
+          timestamp = rs.getLong("timestamp"))))
+      else {
+        using(sqlite.prepareStatement("SELECT * FROM received WHERE payment_hash = ?")) { statement =>
+          statement.setBytes(1, paymentHash)
+          val rs = statement.executeQuery()
+          if(rs.next()) {
+            Some(Right(PaymentReceived(
+          amount = MilliSatoshi(rs.getLong("amount_msat")),
+          paymentHash = BinaryData(rs.getBytes("payment_hash")),
+          fromChannelId = BinaryData(rs.getBytes("from_channel_id")),
+          timestamp = rs.getLong("timestamp"))))
+          } else
+            None
+        }
+      }
+    }
+
   override def listSent(from: Long, to: Long): Seq[PaymentSent] =
     using(sqlite.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>
       statement.setLong(1, from)

@@ -62,6 +62,12 @@ class SqliteAuditDbSpec extends FunSuite {
     assert(db.listRelayed(from = 0L, to = Long.MaxValue).toList === List(e3))
     assert(db.listNetworkFees(from = 0L, to = Long.MaxValue).size === 1)
     assert(db.listNetworkFees(from = 0L, to = Long.MaxValue).head.txType === "mutual")
+
+    assert(db.getPaymentInfo(e1.paymentHash)==Some(Left(e1)))
+    assert(db.getPaymentInfo(e2.paymentHash)==Some(Right(e2)))
+    assert(db.getPaymentInfo(e5.paymentHash)==Some(Left(e5)))
+    assert(db.getPaymentInfo(e6.paymentHash)==Some(Left(e6)))
+    assert(db.getPaymentInfo(randomBytes(32))==None)
   }
 
   test("stats") {

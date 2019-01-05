@@ -39,6 +39,8 @@ trait AuditDb {
 
   def listNetworkFees(from: Long, to: Long): Seq[NetworkFee]
 
+  def getPaymentInfo(paymentHash: BinaryData): Option[Either[PaymentSent,PaymentReceived]]
+
   def stats: Seq[Stats]
 
   def close: Unit

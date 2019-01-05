@@ -167,6 +167,8 @@ java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gu
   forceclose   | channelId                                                                              | force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)"
   audit        |                                                                                        | list all send/received/relayed payments
   audit        | from, to                                                                               | list send/received/relayed payments in that interval (from <= timestamp < to)
+  auditauditgetpayment|paymentHash                                                                      | returns null if nothing in audit else details of sent or received payment from audit database
+  auditauditgetpayment|paymentRequest                                                                   | returns null if nothing in audit else details of sent or received payment from audit database
   networkfees  |                                                                                        | list all network fees paid to the miners, by transaction
   networkfees  |from, to                                                                                | list network fees paid to the miners, by transaction, in that interval (from <= timestamp < to)
   help         |                                                                                        | display available methods
