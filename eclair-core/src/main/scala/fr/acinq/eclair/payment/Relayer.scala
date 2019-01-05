@@ -199,7 +199,7 @@ object Relayer {
   sealed trait NextPayload
   case class FinalPayload(add: UpdateAddHtlc, payload: PerHopPayload) extends NextPayload
   case class RelayPayload(add: UpdateAddHtlc, payload: PerHopPayload, nextPacket: Sphinx.Packet) extends NextPayload {
-    val relayFeeSatoshi = add.amountMsat - payload.amtToForward
+    val relayFeeMsat = add.amountMsat - payload.amtToForward
     val expiryDelta = add.cltvExpiry - payload.outgoingCltvValue
   }
   // @formatter:on
@@ -263,13 +263,13 @@ object Relayer {
       case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.channelFlags) =>
         Left(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)), commit = true))
       case Some(channelUpdate) if payload.amtToForward < channelUpdate.htlcMinimumMsat =>
-        Left(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(add.amountMsat, channelUpdate)), commit = true))
+        Left(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amtToForward, channelUpdate)), commit = true))
       case Some(channelUpdate) if relayPayload.expiryDelta != channelUpdate.cltvExpiryDelta =>
-        Left(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(add.cltvExpiry, channelUpdate)), commit = true))
-      case Some(channelUpdate) if relayPayload.relayFeeSatoshi < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amtToForward) =>
+        Left(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltvValue, channelUpdate)), commit = true))
+      case Some(channelUpdate) if relayPayload.relayFeeMsat < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amtToForward) =>
         Left(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
-        val isRedirected = (channelUpdate.shortChannelId != payload.shortChannelId) // we may decide to use another channel (to the same node) that the one requested
+        val isRedirected = (channelUpdate.shortChannelId != payload.shortChannelId) // we may decide to use another channel (to the same node) from the one requested
         Right(CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Some(add), commit = true, redirected = isRedirected))
     }
   }
@@ -295,11 +295,10 @@ object Relayer {
       case Some(OutgoingChannel(nextNodeId, _, _)) =>
         log.debug(s"next hop for htlc #{} paymentHash={} is nodeId={}", add.id, add.paymentHash, nextNodeId)
         // then we retrieve all known channels to this node
-        val candidateChannels = node2channels.get(nextNodeId).getOrElse(Set.empty)
+        val candidateChannels = node2channels.get(nextNodeId).getOrElse(Set.empty[ShortChannelId])
         // and we filter keep the ones that are compatible with this payment (mainly fees, expiry delta)
         candidateChannels
-          .map {
-            case shortChannelId =>
+          .map { shortChannelId =>
               val channelInfo_opt = channelUpdates.get(shortChannelId)
               val channelUpdate_opt = channelInfo_opt.map(_.channelUpdate)
               val relayResult = handleRelay(relayPayload, channelUpdate_opt)
@@ -307,7 +306,7 @@ object Relayer {
               (shortChannelId, channelInfo_opt, relayResult)
           }
           .collect { case (shortChannelId, Some(channelInfo), Right(_)) => (shortChannelId, channelInfo.availableBalanceMsat) }
-          .filter(_._2 > relayPayload.add.amountMsat) // we only keep channels that have enough balance to handle this payment
+          .filter(_._2 > relayPayload.payload.amtToForward) // we only keep channels that have enough balance to handle this payment
           .toList // needed for ordering
           .sortBy(_._2) // we want to use the channel with the lowest available balance that can process the payment
           .headOption match {
