@@ -131,6 +131,8 @@ object NodeParams {
 
     datadir.mkdirs()
 
+    val metrics=new MetricRegistry()
+
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
 
@@ -139,13 +141,13 @@ object NodeParams {
 
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
     SqliteUtils.obtainExclusiveLock(sqlite) // there should only be one process writing to this file
-    val channelsDb = new SqliteChannelsDb(sqlite)
+    val channelsDb = new TimedSqliteChannelsDb(sqlite,metrics)
     val peersDb = new SqlitePeersDb(sqlite)
     val pendingRelayDb = new SqlitePendingRelayDb(sqlite)
     val paymentsDb = new SqlitePaymentsDb(sqlite)
 
     val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "network.sqlite")}")
-    val networkDb = new SqliteNetworkDb(sqliteNetwork)
+    val networkDb = new TimedSqliteNetworkDb(sqliteNetwork,metrics)
 
     val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "audit.sqlite")}")
     val auditDb = new SqliteAuditDb(sqliteAudit)
@@ -178,6 +180,7 @@ object NodeParams {
     }.toMap
 
     NodeParams(
+      metrics=metrics,
       keyManager = keyManager,
       alias = config.getString("node-alias").take(32),
       color = Color(color.data(0), color.data(1), color.data(2)),

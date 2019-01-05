@@ -102,6 +102,15 @@ class Setup(datadir: File,
     .outputTo(LoggerFactory.getLogger("fr.acinq.eclair.metrics"))
     .convertRatesTo(TimeUnit.SECONDS)
     .convertDurationsTo(TimeUnit.MILLISECONDS)
+    .filter(MetricFilter.startsWith("db"))
+    .build
+    .start(1, TimeUnit.MINUTES)
+
+  Slf4jReporter
+    .forRegistry(nodeParams.metrics)
+    .outputTo(LoggerFactory.getLogger("fr.acinq.eclair.metrics"))
+    .convertRatesTo(TimeUnit.SECONDS)
+    .convertDurationsTo(TimeUnit.MILLISECONDS)
     .filter(MetricFilter.startsWith("peer"))
     .filter(new MetricFilter {
       override def matches(s: String, metric: Metric): Boolean = {
