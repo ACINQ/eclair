@@ -124,7 +124,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
   when(WAITING_FOR_TIP) {
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) if height < data.blockchain.height =>
-      log.info(s"elextrumx server is behind at ${height} we're at ${data.blockchain.height}, disconnecting")
+      log.info(s"electrumx server is behind at ${height} we're at ${data.blockchain.height}, disconnecting")
       sender ! PoisonPill
       goto(DISCONNECTED) using data
 
@@ -167,7 +167,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           client ! ElectrumClient.GetHeaders(blockchain2.tip.height + 1, RETARGETING_PERIOD)
           goto(SYNCING) using data.copy(blockchain = blockchain2)
         case Failure(error) =>
-          log.error("elextrumx server sent bad headers, disconnecting, {}", error)
+          log.error("electrumx server sent bad headers, disconnecting", error)
           sender ! PoisonPill
           goto(DISCONNECTED) using data
       }
@@ -203,7 +203,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           saveme.grouped(RETARGETING_PERIOD).foreach(chunk => params.db.addHeaders(chunk.head.height, chunk.map(_.header)))
           stay using notifyReady(data.copy(blockchain = blockchain2))
         case Failure(error) =>
-          log.error(s"elextrumx server sent bad header, disconnecting", error)
+          log.error(error, s"electrumx server sent bad header, disconnecting")
           sender ! PoisonPill
           goto(DISCONNECTED) using data
       }
@@ -260,7 +260,9 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         case ((heights, hashes), item) if !data.transactions.contains(item.tx_hash) && !data.pendingTransactionRequests.contains(item.tx_hash) =>
           // we retrieve the tx if we don't have it and haven't yet requested it
           client ! GetTransaction(item.tx_hash)
-          client ! GetMerkle(item.tx_hash, item.height)
+          if (item.height > 0) { // don't ask for merkle proof for unconfirmed transactions
+            client ! GetMerkle(item.tx_hash, item.height)
+          }
           (heights + (item.tx_hash -> item.height), hashes + item.tx_hash)
         case ((heights, hashes), item) =>
           // otherwise we just update the height
