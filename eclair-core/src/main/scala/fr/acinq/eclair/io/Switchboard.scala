@@ -16,15 +16,22 @@
 
 package fr.acinq.eclair.io
 
-import java.net.{InetAddress, InetSocketAddress}
+import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
-import fr.acinq.eclair.channel.HasCommitments
+import fr.acinq.eclair.channel.{HasCommitments, _}
 import fr.acinq.eclair.io.Client.Socks5ProxyParams
+import fr.acinq.eclair.payment.Relayer.RelayPayload
+import fr.acinq.eclair.payment.{Relayed, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
+import fr.acinq.eclair.transactions.{IN, OUT}
+import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
+import grizzled.slf4j.Logging
+
+import scala.util.Success
 
 /**
   * Ties network connections to peers.
@@ -32,13 +39,24 @@ import fr.acinq.eclair.router.Rebroadcast
   */
 class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[Socks5ProxyParams]) extends Actor with ActorLogging {
 
+  import Switchboard._
+
   authenticator ! self
 
   // we load peers and channels from database
   private val initialPeers = {
-    val channels = nodeParams.channelsDb.listChannels().groupBy(_.commitments.remoteParams.nodeId)
+    val channels = nodeParams.channelsDb.listChannels()
     val peers = nodeParams.peersDb.listPeers()
+
+    checkBrokenHtlcsLink(channels, nodeParams.privateKey) match {
+      case Nil => ()
+      case brokenHtlcs =>
+        val brokenHtlcKiller = context.actorOf(Props[HtlcReaper], name = "htlc-reaper")
+        brokenHtlcKiller ! brokenHtlcs
+    }
+
     channels
+      .groupBy(_.commitments.remoteParams.nodeId)
       .map {
         case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
       }
@@ -115,8 +133,73 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Resume }
 }
 
-object Switchboard {
+object Switchboard extends Logging {
 
   def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[Socks5ProxyParams]) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet, socksProxy))
+
+  /**
+    * If we have stopped eclair while it was forwarding HTLCs, it is possible that we are in a state were an incoming HTLC
+    * was committed by both sides, but we didn't have time to send and/or sign the corresponding HTLC to the downstream node.
+    *
+    * In that case, if we do nothing, the incoming HTLC will eventually expire and we won't lose money, but the channel will
+    * get closed, which is a major inconvenience.
+    *
+    * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
+    *
+    * @param channels
+    * @return
+    */
+  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey): Seq[UpdateAddHtlc] = {
+
+    // We are interested in incoming HTLCs, that have been *cross-signed*. They signed it first, so the HTLC will first
+    // appear in our commitment tx, and later on in their commitment when we subsequently sign it.
+    // That's why we need to look in *their* commitment with direction=OUT.
+    val htlcs_in = channels
+      .flatMap(_.commitments.remoteCommit.spec.htlcs)
+      .filter(_.direction == OUT)
+      .map(_.add)
+      .map(Relayer.tryParsePacket(_, privateKey))
+      .collect { case Success(RelayPayload(add, _, _)) => add } // we only consider htlcs that are relayed, not the ones for which we are the final node
+
+    // Here we do it differently because we need the origin information.
+    val relayed_out = channels
+      .flatMap(_.commitments.originChannels.values)
+      .collect { case r: Relayed => r }
+      .toSet
+
+    val htlcs_broken = htlcs_in.filterNot(htlc_in => relayed_out.exists(r => r.originChannelId == htlc_in.channelId && r.originHtlcId == htlc_in.id))
+
+    logger.info(s"htlcs_in=${htlcs_in.size} htlcs_out=${relayed_out.size} htlcs_broken=${htlcs_broken.size}")
+
+    htlcs_broken
+  }
+
+}
+
+class HtlcReaper extends Actor with ActorLogging {
+
+  context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
+
+  override def receive: Receive = {
+    case initialHtlcs: Seq[UpdateAddHtlc]@unchecked => context become main(initialHtlcs)
+  }
+
+  def main(htlcs: Seq[UpdateAddHtlc]): Receive = {
+    case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, data: HasCommitments) =>
+      val acked = htlcs
+        .filter(_.channelId == data.channelId) // only consider htlcs related to this channel
+        .filter {
+        case htlc if Commitments.getHtlcCrossSigned(data.commitments, IN, htlc.id).isDefined =>
+          // this htlc is cross signed in the current commitment, we can fail it
+          log.info(s"failing broken htlc=$htlc")
+          channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
+          false // the channel may very well be disconnected before we sign (=ack) the fail, so we keep it for now
+        case _ =>
+          true // the htlc has already been failed, we can forget about it now
+      }
+      acked.foreach(htlc => log.info(s"forgetting htlc id=${htlc.id} channelId=${htlc.channelId}"))
+      context become main(htlcs diff acked)
+  }
+
 
 }

@@ -41,6 +41,8 @@ trait AuditDb {
 
   def stats: Seq[Stats]
 
+  def close: Unit
+
 }
 
 case class NetworkFee(remoteNodeId: PublicKey, channelId: BinaryData, txId: BinaryData, feeSat: Long, txType: String, timestamp: Long)
