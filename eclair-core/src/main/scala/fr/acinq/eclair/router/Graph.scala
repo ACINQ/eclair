@@ -60,8 +60,8 @@ object Graph {
     val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](QueueComparator)
 
     //  initialize the queue and cost array
-    cost.put(sourceNode, 0)
-    vertexQueue.insert(WeightedNode(sourceNode, 0))
+    cost.put(sourceNode, amountMsat)
+    vertexQueue.insert(WeightedNode(sourceNode, amountMsat))
 
     var targetFound = false
 
@@ -89,10 +89,9 @@ object Graph {
 
             val neighbor = edge.desc.b
 
-            // note: the default value here will never be used, as there is always an entry for the current in the 'cost' map
-            // note: when searching on a reversed graph we consider 0 the weight of the edge of the target-neighboring node
-            // this is because it will be a direct channel to the source and it pays no fees
-            val newMinimumKnownCost = cost.get(current.key) + edgeWeightByAmount(edge, amountMsat, neighbor == targetNode)
+            // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
+            // note: there is always an entry for the current in the 'cost' map
+            val newMinimumKnownCost = edgeWeight(edge, cost.get(current.key), neighbor == targetNode)
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
             val neighborCost = cost.containsKey(neighbor) match {
@@ -137,16 +136,23 @@ object Graph {
     }
   }
 
+  // the total fee cost for this path
+  def pathCost(path: Seq[Hop], amountMsat: Long): Long = {
+    path.drop(1).reverse.foldLeft(amountMsat) { (fee, hop) =>
+        fee + nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, fee)
+    }
+  }
+
   /**
     *
-    * @param edge
-    * @param amountMsat
+    * @param edge the edge for which we want to compute the weight
+    * @param amountWithFees the value that this edge will have to carry along
     * @param isNeighborTarget true if the receiving vertex of this edge is the target node (source in a reversed graph), which has cost 0
-    * @return
+    * @return the new amount updated with the necessary fees for this edge
     */
-  private def edgeWeightByAmount(edge: GraphEdge, amountMsat: Long, isNeighborTarget: Boolean): Long = isNeighborTarget match {
-    case false => nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountMsat)
-    case true => 0
+  private def edgeWeight(edge: GraphEdge, amountWithFees: Long, isNeighborTarget: Boolean): Long = isNeighborTarget match {
+    case false => amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
+    case true => amountWithFees
   }
 
   /**
