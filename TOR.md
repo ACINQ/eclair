@@ -92,7 +92,6 @@ eclair.socks5.enabled = true
 You can use SOCKS5 proxy only for specific types of addresses. Use `eclair.socks5.use-for-ipv4`, `eclair.socks5.use-for-ipv6`
 or `eclair.socks5.use-for-tor` for fine tuning.
 
----
 Tor hidden service and SOCKS5 are independent options. You can use just one of them, but if you want to get the most privacy 
 features from using Tor use both.  
 
