@@ -194,7 +194,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   var reqId = 0
 
   // we need to regularly send a ping in order not to get disconnected
-  val versionTrigger = context.system.scheduler.schedule(30 seconds, 30 seconds, self, version)
+  val pingTrigger = context.system.scheduler.schedule(30 seconds, 30 seconds, self, Ping)
 
   override def unhandled(message: Any): Unit = {
     message match {
@@ -210,12 +210,14 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
       case _: ServerVersionResponse => () // we just ignore these messages, they are used as pings
 
+      case PingResponse => ()
+
       case _ => log.warning(s"unhandled $message")
     }
   }
 
   override def postStop(): Unit = {
-    versionTrigger.cancel()
+    pingTrigger.cancel()
     super.postStop()
   }
 
@@ -334,6 +336,9 @@ object ElectrumClient {
 
   case class ServerVersion(clientName: String, protocolVersion: String) extends Request
   case class ServerVersionResponse(clientName: String, protocolVersion: String) extends Response
+
+  case object Ping extends Request
+  case object PingResponse extends Response
 
   case class GetAddressHistory(address: String) extends Request
   case class TransactionHistoryItem(height: Int, tx_hash: BinaryData)
@@ -494,6 +499,7 @@ object ElectrumClient {
 
   def makeRequest(request: Request, reqId: String): JsonRPCRequest = request match {
     case ServerVersion(clientName, protocolVersion) => JsonRPCRequest(id = reqId, method = "server.version", params = clientName :: protocolVersion :: Nil)
+    case Ping => JsonRPCRequest(id = reqId, method = "server.ping", params = Nil)
     case GetAddressHistory(address) => JsonRPCRequest(id = reqId, method = "blockchain.address.get_history", params = address :: Nil)
     case GetScriptHashHistory(scripthash) => JsonRPCRequest(id = reqId, method = "blockchain.scripthash.get_history", params = scripthash.toString() :: Nil)
     case AddressListUnspent(address) => JsonRPCRequest(id = reqId, method = "blockchain.address.listunspent", params = address :: Nil)
@@ -521,6 +527,7 @@ object ElectrumClient {
           val JString(clientName) = jitems(0)
           val JString(protocolVersion) = jitems(1)
           ServerVersionResponse(clientName, protocolVersion)
+        case Ping => PingResponse
         case GetAddressHistory(address) =>
           val JArray(jitems) = json.result
           val items = jitems.map(jvalue => {
