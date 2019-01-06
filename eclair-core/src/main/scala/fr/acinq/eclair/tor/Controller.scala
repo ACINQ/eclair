@@ -8,7 +8,14 @@ import akka.util.ByteString
 
 import scala.concurrent.ExecutionContext
 
-class Controller(address: InetSocketAddress, listener: ActorRef)
+/**
+  * Created by rorp
+  *
+  * @param address         Tor control address
+  * @param protocolHandler Tor protocol handler
+  * @param ec              execution context
+  */
+class Controller(address: InetSocketAddress, protocolHandler: ActorRef)
                 (implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
   import Controller._
@@ -23,10 +30,10 @@ class Controller(address: InetSocketAddress, listener: ActorRef)
         case Some(ex) => log.error(ex, "Cannot connect")
         case _ => log.error("Cannot connect")
       }
-      context stop listener
+      context stop protocolHandler
       context stop self
     case c@Connected(remote, local) =>
-      listener ! c
+      protocolHandler ! c
       val connection = sender()
       connection ! Register(self)
       context watch connection
@@ -35,15 +42,15 @@ class Controller(address: InetSocketAddress, listener: ActorRef)
           connection ! Write(data)
         case CommandFailed(w: Write) =>
           // O/S buffer was full
-          listener ! SendFailed
+          protocolHandler ! SendFailed
           log.error("Tor command failed")
         case Received(data) =>
-          listener ! data
+          protocolHandler ! data
         case _: ConnectionClosed =>
-          context stop listener
+          context stop protocolHandler
           context stop self
         case Terminated(actor) if actor == connection =>
-          context stop listener
+          context stop protocolHandler
           context stop self
       }
   }
@@ -55,4 +62,5 @@ object Controller {
     Props(new Controller(address, protocolHandler))
 
   case object SendFailed
+
 }

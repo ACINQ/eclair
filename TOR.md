@@ -14,9 +14,9 @@ For Mac OS X:
 brew install tor
 ```
 
-Edit Tor configuration file `/etc/tor/torrc` (Linux) or `/usr/local/etc/tor/torrc` (Mac OS X)
-eclair requires for safe cooke authentication as well as SOCKS5 and control connections to be enabled.
-Change value of `ExitPolicy` parameter only if you really know what you are doing.
+Edit Tor configuration file `/etc/tor/torrc` (Linux) or `/usr/local/etc/tor/torrc` (Mac OS X).
+Eclair requires safe cookie authentication as well as SOCKS5 and control connections to be enabled.
+Change the value of the `ExitPolicy` parameter only if you really know what you are doing.
 
 
 ```
@@ -26,7 +26,7 @@ CookieAuthentication 1
 ExitPolicy reject *:*
 ```
 
-Make sure eclair is allowed to read Tor's cookie file (typically `/var/run/tor/control.authcookie`)
+Make sure eclair is allowed to read Tor's cookie file (typically `/var/run/tor/control.authcookie`).
 
 ### Start Tor
 
@@ -42,31 +42,34 @@ For Mac OS X:
 brew services start tor
 ```
 
-### Configure eclair to use Tor
+### Configure Tor hidden service
 
-To enable Tor support simply set `eclair.tor.enabled` parameter in `eclair.conf` to true.
-
+To create a Tor hidden service endpoint simply set the `eclair.tor.enabled` parameter in `eclair.conf` to true.
 ```
 eclair.tor.enabled = true
 ```
+Eclair will automatically set up a hidden service endpoint and add its onion address to the `server.public-ips` list.
+You can see what onion address is assigned using `eclair-cli`:
 
-By default all traffic will be forwarded through Tor network. Note that in this case the value of `eclair.server.public-ip`
-will be ignored and incoming connections will be disabled. To enable incoming connections you
-need to configure Tor hidden service using `eclair.tor.protocol-version` parameter.
+```shell
+eclair-cli getinfo
+```
+Eclair saves the Tor endpoint's private key in `~/.eclair/tor_pk`, so that it can recreate the endpoint address after 
+restart. If you remove the private key eclair will regenerate the endpoint address.   
+
+There are two possible values for `protocol-version`:
 
 ```
 eclair.tor.protocol-version = "v3"
 ```
 
-eclair will create a hidden service end point and advertise it's onion address as the node's public address.
-
-There are three possible values for `protocol-version`:
-
 value   | description
 --------|---------------------------------------------------------
- socks5 | use SOCKS5 proxy for reaching peers via Tor
  v2     | set up a Tor hidden service version 2 end point
- v3     | set up a Tor hidden service version 3 end point
+ v3     | set up a Tor hidden service version 3 end point (default)
+ 
+Tor protocol v3 (supported by Tor version 0.3.3.6 and higher) is backwards compatible and supports 
+both v2 and v3 addresses. 
 
 To create a new Tor circuit for every connection, use `stream-isolation` parameter:
 
@@ -74,4 +77,23 @@ To create a new Tor circuit for every connection, use `stream-isolation` paramet
 eclair.tor.stream-isolation = true
 ```
 
-Note, that bitcoind should be configured to use Tor as well.
+For increased privacy do not advertise your IP address in the `server.public-ips` list, and set your binding IP to `localhost`:
+```
+eclair.server.binding-ip = "127.0.0.1"
+```
+
+### Configure SOCKS5 proxy
+
+By default all incoming connections will be established via Tor network, but all outgoing will be created via the 
+clearnet. To route them through Tor you can use Tor's SOCKS5 proxy. Add this line in your `eclair.conf`:
+```
+eclair.socks5.enabled = true
+```
+You can use SOCKS5 proxy only for specific types of addresses. Use `eclair.socks5.use-for-ipv4`, `eclair.socks5.use-for-ipv6`
+or `eclair.socks5.use-for-tor` for fine tuning.
+
+---
+Tor hidden service and SOCKS5 are independent options. You can use just one of them, but if you want to get the most privacy 
+features from using Tor use both.  
+
+Note, that bitcoind should be configured to use Tor as well (https://en.bitcoin.it/wiki/Setting_up_a_Tor_hidden_service).

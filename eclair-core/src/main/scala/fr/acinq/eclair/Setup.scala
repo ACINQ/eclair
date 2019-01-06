@@ -56,9 +56,9 @@ import scala.concurrent.duration._
   *
   * Created by PM on 25/01/2016.
   *
-  * @param datadir  directory where eclair-core will write/read its data.
+  * @param datadir          directory where eclair-core will write/read its data.
   * @param overrideDefaults use this parameter to programmatically override the node configuration .
-  * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
+  * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
   */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
@@ -179,7 +179,7 @@ class Setup(datadir: File,
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case (_, Bitcoind(bitcoinClient)) =>
-            new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+          new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
         case _ =>
           new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
       }
@@ -275,7 +275,8 @@ class Setup(datadir: File,
               alias = nodeParams.alias,
               port = config.getInt("server.port"),
               chainHash = nodeParams.chainHash,
-              blockHeight = Globals.blockCount.intValue()))
+              blockHeight = Globals.blockCount.intValue(),
+              publicAddresses = nodeParams.publicAddresses.map(_.getHostString)))
 
           override def appKit: Kit = kit
 
@@ -303,26 +304,22 @@ class Setup(datadir: File,
 
   private def initTor(): Option[InetSocketAddress] = {
     if (config.getBoolean("tor.enabled")) {
-      if (config.getString("tor.protocol").toLowerCase != "socks5") {
-        val promiseTorAddress = Promise[OnionAddress]()
-        val protocolHandler = system.actorOf(TorProtocolHandler.props(
-          version = config.getString("tor.protocol"),
-          privateKeyPath = new File(datadir, config.getString("tor.private-key-file")).getAbsolutePath,
-          virtualPort = config.getInt("server.port"),
-          onionAdded = Some(promiseTorAddress),
-          nonce = None),
-          "tor-proto")
+      val promiseTorAddress = Promise[OnionAddress]()
+      val protocolHandler = system.actorOf(TorProtocolHandler.props(
+        version = config.getString("tor.protocol"),
+        privateKeyPath = new File(datadir, config.getString("tor.private-key-file")).getAbsolutePath,
+        virtualPort = config.getInt("server.port"),
+        onionAdded = Some(promiseTorAddress),
+        nonce = None),
+        "tor-proto")
 
-        val controller = system.actorOf(Controller.props(
-          address = new InetSocketAddress(config.getString("tor.host"), config.getInt("tor.port")),
-          protocolHandler = protocolHandler), "tor")
+      val controller = system.actorOf(Controller.props(
+        address = new InetSocketAddress(config.getString("tor.host"), config.getInt("tor.port")),
+        protocolHandler = protocolHandler), "tor")
 
-        val torAddress = await(promiseTorAddress.future, 30 seconds, "tor did not respond after 30 seconds")
-        logger.info(s"Tor address ${torAddress.toOnion}")
-        Some(torAddress.toInetSocketAddress)
-      } else {
-        None
-      }
+      val torAddress = await(promiseTorAddress.future, 30 seconds, "tor did not respond after 30 seconds")
+      logger.info(s"Tor address ${torAddress.toOnion}")
+      Some(torAddress.toInetSocketAddress)
     } else {
       None
     }

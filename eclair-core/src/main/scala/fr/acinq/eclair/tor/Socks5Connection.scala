@@ -6,6 +6,13 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import akka.io.Tcp
 import akka.util.ByteString
 
+/**
+  * Created by rorp
+  *
+  * @param underlying underlying TcpConnection
+  * @param username   user name for password authentication
+  * @param password   password for password authentication
+  */
 class Socks5Connection(underlying: ActorRef, username: Option[String], password: Option[String]) extends Actor with ActorLogging {
   username.foreach(x => require(x.length < 256, "username is too long"))
   password.foreach(x => require(x.length < 256, "password is too long"))
@@ -48,7 +55,7 @@ class Socks5Connection(underlying: ActorRef, username: Option[String], password:
             underlying ! Tcp.ResumeReading
           }
         }
-      } ("Error connecting to SOCKS5 proxy")
+      }("Error connecting to SOCKS5 proxy")
   }
 
   def authenticate(connectCommand: Socks5Connect): Receive = {
@@ -62,7 +69,7 @@ class Socks5Connection(underlying: ActorRef, username: Option[String], password:
         context become connectionRequest(connectCommand)
         underlying ! Tcp.Write(socks5ConnectionRequest(connectCommand.address))
         underlying ! Tcp.ResumeReading
-      } ("SOCKS5 authentication error")
+      }("SOCKS5 authentication error")
   }
 
   def connectionRequest(connectCommand: Socks5Connect): Receive = {
@@ -98,7 +105,7 @@ class Socks5Connection(underlying: ActorRef, username: Option[String], password:
           log.info(s"connected $connectedAddress")
           commander ! Socks5Connected(connectedAddress)
         }
-      } ("Cannot establish SOCKS5 connection")
+      }("Cannot establish SOCKS5 connection")
   }
 
   def connected: Receive = {
@@ -126,9 +133,9 @@ class Socks5Connection(underlying: ActorRef, username: Option[String], password:
     f
   } catch {
     case e: Throwable =>
-    log.error(e, message + " ")
-    underlying ! Tcp.Close
-    commander ! connectCommand.failureMessage
+      log.error(e, message + " ")
+      underlying ! Tcp.Close
+      commander ! connectCommand.failureMessage
   }
 }
 

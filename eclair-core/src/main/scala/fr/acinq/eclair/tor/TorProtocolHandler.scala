@@ -17,6 +17,16 @@ import scala.concurrent.Promise
 
 case class TorException(msg: String) extends RuntimeException(msg)
 
+/**
+  * Created by rorp
+  *
+  * @param protocolVersion Tor protocol version
+  * @param privateKeyPath  path to a file that contains a Tor private key
+  * @param virtualPort     Tor virtual port
+  * @param targetPorts     target ports
+  * @param onionAdded      a Promise to track creation of the endpoint
+  * @param clientNonce     optional client nonce, will be randomly generated if omitted
+  */
 class TorProtocolHandler(protocolVersion: ProtocolVersion,
                          privateKeyPath: String,
                          virtualPort: Int,

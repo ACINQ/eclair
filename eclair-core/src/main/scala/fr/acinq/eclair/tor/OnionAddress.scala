@@ -4,6 +4,9 @@ import java.net.InetSocketAddress
 
 import org.apache.commons.codec.binary.Base32
 
+/**
+  * Created by rorp
+  */
 sealed trait OnionAddress {
   import OnionAddress._
 
