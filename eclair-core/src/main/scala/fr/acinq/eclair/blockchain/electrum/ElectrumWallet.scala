@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.electrum
 import akka.actor.{ActorRef, FSM, PoisonPill, Props}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey, hardened}
-import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, BlockHeader, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
@@ -105,11 +105,13 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         Blockchain.fromCheckpoints(params.chainHash, checkpoints1)
     }
     val headers = params.db.getHeaders(blockchain.checkpoints.size * RETARGETING_PERIOD, None)
-    log.info(s"loading ${headers.size} from db")
+    log.info(s"loading ${headers.size} headers from db")
     val blockchain1 = Blockchain.addHeadersChunk(blockchain, blockchain.checkpoints.size * RETARGETING_PERIOD, headers)
     val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
     val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
-    val txs = db.getTransactions().map(_._1).map(tx => tx.txid -> tx).toMap
+    val transactions = db.getTransactions().map(_._1)
+    log.info(s"loading ${transactions.size} transactions from db")
+    val txs = transactions.map(tx => tx.txid -> tx).toMap
     val data = Data(params, blockchain1, firstAccountKeys, firstChangeKeys).copy(transactions = txs)
     context.system.eventStream.publish(NewWalletReceiveAddress(data.currentReceiveAddress))
     data
@@ -192,6 +194,23 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) =>
       log.info(s"got new tip ${header.blockId} at ${height}")
+      if (data.chainHash == Block.LivenetGenesisBlock.hash && height % RETARGETING_PERIOD == 0) {
+        // check difficulty at retargeting period
+        // standard case (no difficulty change) is handled in Blockchain.addHeader()
+        val target_opt = for {
+          parent <- params.db.getHeader(height - 1)
+          previous <- params.db.getHeader(height - 2016)
+          target = BlockHeader.calculateNextWorkRequired(parent, previous.time)
+        } yield target
+        target_opt.foreach(target => {
+          log.info(s"hit retargeting period, next difficulty is $target")
+          if (header.bits == target) {
+            log.error(s"electrumx server send bad header, disconnecting")
+            sender ! PoisonPill
+            goto(DISCONNECTED) using data
+          }
+        })
+      }
       Try(Blockchain.addHeader(data.blockchain, height, header)) match {
         case Success(blockchain1) =>
           data.heights.collect {

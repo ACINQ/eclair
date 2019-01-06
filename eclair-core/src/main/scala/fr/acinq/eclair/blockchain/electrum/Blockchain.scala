@@ -207,9 +207,13 @@ object Blockchain extends Logging {
 
   def addHeader(blockchain: Blockchain, height: Int, header: BlockHeader): Blockchain = {
     BlockHeader.checkProofOfWork(header)
-    // TODO: check difficulty target
     blockchain.headersMap.get(header.hashPreviousBlock) match {
       case Some(parent) if parent.height == height - 1 =>
+        if (height % RETARGETING_PERIOD != 0 && blockchain.chainHash == Block.LivenetGenesisBlock.hash) {
+          // check difficulty target, which should be the same as for the parent block
+          // we only check this on mainnet, on testnet rules are much more lax
+          require(header.bits == parent.header.bits, s"header invalid difficulty target for ${header}, it should be ${parent.header.bits}")
+        }
         val blockIndex = BlockIndex(header, height, Some(parent), parent.chainwork + Blockchain.chainWork(header))
         val headersMap1 = blockchain.headersMap + (blockIndex.hash -> blockIndex)
         val bestChain1 = if (parent == blockchain.bestchain.last) {
@@ -225,7 +229,7 @@ object Blockchain extends Logging {
           blockchain.bestchain
         }
         blockchain.copy(headersMap = headersMap1, bestchain = bestChain1)
-      case Some(parent) => throw new IllegalArgumentException(s"parent for $header at $height is $parent ????")
+      case Some(parent) => throw new IllegalArgumentException(s"parent for $header at $height is not valid: $parent ")
       case None if height < blockchain.height - 1000 => blockchain
       case None => throw new IllegalArgumentException(s"cannot find parent for $header at $height")
     }
