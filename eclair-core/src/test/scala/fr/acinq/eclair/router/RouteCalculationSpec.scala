@@ -498,13 +498,13 @@ class RouteCalculationSpec extends FunSuite {
 
 
     val edges = Seq(
-      makeUpdate(1L, d, a, 0, 0),
-      makeUpdate(2L, d, e, 0, 0),
-      makeUpdate(3L, a, e, 0, 0),
-      makeUpdate(4L, e, b, 0, 0),
-      makeUpdate(5L, e, f, 0, 0),
-      makeUpdate(6L, b, c, 0, 0),
-      makeUpdate(7L, c, f, 0, 0)
+      makeUpdate(1L, d, a, 1, 0),
+      makeUpdate(2L, d, e, 1, 0),
+      makeUpdate(3L, a, e, 1, 0),
+      makeUpdate(4L, e, b, 1, 0),
+      makeUpdate(5L, e, f, 1, 0),
+      makeUpdate(6L, b, c, 1, 0),
+      makeUpdate(7L, c, f, 1, 0)
     ).toMap
 
     val graph = DirectedGraph.makeGraph(edges)

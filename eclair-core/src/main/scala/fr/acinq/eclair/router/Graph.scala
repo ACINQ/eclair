@@ -97,7 +97,9 @@ object Graph {
       }
     }
 
-    shortestPaths
+    shortestPaths.map( result => {
+      result.copy(path = result.path.reverse)
+    })
   }
 
   // smart concatenation of paths given the edge lists, if the rootPath begins with the same vertex then discard that
@@ -107,16 +109,13 @@ object Graph {
     case (root :: otherRoot, spurHead :: _ ) => if(root.desc.a == spurHead.desc.a) concat(otherRoot, spurPath) else rootPath ++ spurPath
   }
 
-  def edgeListToVertexList(edges: Seq[GraphEdge]): Seq[PublicKey] = edges.toList match {
-    case Nil => Seq.empty
-    case last :: Nil => Seq(last.desc.a, last.desc.b)
-    case edge :: tail => edge.desc.a +: edgeListToVertexList(tail)
-  }
 
   // Calculates the cost of a path, direct channels with the source will have a cost of 0 (pay no fees), only the first
   // edge in the list is a direct channel
   def pathCost(path: Seq[GraphEdge], amountMsat: Long): Long = {
-    path.zipWithIndex.foldLeft(0L) { case (acc, (edge, index)) => acc + edgeWeightByAmount(edge, amountMsat, false) }
+    path.foldLeft(amountMsat) { (cost, edge) =>
+      cost + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountMsat)
+    }
   }
 
   //helper function implementing the subList function for "Seq[T]" that will return the list with the
@@ -233,7 +232,7 @@ object Graph {
           current = prev.get(current.desc.a)
         }
 
-        WeightedPath(edgePath, pathCost(edgePath, amountMsat))
+        WeightedPath(edgePath.reverse, pathCost(edgePath, amountMsat))
       }
     }
   }
