@@ -90,6 +90,14 @@ class RouteCalculationSpec extends FunSuite {
 
     assert(hops2Ids(route) === 4 :: 5 :: 6 :: Nil)
     assert(Graph.pathCost(route, amountMsat) === expectedCost)
+
+    // now channel 5 could route the amount (10000) but not the amount + fees (10007)
+    val (desc, update) = makeUpdate(5L, e, f, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0, maxHtlcMsat = Some(10005))
+    val graph1 = graph.addEdge(desc, update)
+
+    val Success(route1) = Router.findRoute(graph1, a, d, amountMsat)
+
+    assert(hops2Ids(route1) === 1 :: 2 :: 3 :: Nil)
   }
 
   test("calculate route considering the direct channel pays no fees") {

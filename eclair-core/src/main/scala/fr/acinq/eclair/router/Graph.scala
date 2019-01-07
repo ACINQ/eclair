@@ -81,17 +81,17 @@ object Graph {
         // for each neighbor
         currentNeighbors.foreach { edge =>
 
-          //  test for ignored edges
-          if (!(edge.update.htlcMaximumMsat.exists(_ < amountMsat) ||
-            amountMsat < edge.update.htlcMinimumMsat ||
+          val neighbor = edge.desc.b
+
+          // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
+          // note: there is always an entry for the current in the 'cost' map
+          val newMinimumKnownCost = edgeWeight(edge, cost.get(current.key), neighbor == targetNode)
+
+          // test for ignored edges
+          if (!(edge.update.htlcMaximumMsat.exists(_ < newMinimumKnownCost) ||
+            newMinimumKnownCost < edge.update.htlcMinimumMsat ||
             ignoredEdges.contains(edge.desc))
           ) {
-
-            val neighbor = edge.desc.b
-
-            // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
-            // note: there is always an entry for the current in the 'cost' map
-            val newMinimumKnownCost = edgeWeight(edge, cost.get(current.key), neighbor == targetNode)
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
             val neighborCost = cost.containsKey(neighbor) match {
