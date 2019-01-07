@@ -121,6 +121,33 @@ class Setup(datadir: File,
     .outputTo(LoggerFactory.getLogger("fr.acinq.eclair.metrics"))
     .convertRatesTo(TimeUnit.SECONDS)
     .convertDurationsTo(TimeUnit.MILLISECONDS)
+    .filter(MetricFilter.startsWith("stats"))
+    .build
+    .start(1, TimeUnit.MINUTES)
+
+  Slf4jReporter
+    .forRegistry(nodeParams.metrics)
+    .outputTo(LoggerFactory.getLogger("fr.acinq.eclair.metrics"))
+    .convertRatesTo(TimeUnit.SECONDS)
+    .convertDurationsTo(TimeUnit.MILLISECONDS)
+    .filter(MetricFilter.startsWith("eventstream"))
+    .filter(new MetricFilter {
+      override def matches(s: String, metric: Metric): Boolean = {
+        metric match {
+          // only display meters if they report significant values
+          case m: Meter => m.getOneMinuteRate > 0.01 || m.getFiveMinuteRate > 0.01 || m.getFifteenMinuteRate > 0.01
+          case _ => true
+        }
+      }
+    })
+    .build
+    .start(1, TimeUnit.MINUTES)
+    
+  Slf4jReporter
+    .forRegistry(nodeParams.metrics)
+    .outputTo(LoggerFactory.getLogger("fr.acinq.eclair.metrics"))
+    .convertRatesTo(TimeUnit.SECONDS)
+    .convertDurationsTo(TimeUnit.MILLISECONDS)
     .filter(MetricFilter.startsWith("peer"))
     .filter(new MetricFilter {
       override def matches(s: String, metric: Metric): Boolean = {
@@ -265,11 +292,13 @@ class Setup(datadir: File,
       }
 
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
+
       paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
         case "local" => LocalPaymentHandler.props(nodeParams)
         case "noop" => Props[NoopPaymentHandler]
       }, "payment-handler", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
+      metricsActor = system.actorOf(SimpleSupervisor.props(MetricsActor.props(nodeParams, router,register), "metrics", SupervisorStrategy.Resume))
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))

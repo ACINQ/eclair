@@ -379,6 +379,14 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! d.channels.values
       stay
 
+    case Event('nodecount, d) =>
+      sender ! d.nodes.size
+      stay
+
+    case Event('channelcount, d) =>
+      sender ! d.channels.size
+      stay
+
     case Event('updates, d) =>
       sender ! (d.updates ++ d.privateUpdates).values
       stay

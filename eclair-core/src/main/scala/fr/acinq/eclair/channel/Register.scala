@@ -58,6 +58,8 @@ class Register extends Actor with ActorLogging {
 
     case 'channels => sender ! channels
 
+    case 'channelcount => sender ! channels.size
+
     case 'shortIds => sender ! shortIds
 
     case 'channelsTo => sender ! channelsTo
