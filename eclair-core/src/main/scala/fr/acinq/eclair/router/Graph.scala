@@ -136,13 +136,6 @@ object Graph {
     }
   }
 
-  // the total fee cost for this path
-  def pathCost(path: Seq[Hop], amountMsat: Long): Long = {
-    path.drop(1).reverse.foldLeft(amountMsat) { (fee, hop) =>
-        fee + nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, fee)
-    }
-  }
-
   /**
     *
     * @param edge the edge for which we want to compute the weight
