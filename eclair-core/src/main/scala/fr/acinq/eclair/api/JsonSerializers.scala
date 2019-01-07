@@ -135,7 +135,7 @@ class DirectionSerializer extends CustomSerializer[Direction](format => ({ null 
 
 class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format => ({ null },{
   case p: PaymentRequest => JObject(JField("prefix",JString(p.prefix) ) ::
-      JField("amount",JLong(p.amount.getOrElse(MilliSatoshi(-1L)).toLong) ) ::
+      JField("amount",if(p.amount.isDefined) JLong(p.amount.get.toLong) else JNull ) ::
       JField("timestamp",JLong(p.timestamp) ) ::
       JField("nodeId",JString(p.nodeId.toString()) ) ::
       JField("description",JString(
