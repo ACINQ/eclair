@@ -88,7 +88,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
   startWith(DISCONNECTED, {
     val blockchain = params.chainHash match {
-      // regtest is a special case, there are no checkpoints and we start with a single header (
+      // regtest is a special case, there are no checkpoints and we start with a single header
       case Block.RegtestGenesisBlock.hash => Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header)
       case _ =>
         val checkpoints = CheckPoint.load(params.chainHash, params.walletDb)
@@ -115,27 +115,27 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
   }
 
   when(WAITING_FOR_TIP) {
-    case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) if height < data.blockchain.height =>
-      log.info(s"electrumx server is behind at ${height} we're at ${data.blockchain.height}, disconnecting")
-      sender ! PoisonPill
-      goto(DISCONNECTED) using data
-
-    case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) if data.blockchain.bestchain.isEmpty =>
-      log.info("perfoming full sync")
-      // now ask for the first header after our latest checkpoint
-      client ! ElectrumClient.GetHeaders(data.blockchain.checkpoints.size * RETARGETING_PERIOD, RETARGETING_PERIOD)
-      // make sure there is not last ready message
-      goto(SYNCING) using data.copy(lastReadyMessage = None)
-
-    case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) if header == data.blockchain.tip.header =>
-      data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
-      data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
-      goto(RUNNING) using notifyReady(data.copy(lastReadyMessage = None))
-
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) =>
-      client ! ElectrumClient.GetHeaders(data.blockchain.tip.height + 1, RETARGETING_PERIOD)
-      log.info(s"syncing headers from ${data.blockchain.height} to ${height}")
-      goto(SYNCING) using data.copy(lastReadyMessage = None)
+      if (height < data.blockchain.height) {
+        log.info(s"electrumx server is behind at ${height} we're at ${data.blockchain.height}, disconnecting")
+        sender ! PoisonPill
+        goto(DISCONNECTED) using data
+      } else if (data.blockchain.bestchain.isEmpty) {
+        log.info("perfoming full sync")
+        // now ask for the first header after our latest checkpoint
+        client ! ElectrumClient.GetHeaders(data.blockchain.checkpoints.size * RETARGETING_PERIOD, RETARGETING_PERIOD)
+        // make sure there is not last ready message
+        goto(SYNCING) using data.copy(lastReadyMessage = None)
+      } else if (header == data.blockchain.tip.header) {
+        // nothing to sync
+        data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
+        data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
+        goto(RUNNING) using notifyReady(data.copy(lastReadyMessage = None))
+      } else {
+        client ! ElectrumClient.GetHeaders(data.blockchain.tip.height + 1, RETARGETING_PERIOD)
+        log.info(s"syncing headers from ${data.blockchain.height} to ${height}")
+        goto(SYNCING) using data.copy(lastReadyMessage = None)
+      }
 
     case Event(ElectrumClient.ElectrumDisconnected, data) =>
       log.info(s"wallet got disconnected")
@@ -143,25 +143,26 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
   }
 
   when(SYNCING) {
-    case Event(ElectrumClient.GetHeadersResponse(start, headers, maxHeaders), data) if headers.isEmpty =>
-      // ok, we're all sync now
-      log.info(s"headers sync complete, tip=${data.blockchain.tip}")
-      data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
-      data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
-      goto(RUNNING) using notifyReady(data)
-
-    case Event(ElectrumClient.GetHeadersResponse(start, headers, maxHeaders), data) =>
-      Try(Blockchain.addHeaders(data.blockchain, start, headers)) match {
-        case Success(blockchain1) =>
-          val (blockchain2, saveme) = Blockchain.optimize(blockchain1)
-          saveme.grouped(RETARGETING_PERIOD).foreach(chunk => params.walletDb.addHeaders(chunk.head.height, chunk.map(_.header)))
-          log.info(s"requesting new headers chunk at ${blockchain2.tip.height}")
-          client ! ElectrumClient.GetHeaders(blockchain2.tip.height + 1, RETARGETING_PERIOD)
-          goto(SYNCING) using data.copy(blockchain = blockchain2)
-        case Failure(error) =>
-          log.error("electrumx server sent bad headers, disconnecting", error)
-          sender ! PoisonPill
-          goto(DISCONNECTED) using data
+    case Event(ElectrumClient.GetHeadersResponse(start, headers, _), data) =>
+      if (headers.isEmpty) {
+        // ok, we're all synced now
+        log.info(s"headers sync complete, tip=${data.blockchain.tip}")
+        data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
+        data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
+        goto(RUNNING) using notifyReady(data)
+      } else {
+        Try(Blockchain.addHeaders(data.blockchain, start, headers)) match {
+          case Success(blockchain1) =>
+            val (blockchain2, saveme) = Blockchain.optimize(blockchain1)
+            saveme.grouped(RETARGETING_PERIOD).foreach(chunk => params.walletDb.addHeaders(chunk.head.height, chunk.map(_.header)))
+            log.info(s"requesting new headers chunk at ${blockchain2.tip.height}")
+            client ! ElectrumClient.GetHeaders(blockchain2.tip.height + 1, RETARGETING_PERIOD)
+            goto(SYNCING) using data.copy(blockchain = blockchain2)
+          case Failure(error) =>
+            log.error("electrumx server sent bad headers, disconnecting", error)
+            sender ! PoisonPill
+            goto(DISCONNECTED) using data
+        }
       }
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) =>
@@ -180,7 +181,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
   }
 
   when(RUNNING) {
-    case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) if data.blockchain.tip == header => stay
+    case Event(ElectrumClient.HeaderSubscriptionResponse(_, header), data) if data.blockchain.tip == header => stay
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) =>
       log.info(s"got new tip ${header.blockId} at ${height}")
@@ -315,7 +316,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           stay using notifyReady(data1)
       }
 
-    case Event(response@GetMerkleResponse(txid, merkle, height, pos), data) =>
+    case Event(response@GetMerkleResponse(txid, _, height, _), data) =>
       data.blockchain.getHeader(height).orElse(params.walletDb.getHeader(height)) match {
         case Some(header) if header.hashMerkleRoot == response.root =>
           log.info(s"transaction $txid has been verified")

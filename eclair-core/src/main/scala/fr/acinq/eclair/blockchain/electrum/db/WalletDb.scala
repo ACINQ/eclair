@@ -10,7 +10,7 @@ trait HeaderDb {
 
   def getHeader(height: Int): Option[BlockHeader]
 
-  // TODO: should not be needed
+  // used only in unit tests
   def getHeader(blockHash: BinaryData): Option[(Int, BlockHeader)]
 
   def getHeaders(startHeight: Int, maxCount: Option[Int]): Seq[BlockHeader]
