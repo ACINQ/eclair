@@ -114,8 +114,8 @@ object Graph {
   // Calculates the cost of a path, direct channels with the source will have a cost of 0 (pay no fees), only the first
   // edge in the list is a direct channel
   def pathCost(path: Seq[GraphEdge], amountMsat: Long): Long = {
-    path.foldLeft(amountMsat) { (cost, edge) =>
-      cost + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountMsat)
+    path.drop(1).reverse.foldLeft(amountMsat) { (cost, edge) =>
+      cost + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, cost)
     }
   }
 
