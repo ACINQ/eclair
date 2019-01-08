@@ -91,15 +91,15 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       // regtest is a special case, there are no checkpoints and we start with a single header (
       case Block.RegtestGenesisBlock.hash => Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header)
       case _ =>
-        val checkpoints = CheckPoint.load(params.chainHash, params.db)
+        val checkpoints = CheckPoint.load(params.chainHash, params.walletDb)
         Blockchain.fromCheckpoints(params.chainHash, checkpoints)
     }
-    val headers = params.db.getHeaders(blockchain.checkpoints.size * RETARGETING_PERIOD, None)
+    val headers = params.walletDb.getHeaders(blockchain.checkpoints.size * RETARGETING_PERIOD, None)
     log.info(s"loading ${headers.size} headers from db")
     val blockchain1 = Blockchain.addHeadersChunk(blockchain, blockchain.checkpoints.size * RETARGETING_PERIOD, headers)
     val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
     val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
-    val transactions = db.getTransactions().map(_._1)
+    val transactions = walletDb.getTransactions().map(_._1)
     log.info(s"loading ${transactions.size} transactions from db")
     val txs = transactions.map(tx => tx.txid -> tx).toMap
     val data = Data(params, blockchain1, firstAccountKeys, firstChangeKeys).copy(transactions = txs)
@@ -154,7 +154,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       Try(Blockchain.addHeaders(data.blockchain, start, headers)) match {
         case Success(blockchain1) =>
           val (blockchain2, saveme) = Blockchain.optimize(blockchain1)
-          saveme.grouped(RETARGETING_PERIOD).foreach(chunk => params.db.addHeaders(chunk.head.height, chunk.map(_.header)))
+          saveme.grouped(RETARGETING_PERIOD).foreach(chunk => params.walletDb.addHeaders(chunk.head.height, chunk.map(_.header)))
           log.info(s"requesting new headers chunk at ${blockchain2.tip.height}")
           client ! ElectrumClient.GetHeaders(blockchain2.tip.height + 1, RETARGETING_PERIOD)
           goto(SYNCING) using data.copy(blockchain = blockchain2)
@@ -188,8 +188,8 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         // check difficulty at retargeting period
         // standard case (no difficulty change) is handled in Blockchain.addHeader()
         val target_opt = for {
-          parent <- params.db.getHeader(height - 1)
-          previous <- params.db.getHeader(height - 2016)
+          parent <- params.walletDb.getHeader(height - 1)
+          previous <- params.walletDb.getHeader(height - 2016)
           target = BlockHeader.calculateNextWorkRequired(parent, previous.time)
         } yield target
         target_opt.foreach(target => {
@@ -209,7 +209,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
               context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
           }
           val (blockchain2, saveme) = Blockchain.optimize(blockchain1)
-          saveme.grouped(RETARGETING_PERIOD).foreach(chunk => params.db.addHeaders(chunk.head.height, chunk.map(_.header)))
+          saveme.grouped(RETARGETING_PERIOD).foreach(chunk => params.walletDb.addHeaders(chunk.head.height, chunk.map(_.header)))
           stay using notifyReady(data.copy(blockchain = blockchain2))
         case Failure(error) =>
           log.error(error, s"electrumx server sent bad header, disconnecting")
@@ -316,13 +316,13 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       }
 
     case Event(response@GetMerkleResponse(txid, merkle, height, pos), data) =>
-      data.blockchain.getHeader(height).orElse(params.db.getHeader(height)) match {
+      data.blockchain.getHeader(height).orElse(params.walletDb.getHeader(height)) match {
         case Some(header) if header.hashMerkleRoot == response.root =>
           log.info(s"transaction $txid has been verified")
           data.transactions.get(txid).orElse(data.pendingTransactions.find(_.txid == txid)) match {
             case Some(tx) =>
               log.info(s"saving ${tx.txid} to our db")
-              db.addTransaction(tx, response)
+              walletDb.addTransaction(tx, response)
             case None => ()
           }
         case Some(header) =>
@@ -394,7 +394,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 object ElectrumWallet {
   def props(seed: BinaryData, client: ActorRef, params: WalletParameters): Props = Props(new ElectrumWallet(seed, client, params))
 
-  case class WalletParameters(chainHash: BinaryData, db: WalletDb, minimumFee: Satoshi = Satoshi(2000), dustLimit: Satoshi = Satoshi(546), swipeRange: Int = 10, allowSpendUnconfirmed: Boolean = true)
+  case class WalletParameters(chainHash: BinaryData, walletDb: WalletDb, minimumFee: Satoshi = Satoshi(2000), dustLimit: Satoshi = Satoshi(546), swipeRange: Int = 10, allowSpendUnconfirmed: Boolean = true)
 
   // @formatter:off
   sealed trait State

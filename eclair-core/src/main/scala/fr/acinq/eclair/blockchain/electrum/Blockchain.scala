@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.electrum
 import java.math.BigInteger
 
 import fr.acinq.bitcoin.{BinaryData, Block, BlockHeader, decodeCompact}
-import ElectrumWallet.RETARGETING_PERIOD
+import fr.acinq.eclair.blockchain.electrum.db.HeaderDb
 import grizzled.slf4j.Logging
 
 import scala.annotation.tailrec
@@ -81,6 +81,9 @@ case class Blockchain(chainHash: BinaryData,
 
 object Blockchain extends Logging {
 
+  val RETARGETING_PERIOD = 2016 // on bitcoin, the difficulty re-targeting period is 2016 blocks
+  val MAX_REORG = 500 // we assume that there won't be a reorg of more than 500 blocks
+
   /**
     *
     * @param header    block header
@@ -114,6 +117,28 @@ object Blockchain extends Logging {
     // the height of the genesis block is 0
     val blockIndex = BlockIndex(genesis, 0, None, decodeCompact(genesis.bits)._1)
     Blockchain(chainhash, Vector(), Map(blockIndex.hash -> blockIndex), Vector(blockIndex))
+  }
+
+  /**
+    * load an em
+    *
+    * @param chainHash
+    * @param headerDb
+    * @return
+    */
+  def load(chainHash: BinaryData, headerDb: HeaderDb): Blockchain = {
+    val checkpoints = CheckPoint.load(chainHash)
+    val checkpoints1 = headerDb.getTip match {
+      case Some((height, header)) =>
+        val newcheckpoints = for {h <- checkpoints.size * RETARGETING_PERIOD - 1 + RETARGETING_PERIOD to height - RETARGETING_PERIOD by RETARGETING_PERIOD} yield {
+          val cpheader = headerDb.getHeader(h).get
+          val nextDiff = headerDb.getHeader(h + 1).get.bits
+          CheckPoint(cpheader.hash, nextDiff)
+        }
+        checkpoints ++ newcheckpoints
+      case None => checkpoints
+    }
+    Blockchain.fromCheckpoints(chainHash, checkpoints1)
   }
 
   /**
@@ -273,9 +298,17 @@ object Blockchain extends Logging {
 
   def chainWork(header: BlockHeader): BigInt = chainWork(header.bits)
 
+  /**
+    * Optimize blockchain
+    *
+    * @param blockchain
+    * @param acc internal accumulator
+    * @return a (blockchain, indexes) tuple where headers that are old enough have been removed and new checkpoints added,
+    *         and indexes is the list of header indexes that have been optimized out and must be persisted
+    */
   @tailrec
   def optimize(blockchain: Blockchain, acc: Vector[BlockIndex] = Vector.empty[BlockIndex]) : (Blockchain, Vector[BlockIndex]) = {
-    if (blockchain.bestchain.size >= 2 * RETARGETING_PERIOD) {
+    if (blockchain.bestchain.size >= RETARGETING_PERIOD + MAX_REORG) {
       val saveme = blockchain.bestchain.take(RETARGETING_PERIOD)
       val headersMap1 = blockchain.headersMap -- saveme.map(_.hash)
       val bestchain1 = blockchain.bestchain.drop(RETARGETING_PERIOD)
