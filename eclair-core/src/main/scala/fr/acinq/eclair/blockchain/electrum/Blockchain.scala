@@ -238,7 +238,7 @@ object Blockchain extends Logging {
   }
 
   def addHeader(blockchain: Blockchain, height: Int, header: BlockHeader): Blockchain = {
-    BlockHeader.checkProofOfWork(header)
+    require(BlockHeader.checkProofOfWork(header), s"invalid proof of work for $header")
     blockchain.headersMap.get(header.hashPreviousBlock) match {
       case Some(parent) if parent.height == height - 1 =>
         if (height % RETARGETING_PERIOD != 0 && blockchain.chainHash == Block.LivenetGenesisBlock.hash) {

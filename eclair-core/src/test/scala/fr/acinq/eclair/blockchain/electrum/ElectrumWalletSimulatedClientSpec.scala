@@ -60,7 +60,6 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
 
   def makeHeader(previousHeader: BlockHeader, timestamp: Long) = previousHeader.copy(hashPreviousBlock = previousHeader.hash, time = timestamp)
 
-
   test("wait until wallet is ready") {
     sender.send(wallet, ElectrumClient.ElectrumReady(1, headers(1), InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(1, headers(1)))
@@ -106,5 +105,12 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
 
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(3, headers(3)))
     listener.expectNoMsg(500 milliseconds)
+  }
+
+  test("disconnect if server sends a bad header") {
+    val last = wallet.stateData.blockchain.bestchain.last
+    val bad = makeHeader(last.header, 42L).copy(bits = Long.MaxValue)
+    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, bad))
+    awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
   }
 }
