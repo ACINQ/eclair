@@ -544,39 +544,39 @@ class RouteCalculationSpec extends FunSuite {
 
     val graph = DirectedGraph().addEdges(edges)
 
-    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, numberOfPathsToFind = 2)
+    val twoShortestPaths = Graph.yenKshortestPaths(graph, h, c, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, numberOfPathsToFind = 2)
 
     assert(twoShortestPaths.size === 2)
     val shortest = twoShortestPaths(0)
     assert(hops2Ids(shortest.path.map(graphEdgeToHop)) === 10 :: 50 :: 80 :: Nil) // C -> E -> F -> H
-    assert(shortest.weight === 5)
 
     val secondShortest = twoShortestPaths(1)
     assert(hops2Ids(secondShortest.path.map(graphEdgeToHop)) === 10 :: 60 :: 90 :: Nil) // C -> E -> G -> H
-    assert(secondShortest.weight === 7)
   }
 
-//  test("terminate looking for k-shortest path if there are no more alternative paths than k"){
-//
-//    //simple graph with only 2 possible paths from A to F
-//    val edges = Seq(
-//      makeUpdate(1L, a, b, 0, 0),
-//      makeUpdate(2L, b, c, 0, 0),
-//      makeUpdate(3L, c, f, 0, 0),
-//      makeUpdate(4L, c, d, 0, 0),
-//      makeUpdate(5L, d, e, 0, 0),
-//      makeUpdate(6L, e, f, 0, 0)
-//    )
-//
-//    val graph = DirectedGraph().addEdges(edges)
-//
-//    //we ask for 3 shortest paths but only 2 can be found
-//    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, numberOfPathsToFind = 3)
-//
-//    assert(foundPaths.size === 2)
-//    assert(hops2Ids(foundPaths(0).path.map(graphEdgeToHop)) === 1 :: 2 :: 3 :: Nil) // A -> B -> C -> F
-//    assert(hops2Ids(foundPaths(1).path.map(graphEdgeToHop)) === 1 :: 2 :: 4 :: 5 :: 6 :: Nil) // A -> B -> C -> D -> E -> F
-//  }
+  test("terminate looking for k-shortest path if there are no more alternative paths than k"){
+
+    val f = randomKey.publicKey
+
+    //simple graph with only 2 possible paths from A to F
+    val edges = Seq(
+      makeUpdate(1L, a, b, 1, 0),
+      makeUpdate(2L, b, c, 1, 0),
+      makeUpdate(3L, c, f, 1, 0),
+      makeUpdate(4L, c, d, 1, 0),
+      makeUpdate(5L, d, e, 1, 0),
+      makeUpdate(6L, e, f, 1, 0)
+    )
+
+    val graph = DirectedGraph().addEdges(edges)
+
+    //we ask for 3 shortest paths but only 2 can be found
+    val foundPaths = Graph.yenKshortestPaths(graph, f, a, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, numberOfPathsToFind = 3)
+
+    assert(foundPaths.size === 2)
+    assert(hops2Ids(foundPaths(0).path.map(graphEdgeToHop)) === 1 :: 2 :: 3 :: Nil) // A -> B -> C -> F
+    assert(hops2Ids(foundPaths(1).path.map(graphEdgeToHop)) === 1 :: 2 :: 4 :: 5 :: 6 :: Nil) // A -> B -> C -> D -> E -> F
+  }
 
 }
 

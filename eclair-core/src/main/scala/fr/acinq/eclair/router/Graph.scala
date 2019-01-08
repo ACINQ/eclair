@@ -48,7 +48,7 @@ object Graph {
     shortestPaths += dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges)
 
     // stores the candidates for k(K +1) shortest paths, sorted by path cost
-    val candidate = new mutable.PriorityQueue[WeightedPath]
+    val candidates = new mutable.PriorityQueue[WeightedPath]
 
     // main loop
     for(k <- 1 until numberOfPathsToFind) {
@@ -56,7 +56,7 @@ object Graph {
       if ( !allSpurPathsFound ) {
 
         // for every edge in the path
-        for (i <- 0 to shortestPaths(k - 1).path.size - 1) {
+        for (i <- shortestPaths(k - 1).path.indices) {
 
           // select the spur node as the i-th element of the k-th previous shortest path (k -1)
           val spurEdge = shortestPaths(k - 1).path(i)
@@ -67,8 +67,6 @@ object Graph {
           // subgraph NOT containing the links that are part of the previous shortest path and which share the same root path
           val mutatedGraph = shortestPaths.foldLeft(graph) { (g, weightedPath) =>
             if (subList(weightedPath.path, 0, i) == rootPathEdges) {
-              println(s"k=$k i=$i removing edge ${weightedPath.path(i).desc.shortChannelId} from ${weightedPath.path.map(_.desc.shortChannelId)}")
-
               g.removeEdge(reverseDesc(weightedPath.path(i).desc))
             } else {
               g
@@ -78,28 +76,31 @@ object Graph {
           // find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
           val spurPath = dijkstraShortestPath(mutatedGraph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges, extraEdges)
 
-          // candidate shortest path is made of the rootPath and the new spurPath
-          val totalPath = concat(rootPathEdges, spurPath.path.toList)
-          val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat))
+          if(spurPath.path.nonEmpty) {
+            // candidate shortest path is made of the rootPath and the new spurPath
+            val totalPath = concat(rootPathEdges, spurPath.path.toList)
+            val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat))
 
-          if (spurPath.path.nonEmpty) {
-            candidate.enqueue(candidatePath)
+            if (!shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
+              candidates.enqueue(candidatePath)
+            }
+
           }
         }
       }
 
-      if(candidate.isEmpty) {
+      if(candidates.isEmpty) {
         // handles the case of having exhausted all possible spur paths and it's impossible to reach the target from the source
         allSpurPathsFound = true
       } else {
         // move the best candidate from in the container A
-        shortestPaths += candidate.dequeue()
+        shortestPaths += candidates.dequeue()
       }
     }
 
-    shortestPaths.map( result => {
+    shortestPaths.map( result =>
       result.copy(path = result.path.reverse)
-    })
+    )
   }
 
   // smart concatenation of paths given the edge lists, if the rootPath begins with the same vertex then discard that
