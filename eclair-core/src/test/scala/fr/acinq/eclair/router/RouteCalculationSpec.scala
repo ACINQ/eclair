@@ -23,7 +23,7 @@ import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.router.Router.DEFAULT_AMOUNT_MSAT
-import fr.acinq.eclair.{ShortChannelId, randomKey}
+import fr.acinq.eclair.{ShortChannelId, nodeFee, randomKey}
 import org.scalatest.FunSuite
 
 import scala.util.{Failure, Success}
@@ -37,6 +37,13 @@ class RouteCalculationSpec extends FunSuite {
   import RouteCalculationSpec._
 
   val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+
+  // the total fee cost for this path
+  def pathCost(path: Seq[Hop], amountMsat: Long): Long = {
+    path.drop(1).reverse.foldLeft(amountMsat) { (fee, hop) =>
+      fee + nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, fee)
+    }
+  }
 
   test("calculate simple route") {
 
@@ -54,10 +61,57 @@ class RouteCalculationSpec extends FunSuite {
     assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
+  test("calculate the shortest path (correct fees)") {
+
+    val (a, b, c, d, e, f) = (
+      PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), // a: source
+      PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"),
+      PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"),
+      PublicKey("029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c"), // d: target
+      PublicKey("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"),
+      PublicKey("020c65be6f9252e85ae2fe9a46eed892cb89565e2157730e78311b1621a0db4b22")
+    )
+
+    // note: we don't actually use floating point numbers
+    // cost(CD) = 10005 = amountMsat + 1 + (amountMsat * 400 / 1000000)
+    // cost(BC) = 10009,0015 = (cost(CD) + 1 + (cost(CD) * 300 / 1000000)
+    // cost(FD) = 10002 = amountMsat + 1 + (amountMsat * 100 / 1000000)
+    // cost(EF) = 10007,0008 = cost(FD) + 1 + (cost(FD) * 400 / 1000000)
+    // cost(AE) = 10007 -> A is source, shortest path found
+    // cost(AB) = 10009
+
+    val amountMsat = 10000
+    val expectedCost = 10007
+
+    val updates = List(
+      makeUpdate(1L, a, b, feeBaseMsat = 1, feeProportionalMillionth = 200, minHtlcMsat = 0),
+      makeUpdate(4L, a, e, feeBaseMsat = 1, feeProportionalMillionth =  200, minHtlcMsat = 0),
+      makeUpdate(2L, b, c, feeBaseMsat = 1, feeProportionalMillionth = 300, minHtlcMsat = 0),
+      makeUpdate(3L, c, d, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0),
+      makeUpdate(5L, e, f, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0),
+      makeUpdate(6L, f, d, feeBaseMsat = 1, feeProportionalMillionth = 100, minHtlcMsat = 0)
+    ).toMap
+
+    val graph = makeGraph(updates)
+
+    val Success(route) = Router.findRoute(graph, a, d, amountMsat)
+
+    assert(hops2Ids(route) === 4 :: 5 :: 6 :: Nil)
+    assert(pathCost(route, amountMsat) === expectedCost)
+
+    // now channel 5 could route the amount (10000) but not the amount + fees (10007)
+    val (desc, update) = makeUpdate(5L, e, f, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0, maxHtlcMsat = Some(10005))
+    val graph1 = graph.addEdge(desc, update)
+
+    val Success(route1) = Router.findRoute(graph1, a, d, amountMsat)
+
+    assert(hops2Ids(route1) === 1 :: 2 :: 3 :: Nil)
+  }
+
   test("calculate route considering the direct channel pays no fees") {
     val updates = List(
       makeUpdate(1L, a, b, 5, 0), // a -> b
-      makeUpdate(2L, a, d, 15, 0),// a -> d  this goes a bit closer to the targed and asks for higher fees but is a direct channel
+      makeUpdate(2L, a, d, 15, 0),// a -> d  this goes a bit closer to the target and asks for higher fees but is a direct channel
       makeUpdate(3L, b, c, 5, 0), // b -> c
       makeUpdate(4L, c, d, 5, 0), // c -> d
       makeUpdate(5L, d, e, 5, 0)  // d -> e
@@ -86,7 +140,6 @@ class RouteCalculationSpec extends FunSuite {
     val graphWithRemovedEdge = g.removeEdge(ChannelDesc(ShortChannelId(3L), c, d))
     val route2 = Router.findRoute(graphWithRemovedEdge, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route2.map(hops2Ids) === Failure(RouteNotFound))
-
   }
 
   test("calculate the shortest path (hardcoded nodes)") {
