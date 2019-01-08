@@ -47,6 +47,7 @@ import scala.util.{Failure, Success, Try}
   */
 class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.WalletParameters) extends FSM[ElectrumWallet.State, ElectrumWallet.Data] {
 
+  import Blockchain.RETARGETING_PERIOD
   import ElectrumWallet._
   import params._
 
@@ -90,19 +91,8 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       // regtest is a special case, there are no checkpoints and we start with a single header (
       case Block.RegtestGenesisBlock.hash => Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header)
       case _ =>
-        // TODO: move this into Blockchain
-        val checkpoints = CheckPoint.load(params.chainHash)
-        val checkpoints1 = db.getTip match {
-          case Some((height, header)) =>
-            val newcheckpoints = for {h <- checkpoints.size * RETARGETING_PERIOD - 1 + RETARGETING_PERIOD to height - RETARGETING_PERIOD by RETARGETING_PERIOD} yield {
-              val cpheader = db.getHeader(h).get
-              val nextDiff = db.getHeader(h + 1).get.bits
-              CheckPoint(cpheader.hash, nextDiff)
-            }
-            checkpoints ++ newcheckpoints
-          case None => checkpoints
-        }
-        Blockchain.fromCheckpoints(params.chainHash, checkpoints1)
+        val checkpoints = CheckPoint.load(params.chainHash, params.db)
+        Blockchain.fromCheckpoints(params.chainHash, checkpoints)
     }
     val headers = params.db.getHeaders(blockchain.checkpoints.size * RETARGETING_PERIOD, None)
     log.info(s"loading ${headers.size} headers from db")
@@ -405,8 +395,6 @@ object ElectrumWallet {
   def props(seed: BinaryData, client: ActorRef, params: WalletParameters): Props = Props(new ElectrumWallet(seed, client, params))
 
   case class WalletParameters(chainHash: BinaryData, db: WalletDb, minimumFee: Satoshi = Satoshi(2000), dustLimit: Satoshi = Satoshi(546), swipeRange: Int = 10, allowSpendUnconfirmed: Boolean = true)
-
-  val RETARGETING_PERIOD = 2016 // on bitcoin, the difficulty re-targeting period is 2016 blocks
 
   // @formatter:off
   sealed trait State
