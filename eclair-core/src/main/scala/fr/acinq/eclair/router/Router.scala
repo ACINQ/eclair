@@ -795,9 +795,12 @@ object Router {
   def findRoutes(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Seq[Hop]]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    Graph.yenKshortestPaths(g, targetNodeId, localNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes) match {
+    val routes = Graph.yenKshortestPaths(g, targetNodeId, localNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes).map(_.path).map(_.map(graphEdgeToHop)).toList
+
+    routes match {
       case Nil => throw RouteNotFound
-      case paths => paths.map(_.path).map(_.map(graphEdgeToHop))
+      case route :: Nil  if route.isEmpty => throw RouteNotFound
+      case foundRoutes => foundRoutes
     }
   }
 }
