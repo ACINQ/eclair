@@ -16,7 +16,6 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
 
   using(sqlite.createStatement()) { statement =>
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS headers (height INTEGER NOT NULL PRIMARY KEY, block_hash BLOB NOT NULL, header BLOB NOT NULL)")
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS headers_hash_idx ON headers(block_hash)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS transactions (tx_hash BLOB PRIMARY KEY, tx BLOB NOT NULL, proof BLOB NOT NULL)")
   }
 

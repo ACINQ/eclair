@@ -39,7 +39,9 @@ case class Blockchain(chainHash: BinaryData,
   def height = if (bestchain.isEmpty) 0 else bestchain.last.height
 
   /**
-    * build a chain of block indexes
+    * Build a chain of block indexes
+    *
+    * This is used in case of reorg to rebuilt the new best chain
     *
     * @param index last index of the chain
     * @param acc   accumulator
@@ -112,6 +114,9 @@ object Blockchain extends Logging {
     Blockchain(chainhash, checkpoints, Map(), Vector())
   }
 
+  /**
+    * Used in tests
+    */
   def fromGenesisBlock(chainhash: BinaryData, genesis: BlockHeader): Blockchain = {
     require(chainhash == Block.RegtestGenesisBlock.hash)
     // the height of the genesis block is 0
@@ -143,6 +148,8 @@ object Blockchain extends Logging {
 
   /**
     * Validate a chunk of 2016 headers
+    *
+    * Used during initial sync to batch validate
     *
     * @param height  height of the first header; must be a multiple of 2016
     * @param headers headers.
@@ -216,7 +223,7 @@ object Blockchain extends Logging {
       case _ if height < blockchain.checkpoints.length * RETARGETING_PERIOD =>
         blockchain
       case _ if height == blockchain.height + 1 =>
-        // attach at our bestchain
+        // attach at our best chain
         require(headers.head.hashPreviousBlock == blockchain.bestchain.last.hash)
         val blockIndex = BlockIndex(headers.head, height, None, blockchain.bestchain.last.chainwork + Blockchain.chainWork(headers.head))
         val indexes = headers.tail.foldLeft(Vector(blockIndex)) {

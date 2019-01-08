@@ -117,11 +117,11 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
   when(WAITING_FOR_TIP) {
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) =>
       if (height < data.blockchain.height) {
-        log.info(s"electrumx server is behind at ${height} we're at ${data.blockchain.height}, disconnecting")
+        log.info(s"electrum server is behind at ${height} we're at ${data.blockchain.height}, disconnecting")
         sender ! PoisonPill
         goto(DISCONNECTED) using data
       } else if (data.blockchain.bestchain.isEmpty) {
-        log.info("perfoming full sync")
+        log.info("performing full sync")
         // now ask for the first header after our latest checkpoint
         client ! ElectrumClient.GetHeaders(data.blockchain.checkpoints.size * RETARGETING_PERIOD, RETARGETING_PERIOD)
         // make sure there is not last ready message
@@ -159,21 +159,16 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
             client ! ElectrumClient.GetHeaders(blockchain2.tip.height + 1, RETARGETING_PERIOD)
             goto(SYNCING) using data.copy(blockchain = blockchain2)
           case Failure(error) =>
-            log.error("electrumx server sent bad headers, disconnecting", error)
+            log.error("electrum server sent bad headers, disconnecting", error)
             sender ! PoisonPill
             goto(DISCONNECTED) using data
         }
       }
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) =>
-      Try(Blockchain.addHeader(data.blockchain, height, header)) match {
-        case Success(blockchain1) =>
-          stay using data.copy(blockchain = blockchain1)
-        case Failure(error) =>
-          log.error(s"electrumx server sent bad header, disconnecting", error)
-          sender ! PoisonPill
-          goto(DISCONNECTED) using data
-      }
+      // we can ignore this, we will request header chunks until the server has nothing left to send us
+      log.debug(s"ignoring header $header at $height while syncing")
+      stay()
 
     case Event(ElectrumClient.ElectrumDisconnected, data) =>
       log.info(s"wallet got disconnected")
@@ -196,7 +191,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         target_opt.foreach(target => {
           log.info(s"hit retargeting period, next difficulty is $target")
           if (header.bits == target) {
-            log.error(s"electrumx server send bad header, disconnecting")
+            log.error(s"electrum server send bad header, disconnecting")
             sender ! PoisonPill
             goto(DISCONNECTED) using data
           }
@@ -213,7 +208,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           saveme.grouped(RETARGETING_PERIOD).foreach(chunk => params.walletDb.addHeaders(chunk.head.height, chunk.map(_.header)))
           stay using notifyReady(data.copy(blockchain = blockchain2))
         case Failure(error) =>
-          log.error(error, s"electrumx server sent bad header, disconnecting")
+          log.error(error, s"electrum server sent bad header, disconnecting")
           sender ! PoisonPill
           goto(DISCONNECTED) using data
       }
@@ -324,10 +319,12 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
             case Some(tx) =>
               log.info(s"saving ${tx.txid} to our db")
               walletDb.addTransaction(tx, response)
-            case None => ()
+            case None => log.warning(s"we received a Merkle proof for transaction $txid that we don't have")
           }
         case Some(header) =>
           log.error(s"server sent an invalid proof for $txid, disconnecting")
+          sender ! PoisonPill
+          goto(DISCONNECTED) using data
         case None =>
           // this is probably because the tx is old and within our checkpoints => request the whole header chunk
           val start = (height / RETARGETING_PERIOD) * RETARGETING_PERIOD
@@ -401,7 +398,6 @@ object ElectrumWallet {
   sealed trait State
   case object DISCONNECTED extends State
   case object WAITING_FOR_TIP extends State
-  case object WAITING_FOR_FIRST_HEADER extends State
   case object SYNCING extends State
   case object RUNNING extends State
 
@@ -485,7 +481,7 @@ object ElectrumWallet {
   /**
     *
     * @param key public key
-    * @return the hash of the public key script for this key, as used by ElectrumX's hash-based methods
+    * @return the hash of the public key script for this key, as used by Electrum's hash-based methods
     */
   def computeScriptHashFromPublicKey(key: PublicKey): BinaryData = Crypto.sha256(Script.write(computePublicKeyScript(key))).reverse
 
@@ -565,14 +561,14 @@ object ElectrumWallet {
   }
 
   /**
-    * Wallet state, which stores data returned by ElectrumX servers.
+    * Wallet state, which stores data returned by Electrum servers.
     * Most items are indexed by script hash (i.e. by pubkey script sha256 hash).
-    * Height follow ElectrumX's conventions:
+    * Height follows Electrum's conventions:
     * - h > 0 means that the tx was confirmed at block #h
     * - 0 means unconfirmed, but all input are confirmed
     * < 0 means unconfirmed, and some inputs are unconfirmed as well
     *
-    * @param tip                        current blockchain tip
+    * @param blockchain                 blockchain
     * @param accountKeys                account keys
     * @param changeKeys                 change keys
     * @param status                     script hash -> status; "" means that the script hash has not been used
