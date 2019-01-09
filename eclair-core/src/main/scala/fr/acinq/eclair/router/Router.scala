@@ -41,7 +41,9 @@ import scala.util.Try
 
 // @formatter:off
 
-case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
+case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey) {
+  def reverse():ChannelDesc = this.copy(a = b, b = a)
+}
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
 case class RouteRequest(source: PublicKey, target: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
@@ -789,7 +791,7 @@ object Router {
     * @return the computed route to the destination @targetNodeId
     */
   def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Hop]] = {
-    findRoutes(g, localNodeId, targetNodeId, amountMsat, 1, extraEdges.map(edge => edge.copy(desc = reverseDesc(edge.desc))), ignoredEdges.map(reverseDesc)).map(_.head)
+    findRoutes(g, localNodeId, targetNodeId, amountMsat, 1, extraEdges.map(edge => edge.copy(desc = edge.desc.reverse())), ignoredEdges.map(_.reverse())).map(_.head)
   }
 
   def findRoutes(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Seq[Hop]]] = Try {

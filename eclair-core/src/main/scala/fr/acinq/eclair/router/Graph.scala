@@ -67,7 +67,7 @@ object Graph {
           // subgraph NOT containing the links that are part of the previous shortest path and which share the same root path
           val mutatedGraph = shortestPaths.foldLeft(graph) { (g, weightedPath) =>
             if (subList(weightedPath.path, 0, i) == rootPathEdges) {
-              g.removeEdge(reverseDesc(weightedPath.path(i).desc))
+              g.removeEdge(weightedPath.path(i).desc.reverse())
             } else {
               g
             }
@@ -279,7 +279,7 @@ object Graph {
         */
       def addEdge(edge: GraphEdge): DirectedGraph = {
 
-        val finalEdge = edge.copy(desc = reverseDesc(edge.desc))
+        val finalEdge = edge.copy(desc = edge.desc.reverse())
 
         val vertexIn = finalEdge.desc.a
         val vertexOut = finalEdge.desc.b
@@ -303,7 +303,7 @@ object Graph {
         * @return
         */
       def removeEdge(desc: ChannelDesc): DirectedGraph = {
-        val someDesc = reverseDesc(desc)
+        val someDesc = desc.reverse()
 
         containsEdge(desc) match {
           case true => DirectedGraph(vertices.updated(someDesc.a, vertices(someDesc.a).filterNot(_.desc == someDesc)))
@@ -324,7 +324,7 @@ object Graph {
       def getEdge(edge: GraphEdge): Option[GraphEdge] = getEdge(edge.desc)
 
       def getEdge(desc: ChannelDesc): Option[GraphEdge] = {
-        val someDesc = reverseDesc(desc)
+        val someDesc = desc.reverse()
         vertices.get(someDesc.a).flatMap { adj =>
           adj.find(e => e.desc.shortChannelId == someDesc.shortChannelId && e.desc.b == someDesc.b)
         }
@@ -398,7 +398,7 @@ object Graph {
         * @return true if this edge desc is in the graph. For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
         */
       def containsEdge(desc: ChannelDesc): Boolean = {
-        val someDesc = reverseDesc(desc)
+        val someDesc = desc.reverse()
 
         vertices.get(someDesc.a) match {
           case None => false
@@ -436,7 +436,7 @@ object Graph {
 
         // add all the vertices and edges in one go
         descAndUpdates.foreach { case (desc, update) =>
-          val someDesc = reverseDesc(desc)
+          val someDesc = desc.reverse()
 
           // create or update vertex (desc.a) and update its neighbor
           mutableMap.put(someDesc.a, GraphEdge(someDesc, update) +: mutableMap.getOrElse(someDesc.a, List.empty[GraphEdge]))
@@ -448,8 +448,6 @@ object Graph {
 
         new DirectedGraph(mutableMap.toMap)
       }
-
-      def reverseDesc(desc: ChannelDesc): ChannelDesc = desc.copy(a = desc.b, b = desc.a)
 
       def graphEdgeToHop(graphEdge: GraphEdge): Hop = Hop(graphEdge.desc.b, graphEdge.desc.a, graphEdge.update)
     }
