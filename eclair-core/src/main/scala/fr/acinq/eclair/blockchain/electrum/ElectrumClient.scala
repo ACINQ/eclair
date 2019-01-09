@@ -45,7 +45,7 @@ import scala.concurrent.duration._
 
 /**
   * For later optimizations, see http://normanmaurer.me/presentations/2014-facebook-eng-netty/slides.html
-  * 
+  *
   */
 class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec: ExecutionContext) extends Actor with Stash with ActorLogging {
 
@@ -81,24 +81,39 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       ch.pipeline.addLast(new LineEncoder)
       ch.pipeline.addLast(new JsonRPCRequestEncoder)
       // error handler
-      ch.pipeline().addLast(new ExceptionHandler)
+      ch.pipeline.addLast(new ExceptionHandler)
     }
   })
 
   // Start the client.
   log.info(s"connecting to $serverAddress")
-  val channelFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
+  val channelOpenFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
 
-  def errorHandler(t: Throwable) = {
-    log.info(s"connection error (reason=${t.getMessage})")
+  def close() = {
     statusListeners.map(_ ! ElectrumDisconnected)
     context stop self
   }
 
-  channelFuture.addListeners(new ChannelFutureListener {
+  def errorHandler(t: Throwable) = {
+    log.info(s"connection error (reason=${t.getMessage})")
+    close()
+  }
+
+  channelOpenFuture.addListeners(new ChannelFutureListener {
     override def operationComplete(future: ChannelFuture): Unit = {
       if (!future.isSuccess) {
         errorHandler(future.cause())
+      } else {
+        future.channel().closeFuture().addListener(new ChannelFutureListener {
+          override def operationComplete(future: ChannelFuture): Unit = {
+            if (!future.isSuccess) {
+              errorHandler(future.cause())
+            } else {
+              log.info(s"channel closed: " + future.channel())
+              close()
+            }
+          }
+        })
       }
     }
   })
@@ -187,7 +202,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   var addressSubscriptions = Map.empty[String, Set[ActorRef]]
   var scriptHashSubscriptions = Map.empty[BinaryData, Set[ActorRef]]
   val headerSubscriptions = collection.mutable.HashSet.empty[ActorRef]
-  val version = ServerVersion("2.1.7", "1.4")
+  val version = ServerVersion("3.3.2", "1.4")
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
   val keepHeaders = 100
 
@@ -205,10 +220,6 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
         headerSubscriptions -= deadActor
 
       case RemoveStatusListener(actor) => statusListeners -= actor
-
-      case _: ServerVersion => () // we only handle this when connected
-
-      case _: ServerVersionResponse => () // we just ignore these messages, they are used as pings
 
       case PingResponse => ()
 
@@ -230,7 +241,11 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
     */
   def send(ctx: ChannelHandlerContext, request: Request): String = {
     val electrumRequestId = "" + reqId
-    ctx.channel().writeAndFlush(makeRequest(request, electrumRequestId))
+    if (ctx.channel().isWritable) {
+      ctx.channel().writeAndFlush(makeRequest(request, electrumRequestId))
+    } else {
+      errorHandler(new RuntimeException(s"channel not writable"))
+    }
     reqId = reqId + 1
     electrumRequestId
   }
