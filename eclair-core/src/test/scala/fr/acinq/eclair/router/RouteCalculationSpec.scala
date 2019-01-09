@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.router.Router.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.{ShortChannelId, nodeFee, randomKey}
 import org.scalatest.FunSuite
 
@@ -36,6 +35,7 @@ class RouteCalculationSpec extends FunSuite {
   import RouteCalculationSpec._
 
   val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+
 
   // the total fee cost for this path
   def pathCost(path: Seq[Hop], amountMsat: Long): Long = {
@@ -577,6 +577,8 @@ class RouteCalculationSpec extends FunSuite {
 }
 
 object RouteCalculationSpec {
+
+  val DEFAULT_AMOUNT_MSAT = 10000000
 
   val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
 

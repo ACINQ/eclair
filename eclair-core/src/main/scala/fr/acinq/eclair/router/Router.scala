@@ -772,11 +772,6 @@ object Router {
   }
 
   /**
-    * Routing fee have a variable part, this value will be used as a default if none is provided when search for a route
-    */
-  val DEFAULT_AMOUNT_MSAT = 10000000
-
-  /**
     * https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
     */
   val ROUTE_MAX_LENGTH = 19
