@@ -27,6 +27,7 @@ trait ElectrumxService extends DockerTestKit {
 
   val electrumxContainer = if (System.getProperty("os.name").startsWith("Linux")) {
     // "host" mode will let the container access the host network on linux
+    // we use our own docker image because other images on Docker lag behind and don't yet support 1.4
     DockerContainer("acinq/electrumx")
       .withNetworkMode("host")
       .withEnv("DAEMON_URL=http://foo:bar@localhost:28332", "COIN=BitcoinSegwit", "NET=regtest")

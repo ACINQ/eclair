@@ -136,10 +136,6 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         log.info(s"syncing headers from ${data.blockchain.height} to ${height}")
         goto(SYNCING) using data.copy(lastReadyMessage = None)
       }
-
-    case Event(ElectrumClient.ElectrumDisconnected, data) =>
-      log.info(s"wallet got disconnected")
-      goto(DISCONNECTED) using data
   }
 
   when(SYNCING) {
@@ -169,10 +165,6 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       // we can ignore this, we will request header chunks until the server has nothing left to send us
       log.debug(s"ignoring header $header at $height while syncing")
       stay()
-
-    case Event(ElectrumClient.ElectrumDisconnected, data) =>
-      log.info(s"wallet got disconnected")
-      goto(DISCONNECTED) using data
   }
 
   when(RUNNING) {
@@ -193,7 +185,6 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           if (header.bits == target) {
             log.error(s"electrum server send bad header, disconnecting")
             sender ! PoisonPill
-            goto(DISCONNECTED) using data
           }
         })
       }
@@ -210,7 +201,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         case Failure(error) =>
           log.error(error, s"electrum server sent bad header, disconnecting")
           sender ! PoisonPill
-          goto(DISCONNECTED) using data
+          stay() using data
       }
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash) == Some(status) =>
@@ -266,6 +257,10 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           // we retrieve the tx if we don't have it and haven't yet requested it
           client ! GetTransaction(item.tx_hash)
           if (item.height > 0) { // don't ask for merkle proof for unconfirmed transactions
+            if (data.blockchain.getHeader(item.height).orElse(params.walletDb.getHeader(item.height)).isEmpty) {
+              val start = (item.height / RETARGETING_PERIOD) * RETARGETING_PERIOD
+              client ! GetHeaders(start, RETARGETING_PERIOD)
+            }
             client ! GetMerkle(item.tx_hash, item.height)
           }
           (heights + (item.tx_hash -> item.height), hashes + item.tx_hash)
@@ -321,16 +316,17 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
               walletDb.addTransaction(tx, response)
             case None => log.warning(s"we received a Merkle proof for transaction $txid that we don't have")
           }
+          stay()
         case Some(header) =>
           log.error(s"server sent an invalid proof for $txid, disconnecting")
           sender ! PoisonPill
-          goto(DISCONNECTED) using data
+          stay() using data.copy(transactions = data.transactions - txid)
         case None =>
           // this is probably because the tx is old and within our checkpoints => request the whole header chunk
           val start = (height / RETARGETING_PERIOD) * RETARGETING_PERIOD
           client ! GetHeaders(start, RETARGETING_PERIOD)
+          stay()
       }
-      stay
 
     case Event(CompleteTransaction(tx, feeRatePerKw), data) =>
       Try(data.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, allowSpendUnconfirmed)) match {
@@ -361,13 +357,20 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       log.info(s"broadcasting txid=${tx.txid}")
       client forward bc
       stay
-
-    case Event(ElectrumClient.ElectrumDisconnected, data) =>
-      log.info(s"wallet got disconnected")
-      goto(DISCONNECTED) using data
   }
 
   whenUnhandled {
+
+    case Event(ElectrumClient.ElectrumDisconnected, data) =>
+      log.info(s"wallet got disconnected")
+      goto(DISCONNECTED) using data.copy(
+        pendingHistoryRequests = Set(),
+        pendingTransactionRequests = Set(),
+        pendingTransactions = Seq(),
+        status = Map(),
+        heights = Map(),
+        history = Map()
+      )
 
     case Event(GetCurrentReceiveAddress, data) => stay replying GetCurrentReceiveAddressResponse(data.currentReceiveAddress)
 
