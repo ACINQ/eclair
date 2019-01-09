@@ -59,7 +59,7 @@ object Graph {
     val prev = new java.util.HashMap[PublicKey, GraphEdge](maxMapSize)
     val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](QueueComparator)
 
-    //  initialize the queue and cost array
+    //  initialize the queue and cost array with the base cost (amount to be routed)
     cost.put(sourceNode, amountMsat)
     vertexQueue.insert(WeightedNode(sourceNode, amountMsat))
 
@@ -149,7 +149,7 @@ object Graph {
   }
 
   /**
-    * A graph data structure that uses the adjacency lists, stores the edges in reversed order
+    * A graph data structure that uses the adjacency lists, stores the incoming edges of the neighbors
     */
   object GraphStructure {
 
@@ -319,7 +319,7 @@ object Graph {
         makeGraph(edges.map(e => e.desc -> e.update).toMap)
       }
 
-      // optimized constructor, builds the graph with reversed edges
+      // optimized constructor
       def makeGraph(descAndUpdates: Map[ChannelDesc, ChannelUpdate]): DirectedGraph = {
 
         // initialize the map with the appropriate size to avoid resizing during the graph initialization
@@ -329,7 +329,7 @@ object Graph {
 
         // add all the vertices and edges in one go
         descAndUpdates.foreach { case (desc, update) =>
-          // create or update vertex (desc.a) and update its neighbor
+          // create or update vertex (desc.b) and update its neighbor
           mutableMap.put(desc.b, GraphEdge(desc, update) +: mutableMap.getOrElse(desc.b, List.empty[GraphEdge]))
           mutableMap.get(desc.a) match {
             case None => mutableMap += desc.a -> List.empty[GraphEdge]
