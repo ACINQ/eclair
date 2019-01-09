@@ -1,11 +1,11 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-
 import scala.collection.mutable
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire.ChannelUpdate
+import Router._
 
 object Graph {
 
@@ -54,14 +54,16 @@ object Graph {
 
     val maxMapSize = graphVerticesWithExtra.size + 1
 
-    //  this is not the actual optimal size for the maps, because we only put in there all the vertices in the worst case scenario.
+    // this is not the actual optimal size for the maps, because we only put in there all the vertices in the worst case scenario.
     val cost = new java.util.HashMap[PublicKey, Long](maxMapSize)
     val prev = new java.util.HashMap[PublicKey, GraphEdge](maxMapSize)
     val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](QueueComparator)
+    val pathLength = new java.util.HashMap[PublicKey, Int](maxMapSize)
 
-    //  initialize the queue and cost array with the base cost (amount to be routed)
+    // initialize the queue and cost array with the base cost (amount to be routed)
     cost.put(sourceNode, amountMsat)
     vertexQueue.insert(WeightedNode(sourceNode, amountMsat))
+    pathLength.put(sourceNode, 0) // the source node has distance 0
 
     var targetFound = false
 
@@ -83,6 +85,9 @@ object Graph {
 
           val neighbor = edge.desc.a
 
+          // calculate the length of the partial path given the new edge (current -> neighbor)
+          val neighborPathLength = pathLength.get(current.key) + 1
+
           // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
           // note: there is always an entry for the current in the 'cost' map
           val newMinimumKnownCost = edgeWeight(edge, cost.get(current.key), neighbor == targetNode)
@@ -90,7 +95,8 @@ object Graph {
           // test for ignored edges
           if (!(edge.update.htlcMaximumMsat.exists(_ < newMinimumKnownCost) ||
             newMinimumKnownCost < edge.update.htlcMinimumMsat ||
-            ignoredEdges.contains(edge.desc))
+            ignoredEdges.contains(edge.desc) ||
+            neighborPathLength >= ROUTE_MAX_LENGTH) // ignore this edge if it would make the path too long
           ) {
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
@@ -101,6 +107,9 @@ object Graph {
 
             // if this neighbor has a shorter distance than previously known
             if (newMinimumKnownCost < neighborCost) {
+
+              // update the total length of this partial path
+              pathLength.put(neighbor, neighborPathLength)
 
               // update the visiting tree
               prev.put(neighbor, edge)

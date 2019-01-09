@@ -523,6 +523,41 @@ class RouteCalculationSpec extends FunSuite {
       ChannelDesc(ShortChannelId(8L), i, j)
     ))
   }
+
+  test("limit routes to 20 hops") {
+
+    val nodes = (for (_ <- 0 until 100) yield randomKey.publicKey).toList
+
+    val updates = nodes
+      .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
+      .zipWithIndex // ((0, 1), 0) :: ((1, 2), 1) :: ...
+      .map { case ((na, nb), index) => makeUpdate(index, na, nb, 5, 0) }
+      .toMap
+
+    val g = makeGraph(updates)
+    val route = Router.findRoute(g, nodes.head, nodes.last, DEFAULT_AMOUNT_MSAT)
+
+    assert(route === Failure(RouteNotFound))
+  }
+
+  test("ignore cheaper route when it has more than 20 hops") {
+
+    val nodes = (for (_ <- 0 until 50) yield randomKey.publicKey).toList
+
+    val updates = nodes
+      .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
+      .zipWithIndex // ((0, 1), 0) :: ((1, 2), 1) :: ...
+      .map {case ((na, nb), index) => makeUpdate(index, na, nb, 1, 0)}
+      .toMap
+
+    val updates2 = updates + makeUpdate(99, nodes(2), nodes(48), 1000, 0) // expensive shorter route
+
+    val g = makeGraph(updates2)
+
+    val route = Router.findRoute(g, nodes(0), nodes(49), DEFAULT_AMOUNT_MSAT)
+    assert(route.map(hops2Ids) === Success(0 :: 1 :: 99 :: 48 :: Nil))
+  }
+
 }
 
 object RouteCalculationSpec {

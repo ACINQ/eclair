@@ -777,6 +777,12 @@ object Router {
   val DEFAULT_AMOUNT_MSAT = 10000000
 
   /**
+    * https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
+    */
+  val ROUTE_MAX_LENGTH = 19
+
+
+  /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route and its cost
     *
     * @param g
