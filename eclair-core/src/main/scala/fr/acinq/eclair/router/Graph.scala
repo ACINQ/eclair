@@ -129,9 +129,9 @@ object Graph {
 
     targetFound match {
       case false => Seq.empty[GraphEdge]
-      case true => {
+      case true =>
         // we traverse the list of "previous" backward building the final list of edges that make the shortest path
-        val edgePath = new mutable.ArrayBuffer[GraphEdge](21) // max path length is 20! https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
+        val edgePath = new mutable.ArrayBuffer[GraphEdge](ROUTE_MAX_LENGTH) // max path length is 20! https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
         var current = prev.get(targetNode)
 
         while (current != null) {
@@ -141,7 +141,6 @@ object Graph {
         }
 
         edgePath
-      }
     }
   }
 
