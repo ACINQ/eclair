@@ -41,7 +41,9 @@ import scala.util.Try
 
 // @formatter:off
 
-case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
+case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey) {
+  def reverse():ChannelDesc = this.copy(a = b, b = a)
+}
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
 case class RouteRequest(source: PublicKey, target: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
@@ -791,7 +793,7 @@ object Router {
   def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    Graph.shortestPath(g, targetNodeId, localNodeId, amountMsat, ignoredEdges.map(reverseDesc), extraEdges.map(edge => edge.copy(desc = reverseDesc(edge.desc)))) match {
+    Graph.shortestPath(g, targetNodeId, localNodeId, amountMsat, ignoredEdges.map(_.reverse()), extraEdges.map(edge => edge.copy(desc = edge.desc.reverse()))) match {
       case Nil => throw RouteNotFound
       case path => path
     }
