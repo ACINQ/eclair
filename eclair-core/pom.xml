@@ -132,6 +132,13 @@
             <artifactId>akka-http-core_${scala.version.short}</artifactId>
             <version>10.0.11</version>
         </dependency>
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-http-testkit_${scala.version.short}</artifactId>
+            <version>10.0.11</version>
+            <scope>test</scope>
+        </dependency>
+
         <!-- HTTP CLIENT -->
         <dependency>
             <groupId>com.softwaremill.sttp</groupId>
