@@ -558,6 +558,22 @@ class RouteCalculationSpec extends FunSuite {
     assert(route.map(hops2Ids) === Success(0 :: 1 :: 99 :: 48 :: Nil))
   }
 
+  test("ignore loops") {
+
+    val updates = List(
+      makeUpdate(1L, a, b, 10, 10),
+      makeUpdate(2L, b, c, 10, 10),
+      makeUpdate(3L, c, a, 10, 10),
+      makeUpdate(4L, c, d, 10, 10),
+      makeUpdate(5L, d, e, 10, 10)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
+    assert(route1.map(hops2Ids) === Success(1 :: 2  :: 4 :: 5 :: Nil))
+  }
+
 }
 
 object RouteCalculationSpec {
