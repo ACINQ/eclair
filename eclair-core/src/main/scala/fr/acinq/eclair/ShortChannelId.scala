@@ -25,7 +25,7 @@ package fr.acinq.eclair
 case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] {
 
   def toLong: Long = id
-
+  
   override def toString: String = s"${txCoordinates.blockHeight}x${txCoordinates.outputIndex}x${txCoordinates.outputIndex}"
 
   // we use an unsigned long comparison here
