@@ -41,7 +41,7 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
   // on startup, we attempt to connect to a number of electrum clients
   // they will send us an `ElectrumReady` message when they're connected, or
   // terminate if they cannot connect
-  (0 until MAX_CONNECTION_COUNT) foreach (_ => self ! Connect)
+  (0 until Math.min(MAX_CONNECTION_COUNT, serverAddresses.size)) foreach (_ => self ! Connect)
 
   log.debug(s"starting electrum pool with serverAddresses={}", serverAddresses)
 
