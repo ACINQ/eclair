@@ -181,8 +181,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
 
     case Event(PingTimeout(ping), d: ConnectedData) =>
-      log.warning(s"no response to ping=$ping, closing connection")
-      d.transport ! PoisonPill
+      if (nodeParams.pingDisconnect) {
+        log.warning(s"no response to ping=$ping, closing connection")
+        d.transport ! PoisonPill
+      } else {
+        log.warning(s"no response to ping=$ping (ignored)")
+      }
       stay
 
     case Event(ping@wire.Ping(pongLength, _), d: ConnectedData) =>
