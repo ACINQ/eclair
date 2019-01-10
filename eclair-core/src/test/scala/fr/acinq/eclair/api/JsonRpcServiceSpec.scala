@@ -1,11 +1,9 @@
 package fr.acinq.eclair.api
 
-import java.io.File
-import java.net.URI
+
 import java.nio.charset.StandardCharsets._
 import java.nio.file.{Files, Path, Paths, StandardOpenOption}
 import java.nio.file.StandardOpenOption._
-
 import akka.actor.{Actor, ActorSystem, Props, Scheduler}
 import org.scalatest.FunSuite
 import akka.http.scaladsl.model.StatusCodes._
@@ -67,7 +65,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
     import mockService.formats
     import mockService.serialization
 
-    //no auth
+    // no auth
     Post("/", JsonRPCBody(method = "help", params = Seq.empty)) ~>
       Route.seal(mockService.route) ~>
       check {
@@ -75,7 +73,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(status == Unauthorized)
       }
 
-    //wrong auth
+    // wrong auth
     Post("/", JsonRPCBody(method = "help", params = Seq.empty)) ~>
       addCredentials(BasicHttpCredentials("", mockService.password+"what!")) ~>
       addHeader("Content-Type", "application/json") ~>
