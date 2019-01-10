@@ -77,6 +77,7 @@ object SqliteUtils {
 
   /**
     * This helper uses the proper way to set a nullable value.
+    * It is used on Android only
     *
     * @param statement
     * @param parameterIndex
@@ -92,6 +93,7 @@ object SqliteUtils {
   /**
     * This helper retrieves the value from a nullable integer column and interprets it as an option. This is needed
     * because `rs.getLong` would return `0` for a null value.
+    * It is used on Android only
     *
     * @param label
     * @return

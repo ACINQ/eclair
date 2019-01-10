@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.payment.{ForwardAdd, Local, PaymentLifecycle}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
@@ -38,13 +38,13 @@ import scala.concurrent.duration._
 
 class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayer: TestProbe)
+  type FixtureParam = SetupFixture
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer)
+      reachNormal(setup)
       val sender = TestProbe()
       // alice sends an HTLC to bob
       val r1: BinaryData = "11" * 32
@@ -80,8 +80,8 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       bob2alice.forward(alice)
       alice2bob.expectMsgType[RevokeAndAck]
       alice2bob.forward(bob)
-      relayer.expectMsgType[ForwardAdd]
-      relayer.expectMsgType[ForwardAdd]
+      relayerB.expectMsgType[ForwardAdd]
+      relayerB.expectMsgType[ForwardAdd]
       // alice initiates a closing
       sender.send(alice, CMD_CLOSE(None))
       alice2bob.expectMsgType[Shutdown]
@@ -90,7 +90,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       bob2alice.forward(alice)
       awaitCond(alice.stateName == SHUTDOWN)
       awaitCond(bob.stateName == SHUTDOWN)
-      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer)))
+      channelUpdateListener.expectMsgType[LocalChannelDown]
+      channelUpdateListener.expectMsgType[LocalChannelDown]
+      withFixture(test.toNoArgTest(setup))
     }
   }
 
@@ -439,6 +441,58 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[PublishAsap] // htlc delayed 1
     alice2blockchain.expectMsgType[PublishAsap] // htlc delayed 2
     alice2blockchain.expectMsgType[WatchConfirmed]
+  }
+
+  test("recv RevokeAndAck (forward UpdateFailHtlc)") { f =>
+    import f._
+    val sender = TestProbe()
+    sender.send(bob, CMD_FAIL_HTLC(1, Right(PermanentChannelFailure)))
+    sender.expectMsg("ok")
+    val fail = bob2alice.expectMsgType[UpdateFailHtlc]
+    bob2alice.forward(alice)
+    sender.send(bob, CMD_SIGN)
+    sender.expectMsg("ok")
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    // alice still hasn't forwarded the fail because it is not yet cross-signed
+    relayerA.expectNoMsg()
+
+    // actual test begins
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    // alice will forward the fail upstream
+    val forward = relayerA.expectMsgType[ForwardFail]
+    assert(forward.fail === fail)
+  }
+
+  test("recv RevokeAndAck (forward UpdateFailMalformedHtlc)") { f =>
+    import f._
+    val sender = TestProbe()
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256("should be htlc.onionRoutingPacket".getBytes()), FailureMessageCodecs.BADONION))
+    sender.expectMsg("ok")
+    val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
+    bob2alice.forward(alice)
+    sender.send(bob, CMD_SIGN)
+    sender.expectMsg("ok")
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    // alice still hasn't forwarded the fail because it is not yet cross-signed
+    relayerA.expectNoMsg()
+
+    // actual test begins
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    // alice will forward the fail upstream
+    val forward = relayerA.expectMsgType[ForwardFailMalformed]
+    assert(forward.fail === fail)
   }
 
   test("recv CMD_UPDATE_FEE") { f =>

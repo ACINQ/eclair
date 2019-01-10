@@ -42,20 +42,16 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
       log.debug(s"fulfill/fail acked for channelId=$channelId htlcId=$htlcId")
       pendingRelayDb.removePendingRelay(channelId, htlcId)
 
-    case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, nextState, d: HasCommitments) =>
+    case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, d: HasCommitments) =>
       import d.channelId
       // if channel is in a state where it can have pending htlcs, we send them the fulfills we know of
-      nextState match {
-        case NORMAL | SHUTDOWN | CLOSING =>
-          pendingRelayDb.listPendingRelay(channelId) match {
-            case Nil => ()
-            case msgs =>
-              log.info(s"re-sending ${msgs.size} unacked fulfills/fails to channel $channelId")
-              msgs.foreach(channel ! _) // they all have commit = false
-              // better to sign once instead of after each fulfill
-              channel ! CMD_SIGN
-          }
-        case _ => ()
+      pendingRelayDb.listPendingRelay(channelId) match {
+        case Nil => ()
+        case msgs =>
+          log.info(s"re-sending ${msgs.size} unacked fulfills/fails to channel $channelId")
+          msgs.foreach(channel ! _) // they all have commit = false
+          // better to sign once instead of after each fulfill
+          channel ! CMD_SIGN
       }
 
     case _: ChannelStateChanged => () // ignored

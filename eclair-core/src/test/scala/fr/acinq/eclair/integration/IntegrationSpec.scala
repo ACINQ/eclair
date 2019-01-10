@@ -693,6 +693,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       val pr = sender.expectMsgType[PaymentRequest]
       val sendReq = SendPayment(amountMsat, pr.paymentHash, pr.nodeId)
       sender.send(paymentInitiator, sendReq)
+      sender.expectNoMsg()
     }
 
     val buffer = TestProbe()
