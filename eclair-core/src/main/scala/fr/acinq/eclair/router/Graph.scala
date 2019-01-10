@@ -93,10 +93,10 @@ object Graph {
           val newMinimumKnownCost = edgeWeight(edge, cost.get(current.key), neighbor == targetNode)
 
           // test for ignored edges
-          if (!(edge.update.htlcMaximumMsat.exists(_ < newMinimumKnownCost) ||
-            newMinimumKnownCost < edge.update.htlcMinimumMsat ||
-            ignoredEdges.contains(edge.desc) ||
-            neighborPathLength >= ROUTE_MAX_LENGTH) // ignore this edge if it would make the path too long
+          if (edge.update.htlcMaximumMsat.forall(newMinimumKnownCost <= _) &&
+            newMinimumKnownCost >= edge.update.htlcMinimumMsat &&
+            neighborPathLength < ROUTE_MAX_LENGTH && // ignore this edge if it would make the path too long
+            !ignoredEdges.contains(edge.desc)
           ) {
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
