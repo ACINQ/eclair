@@ -24,9 +24,10 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{Error, JsonRPCRequest, JsonRPCResponse}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import io.netty.bootstrap.Bootstrap
+import io.netty.buffer.PooledByteBufAllocator
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
-import io.netty.channel.socket.{SocketChannel, SocketChannelConfig}
+import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.handler.codec.string.{LineEncoder, StringDecoder}
 import io.netty.handler.codec.{LineBasedFrameDecoder, MessageToMessageDecoder, MessageToMessageEncoder}
@@ -42,19 +43,23 @@ import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
+/**
+  * For later optimizations, see http://normanmaurer.me/presentations/2014-facebook-eng-netty/slides.html
+  * 
+  */
 class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec: ExecutionContext) extends Actor with Stash with ActorLogging {
 
   import ElectrumClient._
 
   implicit val formats = DefaultFormats
 
-  val workerGroup = new NioEventLoopGroup()
-
   val b = new Bootstrap
   b.group(workerGroup)
   b.channel(classOf[NioSocketChannel])
   b.option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
+  b.option[java.lang.Boolean](ChannelOption.TCP_NODELAY, true)
   b.option[java.lang.Integer](ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
+  b.option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
   b.handler(new ChannelInitializer[SocketChannel]() {
     override def initChannel(ch: SocketChannel): Unit = {
       ssl match {
@@ -308,6 +313,10 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 }
 
 object ElectrumClient {
+
+  // this is expensive and shared with all clients
+  val workerGroup = new NioEventLoopGroup()
+
   /**
     * Utility function to converts a publicKeyScript to electrum's scripthash
     *
