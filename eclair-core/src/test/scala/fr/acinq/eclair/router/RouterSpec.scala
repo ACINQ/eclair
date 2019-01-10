@@ -18,6 +18,7 @@ package fr.acinq.eclair.router
 
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
@@ -26,6 +27,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
+import fr.acinq.eclair.router.Router.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.QueryShortChannelIds
 import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
@@ -144,7 +146,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(a, f))
+    sender.send(router, RouteRequest(a, f, DEFAULT_AMOUNT_MSAT))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
@@ -152,7 +154,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(randomKey.publicKey, f))
+    sender.send(router, RouteRequest(randomKey.publicKey, f, DEFAULT_AMOUNT_MSAT))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
@@ -160,14 +162,14 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(a, randomKey.publicKey))
+    sender.send(router, RouteRequest(a, randomKey.publicKey, DEFAULT_AMOUNT_MSAT))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("route found") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.hops.last.nextNodeId === d)
@@ -176,13 +178,13 @@ class RouterSpec extends BaseRouterSpec {
   test("route found (with extra routing info)") { fixture =>
     import fixture._
     val sender = TestProbe()
-    val x = randomKey.publicKey
-    val y = randomKey.publicKey
-    val z = randomKey.publicKey
+    val x = PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73")
+    val y = PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a")
+    val z = PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484")
     val extraHop_cx = ExtraHop(c, ShortChannelId(1), 10, 11, 12)
     val extraHop_xy = ExtraHop(x, ShortChannelId(2), 10, 11, 12)
     val extraHop_yz = ExtraHop(y, ShortChannelId(3), 20, 21, 22)
-    sender.send(router, RouteRequest(a, z, assistedRoutes = Seq(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil)))
+    sender.send(router, RouteRequest(a, z, DEFAULT_AMOUNT_MSAT, assistedRoutes = Seq(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil)))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: x :: y :: Nil)
     assert(res.hops.last.nextNodeId === z)
@@ -191,7 +193,7 @@ class RouterSpec extends BaseRouterSpec {
   test("route not found (channel disabled)") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.hops.last.nextNodeId === d)
@@ -199,42 +201,27 @@ class RouterSpec extends BaseRouterSpec {
     val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000L, enable = false)
     sender.send(router, PeerRoutingMessage(null, remoteNodeId, channelUpdate_cd1))
     sender.expectMsg(TransportHandler.ReadAck(channelUpdate_cd1))
-    sender.send(router, RouteRequest(a, d))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("temporary channel exclusion") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
     sender.expectMsgType[RouteResponse]
     val bc = ChannelDesc(channelId_bc, b, c)
     // let's exclude channel b->c
     sender.send(router, ExcludeChannel(bc))
-    sender.send(router, RouteRequest(a, d))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
     sender.expectMsg(Failure(RouteNotFound))
     // note that cb is still available!
-    sender.send(router, RouteRequest(d, a))
+    sender.send(router, RouteRequest(d, a, DEFAULT_AMOUNT_MSAT))
     sender.expectMsgType[RouteResponse]
     // let's remove the exclusion
     sender.send(router, LiftChannelExclusion(bc))
-    sender.send(router, RouteRequest(a, d))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
     sender.expectMsgType[RouteResponse]
-  }
-
-  test("export graph in dot format") { fixture =>
-    import fixture._
-    val sender = TestProbe()
-    sender.send(router, 'dot)
-    val dot = sender.expectMsgType[String]
-    /*Files.write(dot.getBytes(), new File("graph.dot"))
-
-    import scala.sys.process._
-    val input = new ByteArrayInputStream(dot.getBytes)
-    val output = new ByteArrayOutputStream()
-    "dot -Tpng" #< input #> output !
-    val img = output.toByteArray
-    Files.write(img, new File("graph.png"))*/
   }
 
   test("send routing state") { fixture =>

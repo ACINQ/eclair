@@ -107,21 +107,6 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     res <- (kit.paymentHandler ? ReceivePayment(amountMsat_opt, description)).mapTo[PaymentRequest].map(PaymentRequest.write)
   } yield res
 
-  def exportToDot(file: File) = for {
-    kit <- fKit
-    dot <- (kit.router ? 'dot).mapTo[String]
-    _ = printToFile(file)(writer => writer.write(dot))
-  } yield {}
-
-  private def printToFile(f: java.io.File)(op: java.io.FileWriter => Unit) {
-    val p = new FileWriter(f)
-    try {
-      op(p)
-    } finally {
-      p.close
-    }
-  }
-
   /**
     * Displays a system notification if the system supports it.
     *
