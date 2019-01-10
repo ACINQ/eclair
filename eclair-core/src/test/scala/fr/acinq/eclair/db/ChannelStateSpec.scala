@@ -52,9 +52,9 @@ object ChannelStateSpec {
     keyManager.nodeId,
     channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
     dustLimitSatoshis = Satoshi(546).toLong,
-    maxHtlcValueInFlightMsat = UInt64(50),
+    maxHtlcValueInFlightMsat = UInt64(50000000),
     channelReserveSatoshis = 10000,
-    htlcMinimumMsat = 50000,
+    htlcMinimumMsat = 10000,
     toSelfDelay = 144,
     maxAcceptedHtlcs = 50,
     defaultFinalScriptPubKey = Nil,
@@ -65,9 +65,9 @@ object ChannelStateSpec {
   val remoteParams = RemoteParams(
     nodeId = randomKey.publicKey,
     dustLimitSatoshis = Satoshi(546).toLong,
-    maxHtlcValueInFlightMsat = UInt64(50),
+    maxHtlcValueInFlightMsat = UInt64(5000000),
     channelReserveSatoshis = 10000,
-    htlcMinimumMsat = 50000,
+    htlcMinimumMsat = 5000,
     toSelfDelay = 144,
     maxAcceptedHtlcs = 50,
     fundingPubKey = PrivateKey(BinaryData("01" * 32) :+ 1.toByte).publicKey,
@@ -88,21 +88,21 @@ object ChannelStateSpec {
 
   val htlcs = Seq(
     DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Crypto.sha256(paymentPreimages(0)), 500, BinaryData("00" * Sphinx.PacketLength))),
-    DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(1)), 501, BinaryData("00" * Sphinx.PacketLength))),
-    DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(2)), 502, BinaryData("00" * Sphinx.PacketLength))),
-    DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(3000000).amount, Crypto.sha256(paymentPreimages(3)), 503, BinaryData("00" * Sphinx.PacketLength))),
-    DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(4000000).amount, Crypto.sha256(paymentPreimages(4)), 504, BinaryData("00" * Sphinx.PacketLength)))
+    DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 1, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(1)), 501, BinaryData("00" * Sphinx.PacketLength))),
+    DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 30, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(2)), 502, BinaryData("00" * Sphinx.PacketLength))),
+    DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 31, MilliSatoshi(3000000).amount, Crypto.sha256(paymentPreimages(3)), 503, BinaryData("00" * Sphinx.PacketLength))),
+    DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 2, MilliSatoshi(4000000).amount, Crypto.sha256(paymentPreimages(4)), 504, BinaryData("00" * Sphinx.PacketLength)))
   )
 
   val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
   val fundingAmount = fundingTx.txOut(0).amount
   val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey)
 
-  val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000, 700000), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
-  val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000, 700000), BinaryData("0303030303030303030303030303030303030303030303030303030303030303"), Scalar(BinaryData("04" * 32)).toPoint)
+  val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000, 70000000), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
+  val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, 50000, 700000), BinaryData("0303030303030303030303030303030303030303030303030303030303030303"), Scalar(BinaryData("04" * 32)).toPoint)
   val commitments = Commitments(localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
-    localNextHtlcId = 0L,
-    remoteNextHtlcId = 0L,
+    localNextHtlcId = 32L,
+    remoteNextHtlcId = 4L,
     originChannels = Map(42L -> Local(None), 15000L -> Relayed("42" * 32, 43, 11000000L, 10000000L)),
     remoteNextCommitInfo = Right(randomKey.publicKey),
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32)
