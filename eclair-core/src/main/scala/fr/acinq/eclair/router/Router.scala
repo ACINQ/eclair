@@ -793,21 +793,18 @@ object Router {
     */
   def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Hop]] = {
     findRoutes(g, localNodeId, targetNodeId, amountMsat, 1, extraEdges, ignoredEdges).map { foundRoutes =>
-      val cheapestCost = foundRoutes.head.weight
+      val minimumCost = foundRoutes.head.weight
       val allowedCostSpread = 0.1D
 
-      val eligibleRoutes = foundRoutes.filter(_.weight < cheapestCost + cheapestCost * allowedCostSpread)
+      val eligibleRoutes = foundRoutes.filter(_.weight < minimumCost + minimumCost * allowedCostSpread)
       Random.shuffle(eligibleRoutes).head
     }.map(_.path.map(graphEdgeToHop))
-
   }
 
   def findRoutes(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[WeightedPath]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    val routes = Graph.yenKshortestPaths(g, targetNodeId, localNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes).toList
-
-    routes match {
+    Graph.yenKshortestPaths(g, targetNodeId, localNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes).toList match {
       case Nil => throw RouteNotFound
       case route :: Nil  if route.path.isEmpty => throw RouteNotFound
       case foundRoutes => foundRoutes

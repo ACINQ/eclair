@@ -9,8 +9,6 @@ import Router._
 
 object Graph {
 
-  import DirectedGraph._
-
   case class WeightedNode(key: PublicKey, weight: Long)
   case class WeightedPath(path: Seq[GraphEdge], weight: Long)
 

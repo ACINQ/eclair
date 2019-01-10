@@ -37,14 +37,6 @@ class RouteCalculationSpec extends FunSuite {
 
   val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
 
-
-  // the total fee cost for this path
-  def pathCost(path: Seq[Hop], amountMsat: Long): Long = {
-    path.drop(1).reverse.foldLeft(amountMsat) { (fee, hop) =>
-      fee + nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, fee)
-    }
-  }
-
   test("calculate simple route") {
 
     val updates = List(
@@ -96,8 +88,10 @@ class RouteCalculationSpec extends FunSuite {
 
     val Success(route) = Router.findRoute(graph, a, d, amountMsat)
 
+    val routeEdges = route.map(hop => GraphEdge(ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId), hop.lastUpdate))
+
     assert(hops2Ids(route) === 4 :: 5 :: 6 :: Nil)
-    assert(pathCost(route, amountMsat) === expectedCost)
+    assert(Graph.pathCost(routeEdges, amountMsat) === expectedCost)
 
     // now channel 5 could route the amount (10000) but not the amount + fees (10007)
     val (desc, update) = makeUpdate(5L, e, f, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0, maxHtlcMsat = Some(10005))
