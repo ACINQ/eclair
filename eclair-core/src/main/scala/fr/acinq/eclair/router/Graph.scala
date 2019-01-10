@@ -67,16 +67,18 @@ object Graph {
           // subgraph NOT containing the links that are part of the previous shortest path and which share the same root path
           val mutatedGraph = shortestPaths.foldLeft(graph) { (g, weightedPath) =>
             if (subList(weightedPath.path, 0, i) == rootPathEdges) {
-              g.removeEdge(weightedPath.path(i).desc.reverse())
+              g.removeEdge(weightedPath.path(i).desc)
             } else {
               g
             }
           }
 
           // find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
-          val spurPath = dijkstraShortestPath(mutatedGraph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges, extraEdges)
+          val spurPath = dijkstraShortestPath(mutatedGraph, spurEdge.desc.b, targetNode, amountMsat, ignoredEdges, extraEdges)
 
+          // if there wasn't a path the spur will be empty
           if(spurPath.path.nonEmpty) {
+
             // candidate shortest path is made of the rootPath and the new spurPath
             val totalPath = concat(rootPathEdges, spurPath.path.toList)
             val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat))
@@ -107,7 +109,7 @@ object Graph {
   def concat(rootPath: List[GraphEdge], spurPath: List[GraphEdge]): List[GraphEdge] = (rootPath, spurPath) match {
     case (Nil, _) => spurPath
     case (_, Nil) => rootPath
-    case (root :: otherRoot, spurHead :: _ ) => if(root.desc.a == spurHead.desc.a) concat(otherRoot, spurPath) else rootPath ++ spurPath
+    case (root :: otherRoot, spurHead :: _ ) => if(root.desc.b == spurHead.desc.b) concat(otherRoot, spurPath) else rootPath ++ spurPath
   }
 
 
@@ -230,7 +232,7 @@ object Graph {
 
     targetFound match {
       case false => WeightedPath(Seq.empty[GraphEdge], 0L)
-      case true => {
+      case true =>
         // we traverse the list of "previous" backward building the final list of edges that make the shortest path
         val edgePath = new mutable.ArrayBuffer[GraphEdge](ROUTE_MAX_LENGTH)
         var current = prev.get(targetNode)
@@ -242,7 +244,6 @@ object Graph {
         }
 
         WeightedPath(edgePath.reverse, pathCost(edgePath, amountMsat))
-      }
     }
   }
 

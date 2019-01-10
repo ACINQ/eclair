@@ -28,15 +28,18 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChannel, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.WeightedPath
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
+
 import scala.collection.{SortedSet, mutable}
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise}
-import scala.util.Try
+import scala.util.{Random, Try}
 
 // @formatter:off
 
@@ -789,17 +792,24 @@ object Router {
     * @return the computed route to the destination @targetNodeId
     */
   def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Hop]] = {
-    findRoutes(g, localNodeId, targetNodeId, amountMsat, 1, extraEdges.map(edge => edge.copy(desc = edge.desc.reverse())), ignoredEdges.map(_.reverse())).map(_.head)
+    findRoutes(g, localNodeId, targetNodeId, amountMsat, 1, extraEdges, ignoredEdges).map { foundRoutes =>
+      val cheapestCost = foundRoutes.head.weight
+      val allowedCostSpread = 0.1D
+
+      val eligibleRoutes = foundRoutes.filter(_.weight < cheapestCost + cheapestCost * allowedCostSpread)
+      Random.shuffle(eligibleRoutes).head
+    }.map(_.path.map(graphEdgeToHop))
+
   }
 
-  def findRoutes(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Seq[Hop]]] = Try {
+  def findRoutes(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[WeightedPath]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    val routes = Graph.yenKshortestPaths(g, targetNodeId, localNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes).map(_.path).map(_.map(graphEdgeToHop)).toList
+    val routes = Graph.yenKshortestPaths(g, targetNodeId, localNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes).toList
 
     routes match {
       case Nil => throw RouteNotFound
-      case route :: Nil  if route.isEmpty => throw RouteNotFound
+      case route :: Nil  if route.path.isEmpty => throw RouteNotFound
       case foundRoutes => foundRoutes
     }
   }
