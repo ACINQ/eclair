@@ -38,7 +38,7 @@ case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] 
 object ShortChannelId {
 
   def apply(s: String): ShortChannelId = s.split("x").toList match {
-    case blockHeight :: txIndex :: outIndex :: Nil => ShortChannelId(toShortId(blockHeight.toInt, txIndex.toInt, outIndex.toInt))
+    case blockHeight :: txIndex :: outputIndex :: Nil => ShortChannelId(toShortId(blockHeight.toInt, txIndex.toInt, outputIndex.toInt))
     case _ => throw new IllegalArgumentException(s"Invalid short channel id: $s")
   }
 
