@@ -18,7 +18,8 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.NetworkFeePaid
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db.ChannelLifecycleEvent
 
 class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
@@ -26,6 +27,9 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
   context.system.eventStream.subscribe(self, classOf[PaymentEvent])
   context.system.eventStream.subscribe(self, classOf[NetworkFeePaid])
+  context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
+  context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
+  context.system.eventStream.subscribe(self, classOf[ChannelClosed])
 
   override def receive: Receive = {
 
@@ -36,6 +40,12 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
     case e: PaymentRelayed => db.add(e)
 
     case e: NetworkFeePaid => db.add(e)
+
+    case ChannelStateChanged(_, _, remoteNodeId, WAIT_FOR_FUNDING_LOCKED, NORMAL, d: DATA_NORMAL) =>
+      db.add(ChannelLifecycleEvent(d.channelId, remoteNodeId, d.commitments.commitInput.txOut.amount.toLong, d.commitments.localParams.isFunder, !d.commitments.announceChannel, "created"))
+
+    case e: ChannelClosed =>
+      db.add(ChannelLifecycleEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount.toLong, e.commitments.localParams.isFunder, !e.commitments.announceChannel, e.closeType))
 
   }
 
