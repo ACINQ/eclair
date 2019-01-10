@@ -22,7 +22,6 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.router.Router.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.{ShortChannelId, nodeFee, randomKey}
 import org.scalatest.FunSuite
 
@@ -37,6 +36,14 @@ class RouteCalculationSpec extends FunSuite {
   import RouteCalculationSpec._
 
   val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+
+
+  // the total fee cost for this path
+  def pathCost(path: Seq[Hop], amountMsat: Long): Long = {
+    path.drop(1).reverse.foldLeft(amountMsat) { (fee, hop) =>
+      fee + nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, fee)
+    }
+  }
 
   test("calculate simple route") {
 
@@ -90,8 +97,7 @@ class RouteCalculationSpec extends FunSuite {
     val Success(route) = Router.findRoute(graph, a, d, amountMsat)
 
     assert(hops2Ids(route) === 4 :: 5 :: 6 :: Nil)
-    val routeEdges = route.map( h => GraphEdge(ChannelDesc(h.lastUpdate.shortChannelId, h.nodeId, h.nextNodeId), h.lastUpdate))
-    assert(Graph.pathCost(routeEdges, amountMsat) === expectedCost)
+    assert(pathCost(route, amountMsat) === expectedCost)
 
     // now channel 5 could route the amount (10000) but not the amount + fees (10007)
     val (desc, update) = makeUpdate(5L, e, f, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0, maxHtlcMsat = Some(10005))
@@ -519,6 +525,57 @@ class RouteCalculationSpec extends FunSuite {
     ))
   }
 
+  test("limit routes to 20 hops") {
+
+    val nodes = (for (_ <- 0 until 100) yield randomKey.publicKey).toList
+
+    val updates = nodes
+      .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
+      .zipWithIndex // ((0, 1), 0) :: ((1, 2), 1) :: ...
+      .map { case ((na, nb), index) => makeUpdate(index, na, nb, 5, 0) }
+      .toMap
+
+    val g = makeGraph(updates)
+    val route = Router.findRoute(g, nodes.head, nodes.last, DEFAULT_AMOUNT_MSAT)
+
+    assert(route === Failure(RouteNotFound))
+  }
+
+  test("ignore cheaper route when it has more than 20 hops") {
+
+    val nodes = (for (_ <- 0 until 50) yield randomKey.publicKey).toList
+
+    val updates = nodes
+      .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
+      .zipWithIndex // ((0, 1), 0) :: ((1, 2), 1) :: ...
+      .map {case ((na, nb), index) => makeUpdate(index, na, nb, 1, 0)}
+      .toMap
+
+    val updates2 = updates + makeUpdate(99, nodes(2), nodes(48), 1000, 0) // expensive shorter route
+
+    val g = makeGraph(updates2)
+
+    val route = Router.findRoute(g, nodes(0), nodes(49), DEFAULT_AMOUNT_MSAT)
+    assert(route.map(hops2Ids) === Success(0 :: 1 :: 99 :: 48 :: Nil))
+  }
+
+  test("ignore loops") {
+
+    val updates = List(
+      makeUpdate(1L, a, b, 10, 10),
+      makeUpdate(2L, b, c, 10, 10),
+      makeUpdate(3L, c, a, 10, 10),
+      makeUpdate(4L, c, d, 10, 10),
+      makeUpdate(5L, d, e, 10, 10)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
+    assert(route1.map(hops2Ids) === Success(1 :: 2  :: 4 :: 5 :: Nil))
+  }
+
+
   /**
     *
     * +---+            +---+            +---+
@@ -628,6 +685,8 @@ class RouteCalculationSpec extends FunSuite {
 }
 
 object RouteCalculationSpec {
+
+  val DEFAULT_AMOUNT_MSAT = 10000000
 
   val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
 

@@ -156,7 +156,7 @@ java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gu
   receive      | amountMsat, description                                                                | generate a payment request for a given amount
   receive      | amountMsat, description, expirySeconds                                                 | generate a payment request for a given amount that expires after given number of seconds
   checkinvoice | paymentRequest                                                                         | returns node, amount and payment hash in an invoice/paymentRequest
-  findroute    | paymentRequest|nodeId                                                                  | given a payment request or nodeID checks if there is a valid payment route returns JSON with attempts, nodes and channels of route
+  findroute    | paymentRequest|paymentRequest, amountMsat|nodeId, amountMsat                           | given a payment request or nodeID and an amount checks if there is a valid payment route returns JSON with attempts, nodes and channels of route
   send         | amountMsat, paymentHash, nodeId                                                        | send a payment to a lightning node
   send         | paymentRequest                                                                         | send a payment to a lightning node using a BOLT11 payment request
   send         | paymentRequest, amountMsat                                                             | send a payment to a lightning node using a BOLT11 payment request and a custom amount

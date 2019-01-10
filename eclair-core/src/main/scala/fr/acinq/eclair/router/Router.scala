@@ -31,7 +31,6 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import DirectedGraph._
 import scala.collection.{SortedSet, mutable}
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
@@ -41,9 +40,7 @@ import scala.util.Try
 
 // @formatter:off
 
-case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey) {
-  def reverse():ChannelDesc = this.copy(a = b, b = a)
-}
+case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
 case class RouteRequest(source: PublicKey, target: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
@@ -775,9 +772,10 @@ object Router {
   }
 
   /**
-    * Routing fee have a variable part, this value will be used as a default if none is provided when search for a route
+    * https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
     */
-  val DEFAULT_AMOUNT_MSAT = 10000000
+  val ROUTE_MAX_LENGTH = 19
+
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route and its cost
