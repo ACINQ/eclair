@@ -460,6 +460,27 @@ class RouteCalculationSpec extends FunSuite {
     assert(route2.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
+  test("route to a destination that is not in the graph (with assisted routes)") {
+    val updates = List(
+      makeUpdate(1L, a, b, 10, 10),
+      makeUpdate(2L, b, c, 10, 10),
+      makeUpdate(3L, c, d, 10, 10)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
+    assert(route.map(hops2Ids) === Failure(RouteNotFound))
+
+    // now we add the missing edge to reach the destination
+    val (extraDesc, extraUpdate) = makeUpdate(4L, d, e, 5, 5)
+    val extraGraphEdges = Set(GraphEdge(extraDesc, extraUpdate))
+
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, extraEdges = extraGraphEdges)
+    assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+  }
+
+
   test("verify that extra hops takes precedence over known channels") {
     val updates = List(
       makeUpdate(1L, a, b, 10, 10),
