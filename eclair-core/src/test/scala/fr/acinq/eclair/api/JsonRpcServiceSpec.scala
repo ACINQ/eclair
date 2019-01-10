@@ -20,6 +20,7 @@ import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.server.Route
 import akka.stream.scaladsl.Flow
+import fr.acinq.eclair.channel.Register.ForwardShortId
 import org.json4s.Formats
 import org.json4s.JsonAST.{JInt, JString}
 import org.json4s.jackson.Serialization
@@ -29,8 +30,6 @@ import scala.concurrent.duration._
 
 class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
 
-  //a WARN is being thrown by akka, currently there is an open issue to test the
-  //withRequestTimeoutResponse https://github.com/akka/akka-http/issues/952
   implicit val routeTestTimeout = RouteTestTimeout(3 seconds)
 
   def defaultMockKit = Kit(
@@ -86,7 +85,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(status == Unauthorized)
       }
 
-    //correct auth but wrong URL
+    // correct auth but wrong URL
     Post("/mistake", JsonRPCBody(method = "help", params = Seq.empty)) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
@@ -96,7 +95,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(status == NotFound)
       }
 
-    //wrong rpc method
+    // wrong rpc method
     Post("/", JsonRPCBody(method = "open_not_really", params = Seq.empty)) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
@@ -106,7 +105,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(status == BadRequest)
       }
 
-    //wrong params
+    // wrong params
     Post("/", JsonRPCBody(method = "open", params = Seq(JInt(123), JString("abc")))) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
@@ -118,7 +117,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
 
   }
 
-  test("Help should respond with a help message") {
+  test("'help' should respond with a help message") {
     val mockService = new MockService
     import mockService.formats
     import mockService.serialization
@@ -139,7 +138,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
 
   }
 
-  test("Peers should ask the switchboard for current known peers") {
+  test("'peers' should ask the switchboard for current known peers") {
 
     val mockAlicePeer = system.actorOf(Props(new {} with MockActor {
       override def receive = {
@@ -191,7 +190,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
       }
   }
 
-  test("GetInfo response should include this node ID") {
+  test("'getinfo' response should include this node ID") {
     val mockService = new {} with MockService {
       override def getInfoResponse: Future[GetInfoResponse] = Future.successful(GetInfoResponse(
         nodeId = Alice.nodeParams.nodeId,
@@ -219,6 +218,37 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
       }
   }
 
+  test("'close' method should accept a shortChannelId") {
+
+    val shortChannelIdSerialized = "42000x27x3"
+
+    val mockService = new MockService(defaultMockKit.copy(
+      register = system.actorOf(Props(new {} with MockActor {
+        override def receive = {
+          case ForwardShortId(shortChannelId, _) if shortChannelId.toString == shortChannelIdSerialized =>
+            sender() ! Alice.nodeParams.nodeId.toString
+        }
+      }))
+    ))
+
+    import mockService.formats
+    import mockService.serialization
+
+
+    val postBody = JsonRPCBody(method = "close", params = Seq(JString(shortChannelIdSerialized)))
+
+    Post("/", postBody) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val resp = entityAs[JsonRPCRes]
+        assert(resp.result.toString.contains(Alice.nodeParams.nodeId.toString))
+        matchTestJson("close", false ,resp)
+      }
+  }
 
   private def readFileAsString(path: Path): String = Files.exists(path) match {
     case true => new String(Files.readAllBytes(path.toAbsolutePath))
