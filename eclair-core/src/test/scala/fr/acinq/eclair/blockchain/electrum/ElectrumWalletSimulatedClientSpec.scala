@@ -28,6 +28,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import org.scalatest.FunSuiteLike
 
+import scala.annotation.tailrec
 import scala.concurrent.duration._
 
 
@@ -41,6 +42,10 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
   val listener = TestProbe()
   system.eventStream.subscribe(listener.ref, classOf[WalletEvent])
 
+  val genesis = Block.RegtestGenesisBlock.header
+  // initial headers that we will sync when we connect to our mock server
+  val headers = makeHeaders(genesis, 2016 + 2000)
+
   val client = TestProbe()
   client.ignoreMsg {
     case ElectrumClient.Ping => true
@@ -52,32 +57,41 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
       case ScriptHashSubscription(scriptHash, replyTo) =>
         replyTo ! ScriptHashSubscriptionResponse(scriptHash, "")
         TestActor.KeepRunning
+      case GetHeaders(start, count, _) =>
+        sender ! GetHeadersResponse(start, headers.drop(start - 1).take(count), 2016)
+        TestActor.KeepRunning
       case _ => TestActor.KeepRunning
     }
   })
+
+
   val wallet = TestFSMRef(new ElectrumWallet(seed, client.ref, WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = Satoshi(5000))))
 
   // wallet sends a receive address notification as soon as it is created
   listener.expectMsgType[NewWalletReceiveAddress]
+  
+  def makeHeader(previousHeader: BlockHeader, timestamp: Long): BlockHeader = {
+    var template = previousHeader.copy(hashPreviousBlock = previousHeader.hash, time = timestamp, nonce = 0)
+    while (!BlockHeader.checkProofOfWork(template)) {
+      template = template.copy(nonce = template.nonce + 1)
+    }
+    template
+  }
 
-  val genesis = Block.RegtestGenesisBlock.header
-  val header1 = makeHeader(genesis, 12345L)
-  val header2 = makeHeader(header1, 12346L)
-  val header3 = makeHeader(header2, 12347L)
-  val header4 = makeHeader(header3, 12348L)
+  def makeHeader(previousHeader: BlockHeader): BlockHeader = makeHeader(previousHeader, previousHeader.time + 1)
 
-  val headers = Seq(genesis, header1, header2, header3, header4)
+  def makeHeaders(previousHeader: BlockHeader, count: Int): Vector[BlockHeader] = {
+    @tailrec
+    def loop(acc: Vector[BlockHeader]): Vector[BlockHeader] = if (acc.length == count) acc else loop(acc :+ makeHeader(acc.last))
 
-  def makeHeader(previousHeader: BlockHeader, timestamp: Long) = previousHeader.copy(hashPreviousBlock = previousHeader.hash, time = timestamp)
+    loop(Vector(makeHeader(previousHeader)))
+  }
 
   test("wait until wallet is ready") {
-    sender.send(wallet, ElectrumClient.ElectrumReady(1, headers(1), InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(1, headers(1)))
-    awaitCond(wallet.stateName == ElectrumWallet.SYNCING)
-
-    sender.send(wallet, ElectrumClient.GetHeadersResponse(1,Seq(headers(1)), 2016))
-    sender.send(wallet, ElectrumClient.GetHeadersResponse(2,Seq(), 2016))
-    assert(listener.expectMsgType[WalletReady].timestamp == headers(1).time)
+    sender.send(wallet, ElectrumClient.ElectrumReady(2016, headers(2015), InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
+    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(2016, headers(2015)))
+    val ready = listener.expectMsgType[WalletReady]
+    assert(ready.timestamp == headers.last.time)
     listener.expectMsgType[NewWalletReceiveAddress]
     listener.send(wallet, GetXpub)
     val GetXpubResponse(xpub, path) = listener.expectMsgType[GetXpubResponse]
@@ -86,8 +100,10 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
   }
 
   test("tell wallet is ready when a new block comes in, even if nothing else has changed") {
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(2, headers(2)))
-    assert(listener.expectMsgType[WalletReady].timestamp == headers(2).time)
+    val last = wallet.stateData.blockchain.tip
+    val header = makeHeader(last.header)
+    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
+    assert(listener.expectMsgType[WalletReady].timestamp == header.time)
     val NewWalletReceiveAddress(address) = listener.expectMsgType[NewWalletReceiveAddress]
     assert(address == "2NDjBqJugL3gCtjWTToDgaWWogq9nYuYw31")
   }
@@ -98,22 +114,25 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
 
     // reconnect wallet
-    sender.send(wallet, ElectrumClient.ElectrumReady(2, headers(2), InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(2, headers(2)))
+    val last = wallet.stateData.blockchain.tip
+    sender.send(wallet, ElectrumClient.ElectrumReady(2016, headers(2015), InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
+    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height, last.header))
     awaitCond(wallet.stateName == ElectrumWallet.RUNNING)
 
     // listener should be notified
-    assert(listener.expectMsgType[WalletReady].timestamp == headers(2).time)
+    assert(listener.expectMsgType[WalletReady].timestamp == last.header.time)
     listener.expectMsgType[NewWalletReceiveAddress]
   }
 
   test("don't send the same ready message more then once") {
     // listener should be notified
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(3, headers(3)))
-    assert(listener.expectMsgType[WalletReady].timestamp == headers(3).time)
+    val last = wallet.stateData.blockchain.tip
+    val header = makeHeader(last.header)
+    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
+    assert(listener.expectMsgType[WalletReady].timestamp == header.time)
     listener.expectMsgType[NewWalletReceiveAddress]
 
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(3, headers(3)))
+    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
     listener.expectNoMsg(500 milliseconds)
   }
 
@@ -122,20 +141,20 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     val bad = makeHeader(last.header, 42L).copy(bits = Long.MaxValue)
 
     // here we simulate a bad client
-    val sender1 = TestProbe()
+    val probe = TestProbe()
     val watcher = TestProbe()
-    watcher.watch(sender1.ref)
+    watcher.watch(probe.ref)
     watcher.setAutoPilot(new TestActor.AutoPilot {
       override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case Terminated(actor) if actor == sender1.ref =>
+        case Terminated(actor) if actor == probe.ref =>
           // if the client dies, we tell the wallet that it's been disconnected
           wallet ! ElectrumClient.ElectrumDisconnected
           TestActor.KeepRunning
       }
     })
 
-    sender1.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, bad))
-    watcher.expectTerminated(sender1.ref)
+    probe.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, bad))
+    watcher.expectTerminated(probe.ref)
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
 
     sender.send(wallet, ElectrumClient.ElectrumReady(last.height, last.header, InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
@@ -172,18 +191,18 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
 
     client.expectMsg(GetMerkle(tx.txid, 2))
 
-    val sender1 = TestProbe()
+    val probe = TestProbe()
     val watcher = TestProbe()
-    watcher.watch(sender1.ref)
+    watcher.watch(probe.ref)
     watcher.setAutoPilot(new TestActor.AutoPilot {
       override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case Terminated(actor) if actor == sender1.ref =>
+        case Terminated(actor) if actor == probe.ref =>
           wallet ! ElectrumClient.ElectrumDisconnected
           TestActor.KeepRunning
       }
     })
-    sender1.send(wallet, GetMerkleResponse(tx.txid, BinaryData("01" * 32) :: Nil, 2, 0))
-    watcher.expectTerminated(sender1.ref)
+    probe.send(wallet, GetMerkleResponse(tx.txid, BinaryData("01" * 32) :: Nil, 2, 0))
+    watcher.expectTerminated(probe.ref)
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
 
     sender.send(wallet, ElectrumClient.ElectrumReady(wallet.stateData.blockchain.bestchain.last.height, wallet.stateData.blockchain.bestchain.last.header, InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
@@ -195,5 +214,19 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     awaitCond(wallet.stateName == ElectrumWallet.RUNNING)
     val ready = listener.expectMsgType[WalletReady]
     assert(ready.unconfirmedBalance == Satoshi(0))
+  }
+
+  test("disconnect if server sent a block with an invalid difficulty target") {
+    val last = wallet.stateData.blockchain.bestchain.last
+    val chunk = makeHeaders(last.header, 2015 - (last.height % 2016))
+    for (i <- 0 until chunk.length) {
+      wallet ! HeaderSubscriptionResponse(last.height + i + 1, chunk(i))
+    }
+    awaitCond(wallet.stateData.blockchain.tip.header == chunk.last)
+    val bad = {
+      var template = makeHeader(chunk.last)
+      template
+    }
+    wallet ! HeaderSubscriptionResponse(wallet.stateData.blockchain.tip.height + 1, bad)
   }
 }

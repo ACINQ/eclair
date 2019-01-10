@@ -172,36 +172,29 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) =>
       log.info(s"got new tip ${header.blockId} at ${height}")
-      if (data.chainHash == Block.LivenetGenesisBlock.hash && height % RETARGETING_PERIOD == 0) {
-        // check difficulty at retargeting period
-        // standard case (no difficulty change) is handled in Blockchain.addHeader()
-        val target_opt = for {
-          parent <- params.walletDb.getHeader(height - 1)
-          previous <- params.walletDb.getHeader(height - 2016)
-          target = BlockHeader.calculateNextWorkRequired(parent, previous.time)
-        } yield target
-        target_opt.foreach(target => {
-          log.info(s"hit retargeting period, next difficulty is $target")
-          if (header.bits == target) {
-            log.error(s"electrum server send bad header, disconnecting")
+
+      val difficulty = Blockchain.getDifficulty(data.blockchain, height, params.walletDb)
+
+      if (!difficulty.forall(target => header.bits == target)) {
+        log.error(s"electrum server send bad header (difficulty is not valid), disconnecting")
+        sender ! PoisonPill
+        stay()
+      } else {
+        Try(Blockchain.addHeader(data.blockchain, height, header)) match {
+          case Success(blockchain1) =>
+            data.heights.collect {
+              case (txid, txheight) if txheight > 0 =>
+                val confirmations = computeDepth(height, txheight)
+                context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
+            }
+            val (blockchain2, saveme) = Blockchain.optimize(blockchain1)
+            saveme.grouped(RETARGETING_PERIOD).foreach(chunk => params.walletDb.addHeaders(chunk.head.height, chunk.map(_.header)))
+            stay using notifyReady(data.copy(blockchain = blockchain2))
+          case Failure(error) =>
+            log.error(error, s"electrum server sent bad header, disconnecting")
             sender ! PoisonPill
-          }
-        })
-      }
-      Try(Blockchain.addHeader(data.blockchain, height, header)) match {
-        case Success(blockchain1) =>
-          data.heights.collect {
-            case (txid, txheight) if txheight > 0 =>
-              val confirmations = computeDepth(height, txheight)
-              context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
-          }
-          val (blockchain2, saveme) = Blockchain.optimize(blockchain1)
-          saveme.grouped(RETARGETING_PERIOD).foreach(chunk => params.walletDb.addHeaders(chunk.head.height, chunk.map(_.header)))
-          stay using notifyReady(data.copy(blockchain = blockchain2))
-        case Failure(error) =>
-          log.error(error, s"electrum server sent bad header, disconnecting")
-          sender ! PoisonPill
-          stay() using data
+            stay() using data
+        }
       }
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash) == Some(status) =>

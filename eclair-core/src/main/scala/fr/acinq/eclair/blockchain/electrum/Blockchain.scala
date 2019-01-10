@@ -167,7 +167,7 @@ object Blockchain extends Logging {
         // on mainnet all blocks with a re-targeting window have the same difficulty target
         // on testnet it doesn't hold, there can be a drop in difficulty if there are no blocks for 20 minutes
         blockchain.chainHash match {
-          case Block.LivenetGenesisBlock => require(current.bits == previous.bits)
+          case Block.LivenetGenesisBlock | Block.RegtestGenesisBlock.hash => require(current.bits == previous.bits)
           case _ => ()
         }
         current
@@ -241,7 +241,7 @@ object Blockchain extends Logging {
     require(BlockHeader.checkProofOfWork(header), s"invalid proof of work for $header")
     blockchain.headersMap.get(header.hashPreviousBlock) match {
       case Some(parent) if parent.height == height - 1 =>
-        if (height % RETARGETING_PERIOD != 0 && blockchain.chainHash == Block.LivenetGenesisBlock.hash) {
+        if (height % RETARGETING_PERIOD != 0 && (blockchain.chainHash == Block.LivenetGenesisBlock.hash || blockchain.chainHash == Block.RegtestGenesisBlock.hash)) {
           // check difficulty target, which should be the same as for the parent block
           // we only check this on mainnet, on testnet rules are much more lax
           require(header.bits == parent.header.bits, s"header invalid difficulty target for ${header}, it should be ${parent.header.bits}")
@@ -323,6 +323,30 @@ object Blockchain extends Logging {
       optimize(blockchain.copy(headersMap = headersMap1, bestchain = bestchain1, checkpoints = checkpoints1), acc ++ saveme)
     } else {
       (blockchain, acc)
+    }
+  }
+
+  /**
+    * Computes the difficulty target at a given height.
+    *
+    * @param blockchain blockchain
+    * @param height     height for which we want the difficulty target
+    * @param headerDb   header database
+    * @return the difficulty target for this height
+    */
+  def getDifficulty(blockchain: Blockchain, height: Int, headerDb: HeaderDb): Option[Long] = {
+    blockchain.chainHash match {
+      case Block.LivenetGenesisBlock.hash | Block.RegtestGenesisBlock.hash =>
+        (height % RETARGETING_PERIOD) match {
+          case 0 =>
+            for {
+              parent <- blockchain.getHeader(height - 1) orElse headerDb.getHeader(height - 1)
+              previous <- blockchain.getHeader(height - 2016) orElse headerDb.getHeader(height - 2016)
+              target = BlockHeader.calculateNextWorkRequired(parent, previous.time)
+            } yield target
+          case _ => blockchain.getHeader(height - 1) orElse headerDb.getHeader(height - 1) map (_.bits)
+        }
+      case _ => None // no difficulty check on testnet
     }
   }
 }
