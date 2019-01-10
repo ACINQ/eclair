@@ -19,9 +19,10 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.router.Router.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.{ShortChannelId, randomKey}
-import org.jgrapht.graph.DirectedWeightedPseudograph
 import org.scalatest.FunSuite
 
 import scala.util.{Failure, Success}
@@ -47,7 +48,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, e)
+    val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
 
   }
@@ -63,13 +64,58 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route1 = Router.findRoute(g, a, e)
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
 
-    Router.removeEdge(g, ChannelDesc(ShortChannelId(3L), c, d))
-    val route2 = Router.findRoute(g, a, e)
+    val graphWithRemovedEdge = g.removeEdge(ChannelDesc(ShortChannelId(3L), c, d))
+    val route2 = Router.findRoute(graphWithRemovedEdge, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route2.map(hops2Ids) === Failure(RouteNotFound))
 
+  }
+
+  test("calculate the shortest path (hardcoded nodes)") {
+
+    val (f, g, h, i) = (
+      PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //source
+      PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"),
+      PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"),
+      PublicKey("029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c") //target
+    )
+
+    val updates = List(
+      makeUpdate(1L, f, g, 0, 0),
+      makeUpdate(2L, g, h, 0, 0),
+      makeUpdate(3L, h, i, 0, 0),
+      makeUpdate(4L, f, i, 50, 0) //direct channel, more expensive
+    ).toMap
+
+    val graph = makeGraph(updates)
+
+    val route = Router.findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT)
+    assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: Nil))
+
+  }
+
+  test("if there are multiple channels between the same node, select the cheapest") {
+
+    val (f, g, h, i) = (
+      PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //F source
+      PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), //G
+      PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), //H
+      PublicKey("029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c") //I target
+    )
+
+    val updates = List(
+      makeUpdate(1L, f, g, 0, 0),
+      makeUpdate(2L, g, h, 5, 5), //expensive  g -> h channel
+      makeUpdate(6L, g, h, 0, 0), //cheap      g -> h channel
+      makeUpdate(3L, h, i, 0, 0)
+    ).toMap
+
+    val graph = makeGraph(updates)
+
+    val route = Router.findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT)
+    assert(route.map(hops2Ids) === Success(1 :: 6 :: 3 :: Nil))
   }
 
   test("calculate longer but cheaper route") {
@@ -84,7 +130,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, e)
+    val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
@@ -97,7 +143,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, e)
+    val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
   }
 
@@ -111,7 +157,34 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, e)
+    val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
+    assert(route.map(hops2Ids) === Failure(RouteNotFound))
+  }
+
+  test("route not found (source node not connected)") {
+
+    val updates = List(
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(4L, d, e, 0, 0)
+    ).toMap
+
+    val g = makeGraph(updates).addVertex(a)
+
+    val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
+    assert(route.map(hops2Ids) === Failure(RouteNotFound))
+  }
+
+  test("route not found (target node not connected)") {
+
+    val updates = List(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, c, d, 0, 0)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
   }
 
@@ -125,8 +198,42 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, e)
+    val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
+  }
+
+  test("route not found (amount too high)") {
+
+    val highAmount = DEFAULT_AMOUNT_MSAT * 10
+
+    val updates = List(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0, maxHtlcMsat = Some(DEFAULT_AMOUNT_MSAT)),
+      makeUpdate(3L, c, d, 0, 0)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, d, highAmount)
+    assert(route.map(hops2Ids) === Failure(RouteNotFound))
+
+  }
+
+  test("route not found (amount too low)") {
+
+    val lowAmount = DEFAULT_AMOUNT_MSAT / 10
+
+    val updates = List(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0, minHtlcMsat = DEFAULT_AMOUNT_MSAT),
+      makeUpdate(3L, c, d, 0, 0)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, d, lowAmount)
+    assert(route.map(hops2Ids) === Failure(RouteNotFound))
+
   }
 
   test("route to self") {
@@ -139,7 +246,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, a)
+    val route = Router.findRoute(g, a, a, DEFAULT_AMOUNT_MSAT)
     assert(route.map(hops2Ids) === Failure(CannotRouteToSelf))
   }
 
@@ -154,7 +261,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, b)
+    val route = Router.findRoute(g, a, b, DEFAULT_AMOUNT_MSAT)
     assert(route.map(hops2Ids) === Success(1 :: Nil))
   }
 
@@ -170,10 +277,10 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route1 = Router.findRoute(g, a, e)
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
 
-    val route2 = Router.findRoute(g, e, a)
+    val route2 = Router.findRoute(g, e, a, DEFAULT_AMOUNT_MSAT)
     assert(route2.map(hops2Ids) === Failure(RouteNotFound))
   }
 
@@ -210,7 +317,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val hops = Router.findRoute(g, a, e).get
+    val hops = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT).get
 
     assert(hops === Hop(a, b, uab) :: Hop(b, c, ubc) :: Hop(c, d, ucd) :: Hop(d, e, ude) :: Nil)
   }
@@ -250,16 +357,16 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route1 = Router.findRoute(g, a, e, withoutEdges = ChannelDesc(ShortChannelId(3L), c, d) :: Nil)
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, ignoredEdges = Set(ChannelDesc(ShortChannelId(3L), c, d)))
     assert(route1.map(hops2Ids) === Failure(RouteNotFound))
 
     // verify that we left the graph untouched
-    assert(g.containsEdge(c, d))
+    assert(g.containsEdge(makeUpdate(3L, c, d, 0, 0)._1)) // c -> d
     assert(g.containsVertex(c))
     assert(g.containsVertex(d))
 
     // make sure we can find a route if without the blacklist
-    val route2 = Router.findRoute(g, a, e)
+    val route2 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route2.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
@@ -273,11 +380,15 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route1 = Router.findRoute(g, a, e)
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
     assert(route1.get.head.lastUpdate.feeBaseMsat == 10)
 
-    val route2 = Router.findRoute(g, a, e, withEdges = Map(makeUpdate(1L, a, b, 5, 5)))
+    val extraUpdate = makeUpdate(1L, a, b, 5, 5)
+
+    val extraGraphEdges = Set(GraphEdge(extraUpdate._1, extraUpdate._2))
+
+    val route2 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, extraEdges = extraGraphEdges)
     assert(route2.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
     assert(route2.get.head.lastUpdate.feeBaseMsat == 5)
   }
@@ -321,9 +432,7 @@ class RouteCalculationSpec extends FunSuite {
       ChannelDesc(ShortChannelId(3L), c, d),
       ChannelDesc(ShortChannelId(8L), i, j)
     ))
-
   }
-
 }
 
 object RouteCalculationSpec {
@@ -335,15 +444,25 @@ object RouteCalculationSpec {
     ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, "", Block.RegtestGenesisBlock.hash, ShortChannelId(shortChannelId), nodeId1, nodeId2, randomKey.publicKey, randomKey.publicKey)
   }
 
-  def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBaseMsat: Int, feeProportionalMillionth: Int): (ChannelDesc, ChannelUpdate) =
-    (ChannelDesc(ShortChannelId(shortChannelId), nodeId1, nodeId2) -> ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(shortChannelId), 0L, 0, 0, 1, 42, feeBaseMsat, feeProportionalMillionth, None))
+  def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBaseMsat: Int, feeProportionalMillionth: Int, minHtlcMsat: Long = DEFAULT_AMOUNT_MSAT, maxHtlcMsat: Option[Long] = None): (ChannelDesc, ChannelUpdate) =
+    ChannelDesc(ShortChannelId(shortChannelId), nodeId1, nodeId2) -> ChannelUpdate(
+      signature = DUMMY_SIG,
+      chainHash = Block.RegtestGenesisBlock.hash,
+      shortChannelId = ShortChannelId(shortChannelId),
+      timestamp = 0L,
+      messageFlags = maxHtlcMsat match {
+        case Some(_) => 1
+        case None => 0
+      },
+      channelFlags = 0,
+      cltvExpiryDelta = 0,
+      htlcMinimumMsat = minHtlcMsat,
+      feeBaseMsat = feeBaseMsat,
+      feeProportionalMillionths = feeProportionalMillionth,
+      htlcMaximumMsat = maxHtlcMsat
+    )
 
-
-  def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = {
-    val g = new DirectedWeightedPseudograph[PublicKey, DescEdge](classOf[DescEdge])
-    updates.foreach { case (d, u) => Router.addEdge(g, d, u) }
-    g
-  }
+  def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = DirectedGraph().addEdges(updates.toSeq)
 
   def hops2Ids(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId.toLong)
 

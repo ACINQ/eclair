@@ -292,12 +292,6 @@
                                 </MenuItem>
                             </items>
                         </Menu>
-                        <Menu mnemonicParsing="false" text="Tools">
-                            <items>
-                                <MenuItem mnemonicParsing="false" onAction="#handleExportDot"
-                                          text="Export Graph to .dot"/>
-                            </items>
-                        </Menu>
                         <Menu mnemonicParsing="false" text="Help">
                             <items>
                                 <MenuItem mnemonicParsing="false" onAction="#handleOpenAbout" text="About Eclair..."/>

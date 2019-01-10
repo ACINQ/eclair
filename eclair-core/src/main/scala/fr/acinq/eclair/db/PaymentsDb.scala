@@ -41,6 +41,8 @@ trait PaymentsDb {
 
   def listPayments(): Seq[Payment]
 
+  def close: Unit
+
 }
 
 /**

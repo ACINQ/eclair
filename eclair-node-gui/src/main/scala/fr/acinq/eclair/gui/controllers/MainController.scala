@@ -503,14 +503,6 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     row
   }
 
-  @FXML def handleExportDot() = {
-    val fileChooser = new FileChooser
-    fileChooser.setTitle("Save as")
-    fileChooser.getExtensionFilters.addAll(new ExtensionFilter("DOT File (*.dot)", "*.dot"))
-    val file = fileChooser.showSaveDialog(getWindow.orNull)
-    if (file != null) handlers.exportToDot(file)
-  }
-
   @FXML def handleOpenChannel() = {
     val openChannelStage = new OpenChannelStage(handlers)
     openChannelStage.initOwner(getWindow.orNull)
