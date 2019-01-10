@@ -41,6 +41,8 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
     case e: NetworkFeePaid => db.add(e)
 
+    case e: AvailableBalanceChanged => db.add(e)
+
     case e: ChannelStateChanged =>
       e match {
         case ChannelStateChanged(_, _, remoteNodeId, WAIT_FOR_FUNDING_LOCKED, NORMAL, d: DATA_NORMAL) =>
