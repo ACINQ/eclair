@@ -95,7 +95,7 @@ object Graph {
           // test for ignored edges
           if (edge.update.htlcMaximumMsat.forall(newMinimumKnownCost <= _) &&
             newMinimumKnownCost >= edge.update.htlcMinimumMsat &&
-            neighborPathLength < ROUTE_MAX_LENGTH && // ignore this edge if it would make the path too long
+            neighborPathLength <= ROUTE_MAX_LENGTH && // ignore this edge if it would make the path too long
             !ignoredEdges.contains(edge.desc)
           ) {
 
