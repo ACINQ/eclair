@@ -124,7 +124,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
         // let's bring existing/requested channels online
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport, d.localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }) forMax(1 minute) // forMax will trigger a StateTimeout
+        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }) forMax(30 seconds) // forMax will trigger a StateTimeout
       } else {
         log.warning(s"incompatible features, disconnecting")
         d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
