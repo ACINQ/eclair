@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.electrum
 import com.spotify.docker.client.{DefaultDockerClient, DockerClient}
 import com.whisk.docker.impl.spotify.SpotifyDockerFactory
 import com.whisk.docker.scalatest.DockerTestKit
-import com.whisk.docker.{DockerContainer, DockerFactory}
+import com.whisk.docker.{DockerContainer, DockerFactory, LogLineReceiver}
 import org.scalatest.Suite
 
 trait ElectrumxService extends DockerTestKit {
@@ -27,14 +27,15 @@ trait ElectrumxService extends DockerTestKit {
 
   val electrumxContainer = if (System.getProperty("os.name").startsWith("Linux")) {
     // "host" mode will let the container access the host network on linux
-    DockerContainer("lukechilds/electrumx")
+    // we use our own docker image because other images on Docker lag behind and don't yet support 1.4
+    DockerContainer("acinq/electrumx")
       .withNetworkMode("host")
       .withEnv("DAEMON_URL=http://foo:bar@localhost:28332", "COIN=BitcoinSegwit", "NET=regtest")
       //.withLogLineReceiver(LogLineReceiver(true, println))
   } else {
     // on windows or oxs, host mode is not available, but from docker 18.03 on host.docker.internal can be used instead
     // host.docker.internal is not (yet ?) available on linux though
-    DockerContainer("lukechilds/electrumx")
+    DockerContainer("acinq/electrumx")
       .withPorts(50001 -> Some(50001))
       .withEnv("DAEMON_URL=http://foo:bar@host.docker.internal:28332", "COIN=BitcoinSegwit", "NET=regtest", "TCP_PORT=50001")
       //.withLogLineReceiver(LogLineReceiver(true, println))

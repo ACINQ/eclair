@@ -130,7 +130,7 @@
         <dependency>
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-http-core_${scala.version.short}</artifactId>
-            <version>10.0.11</version>
+            <version>${akka.http.version}</version>
         </dependency>
         <!-- HTTP CLIENT -->
         <dependency>
@@ -239,6 +239,12 @@
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
             <version>1.2.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-http-testkit_${scala.version.short}</artifactId>
+            <version>${akka.http.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
