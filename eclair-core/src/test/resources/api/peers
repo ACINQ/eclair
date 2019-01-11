@@ -1,0 +1,13 @@
+{
+  "result" : [ {
+    "nodeId" : "03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0",
+    "state" : "CONNECTED",
+    "address" : "localhost:9731",
+    "channels" : 1
+  }, {
+    "nodeId" : "039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585",
+    "state" : "DISCONNECTED",
+    "channels" : 1
+  } ],
+  "id" : "eclair-node"
+}
