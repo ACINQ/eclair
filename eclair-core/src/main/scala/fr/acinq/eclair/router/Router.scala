@@ -793,9 +793,10 @@ object Router {
   }
 
   /**
-    * Routing fee have a variable part, this value will be used as a default if none is provided when search for a route
+    * https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
     */
-  val DEFAULT_AMOUNT_MSAT = 10000000
+  val ROUTE_MAX_LENGTH = 20
+
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route and its cost
