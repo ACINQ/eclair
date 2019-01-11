@@ -455,6 +455,27 @@ class RouteCalculationSpec extends FunSuite {
     assert(route2.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
+  test("route to a destination that is not in the graph (with assisted routes)") {
+    val updates = List(
+      makeUpdate(1L, a, b, 10, 10),
+      makeUpdate(2L, b, c, 10, 10),
+      makeUpdate(3L, c, d, 10, 10)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT)
+    assert(route.map(hops2Ids) === Failure(RouteNotFound))
+
+    // now we add the missing edge to reach the destination
+    val (extraDesc, extraUpdate) = makeUpdate(4L, d, e, 5, 5)
+    val extraGraphEdges = Set(GraphEdge(extraDesc, extraUpdate))
+
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, extraEdges = extraGraphEdges)
+    assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+  }
+
+
   test("verify that extra hops takes precedence over known channels") {
     val updates = List(
       makeUpdate(1L, a, b, 10, 10),
@@ -521,18 +542,20 @@ class RouteCalculationSpec extends FunSuite {
 
   test("limit routes to 20 hops") {
 
-    val nodes = (for (_ <- 0 until 100) yield randomKey.publicKey).toList
+    val nodes = (for (_ <- 0 until 22) yield randomKey.publicKey).toList
 
     val updates = nodes
       .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
       .zipWithIndex // ((0, 1), 0) :: ((1, 2), 1) :: ...
-      .map { case ((na, nb), index) => makeUpdate(index, na, nb, 5, 0) }
+      .map {case ((na, nb), index) => makeUpdate(index, na, nb, 5, 0)}
       .toMap
 
     val g = makeGraph(updates)
-    val route = Router.findRoute(g, nodes.head, nodes.last, DEFAULT_AMOUNT_MSAT)
 
-    assert(route === Failure(RouteNotFound))
+    assert(Router.findRoute(g, nodes(0), nodes(18), DEFAULT_AMOUNT_MSAT).map(hops2Ids) === Success(0 until 18))
+    assert(Router.findRoute(g, nodes(0), nodes(19), DEFAULT_AMOUNT_MSAT).map(hops2Ids) === Success(0 until 19))
+    assert(Router.findRoute(g, nodes(0), nodes(20), DEFAULT_AMOUNT_MSAT).map(hops2Ids) === Success(0 until 20))
+    assert(Router.findRoute(g, nodes(0), nodes(21), DEFAULT_AMOUNT_MSAT).map(hops2Ids) === Failure(RouteNotFound))
   }
 
   test("ignore cheaper route when it has more than 20 hops") {

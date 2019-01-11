@@ -777,7 +777,7 @@ object Router {
   /**
     * https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
     */
-  val ROUTE_MAX_LENGTH = 19
+  val ROUTE_MAX_LENGTH = 20
 
 
   /**
