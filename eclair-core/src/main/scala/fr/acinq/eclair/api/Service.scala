@@ -399,7 +399,7 @@ trait Service extends Logging {
   /**
     * Sends a request to a channel and expects a response
     *
-    * @param channelIdentifier can be a shortChannelId (8-byte hex encoded) or a channelId (32-byte hex encoded)
+    * @param channelIdentifier can be a shortChannelId (BOLT encoded) or a channelId (32-byte hex encoded)
     * @param request
     * @return
     */

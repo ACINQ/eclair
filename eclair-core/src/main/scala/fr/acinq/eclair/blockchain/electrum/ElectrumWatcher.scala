@@ -20,7 +20,7 @@ import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props, Stash, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, BlockHeader, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT, BITCOIN_PARENT_TX_CONFIRMED}
@@ -52,29 +52,29 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
   def receive = disconnected(Set.empty, Nil, SortedMap.empty)
 
   def disconnected(watches: Set[Watch], publishQueue: Seq[PublishAsap], block2tx: SortedMap[Long, Seq[Transaction]]): Receive = {
-    case ElectrumClient.ElectrumReady(_, _) =>
+    case ElectrumClient.ElectrumReady(_, _, _) =>
       client ! ElectrumClient.HeaderSubscription(self)
-    case ElectrumClient.HeaderSubscriptionResponse(header) =>
+    case ElectrumClient.HeaderSubscriptionResponse(height, header) =>
       watches.map(self ! _)
       publishQueue.map(self ! _)
-      context become running(header, Set(), Map(), block2tx, Nil)
+      context become running(height, header, Set(), Map(), block2tx, Nil)
     case watch: Watch => context become disconnected(watches + watch, publishQueue, block2tx)
     case publish: PublishAsap => context become disconnected(watches, publishQueue :+ publish, block2tx)
   }
 
-  def running(tip: ElectrumClient.Header, watches: Set[Watch], scriptHashStatus: Map[BinaryData, String], block2tx: SortedMap[Long, Seq[Transaction]], sent: Seq[Transaction]): Receive = {
-    case ElectrumClient.HeaderSubscriptionResponse(newtip) if tip == newtip => ()
+  def running(height: Int, tip: BlockHeader, watches: Set[Watch], scriptHashStatus: Map[BinaryData, String], block2tx: SortedMap[Long, Seq[Transaction]], sent: Seq[Transaction]): Receive = {
+    case ElectrumClient.HeaderSubscriptionResponse(newheight, newtip) if tip == newtip => ()
 
-    case ElectrumClient.HeaderSubscriptionResponse(newtip) =>
-      log.info(s"new tip: ${newtip.block_hash} $newtip")
+    case ElectrumClient.HeaderSubscriptionResponse(newheight, newtip) =>
+      log.info(s"new tip: ${newtip.blockId} $height")
       watches collect {
         case watch: WatchConfirmed =>
           val scriptHash = computeScriptHash(watch.publicKeyScript)
           client ! ElectrumClient.GetScriptHashHistory(scriptHash)
       }
-      val toPublish = block2tx.filterKeys(_ <= newtip.block_height)
+      val toPublish = block2tx.filterKeys(_ <= newheight)
       toPublish.values.flatten.foreach(tx => self ! PublishAsap(tx))
-      context become running(newtip, watches, scriptHashStatus, block2tx -- toPublish.keys, sent)
+      context become running(newheight, newtip, watches, scriptHashStatus, block2tx -- toPublish.keys, sent)
 
     case watch: Watch if watches.contains(watch) => ()
 
@@ -83,25 +83,25 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
       log.info(s"added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash")
       client ! ElectrumClient.ScriptHashSubscription(scriptHash, self)
       context.watch(watch.channel)
-      context become running(tip, watches + watch, scriptHashStatus, block2tx, sent)
+      context become running(height, tip, watches + watch, scriptHashStatus, block2tx, sent)
 
     case watch@WatchSpentBasic(_, txid, outputIndex, publicKeyScript, _) =>
       val scriptHash = computeScriptHash(publicKeyScript)
       log.info(s"added watch-spent-basic on output=$txid:$outputIndex scriptHash=$scriptHash")
       client ! ElectrumClient.ScriptHashSubscription(scriptHash, self)
       context.watch(watch.channel)
-      context become running(tip, watches + watch, scriptHashStatus, block2tx, sent)
+      context become running(height, tip, watches + watch, scriptHashStatus, block2tx, sent)
 
     case watch@WatchConfirmed(_, txid, publicKeyScript, _, _) =>
       val scriptHash = computeScriptHash(publicKeyScript)
       log.info(s"added watch-confirmed on txid=$txid scriptHash=$scriptHash")
       client ! ElectrumClient.GetScriptHashHistory(scriptHash)
       context.watch(watch.channel)
-      context become running(tip, watches + watch, scriptHashStatus, block2tx, sent)
+      context become running(height, tip, watches + watch, scriptHashStatus, block2tx, sent)
 
     case Terminated(actor) =>
       val watches1 = watches.filterNot(_.channel == actor)
-      context become running(tip, watches1, scriptHashStatus, block2tx, sent)
+      context become running(height, tip, watches1, scriptHashStatus, block2tx, sent)
 
     case ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status) =>
       scriptHashStatus.get(scriptHash) match {
@@ -111,33 +111,33 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
           log.info(s"new status=$status for scriptHash=$scriptHash")
           client ! ElectrumClient.GetScriptHashHistory(scriptHash)
       }
-      context become running(tip, watches, scriptHashStatus + (scriptHash -> status), block2tx, sent)
+      context become running(height, tip, watches, scriptHashStatus + (scriptHash -> status), block2tx, sent)
 
     case ElectrumClient.GetScriptHashHistoryResponse(_, history) =>
       // this is for WatchSpent/WatchSpentBasic
       history.filter(_.height >= 0).map(item => client ! ElectrumClient.GetTransaction(item.tx_hash))
       // this is for WatchConfirmed
       history.collect {
-        case ElectrumClient.TransactionHistoryItem(height, tx_hash) if height > 0 => watches.collect {
+        case ElectrumClient.TransactionHistoryItem(txheight, tx_hash) if txheight > 0 => watches.collect {
           case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx_hash =>
-            val confirmations = tip.block_height - height + 1
-            log.info(s"txid=$txid was confirmed at height=$height and now has confirmations=$confirmations (currentHeight=${tip.block_height})")
+            val confirmations = height - txheight + 1
+            log.info(s"txid=$txid was confirmed at height=$txheight and now has confirmations=$confirmations (currentHeight=${height})")
             if (confirmations >= minDepth) {
               // we need to get the tx position in the block
-              client ! GetMerkle(tx_hash, height)
+              client ! GetMerkle(tx_hash, txheight)
             }
         }
       }
 
-    case ElectrumClient.GetMerkleResponse(tx_hash, _, height, pos) =>
-      val confirmations = tip.block_height - height + 1
+    case ElectrumClient.GetMerkleResponse(tx_hash, _, txheight, pos) =>
+      val confirmations = height - txheight + 1
       val triggered = watches.collect {
         case w@WatchConfirmed(channel, txid, _, minDepth, event) if txid == tx_hash && confirmations >= minDepth =>
-          log.info(s"txid=$txid had confirmations=$confirmations in block=$height pos=$pos")
-          channel ! WatchEventConfirmed(event, height.toInt, pos)
+          log.info(s"txid=$txid had confirmations=$confirmations in block=$txheight pos=$pos")
+          channel ! WatchEventConfirmed(event, txheight.toInt, pos)
           w
       }
-      context become running(tip, watches -- triggered, scriptHashStatus, block2tx, sent)
+      context become running(height, tip, watches -- triggered, scriptHashStatus, block2tx, sent)
 
     case ElectrumClient.GetTransactionResponse(spendingTx) =>
       val triggered = spendingTx.txIn.map(_.outPoint).flatMap(outPoint => watches.collect {
@@ -152,7 +152,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
           channel ! WatchEventSpentBasic(event)
           Some(w)
       }).flatten
-      context become running(tip, watches -- triggered, scriptHashStatus, block2tx, sent)
+      context become running(height, tip, watches -- triggered, scriptHashStatus, block2tx, sent)
 
     case PublishAsap(tx) =>
       val blockCount = Globals.blockCount.get()
@@ -167,11 +167,11 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
-        context become running(tip, watches, scriptHashStatus, block2tx1, sent)
+        context become running(height, tip, watches, scriptHashStatus, block2tx1, sent)
       } else {
         log.info(s"publishing tx=$tx")
         client ! BroadcastTransaction(tx)
-        context become running(tip, watches, scriptHashStatus, block2tx, sent :+ tx)
+        context become running(height, tip, watches, scriptHashStatus, block2tx, sent :+ tx)
       }
 
     case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _) =>
@@ -182,11 +182,11 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
       if (absTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(absTimeout, block2tx.getOrElse(absTimeout, Seq.empty[Transaction]) :+ tx)
-        context become running(tip, watches, scriptHashStatus, block2tx1, sent)
+        context become running(height, tip, watches, scriptHashStatus, block2tx1, sent)
       } else {
         log.info(s"publishing tx=$tx")
         client ! BroadcastTransaction(tx)
-        context become running(tip, watches, scriptHashStatus, block2tx, sent :+ tx)
+        context become running(height, tip, watches, scriptHashStatus, block2tx, sent :+ tx)
       }
 
     case ElectrumClient.BroadcastTransactionResponse(tx, error_opt) =>
@@ -195,7 +195,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
         case Some(error) if error.message.contains("transaction already in block chain") => log.info(s"broadcast ignored for txid=${tx.txid} tx=$tx (tx was already in blockchain)")
         case Some(error) => log.error(s"broadcast failed for txid=${tx.txid} tx=$tx with error=$error")
       }
-      context become running(tip, watches, scriptHashStatus, block2tx, sent diff Seq(tx))
+      context become running(height, tip, watches, scriptHashStatus, block2tx, sent diff Seq(tx))
 
     case ElectrumClient.ElectrumDisconnected =>
       // we remember watches and keep track of tx that have not yet been published
@@ -220,7 +220,7 @@ object ElectrumWatcher extends App {
     }
 
     def receive = {
-      case ElectrumClient.ElectrumReady(_, _) =>
+      case ElectrumClient.ElectrumReady(_, _, _) =>
         log.info(s"starting watcher")
         context become running(context.actorOf(Props(new ElectrumWatcher(client)), "watcher"))
     }
