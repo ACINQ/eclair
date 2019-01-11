@@ -18,6 +18,7 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.InetSocketAddress
+import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
@@ -30,6 +31,7 @@ import fr.acinq.eclair.NodeParams.ELECTRUM
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum._
+import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
@@ -140,7 +142,11 @@ class Setup(datadir: File,
 
       wallet = bitcoin match {
         case Electrum(electrumClient) =>
-          val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash)), "electrum-wallet")
+          // TODO: DRY
+          val chaindir = new File(datadir, chain)
+          val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
+          val walletDb = new SqliteWalletDb(sqlite)
+          val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
           implicit val timeout = Timeout(30 seconds)
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
         case _ => ???

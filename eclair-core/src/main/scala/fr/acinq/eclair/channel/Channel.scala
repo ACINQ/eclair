@@ -626,6 +626,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
                 log.info(s"updating channel_update aboveReserve=${Helpers.aboveReserve(commitments1)}")
                 self ! TickRefreshChannelUpdate
               }
+              if (!Helpers.aboveReserve(d.commitments) && Helpers.aboveReserve(commitments1)) {
+                // we just went above reserve (can't go below), let's refresh our channel_update to enable/disable it accordingly
+                log.info(s"updating channel_update aboveReserve=${Helpers.aboveReserve(commitments1)}")
+                self ! TickRefreshChannelUpdate
+              }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, nextRemoteCommit.spec.toRemoteMsat)) // note that remoteCommit.toRemote == toLocal
               // we expect a quick response from our peer

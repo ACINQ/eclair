@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.{PreparedStatement, ResultSet, Statement}
+import java.sql.{Connection, PreparedStatement, ResultSet, Statement}
 
 import scodec.Codec
 import scodec.bits.BitVector
@@ -31,10 +31,12 @@ object SqliteUtils {
     * @param statement
     * @param block
     */
-  def using[T <: Statement, U](statement: T)(block: T => U): U = {
+  def using[T <: Statement, U](statement: T, disableAutoCommit: Boolean = false)(block: T => U): U = {
     try {
+      if (disableAutoCommit) statement.getConnection.setAutoCommit(false)
       block(statement)
     } finally {
+      if (disableAutoCommit) statement.getConnection.setAutoCommit(true)
       if (statement != null) statement.close()
     }
   }
@@ -101,5 +103,21 @@ object SqliteUtils {
   def getNullableLong(rs: ResultSet, label: String) : Option[Long] = {
     val result = rs.getLong(label)
     if (rs.wasNull()) None else Some(result)
+  }
+
+  /**
+    * Obtain an exclusive lock on a sqlite database. This is useful when we want to make sure that only one process
+    * accesses the database file (see https://www.sqlite.org/pragma.html).
+    *
+    * The lock will be kept until the database is closed, or if the locking mode is explicitely reset.
+    *
+    * @param sqlite
+    */
+  def obtainExclusiveLock(sqlite: Connection){
+    val statement = sqlite.createStatement()
+    statement.execute("PRAGMA locking_mode = EXCLUSIVE")
+    // we have to make a write to actually obtain the lock
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS dummy_table_for_locking (a INTEGER NOT NULL)")
+    statement.executeUpdate("INSERT INTO dummy_table_for_locking VALUES (42)")
   }
 }

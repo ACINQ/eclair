@@ -135,6 +135,7 @@ object NodeParams {
     chaindir.mkdir()
 
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
+    SqliteUtils.obtainExclusiveLock(sqlite) // there should only be one process writing to this file
     val channelsDb = new SqliteChannelsDb(sqlite)
     val peersDb = new SqlitePeersDb(sqlite)
     val pendingRelayDb = new SqlitePendingRelayDb(sqlite)
