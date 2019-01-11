@@ -43,10 +43,12 @@ object Graph {
 
     // stores the k shortest path
     val shortestPaths = new mutable.MutableList[WeightedPath]
-    shortestPaths += dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges)
-
     // stores the candidates for k(K +1) shortest paths, sorted by path cost
     val candidates = new mutable.PriorityQueue[WeightedPath]
+
+    // find the shortest path, k = 0
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges)
+    shortestPaths += WeightedPath(shortestPath, pathCost(shortestPath, amountMsat))
 
     // main loop
     for(k <- 1 until numberOfPathsToFind) {
@@ -72,13 +74,13 @@ object Graph {
           }
 
           // find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
-          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.b, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges)
+          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges)
 
           // if there wasn't a path the spur will be empty
-          if(spurPath.path.nonEmpty) {
+          if(spurPath.nonEmpty) {
 
             // candidate k-shortest path is made of the rootPath and the new spurPath
-            val totalPath = concat(rootPathEdges, spurPath.path.toList)
+            val totalPath = concat(rootPathEdges, spurPath.toList)
             val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat))
 
             if (!shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
@@ -98,16 +100,14 @@ object Graph {
       }
     }
 
-    shortestPaths.map( result =>
-      result.copy(path = result.path.reverse)
-    )
+    shortestPaths
   }
 
   // smart concatenation of paths given the edge lists, if the rootPath begins with the same vertex then discard that
   def concat(rootPath: List[GraphEdge], spurPath: List[GraphEdge]): List[GraphEdge] = (rootPath, spurPath) match {
     case (Nil, _) => spurPath
     case (_, Nil) => rootPath
-    case (root :: otherRoot, spurHead :: _ ) => if(root.desc.b == spurHead.desc.b) concat(otherRoot, spurPath) else rootPath ++ spurPath
+    case (root :: otherRoot, spurHead :: _ ) => if(root.desc.a == spurHead.desc.a) concat(otherRoot, spurPath) else rootPath ++ spurPath
   }
 
 
@@ -143,7 +143,7 @@ object Graph {
     * @param extraEdges a list of extra edges we want to consider but are not currently in the graph
     * @return
     */
-  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): WeightedPath = {
+  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[GraphEdge] = {
 
     // optionally add the extra edges to the graph
     val graphVerticesWithExtra = extraEdges.nonEmpty match {
@@ -152,8 +152,8 @@ object Graph {
     }
 
     //  the graph does not contain source/destination nodes
-    if (!graphVerticesWithExtra.contains(sourceNode)) return WeightedPath(Seq.empty, 0L)
-    if (!graphVerticesWithExtra.contains(targetNode)) return WeightedPath(Seq.empty, 0L)
+    if (!graphVerticesWithExtra.contains(sourceNode)) return Seq.empty
+    if (!graphVerticesWithExtra.contains(targetNode)) return Seq.empty
 
     val maxMapSize = graphVerticesWithExtra.size + 1
 
@@ -231,7 +231,7 @@ object Graph {
     }
 
     targetFound match {
-      case false => WeightedPath(Seq.empty[GraphEdge], 0L)
+      case false => Seq.empty[GraphEdge]
       case true =>
         // we traverse the list of "previous" backward building the final list of edges that make the shortest path
         val edgePath = new mutable.ArrayBuffer[GraphEdge](ROUTE_MAX_LENGTH)
@@ -243,7 +243,7 @@ object Graph {
           current = prev.get(current.desc.b)
         }
 
-        WeightedPath(edgePath.reverse, pathCost(edgePath, amountMsat))
+        edgePath
     }
   }
 
