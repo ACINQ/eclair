@@ -1,9 +1,7 @@
 package fr.acinq.eclair.api
 
 
-import java.nio.charset.StandardCharsets._
-import java.nio.file.{Files, Path, Paths, StandardOpenOption}
-import java.nio.file.StandardOpenOption._
+import java.io.{File, FileOutputStream}
 import akka.actor.{Actor, ActorSystem, Props, Scheduler}
 import org.scalatest.FunSuite
 import akka.http.scaladsl.model.StatusCodes._
@@ -25,6 +23,8 @@ import org.json4s.jackson.Serialization
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.io.Source
+import scala.util.Try
 
 class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
 
@@ -248,23 +248,19 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
       }
   }
 
-  private def readFileAsString(path: Path): String = Files.exists(path) match {
-    case true => new String(Files.readAllBytes(path.toAbsolutePath))
-    case false => throw new IllegalArgumentException(s"Mock file for $path does not exist, please use 'overWrite' first.")
-  }
+  private def readFileAsString(stream: File): Try[String] = Try(Source.fromFile(stream).mkString)
 
   private def matchTestJson(rpcMethod: String, overWrite: Boolean, response: JsonRPCRes)(implicit formats: Formats) = {
     val responseContent = Serialization.writePretty(response)
-    val path = Paths.get(s"src/test/resources/api/$rpcMethod")
-    if(overWrite){
-      Files.write(path, responseContent.getBytes(UTF_8), TRUNCATE_EXISTING, CREATE)
+    val resourceName = s"/api/$rpcMethod"
+    val resourceFile = new File(getClass.getResource(resourceName).toURI.toURL.getFile)
+    if(overWrite) {
+      new FileOutputStream(resourceFile).write(responseContent.getBytes)
       assert(false, "'overWrite' should be false before commit")
-    }else{
-      val expectedResponse = readFileAsString(path)
-      assert(responseContent == expectedResponse, s"test mock for $rpcMethod did not match the expected response")
+    } else {
+      val expectedResponse = readFileAsString(resourceFile).getOrElse(throw new IllegalArgumentException(s"Mock file for '$resourceName' does not exist, please use 'overWrite' first."))
+      assert(responseContent == expectedResponse, s"Test mock for $rpcMethod did not match the expected response")
     }
-
   }
 
 }
-
