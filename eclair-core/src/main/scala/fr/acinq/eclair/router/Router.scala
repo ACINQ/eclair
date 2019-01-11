@@ -33,7 +33,6 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.WeightedPath
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-
 import scala.collection.{SortedSet, mutable}
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform

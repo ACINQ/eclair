@@ -131,7 +131,9 @@ object Graph {
 
 
   /**
-    * Finds the shortest path in the graph, Dijsktra's algorithm
+    * Finds the shortest path in the graph, uses a modified version of Dijsktra's algorithm that computes
+    * the shortest path from the target to the source (this is because we want to calculate the weight of the
+    * edges correctly). The graph @param g is optimized for querying the incoming edges given a vertex.
     *
     * @param g the graph on which will be performed the search
     * @param sourceNode the starting node of the path we're looking for
@@ -162,9 +164,9 @@ object Graph {
     val pathLength = new java.util.HashMap[PublicKey, Int](maxMapSize)
 
     // initialize the queue and cost array with the base cost (amount to be routed)
-    cost.put(sourceNode, amountMsat)
-    vertexQueue.insert(WeightedNode(sourceNode, amountMsat))
-    pathLength.put(sourceNode, 0) // the source node has distance 0
+    cost.put(targetNode, amountMsat)
+    vertexQueue.insert(WeightedNode(targetNode, amountMsat))
+    pathLength.put(targetNode, 0) // the source node has distance 0
 
     var targetFound = false
 
@@ -173,7 +175,7 @@ object Graph {
       // node with the smallest distance from the source
       val current = vertexQueue.deleteMin().getKey // O(log(n))
 
-      if (current.key != targetNode) {
+      if (current.key != sourceNode) {
 
         // build the neighbors with optional extra edges
         val currentNeighbors = extraEdges.isEmpty match {
@@ -191,7 +193,7 @@ object Graph {
 
           // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
           // note: there is always an entry for the current in the 'cost' map
-          val newMinimumKnownCost = edgeWeight(edge, cost.get(current.key), neighbor == targetNode)
+          val newMinimumKnownCost = edgeWeight(edge, cost.get(current.key), neighbor == sourceNode)
 
           // test for ignored edges
           if (edge.update.htlcMaximumMsat.forall(newMinimumKnownCost <= _) &&
@@ -233,7 +235,7 @@ object Graph {
       case true =>
         // we traverse the list of "previous" backward building the final list of edges that make the shortest path
         val edgePath = new mutable.ArrayBuffer[GraphEdge](ROUTE_MAX_LENGTH)
-        var current = prev.get(targetNode)
+        var current = prev.get(sourceNode)
 
         while (current != null) {
 
