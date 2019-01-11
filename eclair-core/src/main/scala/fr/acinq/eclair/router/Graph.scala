@@ -62,22 +62,22 @@ object Graph {
           // select the subpath from the source to the spur node of the k-th previous shortest path
           val rootPathEdges = subList(shortestPaths(k - 1).path, 0, i).toList
 
-          // subgraph NOT containing the links that are part of the previous shortest path and which share the same root path
-          val mutatedGraph = shortestPaths.foldLeft(graph) { (g, weightedPath) =>
+          // links to be removed that are part of the previous shortest path and which share the same root path
+          val edgesToIgnore = shortestPaths.flatMap { weightedPath =>
             if (subList(weightedPath.path, 0, i) == rootPathEdges) {
-              g.removeEdge(weightedPath.path(i).desc)
+              weightedPath.path(i).desc :: Nil
             } else {
-              g
+              Nil
             }
           }
 
           // find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
-          val spurPath = dijkstraShortestPath(mutatedGraph, spurEdge.desc.b, targetNode, amountMsat, ignoredEdges, extraEdges)
+          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.b, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges)
 
           // if there wasn't a path the spur will be empty
           if(spurPath.path.nonEmpty) {
 
-            // candidate shortest path is made of the rootPath and the new spurPath
+            // candidate k-shortest path is made of the rootPath and the new spurPath
             val totalPath = concat(rootPathEdges, spurPath.path.toList)
             val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat))
 
@@ -93,7 +93,7 @@ object Graph {
         // handles the case of having exhausted all possible spur paths and it's impossible to reach the target from the source
         allSpurPathsFound = true
       } else {
-        // move the best candidate from in the container A
+        // move the best candidate to the shortestPaths container
         shortestPaths += candidates.dequeue()
       }
     }

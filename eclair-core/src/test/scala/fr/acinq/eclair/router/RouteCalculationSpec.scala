@@ -22,7 +22,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{ShortChannelId, nodeFee, randomKey}
+import fr.acinq.eclair.{ShortChannelId, randomKey}
 import org.scalatest.FunSuite
 
 import scala.util.{Failure, Success}
