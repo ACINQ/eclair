@@ -26,7 +26,7 @@ case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] 
 
   def toLong: Long = id
   
-  override def toString: String = s"${txCoordinates.blockHeight}x${txCoordinates.outputIndex}x${txCoordinates.outputIndex}"
+  override def toString: String = s"${txCoordinates.blockHeight}x${txCoordinates.txIndex}x${txCoordinates.outputIndex}"
 
   // we use an unsigned long comparison here
   override def compare(that: ShortChannelId): Int = (this.id + Long.MinValue).compareTo(that.id + Long.MinValue)
