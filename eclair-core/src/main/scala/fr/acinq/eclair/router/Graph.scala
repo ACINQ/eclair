@@ -1,25 +1,55 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
+
 import scala.collection.mutable
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire.ChannelUpdate
 import Router._
+import fr.acinq.eclair.channel.Channel
+import ShortChannelId._
 
 object Graph {
 
   import DirectedGraph._
 
-  case class WeightedNode(key: PublicKey, weight: Long)
+  case class WeightedNode(key: PublicKey, compoundWeight: CompoundWeight) {
+
+    def weight(weightSettings: WeightSettings): Long = {
+
+      val weight = compoundWeight.costMsat * weightSettings.costFactor +
+      compoundWeight.cltvDelta * weightSettings.cltvDeltaFactor +
+      compoundWeight.score * weightSettings.scoreFactor
+
+      println(s"Weight: $weight")
+      weight
+    }
+  }
+
+  case class CompoundWeight(costMsat: Long, cltvDelta: Long, score: Long) {
+    def compare(x: CompoundWeight, weightSettings: WeightSettings): Int = {
+      val w1 = costMsat * weightSettings.costFactor + cltvDelta * weightSettings.cltvDeltaFactor + score * weightSettings.scoreFactor
+      val w2 = x.costMsat * weightSettings.costFactor + x.cltvDelta * weightSettings.cltvDeltaFactor + x.score * weightSettings.scoreFactor
+      w1.compareTo(w2)
+    }
+  }
+
+  case class WeightSettings(costFactor: Long, cltvDeltaFactor: Long, scoreFactor: Long)
+
+//  type WeightFunction = {
+//    val costFactor: Long => Long
+//    val cltvFactor: Long => Long
+//    val scoreFactor: Long => Long
+//  }
 
   /**
     * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
     * the same weight we distinguish them by their public key. See https://docs.oracle.com/javase/8/docs/api/java/util/Comparator.html
     */
-  object QueueComparator extends Ordering[WeightedNode] {
+  class QueueComparator(weightSettings: WeightSettings) extends Ordering[WeightedNode] {
     override def compare(x: WeightedNode, y: WeightedNode): Int = {
-      val weightCmp = x.weight.compareTo(y.weight)
+      val weightCmp = x.weight(weightSettings).compareTo(y.weight(weightSettings))
       if (weightCmp == 0) x.key.toString().compareTo(y.key.toString())
       else weightCmp
     }
@@ -44,6 +74,8 @@ object Graph {
 
   def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[GraphEdge] = {
 
+    val weightSettings = WeightSettings(1, 0, 0)
+
     // optionally add the extra edges to the graph
     val graphVerticesWithExtra = extraEdges.nonEmpty match {
       case true => g.vertexSet() ++ extraEdges.map(_.desc.a) ++ extraEdges.map(_.desc.b)
@@ -57,14 +89,15 @@ object Graph {
     val maxMapSize = graphVerticesWithExtra.size + 1
 
     // this is not the actual optimal size for the maps, because we only put in there all the vertices in the worst case scenario.
-    val cost = new java.util.HashMap[PublicKey, Long](maxMapSize)
+    val weight = new java.util.HashMap[PublicKey, CompoundWeight](maxMapSize)
     val prev = new java.util.HashMap[PublicKey, GraphEdge](maxMapSize)
-    val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](QueueComparator)
+    val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](new QueueComparator(weightSettings))
     val pathLength = new java.util.HashMap[PublicKey, Int](maxMapSize)
 
-    // initialize the queue and cost array with the base cost (amount to be routed)
-    cost.put(targetNode, amountMsat)
-    vertexQueue.insert(WeightedNode(targetNode, amountMsat))
+    // initialize the queue and weight array with the base cost (amount to be routed)
+    val startingWeight = CompoundWeight(amountMsat, 0, 0)
+    weight.put(targetNode, startingWeight)
+    vertexQueue.insert(WeightedNode(targetNode, startingWeight))
     pathLength.put(targetNode, 0) // the source node has distance 0
 
     var targetFound = false
@@ -92,23 +125,23 @@ object Graph {
 
           // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
           // note: there is always an entry for the current in the 'cost' map
-          val newMinimumKnownCost = edgeWeight(edge, cost.get(current.key), neighbor == sourceNode)
+          val newMinimumCompoundWeight = edgeWeightCompound(edge, weight.get(current.key), neighbor == sourceNode)
 
           // test for ignored edges
-          if (edge.update.htlcMaximumMsat.forall(newMinimumKnownCost <= _) &&
-            newMinimumKnownCost >= edge.update.htlcMinimumMsat &&
+          if (edge.update.htlcMaximumMsat.forall(newMinimumCompoundWeight.costMsat <= _) &&
+            newMinimumCompoundWeight.costMsat >= edge.update.htlcMinimumMsat &&
             neighborPathLength <= ROUTE_MAX_LENGTH && // ignore this edge if it would make the path too long
             !ignoredEdges.contains(edge.desc)
           ) {
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
-            val neighborCost = cost.containsKey(neighbor) match {
-              case false => Long.MaxValue
-              case true => cost.get(neighbor)
+            val neighborCost = weight.containsKey(neighbor) match {
+              case false => CompoundWeight(Long.MaxValue, 0, 0)
+              case true => weight.get(neighbor)
             }
 
             // if this neighbor has a shorter distance than previously known
-            if (newMinimumKnownCost < neighborCost) {
+            if (newMinimumCompoundWeight.compare(neighborCost, weightSettings) < 0) {
 
               // update the total length of this partial path
               pathLength.put(neighbor, neighborPathLength)
@@ -117,10 +150,10 @@ object Graph {
               prev.put(neighbor, edge)
 
               // update the queue
-              vertexQueue.insert(WeightedNode(neighbor, newMinimumKnownCost)) // O(1)
+              vertexQueue.insert(WeightedNode(neighbor, newMinimumCompoundWeight)) // O(1)
 
               // update the minimum known distance array
-              cost.put(neighbor, newMinimumKnownCost)
+              weight.put(neighbor, newMinimumCompoundWeight)
             }
           }
         }
@@ -146,6 +179,35 @@ object Graph {
     }
   }
 
+  val MAX_FUNDING_MSAT = Channel.MAX_FUNDING_SATOSHIS * 1000L
+
+  private def edgeWeightCompound(edge: GraphEdge, compoundCostSoFar: CompoundWeight, isNeighborTarget: Boolean): CompoundWeight = {
+
+    // Every edge is weighted down by funding block height, but older blocks add less weight
+    val blockFactor = coordinates(edge.desc.shortChannelId).blockHeight
+
+    // Every edge is weighted down by channel capacity, but larger channels add less weight
+    val capFactor = edge.update.htlcMaximumMsat.map(MAX_FUNDING_MSAT - _).getOrElse(MAX_FUNDING_MSAT)
+
+    val costFactor = edgeCost(edge, compoundCostSoFar.costMsat, isNeighborTarget)
+
+    val cltvFactor = compoundCostSoFar.cltvDelta + edge.update.cltvExpiryDelta
+
+    val scoreFactor = capFactor + blockFactor
+    /*
+    * Example:
+    * calculated node fee = 10 000 MSat
+    * funding block height = 590 000 = 0.59% of scaled up fee
+    * channel capacity = 5 000 000 000 MSat = 0.5% of scaled up fee
+    *
+    * The larger the fee the less influential other factors are
+    * */
+
+    println(s"Channel ${edge.desc.shortChannelId.toLong}: blockFactor: $blockFactor, capFactor: $capFactor, costFactor:$costFactor, cltvFactor: $cltvFactor")
+
+    CompoundWeight(costFactor, cltvFactor, scoreFactor)
+  }
+
   /**
     *
     * @param edge the edge for which we want to compute the weight
@@ -153,7 +215,7 @@ object Graph {
     * @param isNeighborTarget true if the receiving vertex of this edge is the target node (source in a reversed graph), which has cost 0
     * @return the new amount updated with the necessary fees for this edge
     */
-  private def edgeWeight(edge: GraphEdge, amountWithFees: Long, isNeighborTarget: Boolean): Long = isNeighborTarget match {
+  private def edgeCost(edge: GraphEdge, amountWithFees: Long, isNeighborTarget: Boolean): Long = isNeighborTarget match {
     case false => amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
     case true => amountWithFees
   }
