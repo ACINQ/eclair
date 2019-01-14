@@ -15,41 +15,36 @@ object Graph {
   import DirectedGraph._
 
   case class WeightedNode(key: PublicKey, compoundWeight: CompoundWeight) {
-
-    def weight(weightSettings: WeightSettings): Long = {
-
-      val weight = compoundWeight.costMsat * weightSettings.costFactor +
-      compoundWeight.cltvDelta * weightSettings.cltvDeltaFactor +
-      compoundWeight.score * weightSettings.scoreFactor
-
-      println(s"Weight: $weight")
-      weight
-    }
+    def weight(weightSettings: WeightRatios): Double = compoundWeight.totalWeight(weightSettings)
   }
 
   case class CompoundWeight(costMsat: Long, cltvDelta: Long, score: Long) {
-    def compare(x: CompoundWeight, weightSettings: WeightSettings): Int = {
-      val w1 = costMsat * weightSettings.costFactor + cltvDelta * weightSettings.cltvDeltaFactor + score * weightSettings.scoreFactor
-      val w2 = x.costMsat * weightSettings.costFactor + x.cltvDelta * weightSettings.cltvDeltaFactor + x.score * weightSettings.scoreFactor
-      w1.compareTo(w2)
+
+    // TODO check for overflows
+    def totalWeight(wr: WeightRatios): Double = {
+      if(costMsat == Long.MaxValue)  Long.MaxValue
+      else if(cltvDelta == Long.MaxValue)  Long.MaxValue
+      else if(score == Long.MaxValue)  Long.MaxValue
+
+      else costMsat * wr.costFactor + cltvDelta * wr.cltvDeltaFactor + score * wr.scoreFactor
+    }
+
+    def compare(x: CompoundWeight, wr: WeightRatios): Int = {
+      totalWeight(wr).compareTo(x.totalWeight(wr))
     }
   }
 
-  case class WeightSettings(costFactor: Long, cltvDeltaFactor: Long, scoreFactor: Long)
-
-//  type WeightFunction = {
-//    val costFactor: Long => Long
-//    val cltvFactor: Long => Long
-//    val scoreFactor: Long => Long
-//  }
+  case class WeightRatios(costFactor: Double, cltvDeltaFactor: Double, scoreFactor: Double) {
+    require(0 < costFactor + cltvDeltaFactor + scoreFactor && costFactor + cltvDeltaFactor + scoreFactor <= 1D, "Total weight ratio must be between 0 and 1")
+  }
 
   /**
     * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
     * the same weight we distinguish them by their public key. See https://docs.oracle.com/javase/8/docs/api/java/util/Comparator.html
     */
-  class QueueComparator(weightSettings: WeightSettings) extends Ordering[WeightedNode] {
+  class QueueComparator(wr: WeightRatios) extends Ordering[WeightedNode] {
     override def compare(x: WeightedNode, y: WeightedNode): Int = {
-      val weightCmp = x.weight(weightSettings).compareTo(y.weight(weightSettings))
+      val weightCmp = x.weight(wr).compareTo(y.weight(wr))
       if (weightCmp == 0) x.key.toString().compareTo(y.key.toString())
       else weightCmp
     }
@@ -68,13 +63,11 @@ object Graph {
     * @param extraEdges a list of extra edges we want to consider but are not currently in the graph
     * @return
     */
-  def shortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[Hop] = {
-    dijkstraShortestPath(g, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges).map(graphEdgeToHop)
+  def shortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], wf: WeightRatios): Seq[Hop] = {
+    dijkstraShortestPath(g, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, wf).map(graphEdgeToHop)
   }
 
-  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[GraphEdge] = {
-
-    val weightSettings = WeightSettings(1, 0, 0)
+  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], wr: WeightRatios): Seq[GraphEdge] = {
 
     // optionally add the extra edges to the graph
     val graphVerticesWithExtra = extraEdges.nonEmpty match {
@@ -91,7 +84,7 @@ object Graph {
     // this is not the actual optimal size for the maps, because we only put in there all the vertices in the worst case scenario.
     val weight = new java.util.HashMap[PublicKey, CompoundWeight](maxMapSize)
     val prev = new java.util.HashMap[PublicKey, GraphEdge](maxMapSize)
-    val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](new QueueComparator(weightSettings))
+    val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](new QueueComparator(wr))
     val pathLength = new java.util.HashMap[PublicKey, Int](maxMapSize)
 
     // initialize the queue and weight array with the base cost (amount to be routed)
@@ -136,12 +129,12 @@ object Graph {
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
             val neighborCost = weight.containsKey(neighbor) match {
-              case false => CompoundWeight(Long.MaxValue, 0, 0)
+              case false => CompoundWeight(Long.MaxValue, Long.MaxValue, Long.MaxValue)
               case true => weight.get(neighbor)
             }
 
             // if this neighbor has a shorter distance than previously known
-            if (newMinimumCompoundWeight.compare(neighborCost, weightSettings) < 0) {
+            if (newMinimumCompoundWeight.totalWeight(wr) < neighborCost.totalWeight(wr)) {
 
               // update the total length of this partial path
               pathLength.put(neighbor, neighborPathLength)
@@ -179,7 +172,7 @@ object Graph {
     }
   }
 
-  val MAX_FUNDING_MSAT = Channel.MAX_FUNDING_SATOSHIS * 1000L
+  val MAX_FUNDING_MSAT: Long = Channel.MAX_FUNDING_SATOSHIS * 1000L
 
   private def edgeWeightCompound(edge: GraphEdge, compoundCostSoFar: CompoundWeight, isNeighborTarget: Boolean): CompoundWeight = {
 
@@ -189,24 +182,17 @@ object Graph {
     // Every edge is weighted down by channel capacity, but larger channels add less weight
     val capFactor = edge.update.htlcMaximumMsat.map(MAX_FUNDING_MSAT - _).getOrElse(MAX_FUNDING_MSAT)
 
+    // the 'score' is an aggregate of all factors beside the feeCost and CLTV
+    val scoreFactor = capFactor + blockFactor
+
     val costFactor = edgeCost(edge, compoundCostSoFar.costMsat, isNeighborTarget)
 
     val cltvFactor = compoundCostSoFar.cltvDelta + edge.update.cltvExpiryDelta
 
-    val scoreFactor = capFactor + blockFactor
-    /*
-    * Example:
-    * calculated node fee = 10 000 MSat
-    * funding block height = 590 000 = 0.59% of scaled up fee
-    * channel capacity = 5 000 000 000 MSat = 0.5% of scaled up fee
-    *
-    * The larger the fee the less influential other factors are
-    * */
-
-    println(s"Channel ${edge.desc.shortChannelId.toLong}: blockFactor: $blockFactor, capFactor: $capFactor, costFactor:$costFactor, cltvFactor: $cltvFactor")
-
     CompoundWeight(costFactor, cltvFactor, scoreFactor)
   }
+
+  private def normalize(value: Long, min: Long, max: Long) = value - min / max - min
 
   /**
     *

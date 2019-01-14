@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, nodeFee, randomKey}
 import org.scalatest.FunSuite
@@ -528,8 +529,47 @@ class RouteCalculationSpec extends FunSuite {
 
   test("Use weight settings to give priority to routes") {
 
+    val f = randomKey.publicKey
+
+    // A -> B -> C -> D is 'fee optimized', lower fees route (totFees = 2, totCltv = 20)
+    // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 11, totCltv = 8)
+    // A -> E -> C -> D is 'score optimized', more recent channel/larger capacity route
+    val updates = List(
+      makeUpdate(ShortChannelId("0x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 3),
+      makeUpdate(ShortChannelId("0x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2),
+      makeUpdate(ShortChannelId("0x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 5),
+      makeUpdate(ShortChannelId("0x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId("0x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2),
+      makeUpdate(ShortChannelId("0x0x6"), f, d, feeBaseMsat = 10, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 4),
+      makeUpdate(ShortChannelId("8876x0x7"), e, c, feeBaseMsat = 11, 0, minHtlcMsat = 0, maxHtlcMsat = Some(16777216000L), cltvDelta = 15)
+    ).toMap
 
 
+    val g = makeGraph(updates)
+
+    val Success(routeFeeOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, wr = WeightRatios(
+      costFactor = 1,
+      cltvDeltaFactor = 0.0,
+      scoreFactor = 0.0
+    ))
+
+    assert(hops2Ids(routeFeeOptimized) === 1 :: 2 :: 3 :: Nil)
+
+    val Success(routeCltvOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, wr = WeightRatios(
+      costFactor = 0.0,
+      cltvDeltaFactor = 1,
+      scoreFactor = 0.0
+    ))
+
+    assert(hops2Ids(routeCltvOptimized) === 4 :: 5 :: 6 :: Nil)
+
+    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, wr = WeightRatios(
+      costFactor = 0.0,
+      cltvDeltaFactor = 0.0,
+      scoreFactor = 1
+    ))
+
+    assert(hops2Ids(routeScoreOptimized) === 4 :: 9759265208139783L :: 3 :: Nil)
   }
 }
 
@@ -544,11 +584,15 @@ object RouteCalculationSpec {
     ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, "", Block.RegtestGenesisBlock.hash, ShortChannelId(shortChannelId), nodeId1, nodeId2, randomKey.publicKey, randomKey.publicKey)
   }
 
-  def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBaseMsat: Int, feeProportionalMillionth: Int, minHtlcMsat: Long = DEFAULT_AMOUNT_MSAT, maxHtlcMsat: Option[Long] = None, cltvDelta: Int = 0): (ChannelDesc, ChannelUpdate) =
-    ChannelDesc(ShortChannelId(shortChannelId), nodeId1, nodeId2) -> ChannelUpdate(
+  def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBaseMsat: Int, feeProportionalMillionth: Int, minHtlcMsat: Long = DEFAULT_AMOUNT_MSAT, maxHtlcMsat: Option[Long] = None, cltvDelta: Int = 0): (ChannelDesc, ChannelUpdate) = {
+    makeUpdate(ShortChannelId(shortChannelId), nodeId1, nodeId2, feeBaseMsat, feeProportionalMillionth, minHtlcMsat, maxHtlcMsat, cltvDelta)
+  }
+
+  def makeUpdate(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBaseMsat: Int, feeProportionalMillionth: Int, minHtlcMsat: Long, maxHtlcMsat: Option[Long], cltvDelta: Int): (ChannelDesc, ChannelUpdate) =
+    ChannelDesc(shortChannelId, nodeId1, nodeId2) -> ChannelUpdate(
       signature = DUMMY_SIG,
       chainHash = Block.RegtestGenesisBlock.hash,
-      shortChannelId = ShortChannelId(shortChannelId),
+      shortChannelId = shortChannelId,
       timestamp = 0L,
       messageFlags = maxHtlcMsat match {
         case Some(_) => 1

@@ -29,8 +29,10 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChannel, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
+
 import scala.collection.{SortedSet, mutable}
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
@@ -776,6 +778,7 @@ object Router {
     */
   val ROUTE_MAX_LENGTH = 20
 
+  val DEFAULT_WEIGHT_SETTINGS = WeightRatios(costFactor = 1D, cltvDeltaFactor = 0, scoreFactor = 0)
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route and its cost
@@ -788,10 +791,10 @@ object Router {
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
     * @return the computed route to the destination @targetNodeId
     */
-  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Hop]] = Try {
+  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty, wr: WeightRatios = DEFAULT_WEIGHT_SETTINGS): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    Graph.shortestPath(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges) match {
+    Graph.shortestPath(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, wr) match {
       case Nil => throw RouteNotFound
       case path => path
     }
