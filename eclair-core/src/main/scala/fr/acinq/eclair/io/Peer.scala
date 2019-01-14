@@ -20,7 +20,7 @@ import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
 import java.nio.ByteOrder
 
-import akka.actor.{ActorRef, Cancellable, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{ActorRef, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
@@ -124,7 +124,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
         // let's bring existing/requested channels online
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport, d.localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) })
+        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }) forMax(30 seconds) // forMax will trigger a StateTimeout
       } else {
         log.warning(s"incompatible features, disconnecting")
         d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
@@ -157,18 +157,36 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   when(CONNECTED) {
+    case Event(StateTimeout, _: ConnectedData) =>
+      // the first ping is sent after the connection has been quiet for a while
+      // we don't want to send pings right after connection, because peer will be syncing and may not be able to
+      // answer to our ping quickly enough, which will make us close the connection
+      log.debug(s"no messages sent/received for a while, start sending pings")
+      self ! SendPing
+      setStateTimeout(CONNECTED, None) // cancels the state timeout (it will be reset with forMax)
+      stay
+
     case Event(SendPing, d: ConnectedData) =>
-      // no need to use secure random here
-      val pingSize = Random.nextInt(1000)
-      val pongSize = Random.nextInt(1000)
-      val ping = wire.Ping(pongSize, BinaryData("00" * pingSize))
-      setTimer(PingTimeout.toString, PingTimeout(ping), 10 seconds, repeat = false)
-      d.transport ! ping
-      stay using d.copy(expectedPong_opt = Some(ExpectedPong(ping)))
+      if (d.expectedPong_opt.isEmpty) {
+        // no need to use secure random here
+        val pingSize = Random.nextInt(1000)
+        val pongSize = Random.nextInt(1000)
+        val ping = wire.Ping(pongSize, BinaryData("00" * pingSize))
+        setTimer(PingTimeout.toString, PingTimeout(ping), nodeParams.pingTimeout, repeat = false)
+        d.transport ! ping
+        stay using d.copy(expectedPong_opt = Some(ExpectedPong(ping)))
+      } else {
+        log.warning(s"can't send ping, already have one in flight")
+        stay
+      }
 
     case Event(PingTimeout(ping), d: ConnectedData) =>
-      log.warning(s"no response to ping=$ping, closing connection")
-      d.transport ! PoisonPill
+      if (nodeParams.pingDisconnect) {
+        log.warning(s"no response to ping=$ping, closing connection")
+        d.transport ! PoisonPill
+      } else {
+        log.warning(s"no response to ping=$ping (ignored)")
+      }
       stay
 
     case Event(ping@wire.Ping(pongLength, _), d: ConnectedData) =>
@@ -189,7 +207,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           val latency = Platform.currentTime - timestamp
           log.debug(s"received pong with latency=$latency")
           cancelTimer(PingTimeout.toString())
-          schedulePing()
+          // pings are sent periodically with some randomization
+          val nextDelay = nodeParams.pingInterval + secureRandom.nextInt(10).seconds
+          setTimer(SendPing.toString, SendPing, nextDelay, repeat = false)
         case None =>
           log.debug(s"received unexpected pong with size=${data.length}")
       }
@@ -417,12 +437,15 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(SendPing, _) => stay // we got disconnected in the meantime
 
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
+
+    case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
+
+    case Event(_: Terminated, _) => stay // this channel got closed before having a commitment and we got disconnected (e.g. a funding error occured)
   }
 
   onTransition {
     case _ -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
     case DISCONNECTED -> _ if nodeParams.autoReconnect && stateData.address_opt.isDefined => cancelTimer(RECONNECT_TIMER)
-    case _ -> CONNECTED => schedulePing()
   }
 
   def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingSatoshis: Long, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
@@ -444,12 +467,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   initialize()
 
   override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
-
-  def schedulePing(): Unit = {
-    // pings are periodically with some randomization
-    val nextDelay = nodeParams.pingInterval + secureRandom.nextInt(10).seconds
-    setTimer(SendPing.toString, SendPing, nextDelay, repeat = false)
-  }
 
 }
 
