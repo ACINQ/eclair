@@ -275,7 +275,7 @@ object Relayer {
   }
 
   /**
-    * Select a channel to the same node to the relay the payment to, that has the highest balance and is compatible in
+    * Select a channel to the same node to the relay the payment to, that has the lowest balance and is compatible in
     * terms of fees, expiry_delta, etc.
     *
     * If no suitable channel is found we default to the originally requested channel.
