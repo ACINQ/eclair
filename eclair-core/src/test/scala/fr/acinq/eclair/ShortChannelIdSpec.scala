@@ -18,6 +18,8 @@ package fr.acinq.eclair
 
 import org.scalatest.FunSuite
 
+import scala.util.{Failure, Try}
+
 
 
 class ShortChannelIdSpec extends FunSuite {
@@ -43,4 +45,17 @@ class ShortChannelIdSpec extends FunSuite {
     assert(ShortChannelId(0x0000a41000001b0003L).toString == "42000x27x3")
   }
 
+  test("parse a short channel it") {
+    assert(ShortChannelId("42000x27x3").toLong == 0x0000a41000001b0003L)
+  }
+
+  test("fail parsing a short channel id if not in the required form") {
+    assert(Try(ShortChannelId("42000x27x3.1")).isFailure)
+    assert(Try(ShortChannelId("4200aa0x27x3")).isFailure)
+    assert(Try(ShortChannelId("4200027x3")).isFailure)
+    assert(Try(ShortChannelId("42000x27ax3")).isFailure)
+    assert(Try(ShortChannelId("42000x27x")).isFailure)
+    assert(Try(ShortChannelId("42000x27")).isFailure)
+    assert(Try(ShortChannelId("42000x")).isFailure)
+  }
 }

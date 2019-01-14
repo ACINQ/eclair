@@ -41,7 +41,6 @@ import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
-import fr.acinq.eclair.router.Router.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging
@@ -244,15 +243,21 @@ trait Service extends Logging {
                       }
 
                       case "findroute" => req.params match {
-                        case JString(nodeId) :: Nil if nodeId.length() == 66 => Try(PublicKey(nodeId)) match {
-                          case Success(pk) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, pk, DEFAULT_AMOUNT_MSAT)).mapTo[RouteResponse])
+                        case JString(nodeId) :: JInt(amountMsat) :: Nil if nodeId.length() == 66 => Try(PublicKey(nodeId)) match {
+                          case Success(pk) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, pk, amountMsat.toLong)).mapTo[RouteResponse])
                           case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid nodeId hash '$nodeId'"))
                         }
                         case JString(paymentRequest) :: Nil => Try(PaymentRequest.read(paymentRequest)) match {
-                          case Success(pr) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, pr.nodeId, pr.amount.map(_.toLong).getOrElse(DEFAULT_AMOUNT_MSAT))).mapTo[RouteResponse])
+                          case Success(PaymentRequest(_, Some(amountMsat), _, nodeId , _, _)) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, nodeId, amountMsat.toLong)).mapTo[RouteResponse])
+                          case Success(_) => reject(RpcValidationRejection(req.id, s"payment request is missing amount, please specify it"))
                           case Failure(t) => reject(RpcValidationRejection(req.id, s"invalid payment request ${t.getLocalizedMessage}"))
                         }
-                        case _ => reject(UnknownParamsRejection(req.id, "[payment_request] or [nodeId]"))
+                        case JString(paymentRequest) :: JInt(amountMsat) :: Nil => Try(PaymentRequest.read(paymentRequest)) match {
+                          case Success(PaymentRequest(_, None, _, nodeId , _, _)) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, nodeId, amountMsat.toLong)).mapTo[RouteResponse])
+                          case Success(_) => reject(RpcValidationRejection(req.id, s"amount was specified both in payment request and api call"))
+                          case Failure(t) => reject(RpcValidationRejection(req.id, s"invalid payment request ${t.getLocalizedMessage}"))
+                        }
+                        case _ => reject(UnknownParamsRejection(req.id, "[payment_request] or [payment_request, amountMsat] or [nodeId, amountMsat]"))
                       }
 
                       case "send" => req.params match {
@@ -399,7 +404,7 @@ trait Service extends Logging {
   /**
     * Sends a request to a channel and expects a response
     *
-    * @param channelIdentifier can be a shortChannelId (8-byte hex encoded) or a channelId (32-byte hex encoded)
+    * @param channelIdentifier can be a shortChannelId (BOLT encoded) or a channelId (32-byte hex encoded)
     * @param request
     * @return
     */
