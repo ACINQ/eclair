@@ -1,7 +1,6 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-
 import scala.collection.mutable
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -15,18 +14,16 @@ object Graph {
   import DirectedGraph._
 
   case class WeightedNode(key: PublicKey, compoundWeight: CompoundWeight) {
-    def weight(weightSettings: WeightRatios): Double = compoundWeight.totalWeight(weightSettings)
+    def weight(wr: WeightRatios): Double = compoundWeight.totalWeight(wr)
   }
 
   case class CompoundWeight(costMsat: Long, cltvDelta: Long, score: Long) {
 
-    // TODO check for overflows
     def totalWeight(wr: WeightRatios): Double = {
-      if(costMsat == Long.MaxValue)  Long.MaxValue
-      else if(cltvDelta == Long.MaxValue)  Long.MaxValue
-      else if(score == Long.MaxValue)  Long.MaxValue
-
-      else costMsat * wr.costFactor + cltvDelta * wr.cltvDeltaFactor + score * wr.scoreFactor
+      if(costMsat == Long.MaxValue) Double.MaxValue
+      else if(cltvDelta == Long.MaxValue) Double.MaxValue
+      else if(score == Long.MaxValue) Double.MaxValue
+      else (costMsat * wr.costFactor + cltvDelta * wr.cltvDeltaFactor + score * wr.scoreFactor).abs
     }
 
     def compare(x: CompoundWeight, wr: WeightRatios): Int = {
@@ -176,23 +173,36 @@ object Graph {
 
   private def edgeWeightCompound(edge: GraphEdge, compoundCostSoFar: CompoundWeight, isNeighborTarget: Boolean): CompoundWeight = {
 
-    // Every edge is weighted down by funding block height, but older blocks add less weight
-    val blockFactor = coordinates(edge.desc.shortChannelId).blockHeight
+    // Every edge is weighted down by funding block height, but older blocks add less weight - scaledUp to match the capFactor
+    val blockFactor = coordinates(edge.desc.shortChannelId).blockHeight * 1000
 
     // Every edge is weighted down by channel capacity, but larger channels add less weight
-    val capFactor = edge.update.htlcMaximumMsat.map(MAX_FUNDING_MSAT - _).getOrElse(MAX_FUNDING_MSAT)
+    val capFactor = edge.update.htlcMaximumMsat.map(htlcMax => (MAX_FUNDING_MSAT - htlcMax).abs).getOrElse(MAX_FUNDING_MSAT)
 
-    // the 'score' is an aggregate of all factors beside the feeCost and CLTV
-    val scoreFactor = capFactor + blockFactor
+    // the 'score' is an aggregate of all factors beside the feeCost and CLTV - scaledDown to match the costFactor
+    val scoreFactor = (capFactor + blockFactor) / 10000 + compoundCostSoFar.score
 
     val costFactor = edgeCost(edge, compoundCostSoFar.costMsat, isNeighborTarget)
 
     val cltvFactor = compoundCostSoFar.cltvDelta + edge.update.cltvExpiryDelta
 
+    /**
+      *  Example values:
+      *  cltvDelta = 9
+      *  blockFactor = 590 000 * 1000 = 590 000 000
+      *  capFactor = 16 777 216 000
+      *
+      *  scoreFactor = 1 736 721,6 + 0
+      *  cltvFactor = 9
+      *  costFactor = 10 000 010 msat
+      *
+      *  weight (costR = 0.8, cltvR = 0.1, scoreR = 0.1) = 8173681,06
+      *  weight (costR = 0.1, cltvR = 0.8, scoreR = 0.1) = 1173680,36
+      *  weight (costR = 0.1, cltvR = 0.1, scoreR = 0.8) = 2389379,18
+      */
+
     CompoundWeight(costFactor, cltvFactor, scoreFactor)
   }
-
-  private def normalize(value: Long, min: Long, max: Long) = value - min / max - min
 
   /**
     *

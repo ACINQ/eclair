@@ -35,7 +35,7 @@ class RouteCalculationSpec extends FunSuite {
 
   import RouteCalculationSpec._
 
-  val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+  val (a, b, c, d, e, f) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
 
 
   // the total fee cost for this path
@@ -436,7 +436,6 @@ class RouteCalculationSpec extends FunSuite {
 
   test("compute ignored channels") {
 
-    val f = randomKey.publicKey
     val g = randomKey.publicKey
     val h = randomKey.publicKey
     val i = randomKey.publicKey
@@ -527,49 +526,68 @@ class RouteCalculationSpec extends FunSuite {
     assert(route1.map(hops2Ids) === Success(1 :: 2  :: 4 :: 5 :: Nil))
   }
 
-  test("Use weight settings to give priority to routes") {
-
-    val f = randomKey.publicKey
+  test("Use weight ratios to when computing the edge weight") {
 
     // A -> B -> C -> D is 'fee optimized', lower fees route (totFees = 2, totCltv = 20)
     // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 11, totCltv = 8)
     // A -> E -> C -> D is 'score optimized', more recent channel/larger capacity route
     val updates = List(
-      makeUpdate(ShortChannelId("0x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 3),
-      makeUpdate(ShortChannelId("0x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2),
-      makeUpdate(ShortChannelId("0x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 5),
-      makeUpdate(ShortChannelId("0x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdate(ShortChannelId("0x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2),
-      makeUpdate(ShortChannelId("0x0x6"), f, d, feeBaseMsat = 10, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 4),
-      makeUpdate(ShortChannelId("8876x0x7"), e, c, feeBaseMsat = 11, 0, minHtlcMsat = 0, maxHtlcMsat = Some(16777216000L), cltvDelta = 15)
+      makeUpdate(ShortChannelId("1000x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 3),
+      makeUpdate(ShortChannelId("1000x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2),
+      makeUpdate(ShortChannelId("1000x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 5),
+      makeUpdate(ShortChannelId("1000x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId("1000x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2),
+      makeUpdate(ShortChannelId("1000x0x6"), f, d, feeBaseMsat = 10, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 4),
+      makeUpdate(ShortChannelId("876x0x7"), e, c, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = Some(16777210L), cltvDelta = 150)
     ).toMap
 
 
     val g = makeGraph(updates)
 
     val Success(routeFeeOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, wr = WeightRatios(
-      costFactor = 1,
-      cltvDeltaFactor = 0.0,
-      scoreFactor = 0.0
+      costFactor = 0.98,
+      cltvDeltaFactor = 0.01,
+      scoreFactor = 0.001
     ))
 
-    assert(hops2Ids(routeFeeOptimized) === 1 :: 2 :: 3 :: Nil)
+    assert(hops2ShortChannelIds(routeFeeOptimized) === "1000x0x1" :: "1000x0x2" :: "1000x0x3" :: Nil)
 
     val Success(routeCltvOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, wr = WeightRatios(
-      costFactor = 0.0,
-      cltvDeltaFactor = 1,
-      scoreFactor = 0.0
+      costFactor = 0.001,
+      cltvDeltaFactor = 0.98,
+      scoreFactor = 0.001
     ))
 
-    assert(hops2Ids(routeCltvOptimized) === 4 :: 5 :: 6 :: Nil)
+    assert(hops2ShortChannelIds(routeCltvOptimized) === "1000x0x4" :: "1000x0x5" :: "1000x0x6" :: Nil)
 
     val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, wr = WeightRatios(
-      costFactor = 0.0,
-      cltvDeltaFactor = 0.0,
-      scoreFactor = 1
+      costFactor = 0.001,
+      cltvDeltaFactor = 0.001,
+      scoreFactor = 0.98
     ))
 
-    assert(hops2Ids(routeScoreOptimized) === 4 :: 9759265208139783L :: 3 :: Nil)
+    assert(hops2ShortChannelIds(routeScoreOptimized) === "1000x0x4" :: "876x0x7" :: "1000x0x3" :: Nil)
+  }
+
+  test("prefer going through an older channel if fees are the same") {
+
+    val g = makeGraph(List(
+      makeUpdate(ShortChannelId("20x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1),
+      makeUpdate(ShortChannelId("20x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1),
+      makeUpdate(ShortChannelId("10x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1), // younger channel
+      makeUpdate(ShortChannelId("20x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1),
+      makeUpdate(ShortChannelId("22x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1),
+      makeUpdate(ShortChannelId("23x0x6"), f, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1)
+    ).toMap)
+
+
+    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, wr = WeightRatios(
+      costFactor = 0.33,
+      cltvDeltaFactor = 0.33,
+      scoreFactor = 0.33
+    ))
+
+    assert(hops2ShortChannelIds(routeScoreOptimized) === "20x0x1" :: "10x0x2" :: "20x0x3" :: Nil)
   }
 }
 
@@ -609,5 +627,7 @@ object RouteCalculationSpec {
   def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = DirectedGraph.makeGraph(updates)
 
   def hops2Ids(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId.toLong)
+
+  def hops2ShortChannelIds(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId.toString).toList
 
 }
