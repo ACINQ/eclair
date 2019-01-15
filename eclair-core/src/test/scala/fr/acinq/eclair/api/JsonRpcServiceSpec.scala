@@ -2,6 +2,7 @@ package fr.acinq.eclair.api
 
 
 import java.io.{File, FileOutputStream}
+
 import akka.actor.{Actor, ActorSystem, Props, Scheduler}
 import org.scalatest.FunSuite
 import akka.http.scaladsl.model.StatusCodes._
@@ -17,6 +18,7 @@ import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.server.Route
 import akka.stream.scaladsl.Flow
 import fr.acinq.eclair.channel.Register.ForwardShortId
+import fr.acinq.eclair.router.{Graph, Router}
 import org.json4s.Formats
 import org.json4s.JsonAST.{JInt, JString}
 import org.json4s.jackson.Serialization
@@ -58,6 +60,8 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
     override def password: String = "mock"
 
     override val socketHandler: Flow[Message, TextMessage.Strict, NotUsed] = makeSocketHandler(system)(materializer)
+
+    override val routeWeightRatios: Graph.WeightRatios = Router.DEFAULT_WEIGHT_RATIOS
   }
 
   test("API service should handle failures correctly"){

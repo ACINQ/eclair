@@ -44,6 +44,7 @@ import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
@@ -254,6 +255,12 @@ class Setup(datadir: File,
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
         implicit val materializer = ActorMaterializer()
         val api = new Service {
+
+          override val routeWeightRatios = WeightRatios(
+            costFactor = config.getDouble("router.weight-ratio-fees"),
+            cltvDeltaFactor= config.getDouble("router.weight-ratio-cltv"),
+            scoreFactor = config.getDouble("router.weight-ratio-score")
+          )
 
           override def scheduler = system.scheduler
 
