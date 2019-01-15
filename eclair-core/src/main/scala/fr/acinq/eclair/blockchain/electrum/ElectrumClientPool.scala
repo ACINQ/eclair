@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.electrum
 import java.io.InputStream
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorRef, FSM, Props, Terminated}
+import akka.actor.{Actor, ActorRef, FSM, OneForOneStrategy, Props, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.CurrentBlockCount
@@ -38,12 +38,19 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
   val addresses = collection.mutable.Map.empty[ActorRef, InetSocketAddress]
 
+
   // on startup, we attempt to connect to a number of electrum clients
   // they will send us an `ElectrumReady` message when they're connected, or
   // terminate if they cannot connect
   (0 until Math.min(MAX_CONNECTION_COUNT, serverAddresses.size)) foreach (_ => self ! Connect)
 
   log.debug(s"starting electrum pool with serverAddresses={}", serverAddresses)
+
+  // custom supervision strategy: always stop Electrum clients when there's a problem, we will automatically reconnect
+  // to another client
+  override def supervisorStrategy: SupervisorStrategy = OneForOneStrategy(loggingEnabled = true) {
+    case _ => SupervisorStrategy.stop
+  }
 
   startWith(Disconnected, DisconnectedData)
 
