@@ -134,16 +134,16 @@ class DirectionSerializer extends CustomSerializer[Direction](format => ({ null 
 }))
 
 class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format => ({ null },{
-  case p: PaymentRequest => JObject(JField("prefix",JString(p.prefix) ) ::
-      JField("amount",if(p.amount.isDefined) JLong(p.amount.get.toLong) else JNull ) ::
-      JField("timestamp",JLong(p.timestamp) ) ::
-      JField("nodeId",JString(p.nodeId.toString()) ) ::
-      JField("description",JString(
-          p.description match{ case Left(l) => l.toString()
-                               case Right(r) => r.toString() }
-          ) ) ::
-      JField("paymentHash",JString(p.paymentHash.toString()) ) ::
-      JField("expiry",if(p.expiry.isDefined) JLong(p.expiry.get) else JNull ) ::
-      JField("minFinalCltvExpiry",if(p.minFinalCltvExpiry.isDefined) JLong(p.minFinalCltvExpiry.get) else JNull ) ::
-      Nil)
+  case p: PaymentRequest => JObject(JField("prefix", JString(p.prefix)) ::
+    JField("amount", if (p.amount.isDefined) JLong(p.amount.get.toLong) else JNull) ::
+    JField("timestamp", JLong(p.timestamp)) ::
+    JField("nodeId", JString(p.nodeId.toString())) ::
+    JField("description", JString(p.description match {
+      case Left(l) => l.toString()
+      case Right(r) => r.toString()
+    })) ::
+    JField("paymentHash", JString(p.paymentHash.toString())) ::
+    JField("expiry", if (p.expiry.isDefined) JLong(p.expiry.get) else JNull) ::
+    JField("minFinalCltvExpiry", if (p.minFinalCltvExpiry.isDefined) JLong(p.minFinalCltvExpiry.get) else JNull) ::
+    Nil)
 }))
