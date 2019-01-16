@@ -1,7 +1,6 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-
 import scala.collection.mutable
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -9,8 +8,6 @@ import fr.acinq.eclair.wire.ChannelUpdate
 import Router._
 
 object Graph {
-
-  import DirectedGraph._
 
   case class WeightedNode(key: PublicKey, weight: Long)
   case class WeightedPath(path: Seq[GraphEdge], weight: Long)
@@ -32,19 +29,19 @@ object Graph {
   }
   /**
     * Yen's algorithm to find the k-shortest (loopless) paths in a graph, uses dijkstra as search algo. Is guaranteed to terminate finding
-    * at most @numbersOfPathsToFind paths sorted by cost (the cheapest is in position 0).
+    * at most @pathsToFind paths sorted by cost (the cheapest is in position 0).
     * @param graph
     * @param sourceNode
     * @param targetNode
     * @param amountMsat
-    * @param numberOfPathsToFind
+    * @param pathsToFind
     * @return
     */
-  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], numberOfPathsToFind: Int): Seq[WeightedPath] = {
+  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], pathsToFind: Int): Seq[WeightedPath] = {
 
     var allSpurPathsFound = false
 
-    // stores the k shortest path
+    // stores the shortest paths
     val shortestPaths = new mutable.MutableList[WeightedPath]
     // stores the candidates for k(K +1) shortest paths, sorted by path cost
     val candidates = new mutable.PriorityQueue[WeightedPath]
@@ -54,7 +51,7 @@ object Graph {
     shortestPaths += WeightedPath(shortestPath, pathCost(shortestPath, amountMsat))
 
     // main loop
-    for(k <- 1 until numberOfPathsToFind) {
+    for(k <- 1 until pathsToFind) {
 
       if ( !allSpurPathsFound ) {
 
@@ -83,7 +80,12 @@ object Graph {
           if(spurPath.nonEmpty) {
 
             // candidate k-shortest path is made of the rootPath and the new spurPath
-            val totalPath = concat(rootPathEdges, spurPath.toList)
+            val totalPath = rootPathEdges.head.desc.a == spurPath.head.desc.a match {
+              case true => rootPathEdges.tail ++ spurPath // if the heads are the same node, drop it from the rootPath
+              case false => rootPathEdges ++ spurPath
+            }
+
+            //val totalPath = concat(rootPathEdges, spurPath.toList)
             val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat))
 
             if (!shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
@@ -105,14 +107,6 @@ object Graph {
 
     shortestPaths
   }
-
-  // smart concatenation of paths given the edge lists, if the rootPath begins with the same vertex then discard that
-  def concat(rootPath: List[GraphEdge], spurPath: List[GraphEdge]): List[GraphEdge] = (rootPath, spurPath) match {
-    case (Nil, _) => spurPath
-    case (_, Nil) => rootPath
-    case (root :: otherRoot, spurHead :: _ ) => if(root.desc.a == spurHead.desc.a) concat(otherRoot, spurPath) else rootPath ++ spurPath
-  }
-
 
   // Calculates the cost of a path, direct channels with the source will have a cost of 0 (pay no fees), only the first
   // edge in the list is a direct channel
