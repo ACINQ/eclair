@@ -85,9 +85,13 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
     }
   })
 
+
   // Start the client.
   log.info(s"connecting to $serverAddress")
+
+
   val channelOpenFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
+
 
   def close() = {
     statusListeners.map(_ ! ElectrumDisconnected)
@@ -95,7 +99,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   }
 
   def errorHandler(t: Throwable) = {
-    log.info(s"connection error (reason=${t.getMessage})")
+    log.info(s"server=$serverAddress connection error (reason=${t.getMessage})")
     close()
   }
 
@@ -168,7 +172,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       import org.json4s._
       import org.json4s.jackson.JsonMethods._
 
-      log.info(s"sending $request")
+      log.info(s"sending $request to $serverAddress")
       val json = ("method" -> request.method) ~ ("params" -> request.params.map {
         case s: String => new JString(s)
         case b: BinaryData => new JString(b.toString())
@@ -202,7 +206,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   var addressSubscriptions = Map.empty[String, Set[ActorRef]]
   var scriptHashSubscriptions = Map.empty[BinaryData, Set[ActorRef]]
   val headerSubscriptions = collection.mutable.HashSet.empty[ActorRef]
-  val version = ServerVersion("3.3.2", "1.4")
+  val version = ServerVersion(CLIENT_NAME, PROTOCOL_VERSION)
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
   val keepHeaders = 100
 
@@ -263,12 +267,17 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
   def waitingForVersion(ctx: ChannelHandlerContext): Receive = {
     case Right(json: JsonRPCResponse) =>
-      val serverVersion = parseJsonResponse(version, json)
-      log.debug(s"serverVersion=$serverVersion")
-      send(ctx, HeaderSubscription(self))
-      headerSubscriptions += self
-      log.debug("waiting for tip")
-      context become waitingForTip(ctx)
+      (parseJsonResponse(version, json): @unchecked) match {
+        case ServerVersionResponse(clientName, protocolVersion) =>
+          log.info(s"server=$serverAddress clientName=$clientName protocolVersion=$protocolVersion")
+          send(ctx, HeaderSubscription(self))
+          headerSubscriptions += self
+          log.debug("waiting for tip")
+          context become waitingForTip(ctx)
+        case ServerError(request, error) =>
+          log.error(s"Electrum server=$serverAddress sent error=$error while processing request=$request, disconnecting")
+          close()
+      }
 
     case AddStatusListener(actor) => statusListeners += actor
   }
@@ -276,7 +285,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   def waitingForTip(ctx: ChannelHandlerContext): Receive = {
     case Right(json: JsonRPCResponse) =>
       val (height, header) = parseBlockHeader(json.result)
-      log.debug(s"connected, tip = ${header.hash} height = $height")
+      log.debug(s"connected to server=$serverAddress, tip = ${header.hash} height = $height")
       statusListeners.map(_ ! ElectrumReady(height, header, serverAddress))
       context become connected(ctx, height, header, "", Map())
 
@@ -324,12 +333,14 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
     case Left(response: ScriptHashSubscriptionResponse) => scriptHashSubscriptions.get(response.scriptHash).map(listeners => listeners.map(_ ! response))
 
     case HeaderSubscriptionResponse(height, newtip) =>
-      log.info(s"new tip $newtip")
+      log.info(s"server=$serverAddress new tip $newtip")
       context become connected(ctx, height, newtip, buffer, requests)
   }
 }
 
 object ElectrumClient {
+  val CLIENT_NAME = "3.3.2" // client name that we wil include in our "version" message
+  val PROTOCOL_VERSION = "1.4" // version of the protocol that we require
 
   // this is expensive and shared with all clients
   val workerGroup = new NioEventLoopGroup()
@@ -538,6 +549,7 @@ object ElectrumClient {
       }
       case None => (request: @unchecked) match {
         case s: ServerVersion =>
+          //throw new RuntimeException("Nein!")
           val JArray(jitems) = json.result
           val JString(clientName) = jitems(0)
           val JString(protocolVersion) = jitems(1)
