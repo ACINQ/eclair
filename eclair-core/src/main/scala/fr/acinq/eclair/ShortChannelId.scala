@@ -26,7 +26,10 @@ case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] 
 
   def toLong: Long = id
 
-  override def toString: String = id.toHexString
+  override def toString: String = {
+    val TxCoordinates(blockHeight, txIndex, outputIndex) = ShortChannelId.coordinates(this)
+    s"${blockHeight}x${txIndex}x${outputIndex}"
+  }
 
   // we use an unsigned long comparison here
   override def compare(that: ShortChannelId): Int = (this.id + Long.MinValue).compareTo(that.id + Long.MinValue)
@@ -34,7 +37,10 @@ case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] 
 
 object ShortChannelId {
 
-  def apply(s: String): ShortChannelId = ShortChannelId(java.lang.Long.parseLong(s, 16))
+  def apply(s: String): ShortChannelId = s.split("x").toList match {
+    case blockHeight :: txIndex :: outputIndex :: Nil => ShortChannelId(toShortId(blockHeight.toInt, txIndex.toInt, outputIndex.toInt))
+    case _ => throw new IllegalArgumentException(s"Invalid short channel id: $s")
+  }
 
   def apply(blockHeight: Int, txIndex: Int, outputIndex: Int): ShortChannelId = ShortChannelId(toShortId(blockHeight, txIndex, outputIndex))
 

@@ -1,6 +1,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
+
 import scala.collection.mutable
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -8,6 +9,8 @@ import fr.acinq.eclair.wire.ChannelUpdate
 import Router._
 
 object Graph {
+
+  import DirectedGraph._
 
   case class WeightedNode(key: PublicKey, weight: Long)
   case class WeightedPath(path: Seq[GraphEdge], weight: Long)
@@ -143,6 +146,7 @@ object Graph {
     * @param extraEdges a list of extra edges we want to consider but are not currently in the graph
     * @return
     */
+
   def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[GraphEdge] = {
 
     // optionally add the extra edges to the graph

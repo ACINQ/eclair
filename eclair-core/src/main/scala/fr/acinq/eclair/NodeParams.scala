@@ -68,6 +68,8 @@ case class NodeParams(keyManager: KeyManager,
                       revocationTimeout: FiniteDuration,
                       routerBroadcastInterval: FiniteDuration,
                       pingInterval: FiniteDuration,
+                      pingTimeout: FiniteDuration,
+                      pingDisconnect: Boolean,
                       maxFeerateMismatch: Double,
                       updateFeeMinDiffRatio: Double,
                       autoReconnect: Boolean,
@@ -136,6 +138,7 @@ object NodeParams {
     chaindir.mkdir()
 
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
+    SqliteUtils.obtainExclusiveLock(sqlite) // there should only be one process writing to this file
     val channelsDb = new SqliteChannelsDb(sqlite)
     val peersDb = new SqlitePeersDb(sqlite)
     val pendingRelayDb = new SqlitePendingRelayDb(sqlite)
@@ -162,6 +165,10 @@ object NodeParams {
 
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
+
+    val maxToLocalCLTV = config.getInt("max-to-local-delay-blocks")
+    val offeredCLTV = config.getInt("to-remote-delay-blocks")
+    require(maxToLocalCLTV <= Channel.MAX_TO_SELF_DELAY && offeredCLTV <= Channel.MAX_TO_SELF_DELAY, s"CLTV delay values too high, max is ${Channel.MAX_TO_SELF_DELAY}")
 
     val overrideFeatures: Map[PublicKey, (BinaryData, BinaryData)] = config.getConfigList("override-features").map { e =>
       val p = PublicKey(e.getString("nodeid"))
@@ -200,6 +207,8 @@ object NodeParams {
       revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
+      pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
+      pingDisconnect = config.getBoolean("ping-disconnect"),
       maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
       updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
       autoReconnect = config.getBoolean("auto-reconnect"),
