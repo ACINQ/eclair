@@ -85,13 +85,9 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
     }
   })
 
-
   // Start the client.
   log.info(s"connecting to $serverAddress")
-
-
   val channelOpenFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
-
 
   def close() = {
     statusListeners.map(_ ! ElectrumDisconnected)
