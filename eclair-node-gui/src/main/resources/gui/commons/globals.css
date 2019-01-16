@@ -15,8 +15,24 @@
 	-fx-font-weight: bold;
 }
 
+.text-xs {
+    -fx-font-size: 10px;
+}
+
 .text-sm {
     -fx-font-size: 12px;
+}
+
+.text-md {
+    -fx-font-size: 14px;
+}
+
+.text-lg {
+    -fx-font-size: 16px;
+}
+
+.text-xl {
+    -fx-font-size: 18px;
 }
 
 .text-error {
@@ -115,15 +131,13 @@
 /* ---------- Progress Bar ---------- */
 
 .bar {
-	-fx-background-color: rgb(63,179,234);
+	-fx-background-color: rgb(114,193,229);
 	-fx-background-insets: 0;
-	-fx-background-radius: 0;
 }
 
 .track {
-	-fx-background-color: rgb(206,230,255);
+	-fx-background-color: rgb(211,227,234);
 	-fx-background-insets: 0;
-	-fx-background-radius: 0;
 }
 
 /* ---------- Forms ----------- */

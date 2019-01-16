@@ -1,11 +1,11 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-
 import scala.collection.mutable
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire.ChannelUpdate
+import Router._
 
 object Graph {
 
@@ -26,7 +26,9 @@ object Graph {
   }
 
   /**
-    * Finds the shortest path in the graph, Dijsktra's algorithm
+    * Finds the shortest path in the graph, uses a modified version of Dijsktra's algorithm that computes
+    * the shortest path from the target to the source (this is because we want to calculate the weight of the
+    * edges correctly). The graph @param g is optimized for querying the incoming edges given a vertex.
     *
     * @param g the graph on which will be performed the search
     * @param sourceNode the starting node of the path we're looking for
@@ -54,14 +56,16 @@ object Graph {
 
     val maxMapSize = graphVerticesWithExtra.size + 1
 
-    //  this is not the actual optimal size for the maps, because we only put in there all the vertices in the worst case scenario.
+    // this is not the actual optimal size for the maps, because we only put in there all the vertices in the worst case scenario.
     val cost = new java.util.HashMap[PublicKey, Long](maxMapSize)
     val prev = new java.util.HashMap[PublicKey, GraphEdge](maxMapSize)
     val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](QueueComparator)
+    val pathLength = new java.util.HashMap[PublicKey, Int](maxMapSize)
 
-    //  initialize the queue and cost array
-    cost.put(sourceNode, 0)
-    vertexQueue.insert(WeightedNode(sourceNode, 0))
+    // initialize the queue and cost array with the base cost (amount to be routed)
+    cost.put(targetNode, amountMsat)
+    vertexQueue.insert(WeightedNode(targetNode, amountMsat))
+    pathLength.put(targetNode, 0) // the source node has distance 0
 
     var targetFound = false
 
@@ -70,27 +74,32 @@ object Graph {
       // node with the smallest distance from the source
       val current = vertexQueue.deleteMin().getKey // O(log(n))
 
-      if (current.key != targetNode) {
+      if (current.key != sourceNode) {
 
         // build the neighbors with optional extra edges
         val currentNeighbors = extraEdges.isEmpty match {
-          case true => g.edgesOf(current.key)
-          case false => g.edgesOf(current.key) ++ extraEdges.filter(_.desc.a == current.key)
+          case true => g.getIncomingEdgesOf(current.key)
+          case false => g.getIncomingEdgesOf(current.key) ++ extraEdges.filter(_.desc.b == current.key)
         }
 
         // for each neighbor
         currentNeighbors.foreach { edge =>
 
-          //  test for ignored edges
-          if (!(edge.update.htlcMaximumMsat.exists(_ < amountMsat) ||
-            amountMsat < edge.update.htlcMinimumMsat ||
-            ignoredEdges.contains(edge.desc))
+          val neighbor = edge.desc.a
+
+          // calculate the length of the partial path given the new edge (current -> neighbor)
+          val neighborPathLength = pathLength.get(current.key) + 1
+
+          // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
+          // note: there is always an entry for the current in the 'cost' map
+          val newMinimumKnownCost = edgeWeight(edge, cost.get(current.key), neighbor == sourceNode)
+
+          // test for ignored edges
+          if (edge.update.htlcMaximumMsat.forall(newMinimumKnownCost <= _) &&
+            newMinimumKnownCost >= edge.update.htlcMinimumMsat &&
+            neighborPathLength <= ROUTE_MAX_LENGTH && // ignore this edge if it would make the path too long
+            !ignoredEdges.contains(edge.desc)
           ) {
-
-            val neighbor = edge.desc.b
-
-            // note: the default value here will never be used, as there is always an entry for the current in the 'cost' map
-            val newMinimumKnownCost = cost.get(current.key) + edgeWeightByAmount(edge, amountMsat)
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
             val neighborCost = cost.containsKey(neighbor) match {
@@ -100,6 +109,9 @@ object Graph {
 
             // if this neighbor has a shorter distance than previously known
             if (newMinimumKnownCost < neighborCost) {
+
+              // update the total length of this partial path
+              pathLength.put(neighbor, neighborPathLength)
 
               // update the visiting tree
               prev.put(neighbor, edge)
@@ -119,28 +131,35 @@ object Graph {
 
     targetFound match {
       case false => Seq.empty[GraphEdge]
-      case true => {
+      case true =>
         // we traverse the list of "previous" backward building the final list of edges that make the shortest path
-        val edgePath = new mutable.ArrayBuffer[GraphEdge](21) // max path length is 20! https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
-        var current = prev.get(targetNode)
+        val edgePath = new mutable.ArrayBuffer[GraphEdge](ROUTE_MAX_LENGTH)
+        var current = prev.get(sourceNode)
 
         while (current != null) {
 
           edgePath += current
-          current = prev.get(current.desc.a)
+          current = prev.get(current.desc.b)
         }
 
-        edgePath.reverse
-      }
+        edgePath
     }
   }
 
-  private def edgeWeightByAmount(edge: GraphEdge, amountMsat: Long): Long = {
-    nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountMsat)
+  /**
+    *
+    * @param edge the edge for which we want to compute the weight
+    * @param amountWithFees the value that this edge will have to carry along
+    * @param isNeighborTarget true if the receiving vertex of this edge is the target node (source in a reversed graph), which has cost 0
+    * @return the new amount updated with the necessary fees for this edge
+    */
+  private def edgeWeight(edge: GraphEdge, amountWithFees: Long, isNeighborTarget: Boolean): Long = isNeighborTarget match {
+    case false => amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
+    case true => amountWithFees
   }
 
   /**
-    * A graph data structure that uses the adjacency lists
+    * A graph data structure that uses the adjacency lists, stores the incoming edges of the neighbors
     */
   object GraphStructure {
 
@@ -161,7 +180,7 @@ object Graph {
       }
 
       /**
-        * Adds and edge to the graph, if one of the two vertices is not found, it will be created
+        * Adds and edge to the graph, if one of the two vertices is not found, it will be created.
         *
         * @param edge the edge that is going to be added to the graph
         * @return a new graph containing this edge
@@ -173,10 +192,10 @@ object Graph {
 
         // the graph is allowed to have multiple edges between the same vertices but only one per channel
         if (containsEdge(edge.desc)) {
-          removeEdge(edge.desc).addEdge(edge)
+          removeEdge(edge.desc).addEdge(edge) // the recursive call will have the original params
         } else {
           val withVertices = addVertex(vertexIn).addVertex(vertexOut)
-          DirectedGraph(withVertices.vertices.updated(vertexIn, edge +: withVertices.vertices(vertexIn)))
+          DirectedGraph(withVertices.vertices.updated(vertexOut, edge +: withVertices.vertices(vertexOut)))
         }
       }
 
@@ -189,7 +208,7 @@ object Graph {
         */
       def removeEdge(desc: ChannelDesc): DirectedGraph = {
         containsEdge(desc) match {
-          case true => DirectedGraph(vertices.updated(desc.a, vertices(desc.a).filterNot(_.desc == desc)))
+          case true => DirectedGraph(vertices.updated(desc.b, vertices(desc.b).filterNot(_.desc == desc)))
           case false => this
         }
       }
@@ -204,8 +223,10 @@ object Graph {
         */
       def getEdge(edge: GraphEdge): Option[GraphEdge] = getEdge(edge.desc)
 
-      def getEdge(desc: ChannelDesc): Option[GraphEdge] = vertices.get(desc.a).flatMap { adj =>
-        adj.find(e => e.desc.shortChannelId == desc.shortChannelId && e.desc.b == desc.b)
+      def getEdge(desc: ChannelDesc): Option[GraphEdge] = {
+        vertices.get(desc.b).flatMap { adj =>
+          adj.find(e => e.desc.shortChannelId == desc.shortChannelId && e.desc.a == desc.a)
+        }
       }
 
       /**
@@ -214,14 +235,19 @@ object Graph {
         * @return all the edges going from keyA --> keyB (there might be more than one if it refers to different shortChannelId)
         */
       def getEdgesBetween(keyA: PublicKey, keyB: PublicKey): Seq[GraphEdge] = {
-        vertices.get(keyA) match {
+        vertices.get(keyB) match {
           case None => Seq.empty
-          case Some(adj) => adj.filter(e => e.desc.b == keyB)
+          case Some(adj) => adj.filter(e => e.desc.a == keyA)
         }
       }
 
-      def getIncomingEdgesOf(keyA: PublicKey): Seq[GraphEdge] = {
-        edgeSet().filter(_.desc.b == keyA).toSeq
+      /**
+        * The the incoming edges for vertex @param keyB
+        * @param keyB
+        * @return
+        */
+      def getIncomingEdgesOf(keyB: PublicKey): Seq[GraphEdge] = {
+        vertices.getOrElse(keyB, List.empty)
       }
 
       /**
@@ -248,10 +274,13 @@ object Graph {
       }
 
       /**
+        * Note this operation will traverse all edges in the graph (expensive)
         * @param key
         * @return a list of the outgoing edges of vertex @param key, if the edge doesn't exists an empty list is returned
         */
-      def edgesOf(key: PublicKey): Seq[GraphEdge] = vertices.getOrElse(key, List.empty)
+      def edgesOf(key: PublicKey): Seq[GraphEdge] = {
+        edgeSet().filter(_.desc.a == key).toSeq
+      }
 
       /**
         * @return the set of all the vertices in this graph
@@ -273,9 +302,11 @@ object Graph {
         * @param desc
         * @return true if this edge desc is in the graph. For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
         */
-      def containsEdge(desc: ChannelDesc): Boolean = vertices.get(desc.a) match {
-        case None => false
-        case Some(adj) => adj.exists(neighbor => neighbor.desc.shortChannelId == desc.shortChannelId && neighbor.desc.b == desc.b)
+      def containsEdge(desc: ChannelDesc): Boolean = {
+        vertices.get(desc.b) match {
+          case None => false
+          case Some(adj) => adj.exists(neighbor => neighbor.desc.shortChannelId == desc.shortChannelId && neighbor.desc.a == desc.a)
+        }
       }
 
       def prettyPrint(): String = {
@@ -308,10 +339,10 @@ object Graph {
 
         // add all the vertices and edges in one go
         descAndUpdates.foreach { case (desc, update) =>
-          // create or update vertex (desc.a) and update its neighbor
-          mutableMap.put(desc.a, GraphEdge(desc, update) +: mutableMap.getOrElse(desc.a, List.empty[GraphEdge]))
-          mutableMap.get(desc.b) match {
-            case None => mutableMap += desc.b -> List.empty[GraphEdge]
+          // create or update vertex (desc.b) and update its neighbor
+          mutableMap.put(desc.b, GraphEdge(desc, update) +: mutableMap.getOrElse(desc.b, List.empty[GraphEdge]))
+          mutableMap.get(desc.a) match {
+            case None => mutableMap += desc.a -> List.empty[GraphEdge]
             case _ =>
           }
         }
