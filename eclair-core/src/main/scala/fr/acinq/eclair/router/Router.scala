@@ -380,7 +380,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
       // we ask the router to make a random selection among the three best routes, numRoutes = 3
-      findRoute(d.graph, start, end, amount, numRoutes = DEFAULT_ROUTES_AMOUNT, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet)
+      findRoute(d.graph, start, end, amount, numRoutes = DEFAULT_ROUTES_COUNT, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -780,11 +780,13 @@ object Router {
   val ROUTE_MAX_LENGTH = 20
 
   // The default amount of routes we'll search for when findRoute is called
-  val DEFAULT_ROUTES_AMOUNT = 3
+  val DEFAULT_ROUTES_COUNT = 3
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.
-    * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result.
+    * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result,
+    * the 'route-set' from where we select the result is made of the k-shortest path given that none of them
+    * exceeds a 10% spread with the cheapest route
     *
     * @param g
     * @param localNodeId
