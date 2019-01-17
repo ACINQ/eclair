@@ -272,7 +272,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
           log.debug("waiting for tip from server={}", serverAddress)
           context become waitingForTip(ctx)
         case ServerError(request, error) =>
-          log.error("Electrum server={} sent error={} while processing request={}, disconnecting", serverAddress, error, request)
+          log.error("server={} sent error={} while processing request={}, disconnecting", serverAddress, error, request)
           close()
       }
 
@@ -330,7 +330,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
     case Left(response: ScriptHashSubscriptionResponse) => scriptHashSubscriptions.get(response.scriptHash).map(listeners => listeners.map(_ ! response))
 
     case HeaderSubscriptionResponse(height, newtip) =>
-      log.info(s"server=$serverAddress new tip $newtip")
+      log.info("server={} new tip={}", serverAddress, newtip)
       context become connected(ctx, height, newtip, buffer, requests)
   }
 }
