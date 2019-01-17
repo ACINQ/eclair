@@ -12,11 +12,16 @@ class StartupSpec extends FunSuite {
   test("NodeParams should fail if configuration params are non-okay") {
 
     val threeBytesUTFChar = '\u20AC' // €
+    val baseUkraineAlias = "BitcoinLightningNodeUkraine"
 
+    assert(baseUkraineAlias.length === 27)
+    assert(baseUkraineAlias.getBytes.length === 27)
+
+    // we add 2 UTF-8 chars, each is 3-bytes long -> total new length 33 bytes!
     val goUkraineGo = threeBytesUTFChar+"BitcoinLightningNodeUkraine"+threeBytesUTFChar
 
-    // too long for the alias, should be truncated
-    assert(goUkraineGo.getBytes.length === 33)
+    assert(goUkraineGo.length === 29)
+    assert(goUkraineGo.getBytes.length === 33) // too long for the alias, should be truncated
 
     val conf = ConfigFactory.parseString(rawEclairConf(goUkraineGo)).resolve().getConfig("eclair")
     val fileToDestroy = new File("temp-test.conf")
@@ -26,7 +31,7 @@ class StartupSpec extends FunSuite {
     val nodeParams = NodeParams.makeNodeParams(fileToDestroy, conf, keyManager)
 
     // the alias has been truncated
-    //assert(nodeParams.alias === goUkraineGo)
+    // assert(nodeParams.alias !== goUkraineGo)
     assert(nodeParams.alias.getBytes.length === 32)
   }
 
