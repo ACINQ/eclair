@@ -155,7 +155,7 @@ java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gu
   receive      | description                                                                            | generate a payment request without a required amount (can be useful for donations)
   receive      | amountMsat, description                                                                | generate a payment request for a given amount
   receive      | amountMsat, description, expirySeconds                                                 | generate a payment request for a given amount that expires after given number of seconds
-  checkinvoice | paymentRequest                                                                         | returns node, amount and payment hash in an invoice/paymentRequest
+  parseinvoice | paymentRequest                                                                         | returns node, amount and payment hash in a payment request
   findroute    | paymentRequest                                                                         | returns nodes and channels of the route for this payment request if there is any
   findroute    | paymentRequest, amountMsat                                                             | returns nodes and channels of the route for this payment request and amount, if there is any
   findroute    | nodeId, amountMsat                                                                     | returns nodes and channels of the route to the nodeId, if there is any

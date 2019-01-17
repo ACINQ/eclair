@@ -19,6 +19,7 @@ package fr.acinq.eclair.api
 import java.net.{InetAddress, InetSocketAddress}
 
 import fr.acinq.bitcoin.{BinaryData, OutPoint}
+import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.NodeAddress
 import org.json4s.jackson.Serialization
@@ -61,4 +62,9 @@ class JsonSerializersSpec extends FunSuite with Matchers {
     Serialization.write(OUT)(org.json4s.DefaultFormats + new DirectionSerializer) shouldBe s""""OUT""""
   }
 
+  test("Payment Request") {
+    val ref = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
+    val pr = PaymentRequest.read(ref)
+    Serialization.write(pr)(org.json4s.DefaultFormats + new PaymentRequestSerializer) shouldBe """{"prefix":"lnbc","amount":250000000,"timestamp":1496314658,"nodeId":"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad","description":"1 cup coffee","paymentHash":"0001020304050607080900010203040506070809000102030405060708090102","expiry":60,"minFinalCltvExpiry":null}"""
+  }
 }
