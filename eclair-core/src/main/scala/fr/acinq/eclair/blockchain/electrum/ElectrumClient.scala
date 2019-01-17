@@ -86,7 +86,8 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   })
 
   // Start the client.
-  log.info(s"connecting to $serverAddress")
+  log.info("connecting to server={}", serverAddress)
+
   val channelOpenFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
 
   def close() = {
@@ -95,7 +96,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   }
 
   def errorHandler(t: Throwable) = {
-    log.info(s"server=$serverAddress connection error (reason=${t.getMessage})")
+    log.info("server={} connection error (reason={})", serverAddress, t.getMessage)
     close()
   }
 
@@ -109,7 +110,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
             if (!future.isSuccess) {
               errorHandler(future.cause())
             } else {
-              log.info(s"channel closed: " + future.channel())
+              log.info("server={} channel closed: {}", serverAddress, future.channel())
               close()
             }
           }
@@ -223,7 +224,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
       case PingResponse => ()
 
-      case _ => log.warning(s"unhandled $message")
+      case _ => log.warning("server={} unhandled message {}", serverAddress, message)
     }
   }
 
@@ -254,7 +255,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
   def disconnected: Receive = {
     case ctx: ChannelHandlerContext =>
-      log.info("connected to {}", serverAddress)
+      log.info("connected to server={}", serverAddress)
       send(ctx, version)
       context become waitingForVersion(ctx)
 
@@ -268,10 +269,10 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
           log.info("server={} clientName={} protocolVersion={}", serverAddress, clientName, protocolVersion)
           send(ctx, HeaderSubscription(self))
           headerSubscriptions += self
-          log.debug("waiting for tip from {}", serverAddress)
+          log.debug("waiting for tip from server={}", serverAddress)
           context become waitingForTip(ctx)
         case ServerError(request, error) =>
-          log.error(s"Electrum server=$serverAddress sent error=$error while processing request=$request, disconnecting")
+          log.error("Electrum server={} sent error={} while processing request={}, disconnecting", serverAddress, error, request)
           close()
       }
 
@@ -315,10 +316,10 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       requests.get(json.id) match {
         case Some((request, requestor)) =>
           val response = parseJsonResponse(request, json)
-          log.debug("got response for reqId={} request={} response={}", json.id, request, response)
+          log.debug("server={} sent response for reqId={} request={} response={}", serverAddress, json.id, request, response)
           requestor ! response
         case None =>
-          log.warning(s"could not find requestor for reqId=${json.id} response=$json")
+          log.warning("server={} could not find requestor for reqId=${} response={}", serverAddress, json.id, json)
       }
       context become connected(ctx, height, tip, buffer, requests - json.id)
 
@@ -545,7 +546,6 @@ object ElectrumClient {
       }
       case None => (request: @unchecked) match {
         case s: ServerVersion =>
-          //throw new RuntimeException("Nein!")
           val JArray(jitems) = json.result
           val JString(clientName) = jitems(0)
           val JString(protocolVersion) = jitems(1)
