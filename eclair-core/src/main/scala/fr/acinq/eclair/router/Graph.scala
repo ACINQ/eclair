@@ -110,8 +110,7 @@ object Graph {
     shortestPaths
   }
 
-  // Calculates the cost of a path, direct channels with the source will have a cost of 0 (pay no fees), only the first
-  // edge in the list is a direct channel
+  // Calculates the total cost of a path (amount + fees), direct channels with the source will have a cost of 0 (pay no fees)
   def pathCost(path: Seq[GraphEdge], amountMsat: Long): Long = {
     path.drop(1).foldRight(amountMsat) { (edge, cost) =>
       edgeWeight(edge, cost, isNeighborTarget = false)

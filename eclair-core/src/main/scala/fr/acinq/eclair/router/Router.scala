@@ -782,6 +782,10 @@ object Router {
   // The default amount of routes we'll search for when findRoute is called
   val DEFAULT_ROUTES_COUNT = 3
 
+  // The default allowed 'spread' between the cheapest route found an the others
+  // routes exceeding this difference won't be considered as a valid result
+  val DEFAULT_ALLOWED_SPREAD = 0.1D
+
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.
     * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result,
@@ -806,10 +810,11 @@ object Router {
       case foundRoutes => foundRoutes
     }
 
+    // minimum cost
     val minimumCost = foundRoutes.head.weight
-    val allowedCostSpread = 0.1D
 
-    val eligibleRoutes = foundRoutes.filter(_.weight < minimumCost + minimumCost * allowedCostSpread)
+    // routes paying at most minimumCost + 10%
+    val eligibleRoutes = foundRoutes.filter(_.weight  <= (minimumCost + minimumCost * DEFAULT_ALLOWED_SPREAD).round)
     Random.shuffle(eligibleRoutes).head.path.map(graphEdgeToHop)
   }
 }

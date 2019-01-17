@@ -699,9 +699,9 @@ class RouteCalculationSpec extends FunSuite {
 
     val f = randomKey.publicKey
 
-    // A -> B -> C -> D has total cost of 5
-    // A -> E -> C -> D has total cost of 4
-    // A -> E -> F -> D has total cost of 6
+    // A -> B -> C -> D has total cost of 10000005
+    // A -> E -> C -> D has total cost of 11080003 !!
+    // A -> E -> F -> D has total cost of 10000006
     val g = makeGraph(List(
       makeUpdate(1L, a, b, feeBaseMsat = 1, 0),
       makeUpdate(4L, a, e, feeBaseMsat = 1, 0),
@@ -709,18 +709,19 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(3L, c, d, feeBaseMsat = 3, 0),
       makeUpdate(5L, e, f, feeBaseMsat = 3, 0),
       makeUpdate(6L, f, d, feeBaseMsat = 3, 0),
-      makeUpdate(7L, e, c, feeBaseMsat = 1, 0)
+      makeUpdate(7L, e, c, feeBaseMsat = 90000, 99000)
     ).toMap)
 
     (for { _ <- 0 to 10 } yield Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3)).map {
       case Failure(_) => assert(false)
       case Success(someRoute) =>
 
-        val routeFees = Graph.pathCost(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT) - DEFAULT_AMOUNT_MSAT
-        val allowedSpread = DEFAULT_AMOUNT_MSAT * 0.1D
+        val routeCost = Graph.pathCost(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT)
+        val allowedSpread = DEFAULT_AMOUNT_MSAT + (DEFAULT_AMOUNT_MSAT * Router.DEFAULT_ALLOWED_SPREAD)
 
-        assert(routeFees >= 4 && routeFees <=6)
-        assert(routeFees < allowedSpread)
+        // over the three routes we could only get the 2 cheapest because the third is too expensive (over 10% of the cheapest)
+        assert(routeCost == 10000005 || routeCost == 10000006)
+        assert(routeCost < allowedSpread)
     }
   }
 }
