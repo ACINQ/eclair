@@ -44,7 +44,7 @@ class StartupSpec extends FunSuite {
       }
     })
 
-    tempConfParentDir.listFiles.foreach(_.deleteOnExit())
+    tempConfParentDir.listFiles.foreach(_.delete())
     tempConfParentDir.deleteOnExit()
   }
 
