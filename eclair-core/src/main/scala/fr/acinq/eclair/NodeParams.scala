@@ -179,7 +179,7 @@ object NodeParams {
 
     NodeParams(
       keyManager = keyManager,
-      alias = config.getString("node-alias").take(32),
+      alias = new String(config.getString("node-alias").getBytes("UTF-8").take(32)),
       color = Color(color.data(0), color.data(1), color.data(2)),
       publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port"))),
       globalFeatures = BinaryData(config.getString("global-features")),
