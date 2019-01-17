@@ -142,11 +142,11 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
         context.system.eventStream.publish(ElectrumClient.ElectrumReady(height, tip, remoteAddress))
         goto(Connected) using ConnectedData(connection, Map(connection -> (height, tip)))
       case Some(d) if connection != d.master && height >= d.blockHeight + 2L =>
+        // we only switch to a new master if there is a significant difference with our current master, because
+        // we don't want to switch to a new master every time a new block arrives (some servers will be notified before others)
         // we check that the current connection is not our master because on regtest when you generate several blocks at once
         // (and maybe on testnet in some pathological cases where there's a block every second) it may seen like our master
         // skipped a block and is suddenly at height + 2
-        // we only switch to a new master if there is a significant difference with our current master, because
-        // we don't want to switch to a new master every time a new block arrives (some servers will be notified before others)
         log.info(s"switching to master $remoteAddress at $tip")
         // we've switched to a new master, treat this as a disconnection/reconnection
         // so users (wallet, watcher, ...) will reset their subscriptions
@@ -156,7 +156,7 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
         context.system.eventStream.publish(ElectrumClient.ElectrumReady(height, tip, remoteAddress))
         goto(Connected) using d.copy(master = connection, tips = d.tips + (connection -> (height, tip)))
       case Some(d) =>
-        log.debug(s"received tip from $remoteAddress} $tip at $height")
+        log.debug("received tip {} from {} at {}", tip, remoteAddress, height)
         stay using d.copy(tips = d.tips + (connection -> (height, tip)))
     }
   }

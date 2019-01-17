@@ -168,7 +168,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       import org.json4s._
       import org.json4s.jackson.JsonMethods._
 
-      log.info(s"sending $request to $serverAddress")
+      log.debug("sending {} to {}", request, serverAddress)
       val json = ("method" -> request.method) ~ ("params" -> request.params.map {
         case s: String => new JString(s)
         case b: BinaryData => new JString(b.toString())
@@ -254,7 +254,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
   def disconnected: Receive = {
     case ctx: ChannelHandlerContext =>
-      log.info(s"connected to $serverAddress")
+      log.info("connected to {}", serverAddress)
       send(ctx, version)
       context become waitingForVersion(ctx)
 
@@ -265,10 +265,10 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
     case Right(json: JsonRPCResponse) =>
       (parseJsonResponse(version, json): @unchecked) match {
         case ServerVersionResponse(clientName, protocolVersion) =>
-          log.info(s"server=$serverAddress clientName=$clientName protocolVersion=$protocolVersion")
+          log.info("server={} clientName={} protocolVersion={}", serverAddress, clientName, protocolVersion)
           send(ctx, HeaderSubscription(self))
           headerSubscriptions += self
-          log.debug("waiting for tip")
+          log.debug("waiting for tip from {}", serverAddress)
           context become waitingForTip(ctx)
         case ServerError(request, error) =>
           log.error(s"Electrum server=$serverAddress sent error=$error while processing request=$request, disconnecting")
@@ -281,7 +281,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   def waitingForTip(ctx: ChannelHandlerContext): Receive = {
     case Right(json: JsonRPCResponse) =>
       val (height, header) = parseBlockHeader(json.result)
-      log.debug(s"connected to server=$serverAddress, tip = ${header.hash} height = $height")
+      log.debug("connected to server={}, tip={} height={}", serverAddress, header.hash, height)
       statusListeners.map(_ ! ElectrumReady(height, header, serverAddress))
       context become connected(ctx, height, header, "", Map())
 
@@ -315,7 +315,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       requests.get(json.id) match {
         case Some((request, requestor)) =>
           val response = parseJsonResponse(request, json)
-          log.debug(s"got response for reqId=${json.id} request=$request response=$response")
+          log.debug("got response for reqId={} request={} response={}", json.id, request, response)
           requestor ! response
         case None =>
           log.warning(s"could not find requestor for reqId=${json.id} response=$json")
@@ -335,7 +335,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 }
 
 object ElectrumClient {
-  val CLIENT_NAME = "3.3.2" // client name that we wil include in our "version" message
+  val CLIENT_NAME = "3.3.2" // client name that we will include in our "version" message
   val PROTOCOL_VERSION = "1.4" // version of the protocol that we require
 
   // this is expensive and shared with all clients
