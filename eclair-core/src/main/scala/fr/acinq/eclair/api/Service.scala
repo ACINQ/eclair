@@ -385,7 +385,7 @@ trait Service extends Logging {
     "allupdates (nodeId): list all channels updates for this nodeId",
     "receive (amountMsat, description): generate a payment request for a given amount",
     "receive (amountMsat, description, expirySeconds): generate a payment request for a given amount with a description and a number of seconds till it expires",
-    "parseinvoice (paymentRequest): returns node, amount and payment hash in an payment request",
+    "parseinvoice (paymentRequest): returns node, amount and payment hash in a payment request",
     "findroute (paymentRequest): returns nodes and channels of the route if there is any",
     "findroute (paymentRequest, amountMsat): returns nodes and channels of the route if there is any",
     "findroute (nodeId, amountMsat): returns nodes and channels of the route if there is any",
