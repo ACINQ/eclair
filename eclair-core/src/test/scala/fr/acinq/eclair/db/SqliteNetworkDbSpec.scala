@@ -99,6 +99,28 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.updateChannelUpdate(channel_update_1)
   }
 
+  test("remove many channels at once") {
+    val sqlite = inmem
+    val db = new SqliteNetworkDb(sqlite)
+    val sig = Crypto.encodeSignature(Crypto.sign(randomKey.toBin, randomKey)) :+ 1.toByte
+    val priv = randomKey
+    val pub = priv.publicKey
+    val capacity = Satoshi(10000)
+
+    val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
+    val channels = shortChannelIds.map(id => Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, id, pub, pub, pub, pub, sig, sig, sig, sig))
+    val updates = shortChannelIds.map(id => Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv, pub, id, 5, 7000000, 50000, 100, 500000000L, true))
+    channels.foreach(ca => db.addChannel(ca, randomKey.toBin, capacity))
+    updates.foreach(u => db.addChannelUpdate(u))
+    assert(db.listChannels().size === channels.length)
+    assert(db.listChannelUpdates().size === updates.length)
+
+    val toDelete = shortChannelIds.drop(500).take(1000)
+    db.removeChannels(toDelete)
+    assert(db.listChannels().size === channels.length - toDelete.length)
+    assert(db.listChannelUpdates().size === updates.length - toDelete.length)
+  }
+
   test("add/remove/test pruned channels") {
     val sqlite = inmem
     val db = new SqliteNetworkDb(sqlite)

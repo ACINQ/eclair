@@ -41,6 +41,8 @@ trait NetworkDb {
     */
   def removeChannel(shortChannelId: ShortChannelId)
 
+  def removeChannels(shortChannelIds: Seq[ShortChannelId])
+
   def listChannels(): Map[ChannelAnnouncement, (BinaryData, Satoshi)]
 
   def addChannelUpdate(u: ChannelUpdate)

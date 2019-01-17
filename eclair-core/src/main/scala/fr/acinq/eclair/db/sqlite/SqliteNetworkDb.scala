@@ -92,6 +92,17 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
+
+  override def removeChannels(shortChannelIds: Seq[ShortChannelId]): Unit = {
+    val ids = shortChannelIds.map(_.toLong).mkString(",")
+    using(sqlite.createStatement) { statement =>
+      statement.execute("BEGIN TRANSACTION")
+      statement.executeUpdate(s"DELETE FROM channel_updates WHERE short_channel_id IN ($ids)")
+      statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id IN ($ids)")
+      statement.execute("COMMIT TRANSACTION")
+    }
+  }
+
   override def listChannels(): Map[ChannelAnnouncement, (BinaryData, Satoshi)] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT data, txid, capacity_sat FROM channels")
