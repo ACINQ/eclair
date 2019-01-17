@@ -58,15 +58,17 @@ object Graph {
         // for every edge in the path
         for (i <- shortestPaths(k - 1).path.indices) {
 
+          val prevShortestPath = shortestPaths(k - 1).path
+
           // select the spur node as the i-th element of the k-th previous shortest path (k -1)
-          val spurEdge = shortestPaths(k - 1).path(i)
+          val spurEdge = prevShortestPath(i)
 
           // select the subpath from the source to the spur node of the k-th previous shortest path
-          val rootPathEdges = subList(shortestPaths(k - 1).path, 0, i).toList
+          val rootPathEdges = if(i == 0) prevShortestPath.head :: Nil else prevShortestPath.take(i)
 
           // links to be removed that are part of the previous shortest path and which share the same root path
           val edgesToIgnore = shortestPaths.flatMap { weightedPath =>
-            if (subList(weightedPath.path, 0, i) == rootPathEdges) {
+            if ( (i == 0 && (weightedPath.path.head :: Nil) == rootPathEdges) || weightedPath.path.take(i) == rootPathEdges ) {
               weightedPath.path(i).desc :: Nil
             } else {
               Nil
@@ -111,21 +113,10 @@ object Graph {
   // Calculates the cost of a path, direct channels with the source will have a cost of 0 (pay no fees), only the first
   // edge in the list is a direct channel
   def pathCost(path: Seq[GraphEdge], amountMsat: Long): Long = {
-    path.drop(1).reverse.foldLeft(amountMsat) { (cost, edge) =>
+    path.drop(1).foldRight(amountMsat) { (edge, cost) =>
       edgeWeight(edge, cost, isNeighborTarget = false)
     }
   }
-
-  //helper function implementing the subList function for "Seq[T]" that will return the list with the
-  //first element if indices 0 are used
-  def subList[T](list: Seq[T], from: Int, to: Int): Seq[T] = {
-    if(from == 0 && to == 0) {
-      list.head :: Nil
-    } else {
-      list.slice(from, to)
-    }
-  }
-
 
   /**
     * Finds the shortest path in the graph, uses a modified version of Dijsktra's algorithm that computes
