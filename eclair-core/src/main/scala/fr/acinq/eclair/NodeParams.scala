@@ -81,6 +81,7 @@ case class NodeParams(keyManager: KeyManager,
                       maxPendingPaymentRequests: Int,
                       maxPaymentFee: Double,
                       minFundingSatoshis: Long) {
+
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
 }
@@ -170,6 +171,9 @@ object NodeParams {
     val offeredCLTV = config.getInt("to-remote-delay-blocks")
     require(maxToLocalCLTV <= Channel.MAX_TO_SELF_DELAY && offeredCLTV <= Channel.MAX_TO_SELF_DELAY, s"CLTV delay values too high, max is ${Channel.MAX_TO_SELF_DELAY}")
 
+    val nodeAlias = config.getString("node-alias")
+    require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
+
     val overrideFeatures: Map[PublicKey, (BinaryData, BinaryData)] = config.getConfigList("override-features").map { e =>
       val p = PublicKey(e.getString("nodeid"))
       val gf = BinaryData(e.getString("global-features"))
@@ -179,7 +183,7 @@ object NodeParams {
 
     NodeParams(
       keyManager = keyManager,
-      alias = config.getString("node-alias").take(32),
+      alias = nodeAlias,
       color = Color(color.data(0), color.data(1), color.data(2)),
       publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port"))),
       globalFeatures = BinaryData(config.getString("global-features")),
