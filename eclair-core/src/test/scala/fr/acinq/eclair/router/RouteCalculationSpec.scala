@@ -23,9 +23,7 @@ import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, randomKey}
-import fr.acinq.eclair.{ShortChannelId, nodeFee, randomKey}
 import org.scalatest.FunSuite
-
 import scala.util.{Failure, Success}
 
 /**
@@ -37,14 +35,6 @@ class RouteCalculationSpec extends FunSuite {
   import RouteCalculationSpec._
 
   val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
-
-
-  // the total fee cost for this path
-  def pathCost(path: Seq[Hop], amountMsat: Long): Long = {
-    path.drop(1).reverse.foldLeft(amountMsat) { (fee, hop) =>
-      fee + nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, fee)
-    }
-  }
 
   test("calculate simple route") {
 
@@ -98,7 +88,7 @@ class RouteCalculationSpec extends FunSuite {
     val Success(route) = Router.findRoute(graph, a, d, amountMsat, numRoutes = 1)
 
     assert(hops2Ids(route) === 4 :: 5 :: 6 :: Nil)
-    assert(pathCost(route, amountMsat) === expectedCost)
+    assert(Graph.pathCost(hops2Edges(route), amountMsat) === expectedCost)
 
     // now channel 5 could route the amount (10000) but not the amount + fees (10007)
     val (desc, update) = makeUpdate(5L, e, f, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0, maxHtlcMsat = Some(10005))
@@ -724,7 +714,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val Success(someRoute) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3)
 
-    val routeFees = pathCost(someRoute, DEFAULT_AMOUNT_MSAT) - DEFAULT_AMOUNT_MSAT
+    val routeFees = Graph.pathCost(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT) - DEFAULT_AMOUNT_MSAT
     val allowedSpread = DEFAULT_AMOUNT_MSAT * 0.1D
 
     assert(routeFees >= 4 && routeFees <=6)
@@ -764,5 +754,7 @@ object RouteCalculationSpec {
   def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = DirectedGraph.makeGraph(updates)
 
   def hops2Ids(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId.toLong)
+
+  def hops2Edges(route: Seq[Hop]) = route.map(hop => GraphEdge(ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId), hop.lastUpdate))
 
 }
