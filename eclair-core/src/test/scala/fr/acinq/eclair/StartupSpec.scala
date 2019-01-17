@@ -1,11 +1,15 @@
 package fr.acinq.eclair
 
-import java.io.File
+import java.io.{File, IOException}
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file._
 
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.crypto.LocalKeyManager
 import org.scalatest.FunSuite
+
+import scala.util.Try
 
 class StartupSpec extends FunSuite {
 
@@ -24,15 +28,24 @@ class StartupSpec extends FunSuite {
     assert(goUkraineGo.getBytes.length === 33) // too long for the alias, should be truncated
 
     val conf = ConfigFactory.parseString(rawEclairConf(goUkraineGo)).resolve().getConfig("eclair")
-    val fileToDestroy = new File("temp-test.conf")
-    fileToDestroy.deleteOnExit()
+    val tempConfParentDir = new File("temp-test.conf")
 
     val keyManager = new LocalKeyManager(seed = randomKey.toBin, chainHash = Block.TestnetGenesisBlock.hash)
-    val nodeParams = NodeParams.makeNodeParams(fileToDestroy, conf, keyManager)
 
-    // the alias has been truncated
-    // assert(nodeParams.alias !== goUkraineGo)
-    assert(nodeParams.alias.getBytes.length === 32)
+    // try to create a NodeParams instance with a conf that contains an illegal alias
+    val nodeParamsAttempt = Try(NodeParams.makeNodeParams(tempConfParentDir, conf, keyManager))
+    assert(nodeParamsAttempt.isFailure)
+
+    // destroy conf files after the test
+    Files.walkFileTree(tempConfParentDir.toPath, new SimpleFileVisitor[Path]() {
+      override def visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult = {
+        Files.deleteIfExists(file)
+        FileVisitResult.CONTINUE
+      }
+    })
+
+    tempConfParentDir.listFiles.foreach(_.deleteOnExit())
+    tempConfParentDir.deleteOnExit()
   }
 
 
