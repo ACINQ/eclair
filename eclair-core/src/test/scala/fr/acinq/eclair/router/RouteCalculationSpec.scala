@@ -712,13 +712,16 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(7L, e, c, feeBaseMsat = 1, 0)
     ).toMap)
 
-    val Success(someRoute) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3)
+    (for { _ <- 0 to 10 } yield Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3)).map {
+      case Failure(_) => assert(false)
+      case Success(someRoute) =>
 
-    val routeFees = Graph.pathCost(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT) - DEFAULT_AMOUNT_MSAT
-    val allowedSpread = DEFAULT_AMOUNT_MSAT * 0.1D
+        val routeFees = Graph.pathCost(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT) - DEFAULT_AMOUNT_MSAT
+        val allowedSpread = DEFAULT_AMOUNT_MSAT * 0.1D
 
-    assert(routeFees >= 4 && routeFees <=6)
-    assert(routeFees < allowedSpread)
+        assert(routeFees >= 4 && routeFees <=6)
+        assert(routeFees < allowedSpread)
+    }
   }
 }
 
