@@ -34,7 +34,7 @@ class StartupSpec extends FunSuite {
 
     // try to create a NodeParams instance with a conf that contains an illegal alias
     val nodeParamsAttempt = Try(NodeParams.makeNodeParams(tempConfParentDir, conf, keyManager))
-    assert(nodeParamsAttempt.isFailure)
+    assert(nodeParamsAttempt.isFailure && nodeParamsAttempt.failed.get.getMessage.contains("alias, too long"))
 
     // destroy conf files after the test
     Files.walkFileTree(tempConfParentDir.toPath, new SimpleFileVisitor[Path]() {
