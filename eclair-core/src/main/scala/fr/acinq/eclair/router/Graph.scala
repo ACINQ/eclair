@@ -6,10 +6,9 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire.ChannelUpdate
 import Router._
+import fr.acinq.eclair.channel.Channel
 
 object Graph {
-
-  import DirectedGraph._
 
   case class WeightedNode(key: PublicKey, compoundWeight: CompoundWeight) {
     def weight(wr: WeightRatios): Double = compoundWeight.totalWeight(wr)
@@ -59,7 +58,7 @@ object Graph {
     * @param pathsToFind
     * @return
     */
-  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], pathsToFind: Int): Seq[WeightedPath] = {
+  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], pathsToFind: Int, wr: WeightRatios): Seq[WeightedPath] = {
 
     var allSpurPathsFound = false
 
@@ -69,7 +68,7 @@ object Graph {
     val candidates = new mutable.PriorityQueue[WeightedPath]
 
     // find the shortest path, k = 0
-    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges)
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, wr)
     shortestPaths += WeightedPath(shortestPath, pathCost(shortestPath, amountMsat))
 
     // main loop
@@ -98,7 +97,7 @@ object Graph {
           }
 
           // find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
-          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges)
+          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges, wr)
 
           // if there wasn't a path the spur will be empty
           if(spurPath.nonEmpty) {
@@ -135,7 +134,7 @@ object Graph {
   // Calculates the total cost of a path (amount + fees), direct channels with the source will have a cost of 0 (pay no fees)
   def pathCost(path: Seq[GraphEdge], amountMsat: Long): Long = {
     path.drop(1).foldRight(amountMsat) { (edge, cost) =>
-      edgeWeight(edge, cost, isNeighborTarget = false)
+      edgeCost(edge, cost, isNeighborTarget = false)
     }
   }
 
@@ -263,7 +262,7 @@ object Graph {
   private def edgeWeightCompound(edge: GraphEdge, compoundCostSoFar: CompoundWeight, isNeighborTarget: Boolean): CompoundWeight = {
 
     // Every edge is weighted down by funding block height, but older blocks add less weight - scaledUp to match the capFactor
-    val blockFactor = coordinates(edge.desc.shortChannelId).blockHeight * 1000
+    val blockFactor = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight * 1000
 
     // Every edge is weighted down by channel capacity, but larger channels add less weight
     val capFactor = edge.update.htlcMaximumMsat.map(htlcMax => (MAX_FUNDING_MSAT - htlcMax).abs).getOrElse(MAX_FUNDING_MSAT)

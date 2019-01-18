@@ -18,8 +18,6 @@ package fr.acinq.eclair.router
 
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
-import akka.pattern.pipe
-import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -30,11 +28,9 @@ import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChan
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.WeightedPath
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-
 import scala.collection.{SortedSet, mutable}
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
@@ -787,6 +783,8 @@ object Router {
   // The default allowed 'spread' between the cheapest route found an the others
   // routes exceeding this difference won't be considered as a valid result
   val DEFAULT_ALLOWED_SPREAD = 0.1D
+
+  //
   val DEFAULT_WEIGHT_RATIOS = WeightRatios(costFactor = 1D, cltvDeltaFactor = 0, scoreFactor = 0)
 
   /**
@@ -804,10 +802,10 @@ object Router {
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
     * @return the computed route to the destination @targetNodeId
     */
-  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Hop]] = Try {
+  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty, wr: WeightRatios = DEFAULT_WEIGHT_RATIOS): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes).toList match {
+    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, wr).toList match {
       case Nil => throw RouteNotFound
       case route :: Nil  if route.path.isEmpty => throw RouteNotFound
       case foundRoutes => foundRoutes

@@ -240,8 +240,8 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates).addVertex(a).addVertex(e)
 
-    assert(Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT) === Failure(RouteNotFound))
-    assert(Router.findRoute(g, b, e, DEFAULT_AMOUNT_MSAT) === Failure(RouteNotFound))
+    assert(Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1) === Failure(RouteNotFound))
+    assert(Router.findRoute(g, b, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1) === Failure(RouteNotFound))
   }
 
   test("route not found (amount too high OR too low)") {
@@ -264,8 +264,8 @@ class RouteCalculationSpec extends FunSuite {
     val g = makeGraph(updatesHi)
     val g1 = makeGraph(updatesLo)
 
-    assert(Router.findRoute(g, a, d, highAmount) === Failure(RouteNotFound))
-    assert(Router.findRoute(g1, a, d, lowAmount) === Failure(RouteNotFound))
+    assert(Router.findRoute(g, a, d, highAmount, numRoutes = 1) === Failure(RouteNotFound))
+    assert(Router.findRoute(g1, a, d, lowAmount, numRoutes = 1) === Failure(RouteNotFound))
   }
 
   test("route to self") {
@@ -557,7 +557,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val graph = DirectedGraph.makeGraph(edges)
 
-    val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 4)
+    val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 4, wr = Router.DEFAULT_WEIGHT_RATIOS)
 
     assert(fourShortestPaths.size === 4)
     assert(hops2Ids(fourShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
@@ -591,7 +591,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val graph = DirectedGraph().addEdges(edges)
 
-    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 2)
+    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 2, wr = Router.DEFAULT_WEIGHT_RATIOS)
 
     assert(twoShortestPaths.size === 2)
     val shortest = twoShortestPaths(0)
@@ -618,7 +618,7 @@ class RouteCalculationSpec extends FunSuite {
     val graph = DirectedGraph().addEdges(edges)
 
     //we ask for 3 shortest paths but only 2 can be found
-    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 3)
+    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 3, wr = Router.DEFAULT_WEIGHT_RATIOS)
 
     assert(foundPaths.size === 2)
     assert(hops2Ids(foundPaths(0).path.map(graphEdgeToHop)) === 1 :: 2 :: 3 :: Nil) // A -> B -> C -> F
@@ -672,7 +672,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val Success(routeFeeOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, wr = WeightRatios(
+    val Success(routeFeeOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
       costFactor = 0.98,
       cltvDeltaFactor = 0.01,
       scoreFactor = 0.001
@@ -680,7 +680,7 @@ class RouteCalculationSpec extends FunSuite {
 
     assert(hops2ShortChannelIds(routeFeeOptimized) === "1000x0x1" :: "1000x0x2" :: "1000x0x3" :: Nil)
 
-    val Success(routeCltvOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, wr = WeightRatios(
+    val Success(routeCltvOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
       costFactor = 0.001,
       cltvDeltaFactor = 0.98,
       scoreFactor = 0.001
@@ -688,7 +688,7 @@ class RouteCalculationSpec extends FunSuite {
 
     assert(hops2ShortChannelIds(routeCltvOptimized) === "1000x0x4" :: "1000x0x5" :: "1000x0x6" :: Nil)
 
-    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, wr = WeightRatios(
+    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
       costFactor = 0.001,
       cltvDeltaFactor = 0.001,
       scoreFactor = 0.98
@@ -709,7 +709,7 @@ class RouteCalculationSpec extends FunSuite {
     ).toMap)
 
 
-    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, wr = WeightRatios(
+    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
       costFactor = 0.33,
       cltvDeltaFactor = 0.33,
       scoreFactor = 0.33
@@ -730,7 +730,7 @@ class RouteCalculationSpec extends FunSuite {
     ).toMap)
 
 
-    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, wr = WeightRatios(
+    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
       costFactor = 0.33,
       cltvDeltaFactor = 0.33,
       scoreFactor = 0.33
