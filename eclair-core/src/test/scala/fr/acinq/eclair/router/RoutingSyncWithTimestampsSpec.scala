@@ -60,7 +60,7 @@ class RoutingSyncWithTimestampsSpec extends TestKit(ActorSystem("test")) with Fu
     sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyChannelRangeWithTimestamps(chainHash, block.firstBlock, block.numBlocks, 1, block.shortChannelIdAndTimestamps)))
 
     // router should ask for our first block of ids
-    val QueryShortChannelIdsWithTimestamps(_, data1) = sender.expectMsgType[QueryShortChannelIdsWithTimestamps]
+    val QueryShortChannelIdsWithFlags(_, data1) = sender.expectMsgType[QueryShortChannelIdsWithFlags]
     val (_, shortChannelIdAndFlags1) = ShortChannelIdAndFlagsBlock.decode(data1)
     assert(shortChannelIdAndFlags1.keySet == shortChannelIds.take(Router.SHORTID_WINDOW))
     assert(shortChannelIdAndFlags1.values.toSet == Set(ChannelRangeQueries.INCLUDE_ANNOUNCEMENT))
@@ -84,10 +84,10 @@ class RoutingSyncWithTimestampsSpec extends TestKit(ActorSystem("test")) with Fu
     sender.expectNoMsg(1 second)
 
     // now send our ReplyShortChannelIdsEnd message
-    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndWithTimestamps(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsWithFlagsEnd(chainHash, 1.toByte)))
 
     // router should ask for our second block of ids
-    val QueryShortChannelIdsWithTimestamps(_, data2) = sender.expectMsgType[QueryShortChannelIdsWithTimestamps]
+    val QueryShortChannelIdsWithFlags(_, data2) = sender.expectMsgType[QueryShortChannelIdsWithFlags]
     val (_, shortChannelIdAndFlags2) = ShortChannelIdAndFlagsBlock.decode(data2)
     assert(shortChannelIdAndFlags2.keySet == shortChannelIds.drop(Router.SHORTID_WINDOW).take(Router.SHORTID_WINDOW))
 
@@ -98,10 +98,10 @@ class RoutingSyncWithTimestampsSpec extends TestKit(ActorSystem("test")) with Fu
       sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu1))
       sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu2))
     })
-    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndWithTimestamps(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsWithFlagsEnd(chainHash, 1.toByte)))
 
     // router should ask for our third block of ids
-    val QueryShortChannelIdsWithTimestamps(_, data3) = sender.expectMsgType[QueryShortChannelIdsWithTimestamps]
+    val QueryShortChannelIdsWithFlags(_, data3) = sender.expectMsgType[QueryShortChannelIdsWithFlags]
     val (_, shortChannelIdAndFlags3) = ShortChannelIdAndFlagsBlock.decode(data3)
     assert(shortChannelIdAndFlags3.keySet == shortChannelIds.drop(2 * Router.SHORTID_WINDOW).take(Router.SHORTID_WINDOW))
 
@@ -112,10 +112,10 @@ class RoutingSyncWithTimestampsSpec extends TestKit(ActorSystem("test")) with Fu
       sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu1))
       sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu2))
     })
-    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndWithTimestamps(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsWithFlagsEnd(chainHash, 1.toByte)))
 
     // router should ask for our third block of ids
-    val QueryShortChannelIdsWithTimestamps(_, data4) = sender.expectMsgType[QueryShortChannelIdsWithTimestamps]
+    val QueryShortChannelIdsWithFlags(_, data4) = sender.expectMsgType[QueryShortChannelIdsWithFlags]
     val (_, shortChannelIdAndFlags4) = ShortChannelIdAndFlagsBlock.decode(data4)
     assert(shortChannelIdAndFlags4.keySet == shortChannelIds.drop(3 * Router.SHORTID_WINDOW).take(Router.SHORTID_WINDOW))
     // send block #4
@@ -125,7 +125,7 @@ class RoutingSyncWithTimestampsSpec extends TestKit(ActorSystem("test")) with Fu
       sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu1))
       sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, cu2))
     })
-    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndWithTimestamps(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsWithFlagsEnd(chainHash, 1.toByte)))
 
     awaitCond({
       router.stateData.channels == initChannels
@@ -152,7 +152,7 @@ class RoutingSyncWithTimestampsSpec extends TestKit(ActorSystem("test")) with Fu
     sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyChannelRangeWithTimestamps(chainHash, block.firstBlock, block.numBlocks, 1, block1.shortChannelIdAndTimestamps)))
 
     // router should ask for our new channel updates
-    val QueryShortChannelIdsWithTimestamps(_, data5) = sender.expectMsgType[QueryShortChannelIdsWithTimestamps]
+    val QueryShortChannelIdsWithFlags(_, data5) = sender.expectMsgType[QueryShortChannelIdsWithFlags]
     val (_, shortChannelIdAndFlags5) = ShortChannelIdAndFlagsBlock.decode(data5)
     assert(shortChannelIdAndFlags5.keySet == updatedIds)
     assert(shortChannelIdAndFlags5.values.toSet == Set(ChannelRangeQueries.INCLUDE_CHANNEL_UPDATE_1))

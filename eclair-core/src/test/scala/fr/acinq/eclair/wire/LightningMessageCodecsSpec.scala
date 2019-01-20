@@ -22,11 +22,14 @@ import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.router.ChannelRangeQueries.{UNCOMPRESSED_FORMAT, ZLIB_FORMAT}
+import fr.acinq.eclair.router.{Announcements, ShortChannelIdAndTimestampsBlock}
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.{ShortChannelId, UInt64, randomBytes, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
+
+import scala.collection.{SortedMap, SortedSet}
 
 /**
   * Created by PM on 31/05/2016.
@@ -300,6 +303,70 @@ class LightningMessageCodecsSpec extends FunSuite {
     assert(Announcements.checkSig(update, nodeId))
     val bin2 = BinaryData(LightningMessageCodecs.lightningMessageCodec.encode(update).require.toByteArray)
     assert(bin === bin2)
+  }
+
+  test("test TV codecs") {
+
+    case class A(a: Byte, i: Int)
+
+    import scodec.Codec
+    import scodec.codecs._
+
+    val codec: Codec[A] =
+      discriminated[A].by(byte)
+        .\(0) { case a@A(0, _) => a }((provide(0: Byte) :: uint8).as[A])
+        .\(1) { case a@A(1, _) => a }((provide(1: Byte) :: uint16).as[A])
+
+    val bin1 = logToStdOut(codec).encode(A(0, 42))
+    logToStdOut(codec).decode(bin1.require)
+    val bin2 = logToStdOut(codec).encode(A(1, 42))
+    logToStdOut(codec).decode(bin2.require)
+  }
+
+  test("basic channel range nonreg tests") {
+
+    case class ChannelTimestampsInfo(shortChannelId: ShortChannelId,
+                                     node1Timestamp: Long,
+                                     node2Timestamp: Long)
+
+    case class ChannelRangeWithTimestampsData(encoding: Byte,
+                                              array: List[ChannelTimestampsInfo])
+
+    import scodec.Codec
+    import scodec.codecs._
+
+    val channelTimestampsInfoCodec: Codec[ChannelTimestampsInfo] = (
+      ("shortChannelId" | shortchannelid) ::
+        ("node1Timestamp" | uint32) ::
+        ("node2Timestamp" | uint32)
+      ).as[ChannelTimestampsInfo]
+
+    val channelRangeWithTimestampsDataCodec: Codec[ChannelRangeWithTimestampsData] =
+      discriminated[ChannelRangeWithTimestampsData].by(byte)
+        .\(EncodingTypes.UNCOMPRESSED) { case a@ChannelRangeWithTimestampsData(EncodingTypes.UNCOMPRESSED, _) => a }((provide(EncodingTypes.UNCOMPRESSED) :: list(channelTimestampsInfoCodec)).as[ChannelRangeWithTimestampsData])
+        .\(EncodingTypes.COMPRESSED_ZLIB) { case a@ChannelRangeWithTimestampsData(EncodingTypes.COMPRESSED_ZLIB, _) => a }((provide(EncodingTypes.COMPRESSED_ZLIB) :: zlib(list(channelTimestampsInfoCodec))).as[ChannelRangeWithTimestampsData])
+
+    val channels = SortedMap(
+      ShortChannelId(0xaa) -> (0x1000L, 0x1001L),
+      ShortChannelId(0xbb) -> (0x2000L, 0x2001L),
+      ShortChannelId(0xcc) -> (0x3000L, 0x3001L)
+    )
+
+    for (encoding <- List(UNCOMPRESSED_FORMAT, ZLIB_FORMAT)) {
+
+      val encodedManual = ShortChannelIdAndTimestampsBlock
+        .encode(0, 42, channels.keySet, id => channels(id), encoding)
+        .head
+        .shortChannelIdAndTimestamps
+
+      val decodedScodec = channelRangeWithTimestampsDataCodec.decode(BitVector.apply(encodedManual.data)).require.value
+      assert(decodedScodec.encoding == encoding)
+      assert(decodedScodec.array == channels.toList.map(x => ChannelTimestampsInfo(x._1, x._2._1, x._2._2)))
+
+      val encodedScodec = channelRangeWithTimestampsDataCodec.encode(decodedScodec).require
+      assert(BinaryData(encodedScodec.toByteArray) == encodedManual)
+    }
+
   }
 
 }

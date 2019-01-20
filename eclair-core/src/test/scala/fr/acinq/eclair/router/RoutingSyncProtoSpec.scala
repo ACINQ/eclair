@@ -23,8 +23,8 @@ class RoutingSyncProtoSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
 
     // ask router to send a channel range query
-    sender.send(router, SendChannelQueryProto(remoteNodeId, sender.ref))
-    val QueryChannelRangeProto(chainHash, firstBlockNum, numberOfBlocks) = sender.expectMsgType[QueryChannelRangeProto]
+    sender.send(router, SendChannelQueryDeprecated(remoteNodeId, sender.ref))
+    val QueryChannelRangeDeprecated(chainHash, firstBlockNum, numberOfBlocks) = sender.expectMsgType[QueryChannelRangeDeprecated]
     sender.expectMsgType[GossipTimestampFilter]
 
 
@@ -42,14 +42,14 @@ class RoutingSyncProtoSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     val List(block3) = ShortChannelIdAndTimestampBlock.encode(firstBlockNum, numberOfBlocks, shortChannelIds.drop(200).take(150), Router.getTimestamp(initChannels, initChannelUpdates), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
 
     // send first block
-    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyChannelRangeProto(chainHash, block1.firstBlock, block1.numBlocks, 1, block1.shortChannelIdAndTimestamps)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyChannelRangeDeprecated(chainHash, block1.firstBlock, block1.numBlocks, 1, block1.shortChannelIdAndTimestamps)))
     // router should ask for our first block of ids
-    val QueryShortChannelIdsProto(_, _, data1) = sender.expectMsgType[QueryShortChannelIdsProto]
+    val QueryShortChannelIdsDeprecated(_, _, data1) = sender.expectMsgType[QueryShortChannelIdsDeprecated]
     val (_, shortChannelIds1, false) = ShortChannelIdsBlock.decode(data1)
     assert(shortChannelIds1 == shortChannelIds.take(100))
 
     // send second block
-    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyChannelRangeProto(chainHash, block2.firstBlock, block2.numBlocks, 1, block2.shortChannelIdAndTimestamps)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyChannelRangeDeprecated(chainHash, block2.firstBlock, block2.numBlocks, 1, block2.shortChannelIdAndTimestamps)))
 
     // router should not ask for more ids, it already has a pending query !
     sender.expectNoMsg(1 second)
@@ -73,10 +73,10 @@ class RoutingSyncProtoSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     sender.expectNoMsg(1 second)
 
     // now send our ReplyShortChannelIdsEnd message
-    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndProto(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, ReplyShortChannelIdsEndDeprecated(chainHash, 1.toByte)))
 
     // router should ask for our second block of ids
-    val QueryShortChannelIdsProto(_, _, data2) = sender.expectMsgType[QueryShortChannelIdsProto]
+    val QueryShortChannelIdsDeprecated(_, _, data2) = sender.expectMsgType[QueryShortChannelIdsDeprecated]
     val (_, shortChannelIds2, false) = ShortChannelIdsBlock.decode(data2)
     assert(shortChannelIds2 == shortChannelIds.drop(100).take(100))
   }

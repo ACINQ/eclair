@@ -212,10 +212,13 @@ case class PerHopPayload(shortChannelId: ShortChannelId,
 /**
   *
   * @param chainHash chain hash
-  * @param data prefix + list of short channel ids, where prefix specifies how the list is encoded
+  * @param data      prefix + list of short channel ids, where prefix specifies how the list is encoded
   */
 case class QueryShortChannelIds(chainHash: BinaryData,
                                 data: BinaryData) extends RoutingMessage with HasChainHash
+
+case class ReplyShortChannelIdsEnd(chainHash: BinaryData,
+                                   complete: Byte) extends RoutingMessage with HasChainHash
 
 case class QueryChannelRange(chainHash: BinaryData,
                              firstBlockNum: Long,
@@ -227,9 +230,6 @@ case class ReplyChannelRange(chainHash: BinaryData,
                              complete: Byte,
                              data: BinaryData) extends RoutingMessage with HasChainHash
 
-case class ReplyShortChannelIdsEnd(chainHash: BinaryData,
-                                   complete: Byte) extends RoutingMessage with HasChainHash
-
 case class GossipTimestampFilter(chainHash: BinaryData,
                                  firstTimestamp: Long,
                                  timestampRange: Long) extends RoutingMessage with HasChainHash
@@ -239,44 +239,45 @@ case class GossipTimestampFilter(chainHash: BinaryData,
 /**
   *
   * @param chainHash chain hash
-  * @param flag if flag == 1, don't send back channel announcements
-  * @param data prefix + list of short channel ids, where prefix specifies how the list is encoded
+  * @param flag      if flag == 1, don't send back channel announcements
+  * @param data      prefix + list of short channel ids, where prefix specifies how the list is encoded
   */
-case class QueryShortChannelIdsProto(chainHash: BinaryData,
-                                     flag: Byte,
-                                     data: BinaryData) extends RoutingMessage with HasChainHash
+case class QueryShortChannelIdsDeprecated(chainHash: BinaryData,
+                                          flag: Byte,
+                                          data: BinaryData) extends RoutingMessage with HasChainHash
 
-case class QueryChannelRangeProto(chainHash: BinaryData,
-                                  firstBlockNum: Long,
-                                  numberOfBlocks: Long) extends RoutingMessage with HasChainHash
+case class ReplyShortChannelIdsEndDeprecated(chainHash: BinaryData,
+                                             complete: Byte) extends RoutingMessage with HasChainHash
+
+case class QueryChannelRangeDeprecated(chainHash: BinaryData,
+                                       firstBlockNum: Long,
+                                       numberOfBlocks: Long) extends RoutingMessage with HasChainHash
 
 /**
   *
-  * @param chainHash chain hash
-  * @param firstBlockNum first block that is found in data
+  * @param chainHash      chain hash
+  * @param firstBlockNum  first block that is found in data
   * @param numberOfBlocks number of blocks spanned by data
   * @param complete
-  * @param data prefix + list of (short channel id + timestamp) values, where prefix specifies how the list is encoded
+  * @param data           prefix + list of (short channel id + timestamp) values, where prefix specifies how the list is encoded
   */
-case class ReplyChannelRangeProto(chainHash: BinaryData,
-                                  firstBlockNum: Long,
-                                  numberOfBlocks: Long,
-                                  complete: Byte,
-                                  data: BinaryData) extends RoutingMessage with HasChainHash
-
-case class ReplyShortChannelIdsEndProto(chainHash: BinaryData,
-                                        complete: Byte) extends RoutingMessage with HasChainHash
+case class ReplyChannelRangeDeprecated(chainHash: BinaryData,
+                                       firstBlockNum: Long,
+                                       numberOfBlocks: Long,
+                                       complete: Byte,
+                                       data: BinaryData) extends RoutingMessage with HasChainHash
 
 // proposal for BOLT 1.1 channel queries
 
-case class QueryShortChannelIdsWithTimestamps(chainHash: BinaryData, data: BinaryData) extends RoutingMessage with HasChainHash
+case class QueryShortChannelIdsWithFlags(chainHash: BinaryData,
+                                         data: BinaryData) extends RoutingMessage with HasChainHash
 
-
+case class ReplyShortChannelIdsWithFlagsEnd(chainHash: BinaryData,
+                                            complete: Byte) extends RoutingMessage with HasChainHash
 
 case class QueryChannelRangeWithTimestamps(chainHash: BinaryData,
                                            firstBlockNum: Long,
                                            numberOfBlocks: Long) extends RoutingMessage with HasChainHash
-
 
 case class ReplyChannelRangeWithTimestamps(chainHash: BinaryData,
                                            firstBlockNum: Long,
@@ -284,5 +285,28 @@ case class ReplyChannelRangeWithTimestamps(chainHash: BinaryData,
                                            complete: Byte,
                                            data: BinaryData) extends RoutingMessage with HasChainHash
 
-case class ReplyShortChannelIdsEndWithTimestamps(chainHash: BinaryData,
-                                                 complete: Byte) extends RoutingMessage with HasChainHash
+// 2nd proposal with checksums
+
+case class QueryChannelRangeWithChecksums(chainHash: BinaryData,
+                                          firstBlockNum: Long,
+                                          numberOfBlocks: Long) extends RoutingMessage with HasChainHash
+
+case object EncodingTypes {
+  val UNCOMPRESSED: Byte = 0
+  val COMPRESSED_ZLIB: Byte = 1
+}
+
+case class ChannelDigestInfo(shortChannelId: ShortChannelId,
+                             timestamp1: Long,
+                             timestamp2: Long,
+                             checksum1: Long,
+                             checksum2: Long)
+
+case class ChannelRangeWithChecksumsData(encoding: Byte,
+                                         array: List[ChannelDigestInfo])
+
+case class ReplyChannelRangeWithChecksums(chainHash: BinaryData,
+                                          firstBlockNum: Long,
+                                          numberOfBlocks: Long,
+                                          complete: Byte,
+                                          data: ChannelRangeWithChecksumsData) extends RoutingMessage with HasChainHash

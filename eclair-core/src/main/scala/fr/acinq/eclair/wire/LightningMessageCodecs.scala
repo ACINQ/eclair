@@ -280,6 +280,17 @@ object LightningMessageCodecs {
     ("signature" | signature) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
+  val channelUpdateChecksumCodec =
+      ("shortChannelId" | shortchannelid) ::
+      (("messageFlags" | byte) >>:~ { messageFlags =>
+        ("channelFlags" | byte) ::
+          ("cltvExpiryDelta" | uint16) ::
+          ("htlcMinimumMsat" | uint64) ::
+          ("feeBaseMsat" | uint32) ::
+          ("feeProportionalMillionths" | uint32) ::
+          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64))
+      })
+
   val channelUpdateWitnessCodec =
     ("chainHash" | binarydata(32)) ::
       ("shortChannelId" | shortchannelid) ::
@@ -321,40 +332,46 @@ object LightningMessageCodecs {
       ("data" | varsizebinarydata)
     ).as[ReplyChannelRange]
 
-  val queryShortChannelIdsProtoCodec: Codec[QueryShortChannelIdsProto] = (
+  val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
+    ("chainHash" | binarydata(32)) ::
+      ("firstTimestamp" | uint32) ::
+      ("timestampRange" | uint32)
+    ).as[GossipTimestampFilter]
+
+  val queryShortChannelIdsDeprecatedCodec: Codec[QueryShortChannelIdsDeprecated] = (
     ("chainHash" | binarydata(32)) ::
       ("flag" | byte) ::
       ("data" | varsizebinarydata)
-    ).as[QueryShortChannelIdsProto]
+    ).as[QueryShortChannelIdsDeprecated]
 
-  val replyShortChanelIdsEndProtoCodec: Codec[ReplyShortChannelIdsEndProto] = (
-        ("chainHash" | binarydata(32)) ::
-              ("complete" | byte)
-        ).as[ReplyShortChannelIdsEndProto]
-
-  val queryChannelRangeProtoCodec: Codec[QueryChannelRangeProto] = (
-        ("chainHash" | binarydata(32)) ::
-              ("firstBlockNum" | uint32) ::
-              ("numberOfBlocks" | uint32)
-        ).as[QueryChannelRangeProto]
-
-  val replyChannelRangeProtoCodec: Codec[ReplyChannelRangeProto] = (
-        ("chainHash" | binarydata(32)) ::
-              ("firstBlockNum" | uint32) ::
-              ("numberOfBlocks" | uint32) ::
-              ("complete" | byte) ::
-              ("data" | varsizebinarydata)
-        ).as[ReplyChannelRangeProto]
-
-  val queryShortChannelIdsWithTimestampsCodec: Codec[QueryShortChannelIdsWithTimestamps] = (
-        ("chainHash" | binarydata(32)) ::
-              ("data" | varsizebinarydata)
-        ).as[QueryShortChannelIdsWithTimestamps]
-
-  val replyShortChanelIdsEndWithTimestampsCodec: Codec[ReplyShortChannelIdsEndWithTimestamps] = (
+  val replyShortChanelIdsEndDeprecatedCodec: Codec[ReplyShortChannelIdsEndDeprecated] = (
     ("chainHash" | binarydata(32)) ::
       ("complete" | byte)
-    ).as[ReplyShortChannelIdsEndWithTimestamps]
+    ).as[ReplyShortChannelIdsEndDeprecated]
+
+  val queryChannelRangeDeprecatedCodec: Codec[QueryChannelRangeDeprecated] = (
+    ("chainHash" | binarydata(32)) ::
+      ("firstBlockNum" | uint32) ::
+      ("numberOfBlocks" | uint32)
+    ).as[QueryChannelRangeDeprecated]
+
+  val replyChannelRangeDeprecatedCodec: Codec[ReplyChannelRangeDeprecated] = (
+    ("chainHash" | binarydata(32)) ::
+      ("firstBlockNum" | uint32) ::
+      ("numberOfBlocks" | uint32) ::
+      ("complete" | byte) ::
+      ("data" | varsizebinarydata)
+    ).as[ReplyChannelRangeDeprecated]
+
+  val queryShortChannelIdsWithFlagsCodec: Codec[QueryShortChannelIdsWithFlags] = (
+    ("chainHash" | binarydata(32)) ::
+      ("data" | varsizebinarydata)
+    ).as[QueryShortChannelIdsWithFlags]
+
+  val replyShortChannelIdsWithFlagsEndCodec: Codec[ReplyShortChannelIdsWithFlagsEnd] = (
+    ("chainHash" | binarydata(32)) ::
+      ("complete" | byte)
+    ).as[ReplyShortChannelIdsWithFlagsEnd]
 
   val queryChannelRangeWithTimestampsCodec: Codec[QueryChannelRangeWithTimestamps] = (
     ("chainHash" | binarydata(32)) ::
@@ -370,11 +387,32 @@ object LightningMessageCodecs {
       ("data" | varsizebinarydata)
     ).as[ReplyChannelRangeWithTimestamps]
 
-  val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
+  val queryChannelRangeWithChecksumsCodec: Codec[QueryChannelRangeWithChecksums] = (
     ("chainHash" | binarydata(32)) ::
-      ("firstTimestamp" | uint32) ::
-      ("timestampRange" | uint32)
-    ).as[GossipTimestampFilter]
+      ("firstBlockNum" | uint32) ::
+      ("numberOfBlocks" | uint32)
+    ).as[QueryChannelRangeWithChecksums]
+
+  val channelDigestInfoCodec: Codec[ChannelDigestInfo] = (
+    ("shortChannelId" | shortchannelid) ::
+      ("timestamp1" | uint32) ::
+      ("timestamp2" | uint32) ::
+      ("checksum1" | uint32) ::
+      ("checksum2" | uint32)
+    ).as[ChannelDigestInfo]
+
+  val channelRangeWithChecksumsDataCodec: Codec[ChannelRangeWithChecksumsData] =
+    discriminated[ChannelRangeWithChecksumsData].by(byte)
+      .\(EncodingTypes.UNCOMPRESSED) { case a@ChannelRangeWithChecksumsData(EncodingTypes.UNCOMPRESSED, _) => a }((provide(EncodingTypes.UNCOMPRESSED) :: list(channelDigestInfoCodec)).as[ChannelRangeWithChecksumsData])
+      .\(EncodingTypes.COMPRESSED_ZLIB) { case a@ChannelRangeWithChecksumsData(EncodingTypes.COMPRESSED_ZLIB, _) => a }((provide(EncodingTypes.COMPRESSED_ZLIB) :: zlib(list(channelDigestInfoCodec))).as[ChannelRangeWithChecksumsData])
+
+  val replyChannelRangeWithChecksumsCodec: Codec[ReplyChannelRangeWithChecksums] = (
+    ("chainHash" | binarydata(32)) ::
+      ("firstBlockNum" | uint32) ::
+      ("numberOfBlocks" | uint32) ::
+      ("complete" | byte) ::
+      ("data" | variableSizeBytes(uint16, channelRangeWithChecksumsDataCodec))
+    ).as[ReplyChannelRangeWithChecksums]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
@@ -405,15 +443,16 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
-    .typecase(1001, queryShortChannelIdsProtoCodec)
-    .typecase(1002, replyShortChanelIdsEndProtoCodec)
-    .typecase(1003, queryChannelRangeProtoCodec)
-    .typecase(1004, replyChannelRangeProtoCodec)
-    .typecase(1011, queryShortChannelIdsWithTimestampsCodec)
-    .typecase(1012, replyShortChanelIdsEndWithTimestampsCodec)
+    .typecase(1001, queryShortChannelIdsDeprecatedCodec)
+    .typecase(1002, replyShortChanelIdsEndDeprecatedCodec)
+    .typecase(1003, queryChannelRangeDeprecatedCodec)
+    .typecase(1004, replyChannelRangeDeprecatedCodec)
+    .typecase(1011, queryShortChannelIdsWithFlagsCodec)
+    .typecase(1012, replyShortChannelIdsWithFlagsEndCodec)
     .typecase(1013, queryChannelRangeWithTimestampsCodec)
     .typecase(1014, replyChannelRangeWithTimestampsCodec)
-
+    .typecase(1017, queryChannelRangeWithChecksumsCodec)
+    .typecase(1018, replyChannelRangeWithChecksumsCodec)
 
   /**
     * A codec that caches serialized routing messages
