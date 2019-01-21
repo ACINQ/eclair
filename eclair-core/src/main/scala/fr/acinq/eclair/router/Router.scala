@@ -628,14 +628,15 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     case Event(PeerRoutingMessage(transport, _, routingMessage@QueryShortChannelIdsDeprecated(chainHash, flag, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       val shortChannelIds = data.array
-      log.info("received query_short_channel_ids_proto for {} channel announcements, flag={}", shortChannelIds.size, flag)
+      log.info("received query_short_channel_ids_proto for {} channel announcements, flag={} (NB: flag is ignored!!)", shortChannelIds.size, flag)
       shortChannelIds.foreach(shortChannelId => {
         d.channels.get(shortChannelId) match {
           case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
           case Some(ca) =>
-            if (FlagTypes.includeAnnouncement(flag)) transport ! ca
-            if (FlagTypes.includeUpdate1(flag)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => transport ! u)
-            if (FlagTypes.includeUpdate2(flag)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => transport ! u)
+            // TODO: for backward compatibility we always return all data
+            transport ! ca
+            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => transport ! u)
+            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => transport ! u)
         }
       })
       transport ! ReplyShortChannelIdsEndDeprecated(chainHash, 1)
