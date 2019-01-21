@@ -22,14 +22,15 @@ import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.router.ChannelRangeQueries.{UNCOMPRESSED_FORMAT, ZLIB_FORMAT}
-import fr.acinq.eclair.router.{Announcements, ShortChannelIdAndTimestampsBlock}
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.{ShortChannelId, UInt64, randomBytes, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
+import scodec.Codec
+import scodec.codecs._
 
-import scala.collection.{SortedMap, SortedSet}
+import scala.collection.SortedMap
 
 /**
   * Created by PM on 31/05/2016.
@@ -226,9 +227,9 @@ class LightningMessageCodecsSpec extends FunSuite {
     val channel_update = ChannelUpdate(randomSignature, Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2, 42, 0, 3, 4, 5, 6, None)
     val announcement_signatures = AnnouncementSignatures(randomBytes(32), ShortChannelId(42), randomSignature, randomSignature)
     val gossip_timestamp_filter = GossipTimestampFilter(Block.RegtestGenesisBlock.blockId, 100000, 1500)
-    val query_short_channel_id = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, randomBytes(7515))
+    val query_short_channel_id = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))))
     val query_channel_range = QueryChannelRange(Block.RegtestGenesisBlock.blockId, 100000, 1500)
-    val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 100000, 1500, 1, randomBytes(3200))
+    val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 100000, 1500, 1, EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))))
     val ping = Ping(100, BinaryData("01" * 10))
     val pong = Pong(BinaryData("01" * 10))
     val channel_reestablish = ChannelReestablish(randomBytes(32), 242842L, 42L)
@@ -309,9 +310,6 @@ class LightningMessageCodecsSpec extends FunSuite {
 
     case class A(a: Byte, i: Int)
 
-    import scodec.Codec
-    import scodec.codecs._
-
     val codec: Codec[A] =
       discriminated[A].by(byte)
         .\(0) { case a@A(0, _) => a }((provide(0: Byte) :: uint8).as[A])
@@ -323,28 +321,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     logToStdOut(codec).decode(bin2.require)
   }
 
-  test("basic channel range nonreg tests") {
-
-    case class ChannelTimestampsInfo(shortChannelId: ShortChannelId,
-                                     node1Timestamp: Long,
-                                     node2Timestamp: Long)
-
-    case class ChannelRangeWithTimestampsData(encoding: Byte,
-                                              array: List[ChannelTimestampsInfo])
-
-    import scodec.Codec
-    import scodec.codecs._
-
-    val channelTimestampsInfoCodec: Codec[ChannelTimestampsInfo] = (
-      ("shortChannelId" | shortchannelid) ::
-        ("node1Timestamp" | uint32) ::
-        ("node2Timestamp" | uint32)
-      ).as[ChannelTimestampsInfo]
-
-    val channelRangeWithTimestampsDataCodec: Codec[ChannelRangeWithTimestampsData] =
-      discriminated[ChannelRangeWithTimestampsData].by(byte)
-        .\(EncodingTypes.UNCOMPRESSED) { case a@ChannelRangeWithTimestampsData(EncodingTypes.UNCOMPRESSED, _) => a }((provide(EncodingTypes.UNCOMPRESSED) :: list(channelTimestampsInfoCodec)).as[ChannelRangeWithTimestampsData])
-        .\(EncodingTypes.COMPRESSED_ZLIB) { case a@ChannelRangeWithTimestampsData(EncodingTypes.COMPRESSED_ZLIB, _) => a }((provide(EncodingTypes.COMPRESSED_ZLIB) :: zlib(list(channelTimestampsInfoCodec))).as[ChannelRangeWithTimestampsData])
+  test("nonreg tests") {
 
     val channels = SortedMap(
       ShortChannelId(0xaa) -> (0x1000L, 0x1001L),
@@ -352,22 +329,68 @@ class LightningMessageCodecsSpec extends FunSuite {
       ShortChannelId(0xcc) -> (0x3000L, 0x3001L)
     )
 
-    for (encoding <- List(UNCOMPRESSED_FORMAT, ZLIB_FORMAT)) {
+    val chainHash = Block.RegtestGenesisBlock.hash
+    val firstBlockIn = 0xa0
+    val numBlockIn = 0xff
 
-      val encodedManual = ShortChannelIdAndTimestampsBlock
-        .encode(0, 42, channels.keySet, id => channels(id), encoding)
-        .head
-        .shortChannelIdAndTimestamps
+    //      val encodeManualOriginal = ShortChannelIdsBlock
+    //        .encode(firstBlockIn, numBlockIn, channels.keySet, UNCOMPRESSED_FORMAT)
+    //        .head
+    //        .shortChannelIds
+    //      val reply_channel_range_original_uncompressed = ReplyChannelRange(chainHash, firstBlockIn, numBlockIn, 1, encodeManualOriginal)
+    //      println(logToStdOut(lightningMessageCodec).encode(reply_channel_range_original_uncompressed).require.toHex)
+    //
+    //      val encodeManualOriginalCompressed = ShortChannelIdsBlock
+    //        .encode(firstBlockIn, numBlockIn, channels.keySet, ZLIB_FORMAT)
+    //        .head
+    //        .shortChannelIds
+    //      val reply_channel_range_original_compressed = ReplyChannelRange(chainHash, firstBlockIn, numBlockIn, 1, encodeManualOriginalCompressed)
+    //      println(logToStdOut(lightningMessageCodec).encode(reply_channel_range_original_compressed).require.toHex)
+    //
+    //      val encodeManualDeprecated = ShortChannelIdAndTimestampBlock
+    //        .encode(firstBlockIn, numBlockIn, channels.keySet, id => channels(id)._1, UNCOMPRESSED_FORMAT)
+    //        .head
+    //        .shortChannelIdAndTimestamps
+    //      val reply_channel_range_deprecated_uncompressed = ReplyChannelRangeDeprecated(chainHash, firstBlockIn, numBlockIn, 1, encodeManualDeprecated)
+    //      println(logToStdOut(lightningMessageCodec).encode(reply_channel_range_deprecated_uncompressed).require.toHex)
+    //
+    //      val encodeManualDeprecatedCompressed = ShortChannelIdAndTimestampBlock
+    //        .encode(firstBlockIn, numBlockIn, channels.keySet, id => channels(id)._1, ZLIB_FORMAT)
+    //        .head
+    //        .shortChannelIdAndTimestamps
+    //      val reply_channel_range_deprecated_compressed = ReplyChannelRangeDeprecated(chainHash, firstBlockIn, numBlockIn, 1, encodeManualDeprecatedCompressed)
+    //      println(logToStdOut(lightningMessageCodec).encode(reply_channel_range_deprecated_compressed).require.toHex)
 
-      val decodedScodec = channelRangeWithTimestampsDataCodec.decode(BitVector.apply(encodedManual.data)).require.value
-      assert(decodedScodec.encoding == encoding)
-      assert(decodedScodec.array == channels.toList.map(x => ChannelTimestampsInfo(x._1, x._2._1, x._2._2)))
+    //      encoded ReplyChannelRange(06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f,160,255,1,0000000000000000aa00000000000000bb00000000000000cc) to Successful(BitVector(560 bits, #448413046))
+    //      010806226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f000000a0000000ff0100190000000000000000aa00000000000000bb00000000000000cc
+    //        encoded ReplyChannelRange(06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f,160,255,1,01789c6360008355108a6137943e030012c10232) to Successful(BitVector(520 bits, #-663753163))
+    //      010806226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f000000a0000000ff01001401789c6360008355108a6137943e030012c10232
+    //        encoded ReplyChannelRangeDeprecated(06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f,160,255,1,0000000000000000aa0000100000000000000000bb0000200000000000000000cc00003000) to Successful(BitVector(656 bits, #1135811878))
+    //      03ec06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f000000a0000000ff0100250000000000000000aa0000100000000000000000bb0000200000000000000000cc00003000
+    //        encoded ReplyChannelRangeDeprecated(06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f,160,255,1,01789c63600083550c0c020c50b09b814101c63ec3c060c00000278d0292) to Successful(BitVector(600 bits, #-635546169))
+    //      03ec06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f000000a0000000ff01001e01789c63600083550c0c020c50b09b814101c63ec3c060c00000278d0292
 
-      val encodedScodec = channelRangeWithTimestampsDataCodec.encode(decodedScodec).require
-      assert(BinaryData(encodedScodec.toByteArray) == encodedManual)
+    val encodedManualOriginalBin = BinaryData("010806226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f000000a0000000ff0100190000000000000000aa00000000000000bb00000000000000cc")
+    val encodedManualOriginalCompressedBin = BinaryData("010806226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f000000a0000000ff01001401789c6360008355108a6137943e030012c10232")
+    val encodedManualDeprecatedBin = BinaryData("03ec06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f000000a0000000ff0100250000000000000000aa0000100000000000000000bb0000200000000000000000cc00003000")
+    val encodedManualDeprecatedCompressedBin = BinaryData("03ec06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f000000a0000000ff01001e01789c63600083550c0c020c50b09b814101c63ec3c060c00000278d0292")
+
+    val expected = Map(
+      encodedManualOriginalBin -> ReplyChannelRange(chainHash, firstBlockIn, numBlockIn, 1, EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, channels.keySet.toList)),
+      encodedManualOriginalCompressedBin -> ReplyChannelRange(chainHash, firstBlockIn, numBlockIn, 1, EncodedShortChannelIds(EncodingTypes.COMPRESSED_ZLIB, channels.keySet.toList)),
+      encodedManualDeprecatedBin -> ReplyChannelRangeDeprecated(chainHash, firstBlockIn, numBlockIn, 1, EncodedShortChannelIdsWithTimestamp(EncodingTypes.UNCOMPRESSED, channels.toList.map(i => ShortChannelIdWithTimestamp(i._1, i._2._1)))),
+      encodedManualDeprecatedCompressedBin -> ReplyChannelRangeDeprecated(chainHash, firstBlockIn, numBlockIn, 1, EncodedShortChannelIdsWithTimestamp(EncodingTypes.COMPRESSED_ZLIB, channels.toList.map(i => ShortChannelIdWithTimestamp(i._1, i._2._1))))
+    )
+
+    for ((bin, obj) <- expected) {
+      val decoded = lightningMessageCodec.decode(BitVector.apply(bin.data)).require.value
+      assert(decoded === obj)
+      val encoded = lightningMessageCodec.encode(decoded).require
+      assert(BinaryData(encoded.toByteArray) == bin)
     }
 
   }
+
 
 }
 

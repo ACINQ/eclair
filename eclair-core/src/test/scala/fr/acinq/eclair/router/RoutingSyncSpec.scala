@@ -37,30 +37,32 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     sender.expectMsgType[GossipTimestampFilter]
 
     // split our answer in 3 blocks
-    val List(block1) = ShortChannelIdsBlock.encode(firstBlockNum, numberOfBlocks, shortChannelIds.take(100), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
-    val List(block2) = ShortChannelIdsBlock.encode(firstBlockNum, numberOfBlocks, shortChannelIds.drop(100).take(100), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
-    val List(block3) = ShortChannelIdsBlock.encode(firstBlockNum, numberOfBlocks, shortChannelIds.drop(200).take(150), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+    val block1 = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, shortChannelIds.take(100).toList))
+    val block2 = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, shortChannelIds.drop(100).take(100).toList))
 
     // send first block
-    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyChannelRange(chainHash, block1.firstBlock, block1.numBlocks, 1, block1.shortChannelIds)))
+    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, block1))
     // router should ask for our first block of ids
-    val QueryShortChannelIds(_, data1) = transport.expectMsgType[QueryShortChannelIds]
-    val (_, shortChannelIds1, false) = ShortChannelIdsBlock.decode(data1)
-    assert(shortChannelIds1 == shortChannelIds.take(100))
+    assert(transport.expectMsgType[QueryShortChannelIds] === QueryShortChannelIds(chainHash, block1.data))
 
     // send second block
-    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyChannelRange(chainHash, block2.firstBlock, block2.numBlocks, 1, block2.shortChannelIds)))
+    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, block2))
+
+    // router should not ask for more ids, it already has a pending query !
+    sender.expectNoMsg(1 second)
 
     // send the first 50 items
-    shortChannelIds1.take(50).foreach(id => {
+    block1.data.array.take(50).foreach(id => {
       val (ca, cu1, cu2, _, _) = fakeRoutingInfo(id)
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ca))
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu1))
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu2))
     })
 
+    sender.expectNoMsg(1 second)
+
     // send the last 50 items
-    shortChannelIds1.drop(50).foreach(id => {
+    block1.data.array.drop(50).foreach(id => {
       val (ca, cu1, cu2, _, _) = fakeRoutingInfo(id)
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ca))
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu1))
@@ -74,9 +76,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyShortChannelIdsEnd(chainHash, 1.toByte)))
 
     // router should ask for our second block of ids
-    val QueryShortChannelIds(_, data2) = transport.expectMsgType[QueryShortChannelIds]
-    val (_, shortChannelIds2, false) = ShortChannelIdsBlock.decode(data2)
-    assert(shortChannelIds2 == shortChannelIds.drop(100).take(100))
+    assert(transport.expectMsgType[QueryShortChannelIds] === QueryShortChannelIds(chainHash, block2.data))
   }
 
   test("reset sync state on reconnection") {
@@ -92,16 +92,16 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks) = sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
 
-    val List(block1) = ShortChannelIdsBlock.encode(firstBlockNum, numberOfBlocks, shortChannelIds.take(100), ChannelRangeQueries.UNCOMPRESSED_FORMAT)
+    val block1 = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, shortChannelIds.take(100).toList))
 
     // send first block
-    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyChannelRange(chainHash, block1.firstBlock, block1.numBlocks, 1, block1.shortChannelIds)))
+    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, block1))
 
     // router should ask for our first block of ids
-    val QueryShortChannelIds(_, data1) = transport.expectMsgType[QueryShortChannelIds]
-    // router should think that it is mssing 100 channels
+    assert(transport.expectMsgType[QueryShortChannelIds] === QueryShortChannelIds(chainHash, block1.data))
+    // router should think that it is missing 100 channels, in one request
     val Some(sync) = router.stateData.sync.get(remoteNodeId)
-    assert(sync.totalMissingCount == 100)
+    assert(sync.total == 1)
 
     // simulate a re-connection
     sender.send(router, SendChannelQuery(remoteNodeId, sender.ref))

@@ -17,7 +17,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
   val timestamp = shortChannelIds.map(id => id -> random.nextInt(400000).toLong).toMap
   val timestamps = shortChannelIds.map(id => id -> (random.nextInt(400000).toLong, random.nextInt(400000).toLong)).toMap
 
-  test("create `reply_channel_range` messages (uncompressed format)") {
+  /*test("create `reply_channel_range` messages (uncompressed format)") {
     val blocks = ShortChannelIdsBlock.encode(400000, 20000, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
     val replies = blocks.map(block  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
     var decoded = Set.empty[ShortChannelId]
@@ -92,7 +92,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
     replies.foreach(reply => decoded = decoded ++ ShortChannelIdAndTimestampsBlock.decode(reply.data)._2)
     assert(decoded.keySet == shortChannelIds)
     shortChannelIds.foreach(id => timestamp(id) == decoded(id))
-  }
+  }*/
 
 }
 
