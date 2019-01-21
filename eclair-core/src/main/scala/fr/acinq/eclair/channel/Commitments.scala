@@ -71,6 +71,12 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
   def announceChannel: Boolean = (channelFlags & 0x01) != 0
+
+  def availableBalanceForSendMsat: Long = {
+    val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
+    val fees = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced).amount else 0
+    reduced.toRemoteMsat / 1000 - remoteParams.channelReserveSatoshis - fees
+  }
 }
 
 object Commitments {
