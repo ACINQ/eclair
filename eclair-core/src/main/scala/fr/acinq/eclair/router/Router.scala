@@ -515,7 +515,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
       log.info("replying with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
       split(shortChannelIds)
-        .foreach(chunk => ReplyChannelRange(chainHash, chunk.firstBlock, chunk.numBlocks, complete = 1, data = EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, chunk.shortChannelIds)))
+        .foreach(chunk => transport ! ReplyChannelRange(chainHash, chunk.firstBlock, chunk.numBlocks, complete = 1, data = EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, chunk.shortChannelIds)))
       stay
 
     case Event(PeerRoutingMessage(transport, _, routingMessage@QueryChannelRangeDeprecated(chainHash, firstBlockNum, numberOfBlocks)), d) =>
@@ -595,7 +595,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
           ShortChannelIdAndFlag(channelInfo.shortChannelId, flag.toByte)
         }
         .filter(_.flag != 0)
-      log.info("received reply_channel_range_with_checksums, we're missing {} channel announcements/updates, format={}", shortChannelIdAndFlags.size, data.encoding)
+      val (channelCount, updatesCount) = shortChannelIdAndFlags.foldLeft((0, 0)) {
+        case ((c, u), ShortChannelIdAndFlag(_, flag)) =>
+          val c1 = c + (if (FlagTypes.includeAnnouncement(flag)) 1 else 0)
+          val u1 = u + (if (FlagTypes.includeUpdate1(flag)) 1 else 0) + (if (FlagTypes.includeUpdate2(flag)) 1 else 0)
+        (c1, u1)
+      }
+      log.info("received reply_channel_range_with_checksums with {} channels, we're missing {} channel announcements and {} updates, format={}", data.array.size, channelCount, updatesCount, data.encoding)
       // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
       val replies = shortChannelIdAndFlags
         .grouped(SHORTID_WINDOW)
