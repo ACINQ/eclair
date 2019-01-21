@@ -30,7 +30,9 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChannel, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.WeightedPath
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import shapeless.HNil
@@ -40,7 +42,7 @@ import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise}
-import scala.util.Try
+import scala.util.{Random, Try}
 
 // @formatter:off
 
@@ -392,6 +394,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! (d.updates ++ d.privateUpdates)
       stay
 
+    case Event('data, d) =>
+      sender ! d
+      stay
+
     case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels), d) =>
       // we convert extra routing info provided in the payment request to fake channel_update
       // it takes precedence over all other channel_updates we know
@@ -401,7 +407,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
-      findRoute(d.graph, start, end, amount, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet)
+      // we ask the router to make a random selection among the three best routes, numRoutes = 3
+      findRoute(d.graph, start, end, amount, numRoutes = DEFAULT_ROUTES_COUNT, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -1019,24 +1026,42 @@ object Router {
     */
   val ROUTE_MAX_LENGTH = 20
 
+  // The default amount of routes we'll search for when findRoute is called
+  val DEFAULT_ROUTES_COUNT = 3
+
+  // The default allowed 'spread' between the cheapest route found an the others
+  // routes exceeding this difference won't be considered as a valid result
+  val DEFAULT_ALLOWED_SPREAD = 0.1D
 
   /**
-    * Find a route in the graph between localNodeId and targetNodeId, returns the route and its cost
+    * Find a route in the graph between localNodeId and targetNodeId, returns the route.
+    * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result,
+    * the 'route-set' from where we select the result is made of the k-shortest path given that none of them
+    * exceeds a 10% spread with the cheapest route
     *
     * @param g
     * @param localNodeId
     * @param targetNodeId
     * @param amountMsat   the amount that will be sent along this route
+    * @param numRoutes    the number of shortest-paths to find
     * @param extraEdges   a set of extra edges we want to CONSIDER during the search
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
     * @return the computed route to the destination @targetNodeId
     */
-  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Hop]] = Try {
+  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    Graph.shortestPath(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges) match {
+    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes).toList match {
       case Nil => throw RouteNotFound
-      case path => path
+      case route :: Nil  if route.path.isEmpty => throw RouteNotFound
+      case foundRoutes => foundRoutes
     }
+
+    // minimum cost
+    val minimumCost = foundRoutes.head.weight
+
+    // routes paying at most minimumCost + 10%
+    val eligibleRoutes = foundRoutes.filter(_.weight  <= (minimumCost + minimumCost * DEFAULT_ALLOWED_SPREAD).round)
+    Random.shuffle(eligibleRoutes).head.path.map(graphEdgeToHop)
   }
 }
