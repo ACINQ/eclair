@@ -62,19 +62,19 @@ class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteL
   }
 
   test("get merkle tree") {
-    probe.send(pool, GetMerkle("c5efb5cbd35a44ba956b18100be0a91c9c33af4c7f31be20e33741d95f04e202", 1210223L))
+    probe.send(pool, GetMerkle("c5efb5cbd35a44ba956b18100be0a91c9c33af4c7f31be20e33741d95f04e202", 1210223))
     val response = probe.expectMsgType[GetMerkleResponse]
     assert(response.txid == BinaryData("c5efb5cbd35a44ba956b18100be0a91c9c33af4c7f31be20e33741d95f04e202"))
-    assert(response.block_height == 1210223L)
+    assert(response.block_height == 1210223)
     assert(response.pos == 28)
-    assert(response.root == BinaryData("fb0234a21e96913682bc4108bcf72b67fb5d2dd680875b7e4671c03ccf523a20"))
+    assert(response.root == BinaryData("203a52cf3cc071467e5b8780d62d5dfb672bf7bc0841bc823691961ea23402fb"))
   }
 
   test("header subscription") {
     val probe1 = TestProbe()
     probe1.send(pool, HeaderSubscription(probe1.ref))
-    val HeaderSubscriptionResponse(header) = probe1.expectMsgType[HeaderSubscriptionResponse]
-    logger.info(s"received header for block ${header.block_hash}")
+    val HeaderSubscriptionResponse(_, header) = probe1.expectMsgType[HeaderSubscriptionResponse]
+    logger.info(s"received header for block ${header.blockId}")
   }
 
   test("scripthash subscription") {

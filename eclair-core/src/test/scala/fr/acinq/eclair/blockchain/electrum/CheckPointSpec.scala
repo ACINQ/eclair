@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.gui.utils
+package fr.acinq.eclair.blockchain.electrum
 
-import javafx.collections.FXCollections
-import fr.acinq.eclair._
+import fr.acinq.bitcoin.Block
+import org.scalatest.FunSuite
 
-object Constants {
-  val FX_UNITS_ARRAY_NO_MSAT = FXCollections.observableArrayList(SatUnit.label, BitUnit.label, MBtcUnit.label, BtcUnit.label)
-  val FX_UNITS_ARRAY = FXCollections.observableArrayList(MSatUnit.label, SatUnit.label, BitUnit.label, MBtcUnit.label, BtcUnit.label)
+class CheckPointSpec extends FunSuite {
+  test("load checkpoint") {
+    val checkpoints = CheckPoint.load(Block.LivenetGenesisBlock.hash)
+    assert(!checkpoints.isEmpty)
+  }
 }

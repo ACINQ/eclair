@@ -19,7 +19,8 @@ package fr.acinq.eclair.blockchain.electrum
 import java.io.InputStream
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorRef, FSM, Props, Terminated}
+import akka.actor.{Actor, ActorRef, FSM, OneForOneStrategy, Props, SupervisorStrategy, Terminated}
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
@@ -37,19 +38,26 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
   val addresses = collection.mutable.Map.empty[ActorRef, InetSocketAddress]
 
+
   // on startup, we attempt to connect to a number of electrum clients
   // they will send us an `ElectrumReady` message when they're connected, or
   // terminate if they cannot connect
-  (0 until MAX_CONNECTION_COUNT) foreach (_ => self ! Connect)
+  (0 until Math.min(MAX_CONNECTION_COUNT, serverAddresses.size)) foreach (_ => self ! Connect)
 
-  log.debug(s"starting electrum pool with serverAddresses={}", serverAddresses)
+  log.debug("starting electrum pool with serverAddresses={}", serverAddresses)
+
+  // custom supervision strategy: always stop Electrum clients when there's a problem, we will automatically reconnect
+  // to another client
+  override def supervisorStrategy: SupervisorStrategy = OneForOneStrategy(loggingEnabled = true) {
+    case _ => SupervisorStrategy.stop
+  }
 
   startWith(Disconnected, DisconnectedData)
 
   when(Disconnected) {
-    case Event(ElectrumClient.ElectrumReady(tip, _), _) if addresses.contains(sender) =>
+    case Event(ElectrumClient.ElectrumReady(height, tip, _), _) if addresses.contains(sender) =>
       sender ! ElectrumClient.HeaderSubscription(self)
-      handleHeader(sender, tip, None)
+      handleHeader(sender, height, tip, None)
 
     case Event(ElectrumClient.AddStatusListener(listener), _) =>
       statusListeners += listener
@@ -63,12 +71,12 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
   }
 
   when(Connected) {
-    case Event(ElectrumClient.ElectrumReady(tip, _), d: ConnectedData) if addresses.contains(sender) =>
+    case Event(ElectrumClient.ElectrumReady(height, tip, _), d: ConnectedData) if addresses.contains(sender) =>
       sender ! ElectrumClient.HeaderSubscription(self)
-      handleHeader(sender, tip, Some(d))
+      handleHeader(sender, height, tip, Some(d))
 
-    case Event(ElectrumClient.HeaderSubscriptionResponse(tip), d: ConnectedData) if addresses.contains(sender) =>
-      handleHeader(sender, tip, Some(d))
+    case Event(ElectrumClient.HeaderSubscriptionResponse(height, tip), d: ConnectedData) if addresses.contains(sender) =>
+      handleHeader(sender, height, tip, Some(d))
 
     case Event(request: ElectrumClient.Request, ConnectedData(master, _)) =>
       master forward request
@@ -91,8 +99,8 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
       } else {
         // we choose next best candidate as master
         val tips1 = d.tips - actor
-        val (bestClient, bestTip) = tips1.toSeq.maxBy(_._2.block_height)
-        handleHeader(bestClient, bestTip, Some(d.copy(tips = tips1)))
+        val (bestClient, bestTip) = tips1.toSeq.maxBy(_._2._1)
+        handleHeader(bestClient, bestTip._1, bestTip._2, Some(d.copy(tips = tips1)))
       }
   }
 
@@ -122,38 +130,41 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
 
   initialize()
 
-  private def handleHeader(connection: ActorRef, tip: ElectrumClient.Header, data: Option[ConnectedData]) = {
+  private def handleHeader(connection: ActorRef, height: Int, tip: BlockHeader, data: Option[ConnectedData]) = {
     val remoteAddress = addresses(connection)
     // we update our block count even if it doesn't come from our current master
-    updateBlockCount(tip.block_height)
+    updateBlockCount(height)
     data match {
       case None =>
         // as soon as we have a connection to an electrum server, we select it as master
-        log.info(s"selecting master $remoteAddress} at $tip")
-        statusListeners.foreach(_ ! ElectrumClient.ElectrumReady(tip, remoteAddress))
-        context.system.eventStream.publish(ElectrumClient.ElectrumReady(tip, remoteAddress))
-        goto(Connected) using ConnectedData(connection, Map(connection -> tip))
-      case Some(d) if tip.block_height >= d.blockHeight + 2L =>
+        log.info("selecting master {} at {}", remoteAddress, tip)
+        statusListeners.foreach(_ ! ElectrumClient.ElectrumReady(height, tip, remoteAddress))
+        context.system.eventStream.publish(ElectrumClient.ElectrumReady(height, tip, remoteAddress))
+        goto(Connected) using ConnectedData(connection, Map(connection -> (height, tip)))
+      case Some(d) if connection != d.master && height >= d.blockHeight + 2L =>
         // we only switch to a new master if there is a significant difference with our current master, because
         // we don't want to switch to a new master every time a new block arrives (some servers will be notified before others)
-        log.info(s"switching to master $remoteAddress at $tip")
+        // we check that the current connection is not our master because on regtest when you generate several blocks at once
+        // (and maybe on testnet in some pathological cases where there's a block every second) it may seen like our master
+        // skipped a block and is suddenly at height + 2
+        log.info("switching to master {} at {}", remoteAddress, tip)
         // we've switched to a new master, treat this as a disconnection/reconnection
         // so users (wallet, watcher, ...) will reset their subscriptions
         statusListeners.foreach(_ ! ElectrumClient.ElectrumDisconnected)
         context.system.eventStream.publish(ElectrumClient.ElectrumDisconnected)
-        statusListeners.foreach(_ ! ElectrumClient.ElectrumReady(tip, remoteAddress))
-        context.system.eventStream.publish(ElectrumClient.ElectrumReady(tip, remoteAddress))
-        goto(Connected) using d.copy(master = connection, tips = d.tips + (connection -> tip))
+        statusListeners.foreach(_ ! ElectrumClient.ElectrumReady(height, tip, remoteAddress))
+        context.system.eventStream.publish(ElectrumClient.ElectrumReady(height, tip, remoteAddress))
+        goto(Connected) using d.copy(master = connection, tips = d.tips + (connection -> (height, tip)))
       case Some(d) =>
-        log.debug(s"received tip from $remoteAddress} $tip")
-        stay using d.copy(tips = d.tips + (connection -> tip))
+        log.debug("received tip {} from {} at {}", tip, remoteAddress, height)
+        stay using d.copy(tips = d.tips + (connection -> (height, tip)))
     }
   }
 
   private def updateBlockCount(blockCount: Long): Unit = {
     // when synchronizing we don't want to advertise previous blocks
     if (Globals.blockCount.get() < blockCount) {
-      log.debug(s"current blockchain height=$blockCount")
+      log.debug("current blockchain height={}", blockCount)
       context.system.eventStream.publish(CurrentBlockCount(blockCount))
       Globals.blockCount.set(blockCount)
     }
@@ -207,8 +218,8 @@ object ElectrumClientPool {
 
   sealed trait Data
   case object DisconnectedData extends Data
-  case class ConnectedData(master: ActorRef, tips: Map[ActorRef, ElectrumClient.Header]) extends Data {
-    def blockHeight = tips.get(master).map(_.block_height).getOrElse(0L)
+  case class ConnectedData(master: ActorRef, tips: Map[ActorRef, (Int, BlockHeader)]) extends Data {
+    def blockHeight = tips.get(master).map(_._1).getOrElse(0)
   }
 
   case object Connect

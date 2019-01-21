@@ -1,7 +1,7 @@
 /* ---------- Status Bar ---------- */
 
 .status-bar {
-	-fx-padding: .5em 1em;
+	-fx-padding: .5em .7em;
 	-fx-background-color: rgb(221,221,221);
 	-fx-border-width: 1px 0 0 0;
 	-fx-border-color: rgb(181,181,181);
@@ -50,16 +50,26 @@
 }
 
 .channel .grid {
-    -fx-padding: 10px;
+    -fx-padding: 14px;
     -fx-vgap: 3px;
-    -fx-hgap: 5px;
+    -fx-hgap: 1em;
     -fx-font-size: 12px;
 }
 
 .channel-separator {
-	-fx-background-color: rgb(220,220,220);
+	-fx-background-color: rgb(190,200,210);
 	-fx-pref-height: 1px;
 	-fx-padding: 0 -.25em;
+}
+
+.channel-balance-separator {
+	-fx-background-color: rgb(225,230,235);
+}
+
+.channel-peer-alias {
+    -fx-background-color: rgb(232,233,235);
+    -fx-background-radius: 2;
+    -fx-label-padding: 0 3px;
 }
 
 .channels-info {
