@@ -627,13 +627,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
           case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
           case Some(ca) =>
             if (FlagTypes.includeAnnouncement(flag)) transport ! ca
-            if (FlagTypes.includeAnnouncement(flag) || FlagTypes.includeUpdate1(flag)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => transport ! u)
-            if (FlagTypes.includeAnnouncement(flag) || FlagTypes.includeUpdate2(flag)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => transport ! u)
+            if (FlagTypes.includeUpdate1(flag)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => transport ! u)
+            if (FlagTypes.includeUpdate2(flag)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => transport ! u)
         }
       })
       transport ! ReplyShortChannelIdsEndDeprecated(chainHash, 1)
       stay
-
 
     // new extended query message: a list of [channel id + flag]
     case Event(PeerRoutingMessage(transport, _, routingMessage@QueryShortChannelIdsWithFlags(chainHash, data)), d) =>
@@ -646,8 +645,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
             case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
             case Some(ca) =>
               if (FlagTypes.includeAnnouncement(flag)) transport ! ca
-              if (FlagTypes.includeAnnouncement(flag) || FlagTypes.includeUpdate1(flag)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => transport ! u)
-              if (FlagTypes.includeAnnouncement(flag) || FlagTypes.includeUpdate2(flag)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => transport ! u)
+              if (FlagTypes.includeUpdate1(flag)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => transport ! u)
+              if (FlagTypes.includeUpdate2(flag)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => transport ! u)
           }
         }
       }
