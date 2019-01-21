@@ -19,7 +19,7 @@ package fr.acinq.eclair.db
 import java.net.{InetAddress, InetSocketAddress}
 import java.sql.DriverManager
 
-import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, Block, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.Color
@@ -109,8 +109,10 @@ class SqliteNetworkDbSpec extends FunSuite {
 
     val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
     val channels = shortChannelIds.map(id => Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, id, pub, pub, pub, pub, sig, sig, sig, sig))
-    val updates = shortChannelIds.map(id => Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv, pub, id, 5, 7000000, 50000, 100, 500000000L, true))
-    channels.foreach(ca => db.addChannel(ca, randomKey.toBin, capacity))
+    val template = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv, pub, ShortChannelId(42), 5, 7000000, 50000, 100, 500000000L, true)
+    val updates = shortChannelIds.map(id => template.copy(shortChannelId = id))
+    val txid = BinaryData("ab" * 32)
+    channels.foreach(ca => db.addChannel(ca, txid, capacity))
     updates.foreach(u => db.addChannelUpdate(u))
     assert(db.listChannels().keySet === channels.toSet)
     assert(db.listChannelUpdates() === updates)
