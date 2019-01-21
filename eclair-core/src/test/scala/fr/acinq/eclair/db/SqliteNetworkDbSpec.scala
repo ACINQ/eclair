@@ -112,21 +112,20 @@ class SqliteNetworkDbSpec extends FunSuite {
     val updates = shortChannelIds.map(id => Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv, pub, id, 5, 7000000, 50000, 100, 500000000L, true))
     channels.foreach(ca => db.addChannel(ca, randomKey.toBin, capacity))
     updates.foreach(u => db.addChannelUpdate(u))
-    assert(db.listChannels().size === channels.length)
-    assert(db.listChannelUpdates().size === updates.length)
+    assert(db.listChannels().keySet === channels.toSet)
+    assert(db.listChannelUpdates() === updates)
 
-    val toDelete = shortChannelIds.drop(500).take(1000)
+    val toDelete = channels.map(_.shortChannelId).drop(500).take(2500)
     db.removeChannels(toDelete)
-    assert(db.listChannels().size === channels.length - toDelete.length)
-    assert(db.listChannelUpdates().size === updates.length - toDelete.length)
+    assert(db.listChannels().keySet === channels.filterNot(a => toDelete.contains(a.shortChannelId)).toSet)
+    assert(db.listChannelUpdates().toSet === updates.filterNot(u => toDelete.contains(u.shortChannelId)).toSet)
   }
 
   test("add/remove/test pruned channels") {
     val sqlite = inmem
     val db = new SqliteNetworkDb(sqlite)
 
-    db.addToPruned(ShortChannelId(1))
-    db.addToPruned(ShortChannelId(5))
+    db.addToPruned(Seq(ShortChannelId(1), ShortChannelId(5)))
 
     assert(db.isPruned(ShortChannelId(1)))
     assert(!db.isPruned(ShortChannelId(3)))
