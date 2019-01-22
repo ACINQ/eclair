@@ -598,7 +598,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         case ((c, u), ShortChannelIdAndFlag(_, flag)) =>
           val c1 = c + (if (FlagTypes.includeAnnouncement(flag)) 1 else 0)
           val u1 = u + (if (FlagTypes.includeUpdate1(flag)) 1 else 0) + (if (FlagTypes.includeUpdate2(flag)) 1 else 0)
-        (c1, u1)
+          (c1, u1)
       }
       log.info("received reply_channel_range_with_checksums with {} channels, we're missing {} channel announcements and {} updates, format={}", data.array.size, channelCount, updatesCount, data.encoding)
       // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
@@ -615,54 +615,37 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     // standard query message: a list of channel ids
     case Event(PeerRoutingMessage(transport, _, routingMessage@QueryShortChannelIds(chainHash, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
-      val shortChannelIds = data.array
-      log.info("received query_short_channel_ids for {} channel announcements", shortChannelIds.size)
-      shortChannelIds.foreach(shortChannelId => {
-        d.channels.get(shortChannelId) match {
-          case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
-          case Some(ca) =>
-            transport ! ca
-            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => transport ! u)
-            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => transport ! u)
-        }
-      })
+      val (channelCount, updatesCount) = handleChannelQuery(d, transport, data.array,
+        id = (id: ShortChannelId) => id,
+        sendChannel = (_: ShortChannelId) => true,
+        sendUpdate1 = (_: ShortChannelId) => true,
+        sendUpdate2 = (_: ShortChannelId) => true)
+      log.info("received query_short_channel_ids with {} items, sent back {} channels and {} updates", data.array.size, channelCount, updatesCount)
       transport ! ReplyShortChannelIdsEnd(chainHash, 1)
       stay
 
     // extended query message: a flag and a list of channel ids
     case Event(PeerRoutingMessage(transport, _, routingMessage@QueryShortChannelIdsDeprecated(chainHash, flag, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
-      val shortChannelIds = data.array
-      log.info("received query_short_channel_ids_proto for {} channel announcements, flag={} (NB: flag is ignored!!)", shortChannelIds.size, flag)
-      shortChannelIds.foreach(shortChannelId => {
-        d.channels.get(shortChannelId) match {
-          case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
-          case Some(ca) =>
-            // TODO: for backward compatibility we always return all data
-            transport ! ca
-            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => transport ! u)
-            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => transport ! u)
-        }
-      })
+      // TODO: for backward compatibility we always return all data
+      val (channelCount, updatesCount) = handleChannelQuery(d, transport, data.array,
+        id = (id: ShortChannelId) => id,
+        sendChannel = (_: ShortChannelId) => true,
+        sendUpdate1 = (_: ShortChannelId) => true,
+        sendUpdate2 = (_: ShortChannelId) => true)
+      log.info("received query_short_channel_ids_deprecated with {} items, flag={} (ignored!!), sent back {} channels and {} updates", data.array.size, flag, channelCount, updatesCount)
       transport ! ReplyShortChannelIdsEndDeprecated(chainHash, 1)
       stay
 
     // new extended query message: a list of [channel id + flag]
     case Event(PeerRoutingMessage(transport, _, routingMessage@QueryShortChannelIdsWithFlags(chainHash, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
-      val shortChannelIdAndFlags = data.array
-      log.info("received query_short_channel_ids_ex for {} channel announcements", shortChannelIdAndFlags.size)
-      shortChannelIdAndFlags.foreach {
-        case ShortChannelIdAndFlag(shortChannelId, flag) => {
-          d.channels.get(shortChannelId) match {
-            case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
-            case Some(ca) =>
-              if (FlagTypes.includeAnnouncement(flag)) transport ! ca
-              if (FlagTypes.includeUpdate1(flag)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => transport ! u)
-              if (FlagTypes.includeUpdate2(flag)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => transport ! u)
-          }
-        }
-      }
+      val (channelCount, updatesCount) = handleChannelQuery(d, transport, data.array,
+        id = (item: ShortChannelIdAndFlag) => item.shortChannelId,
+        sendChannel = (item: ShortChannelIdAndFlag) => FlagTypes.includeAnnouncement(item.flag),
+        sendUpdate1 = (item: ShortChannelIdAndFlag) => FlagTypes.includeUpdate1(item.flag),
+        sendUpdate2 = (item: ShortChannelIdAndFlag) => FlagTypes.includeUpdate2(item.flag))
+      log.info("received query_short_channel_ids_ex with {} items, sent back {} channels and {} updates", data.array.size, channelCount, updatesCount)
       transport ! ReplyShortChannelIdsWithFlagsEnd(chainHash, 1)
       stay
 
@@ -850,6 +833,26 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     d.copy(sync = sync1)
   }
 
+  def handleChannelQuery[T](d: Data, transport: ActorRef, items: Iterable[T], id: T => ShortChannelId, sendChannel: T => Boolean, sendUpdate1: T => Boolean, sendUpdate2: T => Boolean): (Int, Int) = {
+    items.foldLeft((0, 0)) {
+      case ((c, u), item) =>
+        var c1 = c
+        var u1 = u
+        val shortChannelId = id(item)
+        d.channels.get(shortChannelId) match {
+          case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
+          case Some(ca) =>
+            if (sendChannel(item)) {
+              transport ! ca
+              c1 = c1 + 1
+            }
+            if (sendUpdate1(item)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).foreach { u => transport ! u; u1 = u1 + 1 }
+            if (sendUpdate2(item)) d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).foreach { u => transport ! u; u1 = u1 + 1 }
+        }
+        (c1, u1)
+    }
+  }
+
   override def mdc(currentMessage: Any): MDC = currentMessage match {
     case SendChannelQuery(remoteNodeId, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
     case PeerRoutingMessage(_, remoteNodeId, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
@@ -1001,11 +1004,11 @@ object Router {
       .grouped(2000) // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
       .toList
       .map { group =>
-      // NB: group is never empty
-      val firstBlock: Long = ShortChannelId.coordinates(group.head).blockHeight.toLong
-      val numBlocks: Long = ShortChannelId.coordinates(group.last).blockHeight.toLong
-      ShortChannelIdsChunk(firstBlock, numBlocks, group.toList)
-    }
+        // NB: group is never empty
+        val firstBlock: Long = ShortChannelId.coordinates(group.head).blockHeight.toLong
+        val numBlocks: Long = ShortChannelId.coordinates(group.last).blockHeight.toLong
+        ShortChannelIdsChunk(firstBlock, numBlocks, group.toList)
+      }
   }
 
   def updateSync(syncMap: Map[PublicKey, Sync], remoteNodeId: PublicKey, pending: List[RoutingMessage]): (Map[PublicKey, Sync], Option[RoutingMessage]) = {
@@ -1059,7 +1062,7 @@ object Router {
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes).toList match {
       case Nil => throw RouteNotFound
-      case route :: Nil  if route.path.isEmpty => throw RouteNotFound
+      case route :: Nil if route.path.isEmpty => throw RouteNotFound
       case foundRoutes => foundRoutes
     }
 
@@ -1067,7 +1070,7 @@ object Router {
     val minimumCost = foundRoutes.head.weight
 
     // routes paying at most minimumCost + 10%
-    val eligibleRoutes = foundRoutes.filter(_.weight  <= (minimumCost + minimumCost * DEFAULT_ALLOWED_SPREAD).round)
+    val eligibleRoutes = foundRoutes.filter(_.weight <= (minimumCost + minimumCost * DEFAULT_ALLOWED_SPREAD).round)
     Random.shuffle(eligibleRoutes).head.path.map(graphEdgeToHop)
   }
 }
