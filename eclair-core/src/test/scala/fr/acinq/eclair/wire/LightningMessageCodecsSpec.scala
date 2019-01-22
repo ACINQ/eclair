@@ -306,21 +306,6 @@ class LightningMessageCodecsSpec extends FunSuite {
     assert(bin === bin2)
   }
 
-  test("test TV codecs") {
-
-    case class A(a: Byte, i: Int)
-
-    val codec: Codec[A] =
-      discriminated[A].by(byte)
-        .\(0) { case a@A(0, _) => a }((provide(0: Byte) :: uint8).as[A])
-        .\(1) { case a@A(1, _) => a }((provide(1: Byte) :: uint16).as[A])
-
-    val bin1 = logToStdOut(codec).encode(A(0, 42))
-    logToStdOut(codec).decode(bin1.require)
-    val bin2 = logToStdOut(codec).encode(A(1, 42))
-    logToStdOut(codec).decode(bin2.require)
-  }
-
   test("nonreg tests") {
 
     val channels = SortedMap(
