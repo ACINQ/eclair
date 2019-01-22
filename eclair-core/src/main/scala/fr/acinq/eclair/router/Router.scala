@@ -1019,7 +1019,7 @@ object Router {
         syncMap.get(remoteNodeId) match {
           case None =>
             // we don't have a pending query with this peer, let's send it
-            (syncMap + (remoteNodeId -> Sync(rest, 1 + pending.size)), Some(head))
+            (syncMap + (remoteNodeId -> Sync(rest, pending.size)), Some(head))
           case Some(sync) =>
             // we already have a pending query with this peer, add missing ids to our "sync" state
             (syncMap + (remoteNodeId -> Sync(sync.pending ++ pending, sync.total + pending.size)), None)
