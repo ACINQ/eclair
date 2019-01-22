@@ -1006,7 +1006,7 @@ object Router {
       .map { group =>
         // NB: group is never empty
         val firstBlock: Long = ShortChannelId.coordinates(group.head).blockHeight.toLong
-        val numBlocks: Long = ShortChannelId.coordinates(group.last).blockHeight.toLong
+        val numBlocks: Long = ShortChannelId.coordinates(group.last).blockHeight.toLong - firstBlock + 1
         ShortChannelIdsChunk(firstBlock, numBlocks, group.toList)
       }
   }
