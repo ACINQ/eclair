@@ -14,13 +14,11 @@ object Graph {
     def weight(wr: WeightRatios): Double = compoundWeight.totalWeight(wr)
   }
 
-  case class CompoundWeight(costMsat: Long, cltvDelta: Long, score: Long) {
+  // Carries a compound weight for an edge, values are normalized except for 'rawCost' which contains the actual fees
+  case class CompoundWeight(feesNormalized: Double, cltvDeltaNormalized: Double, scoreNormalized: Double, rawCost: Long) {
 
     def totalWeight(wr: WeightRatios): Double = {
-      if(costMsat == Long.MaxValue) Double.MaxValue
-      else if(cltvDelta == Long.MaxValue) Double.MaxValue
-      else if(score == Long.MaxValue) Double.MaxValue
-      else (costMsat * wr.costFactor + cltvDelta * wr.cltvDeltaFactor + score * wr.scoreFactor).abs
+      feesNormalized * wr.costFactor + cltvDeltaNormalized * wr.cltvDeltaFactor + scoreNormalized * wr.scoreFactor
     }
 
     def compare(x: CompoundWeight, wr: WeightRatios): Int = {
@@ -58,7 +56,7 @@ object Graph {
     * @param pathsToFind
     * @return
     */
-  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], pathsToFind: Int, wr: WeightRatios): Seq[WeightedPath] = {
+  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], pathsToFind: Int, wr: WeightRatios, currentBlockHeight: Long): Seq[WeightedPath] = {
 
     var allSpurPathsFound = false
 
@@ -68,7 +66,7 @@ object Graph {
     val candidates = new mutable.PriorityQueue[WeightedPath]
 
     // find the shortest path, k = 0
-    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, wr)
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, wr, currentBlockHeight)
     shortestPaths += WeightedPath(shortestPath, pathCost(shortestPath, amountMsat))
 
     // main loop
@@ -97,7 +95,7 @@ object Graph {
           }
 
           // find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
-          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges, wr)
+          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges, wr, currentBlockHeight)
 
           // if there wasn't a path the spur will be empty
           if(spurPath.nonEmpty) {
@@ -152,7 +150,7 @@ object Graph {
     * @return
     */
 
-  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], wr: WeightRatios): Seq[GraphEdge] = {
+  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], wr: WeightRatios, currentBlockHeight: Long): Seq[GraphEdge] = {
 
     // optionally add the extra edges to the graph
     val graphVerticesWithExtra = extraEdges.nonEmpty match {
@@ -173,7 +171,7 @@ object Graph {
     val pathLength = new java.util.HashMap[PublicKey, Int](maxMapSize)
 
     // initialize the queue and weight array with the base cost (amount to be routed)
-    val startingWeight = CompoundWeight(amountMsat, 0, 0)
+    val startingWeight = CompoundWeight(0, 0, 0, 0)
     weight.put(targetNode, startingWeight)
     vertexQueue.insert(WeightedNode(targetNode, startingWeight))
     pathLength.put(targetNode, 0) // the source node has distance 0
@@ -203,18 +201,25 @@ object Graph {
 
           // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
           // note: there is always an entry for the current in the 'cost' map
-          val newMinimumCompoundWeight = edgeWeightCompound(edge, weight.get(current.key), neighbor == sourceNode)
+          val newMinimumCompoundWeight = edgeWeightCompound(amountMsat, edge, weight.get(current.key), neighbor == sourceNode, currentBlockHeight)
+          println(s"EDGE:${edge.desc.shortChannelId.toLong} " +
+            s"costNorm=${newMinimumCompoundWeight.feesNormalized} " +
+            s"cltvNorm=${newMinimumCompoundWeight.cltvDeltaNormalized} " +
+            s"scoreNorm=${newMinimumCompoundWeight.scoreNormalized} " +
+            s"fees=${newMinimumCompoundWeight.rawCost} " +
+            s"weight=${newMinimumCompoundWeight.totalWeight(wr)}")
+
 
           // test for ignored edges
-          if (edge.update.htlcMaximumMsat.forall(newMinimumCompoundWeight.costMsat <= _) &&
-            newMinimumCompoundWeight.costMsat >= edge.update.htlcMinimumMsat &&
+          if (edge.update.htlcMaximumMsat.forall(newMinimumCompoundWeight.rawCost + amountMsat <= _) &&
+            newMinimumCompoundWeight.rawCost + amountMsat >= edge.update.htlcMinimumMsat &&
             neighborPathLength <= ROUTE_MAX_LENGTH && // ignore this edge if it would make the path too long
             !ignoredEdges.contains(edge.desc)
           ) {
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
             val neighborCost = weight.containsKey(neighbor) match {
-              case false => CompoundWeight(Long.MaxValue, Long.MaxValue, Long.MaxValue)
+              case false => CompoundWeight(Double.MaxValue, Double.MaxValue, Double.MaxValue, Long.MaxValue)
               case true => weight.get(neighbor)
             }
 
@@ -257,39 +262,29 @@ object Graph {
     }
   }
 
-  val MAX_FUNDING_MSAT: Long = Channel.MAX_FUNDING_SATOSHIS * 1000L
+  private def edgeWeightCompound(amountMsat: Long, edge: GraphEdge, compoundCostSoFar: CompoundWeight, isNeighborTarget: Boolean, currentBlockHeight: Long): CompoundWeight = {
+    import RoutingHeuristics._
 
-  private def edgeWeightCompound(edge: GraphEdge, compoundCostSoFar: CompoundWeight, isNeighborTarget: Boolean): CompoundWeight = {
+    // Every edge is weighted by funding block height where older blocks add less weight, the window considered is 2 months.
+    val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
+    val blockFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_TWO_MONTHS, max = currentBlockHeight)
 
-    // Every edge is weighted down by funding block height, but older blocks add less weight - scaledUp to match the capFactor
-    val blockFactor = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight * 1000
+    // Every edge is weighted by channel capacity, but larger channels add less weight
+    val edgeMaxCapacity = edge.update.htlcMaximumMsat.getOrElse(CAPACITY_CHANNEL_LOW_MSAT)
+    val capFactor = normalize(edgeMaxCapacity, CAPACITY_CHANNEL_LOW_MSAT, CAPACITY_CHANNEL_HIGH_MSAT)
 
-    // Every edge is weighted down by channel capacity, but larger channels add less weight
-    val capFactor = edge.update.htlcMaximumMsat.map(htlcMax => (MAX_FUNDING_MSAT - htlcMax).abs).getOrElse(MAX_FUNDING_MSAT)
+    // the 'score' is an aggregate of all factors beside the feeCost and CLTV
+    val scoreFactor = (capFactor + blockFactor) / 2
 
-    // the 'score' is an aggregate of all factors beside the feeCost and CLTV - scaledDown to match the costFactor
-    val scoreFactor = (capFactor + blockFactor) / 10000 + compoundCostSoFar.score
+    // Every edge is weighted by its clvt-delta value, normalized
+    val channelCltvDelta = edge.update.cltvExpiryDelta
+    val cltvFactor = normalize(channelCltvDelta, CLTV_LOW, CLTV_HIGH)
 
-    val costFactor = edgeCost(edge, compoundCostSoFar.costMsat, isNeighborTarget)
+    // Weights every edge by its cost in fees, normalized. The actual cost is carried away separately.
+    val edgeFees = edgeCost(edge, amountMsat + compoundCostSoFar.rawCost, isNeighborTarget) - amountMsat
+    val costFactor = normalizeCost(amountMsat, edgeFees)
 
-    val cltvFactor = compoundCostSoFar.cltvDelta + edge.update.cltvExpiryDelta
-
-    /**
-      *  Example values:
-      *  cltvDelta = 9
-      *  blockFactor = 590 000 * 1000 = 590 000 000
-      *  capFactor = 16 777 216 000
-      *
-      *  scoreFactor = 1 736 721,6 + 0
-      *  cltvFactor = 9
-      *  costFactor = 10 000 010 msat
-      *
-      *  weight (costR = 0.8, cltvR = 0.1, scoreR = 0.1) = 8173681,06
-      *  weight (costR = 0.1, cltvR = 0.8, scoreR = 0.1) = 1173680,36
-      *  weight (costR = 0.1, cltvR = 0.1, scoreR = 0.8) = 2389379,18
-      */
-
-    CompoundWeight(costFactor, cltvFactor, scoreFactor)
+    CompoundWeight(costFactor + compoundCostSoFar.feesNormalized, cltvFactor + compoundCostSoFar.cltvDeltaNormalized, scoreFactor + compoundCostSoFar.scoreNormalized, edgeFees + compoundCostSoFar.rawCost)
   }
 
   /**
@@ -302,6 +297,51 @@ object Graph {
   private def edgeCost(edge: GraphEdge, amountWithFees: Long, isNeighborTarget: Boolean): Long = isNeighborTarget match {
     case false => amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
     case true => amountWithFees
+  }
+
+  object RoutingHeuristics {
+
+    // Number of blocks in two months
+    val BLOCK_TIME_TWO_MONTHS = 8640
+
+    // Low/High bound for channel capacity
+    val CAPACITY_CHANNEL_LOW_MSAT = 1000 * 1000L // 1000 sat
+    val CAPACITY_CHANNEL_HIGH_MSAT = Channel.MAX_FUNDING_SATOSHIS * 1000L
+
+    // Low/High bound for CLTV channel value
+    val CLTV_LOW = 9
+    val CLTV_HIGH = 2016
+
+    /**
+      * Normalizes the fees into a [0,1] interval. Buckets with predefined values are used,
+      *
+      * example:
+      *     (average amount - average fee)  (high amount - high fees)
+      *     amount = 10000000 msat          amount = XXX msat
+      *     fees = 90 msat                  fees = YYY msat
+      *     normalizedCost => 0.1           normalizedCost => 0.5
+      *
+      * @param amountMsat
+      * @param edgeCost
+      * @return
+      */
+    def normalizeCost(amountMsat: Long, edgeCost: Long): Double = {
+      (edgeCost * 1000D) / amountMsat match {
+        case x if x > 0.003                 => 1    // #1 bucket: if above 3% of the amount go nuts!
+        case x if x > 0.002 && x < 0.003    => 0.75 // #2 bucket: if between 2 and 3 collapse into 0.75
+        case x if x > 0.001 && x < 0.002    => 0.5  // #3 bucket: if between 1 and 2 collapse into 0.5
+        case x if x > 0.0009 && x < 0.002   => 0.4  // #4 bucket: if between 0.09 and 1 collapse into 0.4
+        case x if x >= 0.0001 && 0.0009 < x => 0.1  //
+        case x if x <= 0.0001               => 0    // anything below 0.001% goes flat to zero
+        case _                              => 0
+      }
+    }
+
+    def normalize(value: Double, min: Double, max: Double) = {
+      if(value <= min) 0D
+      else if (value > max) 1D
+      else 1 - ((value - min) / (max - min))
+    }
   }
 
   /**
