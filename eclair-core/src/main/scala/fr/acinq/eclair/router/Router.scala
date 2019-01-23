@@ -581,17 +581,21 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyChannelRangeWithChecksums(chainHash, _, _, _, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       val shortChannelIdAndFlags = data.array
-        .map { channelInfo =>
+        .map { theirInfo =>
           var flag = 0
-          if (d.channels.contains(channelInfo.shortChannelId)) {
-            val ourInfo = Router.getChannelDigestInfo(d.channels, d.updates)(channelInfo.shortChannelId)
-            if (ourInfo.timestamp1 < channelInfo.timestamp1 && ourInfo.checksum1 != channelInfo.checksum1) flag = flag | FlagTypes.INCLUDE_CHANNEL_UPDATE_1
-            if (ourInfo.timestamp2 < channelInfo.timestamp2 && ourInfo.checksum2 != channelInfo.checksum2) flag = flag | FlagTypes.INCLUDE_CHANNEL_UPDATE_2
+          if (d.channels.contains(theirInfo.shortChannelId)) {
+            val ourInfo = Router.getChannelDigestInfo(d.channels, d.updates)(theirInfo.shortChannelId)
+            // we request their channel_update if all those conditions are met:
+            // - it is more recent than ours
+            // - it is different from ours, or it is the same but ours is about to be stale
+            // - it is not stale itself
+            if (ourInfo.timestamp1 < theirInfo.timestamp1 && (ourInfo.checksum1 != theirInfo.checksum1 || isAlmostStale(ourInfo.timestamp1)) && !isStale(theirInfo.timestamp1)) flag = flag | FlagTypes.INCLUDE_CHANNEL_UPDATE_1
+            if (ourInfo.timestamp2 < theirInfo.timestamp2 && (ourInfo.checksum2 != theirInfo.checksum2 || isAlmostStale(ourInfo.timestamp1)) && !isStale(theirInfo.timestamp2)) flag = flag | FlagTypes.INCLUDE_CHANNEL_UPDATE_2
           } else {
             // we don't know this channel: we request everything
             flag = flag | FlagTypes.INCLUDE_ANNOUNCEMENT | FlagTypes.INCLUDE_CHANNEL_UPDATE_1 | FlagTypes.INCLUDE_CHANNEL_UPDATE_2
           }
-          ShortChannelIdAndFlag(channelInfo.shortChannelId, flag.toByte)
+          ShortChannelIdAndFlag(theirInfo.shortChannelId, flag.toByte)
         }
         .filter(_.flag != 0)
       val (channelCount, updatesCount) = shortChannelIdAndFlags.foldLeft((0, 0)) {
@@ -887,11 +891,19 @@ object Router {
 
   def hasChannels(nodeId: PublicKey, channels: Iterable[ChannelAnnouncement]): Boolean = channels.exists(c => isRelatedTo(c, nodeId))
 
-  def isStale(u: ChannelUpdate): Boolean = {
+  def isStale(u: ChannelUpdate): Boolean = isStale(u.timestamp)
+
+  def isStale(timestamp: Long): Boolean = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update
     val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
-    u.timestamp < staleThresholdSeconds
+    timestamp < staleThresholdSeconds
+  }
+
+  def isAlmostStale(timestamp: Long): Boolean = {
+    // we define almost stale as 2 weeks minus 4 days (
+    val staleThresholdSeconds = Platform.currentTime / 1000 - 864000
+    timestamp < staleThresholdSeconds
   }
 
   /**
