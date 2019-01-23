@@ -18,6 +18,8 @@ package fr.acinq.eclair.router
 
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
+import akka.pattern.pipe
+import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -28,15 +30,17 @@ import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChan
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Graph.{WeightRatios, WeightedPath}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
+
 import scala.collection.{SortedSet, mutable}
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.{Random, Try}
+import fr.acinq.eclair.router.Graph.WeightRatios
 
 // @formatter:off
 
@@ -366,6 +370,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
     case Event('updatesMap, d) =>
       sender ! (d.updates ++ d.privateUpdates)
+      stay
+
+    case Event('data, d) =>
+      sender ! d
       stay
 
     case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, wr_opt), d) =>
