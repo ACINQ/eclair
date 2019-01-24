@@ -816,7 +816,6 @@ object Router {
 
     // TODO reorg
     val ensureFeeCap: CompoundWeight => Boolean = { cp =>
-      println(s"CP:$cp")
       if(cp.rawCost < 21000) true    // if absolute fee cost is less than 21sat OK
       else (cp.rawCost * 100D) / amountMsat match {
         case x if x < 0.03 => true   // if absolute fee is greater than 21sat then it must be less than 3% of amount

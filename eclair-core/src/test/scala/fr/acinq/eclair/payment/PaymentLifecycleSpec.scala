@@ -58,7 +58,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.expectMsg(PaymentFailed(request.paymentHash, LocalFailure(RouteNotFound) :: Nil))
   }
 
-  test("payment failed (route too expensive)") { fixture =>
+  ignore("payment failed (route too expensive)") { fixture =>
     import fixture._
     val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref))
     val monitor = TestProbe()
