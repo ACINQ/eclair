@@ -23,8 +23,9 @@ import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{ShortChannelId, randomKey}
+import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
 import org.scalatest.FunSuite
+
 import scala.util.{Failure, Success}
 
 /**
@@ -34,6 +35,10 @@ import scala.util.{Failure, Success}
 class RouteCalculationSpec extends FunSuite {
 
   import RouteCalculationSpec._
+
+  val currentBlockHeight = 554000
+
+  Globals.blockCount.lazySet(currentBlockHeight)
 
   val (a, b, c, d, e, f) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
 
@@ -662,13 +667,13 @@ class RouteCalculationSpec extends FunSuite {
     // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 11, totCltv = 8)
     // A -> E -> C -> D is 'score optimized', more recent channel/larger capacity route
     val updates = List(
-      makeUpdate(ShortChannelId("1000x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 13),
-      makeUpdate(ShortChannelId("1000x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdate(ShortChannelId("1000x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 15),
-      makeUpdate(ShortChannelId("1000x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 22),
-      makeUpdate(ShortChannelId("1000x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdate(ShortChannelId("1000x0x6"), f, d, feeBaseMsat = 10, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 14),
-      makeUpdate(ShortChannelId("876x0x7"), e, c, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = Some(16777210L), cltvDelta = 160)
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 13),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x2"), b, c, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 15),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x3"), c, d, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 22),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBaseMsat = 2, 4, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 14),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight - 250}x0x7"), e, c, feeBaseMsat = 5, 3, minHtlcMsat = 0, maxHtlcMsat = Some(167772100L), cltvDelta = 140)
     ).toMap
 
 
@@ -680,7 +685,7 @@ class RouteCalculationSpec extends FunSuite {
       scoreFactor = 0
     ))
 
-    assert(hops2ShortChannelIds(routeFeeOptimized) === "1000x0x1" :: "1000x0x2" :: "1000x0x3" :: Nil)
+    assert(hops2Nodes(routeFeeOptimized) === (a, b) :: (b,c) :: (c, d) :: Nil)
 
     val Success(routeCltvOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, wr = WeightRatios(
       costFactor = 0,
@@ -688,7 +693,7 @@ class RouteCalculationSpec extends FunSuite {
       scoreFactor = 0
     ))
 
-    assert(hops2ShortChannelIds(routeCltvOptimized) === "1000x0x4" :: "1000x0x5" :: "1000x0x6" :: Nil)
+    assert(hops2Nodes(routeCltvOptimized) === (a, e) :: (e,f) :: (f, d) :: Nil)
 
     val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, wr = WeightRatios(
       costFactor = 0,
@@ -696,18 +701,18 @@ class RouteCalculationSpec extends FunSuite {
       scoreFactor = 1
     ))
 
-    assert(hops2ShortChannelIds(routeScoreOptimized) === "1000x0x4" :: "876x0x7" :: "1000x0x3" :: Nil)
+    assert(hops2Nodes(routeScoreOptimized) === (a, e) :: (e,c) :: (c, d) :: Nil)
   }
 
   test("prefer going through an older channel if fees and CLTV are the same") {
 
     val g = makeGraph(List(
-      makeUpdate(ShortChannelId("20x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1),
-      makeUpdate(ShortChannelId("20x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1),
-      makeUpdate(ShortChannelId("10x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1), // younger channel
-      makeUpdate(ShortChannelId("20x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1),
-      makeUpdate(ShortChannelId("22x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1),
-      makeUpdate(ShortChannelId("23x0x6"), f, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1)
+      makeUpdate(ShortChannelId(s"${currentBlockHeight - 10}x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight - 10}x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight - 20}x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10), // younger channel
+      makeUpdate(ShortChannelId(s"${currentBlockHeight - 10}x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight - 8}x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight - 7}x0x6"), f, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10)
     ).toMap)
 
 
@@ -717,18 +722,18 @@ class RouteCalculationSpec extends FunSuite {
       scoreFactor = 0.33
     ))
 
-    assert(hops2ShortChannelIds(routeScoreOptimized) === "20x0x1" :: "10x0x2" :: "20x0x3" :: Nil)
+    assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b,c) :: (c, d) :: Nil)
   }
 
   test("prefer a route with a smaller total CLTV if fees and score are the same") {
 
     val g = makeGraph(List(
-      makeUpdate(ShortChannelId("10x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2),
-      makeUpdate(ShortChannelId("10x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2),
-      makeUpdate(ShortChannelId("10x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1), // smaller CLTV
-      makeUpdate(ShortChannelId("10x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2),
-      makeUpdate(ShortChannelId("10x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2),
-      makeUpdate(ShortChannelId("10x0x6"), f, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2)
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10), // smaller CLTV
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12)
     ).toMap)
 
 
@@ -738,7 +743,7 @@ class RouteCalculationSpec extends FunSuite {
       scoreFactor = 0.33
     ))
 
-    assert(hops2ShortChannelIds(routeScoreOptimized) === "10x0x1" :: "10x0x2" :: "10x0x3" :: Nil)
+    assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b,c) :: (c, d) :: Nil)
   }
 }
 
@@ -782,5 +787,7 @@ object RouteCalculationSpec {
   def hops2Edges(route: Seq[Hop]) = route.map(hop => GraphEdge(ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId), hop.lastUpdate))
 
   def hops2ShortChannelIds(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId.toString).toList
+
+  def hops2Nodes(route: Seq[Hop]) = route.map(hop => (hop.nodeId, hop.nextNodeId))
 
 }

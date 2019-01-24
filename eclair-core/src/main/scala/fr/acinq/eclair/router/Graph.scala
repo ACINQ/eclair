@@ -323,15 +323,16 @@ object Graph {
       */
     def normalizeCost(amountMsat: Long, edgeFeesMsat: Long): Double = {
        (edgeFeesMsat * 100D) / amountMsat match {
-        case x if x > 1                       => 1     // #1 bucket:
-        case x if x > 0.5 && x <= 1           => 0.75  // #2 bucket:
-        case x if x > 0.1 && x <= 0.5         => 0.6   // #3 bucket:
-        case x if x > 0.003 && x <= 0.1       => 0.5   // #4 bucket:
-        case x if x > 0.002 && x <= 0.003     => 0.4   // #5 bucket:
-        case x if x > 0.001 && x <= 0.002     => 0.3   // #6 bucket:
-        case x if x > 0.0009 && x <= 0.001    => 0.2   // #7 bucket:
-        case x if x > 0.0001 && 0.0009 <= x   => 0.1   // #8
-        case x if x > 0.0001 && 0 <=x         => 0.001 // #9
+        case x if x > 1                       => 1      // #1 bucket:
+        case x if x > 0.5 && x <= 1           => 0.75   // #2 bucket:
+        case x if x > 0.1 && x <= 0.5         => 0.6    // #3 bucket:
+        case x if x > 0.003 && x <= 0.1       => 0.5    // #4 bucket:
+        case x if x > 0.002 && x <= 0.003     => 0.4    // #5 bucket:
+        case x if x > 0.001 && x <= 0.002     => 0.3    // #6 bucket:
+        case x if x > 0.0009 && x <= 0.001    => 0.2    // #7 bucket:
+        case x if x > 0.0001 && 0.0009 <= x   => 0.1    // #8
+        case x if x > 0.00009 && 0.0001 <=x    => x     // #9 TODO review!
+        case x if x > 0.0001 && 0 <=x         => 0.001  // #9
         case _                                => 0.0001 // #10
       }
     }

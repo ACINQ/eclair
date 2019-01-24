@@ -813,10 +813,7 @@ object Router {
   def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty, wr: WeightRatios = COST_OPTIMIZED_WEIGHT_RATIO): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    val currentBlockHeight = Globals.blockCount.get() match {
-      case 0 => 90000
-      case other => other
-    }
+    val currentBlockHeight = Globals.blockCount.get()
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, wr, currentBlockHeight).toList match {
       case Nil => throw RouteNotFound
