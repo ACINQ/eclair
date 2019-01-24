@@ -791,11 +791,8 @@ object Router {
   // routes exceeding this difference won't be considered as a valid result
   val DEFAULT_ALLOWED_SPREAD = 0.1D
 
-  //
+  // A weight reatiponm
   val COST_OPTIMIZED_WEIGHT_RATIO = WeightRatios(costFactor = 1D, cltvDeltaFactor = 0, scoreFactor = 0)
-
-  //
-
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.
@@ -817,6 +814,7 @@ object Router {
 
     val currentBlockHeight = Globals.blockCount.get()
 
+    // TODO reorg
     val ensureFeeCap: CompoundWeight => Boolean = { cp =>
       println(s"CP:$cp")
       if(cp.rawCost < 21000) true    // if absolute fee cost is less than 21sat OK
@@ -832,7 +830,7 @@ object Router {
       case foundRoutes => foundRoutes
     }
 
-    // minimum cost
+    // minimum cost - TODO: is this still necessary?
     val minimumCost = foundRoutes.head.weight.rawCost
 
     // routes paying at most minimumCost + 10%
