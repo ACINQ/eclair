@@ -88,16 +88,18 @@ class RouteCalculationSpec extends FunSuite {
 
     val Success(route) = Router.findRoute(graph, a, d, amountMsat, numRoutes = 1)
 
-//    assert(hops2Ids(route) === 4 :: 5 :: 6 :: Nil)
-//    assert(Graph.pathCost(hops2Edges(route), amountMsat) === expectedCost)
-//
-//    // now channel 5 could route the amount (10000) but not the amount + fees (10007)
-//    val (desc, update) = makeUpdate(5L, e, f, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0, maxHtlcMsat = Some(10005))
-//    val graph1 = graph.addEdge(desc, update)
-//
-//    val Success(route1) = Router.findRoute(graph1, a, d, amountMsat, numRoutes = 1)
-//
-//    assert(hops2Ids(route1) === 1 :: 2 :: 3 :: Nil)
+    val feeCost = Graph.pathWeight(hops2Edges(route), amountMsat, graph, Router.COST_OPTIMIZED_WEIGHT_RATIO, 0).rawCost
+
+    assert(hops2Ids(route) === 4 :: 5 :: 6 :: Nil)
+    assert(amountMsat + feeCost === expectedCost)
+
+    // now channel 5 could route the amount (10000) but not the amount + fees (10007)
+    val (desc, update) = makeUpdate(5L, e, f, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0, maxHtlcMsat = Some(10005))
+    val graph1 = graph.addEdge(desc, update)
+
+    val Success(route1) = Router.findRoute(graph1, a, d, amountMsat, numRoutes = 1)
+
+    assert(hops2Ids(route1) === 1 :: 2 :: 3 :: Nil)
   }
 
   test("calculate route considering the direct channel pays no fees") {
@@ -557,7 +559,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val graph = DirectedGraph.makeGraph(edges)
 
-    val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 4, wr = Router.DEFAULT_WEIGHT_RATIOS, currentBlockHeight = 10000)
+    val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 4, wr = Router.COST_OPTIMIZED_WEIGHT_RATIO, currentBlockHeight = 10000)
 
     assert(fourShortestPaths.size === 4)
     assert(hops2Ids(fourShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
@@ -591,7 +593,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val graph = DirectedGraph().addEdges(edges)
 
-    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 2, wr = Router.DEFAULT_WEIGHT_RATIOS, currentBlockHeight = 1000)
+    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 2, wr = Router.COST_OPTIMIZED_WEIGHT_RATIO, currentBlockHeight = 1000)
 
     assert(twoShortestPaths.size === 2)
     val shortest = twoShortestPaths(0)
@@ -618,7 +620,7 @@ class RouteCalculationSpec extends FunSuite {
     val graph = DirectedGraph().addEdges(edges)
 
     //we ask for 3 shortest paths but only 2 can be found
-    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 3, wr = Router.DEFAULT_WEIGHT_RATIOS, currentBlockHeight = 1000)
+    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 3, wr = Router.COST_OPTIMIZED_WEIGHT_RATIO, currentBlockHeight = 1000)
 
     assert(foundPaths.size === 2)
     assert(hops2Ids(foundPaths(0).path.map(graphEdgeToHop)) === 1 :: 2 :: 3 :: Nil) // A -> B -> C -> F
@@ -646,11 +648,11 @@ class RouteCalculationSpec extends FunSuite {
       case Failure(_) => assert(false)
       case Success(someRoute) =>
 
-        val routeCost = Graph.pathCost(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT)
-        val allowedSpread = DEFAULT_AMOUNT_MSAT + (DEFAULT_AMOUNT_MSAT * Router.DEFAULT_ALLOWED_SPREAD)
+        val routeCost = Graph.pathWeight(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, g, Router.COST_OPTIMIZED_WEIGHT_RATIO, 0).rawCost
+        val allowedSpread = DEFAULT_AMOUNT_MSAT * Router.DEFAULT_ALLOWED_SPREAD
 
         // over the three routes we could only get the 2 cheapest because the third is too expensive (over 10% of the cheapest)
-        assert(routeCost == 10000005 || routeCost == 10000006)
+        assert(routeCost == 5 || routeCost == 6)
         assert(routeCost < allowedSpread)
     }
   }
@@ -697,7 +699,7 @@ class RouteCalculationSpec extends FunSuite {
     assert(hops2ShortChannelIds(routeScoreOptimized) === "1000x0x4" :: "876x0x7" :: "1000x0x3" :: Nil)
   }
 
-  test("prefer going through an older channel if fees and CLTVare the same") {
+  test("prefer going through an older channel if fees and CLTV are the same") {
 
     val g = makeGraph(List(
       makeUpdate(ShortChannelId("20x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1),

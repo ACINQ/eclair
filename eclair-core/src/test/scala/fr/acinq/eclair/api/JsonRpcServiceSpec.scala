@@ -61,7 +61,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override val socketHandler: Flow[Message, TextMessage.Strict, NotUsed] = makeSocketHandler(system)(materializer)
 
-    override val routeWeightRatios: Graph.WeightRatios = Router.DEFAULT_WEIGHT_RATIOS
+    override val routeWeightRatios: Graph.WeightRatios = Router.COST_OPTIMIZED_WEIGHT_RATIO
   }
 
   test("API service should handle failures correctly"){

@@ -386,7 +386,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
       // we ask the router to make a random selection among the three best routes, numRoutes = 3
-      findRoute(d.graph, start, end, amount, numRoutes = DEFAULT_ROUTES_COUNT, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, wr_opt.getOrElse(DEFAULT_WEIGHT_RATIOS))
+      findRoute(d.graph, start, end, amount, numRoutes = DEFAULT_ROUTES_COUNT, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, wr_opt.getOrElse(COST_OPTIMIZED_WEIGHT_RATIO))
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -793,7 +793,7 @@ object Router {
   val DEFAULT_ALLOWED_SPREAD = 0.1D
 
   //
-  val DEFAULT_WEIGHT_RATIOS = WeightRatios(costFactor = 1D, cltvDeltaFactor = 0, scoreFactor = 0)
+  val COST_OPTIMIZED_WEIGHT_RATIO = WeightRatios(costFactor = 1D, cltvDeltaFactor = 0, scoreFactor = 0)
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.
@@ -810,7 +810,7 @@ object Router {
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
     * @return the computed route to the destination @targetNodeId
     */
-  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty, wr: WeightRatios = DEFAULT_WEIGHT_RATIOS): Try[Seq[Hop]] = Try {
+  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty, wr: WeightRatios = COST_OPTIMIZED_WEIGHT_RATIO): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
     val currentBlockHeight = Globals.blockCount.get() match {

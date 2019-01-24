@@ -131,13 +131,6 @@ object Graph {
     shortestPaths
   }
 
-  // Calculates the total cost of a path (amount + fees), direct channels with the source will have a cost of 0 (pay no fees)
-  def pathCost(path: Seq[GraphEdge], amountMsat: Long): Long = {
-    path.drop(1).foldRight(amountMsat) { (edge, cost) =>
-      edgeCost(edge, cost, isNeighborTarget = false)
-    }
-  }
-
   def pathWeight(path: Seq[GraphEdge], amountMsat: Long, graph: DirectedGraph, wr: WeightRatios, currentBlockHeight: Long): CompoundWeight = {
     path.drop(1).foldRight(CompoundWeight(0, 0, 0, 0)) { (edge, cost) =>
       edgeWeightCompound(amountMsat, edge, cost, isNeighborTarget = false, currentBlockHeight)
@@ -212,13 +205,6 @@ object Graph {
           // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
           // note: there is always an entry for the current in the 'cost' map
           val newMinimumCompoundWeight = edgeWeightCompound(amountMsat, edge, weight.get(current.key), neighbor == sourceNode, currentBlockHeight)
-//          println(s"EDGE:${edge.desc.shortChannelId} " +
-//            s"costNorm=${newMinimumCompoundWeight.feesNormalized} " +
-//            s"cltvNorm=${newMinimumCompoundWeight.cltvDeltaNormalized} " +
-//            s"scoreNorm=${newMinimumCompoundWeight.scoreNormalized} " +
-//            s"fees=${newMinimumCompoundWeight.rawCost} " +
-//            s"weight=${newMinimumCompoundWeight.totalWeight(wr)}")
-
 
           // test for ignored edges
           if (edge.update.htlcMaximumMsat.forall(newMinimumCompoundWeight.rawCost + amountMsat <= _) &&
@@ -293,15 +279,8 @@ object Graph {
     // Weights every edge by its cost in fees, normalized. The actual cost is carried away separately.
     val edgeFees = edgeCost(edge, amountMsat + compoundCostSoFar.rawCost, isNeighborTarget) - amountMsat
     val costFactor = normalizeCost(amountMsat, edgeFees)
-//    println(s"edge: ${edge.desc.shortChannelId}")
-//    println(s"CLTV=${edge.update.cltvExpiryDelta} cltv_normalized=$cltvFactor")
-//    println(s"FEE=$edgeFees fee_normalized=$costFactor")
-//    println(s"block=$channelBlockHeight block_normalized=$blockFactor")
-//    println(s"capacity=$edgeMaxCapacity cap_factor=$capFactor")
-    //println(s"<# edge=${edge.desc.shortChannelId} costFactor=$costFactor cltvFactor=$cltvFactor scoreFactor=$scoreFactor edgeFees=$edgeFees")
 
-
-    CompoundWeight(costFactor + compoundCostSoFar.feesNormalized, cltvFactor + compoundCostSoFar.cltvDeltaNormalized, scoreFactor + compoundCostSoFar.scoreNormalized, edgeFees + compoundCostSoFar.rawCost)
+    CompoundWeight(costFactor + compoundCostSoFar.feesNormalized, cltvFactor + compoundCostSoFar.cltvDeltaNormalized, scoreFactor + compoundCostSoFar.scoreNormalized, edgeFees)
   }
 
   /**
