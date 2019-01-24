@@ -362,7 +362,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 payment"))
       val pr = sender.expectMsgType[PaymentRequest]
 
-      val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId)
+      val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId, maxFeeBaseMsat = 400000) // high fee tolerance
       sender.send(nodes("A").paymentInitiator, sendReq)
       sender.expectMsgType[PaymentSucceeded]
     }
@@ -400,7 +400,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val preimage: BinaryData = "42" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F1").nodeParams.nodeId, maxAttempts = 1)
+    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F1").nodeParams.nodeId, maxAttempts = 1, maxFeeBaseMsat = 400000) // high fee tolerance
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
@@ -478,7 +478,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val preimage: BinaryData = "42" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F2").nodeParams.nodeId, maxAttempts = 1)
+    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F2").nodeParams.nodeId, maxAttempts = 1, maxFeeBaseMsat = 400000) // high fee tolerance
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
@@ -552,7 +552,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val preimage: BinaryData = "42" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F3").nodeParams.nodeId, maxAttempts = 1)
+    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F3").nodeParams.nodeId, maxAttempts = 1, maxFeeBaseMsat = 400000) // high fee tolerance
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
@@ -612,7 +612,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val preimage: BinaryData = "42" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F4").nodeParams.nodeId, maxAttempts = 1)
+    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F4").nodeParams.nodeId, maxAttempts = 1, maxFeeBaseMsat = 400000) // high fee tolerance
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
@@ -683,7 +683,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val amountMsat = MilliSatoshi(300000000L)
     sender.send(paymentHandlerF, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
-    val sendReq = SendPayment(300000000L, pr.paymentHash, pr.nodeId)
+    val sendReq = SendPayment(300000000L, pr.paymentHash, pr.nodeId, maxFeeBaseMsat = 400000) // high fee tolerance
     sender.send(nodes("A").paymentInitiator, sendReq)
     // we forward the htlc to the payment handler
     forwardHandlerF.expectMsgType[UpdateAddHtlc]
@@ -696,7 +696,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     def send(amountMsat: Long, paymentHandler: ActorRef, paymentInitiator: ActorRef) = {
       sender.send(paymentHandler, ReceivePayment(Some(MilliSatoshi(amountMsat)), "1 coffee"))
       val pr = sender.expectMsgType[PaymentRequest]
-      val sendReq = SendPayment(amountMsat, pr.paymentHash, pr.nodeId)
+      val sendReq = SendPayment(amountMsat, pr.paymentHash, pr.nodeId, maxFeeBaseMsat = 400000) // high fee tolerance
       sender.send(paymentInitiator, sendReq)
       sender.expectNoMsg()
     }
