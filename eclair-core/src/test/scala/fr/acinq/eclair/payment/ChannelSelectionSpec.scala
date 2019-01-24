@@ -1,6 +1,5 @@
 package fr.acinq.eclair.payment
 
-import akka.http.impl.util.DefaultNoLogging
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC}
@@ -30,7 +29,7 @@ class ChannelSelectionSpec extends FunSuite {
 
     val channelUpdate = dummyUpdate(ShortChannelId(12345), 10, 100, 1000, 100, 10000000, true)
 
-    implicit val log = DefaultNoLogging
+    implicit val log = akka.event.NoLogging
 
     // nominal case
     assert(Relayer.handleRelay(relayPayload, Some(channelUpdate)) === Right(CMD_ADD_HTLC(relayPayload.payload.amtToForward, relayPayload.add.paymentHash, relayPayload.payload.outgoingCltvValue, relayPayload.nextPacket.serialize, upstream_opt = Some(relayPayload.add), commit = true, redirected = false)))
@@ -78,7 +77,7 @@ class ChannelSelectionSpec extends FunSuite {
     node2channels.put(a, mutable.Set(ShortChannelId(12345), ShortChannelId(11111), ShortChannelId(22222), ShortChannelId(33333)))
     node2channels.put(b, mutable.Set(ShortChannelId(44444)))
 
-    implicit val log = DefaultNoLogging
+    implicit val log = akka.event.NoLogging
 
     import com.softwaremill.quicklens._
 
