@@ -421,9 +421,9 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-//    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1)
-//    assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
-//    assert(route1.get(1).lastUpdate.feeBaseMsat == 10)
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1)
+    assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+    assert(route1.get(1).lastUpdate.feeBaseMsat == 10)
 
     val (extraDesc, extraUpdate) = makeUpdate(2L, b, c, 5, 5)
 
@@ -564,7 +564,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val graph = DirectedGraph.makeGraph(edges)
 
-    val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 4, wr = Router.COST_OPTIMIZED_WEIGHT_RATIO, currentBlockHeight = 10000)
+    val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 4, wr = Router.COST_OPTIMIZED_WEIGHT_RATIO, currentBlockHeight = 10000, {_ => true})
 
     assert(fourShortestPaths.size === 4)
     assert(hops2Ids(fourShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
@@ -598,7 +598,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val graph = DirectedGraph().addEdges(edges)
 
-    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 2, wr = Router.COST_OPTIMIZED_WEIGHT_RATIO, currentBlockHeight = 1000)
+    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 2, wr = Router.COST_OPTIMIZED_WEIGHT_RATIO, currentBlockHeight = 1000, { _ => true })
 
     assert(twoShortestPaths.size === 2)
     val shortest = twoShortestPaths(0)
@@ -625,7 +625,7 @@ class RouteCalculationSpec extends FunSuite {
     val graph = DirectedGraph().addEdges(edges)
 
     //we ask for 3 shortest paths but only 2 can be found
-    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 3, wr = Router.COST_OPTIMIZED_WEIGHT_RATIO, currentBlockHeight = 1000)
+    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 3, wr = Router.COST_OPTIMIZED_WEIGHT_RATIO, currentBlockHeight = 1000, { _ => true })
 
     assert(foundPaths.size === 2)
     assert(hops2Ids(foundPaths(0).path.map(graphEdgeToHop)) === 1 :: 2 :: 3 :: Nil) // A -> B -> C -> F
@@ -661,6 +661,7 @@ class RouteCalculationSpec extends FunSuite {
         assert(routeCost < allowedSpread)
     }
   }
+
   test("Use weight ratios to when computing the edge weight") {
 
     // A -> B -> C -> D is 'fee optimized', lower fees route (totFees = 2, totCltv = 20)

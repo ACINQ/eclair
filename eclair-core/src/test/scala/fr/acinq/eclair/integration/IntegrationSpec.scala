@@ -262,7 +262,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
       val update = sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]](10 seconds).apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
       update == channelUpdateBC
-    }, max = 30 seconds, interval = 1 seconds)
+    }, max = 30 seconds, interval = 3 seconds)
 
     // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
     sender.expectNoMsg(3 seconds)

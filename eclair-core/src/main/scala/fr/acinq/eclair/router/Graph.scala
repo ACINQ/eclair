@@ -56,7 +56,16 @@ object Graph {
     * @param pathsToFind
     * @return
     */
-  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], pathsToFind: Int, wr: WeightRatios, currentBlockHeight: Long): Seq[WeightedPath] = {
+  def yenKshortestPaths(graph: DirectedGraph,
+                        sourceNode: PublicKey,
+                        targetNode: PublicKey,
+                        amountMsat: Long,
+                        ignoredEdges: Set[ChannelDesc],
+                        extraEdges: Set[GraphEdge],
+                        pathsToFind: Int,
+                        wr: WeightRatios,
+                        currentBlockHeight: Long,
+                        boundaries: CompoundWeight => Boolean): Seq[WeightedPath] = {
 
     var allSpurPathsFound = false
 
@@ -68,7 +77,7 @@ object Graph {
     val candidates = new mutable.PriorityQueue[WeightedPath]
 
     // find the shortest path, k = 0
-    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, wr, currentBlockHeight)
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, wr, currentBlockHeight, boundaries)
     shortestPaths += WeightedPath(shortestPath, pathWeight(shortestPath, amountMsat, graph, wr, currentBlockHeight))
 
     // main loop
@@ -97,7 +106,7 @@ object Graph {
           }
 
           // find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
-          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges, wr, currentBlockHeight)
+          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges, wr, currentBlockHeight, boundaries)
 
           // if there wasn't a path the spur will be empty
           if(spurPath.nonEmpty) {
@@ -137,6 +146,8 @@ object Graph {
     }
   }
 
+
+
   /**
     * Finds the shortest path in the graph, uses a modified version of Dijsktra's algorithm that computes
     * the shortest path from the target to the source (this is because we want to calculate the weight of the
@@ -151,7 +162,15 @@ object Graph {
     * @return
     */
 
-  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], wr: WeightRatios, currentBlockHeight: Long): Seq[GraphEdge] = {
+  def dijkstraShortestPath(g: DirectedGraph,
+                           sourceNode: PublicKey,
+                           targetNode: PublicKey,
+                           amountMsat: Long,
+                           ignoredEdges: Set[ChannelDesc],
+                           extraEdges: Set[GraphEdge],
+                           wr: WeightRatios,
+                           currentBlockHeight: Long,
+                           boundaries: CompoundWeight => Boolean): Seq[GraphEdge] = {
 
     // optionally add the extra edges to the graph
     val graphVerticesWithExtra = extraEdges.nonEmpty match {
@@ -210,6 +229,7 @@ object Graph {
           if (edge.update.htlcMaximumMsat.forall(newMinimumCompoundWeight.rawCost + amountMsat <= _) &&
             newMinimumCompoundWeight.rawCost + amountMsat >= edge.update.htlcMinimumMsat &&
             neighborPathLength <= ROUTE_MAX_LENGTH && // ignore this edge if it would make the path too long
+            boundaries(newMinimumCompoundWeight) &&
             !ignoredEdges.contains(edge.desc)
           ) {
 
@@ -287,7 +307,7 @@ object Graph {
     *
     * @param edge the edge for which we want to compute the weight
     * @param amountWithFees the value that this edge will have to carry along
-    * @param isNeighborTarget true if the receiving vertex of this edge is the target node (source in a reversed graph), which has cost 0
+    * @param isNeighborTarget true if the receiving vertex of this edge is the target node (source in a reversed graph), which has no fee cost
     * @return the new amount updated with the necessary fees for this edge
     */
   private def edgeCost(edge: GraphEdge, amountWithFees: Long, isNeighborTarget: Boolean): Long = isNeighborTarget match {
@@ -331,7 +351,7 @@ object Graph {
         case x if x > 0.001 && x <= 0.002     => 0.3    // #6 bucket:
         case x if x > 0.0009 && x <= 0.001    => 0.2    // #7 bucket:
         case x if x > 0.0001 && 0.0009 <= x   => 0.1    // #8
-        case x if x > 0.00009 && 0.0001 <=x    => x     // #9 TODO review!
+        case x if x > 0.00009 && 0.0001 <= x  => x     // #9 TODO review!
         case x if x > 0.0001 && 0 <=x         => 0.001  // #9
         case _                                => 0.0001 // #10
       }

@@ -795,6 +795,9 @@ object Router {
   //
   val COST_OPTIMIZED_WEIGHT_RATIO = WeightRatios(costFactor = 1D, cltvDeltaFactor = 0, scoreFactor = 0)
 
+  //
+
+
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.
     * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result,
@@ -815,7 +818,9 @@ object Router {
 
     val currentBlockHeight = Globals.blockCount.get()
 
-    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, wr, currentBlockHeight).toList match {
+
+
+    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, wr, currentBlockHeight, { _ => true }).toList match {
       case Nil => throw RouteNotFound
       case route :: Nil  if route.path.isEmpty => throw RouteNotFound
       case foundRoutes => foundRoutes
