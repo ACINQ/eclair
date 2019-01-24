@@ -825,10 +825,10 @@ object Router {
     }
 
     // minimum cost
-    val minimumCost = foundRoutes.head.weight
+    val minimumCost = foundRoutes.head.weight.rawCost
 
     // routes paying at most minimumCost + 10%
-    val eligibleRoutes = foundRoutes.filter(_.weight  <= (minimumCost + minimumCost * DEFAULT_ALLOWED_SPREAD).round)
+    val eligibleRoutes = foundRoutes.filter(_.weight.rawCost  <= (minimumCost + minimumCost * DEFAULT_ALLOWED_SPREAD).round)
     Random.shuffle(eligibleRoutes).head.path.map(graphEdgeToHop)
   }
 }

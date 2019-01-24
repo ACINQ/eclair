@@ -29,7 +29,7 @@ object Graph {
   case class WeightRatios(costFactor: Double, cltvDeltaFactor: Double, scoreFactor: Double) {
     require(0 < costFactor + cltvDeltaFactor + scoreFactor && costFactor + cltvDeltaFactor + scoreFactor <= 1D, "Total weight ratio must be between 0 and 1")
   }
-  case class WeightedPath(path: Seq[GraphEdge], weight: Long)
+  case class WeightedPath(path: Seq[GraphEdge], weight: CompoundWeight)
 
   /**
     * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
@@ -43,8 +43,8 @@ object Graph {
     }
   }
 
-  implicit object PathComparator extends Ordering[WeightedPath] {
-    override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.compareTo(x.weight)
+  class PathComparator(wr: WeightRatios) extends Ordering[WeightedPath] {
+    override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.compare(x.weight, wr)
   }
   /**
     * Yen's algorithm to find the k-shortest (loopless) paths in a graph, uses dijkstra as search algo. Is guaranteed to terminate finding
@@ -60,6 +60,8 @@ object Graph {
 
     var allSpurPathsFound = false
 
+    implicit val pc = new PathComparator(wr)
+
     // stores the shortest paths
     val shortestPaths = new mutable.MutableList[WeightedPath]
     // stores the candidates for k(K +1) shortest paths, sorted by path cost
@@ -67,7 +69,7 @@ object Graph {
 
     // find the shortest path, k = 0
     val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, wr, currentBlockHeight)
-    shortestPaths += WeightedPath(shortestPath, pathCost(shortestPath, amountMsat))
+    shortestPaths += WeightedPath(shortestPath, pathWeight(shortestPath, amountMsat, graph, wr, currentBlockHeight))
 
     // main loop
     for(k <- 1 until pathsToFind) {
@@ -107,7 +109,7 @@ object Graph {
             }
 
             //val totalPath = concat(rootPathEdges, spurPath.toList)
-            val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat))
+            val candidatePath = WeightedPath(totalPath, pathWeight(totalPath, amountMsat, graph, wr, currentBlockHeight))
 
             if (!shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
               candidates.enqueue(candidatePath)
@@ -133,6 +135,12 @@ object Graph {
   def pathCost(path: Seq[GraphEdge], amountMsat: Long): Long = {
     path.drop(1).foldRight(amountMsat) { (edge, cost) =>
       edgeCost(edge, cost, isNeighborTarget = false)
+    }
+  }
+
+  def pathWeight(path: Seq[GraphEdge], amountMsat: Long, graph: DirectedGraph, wr: WeightRatios, currentBlockHeight: Long): CompoundWeight = {
+    path.drop(1).foldRight(CompoundWeight(0, 0, 0, 0)) { (edge, cost) =>
+      edgeWeightCompound(amountMsat, edge, cost, isNeighborTarget = false, currentBlockHeight)
     }
   }
 
@@ -188,7 +196,9 @@ object Graph {
         // build the neighbors with optional extra edges
         val currentNeighbors = extraEdges.isEmpty match {
           case true => g.getIncomingEdgesOf(current.key)
-          case false => g.getIncomingEdgesOf(current.key) ++ extraEdges.filter(_.desc.b == current.key)
+          case false =>
+            val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
+            g.getIncomingEdgesOf(current.key).filterNot(e => extraNeighbors.exists(_.desc.shortChannelId == e.desc.shortChannelId)) ++ extraNeighbors
         }
 
         // for each neighbor
@@ -202,12 +212,12 @@ object Graph {
           // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
           // note: there is always an entry for the current in the 'cost' map
           val newMinimumCompoundWeight = edgeWeightCompound(amountMsat, edge, weight.get(current.key), neighbor == sourceNode, currentBlockHeight)
-          println(s"EDGE:${edge.desc.shortChannelId.toLong} " +
-            s"costNorm=${newMinimumCompoundWeight.feesNormalized} " +
-            s"cltvNorm=${newMinimumCompoundWeight.cltvDeltaNormalized} " +
-            s"scoreNorm=${newMinimumCompoundWeight.scoreNormalized} " +
-            s"fees=${newMinimumCompoundWeight.rawCost} " +
-            s"weight=${newMinimumCompoundWeight.totalWeight(wr)}")
+//          println(s"EDGE:${edge.desc.shortChannelId} " +
+//            s"costNorm=${newMinimumCompoundWeight.feesNormalized} " +
+//            s"cltvNorm=${newMinimumCompoundWeight.cltvDeltaNormalized} " +
+//            s"scoreNorm=${newMinimumCompoundWeight.scoreNormalized} " +
+//            s"fees=${newMinimumCompoundWeight.rawCost} " +
+//            s"weight=${newMinimumCompoundWeight.totalWeight(wr)}")
 
 
           // test for ignored edges
@@ -271,7 +281,7 @@ object Graph {
 
     // Every edge is weighted by channel capacity, but larger channels add less weight
     val edgeMaxCapacity = edge.update.htlcMaximumMsat.getOrElse(CAPACITY_CHANNEL_LOW_MSAT)
-    val capFactor = normalize(edgeMaxCapacity, CAPACITY_CHANNEL_LOW_MSAT, CAPACITY_CHANNEL_HIGH_MSAT)
+    val capFactor = 1 - normalize(edgeMaxCapacity, CAPACITY_CHANNEL_LOW_MSAT, CAPACITY_CHANNEL_HIGH_MSAT)
 
     // the 'score' is an aggregate of all factors beside the feeCost and CLTV
     val scoreFactor = (capFactor + blockFactor) / 2
@@ -283,6 +293,13 @@ object Graph {
     // Weights every edge by its cost in fees, normalized. The actual cost is carried away separately.
     val edgeFees = edgeCost(edge, amountMsat + compoundCostSoFar.rawCost, isNeighborTarget) - amountMsat
     val costFactor = normalizeCost(amountMsat, edgeFees)
+//    println(s"edge: ${edge.desc.shortChannelId}")
+//    println(s"CLTV=${edge.update.cltvExpiryDelta} cltv_normalized=$cltvFactor")
+//    println(s"FEE=$edgeFees fee_normalized=$costFactor")
+//    println(s"block=$channelBlockHeight block_normalized=$blockFactor")
+//    println(s"capacity=$edgeMaxCapacity cap_factor=$capFactor")
+    //println(s"<# edge=${edge.desc.shortChannelId} costFactor=$costFactor cltvFactor=$cltvFactor scoreFactor=$scoreFactor edgeFees=$edgeFees")
+
 
     CompoundWeight(costFactor + compoundCostSoFar.feesNormalized, cltvFactor + compoundCostSoFar.cltvDeltaNormalized, scoreFactor + compoundCostSoFar.scoreNormalized, edgeFees + compoundCostSoFar.rawCost)
   }
@@ -313,34 +330,37 @@ object Graph {
     val CLTV_HIGH = 2016
 
     /**
-      * Normalizes the fees into a [0,1] interval. Buckets with predefined values are used,
+      * Normalizes the fees into a [0,1] interval with buckets using predefined values
       *
       * example:
-      *     (average amount - average fee)  (high amount - high fees)
-      *     amount = 10000000 msat          amount = XXX msat
-      *     fees = 90 msat                  fees = YYY msat
-      *     normalizedCost => 0.1           normalizedCost => 0.5
+      *     (average amount - low fee)      (low amount - high fees)    (high amount - low fees)
+      *     amount = 10000000 msat          amount = 1000 msat          amount = 25000000 msat
+      *     fees = 90 msat                  fees = 1000 msat            fees = 30000 msat
+      *     normalized = 0.1                normalized = 1              normalized = 0.6
       *
       * @param amountMsat
-      * @param edgeCost
+      * @param edgeFeesMsat
       * @return
       */
-    def normalizeCost(amountMsat: Long, edgeCost: Long): Double = {
-      (edgeCost * 1000D) / amountMsat match {
-        case x if x > 0.003                 => 1    // #1 bucket: if above 3% of the amount go nuts!
-        case x if x > 0.002 && x < 0.003    => 0.75 // #2 bucket: if between 2 and 3 collapse into 0.75
-        case x if x > 0.001 && x < 0.002    => 0.5  // #3 bucket: if between 1 and 2 collapse into 0.5
-        case x if x > 0.0009 && x < 0.002   => 0.4  // #4 bucket: if between 0.09 and 1 collapse into 0.4
-        case x if x >= 0.0001 && 0.0009 < x => 0.1  //
-        case x if x <= 0.0001               => 0    // anything below 0.001% goes flat to zero
-        case _                              => 0
+    def normalizeCost(amountMsat: Long, edgeFeesMsat: Long): Double = {
+       (edgeFeesMsat * 100D) / amountMsat match {
+        case x if x > 1                       => 1     // #1 bucket:
+        case x if x > 0.5 && x <= 1           => 0.75  // #2 bucket:
+        case x if x > 0.1 && x <= 0.5         => 0.6   // #3 bucket:
+        case x if x > 0.003 && x <= 0.1       => 0.5   // #4 bucket:
+        case x if x > 0.002 && x <= 0.003     => 0.4   // #5 bucket:
+        case x if x > 0.001 && x <= 0.002     => 0.3   // #6 bucket:
+        case x if x > 0.0009 && x <= 0.001    => 0.2   // #7 bucket:
+        case x if x > 0.0001 && 0.0009 <= x   => 0.1   // #8
+        case x if x > 0.0001 && 0 <=x         => 0.001 // #9
+        case _                                => 0.0001 // #10
       }
     }
 
     def normalize(value: Double, min: Double, max: Double) = {
       if(value <= min) 0D
       else if (value > max) 1D
-      else 1 - ((value - min) / (max - min))
+      else (value - min) / (max - min)
     }
   }
 

@@ -557,7 +557,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val graph = DirectedGraph.makeGraph(edges)
 
-    val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 4, wr = Router.DEFAULT_WEIGHT_RATIOS, currentBlockHeight = 1000)
+    val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 4, wr = Router.DEFAULT_WEIGHT_RATIOS, currentBlockHeight = 10000)
 
     assert(fourShortestPaths.size === 4)
     assert(hops2Ids(fourShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
@@ -660,38 +660,38 @@ class RouteCalculationSpec extends FunSuite {
     // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 11, totCltv = 8)
     // A -> E -> C -> D is 'score optimized', more recent channel/larger capacity route
     val updates = List(
-      makeUpdate(ShortChannelId("1000x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 3),
-      makeUpdate(ShortChannelId("1000x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2),
-      makeUpdate(ShortChannelId("1000x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 5),
-      makeUpdate(ShortChannelId("1000x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdate(ShortChannelId("1000x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2),
-      makeUpdate(ShortChannelId("1000x0x6"), f, d, feeBaseMsat = 10, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 4),
-      makeUpdate(ShortChannelId("876x0x7"), e, c, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = Some(16777210L), cltvDelta = 150)
+      makeUpdate(ShortChannelId("1000x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 13),
+      makeUpdate(ShortChannelId("1000x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId("1000x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 15),
+      makeUpdate(ShortChannelId("1000x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 22),
+      makeUpdate(ShortChannelId("1000x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId("1000x0x6"), f, d, feeBaseMsat = 10, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 14),
+      makeUpdate(ShortChannelId("876x0x7"), e, c, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = Some(16777210L), cltvDelta = 160)
     ).toMap
 
 
     val g = makeGraph(updates)
 
-    val Success(routeFeeOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
-      costFactor = 0.98,
-      cltvDeltaFactor = 0.01,
-      scoreFactor = 0.001
+    val Success(routeFeeOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, wr = WeightRatios(
+      costFactor = 1,
+      cltvDeltaFactor = 0,
+      scoreFactor = 0
     ))
 
     assert(hops2ShortChannelIds(routeFeeOptimized) === "1000x0x1" :: "1000x0x2" :: "1000x0x3" :: Nil)
 
-    val Success(routeCltvOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
-      costFactor = 0.001,
-      cltvDeltaFactor = 0.98,
-      scoreFactor = 0.001
+    val Success(routeCltvOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, wr = WeightRatios(
+      costFactor = 0,
+      cltvDeltaFactor = 1,
+      scoreFactor = 0
     ))
 
     assert(hops2ShortChannelIds(routeCltvOptimized) === "1000x0x4" :: "1000x0x5" :: "1000x0x6" :: Nil)
 
-    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
-      costFactor = 0.0,
-      cltvDeltaFactor = 0.0,
-      scoreFactor = 0.98
+    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, wr = WeightRatios(
+      costFactor = 0,
+      cltvDeltaFactor = 0,
+      scoreFactor = 1
     ))
 
     assert(hops2ShortChannelIds(routeScoreOptimized) === "1000x0x4" :: "876x0x7" :: "1000x0x3" :: Nil)
