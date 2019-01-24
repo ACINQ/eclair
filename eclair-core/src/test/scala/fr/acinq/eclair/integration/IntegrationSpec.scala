@@ -255,10 +255,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(nodes("A").paymentInitiator, sendReq)
     // A will receive an error from B that include the updated channel update, then will retry the payment
     sender.expectMsgType[PaymentSucceeded](5 seconds)
-    // in the meantime, the router will have updated its state
-    sender.send(nodes("A").router, 'updatesMap)
-    assert(sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)) === channelUpdateBC)
-    // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
+
+    awaitCond({
+      // in the meantime, the router will have updated its state
+      sender.send(nodes("A").router, 'updatesMap)
+      // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
+      val update = sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]](10 seconds).apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
+      update == channelUpdateBC
+    }, max = 30 seconds, interval = 1 seconds)
+
     // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
     sender.expectNoMsg(3 seconds)
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, TickRefreshChannelUpdate))

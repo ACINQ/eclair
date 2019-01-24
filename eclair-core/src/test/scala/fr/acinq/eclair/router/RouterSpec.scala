@@ -29,11 +29,10 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
-import fr.acinq.eclair.router.Router.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.QueryShortChannelIds
 import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
-
+import RouteCalculationSpec.DEFAULT_AMOUNT_MSAT
 import scala.collection.SortedSet
 import scala.compat.Platform
 import scala.concurrent.duration._

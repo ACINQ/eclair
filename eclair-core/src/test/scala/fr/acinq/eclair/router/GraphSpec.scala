@@ -55,7 +55,6 @@ class GraphSpec extends FunSuite {
     assert(otherGraph.vertexSet().size === 5)
 
     // add some edges to the graph
-
     val (descAB, updateAB) = makeUpdate(1L, a, b, 0, 0)
     val (descBC, updateBC) = makeUpdate(2L, b, c, 0, 0)
     val (descAD, updateAD) = makeUpdate(3L, a, d, 0, 0)
@@ -75,9 +74,9 @@ class GraphSpec extends FunSuite {
     assert(graphWithEdges.edgesOf(d).size === 1)
     assert(graphWithEdges.edgesOf(e).size === 0)
 
-    val withRemovedEdges = graphWithEdges.removeEdge(descDC)
+    val withRemovedEdges = graphWithEdges.removeEdge(descAD)
 
-    assert(withRemovedEdges.edgesOf(d).size === 0)
+    assert(withRemovedEdges.edgesOf(d).size === 1)
   }
 
   test("instantiate a graph adding edges only") {
@@ -98,6 +97,7 @@ class GraphSpec extends FunSuite {
 
     assert(graph.vertexSet().size === 5)
     assert(graph.edgesOf(c).size === 1)
+    assert(graph.getIncomingEdgesOf(c).size === 2)
     assert(graph.edgeSet().size === 6)
   }
 
@@ -134,6 +134,8 @@ class GraphSpec extends FunSuite {
 
     assert(graph.edgeSet().size === 6)
 
+    assert(graph.containsEdge(descBE))
+
     val withRemovedEdge = graph.removeEdge(descBE)
     assert(withRemovedEdge.edgeSet().size === 5)
 
@@ -142,7 +144,7 @@ class GraphSpec extends FunSuite {
 
     val withoutAnyIncomingEdgeInE = graph.removeEdges(Seq(descBE, descCE))
     assert(withoutAnyIncomingEdgeInE.containsVertex(e))
-    assert(withoutAnyIncomingEdgeInE.getIncomingEdgesOf(e).size == 0)
+    assert(withoutAnyIncomingEdgeInE.edgesOf(e).size == 0)
   }
 
   test("should get an edge given two vertices") {
@@ -161,10 +163,15 @@ class GraphSpec extends FunSuite {
     assert(edgesAB.head.desc.a === a)
     assert(edgesAB.head.desc.b === b)
 
-    val bNeighbors = graph.edgesOf(b)
-    assert(bNeighbors.size === 1)
-    assert(bNeighbors.exists(_.desc.a === b)) //there should be an edge b -- c
-    assert(bNeighbors.exists(_.desc.b === c))
+    val bIncoming = graph.getIncomingEdgesOf(b)
+    assert(bIncoming.size === 1)
+    assert(bIncoming.exists(_.desc.a === a)) //there should be an edge a --> b
+    assert(bIncoming.exists(_.desc.b === b))
+
+    val bOutgoing = graph.edgesOf(b)
+    assert(bOutgoing.size === 1)
+    assert(bOutgoing.exists(_.desc.a === b))
+    assert(bOutgoing.exists(_.desc.b === c))
   }
 
   test("there can be multiple edges between the same vertices") {
