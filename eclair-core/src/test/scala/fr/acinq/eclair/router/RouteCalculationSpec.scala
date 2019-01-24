@@ -746,6 +746,29 @@ class RouteCalculationSpec extends FunSuite {
 
     assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b,c) :: (c, d) :: Nil)
   }
+
+  test("avoid a route that pays more than 21sat + 3% of the total amount") {
+
+    val g = makeGraph(List(
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight - 200}x0x2"), b, c, feeBaseMsat = 1001, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight - 150}x0x3"), c, d, feeBaseMsat = 20000, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBaseMsat = 20000, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12)
+    ).toMap)
+
+
+    // even though A -> B -> C -> D has a better cltv/score (and we're optimizing for it) it violates the max fee cap (21sat + 3%)
+    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
+      costFactor = 0,
+      cltvDeltaFactor = 0.5,
+      scoreFactor = 0.5
+    ))
+
+    assert(hops2Nodes(routeScoreOptimized) === (a, e) :: (e,f) :: (f, d) :: Nil)
+  }
+
 }
 
 object RouteCalculationSpec {

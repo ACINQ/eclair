@@ -30,7 +30,7 @@ import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChan
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{WeightRatios, WeightedPath}
+import fr.acinq.eclair.router.Graph.{CompoundWeight, WeightRatios, WeightedPath}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 
@@ -40,7 +40,6 @@ import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.{Random, Try}
-import fr.acinq.eclair.router.Graph.WeightRatios
 
 // @formatter:off
 
@@ -818,9 +817,16 @@ object Router {
 
     val currentBlockHeight = Globals.blockCount.get()
 
+    val ensureFeeCap: CompoundWeight => Boolean = { cp =>
+      println(s"CP:$cp")
+      if(cp.rawCost < 21000) true    // if absolute fee cost is less than 21sat OK
+      else (cp.rawCost * 100D) / amountMsat match {
+        case x if x < 0.03 => true   // if absolute fee is greater than 21sat then it must be less than 3% of amount
+        case _ => false
+      }
+    }
 
-
-    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, wr, currentBlockHeight, { _ => true }).toList match {
+    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, wr, currentBlockHeight, ensureFeeCap).toList match {
       case Nil => throw RouteNotFound
       case route :: Nil  if route.path.isEmpty => throw RouteNotFound
       case foundRoutes => foundRoutes
