@@ -32,6 +32,8 @@ class SqliteNetworkDbSpec extends FunSuite {
 
   def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
 
+  val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
+
   test("init sqlite 2 times in a row") {
     val sqlite = inmem
     val db1 = new SqliteNetworkDb(sqlite)
@@ -99,7 +101,7 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.updateChannelUpdate(channel_update_1)
   }
 
-  test("remove many channels at once") {
+  test("remove many channels") {
     val sqlite = inmem
     val db = new SqliteNetworkDb(sqlite)
     val sig = Crypto.encodeSignature(Crypto.sign(randomKey.toBin, randomKey)) :+ 1.toByte
@@ -107,7 +109,6 @@ class SqliteNetworkDbSpec extends FunSuite {
     val pub = priv.publicKey
     val capacity = Satoshi(10000)
 
-    val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
     val channels = shortChannelIds.map(id => Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, id, pub, pub, pub, pub, sig, sig, sig, sig))
     val template = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv, pub, ShortChannelId(42), 5, 7000000, 50000, 100, 500000000L, true)
     val updates = shortChannelIds.map(id => template.copy(shortChannelId = id))
@@ -123,18 +124,13 @@ class SqliteNetworkDbSpec extends FunSuite {
     assert(db.listChannelUpdates().toSet === updates.filterNot(u => toDelete.contains(u.shortChannelId)).toSet)
   }
 
-  test("add/remove/test pruned channels") {
+  test("prune many channels") {
     val sqlite = inmem
     val db = new SqliteNetworkDb(sqlite)
 
-    db.addToPruned(Seq(ShortChannelId(1), ShortChannelId(5)))
-
-    assert(db.isPruned(ShortChannelId(1)))
-    assert(!db.isPruned(ShortChannelId(3)))
-    assert(db.isPruned(ShortChannelId(1)))
-
+    db.addToPruned(shortChannelIds)
+    shortChannelIds.foreach { id => assert(db.isPruned((id))) }
     db.removeFromPruned(ShortChannelId(5))
     assert(!db.isPruned(ShortChannelId(5)))
   }
-
 }
