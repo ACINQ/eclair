@@ -172,7 +172,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         //NB: order matters!
         case closing: DATA_CLOSING if Closing.nothingAtStake(closing) =>
           log.info(s"we have nothing at stake, going straight to CLOSED")
-          goto(CLOSED)
+          goto(CLOSED) using closing
         case closing: DATA_CLOSING =>
           // we don't put back the WatchSpent if the commitment tx has already been published and the spending tx already reached mindepth
           val commitTxOutpoint = closing.commitments.commitInput.outPoint
