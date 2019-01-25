@@ -38,7 +38,7 @@ class RouteCalculationSpec extends FunSuite {
 
   val currentBlockHeight = 554000
 
-  Globals.blockCount.lazySet(currentBlockHeight)
+  Globals.blockCount.set(currentBlockHeight)
 
   val (a, b, c, d, e, f) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
 
