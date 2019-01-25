@@ -146,6 +146,7 @@ object Graph {
     shortestPaths
   }
 
+  // computes the total compound weight of a path, which is the cumulative sum of all the weights of the edges in this path (except the first)
   def pathWeight(path: Seq[GraphEdge], amountMsat: Long, graph: DirectedGraph, wr: WeightRatios, currentBlockHeight: Long): CompoundWeight = {
     path.drop(1).foldRight(CompoundWeight(0, 0, 0, 0)) { (edge, cost) =>
       edgeWeightCompound(amountMsat, edge, cost, isNeighborTarget = false, currentBlockHeight)
@@ -288,6 +289,7 @@ object Graph {
     }
   }
 
+  // Computes the compound weight for the given @param edge, the weight is cumulative and must account for the previous edge's weight.
   private def edgeWeightCompound(amountMsat: Long, edge: GraphEdge, compoundCostSoFar: CompoundWeight, isNeighborTarget: Boolean, currentBlockHeight: Long): CompoundWeight = {
     import RoutingHeuristics._
 
