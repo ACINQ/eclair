@@ -123,10 +123,9 @@ object Graph {
               case false => rootPathEdges ++ spurPath
             }
 
-            //val totalPath = concat(rootPathEdges, spurPath.toList)
             val candidatePath = WeightedPath(totalPath, pathWeight(totalPath, amountMsat, graph, wr, currentBlockHeight))
 
-            if (!shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
+            if (boundaries(candidatePath.weight) && !shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
               candidates.enqueue(candidatePath)
             }
 

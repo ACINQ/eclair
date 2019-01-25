@@ -787,10 +787,6 @@ object Router {
   // The default amount of routes we'll search for when findRoute is called
   val DEFAULT_ROUTES_COUNT = 3
 
-  // The default allowed 'spread' between the cheapest route found an the others
-  // routes exceeding this difference won't be considered as a valid result
-  val DEFAULT_ALLOWED_SPREAD = 0.1D
-
   // A weight reatiponm
   val COST_OPTIMIZED_WEIGHT_RATIO = WeightRatios(costFactor = 1D, cltvDeltaFactor = 0, scoreFactor = 0)
 
@@ -807,6 +803,9 @@ object Router {
     * @param numRoutes    the number of shortest-paths to find
     * @param extraEdges   a set of extra edges we want to CONSIDER during the search
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
+    * @param wr an object containing the ratios used to 'weight' edges when searching for the shortest path
+    * @param maxFeeBaseMsat a threshold fixed fee above which we enforce the @param maxFeePct.
+    * @param maxFeePct a threshold amount-percentage fee, routes found must pay less than this.
     * @return the computed route to the destination @targetNodeId
     */
   def findRoute(g: DirectedGraph,
@@ -833,11 +832,6 @@ object Router {
       case foundRoutes => foundRoutes
     }
 
-    // minimum cost - TODO: is this still necessary?
-    val minimumCost = foundRoutes.head.weight.rawCost
-
-    // routes paying at most minimumCost + 10%
-    val eligibleRoutes = foundRoutes.filter(_.weight.rawCost  <= (minimumCost + minimumCost * DEFAULT_ALLOWED_SPREAD).round)
-    Random.shuffle(eligibleRoutes).head.path.map(graphEdgeToHop)
+    Random.shuffle(foundRoutes).head.path.map(graphEdgeToHop)
   }
 }

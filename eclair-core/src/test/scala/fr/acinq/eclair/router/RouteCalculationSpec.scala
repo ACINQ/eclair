@@ -632,7 +632,7 @@ class RouteCalculationSpec extends FunSuite {
     assert(hops2Ids(foundPaths(1).path.map(graphEdgeToHop)) === 1 :: 2 :: 4 :: 5 :: 6 :: Nil) // A -> B -> C -> D -> E -> F
   }
 
-  test("select a random route below the allowed fee spread") {
+  test("select a random route below the requested fee") {
 
     val f = randomKey.publicKey
 
@@ -649,16 +649,14 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(7L, e, c, feeBaseMsat = 90000, 99000)
     ).toMap)
 
-    (for { _ <- 0 to 10 } yield Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3)).map {
+    (for { _ <- 0 to 10 } yield Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3, maxFeeBaseMsat = 7, maxFeePct = 0)).map {
       case Failure(_) => assert(false)
       case Success(someRoute) =>
 
-        val routeCost = Graph.pathWeight(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, g, Router.COST_OPTIMIZED_WEIGHT_RATIO, 0).rawCost
-        val allowedSpread = DEFAULT_AMOUNT_MSAT * Router.DEFAULT_ALLOWED_SPREAD
+        val routeCost = Graph.pathWeight(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, g, Router.COST_OPTIMIZED_WEIGHT_RATIO, currentBlockHeight).rawCost
 
-        // over the three routes we could only get the 2 cheapest because the third is too expensive (over 10% of the cheapest)
+        // over the three routes we could only get the 2 cheapest because the third is too expensive (7 msat of fees)
         assert(routeCost == 5 || routeCost == 6)
-        assert(routeCost < allowedSpread)
     }
   }
 
