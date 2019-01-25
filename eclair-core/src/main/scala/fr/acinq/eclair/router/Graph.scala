@@ -14,9 +14,11 @@ object Graph {
     def weight(wr: WeightRatios): Double = compoundWeight.totalWeight(wr)
   }
 
-  // Carries a compound weight for an edge, values are normalized except for 'rawCost' which contains the actual fees
+  // Carries a compound weight for an edge, values are normalized except for 'rawCost' which contains the actual fees in millisatoshi
+  // Weight is used consistently to refer to the value used to 'weight' the edges in the graph, cost is used consistently to refer to fees.
   case class CompoundWeight(feesNormalized: Double, cltvDeltaNormalized: Double, scoreNormalized: Double, rawCost: Long) {
 
+    // Computes the aggregate weight with given the ratios
     def totalWeight(wr: WeightRatios): Double = {
       feesNormalized * wr.costFactor + cltvDeltaNormalized * wr.cltvDeltaFactor + scoreNormalized * wr.scoreFactor
     }
@@ -49,11 +51,15 @@ object Graph {
   /**
     * Yen's algorithm to find the k-shortest (loopless) paths in a graph, uses dijkstra as search algo. Is guaranteed to terminate finding
     * at most @pathsToFind paths sorted by cost (the cheapest is in position 0).
+    *
     * @param graph
     * @param sourceNode
     * @param targetNode
     * @param amountMsat
     * @param pathsToFind
+    * @param wr an object containing the ratios used to 'weight' edges when searching for the shortest path
+    * @param currentBlockHeight the height of the chain tip (latest block)
+    * @param boundaries a predicate function that can be used to impose limits on the outcome of the search
     * @return
     */
   def yenKshortestPaths(graph: DirectedGraph,
@@ -159,6 +165,9 @@ object Graph {
     * @param amountMsat the amount (in millisatoshis) we want to transmit
     * @param ignoredEdges a list of edges we do not want to consider
     * @param extraEdges a list of extra edges we want to consider but are not currently in the graph
+    * @param wr an object containing the ratios used to 'weight' edges when searching for the shortest path
+    * @param currentBlockHeight the height of the chain tip (latest block)
+    * @param boundaries a predicate function that can be used to impose limits on the outcome of the search
     * @return
     */
 
@@ -210,6 +219,7 @@ object Graph {
           case true => g.getIncomingEdgesOf(current.key)
           case false =>
             val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
+            // the resulting set must have only one element per shortChannelId
             g.getIncomingEdgesOf(current.key).filterNot(e => extraNeighbors.exists(_.desc.shortChannelId == e.desc.shortChannelId)) ++ extraNeighbors
         }
 
@@ -221,15 +231,15 @@ object Graph {
           // calculate the length of the partial path given the new edge (current -> neighbor)
           val neighborPathLength = pathLength.get(current.key) + 1
 
-          // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
-          // note: there is always an entry for the current in the 'cost' map
+          // note: 'weight' contains the smallest known cumulative weight necessary to reach 'current' so far
+          // note: there is always an entry for the current in the 'weight' map
           val newMinimumCompoundWeight = edgeWeightCompound(amountMsat, edge, weight.get(current.key), neighbor == sourceNode, currentBlockHeight)
 
           // test for ignored edges
           if (edge.update.htlcMaximumMsat.forall(newMinimumCompoundWeight.rawCost + amountMsat <= _) &&
             newMinimumCompoundWeight.rawCost + amountMsat >= edge.update.htlcMinimumMsat &&
             neighborPathLength <= ROUTE_MAX_LENGTH && // ignore this edge if it would make the path too long
-            boundaries(newMinimumCompoundWeight) &&
+            boundaries(newMinimumCompoundWeight) && // check if this neighbor edge would break off the 'boundaries'
             !ignoredEdges.contains(edge.desc)
           ) {
 
@@ -251,7 +261,7 @@ object Graph {
               // update the queue
               vertexQueue.insert(WeightedNode(neighbor, newMinimumCompoundWeight)) // O(1)
 
-              // update the minimum known distance array
+              // update the minimum known weight array
               weight.put(neighbor, newMinimumCompoundWeight)
             }
           }
@@ -297,6 +307,7 @@ object Graph {
     val cltvFactor = normalize(channelCltvDelta, CLTV_LOW, CLTV_HIGH)
 
     // Weights every edge by its cost in fees, normalized. The actual cost is carried away separately.
+    // NB. 'edgeFees' here is only the fee that must be paid to traverse this @param edge
     val edgeFees = edgeCost(edge, amountMsat + compoundCostSoFar.rawCost, isNeighborTarget) - amountMsat
     val costFactor = normalizeCost(amountMsat, edgeFees)
 
