@@ -710,8 +710,8 @@ class RouteCalculationSpec extends FunSuite {
     val g = makeGraph(List(
       makeUpdate(ShortChannelId(s"${currentBlockHeight - 10}x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10),
       makeUpdate(ShortChannelId(s"${currentBlockHeight - 10}x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight - 20}x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10), // younger channel
-      makeUpdate(ShortChannelId(s"${currentBlockHeight - 10}x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight - 200}x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10), // younger channel
+      makeUpdate(ShortChannelId(s"${currentBlockHeight - 100}x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10),
       makeUpdate(ShortChannelId(s"${currentBlockHeight - 8}x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10),
       makeUpdate(ShortChannelId(s"${currentBlockHeight - 7}x0x6"), f, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10)
     ).toMap)
