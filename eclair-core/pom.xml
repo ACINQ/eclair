@@ -126,12 +126,6 @@
             <artifactId>akka-slf4j_${scala.version.short}</artifactId>
             <version>${akka.version}</version>
         </dependency>
-        <!-- HTTP SERVER -->
-        <dependency>
-            <groupId>com.typesafe.akka</groupId>
-            <artifactId>akka-http-core_${scala.version.short}</artifactId>
-            <version>10.0.11</version>
-        </dependency>
         <!-- HTTP CLIENT -->
         <dependency>
             <groupId>com.softwaremill.sttp</groupId>
