@@ -718,7 +718,7 @@ class RouteCalculationSpec extends FunSuite {
     val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
       costFactor = 0.33,
       cltvDeltaFactor = 0.33,
-      scoreFactor = 0.33
+      scoreFactor = 0.34
     ))
 
     assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b,c) :: (c, d) :: Nil)

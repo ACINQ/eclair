@@ -83,7 +83,7 @@ object Graph {
     val candidates = new mutable.PriorityQueue[WeightedPath]
 
     // find the shortest path, k = 0
-    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, wr, currentBlockHeight, boundaries)
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, wr, currentBlockHeight, boundaries, startingDistance = 0)
     shortestPaths += WeightedPath(shortestPath, pathWeight(shortestPath, amountMsat, graph, wr, currentBlockHeight))
 
     // main loop
@@ -101,6 +101,7 @@ object Graph {
 
           // select the subpath from the source to the spur node of the k-th previous shortest path
           val rootPathEdges = if(i == 0) prevShortestPath.head :: Nil else prevShortestPath.take(i)
+          val rootPathLength = rootPathEdges.size
 
           // links to be removed that are part of the previous shortest path and which share the same root path
           val edgesToIgnore = shortestPaths.flatMap { weightedPath =>
@@ -112,7 +113,7 @@ object Graph {
           }
 
           // find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
-          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges, wr, currentBlockHeight, boundaries)
+          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges, wr, currentBlockHeight, boundaries, startingDistance = rootPathLength)
 
           // if there wasn't a path the spur will be empty
           if(spurPath.nonEmpty) {
@@ -179,7 +180,8 @@ object Graph {
                            extraEdges: Set[GraphEdge],
                            wr: WeightRatios,
                            currentBlockHeight: Long,
-                           boundaries: CompoundWeight => Boolean): Seq[GraphEdge] = {
+                           boundaries: CompoundWeight => Boolean,
+                           startingDistance: Int): Seq[GraphEdge] = {
 
     // optionally add the extra edges to the graph
     val graphVerticesWithExtra = extraEdges.nonEmpty match {
@@ -203,7 +205,7 @@ object Graph {
     val startingWeight = CompoundWeight(0, 0, 0, 0)
     weight.put(targetNode, startingWeight)
     vertexQueue.insert(WeightedNode(targetNode, startingWeight))
-    pathLength.put(targetNode, 0) // the source node has distance 0
+    pathLength.put(targetNode, startingDistance) // the source node has distance 0
 
     var targetFound = false
 

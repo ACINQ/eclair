@@ -271,7 +271,7 @@ trait Service extends Logging {
                         case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
                           (Try(BinaryData(paymentHash)), Try(PublicKey(nodeId))) match {
                             case (Success(ph), Success(pk)) => completeRpcFuture(req.id, (paymentInitiator ?
-                              SendPayment(amountMsat.toLong, ph, pk, maxFeePct = nodeParams.maxPaymentFee,  wr_opt = Some(routeWeightRatios))).mapTo[PaymentResult].map {
+                              SendPayment(amountMsat.toLong, ph, pk, maxFeePct = nodeParams.maxPaymentFee,  wr_opt = Some(routeWeightRatios), randomize = false)).mapTo[PaymentResult].map {
                               case s: PaymentSucceeded => s
                               case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
                             })
@@ -291,8 +291,8 @@ trait Service extends Logging {
                             logger.debug(s"api call for sending payment with amount_msat=$amount_msat")
                             // optional cltv expiry
                             val sendPayment = pr.minFinalCltvExpiry match {
-                              case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, maxFeePct = nodeParams.maxPaymentFee, wr_opt = Some(routeWeightRatios))
-                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry, maxFeePct = nodeParams.maxPaymentFee, wr_opt = Some(routeWeightRatios))
+                              case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, maxFeePct = nodeParams.maxPaymentFee, wr_opt = Some(routeWeightRatios), randomize = false)
+                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry, maxFeePct = nodeParams.maxPaymentFee, wr_opt = Some(routeWeightRatios), randomize = false)
                             }
                             completeRpcFuture(req.id, (paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
                               case s: PaymentSucceeded => s
