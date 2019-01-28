@@ -218,6 +218,12 @@
         </dependency>
         <!-- TESTS -->
         <dependency>
+            <groupId>com.softwaremill.quicklens</groupId>
+            <artifactId>quicklens_${scala.version.short}</artifactId>
+            <version>1.4.11</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>com.whisk</groupId>
             <artifactId>docker-testkit-scalatest_${scala.version.short}</artifactId>
             <version>0.9.8</version>
