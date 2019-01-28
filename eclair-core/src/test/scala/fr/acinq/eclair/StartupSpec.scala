@@ -34,7 +34,7 @@ class StartupSpec extends FunSuite {
     val keyManager = new LocalKeyManager(seed = randomKey.toBin, chainHash = Block.TestnetGenesisBlock.hash)
 
     // try to create a NodeParams instance with a conf that contains an illegal alias
-    val nodeParamsAttempt = Try(NodeParams.makeNodeParams(tempConfParentDir, conf, keyManager))
+    val nodeParamsAttempt = Try(NodeParams.makeNodeParams(tempConfParentDir, conf, keyManager, None))
     assert(nodeParamsAttempt.isFailure && nodeParamsAttempt.failed.get.getMessage.contains("alias, too long"))
 
     // destroy conf files after the test
