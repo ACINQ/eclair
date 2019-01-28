@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.router
 
-import akka.actor.{ActorRef, Props, Status}
 import akka.Done
+import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.{BinaryData, Block}
