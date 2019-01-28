@@ -355,12 +355,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           }
           log.error(s"peer sent us a routing message with invalid sig: r=$r bin=$bin")
           // for now we just return an error, maybe ban the peer in the future?
+          // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
           d.transport ! Error(CHANNELID_ZERO, s"bad announcement sig! bin=$bin".getBytes())
           d.behavior
         case InvalidAnnouncement(c) =>
           // they seem to be sending us fake announcements?
           log.error(s"couldn't find funding tx with valid scripts for shortChannelId=${c.shortChannelId}")
           // for now we just return an error, maybe ban the peer in the future?
+          // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
           d.transport ! Error(CHANNELID_ZERO, s"couldn't verify channel! shortChannelId=${c.shortChannelId}".getBytes())
           d.behavior
         case ChannelClosed(_) =>
