@@ -824,7 +824,7 @@ object Router {
     val currentBlockHeight = Globals.blockCount.get()
 
     val ensureFeeCap: CompoundWeight => Boolean = { cp =>
-      cp.rawCost < maxFeeBaseMsat || (cp.rawCost * 100D) / amountMsat < maxFeePct
+      cp.rawCost < maxFeeBaseMsat || cp.rawCost.toDouble < maxFeePct * amountMsat
     }
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, wr, currentBlockHeight, ensureFeeCap).toList match {
