@@ -270,7 +270,7 @@ object Graph {
   }
 
   // Computes the compound weight for the given @param edge, the weight is cumulative and must account for the previous edge's weight.
-  private def edgeWeightCompound(amountMsat: Long, edge: GraphEdge, compoundCostSoFar: Weight, isNeighborTarget: Boolean, currentBlockHeight: Long, wr: WeightRatios): Weight = {
+  private def edgeWeightCompound(amountMsat: Long, edge: GraphEdge, prev: Weight, isNeighborTarget: Boolean, currentBlockHeight: Long, wr: WeightRatios): Weight = {
     import RoutingHeuristics._
 
     // Every edge is weighted by funding block height where older blocks add less weight, the window considered is 2 months.
@@ -287,7 +287,7 @@ object Graph {
 
     // Weights every edge by its cost in fees, normalized. The actual cost is carried away separately.
     // NB. 'edgeFees' here is only the fee that must be paid to traverse this @param edge
-    val edgeFees = if(isNeighborTarget) 0 else edgeCost(edge, amountMsat + compoundCostSoFar.feeCostMsat) - amountMsat
+    val edgeFees = if(isNeighborTarget) 0 else edgeCost(edge, amountMsat + prev.feeCostMsat) - amountMsat
 
     val factor = (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor) match {
       case 0 => 1
