@@ -12,10 +12,8 @@ object Graph {
 
   case class WeightedNode(key: PublicKey, weight: Weight)
   case class WeightedPath(path: Seq[GraphEdge], weight: Weight)
-  // Carries a compound weight for an edge, values are normalized except for 'rawCost' which contains the actual fees in millisatoshi
-  // Weight is used consistently to refer to the value used to 'weight' the edges in the graph, cost is used consistently to refer to fees.
-  case class Weight(score: Double, rawCost: Long)
-  case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double)
+  case class Weight(score: Double, feeCostMsat: Long) // Carries a compound weight for an edge, score is obtained with (cost X factor),'feeCost' contains the actual fees in millisatoshi
+  case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) // The ratios that will be used to calculate the 'factor'
   /**
     * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
     * the same weight we distinguish them by their public key. See https://docs.oracle.com/javase/8/docs/api/java/util/Comparator.html
@@ -216,13 +214,13 @@ object Graph {
 
           // note: 'weight' contains the smallest known cumulative weight necessary to reach 'current' so far
           // note: there is always an entry for the current in the 'weight' map
-          val newMinimumCompoundWeight = edgeWeightCompound(amountMsat, edge, weight.get(current.key), neighbor == sourceNode, currentBlockHeight, wr)
+          val newMinimumWeight = edgeWeightCompound(amountMsat, edge, weight.get(current.key), neighbor == sourceNode, currentBlockHeight, wr)
 
           // test for ignored edges
-          if (edge.update.htlcMaximumMsat.forall(newMinimumCompoundWeight.rawCost + amountMsat <= _) &&
-            newMinimumCompoundWeight.rawCost + amountMsat >= edge.update.htlcMinimumMsat &&
+          if (edge.update.htlcMaximumMsat.forall(newMinimumWeight.feeCostMsat + amountMsat <= _) &&
+            newMinimumWeight.feeCostMsat + amountMsat >= edge.update.htlcMinimumMsat &&
             neighborPathLength <= ROUTE_MAX_LENGTH && // ignore this edge if it would make the path too long
-            boundaries(newMinimumCompoundWeight) && // check if this neighbor edge would break off the 'boundaries'
+            boundaries(newMinimumWeight) && // check if this neighbor edge would break off the 'boundaries'
             !ignoredEdges.contains(edge.desc)
           ) {
 
@@ -233,7 +231,7 @@ object Graph {
             }
 
             // if this neighbor has a shorter distance than previously known
-            if (newMinimumCompoundWeight.score < neighborCost.score) {
+            if (newMinimumWeight.score < neighborCost.score) {
 
               // update the total length of this partial path
               pathLength.put(neighbor, neighborPathLength)
@@ -242,10 +240,10 @@ object Graph {
               prev.put(neighbor, edge)
 
               // update the queue
-              vertexQueue.insert(WeightedNode(neighbor, newMinimumCompoundWeight)) // O(1)
+              vertexQueue.insert(WeightedNode(neighbor, newMinimumWeight)) // O(1)
 
               // update the minimum known weight array
-              weight.put(neighbor, newMinimumCompoundWeight)
+              weight.put(neighbor, newMinimumWeight)
             }
           }
         }
@@ -289,7 +287,7 @@ object Graph {
 
     // Weights every edge by its cost in fees, normalized. The actual cost is carried away separately.
     // NB. 'edgeFees' here is only the fee that must be paid to traverse this @param edge
-    val edgeFees = if(isNeighborTarget) 0 else edgeCost(edge, amountMsat + compoundCostSoFar.rawCost) - amountMsat
+    val edgeFees = if(isNeighborTarget) 0 else edgeCost(edge, amountMsat + compoundCostSoFar.feeCostMsat) - amountMsat
 
     val factor = (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor) match {
       case 0 => 1

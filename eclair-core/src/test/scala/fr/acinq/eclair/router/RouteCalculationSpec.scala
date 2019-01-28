@@ -93,7 +93,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val Success(route) = Router.findRoute(graph, a, d, amountMsat, numRoutes = 1)
 
-    val feeCost = Graph.pathWeight(hops2Edges(route), amountMsat, graph, Router.COST_OPTIMIZED_WEIGHT_RATIO, 0).rawCost
+    val feeCost = Graph.pathWeight(hops2Edges(route), amountMsat, graph, Router.COST_OPTIMIZED_WEIGHT_RATIO, 0).feeCostMsat
 
     assert(hops2Ids(route) === 4 :: 5 :: 6 :: Nil)
     assert(amountMsat + feeCost === expectedCost)
@@ -653,7 +653,7 @@ class RouteCalculationSpec extends FunSuite {
       case Failure(_) => assert(false)
       case Success(someRoute) =>
 
-        val routeCost = Graph.pathWeight(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, g, Router.COST_OPTIMIZED_WEIGHT_RATIO, currentBlockHeight).rawCost
+        val routeCost = Graph.pathWeight(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, g, Router.COST_OPTIMIZED_WEIGHT_RATIO, currentBlockHeight).feeCostMsat
 
         // over the three routes we could only get the 2 cheapest because the third is too expensive (7 msat of fees)
         assert(routeCost == 5 || routeCost == 6)
