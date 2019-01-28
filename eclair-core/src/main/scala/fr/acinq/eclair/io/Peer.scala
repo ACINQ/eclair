@@ -359,7 +359,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           d.behavior
         case InvalidAnnouncement(c) =>
           // they seem to be sending us fake announcements?
-          log.error(s"ouldn't find funding tx with valid scripts for shortChannelId=${c.shortChannelId}")
+          log.error(s"couldn't find funding tx with valid scripts for shortChannelId=${c.shortChannelId}")
           // for now we just return an error, maybe ban the peer in the future?
           d.transport ! Error(CHANNELID_ZERO, s"couldn't verify channel! shortChannelId=${c.shortChannelId}".getBytes())
           d.behavior
