@@ -77,6 +77,12 @@ final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
   */
 final case class PublishAsap(tx: Transaction)
 final case class ValidateRequest(ann: ChannelAnnouncement)
-final case class ValidateResult(c: ChannelAnnouncement, tx: Option[Transaction], unspent: Boolean, t: Option[Throwable])
+sealed trait UtxoStatus
+object UtxoStatus {
+  case object Unspent extends UtxoStatus
+  case object Spent extends UtxoStatus
+  case object SpentAndSpendingTxConfirmed extends UtxoStatus
+}
+final case class ValidateResult(c: ChannelAnnouncement, fundingTx: Either[Throwable, (Transaction, UtxoStatus)])
 
 // @formatter:on

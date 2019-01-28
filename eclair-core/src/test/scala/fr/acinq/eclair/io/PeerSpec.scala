@@ -170,7 +170,7 @@ class PeerSpec extends TestkitBaseClass {
 
     // now let's assume that the router isn't happy with those channels because the funding tx is not found
     for (c <- channels) {
-      router.send(peer, Peer.NonexistingChannel(c))
+      router.send(peer, Peer.InvalidAnnouncement(c))
     }
     // peer will temporary ignore announcements coming from bob
     for (ann <- channels ++ updates) {
