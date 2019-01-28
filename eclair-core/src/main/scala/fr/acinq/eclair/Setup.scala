@@ -21,6 +21,7 @@ import java.net.InetSocketAddress
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
+import akka.Done
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.http.scaladsl.Http
 import akka.pattern.after
@@ -155,11 +156,11 @@ class Setup(datadir: File,
   def bootstrap: Future[Kit] = {
     for {
       _ <- Future.successful(true)
-      feeratesRetrieved = Promise[Boolean]()
-      zmqBlockConnected = Promise[Boolean]()
-      zmqTxConnected = Promise[Boolean]()
-      tcpBound = Promise[Unit]()
-      routerInitialized = Promise[Unit]()
+      feeratesRetrieved = Promise[Done]()
+      zmqBlockConnected = Promise[Done]()
+      zmqTxConnected = Promise[Done]()
+      tcpBound = Promise[Done]()
+      routerInitialized = Promise[Done]()
 
       defaultFeerates = FeeratesPerKB(
         block_1 = config.getLong("default-feerates.delay-blocks.1"),
@@ -184,7 +185,7 @@ class Setup(datadir: File,
           Globals.feeratesPerKw.set(FeeratesPerKw(feerates))
           system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
           logger.info(s"current feeratesPerKB=${Globals.feeratesPerKB.get()} feeratesPerKw=${Globals.feeratesPerKw.get()}")
-          feeratesRetrieved.trySuccess(true)
+          feeratesRetrieved.trySuccess(Done)
       })
       _ <- feeratesRetrieved.future
 
@@ -194,8 +195,8 @@ class Setup(datadir: File,
           system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
           system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoinClient))), "watcher", SupervisorStrategy.Resume))
         case Electrum(electrumClient) =>
-          zmqBlockConnected.success(true)
-          zmqTxConnected.success(true)
+          zmqBlockConnected.success(Done)
+          zmqTxConnected.success(Done)
           system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
       }
 
