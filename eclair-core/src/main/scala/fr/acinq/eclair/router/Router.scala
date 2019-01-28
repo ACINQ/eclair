@@ -30,7 +30,7 @@ import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChan
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{CompoundWeight, WeightRatios, WeightedPath}
+import fr.acinq.eclair.router.Graph.{Weight, WeightRatios, WeightedPath}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 
@@ -789,7 +789,7 @@ object Router {
   val DEFAULT_ROUTES_COUNT = 3
 
   // A weight reatiponm
-  val COST_OPTIMIZED_WEIGHT_RATIO = WeightRatios(costFactor = 1D, cltvDeltaFactor = 0, scoreFactor = 0)
+  val COST_OPTIMIZED_WEIGHT_RATIO = WeightRatios(ageFactor = 0, cltvDeltaFactor = 0, capacityFactor = 0)
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.
@@ -823,7 +823,7 @@ object Router {
 
     val currentBlockHeight = Globals.blockCount.get()
 
-    val ensureFeeCap: CompoundWeight => Boolean = { cp =>
+    val ensureFeeCap: Weight => Boolean = { cp =>
       cp.rawCost < maxFeeBaseMsat || cp.rawCost.toDouble < maxFeePct * amountMsat
     }
 

@@ -258,9 +258,9 @@ class Setup(datadir: File,
         val api = new Service {
 
           override val routeWeightRatios = WeightRatios(
-            costFactor = config.getDouble("router.weight-ratio-fees"),
+            ageFactor = config.getDouble("router.weight-ratio-fees"),
             cltvDeltaFactor= config.getDouble("router.weight-ratio-cltv"),
-            scoreFactor = config.getDouble("router.weight-ratio-score")
+            capacityFactor = config.getDouble("router.weight-ratio-score")
           )
 
           override def scheduler = system.scheduler

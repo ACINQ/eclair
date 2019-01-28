@@ -672,35 +672,30 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x3"), c, d, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 22),
       makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
       makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBaseMsat = 2, 4, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 14),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight - 250}x0x7"), e, c, feeBaseMsat = 5, 3, minHtlcMsat = 0, maxHtlcMsat = Some(167772100L), cltvDelta = 140)
+      makeUpdate(ShortChannelId(s"${currentBlockHeight - 2500}x0x7"), e, c, feeBaseMsat = 5, 3, minHtlcMsat = 0, maxHtlcMsat = Some(1677721000L), cltvDelta = 12)
     ).toMap
-
 
     val g = makeGraph(updates)
 
-    val Success(routeFeeOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, wr = WeightRatios(
-      costFactor = 1,
-      cltvDeltaFactor = 0,
-      scoreFactor = 0
-    ))
-
+    val Success(routeFeeOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, wr = Router.COST_OPTIMIZED_WEIGHT_RATIO)
     assert(hops2Nodes(routeFeeOptimized) === (a, b) :: (b,c) :: (c, d) :: Nil)
 
     val Success(routeCltvOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, wr = WeightRatios(
-      costFactor = 0,
       cltvDeltaFactor = 1,
-      scoreFactor = 0
+      ageFactor = 0,
+      capacityFactor = 0
     ))
 
     assert(hops2Nodes(routeCltvOptimized) === (a, e) :: (e,f) :: (f, d) :: Nil)
 
-    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, wr = WeightRatios(
-      costFactor = 0,
+    val Success(routeAgeOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
       cltvDeltaFactor = 0,
-      scoreFactor = 1
+      ageFactor = 1,
+      capacityFactor = 0
     ))
 
-    assert(hops2Nodes(routeScoreOptimized) === (a, e) :: (e,c) :: (c, d) :: Nil)
+    //assert(hops2Nodes(routeAgeOptimized) === (a, e) :: (e,c) :: (c, d) :: Nil)
+    assert(hops2ShortChannelIds(routeAgeOptimized) === s"${currentBlockHeight}x0x4" :: s"${currentBlockHeight - 2500}x0x7" :: s"${currentBlockHeight}x0x3" :: Nil)
   }
 
   test("prefer going through an older channel if fees and CLTV are the same") {
@@ -715,9 +710,9 @@ class RouteCalculationSpec extends FunSuite {
     ).toMap)
 
     val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, numRoutes = 1, wr = WeightRatios(
-      costFactor = 0.01,
-      cltvDeltaFactor = 0.01,
-      scoreFactor = 0.98
+      ageFactor = 0.33,
+      cltvDeltaFactor = 0.33,
+      capacityFactor = 0.33
     ))
 
     assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b,c) :: (c, d) :: Nil)
@@ -736,9 +731,9 @@ class RouteCalculationSpec extends FunSuite {
 
 
     val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
-      costFactor = 0.33,
-      cltvDeltaFactor = 0.34,
-      scoreFactor = 0.33
+      ageFactor = 0.33,
+      cltvDeltaFactor = 0.33,
+      capacityFactor = 0.33
     ))
 
     assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b,c) :: (c, d) :: Nil)
@@ -758,9 +753,9 @@ class RouteCalculationSpec extends FunSuite {
 
     // even though A -> B -> C -> D has a better cltv/score (and we're optimizing for it) it violates the max fee cap (21sat + 3%)
     val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
-      costFactor = 0,
+      ageFactor = 0,
       cltvDeltaFactor = 0.5,
-      scoreFactor = 0.5
+      capacityFactor = 0.5
     ))
 
     assert(hops2Nodes(routeScoreOptimized) === (a, e) :: (e,f) :: (f, d) :: Nil)
