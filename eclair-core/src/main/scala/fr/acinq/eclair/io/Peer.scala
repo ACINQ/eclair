@@ -164,7 +164,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         // we have no existing channels, we can forget about this peer
         stop(FSM.Normal)
       } else {
-        stay using d.copy(channels = d.channels -- h)
+        stay using d.copy(channels = channels1)
       }
   }
 
@@ -456,8 +456,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
 
     case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
-
-    case Event(_: Terminated, _) => stay // this channel got closed before having a commitment and we got disconnected (e.g. a funding error occured)
   }
 
   onTransition {
