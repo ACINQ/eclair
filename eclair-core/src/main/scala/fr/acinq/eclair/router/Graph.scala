@@ -285,7 +285,6 @@ object Graph {
     val channelCltvDelta = edge.update.cltvExpiryDelta
     val cltvFactor = normalize(channelCltvDelta, CLTV_LOW, CLTV_HIGH)
 
-    // Weights every edge by its cost in fees, normalized. The actual cost is carried away separately.
     // NB. 'edgeFees' here is only the fee that must be paid to traverse this @param edge
     val edgeFees = if(isNeighborTarget) 0 else edgeCost(edge, amountMsat + prev.feeCostMsat) - amountMsat
 

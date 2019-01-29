@@ -662,9 +662,11 @@ class RouteCalculationSpec extends FunSuite {
 
   test("Use weight ratios to when computing the edge weight") {
 
+    val olderChannelHeight = currentBlockHeight - 5500
+
     // A -> B -> C -> D is 'fee optimized', lower fees route (totFees = 2, totCltv = 20)
     // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 11, totCltv = 8)
-    // A -> E -> C -> D is 'score optimized', more recent channel/larger capacity route
+    // A -> E -> C -> D is 'age optimized', more recent channel/larger capacity route
     val updates = List(
       makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 13),
       makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
@@ -672,7 +674,7 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x3"), c, d, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 22),
       makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
       makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBaseMsat = 2, 4, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 14),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight - 2500}x0x7"), e, c, feeBaseMsat = 5, 3, minHtlcMsat = 0, maxHtlcMsat = Some(1677721000L), cltvDelta = 12)
+      makeUpdate(ShortChannelId(s"${olderChannelHeight}x0x7"), e, c, feeBaseMsat = 2, 3, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12)
     ).toMap
 
     val g = makeGraph(updates)
@@ -695,7 +697,7 @@ class RouteCalculationSpec extends FunSuite {
     ))
 
     //assert(hops2Nodes(routeAgeOptimized) === (a, e) :: (e,c) :: (c, d) :: Nil)
-    assert(hops2ShortChannelIds(routeAgeOptimized) === s"${currentBlockHeight}x0x4" :: s"${currentBlockHeight - 2500}x0x7" :: s"${currentBlockHeight}x0x3" :: Nil)
+    assert(hops2ShortChannelIds(routeAgeOptimized) === s"${currentBlockHeight}x0x4" :: s"${olderChannelHeight}x0x7" :: s"${currentBlockHeight}x0x3" :: Nil)
   }
 
   test("prefer going through an older channel if fees and CLTV are the same") {
