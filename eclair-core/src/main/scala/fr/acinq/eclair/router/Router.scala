@@ -230,18 +230,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
             }
             true
           }
-        case ValidateResult(c, Right((tx, fundingTxStatus))) =>
-          fundingTxStatus match {
-            case UtxoStatus.Spent =>
-              log.debug("ignoring shortChannelId={} tx={} (funding tx already spent but spending tx isn't confirmed)", c.shortChannelId, tx.txid)
-            case UtxoStatus.SpentAndSpendingTxConfirmed =>
-              log.warning("ignoring shortChannelId={} tx={} (funding tx already spent and spending tx is confirmed)", c.shortChannelId, tx.txid)
-                // the funding tx has been spent by a transaction that is now confirmed: peer shouldn't send us those
-                d0.awaiting.get(c) match {
-                  case Some(origins) => origins.foreach(_ ! ChannelClosed(c))
-                  case _ => ()
-                }
-            case UtxoStatus.Unspent => ??? // cannot happen here
+        case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
+          if (fundingTxStatus.spendingTxConfirmed) {
+            log.warning("ignoring shortChannelId={} tx={} (funding tx already spent and spending tx is confirmed)", c.shortChannelId, tx.txid)
+            // the funding tx has been spent by a transaction that is now confirmed: peer shouldn't send us those
+            d0.awaiting.get(c) match {
+              case Some(origins) => origins.foreach(_ ! ChannelClosed(c))
+              case _ => ()
+            }
+          } else {
+            log.debug("ignoring shortChannelId={} tx={} (funding tx already spent but spending tx isn't confirmed)", c.shortChannelId, tx.txid)
           }
           // there may be a record if we have just restarted
           db.removeChannel(c.shortChannelId)
@@ -330,7 +328,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       }
 
       val staleChannelsToRemove = new mutable.MutableList[ChannelDesc]
-      staleChannels.map(d.channels).foreach( ca => {
+      staleChannels.map(d.channels).foreach(ca => {
         staleChannelsToRemove += ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)
         staleChannelsToRemove += ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)
       })
@@ -810,7 +808,7 @@ object Router {
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes).toList match {
       case Nil => throw RouteNotFound
-      case route :: Nil  if route.path.isEmpty => throw RouteNotFound
+      case route :: Nil if route.path.isEmpty => throw RouteNotFound
       case foundRoutes => foundRoutes
     }
 
@@ -818,7 +816,7 @@ object Router {
     val minimumCost = foundRoutes.head.weight
 
     // routes paying at most minimumCost + 10%
-    val eligibleRoutes = foundRoutes.filter(_.weight  <= (minimumCost + minimumCost * DEFAULT_ALLOWED_SPREAD).round)
+    val eligibleRoutes = foundRoutes.filter(_.weight <= (minimumCost + minimumCost * DEFAULT_ALLOWED_SPREAD).round)
     Random.shuffle(eligibleRoutes).head.path.map(graphEdgeToHop)
   }
 }

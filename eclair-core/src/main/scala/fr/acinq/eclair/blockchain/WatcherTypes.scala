@@ -80,8 +80,7 @@ final case class ValidateRequest(ann: ChannelAnnouncement)
 sealed trait UtxoStatus
 object UtxoStatus {
   case object Unspent extends UtxoStatus
-  case object Spent extends UtxoStatus
-  case object SpentAndSpendingTxConfirmed extends UtxoStatus
+  case class Spent(spendingTxConfirmed: Boolean) extends UtxoStatus
 }
 final case class ValidateResult(c: ChannelAnnouncement, fundingTx: Either[Throwable, (Transaction, UtxoStatus)])
 

@@ -77,10 +77,10 @@ class RouterSpec extends BaseRouterSpec {
     watcher.expectMsg(ValidateRequest(chan_ax))
     watcher.expectMsg(ValidateRequest(chan_ay))
     watcher.expectMsg(ValidateRequest(chan_az))
-    watcher.send(router, ValidateResult(chan_ac, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+    watcher.send(router, ValidateResult(chan_ac, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
     watcher.send(router, ValidateResult(chan_ax, Left(new RuntimeException(s"funding tx not found"))))
-    watcher.send(router, ValidateResult(chan_ay, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0)), UtxoStatus.Unspent)))
-    watcher.send(router, ValidateResult(chan_az, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0)), UtxoStatus.SpentAndSpendingTxConfirmed)))
+    watcher.send(router, ValidateResult(chan_ay, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
+    watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = true))))
     watcher.expectMsgType[WatchSpentBasic]
     watcher.expectNoMsg(1 second)
 

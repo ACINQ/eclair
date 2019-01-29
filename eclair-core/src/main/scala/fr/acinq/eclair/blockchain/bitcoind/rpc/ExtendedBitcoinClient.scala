@@ -158,8 +158,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       } else {
         // if this returns true, it means that the spending tx is *not* in the blockchain
         isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map {
-          case true => UtxoStatus.Spent
-          case false => UtxoStatus.SpentAndSpendingTxConfirmed
+          case res => UtxoStatus.Spent(spendingTxConfirmed = !res)
         }
       }
     } yield ValidateResult(c, Right((Transaction.read(tx), fundingTxStatus)))
