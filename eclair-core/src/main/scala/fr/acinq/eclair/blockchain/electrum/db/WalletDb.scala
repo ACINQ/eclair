@@ -2,6 +2,7 @@ package fr.acinq.eclair.blockchain.electrum.db
 
 import fr.acinq.bitcoin.{BinaryData, BlockHeader, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 
 trait HeaderDb {
   def addHeader(height: Int, header: BlockHeader): Unit
@@ -26,4 +27,8 @@ trait TransactionDb {
   def getTransactions(): Seq[(Transaction, GetMerkleResponse)]
 }
 
-trait WalletDb extends HeaderDb with TransactionDb
+trait WalletDb extends HeaderDb with TransactionDb {
+  def persist(data: PersistentData): Unit
+
+  def readPersistentData(): Option[PersistentData]
+}

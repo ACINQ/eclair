@@ -1,11 +1,14 @@
 package fr.acinq.eclair.blockchain.electrum.db.sqlite
 
 import java.sql.DriverManager
-import java.util.Random
 
-import fr.acinq.bitcoin.{BinaryData, Block, BlockHeader, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Block, BlockHeader, OutPoint, Satoshi, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 import org.scalatest.FunSuite
+
+import scala.util.Random
 
 class SqliteWalletDbSpec extends FunSuite {
   val random = new Random()
@@ -50,5 +53,48 @@ class SqliteWalletDbSpec extends FunSuite {
     val Some((tx1, proof1)) = db.getTransaction(tx.hash)
     assert(tx1 == tx)
     assert(proof1 == proof)
+  }
+
+  test("serialize persistent data") {
+    val db = new SqliteWalletDb(inmem)
+
+    def randomBytes(size: Int): BinaryData = {
+      val buffer = new Array[Byte](size)
+      random.nextBytes(buffer)
+      buffer
+    }
+
+    def randomTransaction = Transaction(version = 2,
+      txIn = TxIn(OutPoint(randomBytes(32), random.nextInt(100)), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+      txOut = TxOut(Satoshi(random.nextInt(10000000)), randomBytes(20)) :: Nil,
+      0L
+    )
+
+    def randomHistoryItem = ElectrumClient.TransactionHistoryItem(random.nextInt(1000000), randomBytes(32))
+
+    def randomHistoryItems = (0 to random.nextInt(100)).map(_ => randomHistoryItem).toList
+
+    def randomPersistentData = {
+      val transactions = for (i <- 0 until random.nextInt(100)) yield randomTransaction
+
+      PersistentData(
+        accountKeysCount = 10,
+        changeKeysCount = 10,
+        status = (for (i <- 0 until random.nextInt(100)) yield randomBytes(32) -> random.nextInt(100000).toHexString).toMap,
+        transactions = transactions.map(tx => tx.hash -> tx).toMap,
+        heights = transactions.map(tx => tx.hash -> random.nextInt(500000).toLong).toMap,
+        history = (for (i <- 0 until random.nextInt(100)) yield randomBytes(32) -> randomHistoryItems).toMap,
+        locks = (for (i <- 0 until random.nextInt(10)) yield randomTransaction).toSet
+      )
+    }
+
+    assert(db.readPersistentData() == None)
+
+    for (i <- 0 until 50) {
+      val data = randomPersistentData
+      db.persist(data)
+      val Some(check) = db.readPersistentData()
+      assert(check === data)
+    }
   }
 }
