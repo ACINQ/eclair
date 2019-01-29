@@ -511,7 +511,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! TransportHandler.ReadAck(routingMessage)
       log.info("received {}", routingMessage)
       // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-      val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
+      val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _))
       log.info("replying with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
       split(shortChannelIds)
         .foreach(chunk => transport ! ReplyChannelRange(chainHash, chunk.firstBlock, chunk.numBlocks, complete = 1, data = EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, chunk.shortChannelIds)))
@@ -521,7 +521,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! TransportHandler.ReadAck(routingMessage)
       log.info("received {}", routingMessage)
       // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-      val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
+      val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _))
       log.info("replying with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
       split(shortChannelIds)
         .foreach(chunk => transport ! ReplyChannelRangeDeprecated(chainHash, chunk.firstBlock, chunk.numBlocks, complete = 1, data = EncodedShortChannelIdsWithTimestamp(EncodingTypes.UNCOMPRESSED, chunk.shortChannelIds.map(id => ShortChannelIdWithTimestamp(id, getTimestamp(d.channels, d.updates)(id))))))
@@ -531,7 +531,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! TransportHandler.ReadAck(routingMessage)
       log.info("received {}", routingMessage)
       // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-      val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
+      val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _))
       log.info("replying with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
       split(shortChannelIds)
         .foreach(chunk => transport ! ReplyChannelRangeWithChecksums(chainHash, chunk.firstBlock, chunk.numBlocks, complete = 1, data = EncodedShortChannelIdsWithChecksums(EncodingTypes.UNCOMPRESSED, chunk.shortChannelIds.map(getChannelDigestInfo(d.channels, d.updates)))))
@@ -540,7 +540,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       val theirShortChannelIds: SortedSet[ShortChannelId] = SortedSet(data.array: _*)
-      val ourShortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates))
+      val ourShortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _))
       val missing: SortedSet[ShortChannelId] = theirShortChannelIds -- ourShortChannelIds
       log.info("received reply_channel_range, we're missing {} channel announcements/updates, format={}", missing.size, data.encoding)
       // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
@@ -937,7 +937,7 @@ object Router {
   /**
     * Filters channels that we want to send to nodes asking for a channel range
     */
-  def keep(firstBlockNum: Long, numberOfBlocks: Long, id: ShortChannelId, channels: Map[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Boolean = {
+  def keep(firstBlockNum: Long, numberOfBlocks: Long, id: ShortChannelId): Boolean = {
     val TxCoordinates(height, _, _) = ShortChannelId.coordinates(id)
     height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
   }
