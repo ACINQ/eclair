@@ -56,20 +56,27 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   when(DISCONNECTED) {
-    case Event(Peer.Connect(NodeURI(_, address)), _) =>
-      // even if we are in a reconnection loop, we immediately process explicit connection requests
-      context.actorOf(Client.props(nodeParams, authenticator, new InetSocketAddress(address.getHost, address.getPort), remoteNodeId, origin_opt = Some(sender())))
-      stay
+    case Event(Peer.Connect(NodeURI(_, hostAndPort)), d: DisconnectedData) =>
+      val address = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
+      if (d.address_opt == Some(address)) {
+        // we already know this address, we'll reconnect automatically
+        sender ! "reconnection in progress"
+        stay
+      } else {
+        // we immediately process explicit connection requests to new addresses
+        context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender())))
+        stay
+      }
 
-    case Event(Reconnect, d@DisconnectedData(address_opt, channels, attempts)) =>
-      address_opt match {
+    case Event(Reconnect, d: DisconnectedData) =>
+      d.address_opt match {
         case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
-        case _ if channels.isEmpty => stay // no-op (no more channels with this peer)
+        case _ if d.channels.isEmpty => stay // no-op (no more channels with this peer)
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           // exponential backoff retry with a finite max
-          setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, attempts), 60) seconds, repeat = false)
-          stay using d.copy(attempts = attempts + 1)
+          setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 60) seconds, repeat = false)
+          stay using d.copy(attempts = d.attempts + 1)
       }
 
     case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, address, outgoing, origin_opt), d: DisconnectedData) =>
@@ -434,6 +441,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(_: TransportHandler.ReadAck, _) => stay // ignored
 
+    case Event(Peer.Reconnect, _) => stay // we got connected in the meantime
+
     case Event(SendPing, _) => stay // we got disconnected in the meantime
 
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
@@ -444,6 +453,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   onTransition {
+    case INSTANTIATING -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => self ! Reconnect // we reconnect right away if we just started the peer
     case _ -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
     case DISCONNECTED -> _ if nodeParams.autoReconnect && stateData.address_opt.isDefined => cancelTimer(RECONNECT_TIMER)
   }
