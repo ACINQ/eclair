@@ -289,7 +289,7 @@ object Graph {
     val edgeFees = if(isNeighborTarget) 0 else edgeCost(edge, amountMsat + prev.feeCostMsat) - amountMsat
 
     val factor = (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor) match {
-      case 0 => 0.00001
+      case 0 => 0.00001 // if the factor turns out to be 0 we default to a very small number to avoid having a weight of 0 and still take into account the cost
       case other => other
     }
 
