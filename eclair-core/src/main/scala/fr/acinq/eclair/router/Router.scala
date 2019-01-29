@@ -818,13 +818,15 @@ object Router {
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                 wr: WeightRatios = COST_OPTIMIZED_WEIGHT_RATIO,
                 maxFeeBaseMsat: Long = 21000,
-                maxFeePct: Double = 0.03D): Try[Seq[Hop]] = Try {
+                maxFeePct: Double = 0.03D,
+                maxCltv: Int = 2016): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
     val currentBlockHeight = Globals.blockCount.get()
 
     val ensureFeeCap: Weight => Boolean = { cp =>
-      cp.feeCostMsat < maxFeeBaseMsat || cp.feeCostMsat < maxFeePct * amountMsat
+      (cp.feeCostMsat < maxFeeBaseMsat || cp.feeCostMsat < maxFeePct * amountMsat) &&
+      (cp.cltvCumulative < maxCltv)
     }
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, wr, currentBlockHeight, ensureFeeCap).toList match {

@@ -36,10 +36,6 @@ class RouteCalculationSpec extends FunSuite {
 
   import RouteCalculationSpec._
 
-  val currentBlockHeight = 554000
-
-  Globals.blockCount.set(currentBlockHeight)
-
   val (a, b, c, d, e, f) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
 
   test("calculate simple route") {
@@ -653,7 +649,7 @@ class RouteCalculationSpec extends FunSuite {
       case Failure(_) => assert(false)
       case Success(someRoute) =>
 
-        val routeCost = Graph.pathWeight(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, g, Router.COST_OPTIMIZED_WEIGHT_RATIO, currentBlockHeight).feeCostMsat
+        val routeCost = Graph.pathWeight(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, g, Router.COST_OPTIMIZED_WEIGHT_RATIO, 0).feeCostMsat
 
         // over the three routes we could only get the 2 cheapest because the third is too expensive (7 msat of fees)
         assert(routeCost == 5 || routeCost == 6)
@@ -668,13 +664,13 @@ class RouteCalculationSpec extends FunSuite {
     // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 3, totCltv = 18)
     // A -> E -> C -> D is 'capacity optimized', more recent channel/larger capacity route
     val updates = List(
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBaseMsat = 0, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 13),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBaseMsat = 0, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2000),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2000),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x7"), e, c, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = Some(largeCapacity), cltvDelta = 12)
+      makeUpdate(ShortChannelId(s"0x0x1"), a, b, feeBaseMsat = 0, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 13),
+      makeUpdate(ShortChannelId(s"0x0x4"), a, e, feeBaseMsat = 0, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"0x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 500),
+      makeUpdate(ShortChannelId(s"0x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 500),
+      makeUpdate(ShortChannelId(s"0x0x5"), e, f, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
+      makeUpdate(ShortChannelId(s"0x0x6"), f, d, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
+      makeUpdate(ShortChannelId(s"0x0x7"), e, c, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = Some(largeCapacity), cltvDelta = 12)
     ).toMap
 
     val g = makeGraph(updates)
@@ -701,6 +697,8 @@ class RouteCalculationSpec extends FunSuite {
 
   test("prefer going through an older channel if fees and CLTV are the same") {
 
+    val currentBlockHeight = 554000
+
     val g = makeGraph(List(
       makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = Some(DEFAULT_AMOUNT_MSAT), cltvDelta = 144),
       makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = Some(DEFAULT_AMOUNT_MSAT), cltvDelta = 144),
@@ -709,6 +707,8 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = Some(DEFAULT_AMOUNT_MSAT), cltvDelta = 144),
       makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = Some(DEFAULT_AMOUNT_MSAT), cltvDelta = 144)
     ).toMap)
+
+    Globals.blockCount.set(currentBlockHeight)
 
     val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, numRoutes = 1, wr = WeightRatios(
       ageFactor = 1,
@@ -722,12 +722,12 @@ class RouteCalculationSpec extends FunSuite {
   test("prefer a route with a smaller total CLTV if fees and score are the same") {
 
     val g = makeGraph(List(
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10), // smaller CLTV
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12)
+      makeUpdate(ShortChannelId(s"0x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"0x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"0x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10), // smaller CLTV
+      makeUpdate(ShortChannelId(s"0x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"0x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"0x0x6"), f, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12)
     ).toMap)
 
 
@@ -738,6 +738,29 @@ class RouteCalculationSpec extends FunSuite {
     ))
 
     assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b,c) :: (c, d) :: Nil)
+  }
+
+
+  test("avoid a route that breaks off the max CLTV") {
+
+    // A -> B -> C -> D is cheaper but has a total CLTV > 2016!
+    // A -> E -> F -> D is more expensive but has a total CLTV < 2016
+    val g = makeGraph(List(
+      makeUpdate(ShortChannelId(s"0x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144),
+      makeUpdate(ShortChannelId(s"0x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144),
+      makeUpdate(ShortChannelId(s"0x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1000),
+      makeUpdate(ShortChannelId(s"0x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 900),
+      makeUpdate(ShortChannelId(s"0x0x5"), e, f, feeBaseMsat = 10, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144),
+      makeUpdate(ShortChannelId(s"0x0x6"), f, d, feeBaseMsat = 10, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144)
+    ).toMap)
+
+    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, numRoutes = 1, wr = WeightRatios(
+      ageFactor = 1,
+      cltvDeltaFactor = 1,
+      capacityFactor = 1
+    ))
+
+    assert(hops2Nodes(routeScoreOptimized) === (a, e) :: (e, f) :: (f, d) :: Nil)
   }
 }
 

@@ -10,10 +10,11 @@ import fr.acinq.eclair.channel.Channel
 
 object Graph {
 
+  // A compound weight for an edge, score is obtained with (cost X factor),'feeCost' contains the actual fees in millisatoshi, 'cltvCumulative' the total CLTV necessary to reach this edge
+  case class Weight(score: Double, feeCostMsat: Long, cltvCumulative: Int)
+  case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) // The ratios that will be used to calculate the 'factor'
   case class WeightedNode(key: PublicKey, weight: Weight)
   case class WeightedPath(path: Seq[GraphEdge], weight: Weight)
-  case class Weight(score: Double, feeCostMsat: Long) // Carries a compound weight for an edge, score is obtained with (cost X factor),'feeCost' contains the actual fees in millisatoshi
-  case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) // The ratios that will be used to calculate the 'factor'
   /**
     * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
     * the same weight we distinguish them by their public key. See https://docs.oracle.com/javase/8/docs/api/java/util/Comparator.html
@@ -127,7 +128,7 @@ object Graph {
 
   // computes the total compound weight of a path, which is the cumulative sum of all the weights of the edges in this path (except the first)
   def pathWeight(path: Seq[GraphEdge], amountMsat: Long, graph: DirectedGraph, wr: WeightRatios, currentBlockHeight: Long): Weight = {
-    path.drop(1).foldRight(Weight(0, 0)) { (edge, cost) =>
+    path.drop(1).foldRight(Weight(0, 0, 0)) { (edge, cost) =>
       edgeWeightCompound(amountMsat, edge, cost, isNeighborTarget = false, currentBlockHeight, wr)
     }
   }
@@ -181,7 +182,7 @@ object Graph {
     val pathLength = new java.util.HashMap[PublicKey, Int](maxMapSize)
 
     // initialize the queue and weight array with the base cost (amount to be routed)
-    val startingWeight = Weight(0, 0)
+    val startingWeight = Weight(0, 0, 0)
     weight.put(targetNode, startingWeight)
     vertexQueue.insert(WeightedNode(targetNode, startingWeight))
     pathLength.put(targetNode, startingDistance) // the source node has distance 0
@@ -226,7 +227,7 @@ object Graph {
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
             val neighborCost = weight.containsKey(neighbor) match {
-              case false => Weight(Double.MaxValue, Long.MaxValue)
+              case false => Weight(Double.MaxValue, Long.MaxValue, Int.MaxValue)
               case true => weight.get(neighbor)
             }
 
@@ -293,7 +294,7 @@ object Graph {
       case other => other
     }
 
-    Weight(edgeFees * factor, edgeFees)
+    Weight(edgeFees * factor, edgeFees, prev.cltvCumulative + channelCltvDelta)
   }
 
   /**
