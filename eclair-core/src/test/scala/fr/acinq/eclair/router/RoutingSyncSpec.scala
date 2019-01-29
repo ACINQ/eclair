@@ -109,6 +109,26 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     sender.expectMsgType[GossipTimestampFilter]
     assert(router.stateData.sync.get(remoteNodeId).isEmpty)
   }
+
+  test("sync progress") {
+
+    def req = QueryShortChannelIds(Block.RegtestGenesisBlock.hash, EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, List(ShortChannelId(42))))
+
+    val nodeidA = randomKey.publicKey
+    val nodeidB = randomKey.publicKey
+
+    val (sync1, _) = Router.updateSync(Map.empty, nodeidA, List(req, req, req, req))
+    assert(Router.syncProgress(sync1) == SyncProgress(0.25D))
+
+    val (sync2, _) = Router.updateSync(sync1, nodeidB, List(req, req, req, req, req, req, req, req, req, req, req, req))
+    assert(Router.syncProgress(sync2) == SyncProgress(0.125D))
+
+    // let's assume we made some progress
+    val sync3 = sync2
+      .updated(nodeidA, sync2(nodeidA).copy(pending = List(req)))
+      .updated(nodeidB, sync2(nodeidB).copy(pending = List(req)))
+    assert(Router.syncProgress(sync3) == SyncProgress(0.875D))
+  }
 }
 
 

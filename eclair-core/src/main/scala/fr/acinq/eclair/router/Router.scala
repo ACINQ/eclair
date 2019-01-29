@@ -70,16 +70,7 @@ case class RoutingState(channels: Iterable[ChannelAnnouncement], updates: Iterab
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
-case class Sync(pending: List[RoutingMessage], total: Int) {
-
-  /**
-    * NB: progress is in terms of requests, not individual channels
-    * @return returns a sync progress indicator (1 means fully synced)
-    */
-  def progress: Double = {
-    if (total == 0) 1.0 else ((1.0 - pending.size) / total)
-  }
-}
+case class Sync(pending: List[RoutingMessage], total: Int)
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                 channels: SortedMap[ShortChannelId, ChannelAnnouncement],
@@ -942,12 +933,23 @@ object Router {
     height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
   }
 
-  def syncProgress(sync: Map[PublicKey, Sync]): SyncProgress =
-    if (sync.isEmpty) {
+  /**
+    * Returns overall progress on synchronization
+    *
+    * @param sync
+    * @return a sync progress indicator (1 means fully synced)
+    */
+  def syncProgress(sync: Map[PublicKey, Sync]): SyncProgress = {
+    //NB: progress is in terms of requests, not individual channels
+    val (pending, total) = sync.foldLeft((0, 0)) {
+      case ((p, t), (_, sync)) => (p + sync.pending.size, t + sync.total)
+    }
+    if (total == 0) {
       SyncProgress(1)
     } else {
-      SyncProgress(sync.values.map(_.progress).sum / sync.values.size)
+      SyncProgress((total - pending) / (1.0 * total))
     }
+  }
 
   /**
     * This method is used after a payment failed, and we want to exclude some nodes that we know are failing
