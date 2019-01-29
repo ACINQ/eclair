@@ -45,7 +45,17 @@ import scala.util.{Random, Try}
 
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteRequest(source: PublicKey, target: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty, wr_opt: Option[WeightRatios] = None, maxFeeBaseMsat:Long = 21000, maxFeePct: Double = 0.03D, randomize: Boolean = false)
+case class RouteRequest(source: PublicKey,
+                        target: PublicKey,
+                        amountMsat: Long,
+                        assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                        ignoreNodes: Set[PublicKey] = Set.empty,
+                        ignoreChannels: Set[ChannelDesc] = Set.empty,
+                        wr_opt: Option[WeightRatios] = None,
+                        maxFeeBaseMsat:Long = 21000,
+                        maxFeePct: Double = 0.03D,
+                        randomize: Boolean = false,
+                        maxCltv: Int = 2016)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
   require(hops.size > 0, "route cannot be empty")
 }
@@ -375,7 +385,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! d
       stay
 
-    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, wr_opt, maxFeeBaseMsat, maxFeePct, randomize), d) =>
+    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, wr_opt, maxFeeBaseMsat, maxFeePct, randomize, maxCltv), d) =>
       // we convert extra routing info provided in the payment request to fake channel_update
       // it takes precedence over all other channel_updates we know
       val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end)).toMap
@@ -386,7 +396,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
       // if we're randomizing we ask the router to make a random selection among the N best routes, otherwise we ask for 1 only
       val numRoutes = if(randomize) DEFAULT_ROUTES_COUNT else 1
-      findRoute(d.graph, start, end, amount, numRoutes = numRoutes, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, wr_opt.getOrElse(COST_OPTIMIZED_WEIGHT_RATIO), maxFeeBaseMsat, maxFeePct)
+      findRoute(d.graph, start, end, amount, numRoutes = numRoutes, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, wr_opt.getOrElse(COST_OPTIMIZED_WEIGHT_RATIO), maxFeeBaseMsat, maxFeePct, maxCltv)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay

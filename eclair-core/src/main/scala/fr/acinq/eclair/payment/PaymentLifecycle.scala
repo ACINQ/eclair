@@ -44,7 +44,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPayment, WaitingForRequest) =>
-      router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, randomize = c.randomize)
+      router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, randomize = c.randomize, maxCltv = c.maxCltv)
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 
@@ -104,12 +104,12 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
           // in that case we don't know which node is sending garbage, let's try to blacklist all nodes except the one we are directly connected to and the destination node
           val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1)
           log.warning(s"blacklisting intermediate nodes=${blacklist.mkString(",")}")
-          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes ++ blacklist, ignoreChannels, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, c.randomize)
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes ++ blacklist, ignoreChannels, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, c.randomize, c.maxCltv)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ UnreadableRemoteFailure(hops))
         case Success(e@ErrorPacket(nodeId, failureMessage: Node)) =>
           log.info(s"received 'Node' type error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
           // let's try to route around this node
-          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, c.randomize)
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, c.randomize, c.maxCltv)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
         case Success(e@ErrorPacket(nodeId, failureMessage: Update)) =>
           log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
@@ -137,18 +137,18 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
             // in any case, we forward the update to the router
             router ! failureMessage.update
             // let's try again, router will have updated its state
-            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, c.randomize)
+            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, c.randomize, c.maxCltv)
           } else {
             // this node is fishy, it gave us a bad sig!! let's filter it out
             log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
-            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, c.randomize)
+            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, c.randomize, c.maxCltv)
           }
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
         case Success(e@ErrorPacket(nodeId, failureMessage)) =>
           log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
           // let's try again without the channel outgoing from nodeId
           val faultyChannel = hops.find(_.nodeId == nodeId).map(hop => ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId))
-          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels ++ faultyChannel.toSet, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, c.randomize)
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels ++ faultyChannel.toSet, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, c.randomize, c.maxCltv)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
       }
 
@@ -167,7 +167,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       } else {
         log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
         val faultyChannel = ChannelDesc(hops.head.lastUpdate.shortChannelId, hops.head.nodeId, hops.head.nextNodeId)
-        router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels + faultyChannel, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, c.randomize)
+        router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels + faultyChannel, wr_opt = c.wr_opt, maxFeeBaseMsat = c.maxFeeBaseMsat, maxFeePct = c.maxFeePct, c.randomize, c.maxCltv)
         goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ LocalFailure(t))
       }
 
@@ -194,7 +194,18 @@ object PaymentLifecycle {
   /**
     * @param maxFeePct set by default to 3% as a safety measure (even if a route is found, if fee is higher than that payment won't be attempted)
     */
-  case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY, maxAttempts: Int = 5, maxFeeBaseMsat:Long = 21000, maxFeePct: Double = 0.03, wr_opt: Option[WeightRatios] = None, randomize: Boolean = false) {
+  case class SendPayment(amountMsat: Long,
+                         paymentHash: BinaryData,
+                         targetNodeId: PublicKey,
+                         assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                         finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
+                         maxAttempts: Int = 5,
+                         maxFeeBaseMsat:Long = 21000,
+                         maxFeePct: Double = 0.03,
+                         wr_opt: Option[WeightRatios] = None,
+                         randomize: Boolean = false,
+                         maxCltv: Int = 2016) {
+
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
   case class CheckPayment(paymentHash: BinaryData)
