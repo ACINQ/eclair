@@ -1,10 +1,12 @@
 # Building Eclair
 
 ## Requirements
-- [Java Development Kit](http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html) 1.8u161 or newer
+- [Oracle JDK 1.8](http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html) 1.8u161 or newer, or [OpenJDK 11](https://jdk.java.net/11/).
 - [Maven](https://maven.apache.org/download.cgi) 3.5.4 or newer
 - [Inno Setup](http://www.jrsoftware.org/isdl.php) 5.5.9 (optional, if you want to generate the windows installer)
 - [Docker](https://www.docker.com/) 18.03 or newer (optional) if you want to run all tests
+
+:warning: You can use [Oracle JDK 1.8](http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html) to *build* eclair, but we recommend that you use [OpenJDK 11](https://jdk.java.net/11/) to *run* eclair.
 
 ## Build
 To build the project, simply run:

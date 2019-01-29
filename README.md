@@ -62,9 +62,8 @@ Just use the windows installer, it should create a shortcut on your desktop.
 
 #### Linux, macOS or manual install on Windows
 
-You need to first install java, more precisely a [JRE 1.8](http://www.oracle.com/technetwork/java/javase/downloads/jre8-downloads-2133155.html).
-
- :warning: If you are using the OpenJDK JRE, you will need to build OpenJFX yourself, or run the application in headless mode (see below).
+You need to first install java. Eclair will run on [Oracle JRE 1.8](http://www.oracle.com/technetwork/java/javase/downloads/jre8-downloads-2133155.html), [Oracle JDK 11](https://www.oracle.com/technetwork/java/javase/downloads/jdk11-downloads-5066655.html) and [Open JDK 11](https://jdk.java.net/11/).
+We recommend that use use [Open JDK 11](https://jdk.java.net/11/).
 
 Then download the latest fat jar and depending on whether or not you want a GUI run the following command:
 * with GUI:
