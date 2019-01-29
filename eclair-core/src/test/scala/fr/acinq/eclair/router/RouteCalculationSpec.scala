@@ -664,17 +664,17 @@ class RouteCalculationSpec extends FunSuite {
 
     val olderChannelHeight = currentBlockHeight - 5500
 
-    // A -> B -> C -> D is 'fee optimized', lower fees route (totFees = 2, totCltv = 20)
-    // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 11, totCltv = 8)
+    // A -> B -> C -> D is 'fee optimized', lower fees route (totFees = 2, totCltv = 4000)
+    // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 3, totCltv = 18)
     // A -> E -> C -> D is 'age optimized', more recent channel/larger capacity route
     val updates = List(
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 13),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x2"), b, c, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 15),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x3"), c, d, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 22),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBaseMsat = 1, 2, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBaseMsat = 2, 4, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 14),
-      makeUpdate(ShortChannelId(s"${olderChannelHeight}x0x7"), e, c, feeBaseMsat = 2, 3, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12)
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBaseMsat = 0, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 13),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBaseMsat = 0, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2000),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 2000),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
+      makeUpdate(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
+      makeUpdate(ShortChannelId(s"${olderChannelHeight}x0x7"), e, c, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12)
     ).toMap
 
     val g = makeGraph(updates)
@@ -690,14 +690,13 @@ class RouteCalculationSpec extends FunSuite {
 
     assert(hops2Nodes(routeCltvOptimized) === (a, e) :: (e,f) :: (f, d) :: Nil)
 
-    val Success(routeAgeOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, wr = WeightRatios(
+    val Success(routeAgeOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, wr = WeightRatios(
       cltvDeltaFactor = 0,
       ageFactor = 1,
       capacityFactor = 0
     ))
 
-    //assert(hops2Nodes(routeAgeOptimized) === (a, e) :: (e,c) :: (c, d) :: Nil)
-    assert(hops2ShortChannelIds(routeAgeOptimized) === s"${currentBlockHeight}x0x4" :: s"${olderChannelHeight}x0x7" :: s"${currentBlockHeight}x0x3" :: Nil)
+    assert(hops2Nodes(routeAgeOptimized) === (a, e) :: (e,c) :: (c, d) :: Nil)
   }
 
   test("prefer going through an older channel if fees and CLTV are the same") {

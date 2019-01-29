@@ -789,7 +789,7 @@ object Router {
   val DEFAULT_ROUTES_COUNT = 3
 
   // A weight reatiponm
-  val COST_OPTIMIZED_WEIGHT_RATIO = WeightRatios(ageFactor = 0, cltvDeltaFactor = 0, capacityFactor = 0)
+  val COST_OPTIMIZED_WEIGHT_RATIO = WeightRatios(cltvDeltaFactor = 0, ageFactor = 0, capacityFactor = 0)
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.
