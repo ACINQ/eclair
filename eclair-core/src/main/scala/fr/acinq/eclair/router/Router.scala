@@ -16,25 +16,23 @@
 
 package fr.acinq.eclair.router
 
+import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
-import akka.pattern.pipe
-import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChannel, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.{InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.WeightedPath
-import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import scala.collection.{SortedSet, mutable}
+
 import scala.collection.immutable.{SortedMap, TreeMap}
+import scala.collection.{SortedSet, mutable}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise}
@@ -84,7 +82,7 @@ case object TickPruneStaleChannels
   * Created by PM on 24/05/2016.
   */
 
-class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Unit]] = None) extends FSMDiagnosticActorLogging[State, Data] {
+class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[State, Data] {
 
   import Router._
 
@@ -116,7 +114,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     val graph = DirectedGraph.makeGraph(initChannelUpdates)
 
     log.info(s"initialization completed, ready to process messages")
-    Try(initialized.map(_.success(())))
+    Try(initialized.map(_.success(Done)))
     startWith(NORMAL, Data(Map.empty, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
   }
 
@@ -278,8 +276,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       log.info("sending query_channel_range={}", query)
       remote ! query
 
-      // we also set a pass-all filter for now (we can update it later)
-      val filter = GossipTimestampFilter(nodeParams.chainHash, firstTimestamp = 0, timestampRange = Int.MaxValue)
+      // we also set a pass-all filter for now (we can update it later) for the future gossip messages, by setting
+      // the first_timestamp field to the current date/time and timestamp_range to the maximum value
+      // NB: we can't just set firstTimestamp to 0, because in that case peer would send us all past messages matching
+      // that (i.e. the whole routing table)
+      val filter = GossipTimestampFilter(nodeParams.chainHash, firstTimestamp = Platform.currentTime / 1000, timestampRange = Int.MaxValue)
       remote ! filter
 
       // clean our sync state for this peer: we receive a SendChannelQuery just when we connect/reconnect to a peer and
@@ -690,7 +691,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
 object Router {
 
-  def props(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Unit]] = None) = Props(new Router(nodeParams, watcher, initialized))
+  def props(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
   def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
   // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used

@@ -19,10 +19,9 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.sql.DriverManager
-import java.util.concurrent.TimeUnit
 
+import akka.Done
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
-import akka.pattern.after
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
@@ -78,7 +77,7 @@ class Setup(datadir: File,
   def bootstrap: Future[Kit] =
     for {
       _ <- Future.successful(true)
-      feeratesRetrieved = Promise[Boolean]()
+      feeratesRetrieved = Promise[Done]()
 
       bitcoin = nodeParams.watcherType match {
         case ELECTRUM =>
@@ -128,7 +127,7 @@ class Setup(datadir: File,
           Globals.feeratesPerKw.set(FeeratesPerKw(feerates))
           system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
           logger.info(s"current feeratesPerKB=${Globals.feeratesPerKB.get()} feeratesPerKw=${Globals.feeratesPerKw.get()}")
-          feeratesRetrieved.trySuccess(true)
+          feeratesRetrieved.trySuccess(Done)
       })
       _ <- feeratesRetrieved.future
 

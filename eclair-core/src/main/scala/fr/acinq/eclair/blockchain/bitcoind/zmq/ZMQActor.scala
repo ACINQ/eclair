@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.blockchain.bitcoind.zmq
 
+import akka.Done
 import akka.actor.{Actor, ActorLogging}
 import fr.acinq.bitcoin.{Block, Transaction}
 import fr.acinq.eclair.blockchain.{NewBlock, NewTransaction}
@@ -30,7 +31,7 @@ import scala.util.Try
 /**
   * Created by PM on 04/04/2017.
   */
-class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) extends Actor with ActorLogging {
+class ZMQActor(address: String, connected: Option[Promise[Done]] = None) extends Actor with ActorLogging {
 
   import ZMQActor._
 
@@ -79,7 +80,7 @@ class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) exte
     case event: Event => event.getEvent match {
       case ZMQ.EVENT_CONNECTED =>
         log.info(s"connected to ${event.getAddress}")
-        Try(connected.map(_.success(true)))
+        Try(connected.map(_.success(Done)))
         context.system.eventStream.publish(ZMQConnected)
       case ZMQ.EVENT_DISCONNECTED =>
         log.warning(s"disconnected from ${event.getAddress}")
