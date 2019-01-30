@@ -84,6 +84,7 @@ class SqliteWalletDbSpec extends FunSuite {
         transactions = transactions.map(tx => tx.hash -> tx).toMap,
         heights = transactions.map(tx => tx.hash -> random.nextInt(500000).toLong).toMap,
         history = (for (i <- 0 until random.nextInt(100)) yield randomBytes(32) -> randomHistoryItems).toMap,
+        pendingTransactions = transactions.toList,
         locks = (for (i <- 0 until random.nextInt(10)) yield randomTransaction).toSet
       )
     }

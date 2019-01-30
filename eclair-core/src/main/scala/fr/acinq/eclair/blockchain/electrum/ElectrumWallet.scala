@@ -87,6 +87,14 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
     } else data
   }
 
+  // sent notifications for all wallet transactions
+  def advertiseTransactions(data: ElectrumWallet.Data): Unit = {
+    data.transactions.values.foreach(tx => data.computeTransactionDelta(tx).foreach {
+      case (received, sent, fee_opt) =>
+        context.system.eventStream.publish(TransactionReceived(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt))
+    })
+  }
+
   startWith(DISCONNECTED, {
     val blockchain = params.chainHash match {
       // regtest is a special case, there are no checkpoints and we start with a single header
@@ -151,6 +159,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         // nothing to sync
         data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
+        advertiseTransactions(data)
         goto(RUNNING) using notifyReady(data.copy(lastReadyMessage = None))
       } else {
         client ! ElectrumClient.GetHeaders(data.blockchain.tip.height + 1, RETARGETING_PERIOD)
@@ -166,6 +175,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         log.info(s"headers sync complete, tip=${data.blockchain.tip}")
         data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
+        advertiseTransactions(data)
         goto(RUNNING) using notifyReady(data)
       } else {
         Try(Blockchain.addHeaders(data.blockchain, start, headers)) match {
@@ -983,7 +993,7 @@ object ElectrumWallet {
 
   object Data {
     def apply(params: ElectrumWallet.WalletParameters, blockchain: Blockchain, accountKeys: Vector[ExtendedPrivateKey], changeKeys: Vector[ExtendedPrivateKey]): Data
-    = Data(blockchain, accountKeys, changeKeys, Map(), Map(), Map(), Map(), Set(), Set(), Set(), Set(), Seq(), None)
+    = Data(blockchain, accountKeys, changeKeys, Map(), Map(), Map(), Map(), Set(), Set(), Set(), Set(), List(), None)
   }
 
   case class InfiniteLoopException(data: Data, tx: Transaction) extends Exception
