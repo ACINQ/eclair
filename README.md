@@ -156,12 +156,12 @@ java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gu
   receive      | amountMsat, description                                                                | generate a payment request for a given amount
   receive      | amountMsat, description, expirySeconds                                                 | generate a payment request for a given amount that expires after given number of seconds
   parseinvoice | paymentRequest                                                                         | returns node, amount and payment hash in a payment request
-  findroute    | paymentRequest                                                                         | returns nodes and channels of the route for this payment request if there is any
-  findroute    | paymentRequest, amountMsat                                                             | returns nodes and channels of the route for this payment request and amount, if there is any
-  findroute    | nodeId, amountMsat                                                                     | returns nodes and channels of the route to the nodeId, if there is any
-  send         | amountMsat, paymentHash, nodeId                                                        | send a payment to a lightning node
-  send         | paymentRequest                                                                         | send a payment to a lightning node using a BOLT11 payment request
-  send         | paymentRequest, amountMsat                                                             | send a payment to a lightning node using a BOLT11 payment request and a custom amount
+  findroute    | paymentRequest, randomize = false                                                      | returns nodes and channels of the route for this payment request if there is any, optionally randomizes the route selection
+  findroute    | paymentRequest, amountMsat, randomize = false                                          | returns nodes and channels of the route for this payment request and amount, if there is any, optionally randomizes the route selection
+  findroute    | nodeId, amountMsat, randomize = false                                                  | returns nodes and channels of the route to the nodeId, if there is any, optionally randomizes the route selection
+  send         | amountMsat, paymentHash, nodeId, randomize = false                                     | send a payment to a lightning node, optionally randomizes the route selection
+  send         | paymentRequest, randomize = false                                                      | send a payment to a lightning node using a BOLT11 payment request, optionally randomizes the route selection
+  send         | paymentRequest, amountMsat, randomize = false                                          | send a payment to a lightning node using a BOLT11 payment request and a custom amount, optionally randomizes the route selection
   checkpayment | paymentHash                                                                            | returns true if the payment has been received, false otherwise
   checkpayment | paymentRequest                                                                         | returns true if the payment has been received, false otherwise
   close        | channelId                                                                              | close a channel
