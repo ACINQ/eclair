@@ -36,7 +36,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
 
   override def unhandled(message: Any): Unit = message match {
     case ValidateRequest(c) =>
-        log.info(s"blindly validating channel={}", c)
+        log.info(s"blindly validating channel=$c")
         val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
         val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
         val fakeFundingTx = Transaction(

@@ -23,8 +23,8 @@ import org.zeromq.ZMQ.Event
 import org.zeromq.{ZContext, ZMQ, ZMsg}
 
 import scala.annotation.tailrec
-import scala.concurrent.{ExecutionContext, Promise}
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.Try
 
 /**
