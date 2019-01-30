@@ -271,8 +271,14 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           client ! GetTransaction(item.tx_hash)
           if (item.height > 0) { // don't ask for merkle proof for unconfirmed transactions
             if (data.blockchain.getHeader(item.height).orElse(params.walletDb.getHeader(item.height)).isEmpty) {
+              // we don't have this header, probably because it is older than our checkpoints
+              // request the entire chunk, we will be able to check it efficiently and then store it
               val start = (item.height / RETARGETING_PERIOD) * RETARGETING_PERIOD
-              client ! GetHeaders(start, RETARGETING_PERIOD)
+              val request = GetHeaders(start, RETARGETING_PERIOD)
+              // there may be already a pending request for this chunk of headers
+              if (!data.pendingHeadersRequests.contains(request)) {
+                client ! request
+              }
             }
             client ! GetMerkle(item.tx_hash, item.height)
           }
@@ -301,6 +307,17 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       }
       val data1 = data.copy(heights = heights1, history = data.history + (scriptHash -> items0), pendingHistoryRequests = data.pendingHistoryRequests - scriptHash, pendingTransactionRequests = pendingTransactionRequests1)
       stay using notifyReady(data1)
+
+    case Event(ElectrumClient.GetHeadersResponse(start, headers, _), data) =>
+      Try(Blockchain.addHeadersChunk(data.blockchain, start, headers)) match {
+        case Success(blockchain1) =>
+          params.walletDb.addHeaders(start, headers)
+          stay() using data.copy(blockchain = blockchain1)
+        case Failure(error) =>
+          log.error("electrum server sent bad headers, disconnecting", error)
+          sender ! PoisonPill
+          goto(DISCONNECTED) using data
+      }
 
     case Event(GetTransactionResponse(tx), data) =>
       log.debug(s"received transaction ${tx.txid}")
@@ -379,7 +396,11 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       goto(DISCONNECTED) using data.copy(
         pendingHistoryRequests = Set(),
         pendingTransactionRequests = Set(),
-        pendingTransactions = Seq()
+        pendingHeadersRequests = Set(),
+        pendingTransactions = Seq(),
+        status = Map(),
+        heights = Map(),
+        history = Map()
       )
 
     case Event(GetCurrentReceiveAddress, data) => stay replying GetCurrentReceiveAddressResponse(data.currentReceiveAddress)
@@ -605,6 +626,7 @@ object ElectrumWallet {
                   locks: Set[Transaction],
                   pendingHistoryRequests: Set[BinaryData],
                   pendingTransactionRequests: Set[BinaryData],
+                  pendingHeadersRequests: Set[GetHeaders],
                   pendingTransactions: Seq[Transaction],
                   lastReadyMessage: Option[WalletReady]) extends Logging {
     val chainHash = blockchain.chainHash
@@ -949,7 +971,7 @@ object ElectrumWallet {
 
   object Data {
     def apply(params: ElectrumWallet.WalletParameters, blockchain: Blockchain, accountKeys: Vector[ExtendedPrivateKey], changeKeys: Vector[ExtendedPrivateKey]): Data
-    = Data(blockchain, accountKeys, changeKeys, Map(), Map(), Map(), Map(), Set(), Set(), Set(), Seq(), None)
+    = Data(blockchain, accountKeys, changeKeys, Map(), Map(), Map(), Map(), Set(), Set(), Set(), Set(), Seq(), None)
   }
 
   case class InfiniteLoopException(data: Data, tx: Transaction) extends Exception
