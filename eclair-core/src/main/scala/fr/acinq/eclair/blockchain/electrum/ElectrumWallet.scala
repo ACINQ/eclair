@@ -160,11 +160,13 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         advertiseTransactions(data)
+        // tell everyone we're ready
         goto(RUNNING) using notifyReady(data.copy(lastReadyMessage = None))
       } else {
         client ! ElectrumClient.GetHeaders(data.blockchain.tip.height + 1, RETARGETING_PERIOD)
         log.info(s"syncing headers from ${data.blockchain.height} to ${height}")
-        goto(SYNCING) using data.copy(lastReadyMessage = None)
+        // tell everyone we're ready while we catch up
+        goto(SYNCING) using notifyReady(data.copy(lastReadyMessage = None))
       }
   }
 
