@@ -9,7 +9,8 @@ import Router._
 
 object Graph {
 
-  case class WeightedNode(key: PublicKey, weight: Long)
+  case class RichWeight(cost: Long, size: Int, cltv: Int)
+  case class WeightedNode(key: PublicKey, weight: RichWeight)
   case class WeightedPath(path: Seq[GraphEdge], weight: Long)
 
   /**
@@ -18,7 +19,7 @@ object Graph {
     */
   object QueueComparator extends Ordering[WeightedNode] {
     override def compare(x: WeightedNode, y: WeightedNode): Int = {
-      val weightCmp = x.weight.compareTo(y.weight)
+      val weightCmp = x.weight.cost.compareTo(y.weight.cost)
       if (weightCmp == 0) x.key.toString().compareTo(y.key.toString())
       else weightCmp
     }
@@ -37,7 +38,7 @@ object Graph {
     * @param pathsToFind
     * @return
     */
-  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], pathsToFind: Int): Seq[WeightedPath] = {
+  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], pathsToFind: Int, boundaries: RichWeight => Boolean): Seq[WeightedPath] = {
 
     var allSpurPathsFound = false
 
@@ -47,8 +48,8 @@ object Graph {
     val candidates = new mutable.PriorityQueue[WeightedPath]
 
     // find the shortest path, k = 0
-    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges)
-    shortestPaths += WeightedPath(shortestPath, pathCost(shortestPath, amountMsat))
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, RichWeight(amountMsat, 0, 0), boundaries)
+    shortestPaths += WeightedPath(shortestPath, pathCost(shortestPath, amountMsat, isPartial = false))
 
     // main loop
     for(k <- 1 until pathsToFind) {
@@ -65,6 +66,11 @@ object Graph {
 
           // select the subpath from the source to the spur node of the k-th previous shortest path
           val rootPathEdges = if(i == 0) prevShortestPath.head :: Nil else prevShortestPath.take(i)
+          val rootPathWeight = RichWeight(
+            cost = pathCost(rootPathEdges, amountMsat, isPartial = true),
+            size = rootPathEdges.size,
+            cltv = rootPathEdges.foldLeft(0)( (acc, e) => acc + e.update.cltvExpiryDelta )
+          )
 
           // links to be removed that are part of the previous shortest path and which share the same root path
           val edgesToIgnore = shortestPaths.flatMap { weightedPath =>
@@ -76,7 +82,7 @@ object Graph {
           }
 
           // find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
-          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges)
+          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges, rootPathWeight, boundaries)
 
           // if there wasn't a path the spur will be empty
           if(spurPath.nonEmpty) {
@@ -88,7 +94,7 @@ object Graph {
             }
 
             //val totalPath = concat(rootPathEdges, spurPath.toList)
-            val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat))
+            val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat, isPartial = false))
 
             if (!shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
               candidates.enqueue(candidatePath)
@@ -111,8 +117,8 @@ object Graph {
   }
 
   // Calculates the total cost of a path (amount + fees), direct channels with the source will have a cost of 0 (pay no fees)
-  def pathCost(path: Seq[GraphEdge], amountMsat: Long): Long = {
-    path.drop(1).foldRight(amountMsat) { (edge, cost) =>
+  def pathCost(path: Seq[GraphEdge], amountMsat: Long, isPartial: Boolean): Long = {
+    path.drop(if(isPartial) 0 else 1).foldRight(amountMsat) { (edge, cost) =>
       edgeWeight(edge, cost, isNeighborTarget = false)
     }
   }
@@ -131,24 +137,29 @@ object Graph {
     * @return
     */
 
-  def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[GraphEdge] = {
+  def dijkstraShortestPath(g: DirectedGraph,
+                           sourceNode: PublicKey,
+                           targetNode: PublicKey,
+                           amountMsat: Long,
+                           ignoredEdges: Set[ChannelDesc],
+                           extraEdges: Set[GraphEdge],
+                           initialWeight: RichWeight,
+                           boundaries: RichWeight => Boolean): Seq[GraphEdge] = {
 
     //  the graph does not contain source/destination nodes
     if (!g.containsVertex(sourceNode)) return Seq.empty
-    if (!g.containsVertex(targetNode) || (extraEdges.nonEmpty && !extraEdges.exists(_.desc.a == targetNode))) return Seq.empty
+    if (!g.containsVertex(targetNode) && (extraEdges.nonEmpty && !extraEdges.exists(_.desc.b == targetNode))) return Seq.empty
 
     val maxMapSize = 100 // conservative estimation to avoid over allocating memory
 
     // this is not the actual optimal size for the maps, because we only put in there all the vertices in the worst case scenario.
-    val cost = new java.util.HashMap[PublicKey, Long](maxMapSize)
+    val cost = new java.util.HashMap[PublicKey, RichWeight](maxMapSize)
     val prev = new java.util.HashMap[PublicKey, GraphEdge](maxMapSize)
     val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](QueueComparator)
-    val pathLength = new java.util.HashMap[PublicKey, Int](maxMapSize)
 
-    // initialize the queue and cost array with the base cost (amount to be routed)
-    cost.put(targetNode, amountMsat)
-    vertexQueue.insert(WeightedNode(targetNode, amountMsat))
-    pathLength.put(targetNode, 0) // the source node has distance 0
+    // initialize the queue and cost array with the initial weight
+    cost.put(targetNode, initialWeight)
+    vertexQueue.insert(WeightedNode(targetNode, initialWeight))
 
     var targetFound = false
 
@@ -165,45 +176,45 @@ object Graph {
           case false => g.getIncomingEdgesOf(current.key) ++ extraEdges.filter(_.desc.b == current.key)
         }
 
+        val currentWeight = cost.get(current.key)
+
         // for each neighbor
         currentNeighbors.foreach { edge =>
 
           val neighbor = edge.desc.a
 
-          // calculate the length of the partial path given the new edge (current -> neighbor)
-          val neighborPathLength = pathLength.get(current.key) + 1
-
           // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
           // note: there is always an entry for the current in the 'cost' map
-          val newMinimumKnownCost = edgeWeight(edge, cost.get(current.key), neighbor == sourceNode)
+          val newMinimumKnownWeight = RichWeight(
+            cost = edgeWeight(edge, currentWeight.cost, neighbor == sourceNode),
+            size = currentWeight.size + 1,
+            cltv = currentWeight.cltv + edge.update.cltvExpiryDelta
+          )
 
           // test for ignored edges
-          if (edge.update.htlcMaximumMsat.forall(newMinimumKnownCost <= _) &&
-            newMinimumKnownCost >= edge.update.htlcMinimumMsat &&
-            neighborPathLength <= ROUTE_MAX_LENGTH && // ignore this edge if it would make the path too long
+          if (edge.update.htlcMaximumMsat.forall(newMinimumKnownWeight.cost <= _) &&
+            newMinimumKnownWeight.cost >= edge.update.htlcMinimumMsat &&
+            boundaries(newMinimumKnownWeight) && // ignore this edge if it violates the boundary checks
             !ignoredEdges.contains(edge.desc)
           ) {
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
             val neighborCost = cost.containsKey(neighbor) match {
-              case false => Long.MaxValue
+              case false => RichWeight(Long.MaxValue, 0, 0)
               case true => cost.get(neighbor)
             }
 
             // if this neighbor has a shorter distance than previously known
-            if (newMinimumKnownCost < neighborCost) {
-
-              // update the total length of this partial path
-              pathLength.put(neighbor, neighborPathLength)
+            if (newMinimumKnownWeight.cost < neighborCost.cost) {
 
               // update the visiting tree
               prev.put(neighbor, edge)
 
               // update the queue
-              vertexQueue.insert(WeightedNode(neighbor, newMinimumKnownCost)) // O(1)
+              vertexQueue.insert(WeightedNode(neighbor, newMinimumKnownWeight)) // O(1)
 
               // update the minimum known distance array
-              cost.put(neighbor, newMinimumKnownCost)
+              cost.put(neighbor, newMinimumKnownWeight)
             }
           }
         }
