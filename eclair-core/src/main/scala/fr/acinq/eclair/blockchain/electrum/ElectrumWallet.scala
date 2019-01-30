@@ -119,6 +119,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           history = persisted.history,
           locks = persisted.locks,
           pendingHistoryRequests = Set(),
+          pendingHeadersRequests = Set(),
           pendingTransactionRequests = Set(),
           pendingTransactions = Seq(),
           lastReadyMessage = None)
@@ -265,6 +266,9 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       shadow_items.foreach(item => log.warning(s"keeping shadow item for txid=${item.tx_hash}"))
       val items0 = items ++ shadow_items
 
+      val pendingHeadersRequests1 = collection.mutable.HashSet.empty[GetHeaders]
+      pendingHeadersRequests1 ++= data.pendingHeadersRequests
+
       val (heights1, pendingTransactionRequests1) = items0.foldLeft((data.heights, data.pendingTransactionRequests)) {
         case ((heights, hashes), item) if !data.transactions.contains(item.tx_hash) && !data.pendingTransactionRequests.contains(item.tx_hash) =>
           // we retrieve the tx if we don't have it and haven't yet requested it
@@ -278,6 +282,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
               // there may be already a pending request for this chunk of headers
               if (!data.pendingHeadersRequests.contains(request)) {
                 client ! request
+                pendingHeadersRequests1.add(request)
               }
             }
             client ! GetMerkle(item.tx_hash, item.height)
@@ -305,7 +310,12 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
             // no reorg, nothing to do
           }
       }
-      val data1 = data.copy(heights = heights1, history = data.history + (scriptHash -> items0), pendingHistoryRequests = data.pendingHistoryRequests - scriptHash, pendingTransactionRequests = pendingTransactionRequests1)
+      val data1 = data.copy(
+        heights = heights1,
+        history = data.history + (scriptHash -> items0),
+        pendingHistoryRequests = data.pendingHistoryRequests - scriptHash,
+        pendingTransactionRequests = pendingTransactionRequests1,
+        pendingHeadersRequests = pendingHeadersRequests1.toSet)
       stay using notifyReady(data1)
 
     case Event(ElectrumClient.GetHeadersResponse(start, headers, _), data) =>
@@ -354,8 +364,14 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         case None =>
           // this is probably because the tx is old and within our checkpoints => request the whole header chunk
           val start = (height / RETARGETING_PERIOD) * RETARGETING_PERIOD
-          client ! GetHeaders(start, RETARGETING_PERIOD)
-          stay()
+          val request = GetHeaders(start, RETARGETING_PERIOD)
+          val pendingHeadersRequest1 = if (data.pendingHeadersRequests.contains(request)) {
+            data.pendingHeadersRequests
+          } else {
+            client ! request
+            data.pendingHeadersRequests + request
+          }
+          stay() using data.copy(pendingHeadersRequests = pendingHeadersRequest1)
       }
 
     case Event(CompleteTransaction(tx, feeRatePerKw), data) =>
