@@ -133,17 +133,11 @@ object Graph {
 
   def dijkstraShortestPath(g: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge]): Seq[GraphEdge] = {
 
-    // optionally add the extra edges to the graph
-    val graphVerticesWithExtra = extraEdges.nonEmpty match {
-      case true => g.vertexSet() ++ extraEdges.map(_.desc.a) ++ extraEdges.map(_.desc.b)
-      case false => g.vertexSet()
-    }
-
     //  the graph does not contain source/destination nodes
-    if (!graphVerticesWithExtra.contains(sourceNode)) return Seq.empty
-    if (!graphVerticesWithExtra.contains(targetNode)) return Seq.empty
+    if (!g.containsVertex(sourceNode)) return Seq.empty
+    if (!g.containsVertex(targetNode) || (extraEdges.nonEmpty && !extraEdges.exists(_.desc.a == targetNode))) return Seq.empty
 
-    val maxMapSize = graphVerticesWithExtra.size + 1
+    val maxMapSize = 100 // conservative estimation to avoid over allocating memory
 
     // this is not the actual optimal size for the maps, because we only put in there all the vertices in the worst case scenario.
     val cost = new java.util.HashMap[PublicKey, Long](maxMapSize)
