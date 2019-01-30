@@ -98,15 +98,8 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
     val headers = params.walletDb.getHeaders(blockchain.checkpoints.size * RETARGETING_PERIOD, None)
     log.info(s"loading ${headers.size} headers from db")
     val blockchain1 = Blockchain.addHeadersChunk(blockchain, blockchain.checkpoints.size * RETARGETING_PERIOD, headers)
-    val data = params.walletDb.readPersistentData() match {
-      case None =>
-        val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
-        val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
-        val transactions = walletDb.getTransactions().map(_._1)
-        log.info(s"loading ${transactions.size} transactions from db")
-        val txs = transactions.map(tx => tx.txid -> tx).toMap
-        Data(params, blockchain1, firstAccountKeys, firstChangeKeys).copy(transactions = txs)
-      case Some(persisted) =>
+    val data = Try(params.walletDb.readPersistentData()) match {
+      case Success(Some(persisted)) =>
         val firstAccountKeys = (0 until persisted.accountKeysCount).map(i => derivePrivateKey(accountMaster, i)).toVector
         val firstChangeKeys = (0 until persisted.changeKeysCount).map(i => derivePrivateKey(changeMaster, i)).toVector
 
@@ -121,8 +114,15 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           pendingHistoryRequests = Set(),
           pendingHeadersRequests = Set(),
           pendingTransactionRequests = Set(),
-          pendingTransactions = Seq(),
+          pendingTransactions = persisted.pendingTransactions,
           lastReadyMessage = None)
+      case _ =>
+        val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
+        val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
+        val transactions = walletDb.getTransactions().map(_._1)
+        log.info(s"loading ${transactions.size} transactions from db")
+        val txs = transactions.map(tx => tx.txid -> tx).toMap
+        Data(params, blockchain1, firstAccountKeys, firstChangeKeys).copy(transactions = txs)
     }
     context.system.eventStream.publish(NewWalletReceiveAddress(data.currentReceiveAddress))
     data
@@ -412,11 +412,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       goto(DISCONNECTED) using data.copy(
         pendingHistoryRequests = Set(),
         pendingTransactionRequests = Set(),
-        pendingHeadersRequests = Set(),
-        pendingTransactions = Seq(),
-        status = Map(),
-        heights = Map(),
-        history = Map()
+        pendingHeadersRequests = Set()
       )
 
     case Event(GetCurrentReceiveAddress, data) => stay replying GetCurrentReceiveAddressResponse(data.currentReceiveAddress)
@@ -643,7 +639,7 @@ object ElectrumWallet {
                   pendingHistoryRequests: Set[BinaryData],
                   pendingTransactionRequests: Set[BinaryData],
                   pendingHeadersRequests: Set[GetHeaders],
-                  pendingTransactions: Seq[Transaction],
+                  pendingTransactions: List[Transaction],
                   lastReadyMessage: Option[WalletReady]) extends Logging {
     val chainHash = blockchain.chainHash
 
@@ -998,10 +994,11 @@ object ElectrumWallet {
                             transactions: Map[BinaryData, Transaction],
                             heights: Map[BinaryData, Long],
                             history: Map[BinaryData, List[ElectrumClient.TransactionHistoryItem]],
+                            pendingTransactions: List[Transaction],
                             locks: Set[Transaction])
 
   object PersistentData {
-    def apply(data: Data) = new PersistentData(data.accountKeys.length, data.changeKeys.length, data.status, data.transactions, data.heights, data.history, data.locks)
+    def apply(data: Data) = new PersistentData(data.accountKeys.length, data.changeKeys.length, data.status, data.transactions, data.heights, data.history, data.pendingTransactions, data.locks)
   }
 
 }

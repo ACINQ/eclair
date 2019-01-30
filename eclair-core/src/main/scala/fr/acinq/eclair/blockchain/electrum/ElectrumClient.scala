@@ -92,7 +92,10 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
   def close() = {
     statusListeners.map(_ ! ElectrumDisconnected)
-    Option(context).foreach(_ stop self)
+    Option(context).foreach(ctx => {
+      statusListeners.map(_ ! ElectrumDisconnected)
+      ctx stop self
+    })
   }
 
   def errorHandler(t: Throwable) = {
