@@ -738,25 +738,25 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     val mainTx = alice2blockchain.expectMsgType[PublishAsap].tx
     val mainPenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
-//    val htlc1PenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
-//    val htlc2PenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
+    val htlc1PenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
+    val htlc2PenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(revokedTx))
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(mainTx))
     assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
-//    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // htlc1-penalty
-//    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // htlc2-penalty
+    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // htlc1-penalty
+    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // htlc2-penalty
     alice2blockchain.expectNoMsg(1 second)
 
     Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     Transaction.correctlySpends(mainPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-//    Transaction.correctlySpends(htlc1PenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-//    Transaction.correctlySpends(htlc2PenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    Transaction.correctlySpends(htlc1PenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    Transaction.correctlySpends(htlc2PenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     // two main outputs are 300 000 and 200 000, htlcs are 300 000 and 200 000
     assert(mainTx.txOut(0).amount == Satoshi(284930))
     assert(mainPenaltyTx.txOut(0).amount == Satoshi(195150))
-//    assert(htlc1PenaltyTx.txOut(0).amount == Satoshi(194530))
-//    assert(htlc2PenaltyTx.txOut(0).amount == Satoshi(294530))
+    assert(htlc1PenaltyTx.txOut(0).amount == Satoshi(194530))
+    assert(htlc2PenaltyTx.txOut(0).amount == Satoshi(294530))
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
