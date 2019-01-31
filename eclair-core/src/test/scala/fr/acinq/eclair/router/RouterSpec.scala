@@ -168,7 +168,7 @@ class RouterSpec extends BaseRouterSpec {
   test("route found") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = Router.DEFAULT_ROUTE_PARAMS.copy(maxFeePct = 0.3)))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.hops.last.nextNodeId === d)
@@ -192,7 +192,7 @@ class RouterSpec extends BaseRouterSpec {
   test("route not found (channel disabled)") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = Router.DEFAULT_ROUTE_PARAMS.copy(maxFeePct = 0.3)))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.hops.last.nextNodeId === d)
@@ -200,26 +200,26 @@ class RouterSpec extends BaseRouterSpec {
     val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000L, enable = false)
     sender.send(router, PeerRoutingMessage(null, remoteNodeId, channelUpdate_cd1))
     sender.expectMsg(TransportHandler.ReadAck(channelUpdate_cd1))
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = Router.DEFAULT_ROUTE_PARAMS.copy(maxFeePct = 0.3)))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("temporary channel exclusion") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = Router.DEFAULT_ROUTE_PARAMS.copy(maxFeePct = 0.3)))
     sender.expectMsgType[RouteResponse]
     val bc = ChannelDesc(channelId_bc, b, c)
     // let's exclude channel b->c
     sender.send(router, ExcludeChannel(bc))
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = Router.DEFAULT_ROUTE_PARAMS.copy(maxFeePct = 0.3)))
     sender.expectMsg(Failure(RouteNotFound))
     // note that cb is still available!
-    sender.send(router, RouteRequest(d, a, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(d, a, DEFAULT_AMOUNT_MSAT, routeParams = Router.DEFAULT_ROUTE_PARAMS.copy(maxFeePct = 0.3)))
     sender.expectMsgType[RouteResponse]
     // let's remove the exclusion
     sender.send(router, LiftChannelExclusion(bc))
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = Router.DEFAULT_ROUTE_PARAMS.copy(maxFeePct = 0.3)))
     sender.expectMsgType[RouteResponse]
   }
 
