@@ -312,23 +312,19 @@ trait Service extends Logging {
                             }
                             found <- (paymentHandler ? CheckPayment(paymentHash)).map(found => new JBool(found.asInstanceOf[Boolean]))
                           } yield found)
-                          case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
+                          case JString(identifier) :: JString("true") :: Nil => completeRpcFuture(req.id, for {
+                            paymentHash <- Try(PaymentRequest.read(identifier)) match {
+                              case Success(pr) => Future.successful(pr.paymentHash)
+                              case _ => Try(BinaryData(identifier)) match {
+                                case Success(s) => Future.successful(s)
+                                case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
+                              }
+                            }
+                            found <- (paymentHandler ? CheckPaymentDetailed(paymentHash)).mapTo[CheckPaymentDetailedResponse]
+                          } yield found)
+                          case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] | [paymentRequest] | [paymentHash] true | [paymentRequest] true"))
                         }
 
-                      //check received payments
-                      case "checkpaymentdetails"  => req.params match {
-                        case JString(identifier) :: Nil => completeRpcFuture(req.id, for {
-                          paymentHash <- Try(PaymentRequest.read(identifier)) match {
-                            case Success(pr) => Future.successful(pr.paymentHash)
-                            case _ => Try(BinaryData(identifier)) match {
-                             case Success(s) => Future.successful(s)
-                              case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
-                            }
-                          }
-                          found <- (paymentHandler ? CheckPaymentDetailed(paymentHash)).mapTo[CheckPaymentDetailedResponse]
-                        } yield found)
-                        case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
-                      }
 
                         // retrieve audit events
                         case "audit" =>
@@ -414,6 +410,8 @@ trait Service extends Logging {
     "forceclose (channelId): force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)",
     "checkpayment (paymentHash): returns true if the payment has been received, false otherwise",
     "checkpayment (paymentRequest): returns true if the payment has been received, false otherwise",
+    "checkpayment (paymentHash) true: returns details of payment, empty otherwise",
+    "checkpayment (paymentRequest) true: returns details of payment, empty otherwise",
     "audit: list all send/received/relayed payments",
     "audit (from, to): list send/received/relayed payments in that interval (from <= timestamp < to)",
     "networkfees: list all network fees paid to the miners, by transaction",
