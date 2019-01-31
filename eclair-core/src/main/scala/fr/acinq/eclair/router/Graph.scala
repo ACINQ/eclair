@@ -404,21 +404,6 @@ object Graph {
         }
       }
 
-      def shouldAdd(edge: GraphEdge): Option[GraphEdge] = {
-        getEdgeBetween(edge.desc.a, edge.desc.b) match {
-          case Some(existingLink) =>
-            // compare the maxHtlc
-            edge.update.htlcMaximumMsat match {
-              case Some(edgeMax) => existingLink.update.htlcMaximumMsat match {
-                case Some(existingHtlcMax) => if(existingHtlcMax < edgeMax) Some(existingLink) else None
-                case None => Some(existingLink)
-              }
-              case None => None
-            }
-          case None => None
-        }
-      }
-
       def prettyPrint(): String = {
         vertices.foldLeft("") { case (acc, (vertex, adj)) =>
           acc + s"[${vertex.toString().take(5)}]: ${adj.map("-> " + _.desc.b.toString().take(5))} \n"
