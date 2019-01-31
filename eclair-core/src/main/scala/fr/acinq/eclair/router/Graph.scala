@@ -11,7 +11,7 @@ object Graph {
 
   case class RichWeight(cost: Long, length: Int, cltv: Int)
   case class WeightedNode(key: PublicKey, weight: RichWeight)
-  case class WeightedPath(path: Seq[GraphEdge], weight: Long)
+  case class WeightedPath(path: Seq[GraphEdge], weight: RichWeight)
 
   /**
     * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
@@ -26,7 +26,7 @@ object Graph {
   }
 
   implicit object PathComparator extends Ordering[WeightedPath] {
-    override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.compareTo(x.weight)
+    override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.cost.compareTo(x.weight.cost)
   }
   /**
     * Yen's algorithm to find the k-shortest (loopless) paths in a graph, uses dijkstra as search algo. Is guaranteed to terminate finding
@@ -49,7 +49,7 @@ object Graph {
 
     // find the shortest path, k = 0
     val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, RichWeight(amountMsat, 0, 0), boundaries)
-    shortestPaths += WeightedPath(shortestPath, pathCost(shortestPath, amountMsat, isPartial = false))
+    shortestPaths += WeightedPath(shortestPath, pathWeight(shortestPath, amountMsat, isPartial = false))
 
     // main loop
     for(k <- 1 until pathsToFind) {
@@ -66,11 +66,7 @@ object Graph {
 
           // select the subpath from the source to the spur node of the k-th previous shortest path
           val rootPathEdges = if(i == 0) prevShortestPath.head :: Nil else prevShortestPath.take(i)
-          val rootPathWeight = RichWeight(
-            cost = pathCost(rootPathEdges, amountMsat, isPartial = true),
-            length = rootPathEdges.size,
-            cltv = rootPathEdges.foldLeft(0)( (acc, e) => acc + e.update.cltvExpiryDelta )
-          )
+          val rootPathWeight = pathWeight(rootPathEdges, amountMsat, isPartial = true)
 
           // links to be removed that are part of the previous shortest path and which share the same root path
           val edgesToIgnore = shortestPaths.flatMap { weightedPath =>
@@ -93,10 +89,9 @@ object Graph {
               case false => rootPathEdges ++ spurPath
             }
 
-            //val totalPath = concat(rootPathEdges, spurPath.toList)
-            val candidatePath = WeightedPath(totalPath, pathCost(totalPath, amountMsat, isPartial = false))
+            val candidatePath = WeightedPath(totalPath, pathWeight(totalPath, amountMsat, isPartial = false))
 
-            if (!shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
+            if (boundaries(candidatePath.weight) && !shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
               candidates.enqueue(candidatePath)
             }
 
@@ -117,9 +112,13 @@ object Graph {
   }
 
   // Calculates the total cost of a path (amount + fees), direct channels with the source will have a cost of 0 (pay no fees)
-  def pathCost(path: Seq[GraphEdge], amountMsat: Long, isPartial: Boolean): Long = {
-    path.drop(if(isPartial) 0 else 1).foldRight(amountMsat) { (edge, cost) =>
-      edgeWeight(edge, cost, isNeighborTarget = false)
+  def pathWeight(path: Seq[GraphEdge], amountMsat: Long, isPartial: Boolean): RichWeight = {
+    path.drop(if(isPartial) 0 else 1).foldRight(RichWeight(amountMsat, 0, 0)) { (edge, prev) =>
+      RichWeight(
+        cost = edgeWeight(edge, prev.cost, isNeighborSource = false),
+        cltv = prev.cltv + edge.update.cltvExpiryDelta,
+        length = prev.length + 1
+      )
     }
   }
 
@@ -186,7 +185,7 @@ object Graph {
           // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
           // note: there is always an entry for the current in the 'cost' map
           val newMinimumKnownWeight = RichWeight(
-            cost = edgeWeight(edge, currentWeight.cost, neighbor == sourceNode),
+            cost = edgeWeight(edge, currentWeight.cost, initialWeight.length == 0 && neighbor == sourceNode),
             length = currentWeight.length + 1,
             cltv = currentWeight.cltv + edge.update.cltvExpiryDelta
           )
@@ -244,10 +243,10 @@ object Graph {
     *
     * @param edge the edge for which we want to compute the weight
     * @param amountWithFees the value that this edge will have to carry along
-    * @param isNeighborTarget true if the receiving vertex of this edge is the target node (source in a reversed graph), which has cost 0
+    * @param isNeighborSource true if the receiving vertex of this edge is the target node (source in a reversed graph), which has cost 0
     * @return the new amount updated with the necessary fees for this edge
     */
-  private def edgeWeight(edge: GraphEdge, amountWithFees: Long, isNeighborTarget: Boolean): Long = isNeighborTarget match {
+  private def edgeWeight(edge: GraphEdge, amountWithFees: Long, isNeighborSource: Boolean): Long = isNeighborSource match {
     case false => amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
     case true => amountWithFees
   }

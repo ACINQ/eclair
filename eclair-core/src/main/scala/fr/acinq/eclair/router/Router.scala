@@ -46,7 +46,15 @@ import scala.util.{Random, Try}
 
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteRequest(source: PublicKey, target: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty, randomize: Boolean = true)
+case class RouteParams(maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int)
+case class RouteRequest(source: PublicKey,
+                        target: PublicKey,
+                        amountMsat: Long,
+                        assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                        ignoreNodes: Set[PublicKey] = Set.empty,
+                        ignoreChannels: Set[ChannelDesc] = Set.empty,
+                        randomize: Boolean = true,
+                        routeParams: RouteParams = Router.DEFAULT_ROUTE_PARAMS)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
   require(hops.size > 0, "route cannot be empty")
 }
@@ -376,7 +384,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! d
       stay
 
-    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, randomize), d) =>
+    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, randomize, params), d) =>
       // we convert extra routing info provided in the payment request to fake channel_update
       // it takes precedence over all other channel_updates we know
       val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end)).toMap
@@ -387,7 +395,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
       // if we want to randomize we ask the router to make a random selection among the three best routes
       val routesToFind = if(randomize) DEFAULT_ROUTES_COUNT else 1
-      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet)
+      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, routeParams = params)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -792,9 +800,8 @@ object Router {
   // The default amount of routes we'll search for when findRoute is called
   val DEFAULT_ROUTES_COUNT = 3
 
-  // The default allowed 'spread' between the cheapest route found an the others
-  // routes exceeding this difference won't be considered as a valid result
-  val DEFAULT_ALLOWED_SPREAD = 0.1D
+  // The default params used for route searching, can be overridden by the caller
+  val DEFAULT_ROUTE_PARAMS = RouteParams(maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 144, routeMaxLength = ROUTE_MAX_LENGTH)
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.
@@ -818,14 +825,14 @@ object Router {
                 numRoutes: Int,
                 extraEdges: Set[GraphEdge] = Set.empty,
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
-                maxCltv: Int = 2016,
-                routeMaxSize: Int = ROUTE_MAX_LENGTH): Try[Seq[Hop]] = Try {
+                routeParams: RouteParams = DEFAULT_ROUTE_PARAMS): Try[Seq[Hop]] = Try {
 
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
     val boundaries: RichWeight => Boolean = { weight =>
-      weight.length <= routeMaxSize && weight.length <= ROUTE_MAX_LENGTH &&
-      weight.cltv <= maxCltv
+      ((weight.cost - amountMsat) < routeParams.maxFeeBaseMsat || (weight.cost - amountMsat) < (routeParams.maxFeePct * amountMsat)) &&
+      weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
+      weight.cltv <= routeParams.routeMaxCltv
     }
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, boundaries).toList match {
@@ -834,11 +841,6 @@ object Router {
       case foundRoutes => foundRoutes
     }
 
-    // minimum cost
-    val minimumCost = foundRoutes.head.weight
-
-    // routes paying at most minimumCost + 10%
-    val eligibleRoutes = foundRoutes.filter(_.weight  <= (minimumCost + minimumCost * DEFAULT_ALLOWED_SPREAD).round)
-    Random.shuffle(eligibleRoutes).head.path.map(graphEdgeToHop)
+    Random.shuffle(foundRoutes).head.path.map(graphEdgeToHop)
   }
 }

@@ -90,7 +90,7 @@ class RouteCalculationSpec extends FunSuite {
     val Success(route) = Router.findRoute(graph, a, d, amountMsat, numRoutes = 1)
 
     assert(hops2Ids(route) === 4 :: 5 :: 6 :: Nil)
-    assert(Graph.pathCost(hops2Edges(route), amountMsat, isPartial = false) === expectedCost)
+    assert(Graph.pathWeight(hops2Edges(route), amountMsat, isPartial = false).cost === expectedCost)
 
     // now channel 5 could route the amount (10000) but not the amount + fees (10007)
     val (desc, update) = makeUpdate(5L, e, f, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0, maxHtlcMsat = Some(10005))
@@ -588,7 +588,7 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(6, f, d, feeBaseMsat = 5, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltv = 9)
     ).toMap)
 
-    val route = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, maxCltv = 28)
+    val route = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = Router.DEFAULT_ROUTE_PARAMS.copy(routeMaxCltv = 28))
     assert(route.map(hops2Ids) === Success(4 :: 5 :: 6 :: Nil))
   }
 
@@ -605,7 +605,7 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(6, b, f, feeBaseMsat = 5, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltv = 9)
     ).toMap)
 
-    val route = Router.findRoute(g, a, f, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeMaxSize = 3)
+    val route = Router.findRoute(g, a, f, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = Router.DEFAULT_ROUTE_PARAMS.copy(routeMaxLength = 3))
     assert(route.map(hops2Ids) === Success(1 :: 6 :: Nil))
   }
 
@@ -745,19 +745,17 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(3L, c, d, feeBaseMsat = 3, 0),
       makeUpdate(5L, e, f, feeBaseMsat = 3, 0),
       makeUpdate(6L, f, d, feeBaseMsat = 3, 0),
-      makeUpdate(7L, e, c, feeBaseMsat = 90000, 99000)
+      makeUpdate(7L, e, c, feeBaseMsat = 9, 0)
     ).toMap)
 
-    (for { _ <- 0 to 10 } yield Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3)).map {
+    (for { _ <- 0 to 10 } yield Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3, routeParams = Router.DEFAULT_ROUTE_PARAMS.copy(maxFeeBaseMsat = 7, maxFeePct = 0))).map {
       case Failure(_) => assert(false)
       case Success(someRoute) =>
 
-        val routeCost = Graph.pathCost(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, isPartial = false)
-        val allowedSpread = DEFAULT_AMOUNT_MSAT + (DEFAULT_AMOUNT_MSAT * Router.DEFAULT_ALLOWED_SPREAD)
+        val routeCost = Graph.pathWeight(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, isPartial = false).cost - DEFAULT_AMOUNT_MSAT
 
-        // over the three routes we could only get the 2 cheapest because the third is too expensive (over 10% of the cheapest)
-        assert(routeCost == 10000005 || routeCost == 10000006)
-        assert(routeCost < allowedSpread)
+        // over the three routes we could only get the 2 cheapest because the third is too expensive (over 7msat of fees)
+        assert(routeCost == 5 || routeCost == 6)
     }
   }
 }
