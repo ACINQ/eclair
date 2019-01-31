@@ -20,6 +20,8 @@ case class TorException(msg: String) extends RuntimeException(msg)
 /**
   * Created by rorp
   *
+  * Specification: https://gitweb.torproject.org/torspec.git/tree/control-spec.txt
+  *
   * @param protocolVersion Tor protocol version
   * @param privateKeyPath  path to a file that contains a Tor private key
   * @param virtualPort     port of our protected local server (typically 9735)
