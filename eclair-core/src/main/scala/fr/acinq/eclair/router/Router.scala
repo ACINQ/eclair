@@ -795,13 +795,13 @@ object Router {
   /**
     * https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
     */
-  val ROUTE_MAX_LENGTH = 20
+  val DEFAULT_ROUTE_MAX_LENGTH = 20
 
   // The default amount of routes we'll search for when findRoute is called
   val DEFAULT_ROUTES_COUNT = 3
 
   // The default params used for route searching, can be overridden by the caller
-  val DEFAULT_ROUTE_PARAMS = RouteParams(maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 144, routeMaxLength = ROUTE_MAX_LENGTH)
+  val DEFAULT_ROUTE_PARAMS = RouteParams(maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 144, routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH)
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.
@@ -831,7 +831,7 @@ object Router {
 
     val boundaries: RichWeight => Boolean = { weight =>
       ((weight.cost - amountMsat) < routeParams.maxFeeBaseMsat || (weight.cost - amountMsat) < (routeParams.maxFeePct * amountMsat)) &&
-      weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
+      weight.length <= routeParams.routeMaxLength && weight.length <= DEFAULT_ROUTE_MAX_LENGTH &&
       weight.cltv <= routeParams.routeMaxCltv
     }
 

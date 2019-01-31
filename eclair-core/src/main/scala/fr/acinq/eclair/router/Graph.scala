@@ -111,17 +111,6 @@ object Graph {
     shortestPaths
   }
 
-  // Calculates the total cost of a path (amount + fees), direct channels with the source will have a cost of 0 (pay no fees)
-  def pathWeight(path: Seq[GraphEdge], amountMsat: Long, isPartial: Boolean): RichWeight = {
-    path.drop(if(isPartial) 0 else 1).foldRight(RichWeight(amountMsat, 0, 0)) { (edge, prev) =>
-      RichWeight(
-        cost = edgeWeight(edge, prev.cost, isNeighborSource = false),
-        cltv = prev.cltv + edge.update.cltvExpiryDelta,
-        length = prev.length + 1
-      )
-    }
-  }
-
   /**
     * Finds the shortest path in the graph, uses a modified version of Dijsktra's algorithm that computes
     * the shortest path from the target to the source (this is because we want to calculate the weight of the
@@ -226,7 +215,7 @@ object Graph {
       case false => Seq.empty[GraphEdge]
       case true =>
         // we traverse the list of "previous" backward building the final list of edges that make the shortest path
-        val edgePath = new mutable.ArrayBuffer[GraphEdge](ROUTE_MAX_LENGTH)
+        val edgePath = new mutable.ArrayBuffer[GraphEdge](DEFAULT_ROUTE_MAX_LENGTH)
         var current = prev.get(sourceNode)
 
         while (current != null) {
@@ -249,6 +238,17 @@ object Graph {
   private def edgeWeight(edge: GraphEdge, amountWithFees: Long, isNeighborSource: Boolean): Long = isNeighborSource match {
     case false => amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
     case true => amountWithFees
+  }
+
+  // Calculates the total cost of a path (amount + fees), direct channels with the source will have a cost of 0 (pay no fees)
+  def pathWeight(path: Seq[GraphEdge], amountMsat: Long, isPartial: Boolean): RichWeight = {
+    path.drop(if(isPartial) 0 else 1).foldRight(RichWeight(amountMsat, 0, 0)) { (edge, prev) =>
+      RichWeight(
+        cost = edgeWeight(edge, prev.cost, isNeighborSource = false),
+        cltv = prev.cltv + edge.update.cltvExpiryDelta,
+        length = prev.length + 1
+      )
+    }
   }
 
   /**
