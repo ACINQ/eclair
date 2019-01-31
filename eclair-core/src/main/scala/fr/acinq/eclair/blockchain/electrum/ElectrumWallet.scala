@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKe
 import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, BlockHeader, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
-import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+import fr.acinq.eclair.blockchain.electrum.db.{HeaderDb, WalletDb}
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 
@@ -91,7 +91,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
   def advertiseTransactions(data: ElectrumWallet.Data): Unit = {
     data.transactions.values.foreach(tx => data.computeTransactionDelta(tx).foreach {
       case (received, sent, fee_opt) =>
-        context.system.eventStream.publish(TransactionReceived(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt))
+        context.system.eventStream.publish(TransactionReceived(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt, data.computeTimestamp(tx.txid, params.walletDb)))
     })
   }
 
@@ -218,7 +218,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
             data.heights.collect {
               case (txid, txheight) if txheight > 0 =>
                 val confirmations = computeDepth(height, txheight)
-                context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
+                context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations, data.computeTimestamp(txid, params.walletDb)))
             }
             val (blockchain2, saveme) = Blockchain.optimize(blockchain1)
             saveme.grouped(RETARGETING_PERIOD).foreach(chunk => params.walletDb.addHeaders(chunk.head.height, chunk.map(_.header)))
@@ -314,10 +314,10 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
             // height=0 => unconfirmed, height=-1 => unconfirmed and one input is unconfirmed
             case (None, height) if height > 0 =>
               // first time we get a height for this tx: either it was just confirmed, or we restarted the wallet
-              context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
+              context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations, data.computeTimestamp(txid, params.walletDb)))
             case (Some(previousHeight), height) if previousHeight != height =>
               // there was a reorg
-              context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
+              context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations, data.computeTimestamp(txid, params.walletDb)))
             case (Some(previousHeight), height) if previousHeight == height =>
             // no reorg, nothing to do
           }
@@ -346,7 +346,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       data.computeTransactionDelta(tx) match {
         case Some((received, sent, fee_opt)) =>
           log.info(s"successfully connected txid=${tx.txid}")
-          context.system.eventStream.publish(TransactionReceived(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt))
+          context.system.eventStream.publish(TransactionReceived(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt, data.computeTimestamp(tx.txid, params.walletDb)))
           // when we have successfully processed a new tx, we retry all pending txes to see if they can be added now
           data.pendingTransactions.foreach(self ! GetTransactionResponse(_))
           val data1 = data.copy(transactions = data.transactions + (tx.txid -> tx), pendingTransactionRequests = data.pendingTransactionRequests - tx.txid, pendingTransactions = Nil)
@@ -404,7 +404,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       // we know all the parents
       val (received, sent, Some(fee)) = data.computeTransactionDelta(tx).get
       // we notify here because the tx won't be downloaded again (it has been added to the state at commit)
-      context.system.eventStream.publish(TransactionReceived(tx, data1.computeTransactionDepth(tx.txid), received, sent, Some(fee)))
+      context.system.eventStream.publish(TransactionReceived(tx, data1.computeTransactionDepth(tx.txid), received, sent, Some(fee), None))
       stay using notifyReady(data1) replying CommitTransactionResponse(tx) // goto instead of stay because we want to fire transitions
 
     case Event(CancelTransaction(tx), data) =>
@@ -424,7 +424,8 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       goto(DISCONNECTED) using data.copy(
         pendingHistoryRequests = Set(),
         pendingTransactionRequests = Set(),
-        pendingHeadersRequests = Set()
+        pendingHeadersRequests = Set(),
+        lastReadyMessage = None
       )
 
     case Event(GetCurrentReceiveAddress, data) => stay replying GetCurrentReceiveAddressResponse(data.currentReceiveAddress)
@@ -505,8 +506,8 @@ object ElectrumWallet {
     * @param sent
     * @param feeOpt is set only when we know it (i.e. for outgoing transactions)
     */
-  case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi]) extends WalletEvent
-  case class TransactionConfidenceChanged(txid: BinaryData, depth: Long) extends WalletEvent
+  case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi], timestamp: Option[Long]) extends WalletEvent
+  case class TransactionConfidenceChanged(txid: BinaryData, depth: Long, timestamp: Option[Long]) extends WalletEvent
   case class NewWalletReceiveAddress(address: String) extends WalletEvent
   case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, timestamp: Long) extends WalletEvent
   // @formatter:on
@@ -726,6 +727,20 @@ object ElectrumWallet {
     def isMine(txOut: TxOut): Boolean = publicScriptMap.contains(txOut.publicKeyScript)
 
     def computeTransactionDepth(txid: BinaryData): Long = heights.get(txid).map(height => if (height > 0) computeDepth(blockchain.tip.height, height) else 0).getOrElse(0)
+
+    /**
+      *
+      * @param data wallet data
+      * @param txid transaction id
+      * @param headerDb header db
+      * @return the timestamp of the block this tx was included in
+      */
+    def computeTimestamp(txid: BinaryData, headerDb: HeaderDb): Option[Long] = {
+      for {
+        height <- heights.get(txid).map(_.toInt)
+        header <- blockchain.getHeader(height).orElse(headerDb.getHeader(height))
+      } yield header.time
+    }
 
     /**
       *
