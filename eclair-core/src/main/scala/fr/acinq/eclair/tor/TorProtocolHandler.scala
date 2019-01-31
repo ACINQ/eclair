@@ -22,8 +22,8 @@ case class TorException(msg: String) extends RuntimeException(msg)
   *
   * @param protocolVersion Tor protocol version
   * @param privateKeyPath  path to a file that contains a Tor private key
-  * @param virtualPort     Tor virtual port
-  * @param targetPorts     target ports
+  * @param virtualPort     port of our protected local server (typically 9735)
+  * @param targetPorts     target ports of the public hidden service
   * @param onionAdded      a Promise to track creation of the endpoint
   * @param clientNonce     optional client nonce, will be randomly generated if omitted
   */
