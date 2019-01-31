@@ -77,6 +77,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           log.debug(s"ready message $value has already been sent")
           data
         case _ =>
+          log.info(s"checking wallet")
           val ready = data.readyMessage
           log.info(s"wallet is ready with $ready")
           context.system.eventStream.publish(ready)
@@ -133,6 +134,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         Data(params, blockchain1, firstAccountKeys, firstChangeKeys).copy(transactions = txs)
     }
     context.system.eventStream.publish(NewWalletReceiveAddress(data.currentReceiveAddress))
+    log.info(s"restored wallet balance=${data.balance}")
     data
   })
 
@@ -154,19 +156,19 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         // now ask for the first header after our latest checkpoint
         client ! ElectrumClient.GetHeaders(data.blockchain.checkpoints.size * RETARGETING_PERIOD, RETARGETING_PERIOD)
         // make sure there is not last ready message
-        goto(SYNCING) using data.copy(lastReadyMessage = None)
+        goto(SYNCING) using data
       } else if (header == data.blockchain.tip.header) {
         // nothing to sync
         data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         advertiseTransactions(data)
         // tell everyone we're ready
-        goto(RUNNING) using notifyReady(data.copy(lastReadyMessage = None))
+        goto(RUNNING) using notifyReady(data)
       } else {
         client ! ElectrumClient.GetHeaders(data.blockchain.tip.height + 1, RETARGETING_PERIOD)
-        log.info(s"syncing headers from ${data.blockchain.height} to ${height}")
+        log.info(s"syncing headers from ${data.blockchain.height} to ${height}, ready=${data.isReady(params.swipeRange)}")
         // tell everyone we're ready while we catch up
-        goto(SYNCING) using notifyReady(data.copy(lastReadyMessage = None))
+        goto(SYNCING) using notifyReady(data)
       }
   }
 
@@ -730,8 +732,8 @@ object ElectrumWallet {
 
     /**
       *
-      * @param data wallet data
-      * @param txid transaction id
+      * @param data     wallet data
+      * @param txid     transaction id
       * @param headerDb header db
       * @return the timestamp of the block this tx was included in
       */
