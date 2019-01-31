@@ -39,10 +39,6 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
 
   import TorProtocolHandler._
 
-  // those are defined in the spec
-  private val ServerKey: Array[Byte] = "Tor safe cookie authentication server-to-controller hash".getBytes()
-  private val ClientKey: Array[Byte] = "Tor safe cookie authentication controller-to-server hash".getBytes()
-
   private var receiver: ActorRef = _
 
   private var address: Option[OnionAddress] = None
@@ -179,6 +175,10 @@ object TorProtocolHandler {
             nonce: Option[Array[Byte]] = None
            ): Props =
     Props(new TorProtocolHandler(ProtocolVersion(version), privateKeyPath, virtualPort, targetPorts, onionAdded, nonce))
+
+  // those are defined in the spec
+  private val ServerKey: Array[Byte] = "Tor safe cookie authentication server-to-controller hash".getBytes()
+  private val ClientKey: Array[Byte] = "Tor safe cookie authentication controller-to-server hash".getBytes()
 
   val MinV3Version = "0.3.3.6"
 
