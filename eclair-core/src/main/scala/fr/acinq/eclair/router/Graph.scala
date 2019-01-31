@@ -270,6 +270,7 @@ object Graph {
 
       /**
         * Adds and edge to the graph, if one of the two vertices is not found, it will be created.
+        * NB. We only keep one edge for any 2 given vertices.
         *
         * @param edge the edge that is going to be added to the graph
         * @return a new graph containing this edge
@@ -279,12 +280,20 @@ object Graph {
         val vertexIn = edge.desc.a
         val vertexOut = edge.desc.b
 
-        // the graph is allowed to have multiple edges between the same vertices but only one per channel
-        if (containsEdge(edge.desc)) {
-          removeEdge(edge.desc).addEdge(edge) // the recursive call will have the original params
-        } else {
-          val withVertices = addVertex(vertexIn).addVertex(vertexOut)
-          DirectedGraph(withVertices.vertices.updated(vertexOut, edge +: withVertices.vertices(vertexOut)))
+        getEdgeBetween(vertexIn, vertexOut) match {
+          case Some(_) if edge.update.htlcMaximumMsat.isEmpty => this   // there is an existing link but the new edge is 'weaker', don't update it
+          case Some(existingLink) if edge.desc == existingLink.desc =>  // existing link references the same channel id, update it
+            removeEdge(existingLink.desc).addEdge(edge)
+          case Some(existingLink) => (for {
+              oldMaxHtlc <- existingLink.update.htlcMaximumMsat.orElse(Some(0L))
+              newMaxHtlc <- edge.update.htlcMaximumMsat
+            } yield oldMaxHtlc < newMaxHtlc) match {
+            case Some(isSmaller) if isSmaller => removeEdge(existingLink.desc).addEdge(edge) // the existing link is actually weaker than the new one, replace it
+            case _ => this                                                                   // the old link is stronger than the new one, retain it
+          }
+          case None =>
+            val withVertices = addVertex(vertexIn).addVertex(vertexOut)
+            DirectedGraph(withVertices.vertices.updated(vertexOut, edge +: withVertices.vertices(vertexOut)))
         }
       }
 
@@ -321,13 +330,10 @@ object Graph {
       /**
         * @param keyA the key associated with the starting vertex
         * @param keyB the key associated with the ending vertex
-        * @return all the edges going from keyA --> keyB (there might be more than one if it refers to different shortChannelId)
+        * @return the only edge going from keyA --> keyB if there is any
         */
-      def getEdgesBetween(keyA: PublicKey, keyB: PublicKey): Seq[GraphEdge] = {
-        vertices.get(keyB) match {
-          case None => Seq.empty
-          case Some(adj) => adj.filter(e => e.desc.a == keyA)
-        }
+      def getEdgeBetween(keyA: PublicKey, keyB: PublicKey): Option[GraphEdge] = {
+        vertices.get(keyB).flatMap(_.find(e => e.desc.a == keyA))
       }
 
       /**
@@ -395,6 +401,21 @@ object Graph {
         vertices.get(desc.b) match {
           case None => false
           case Some(adj) => adj.exists(neighbor => neighbor.desc.shortChannelId == desc.shortChannelId && neighbor.desc.a == desc.a)
+        }
+      }
+
+      def shouldAdd(edge: GraphEdge): Option[GraphEdge] = {
+        getEdgeBetween(edge.desc.a, edge.desc.b) match {
+          case Some(existingLink) =>
+            // compare the maxHtlc
+            edge.update.htlcMaximumMsat match {
+              case Some(edgeMax) => existingLink.update.htlcMaximumMsat match {
+                case Some(existingHtlcMax) => if(existingHtlcMax < edgeMax) Some(existingLink) else None
+                case None => Some(existingLink)
+              }
+              case None => None
+            }
+          case None => None
         }
       }
 

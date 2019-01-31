@@ -157,7 +157,7 @@ class GraphSpec extends FunSuite {
 
     val graph = DirectedGraph().addEdges(updates)
 
-    val edgesAB = graph.getEdgesBetween(a, b)
+    val edgesAB = graph.getEdgeBetween(a, b)
 
     assert(edgesAB.size === 1) //there should be an edge a --> b
     assert(edgesAB.head.desc.a === a)
@@ -174,27 +174,33 @@ class GraphSpec extends FunSuite {
     assert(bOutgoing.exists(_.desc.b === c))
   }
 
-  test("there can be multiple edges between the same vertices") {
+  test("there should be only one edge between 2 vertices") {
 
     val graph = makeTestGraph()
 
     // A --> B , A --> D
     assert(graph.edgesOf(a).size == 2)
 
-    //now add a new edge a -> b but with a different channel update and a different ShortChannelId
-    val newEdgeForNewChannel = edgeFromDesc(makeUpdate(15L, a, b, 20, 0))
-    val mutatedGraph = graph.addEdge(newEdgeForNewChannel)
+    // now try to add a new edge a -> b but this time with a maxHtlcMsat
+    val newLink = edgeFromDesc(makeUpdate(15L, a, b, 20, 0, maxHtlcMsat = Some(500)))
+    val g1 = graph.addEdge(newLink)
 
-    assert(mutatedGraph.edgesOf(a).size == 3)
+    assert(g1.edgesOf(a).size == 2)
+    assert(g1.getEdgeBetween(a, b).head.desc.shortChannelId.toLong == 15)
 
-    //if the ShortChannelId is the same we replace the edge and the update, this edge have an update with a different 'feeBaseMsat'
-    val edgeForTheSameChannel = edgeFromDesc(makeUpdate(15L, a, b, 30, 0))
-    val mutatedGraph2 = mutatedGraph.addEdge(edgeForTheSameChannel)
+    val newLinkUpdated = edgeFromDesc(makeUpdate(15L, a, b, 15, 0, maxHtlcMsat = Some(500)))
+    val noHtlcMax = edgeFromDesc(makeUpdate(19L, a, b, 30, 0, maxHtlcMsat = None))
+    val weakerLink = edgeFromDesc(makeUpdate(17L, a, b, 30, 0, maxHtlcMsat = Some(400)))
+    val strongerLink = edgeFromDesc(makeUpdate(18L, a, b, 30, 0, maxHtlcMsat = Some(600)))
 
-    assert(mutatedGraph2.edgesOf(a).size == 3) // A --> B , A --> B , A --> D
-    assert(mutatedGraph2.getEdgesBetween(a, b).size === 2)
-
-    assert(mutatedGraph2.getEdge(edgeForTheSameChannel).get.update.feeBaseMsat === 30)
+    // if a link for the same channelId is added we update it
+    assert(g1.addEdge(newLinkUpdated).getEdgeBetween(a, b) == Some(newLinkUpdated))
+    // if a link without the htlc max is added, we retain the old one
+    assert(g1.addEdge(noHtlcMax).getEdgeBetween(a, b).flatMap(_.update.htlcMaximumMsat) == Some(500))
+    // the weaker link is 'ignored' and the old one with greater htlcMax will be retained
+    assert(g1.addEdge(weakerLink).getEdgeBetween(a, b).flatMap(_.update.htlcMaximumMsat) == Some(500))
+    // the stronger link instead replaces it
+    assert(g1.addEdge(strongerLink).getEdgeBetween(a, b).flatMap(_.update.htlcMaximumMsat) == Some(600))
   }
 
   test("remove a vertex with incoming edges and check those edges are removed too") {
