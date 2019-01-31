@@ -123,7 +123,7 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
     val privateKey = res.get("PrivateKey")
     privateKey.foreach { pk =>
       writeString(privateKeyPath, pk)
-      setPersissions(privateKeyPath, "rw-------")
+      setPermissions(privateKeyPath, "rw-------")
     }
     serviceId
   }
@@ -249,7 +249,7 @@ object TorProtocolHandler {
     }
   }
 
-  def setPersissions(filename: String, permissionString: String): Unit = {
+  def setPermissions(filename: String, permissionString: String): Unit = {
     val path = FileSystems.getDefault.getPath(filename)
     Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(permissionString))
   }
