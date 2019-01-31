@@ -811,11 +811,20 @@ object Router {
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
     * @return the computed route to the destination @targetNodeId
     */
-  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty, maxCltv: Int = 2016): Try[Seq[Hop]] = Try {
+  def findRoute(g: DirectedGraph,
+                localNodeId: PublicKey,
+                targetNodeId: PublicKey,
+                amountMsat: Long,
+                numRoutes: Int,
+                extraEdges: Set[GraphEdge] = Set.empty,
+                ignoredEdges: Set[ChannelDesc] = Set.empty,
+                maxCltv: Int = 2016,
+                routeMaxSize: Int = ROUTE_MAX_LENGTH): Try[Seq[Hop]] = Try {
+
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
     val boundaries: RichWeight => Boolean = { weight =>
-      weight.size <= ROUTE_MAX_LENGTH &&
+      weight.length <= routeMaxSize && weight.length <= ROUTE_MAX_LENGTH &&
       weight.cltv <= maxCltv
     }
 

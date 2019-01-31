@@ -592,6 +592,23 @@ class RouteCalculationSpec extends FunSuite {
     assert(route.map(hops2Ids) === Success(4 :: 5 :: 6 :: Nil))
   }
 
+  test("ignore cheaper route when it grows longer than the requested size") {
+
+    val f = randomKey.publicKey
+
+    val g = makeGraph(List(
+      makeUpdate(1, a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltv = 9),
+      makeUpdate(2, b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltv = 9),
+      makeUpdate(3, c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltv = 9),
+      makeUpdate(4, d, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltv = 9),
+      makeUpdate(5, e, f, feeBaseMsat = 5, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltv = 9),
+      makeUpdate(6, b, f, feeBaseMsat = 5, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltv = 9)
+    ).toMap)
+
+    val route = Router.findRoute(g, a, f, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeMaxSize = 3)
+    assert(route.map(hops2Ids) === Success(1 :: 6 :: Nil))
+  }
+
   test("ignore loops") {
 
     val updates = List(

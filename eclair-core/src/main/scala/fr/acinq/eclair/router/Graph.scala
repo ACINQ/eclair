@@ -9,7 +9,7 @@ import Router._
 
 object Graph {
 
-  case class RichWeight(cost: Long, size: Int, cltv: Int)
+  case class RichWeight(cost: Long, length: Int, cltv: Int)
   case class WeightedNode(key: PublicKey, weight: RichWeight)
   case class WeightedPath(path: Seq[GraphEdge], weight: Long)
 
@@ -68,7 +68,7 @@ object Graph {
           val rootPathEdges = if(i == 0) prevShortestPath.head :: Nil else prevShortestPath.take(i)
           val rootPathWeight = RichWeight(
             cost = pathCost(rootPathEdges, amountMsat, isPartial = true),
-            size = rootPathEdges.size,
+            length = rootPathEdges.size,
             cltv = rootPathEdges.foldLeft(0)( (acc, e) => acc + e.update.cltvExpiryDelta )
           )
 
@@ -187,7 +187,7 @@ object Graph {
           // note: there is always an entry for the current in the 'cost' map
           val newMinimumKnownWeight = RichWeight(
             cost = edgeWeight(edge, currentWeight.cost, neighbor == sourceNode),
-            size = currentWeight.size + 1,
+            length = currentWeight.length + 1,
             cltv = currentWeight.cltv + edge.update.cltvExpiryDelta
           )
 
