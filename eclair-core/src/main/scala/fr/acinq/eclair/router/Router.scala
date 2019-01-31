@@ -801,7 +801,7 @@ object Router {
   val DEFAULT_ROUTES_COUNT = 3
 
   // The default params used for route searching, can be overridden by the caller
-  val DEFAULT_ROUTE_PARAMS = RouteParams(maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 144, routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH)
+  val DEFAULT_ROUTE_PARAMS = RouteParams(maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 144, routeMaxLength = 6)
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.
@@ -836,9 +836,19 @@ object Router {
     }
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, boundaries).toList match {
-      case Nil => throw RouteNotFound
-      case route :: Nil  if route.path.isEmpty => throw RouteNotFound
-      case foundRoutes => foundRoutes
+      case Nil =>
+        if(routeParams.routeMaxLength < DEFAULT_ROUTE_MAX_LENGTH){
+          return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH))
+        } else {
+          throw RouteNotFound
+        }
+      case route :: Nil if route.path.isEmpty =>
+        if(routeParams.routeMaxLength < DEFAULT_ROUTE_MAX_LENGTH){
+          return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH))
+        } else {
+          throw RouteNotFound
+        }
+      case routes => routes
     }
 
     Random.shuffle(foundRoutes).head.path.map(graphEdgeToHop)
