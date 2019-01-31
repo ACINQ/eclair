@@ -253,7 +253,11 @@ object TorProtocolHandler {
 
   def setPermissions(filename: String, permissionString: String): Unit = {
     val path = FileSystems.getDefault.getPath(filename)
-    Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(permissionString))
+    try {
+      Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(permissionString))
+    } catch {
+      case _: UnsupportedOperationException => () // we are on windows
+    }
   }
 
   def unquote(s: String): String = s
