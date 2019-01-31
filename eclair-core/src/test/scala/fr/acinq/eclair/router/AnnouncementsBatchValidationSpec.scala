@@ -59,13 +59,13 @@ class AnnouncementsBatchValidationSpec extends FunSuite {
     val sender = TestProbe()
 
     extendedBitcoinClient.validate(announcements(0)).pipeTo(sender.ref)
-    sender.expectMsgType[ValidateResult].tx.isDefined
+    sender.expectMsgType[ValidateResult].fundingTx.isRight
 
     extendedBitcoinClient.validate(announcements(1).copy(shortChannelId = ShortChannelId(Long.MaxValue))).pipeTo(sender.ref) // invalid block height
-    sender.expectMsgType[ValidateResult].tx.isEmpty
+    sender.expectMsgType[ValidateResult].fundingTx.isRight
 
     extendedBitcoinClient.validate(announcements(2).copy(shortChannelId = ShortChannelId(500, 1000, 0))).pipeTo(sender.ref) // invalid tx index
-    sender.expectMsgType[ValidateResult].tx.isEmpty
+    sender.expectMsgType[ValidateResult].fundingTx.isRight
 
   }
 
