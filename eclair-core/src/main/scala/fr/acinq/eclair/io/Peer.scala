@@ -362,7 +362,15 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           }
           log.error(s"peer sent us a routing message with invalid sig: r=$r bin=$bin")
           // for now we just return an error, maybe ban the peer in the future?
+          // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
           d.transport ! Error(CHANNELID_ZERO, s"bad announcement sig! bin=$bin".getBytes())
+          d.behavior
+        case InvalidAnnouncement(c) =>
+          // they seem to be sending us fake announcements?
+          log.error(s"couldn't find funding tx with valid scripts for shortChannelId=${c.shortChannelId}")
+          // for now we just return an error, maybe ban the peer in the future?
+          // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
+          d.transport ! Error(CHANNELID_ZERO, s"couldn't verify channel! shortChannelId=${c.shortChannelId}".getBytes())
           d.behavior
         case ChannelClosed(_) =>
           if (d.behavior.ignoreNetworkAnnouncement) {
@@ -374,18 +382,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
             log.warning(s"peer sent us too many channel announcements with funding tx already spent (count=${d.behavior.fundingTxAlreadySpentCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
             setTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, repeat = false)
             d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1, ignoreNetworkAnnouncement = true)
-          }
-        case NonexistingChannel(_) =>
-          // this should never happen, unless we are not in sync or there is a 6+ blocks reorg
-          if (d.behavior.ignoreNetworkAnnouncement) {
-            // we already are ignoring announcements, we may have additional notifications for announcements that were received right before our ban
-            d.behavior.copy(fundingTxNotFoundCount = d.behavior.fundingTxNotFoundCount + 1)
-          } else if (d.behavior.fundingTxNotFoundCount < MAX_FUNDING_TX_NOT_FOUND) {
-            d.behavior.copy(fundingTxNotFoundCount = d.behavior.fundingTxNotFoundCount + 1)
-          } else {
-            log.warning(s"peer sent us too many channel announcements with non-existing funding tx (count=${d.behavior.fundingTxNotFoundCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
-            setTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, repeat = false)
-            d.behavior.copy(fundingTxNotFoundCount = d.behavior.fundingTxNotFoundCount + 1, ignoreNetworkAnnouncement = true)
           }
       }
       stay using d.copy(behavior = behavior1)
@@ -539,8 +535,8 @@ object Peer {
 
   sealed trait BadMessage
   case class InvalidSignature(r: RoutingMessage) extends BadMessage
+  case class InvalidAnnouncement(c: ChannelAnnouncement) extends BadMessage
   case class ChannelClosed(c: ChannelAnnouncement) extends BadMessage
-  case class NonexistingChannel(c: ChannelAnnouncement) extends BadMessage
 
   case class Behavior(fundingTxAlreadySpentCount: Int = 0, fundingTxNotFoundCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 

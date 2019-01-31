@@ -168,36 +168,20 @@ class PeerSpec extends TestkitBaseClass {
     }
     transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
 
-    // now let's assume that the router isn't happy with those channels because the funding tx is not found
-    for (c <- channels) {
-      router.send(peer, Peer.NonexistingChannel(c))
-    }
-    // peer will temporary ignore announcements coming from bob
-    for (ann <- channels ++ updates) {
-      transport.send(peer, ann)
-      transport.expectMsg(TransportHandler.ReadAck(ann))
-    }
-    router.expectNoMsg(1 second)
-    // other routing messages go through
-    transport.send(peer, query)
-    router.expectMsg(Peer.PeerRoutingMessage(transport.ref, remoteNodeId, query))
+    // now let's assume that the router isn't happy with those channels because the announcement is invalid
+    router.send(peer, Peer.InvalidAnnouncement(channels(0)))
+    // peer will return a connection-wide error, including the hex-encoded representation of the bad message
+    val error1 = transport.expectMsgType[Error]
+    assert(error1.channelId === CHANNELID_ZERO)
+    assert(new String(error1.data).startsWith("couldn't verify channel! shortChannelId="))
 
-    // after a while the ban is lifted
-    probe.send(peer, ResumeAnnouncements)
-
-    // and announcements are processed again
-    for (c <- channels) {
-      transport.send(peer, c)
-      router.expectMsg(Peer.PeerRoutingMessage(transport.ref, remoteNodeId, c))
-    }
-    transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
 
     // let's assume that one of the sigs were invalid
     router.send(peer, Peer.InvalidSignature(channels(0)))
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
-    val error = transport.expectMsgType[Error]
-    assert(error.channelId === CHANNELID_ZERO)
-    assert(new String(error.data).startsWith("bad announcement sig! bin=0100"))
+    val error2 = transport.expectMsgType[Error]
+    assert(error2.channelId === CHANNELID_ZERO)
+    assert(new String(error2.data).startsWith("bad announcement sig! bin=0100"))
   }
 
 }

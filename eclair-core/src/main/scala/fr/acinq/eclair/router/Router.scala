@@ -27,7 +27,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChannel, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, InvalidAnnouncement, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -203,25 +203,26 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! RoutingState(d.channels.values, d.updates.values, d.nodes.values)
       stay
 
-    case Event(v@ValidateResult(c, _, _, _), d0) =>
+    case Event(v@ValidateResult(c, _), d0) =>
       d0.awaiting.get(c) match {
         case Some(origin +: others) => origin ! TransportHandler.ReadAck(c) // now we can acknowledge the message, we only need to do it for the first peer that sent us the announcement
         case _ => ()
       }
       log.info("got validation result for shortChannelId={} (awaiting={} stash.nodes={} stash.updates={})", c.shortChannelId, d0.awaiting.size, d0.stash.nodes.size, d0.stash.updates.size)
       val success = v match {
-        case ValidateResult(c, _, _, Some(t)) =>
+        case ValidateResult(c, Left(t)) =>
           log.warning("validation failure for shortChannelId={} reason={}", c.shortChannelId, t.getMessage)
           false
-        case ValidateResult(c, Some(tx), true, None) =>
+        case ValidateResult(c, Right((tx, UtxoStatus.Unspent))) =>
           val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
           // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
           val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
-          if (tx.txOut.size < outputIndex + 1) {
-            log.error("invalid script for shortChannelId={}: txid={} does not have outputIndex={} ann={}", c.shortChannelId, tx.txid, outputIndex, c)
-            false
-          } else if (fundingOutputScript != tx.txOut(outputIndex).publicKeyScript) {
-            log.error("invalid script for shortChannelId={} txid={} ann={}", c.shortChannelId, tx.txid, c)
+          if (tx.txOut.size < outputIndex + 1 || fundingOutputScript != tx.txOut(outputIndex).publicKeyScript) {
+            log.error(s"invalid script for shortChannelId={}: txid={} does not have script=$fundingOutputScript at outputIndex=$outputIndex ann={}", c.shortChannelId, tx.txid, c)
+            d0.awaiting.get(c) match {
+              case Some(origins) => origins.foreach(_ ! InvalidAnnouncement(c))
+              case _ => ()
+            }
             false
           } else {
             watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
@@ -239,22 +240,19 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
             }
             true
           }
-        case ValidateResult(c, Some(tx), false, None) =>
-          log.warning("ignoring shortChannelId={} tx={} (funding tx already spent)", c.shortChannelId, tx.txid)
-          d0.awaiting.get(c) match {
-            case Some(origins) => origins.foreach(_ ! ChannelClosed(c))
-            case _ => ()
+        case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
+          if (fundingTxStatus.spendingTxConfirmed) {
+            log.warning("ignoring shortChannelId={} tx={} (funding tx already spent and spending tx is confirmed)", c.shortChannelId, tx.txid)
+            // the funding tx has been spent by a transaction that is now confirmed: peer shouldn't send us those
+            d0.awaiting.get(c) match {
+              case Some(origins) => origins.foreach(_ ! ChannelClosed(c))
+              case _ => ()
+            }
+          } else {
+            log.debug("ignoring shortChannelId={} tx={} (funding tx already spent but spending tx isn't confirmed)", c.shortChannelId, tx.txid)
           }
           // there may be a record if we have just restarted
           db.removeChannel(c.shortChannelId)
-          false
-        case ValidateResult(c, None, _, None) =>
-          // we couldn't find the funding tx in the blockchain, this is highly suspicious because it should have at least 6 confirmations to be announced
-          log.warning("could not retrieve tx for shortChannelId={}", c.shortChannelId)
-          d0.awaiting.get(c) match {
-            case Some(origins) => origins.foreach(_ ! NonexistingChannel(c))
-            case _ => ()
-          }
           false
       }
 
@@ -340,7 +338,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       }
 
       val staleChannelsToRemove = new mutable.MutableList[ChannelDesc]
-      staleChannels.map(d.channels).foreach( ca => {
+      staleChannels.map(d.channels).foreach(ca => {
         staleChannelsToRemove += ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)
         staleChannelsToRemove += ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)
       })
