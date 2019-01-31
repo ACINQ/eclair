@@ -4,7 +4,7 @@ import java.io._
 import java.nio.file.attribute.PosixFilePermissions
 import java.nio.file.{FileSystems, Files, Paths}
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash, Status}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash}
 import akka.io.Tcp.Connected
 import akka.util.ByteString
 import fr.acinq.eclair.randomBytes
@@ -39,6 +39,7 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
 
   import TorProtocolHandler._
 
+  // those are defined in the spec
   private val ServerKey: Array[Byte] = "Tor safe cookie authentication server-to-controller hash".getBytes()
   private val ClientKey: Array[Byte] = "Tor safe cookie authentication controller-to-server hash".getBytes()
 
@@ -56,7 +57,7 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
   }
 
   def protocolInfo: Receive = {
-    case data: ByteString => handleExceptions {
+    case data: ByteString =>
       val res = parseResponse(readResponse(data))
       val protoInfo = ProtocolInfo(
         methods = res.getOrElse("METHODS", throw TorException("Tor auth methods not found")),
@@ -68,11 +69,10 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
       }
       sendCommand(s"AUTHCHALLENGE SAFECOOKIE ${hex(nonce)}")
       context become authChallenge(protoInfo.cookieFile)
-    }
   }
 
   def authChallenge(cookieFile: String): Receive = {
-    case data: ByteString => handleExceptions {
+    case data: ByteString =>
       val res = parseResponse(readResponse(data))
       val clientHash = computeClientHash(
         res.getOrElse("SERVERHASH", throw TorException("Tor server hash not found")),
@@ -81,19 +81,18 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
       )
       sendCommand(s"AUTHENTICATE ${hex(clientHash)}")
       context become authenticate
-    }
   }
 
+
   def authenticate: Receive = {
-    case data: ByteString => handleExceptions {
+    case data: ByteString =>
       readResponse(data)
       sendCommand(s"ADD_ONION $computeKey $computePort")
       context become addOnion
-    }
   }
 
   def addOnion: Receive = {
-    case data: ByteString => handleExceptions {
+    case data: ByteString =>
       val res = readResponse(data)
       if (ok(res)) {
         val serviceId = processOnionResponse(parseResponse(res))
@@ -104,20 +103,11 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
         onionAdded.foreach(_.success(address.get))
         log.debug(s"Onion address: ${address.get}")
       }
-    }
   }
 
   override def unhandled(message: Any): Unit = message match {
     case GetOnionAddress =>
       sender() ! address
-  }
-
-  private def handleExceptions[T](f: => T): Unit = try {
-    f
-  } catch {
-    case e: Exception =>
-      log.error(e, "Tor error: ")
-      sender ! Status.Failure(e)
   }
 
   private def processOnionResponse(res: Map[String, String]): String = {
@@ -172,6 +162,11 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
 
   private def sendCommand(cmd: String): Unit = {
     receiver ! ByteString(s"$cmd\r\n")
+  }
+
+  override def postStop(): Unit = {
+    super.postStop()
+    onionAdded.foreach(_.tryFailure(new RuntimeException("tor connection exception")))
   }
 }
 
@@ -231,7 +226,6 @@ object TorProtocolHandler {
       s.close()
     }
   }
-
 
   def readString(filename: String): String = {
     val r = new BufferedReader(new FileReader(filename))

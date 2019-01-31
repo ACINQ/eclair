@@ -313,17 +313,16 @@ class Setup(datadir: File,
   private def initTor(): Option[InetSocketAddress] = {
     if (config.getBoolean("tor.enabled")) {
       val promiseTorAddress = Promise[OnionAddress]()
-      val protocolHandler = system.actorOf(TorProtocolHandler.props(
+      val protocolHandlerProps = TorProtocolHandler.props(
         version = config.getString("tor.protocol"),
         privateKeyPath = new File(datadir, config.getString("tor.private-key-file")).getAbsolutePath,
         virtualPort = config.getInt("server.port"),
         onionAdded = Some(promiseTorAddress),
-        nonce = None),
-        "tor-proto")
+        nonce = None)
 
-      val controller = system.actorOf(Controller.props(
+      val controller = system.actorOf(SimpleSupervisor.props(Controller.props(
         address = new InetSocketAddress(config.getString("tor.host"), config.getInt("tor.port")),
-        protocolHandler = protocolHandler), "tor")
+        protocolHandlerProps = protocolHandlerProps), "tor", SupervisorStrategy.Stop))
 
       val torAddress = await(promiseTorAddress.future, 30 seconds, "tor did not respond after 30 seconds")
       logger.info(s"Tor address ${torAddress.toOnion}")

@@ -39,15 +39,14 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
 
     val promiseOnionAddress = Promise[OnionAddress]()
 
-    val protocolHandler = TestActorRef(TorProtocolHandler.props(
+    val protocolHandlerProps = TorProtocolHandler.props(
       version ="v2",
       privateKeyPath = sys.props("user.home") + "/v2_pk",
       virtualPort = 9999,
       onionAdded = Some(promiseOnionAddress),
-      nonce = Some(unhex(ClientNonce))),
-      "tor-proto")
+      nonce = Some(unhex(ClientNonce)))
 
-    val controller = TestActorRef(Controller.props(new InetSocketAddress("localhost", 9051), protocolHandler), "tor")
+    val controller = TestActorRef(Controller.props(new InetSocketAddress("localhost", 9051), protocolHandlerProps), "tor")
 
     val address = Await.result(promiseOnionAddress.future, 30 seconds)
     println(address)

@@ -2,20 +2,20 @@ package fr.acinq.eclair.tor
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
+import akka.actor.{Actor, ActorLogging, OneForOneStrategy, Props, SupervisorStrategy, Terminated}
 import akka.io.{IO, Tcp}
 import akka.util.ByteString
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Promise}
 
 /**
   * Created by rorp
   *
-  * @param address         Tor control address
-  * @param protocolHandler Tor protocol handler
-  * @param ec              execution context
+  * @param address              Tor control address
+  * @param protocolHandlerProps Tor protocol handler props
+  * @param ec                   execution context
   */
-class Controller(address: InetSocketAddress, protocolHandler: ActorRef)
+class Controller(address: InetSocketAddress, protocolHandlerProps: Props)
                 (implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
   import Controller._
@@ -30,9 +30,9 @@ class Controller(address: InetSocketAddress, protocolHandler: ActorRef)
         case Some(ex) => log.error(ex, "Cannot connect")
         case _ => log.error("Cannot connect")
       }
-      context stop protocolHandler
       context stop self
-    case c@Connected(remote, local) =>
+    case c: Connected =>
+      val protocolHandler = context actorOf protocolHandlerProps
       protocolHandler ! c
       val connection = sender()
       connection ! Register(self)
@@ -47,19 +47,20 @@ class Controller(address: InetSocketAddress, protocolHandler: ActorRef)
         case Received(data) =>
           protocolHandler ! data
         case _: ConnectionClosed =>
-          context stop protocolHandler
           context stop self
         case Terminated(actor) if actor == connection =>
-          context stop protocolHandler
           context stop self
       }
   }
 
+  // we should not restart a failing tor session
+  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Escalate }
+
 }
 
 object Controller {
-  def props(address: InetSocketAddress, protocolHandler: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.global) =
-    Props(new Controller(address, protocolHandler))
+  def props(address: InetSocketAddress, protocolHandlerProps: Props)(implicit ec: ExecutionContext = ExecutionContext.global) =
+    Props(new Controller(address, protocolHandlerProps))
 
   case object SendFailed
 
