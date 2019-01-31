@@ -14,10 +14,14 @@ For Mac OS X:
 brew install tor
 ```
 
-Edit Tor configuration file `/etc/tor/torrc` (Linux) or `/usr/local/etc/tor/torrc` (Mac OS X).
-Eclair requires safe cookie authentication as well as SOCKS5 and control connections to be enabled.
-Change the value of the `ExitPolicy` parameter only if you really know what you are doing.
+For Windows:
+  
+Download the "Expert Bundle" from https://www.torproject.org/download/download.html and extract it to the root of your drive (e.g. `C:\tor-win32-0.3.5.7`).
 
+Edit Tor configuration file:
+ - `/etc/tor/torrc` (Linux)
+ - `/usr/local/etc/tor/torrc` (Mac OS X)
+ - `C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\tor\torrc` (Windows)
 
 ```
 SOCKSPort 9050
@@ -25,6 +29,9 @@ ControlPort 9051
 CookieAuthentication 1
 ExitPolicy reject *:*
 ```
+
+Eclair requires safe cookie authentication as well as SOCKS5 and control connections to be enabled.
+Change the value of the `ExitPolicy` parameter only if you really know what you are doing.
 
 Make sure eclair is allowed to read Tor's cookie file (typically `/var/run/tor/control.authcookie`).
 
@@ -40,6 +47,14 @@ For Mac OS X:
 
 ```shell
 brew services start tor
+```
+
+For Windows:
+
+Open a CMD with administrator access
+
+```shell
+tor --service install
 ```
 
 ### Configure Tor hidden service
@@ -92,7 +107,7 @@ eclair.socks5.enabled = true
 You can use SOCKS5 proxy only for specific types of addresses. Use `eclair.socks5.use-for-ipv4`, `eclair.socks5.use-for-ipv6`
 or `eclair.socks5.use-for-tor` for fine tuning.
 
-Tor hidden service and SOCKS5 are independent options. You can use just one of them, but if you want to get the most privacy 
+:warning: Tor hidden service and SOCKS5 are independent options. You can use just one of them, but if you want to get the most privacy 
 features from using Tor use both.  
 
 Note, that bitcoind should be configured to use Tor as well (https://en.bitcoin.it/wiki/Setting_up_a_Tor_hidden_service).
