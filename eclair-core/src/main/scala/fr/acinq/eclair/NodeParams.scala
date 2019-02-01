@@ -32,6 +32,7 @@ import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
+import fr.acinq.eclair.io.Client.Socks5ProxyParams
 import fr.acinq.eclair.wire.Color
 
 import scala.collection.JavaConversions._
@@ -81,7 +82,8 @@ case class NodeParams(keyManager: KeyManager,
                       paymentRequestExpiry: FiniteDuration,
                       maxPendingPaymentRequests: Int,
                       maxPaymentFee: Double,
-                      minFundingSatoshis: Long) {
+                      minFundingSatoshis: Long,
+                      socksProxy_opt: Option[Socks5ProxyParams]) {
 
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
@@ -182,6 +184,18 @@ object NodeParams {
       (p -> (gf, lf))
     }.toMap
 
+    val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {
+      Some(Socks5ProxyParams(
+        new InetSocketAddress(config.getString("socks5.host"), config.getInt("socks5.port")),
+        config.getBoolean("tor.stream-isolation"),
+        config.getBoolean("socks5.use-for-ipv4"),
+        config.getBoolean("socks5.use-for-ipv6"),
+        config.getBoolean("socks5.use-for-tor")
+      ))
+    } else {
+      None
+    }
+
     NodeParams(
       keyManager = keyManager,
       alias = nodeAlias,
@@ -226,7 +240,8 @@ object NodeParams {
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"),
       maxPaymentFee = config.getDouble("max-payment-fee"),
-      minFundingSatoshis = config.getLong("min-funding-satoshis")
+      minFundingSatoshis = config.getLong("min-funding-satoshis"),
+      socksProxy_opt = socksProxy_opt
     )
   }
 }

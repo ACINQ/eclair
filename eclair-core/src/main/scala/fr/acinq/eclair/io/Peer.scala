@@ -27,8 +27,6 @@ import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Protocol
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Client.Socks5ProxyParams
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
@@ -41,7 +39,7 @@ import scala.util.Random
 /**
   * Created by PM on 26/08/2016.
   */
-class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[Socks5ProxyParams]) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -66,7 +64,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         stay
       } else {
         // we immediately process explicit connection requests to new addresses
-        context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender()), socksProxy))
+        context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender())))
         stay
       }
 
@@ -75,7 +73,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
         case _ if d.channels.isEmpty => stay // no-op (no more channels with this peer)
         case Some(address) =>
-          context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None, socksProxy))
+          context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           // exponential backoff retry with a finite max
           setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 60) seconds, repeat = false)
           stay using d.copy(attempts = d.attempts + 1)
@@ -496,7 +494,7 @@ object Peer {
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[Socks5ProxyParams]) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet, socksProxy))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet))
 
   // @formatter:off
 

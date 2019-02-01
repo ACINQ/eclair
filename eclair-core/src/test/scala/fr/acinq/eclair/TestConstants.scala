@@ -86,7 +86,8 @@ object TestConstants {
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000,
       maxPaymentFee = 0.03,
-      minFundingSatoshis = 1000L)
+      minFundingSatoshis = 1000L,
+      socksProxy_opt = None)
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -145,7 +146,8 @@ object TestConstants {
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000,
       maxPaymentFee = 0.03,
-      minFundingSatoshis = 1000L)
+      minFundingSatoshis = 1000L,
+      socksProxy_opt = None)
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

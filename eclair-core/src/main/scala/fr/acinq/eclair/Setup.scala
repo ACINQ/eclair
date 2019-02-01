@@ -235,14 +235,7 @@ class Setup(datadir: File,
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
-      socksProxy = if (config.getBoolean("socks5.enabled")) Some(Socks5ProxyParams(
-        new InetSocketAddress(config.getString("socks5.host"), config.getInt("socks5.port")),
-        config.getBoolean("tor.stream-isolation"),
-        config.getBoolean("socks5.use-for-ipv4"),
-        config.getBoolean("socks5.use-for-ipv6"),
-        config.getBoolean("socks5.use-for-tor")
-      )) else None
-      switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet, socksProxy), "switchboard", SupervisorStrategy.Resume))
+      switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.nodeId, router, register), "payment-initiator", SupervisorStrategy.Restart))
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))

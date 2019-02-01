@@ -23,7 +23,6 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.{HasCommitments, _}
-import fr.acinq.eclair.io.Client.Socks5ProxyParams
 import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
@@ -37,7 +36,7 @@ import scala.util.Success
   * Ties network connections to peers.
   * Created by PM on 14/02/2017.
   */
-class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[Socks5ProxyParams]) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
 
   import Switchboard._
 
@@ -120,7 +119,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
       case Some(peer) => peer
       case None =>
         log.info(s"creating new peer current=${peers.size}")
-        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet, socksProxy), name = s"peer-$remoteNodeId")
+        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet), name = s"peer-$remoteNodeId")
         peer ! Peer.Init(previousKnownAddress, offlineChannels)
         context watch (peer)
         peer
@@ -135,7 +134,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
 object Switchboard extends Logging {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, socksProxy: Option[Socks5ProxyParams]) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet, socksProxy))
+  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet))
 
   /**
     * If we have stopped eclair while it was forwarding HTLCs, it is possible that we are in a state were an incoming HTLC
