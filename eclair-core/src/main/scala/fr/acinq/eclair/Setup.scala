@@ -314,10 +314,10 @@ class Setup(datadir: File,
     if (config.getBoolean("tor.enabled")) {
       val promiseTorAddress = Promise[OnionAddress]()
       val protocolHandlerProps = TorProtocolHandler.props(
+        password = config.getString("tor.password"),
         privateKeyPath = new File(datadir, config.getString("tor.private-key-file")).getAbsolutePath,
         virtualPort = config.getInt("server.port"),
-        onionAdded = Some(promiseTorAddress),
-        nonce = None)
+        onionAdded = Some(promiseTorAddress))
 
       val controller = system.actorOf(SimpleSupervisor.props(Controller.props(
         address = new InetSocketAddress(config.getString("tor.host"), config.getInt("tor.port")),

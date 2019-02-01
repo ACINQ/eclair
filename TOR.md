@@ -18,24 +18,33 @@ brew install tor
 
 For Windows:
   
-Download the "Expert Bundle" from https://www.torproject.org/download/download.html and extract it to the root of your drive (e.g. `C:\tor-win32-0.3.5.7`).
+Download the "Expert Bundle" from https://www.torproject.org/download/download.html and extract it to the root of your drive (e.g. `C:\tor`).
+
+### Configuring Tor
+
+First pick a password and hash it with this command:
+
+```shell
+$ tor --hash-password this-is-an-example-password-change-it
+16:94A50709CAA98333602756426F43E6AC6760B9ADEF217F58219E639E5A
+```
 
 Edit Tor configuration file:
  - `/etc/tor/torrc` (Linux)
  - `/usr/local/etc/tor/torrc` (Mac OS X)
- - `C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\tor\torrc` (Windows)
+ - `C:\tor\conf\torrc` (Windows)
+
+Replace the value for `HashedControlPassword` with the result of the command above.
 
 ```
 SOCKSPort 9050
 ControlPort 9051
-CookieAuthentication 1
+HashedControlPassword 16:--REPLACE--THIS--WITH--THE--HASH--OF--YOUR--PASSWORD
 ExitPolicy reject *:*
 ```
 
-Eclair requires safe cookie authentication as well as SOCKS5 and control connections to be enabled.
+Eclair requires password authentication as well as SOCKS5 and control connections to be enabled.
 Change the value of the `ExitPolicy` parameter only if you really know what you are doing.
-
-Make sure eclair is allowed to read Tor's cookie file (typically `/var/run/tor/control.authcookie`).
 
 ### Start Tor
 
