@@ -2,6 +2,8 @@
 
 ### Installing Tor on your node
 
+Eclair requires Tor 0.3.3.6+.
+
 For Linux:
 
 ```shell
@@ -71,20 +73,6 @@ eclair-cli getinfo
 ```
 Eclair saves the Tor endpoint's private key in `~/.eclair/tor_pk`, so that it can recreate the endpoint address after 
 restart. If you remove the private key eclair will regenerate the endpoint address.   
-
-There are two possible values for `protocol-version`:
-
-```
-eclair.tor.protocol-version = "v3"
-```
-
-value   | description
---------|---------------------------------------------------------
- v2     | set up a Tor hidden service version 2 end point
- v3     | set up a Tor hidden service version 3 end point (default)
- 
-Tor protocol v3 (supported by Tor version 0.3.3.6 and higher) is backwards compatible and supports 
-both v2 and v3 addresses. 
 
 To create a new Tor circuit for every connection, use `stream-isolation` parameter:
 

@@ -8,7 +8,6 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash}
 import akka.io.Tcp.Connected
 import akka.util.ByteString
 import fr.acinq.eclair.randomBytes
-import fr.acinq.eclair.tor.TorProtocolHandler.ProtocolVersion
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import javax.xml.bind.DatatypeConverter
@@ -22,15 +21,13 @@ case class TorException(msg: String) extends RuntimeException(msg)
   *
   * Specification: https://gitweb.torproject.org/torspec.git/tree/control-spec.txt
   *
-  * @param protocolVersion Tor protocol version
-  * @param privateKeyPath  path to a file that contains a Tor private key
-  * @param virtualPort     port of our protected local server (typically 9735)
-  * @param targetPorts     target ports of the public hidden service
-  * @param onionAdded      a Promise to track creation of the endpoint
-  * @param clientNonce     optional client nonce, will be randomly generated if omitted
+  * @param privateKeyPath path to a file that contains a Tor private key
+  * @param virtualPort    port of our protected local server (typically 9735)
+  * @param targetPorts    target ports of the public hidden service
+  * @param onionAdded     a Promise to track creation of the endpoint
+  * @param clientNonce    optional client nonce, will be randomly generated if omitted
   */
-class TorProtocolHandler(protocolVersion: ProtocolVersion,
-                         privateKeyPath: String,
+class TorProtocolHandler(privateKeyPath: String,
                          virtualPort: Int,
                          targetPorts: Seq[Int],
                          onionAdded: Option[Promise[OnionAddress]],
@@ -60,9 +57,6 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
         cookieFile = unquote(res.getOrElse("COOKIEFILE", throw TorException("Tor cookie file not found"))),
         version = unquote(res.getOrElse("Tor", throw TorException("Tor version not found"))))
       log.info(s"Tor version ${protoInfo.version}")
-      if (!protocolVersion.supportedBy(protoInfo.version)) {
-        throw TorException(s"Tor version ${protoInfo.version} does not support protocol $protocolVersion")
-      }
       sendCommand(s"AUTHCHALLENGE SAFECOOKIE ${hex(nonce)}")
       context become authChallenge(protoInfo.cookieFile)
   }
@@ -92,10 +86,7 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
       val res = readResponse(data)
       if (ok(res)) {
         val serviceId = processOnionResponse(parseResponse(res))
-        address = Some(protocolVersion match {
-          case V2 => OnionAddressV2(serviceId, virtualPort)
-          case V3 => OnionAddressV3(serviceId, virtualPort)
-        })
+        address = Some(OnionAddressV3(serviceId, virtualPort))
         onionAdded.foreach(_.success(address.get))
         log.debug(s"Onion address: ${address.get}")
       }
@@ -120,10 +111,7 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
     if (Files.exists(Paths.get(privateKeyPath))) {
       readString(privateKeyPath)
     } else {
-      protocolVersion match {
-        case V2 => "NEW:RSA1024"
-        case V3 => "NEW:ED25519-V3"
-      }
+      "NEW:ED25519-V3"
     }
   }
 
@@ -167,40 +155,17 @@ class TorProtocolHandler(protocolVersion: ProtocolVersion,
 }
 
 object TorProtocolHandler {
-  def props(version: String,
-            privateKeyPath: String,
+  def props(privateKeyPath: String,
             virtualPort: Int,
             targetPorts: Seq[Int] = Seq(),
             onionAdded: Option[Promise[OnionAddress]] = None,
             nonce: Option[Array[Byte]] = None
            ): Props =
-    Props(new TorProtocolHandler(ProtocolVersion(version), privateKeyPath, virtualPort, targetPorts, onionAdded, nonce))
+    Props(new TorProtocolHandler(privateKeyPath, virtualPort, targetPorts, onionAdded, nonce))
 
   // those are defined in the spec
   private val ServerKey: Array[Byte] = "Tor safe cookie authentication server-to-controller hash".getBytes()
   private val ClientKey: Array[Byte] = "Tor safe cookie authentication controller-to-server hash".getBytes()
-
-  val MinV3Version = "0.3.3.6"
-
-  sealed trait ProtocolVersion {
-    def supportedBy(torVersion: String): Boolean
-  }
-
-  case object V2 extends ProtocolVersion {
-    override def supportedBy(torVersion: String): Boolean = true
-  }
-
-  case object V3 extends ProtocolVersion {
-    override def supportedBy(torVersion: String): Boolean = Version(torVersion) >= Version(MinV3Version)
-  }
-
-  object ProtocolVersion {
-    def apply(s: String): ProtocolVersion = s match {
-      case "v2" | "V2" => V2
-      case "v3" | "V3" => V3
-      case _ => throw TorException(s"Unknown protocol version `$s`")
-    }
-  }
 
   case object GetOnionAddress
 

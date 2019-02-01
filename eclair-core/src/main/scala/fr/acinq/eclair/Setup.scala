@@ -314,7 +314,6 @@ class Setup(datadir: File,
     if (config.getBoolean("tor.enabled")) {
       val promiseTorAddress = Promise[OnionAddress]()
       val protocolHandlerProps = TorProtocolHandler.props(
-        version = config.getString("tor.protocol"),
         privateKeyPath = new File(datadir, config.getString("tor.private-key-file")).getAbsolutePath,
         virtualPort = config.getInt("server.port"),
         onionAdded = Some(promiseTorAddress),
