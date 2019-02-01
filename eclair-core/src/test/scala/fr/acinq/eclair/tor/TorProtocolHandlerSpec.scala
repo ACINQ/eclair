@@ -2,6 +2,7 @@ package fr.acinq.eclair.tor
 
 import java.io._
 import java.net.InetSocketAddress
+import java.nio.file.Paths
 
 import akka.actor.ActorSystem
 import akka.io.Tcp.Connected
@@ -25,11 +26,11 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
 
   val LocalHost = new InetSocketAddress("localhost", 8888)
   val Password = "foobar"
-  val PkFile = new File(TestUtils.BUILD_DIRECTORY,"testtor.dat")
+  val PkFilePath = Paths.get(TestUtils.BUILD_DIRECTORY,"testtor.dat")
 
   override protected def beforeEach(): Unit = {
     super.afterEach()
-    PkFile.delete()
+    PkFilePath.toFile.delete()
   }
 
   "tor" ignore {
@@ -38,7 +39,7 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
 
     val protocolHandlerProps = TorProtocolHandler.props(
       password = Password,
-      privateKeyPath = new File(TestUtils.BUILD_DIRECTORY, "testtor.dat").getAbsolutePath,
+      privateKeyPath = Paths.get(TestUtils.BUILD_DIRECTORY, "testtor.dat"),
       virtualPort = 9999,
       onionAdded = Some(promiseOnionAddress))
 
@@ -57,7 +58,7 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
 
       val protocolHandler = TestActorRef(props(
         password = Password,
-        privateKeyPath = PkFile.getAbsolutePath,
+        privateKeyPath = PkFilePath,
         virtualPort = 9999,
         onionAdded = Some(promiseOnionAddress)), "happy-v3")
 
@@ -91,7 +92,7 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
       address.toOnion must be ("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd.onion:9999")
       NodeAddress(address).toString must be ("Tor3(6457a1ed0b38a73d56dc866accec93ca6af68bc316568874478dc9399cc1a0b3431b03,9999)")
 
-      readString(PkFile.getAbsolutePath) must be("ED25519-V3:private-key")
+      readString(PkFilePath) must be("ED25519-V3:private-key")
   }
 
   "v3 should handle AUTHENTICATE errors" in {
@@ -102,7 +103,7 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
 
     val protocolHandler = TestActorRef(props(
       password = badPassword,
-      privateKeyPath = "",
+      privateKeyPath = PkFilePath,
       virtualPort = 9999,
       onionAdded = Some(promiseOnionAddress)), "authchallenge-error")
 

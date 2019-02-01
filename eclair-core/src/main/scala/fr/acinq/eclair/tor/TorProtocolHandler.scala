@@ -2,7 +2,8 @@ package fr.acinq.eclair.tor
 
 import java.io._
 import java.nio.file.attribute.PosixFilePermissions
-import java.nio.file.{FileSystems, Files, Paths}
+import java.nio.file.{FileSystems, Files, Path, Paths}
+import java.util
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash}
 import akka.io.Tcp.Connected
@@ -26,7 +27,7 @@ case class TorException(msg: String) extends RuntimeException(msg)
   * @param onionAdded     a Promise to track creation of the endpoint
   */
 class TorProtocolHandler(password: String,
-                         privateKeyPath: String,
+                         privateKeyPath: Path,
                          virtualPort: Int,
                          targetPorts: Seq[Int],
                          onionAdded: Option[Promise[OnionAddress]]
@@ -95,7 +96,7 @@ class TorProtocolHandler(password: String,
   }
 
   private def computeKey: String = {
-    if (Files.exists(Paths.get(privateKeyPath))) {
+    if (privateKeyPath.toFile.exists()) {
       readString(privateKeyPath)
     } else {
       "NEW:ED25519-V3"
@@ -117,7 +118,7 @@ class TorProtocolHandler(password: String,
 
 object TorProtocolHandler {
   def props(password: String,
-            privateKeyPath: String,
+            privateKeyPath: Path,
             virtualPort: Int,
             targetPorts: Seq[Int] = Seq(),
             onionAdded: Option[Promise[OnionAddress]] = None
@@ -130,32 +131,16 @@ object TorProtocolHandler {
 
   case object GetOnionAddress
 
-  def readString(filename: String): String = {
-    val r = new BufferedReader(new FileReader(filename))
-    try {
-      r.readLine()
-    } finally {
-      r.close()
-    }
-  }
+  def readString(path: Path): String = Files.readAllLines(path).get(0)
 
-  def writeString(filename: String, string: String): Unit = {
-    val w = new PrintWriter(new OutputStreamWriter(new FileOutputStream(filename)))
-    try {
-      w.print(string)
-    } finally {
-      w.close()
-    }
-  }
+  def writeString(path: Path, string: String): Unit = Files.write(path, util.Arrays.asList(string))
 
-  def setPermissions(filename: String, permissionString: String): Unit = {
-    val path = FileSystems.getDefault.getPath(filename)
+  def setPermissions(path: Path, permissionString: String): Unit =
     try {
       Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(permissionString))
     } catch {
       case _: UnsupportedOperationException => () // we are on windows
     }
-  }
 
   def unquote(s: String): String = s
     .stripSuffix("\"")

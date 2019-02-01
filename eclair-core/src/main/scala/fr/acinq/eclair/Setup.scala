@@ -18,6 +18,7 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.InetSocketAddress
+import java.nio.file.Paths
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
@@ -315,7 +316,7 @@ class Setup(datadir: File,
       val promiseTorAddress = Promise[OnionAddress]()
       val protocolHandlerProps = TorProtocolHandler.props(
         password = config.getString("tor.password"),
-        privateKeyPath = new File(datadir, config.getString("tor.private-key-file")).getAbsolutePath,
+        privateKeyPath = new File(datadir, config.getString("tor.private-key-file")).toPath,
         virtualPort = config.getInt("server.port"),
         onionAdded = Some(promiseTorAddress))
 
