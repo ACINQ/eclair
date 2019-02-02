@@ -32,7 +32,7 @@ import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
-import fr.acinq.eclair.io.Client.Socks5ProxyParams
+import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.Color
 
 import scala.collection.JavaConversions._
@@ -186,11 +186,12 @@ object NodeParams {
 
     val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {
       Some(Socks5ProxyParams(
-        new InetSocketAddress(config.getString("socks5.host"), config.getInt("socks5.port")),
-        config.getBoolean("tor.stream-isolation"),
-        config.getBoolean("socks5.use-for-ipv4"),
-        config.getBoolean("socks5.use-for-ipv6"),
-        config.getBoolean("socks5.use-for-tor")
+        address = new InetSocketAddress(config.getString("socks5.host"), config.getInt("socks5.port")),
+        credentials_opt = None,
+        randomizeCredentials = config.getBoolean("tor.stream-isolation"),
+        useForIPv4 = config.getBoolean("socks5.use-for-ipv4"),
+        useForIPv6 = config.getBoolean("socks5.use-for-ipv6"),
+        useForTor = config.getBoolean("socks5.use-for-tor")
       ))
     } else {
       None
