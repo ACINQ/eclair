@@ -17,7 +17,6 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
 
   using(sqlite.createStatement()) { statement =>
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS headers (height INTEGER NOT NULL PRIMARY KEY, block_hash BLOB NOT NULL, header BLOB NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS transactions (tx_hash BLOB PRIMARY KEY, tx BLOB NOT NULL, proof BLOB NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS wallet (data BLOB)")
   }
 
@@ -93,38 +92,6 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
     }
   }
 
-  override def addTransaction(tx: Transaction, proof: ElectrumClient.GetMerkleResponse): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transactions VALUES (?, ?, ?)")) { statement =>
-      statement.setBytes(1, tx.hash)
-      statement.setBytes(2, Transaction.write(tx))
-      statement.setBytes(3, SqliteWalletDb.serialize(proof))
-      statement.executeUpdate()
-    }
-  }
-
-  override def getTransaction(tx_hash: BinaryData): Option[(Transaction, ElectrumClient.GetMerkleResponse)] = {
-    using(sqlite.prepareStatement("SELECT tx, proof FROM transactions WHERE tx_hash = ?")) { statement =>
-      statement.setBytes(1, tx_hash)
-      val rs = statement.executeQuery()
-      if (rs.next()) {
-        Some((Transaction.read(rs.getBytes("tx")), SqliteWalletDb.deserializeMerkleProof((rs.getBytes("proof")))))
-      } else {
-        None
-      }
-    }
-  }
-
-  override def getTransactions(): Seq[(Transaction, ElectrumClient.GetMerkleResponse)] = {
-    using(sqlite.prepareStatement("SELECT tx, proof FROM transactions")) { statement =>
-      val rs = statement.executeQuery()
-      var q: Queue[(Transaction, ElectrumClient.GetMerkleResponse)] = Queue()
-      while (rs.next()) {
-        q = q :+ (Transaction.read(rs.getBytes("tx")), SqliteWalletDb.deserializeMerkleProof(rs.getBytes("proof")))
-      }
-      q
-    }
-  }
-
   override def persist(data: ElectrumWallet.PersistentData): Unit = {
     val bin = SqliteWalletDb.serialize(data)
     using(sqlite.prepareStatement("UPDATE wallet SET data=(?)")) { update =>
@@ -164,7 +131,7 @@ object SqliteWalletDb {
       ("block_height" | uint24) ::
       ("pos" | uint24)).as[GetMerkleResponse]
 
-  def serialize(proof: GetMerkleResponse): BinaryData = proofCodec.encode(proof).require.toByteArray
+  def serializeMerkleProof(proof: GetMerkleResponse): BinaryData = proofCodec.encode(proof).require.toByteArray
 
   def deserializeMerkleProof(bin: BinaryData): GetMerkleResponse = proofCodec.decode(BitVector(bin.toArray)).require.value
 
@@ -204,6 +171,13 @@ object SqliteWalletDb {
     (wire: BitVector) => historyListCodec.decode(wire).map(_.map(_.toMap))
   )
 
+  val proofsListCodec: Codec[List[(BinaryData, GetMerkleResponse)]] = listOfN(uint16, binarydata(32) ~ proofCodec)
+
+  val proofsCodec: Codec[Map[BinaryData, GetMerkleResponse]] = Codec[Map[BinaryData, GetMerkleResponse]](
+    (map: Map[BinaryData, GetMerkleResponse]) => proofsListCodec.encode(map.toList),
+    (wire: BitVector) => proofsListCodec.decode(wire).map(_.map(_.toMap))
+  )
+
   val persistentDataCodec: Codec[PersistentData] = (
     ("accountKeysCount" | int32) ::
       ("accountKeysCount" | int32) ::
@@ -211,6 +185,7 @@ object SqliteWalletDb {
       ("transactions" | transactionsCodec) ::
       ("heights" | heightsCodec) ::
       ("history" | historyCodec) ::
+      ("proofs" | proofsCodec) ::
       ("pendingTransactions" | listOfN(uint16, txCodec)) ::
       ("locks" | setCodec(txCodec))).as[PersistentData]
 

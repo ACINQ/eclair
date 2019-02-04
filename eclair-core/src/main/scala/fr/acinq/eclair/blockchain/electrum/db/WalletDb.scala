@@ -19,15 +19,7 @@ trait HeaderDb {
   def getTip: Option[(Int, BlockHeader)]
 }
 
-trait TransactionDb {
-  def addTransaction(tx: Transaction, proof: GetMerkleResponse): Unit
-
-  def getTransaction(txid: BinaryData): Option[(Transaction, GetMerkleResponse)]
-
-  def getTransactions(): Seq[(Transaction, GetMerkleResponse)]
-}
-
-trait WalletDb extends HeaderDb with TransactionDb {
+trait WalletDb extends HeaderDb {
   def persist(data: PersistentData): Unit
 
   def readPersistentData(): Option[PersistentData]
