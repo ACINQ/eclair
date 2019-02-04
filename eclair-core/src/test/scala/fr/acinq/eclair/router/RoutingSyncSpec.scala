@@ -24,7 +24,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   test("handle channel range queries") {
     val params = TestConstants.Alice.nodeParams
-    val router = TestFSMRef(new Router(params, TestProbe().ref))
+    val router = TestFSMRef(new Router(params, TestProbe().ref, randomizeRoutes = false))
     val transport = TestProbe()
     val sender = TestProbe()
     sender.ignoreMsg { case _: TransportHandler.ReadAck => true }
@@ -80,7 +80,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   test("reset sync state on reconnection") {
     val params = TestConstants.Alice.nodeParams
-    val router = TestFSMRef(new Router(params, TestProbe().ref))
+    val router = TestFSMRef(new Router(params, TestProbe().ref, randomizeRoutes = false))
     val transport = TestProbe()
     val sender = TestProbe()
     sender.ignoreMsg { case _: TransportHandler.ReadAck => true }

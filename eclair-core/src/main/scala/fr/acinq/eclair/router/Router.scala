@@ -86,7 +86,7 @@ case object TickPruneStaleChannels
   * Created by PM on 24/05/2016.
   */
 
-class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[State, Data] {
+class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None, randomizeRoutes: Boolean) extends FSMDiagnosticActorLogging[State, Data] {
 
   import Router._
 
@@ -384,7 +384,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
       // if we want to randomize we ask the router to make a random selection among the three best routes
-      val routesToFind = if(randomize) DEFAULT_ROUTES_COUNT else 1
+      val routesToFind = if(randomizeRoutes && randomize) DEFAULT_ROUTES_COUNT else 1
       findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
@@ -695,7 +695,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
 object Router {
 
-  def props(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
+  def props(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None, randomizeRoutes: Boolean) = Props(new Router(nodeParams, watcher, initialized, randomizeRoutes))
 
   def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
   // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
