@@ -36,11 +36,12 @@ object Features {
   val CHANNEL_RANGE_QUERIES_BIT_MANDATORY = 6
   val CHANNEL_RANGE_QUERIES_BIT_OPTIONAL = 7
 
+  val OPTION_SIMPLIFIED_COMMITMENT_MANDATORY = 8
+  val OPTION_SIMPLIFIED_COMMITMENT_OPTIONAL = 9
 
   def hasFeature(features: BitSet, bit: Int): Boolean = features.get(bit)
 
   def hasFeature(features: BinaryData, bit: Int): Boolean = hasFeature(BitSet.valueOf(features.reverse.toArray), bit)
-
 
   /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that

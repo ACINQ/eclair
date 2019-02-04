@@ -111,7 +111,15 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val remoteHasInitialRoutingSync = Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
-      log.info(s"$remoteNodeId has features: initialRoutingSync=$remoteHasInitialRoutingSync channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional channelRangeQueriesMandatory=$remoteHasChannelRangeQueriesMandatory")
+      val remoteHasSimplifiedCommitmentOptional = Features.hasFeature(remoteInit.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_OPTIONAL)
+      val remoteHasSimplifiedCommitmentMandatory = Features.hasFeature(remoteInit.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_MANDATORY)
+      log.info(s"$remoteNodeId has features: " +
+        s"initialRoutingSync=$remoteHasInitialRoutingSync " +
+        s"channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional " +
+        s"channelRangeQueriesMandatory=$remoteHasChannelRangeQueriesMandatory" +
+        s"remoteHasSimplifiedCommitmentOptional=$remoteHasSimplifiedCommitmentOptional" +
+        s"remoteHasSimplifiedCommitmentMandatory=$remoteHasSimplifiedCommitmentMandatory")
+
       if (Features.areSupported(remoteInit.localFeatures)) {
         d.origin_opt.foreach(origin => origin ! "connected")
 
