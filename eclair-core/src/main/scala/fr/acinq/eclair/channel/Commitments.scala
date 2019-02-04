@@ -72,6 +72,8 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def announceChannel: Boolean = (channelFlags & 0x01) != 0
 
+  def isSimplifiedCommitment: Boolean = (channelFlags & 0x02) != 0 // FIXME: the bit hasn't been chosen yet!
+
   def availableBalanceForSendMsat: Long = {
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
     val fees = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced).amount else 0
