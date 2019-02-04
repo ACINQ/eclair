@@ -96,7 +96,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val channels1 = d.channels -- h
       if (channels1.isEmpty) {
         // we have no existing channels, we can forget about this peer
-        stop(FSM.Normal)
+        stopPeer()
       } else {
         stay using d.copy(channels = channels1)
       }
@@ -162,7 +162,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val channels1 = d.channels -- h
       if (channels1.isEmpty) {
         // we have no existing channels, we can forget about this peer
-        stop(FSM.Normal)
+        stopPeer()
       } else {
         stay using d.copy(channels = channels1)
       }
@@ -407,7 +407,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.info(s"lost connection to $remoteNodeId")
       if (d.channels.isEmpty) {
         // we have no existing channels, we can forget about this peer
-        stop(FSM.Normal)
+        stopPeer()
       } else {
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
@@ -476,13 +476,18 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     channel
   }
 
+  def stopPeer() = {
+    log.info("removing peer from db")
+    nodeParams.peersDb.removePeer(remoteNodeId)
+    stop(FSM.Normal)
+  }
+
   // a failing channel won't be restarted, it should handle its states
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
 
   initialize()
 
   override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
-
 }
 
 object Peer {

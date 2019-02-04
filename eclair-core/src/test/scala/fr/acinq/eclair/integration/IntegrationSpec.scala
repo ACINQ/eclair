@@ -416,8 +416,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
     // we then kill the connection between C and F
     sender.send(nodes("F1").switchboard, 'peers)
-    val peers = sender.expectMsgType[Map[PublicKey, ActorRef]]
-    peers(nodes("C").nodeParams.nodeId) ! Disconnect
+    val peers = sender.expectMsgType[Iterable[ActorRef]]
+    // F's only node is C
+    peers.head ! Disconnect
     // we then wait for F to be in disconnected state
     awaitCond({
       sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_GETSTATE))
@@ -494,8 +495,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
     // we then kill the connection between C and F
     sender.send(nodes("F2").switchboard, 'peers)
-    val peers = sender.expectMsgType[Map[PublicKey, ActorRef]]
-    peers(nodes("C").nodeParams.nodeId) ! Disconnect
+    val peers = sender.expectMsgType[Iterable[ActorRef]]
+    // F's only node is C
+    peers.head ! Disconnect
     // we then wait for F to be in disconnected state
     awaitCond({
       sender.send(nodes("F2").register, Forward(htlc.channelId, CMD_GETSTATE))

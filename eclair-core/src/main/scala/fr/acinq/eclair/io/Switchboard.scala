@@ -43,7 +43,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   authenticator ! self
 
   // we load peers and channels from database
-  private val initialPeers = {
+  {
     val channels = nodeParams.channelsDb.listChannels()
     val peers = nodeParams.peersDb.listPeers()
 
@@ -59,69 +59,58 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
       .map {
         case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
       }
-      .map {
+      .foreach {
         case (remoteNodeId, states, address_opt) =>
           // we might not have an address if we didn't initiate the connection in the first place
-          val peer = createOrGetPeer(Map(), remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
-          remoteNodeId -> peer
-      }.toMap
+          createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
+      }
   }
 
-  def receive: Receive = main(initialPeers)
-
-  def main(peers: Map[PublicKey, ActorRef]): Receive = {
+  def receive: Receive = {
 
     case Peer.Connect(NodeURI(publicKey, _)) if publicKey == nodeParams.nodeId =>
       sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
     case c@Peer.Connect(NodeURI(remoteNodeId, _)) =>
       // we create a peer if it doesn't exist
-      val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
+      val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward c
-      context become main(peers + (remoteNodeId -> peer))
 
     case o@Peer.OpenChannel(remoteNodeId, _, _, _, _) =>
-      peers.get(remoteNodeId) match {
+      getPeer(remoteNodeId) match {
         case Some(peer) => peer forward o
         case None => sender ! Status.Failure(new RuntimeException("no connection to peer"))
       }
 
-    case Terminated(actor) =>
-      peers.collectFirst {
-        case (remoteNodeId, peer) if peer == actor =>
-          log.debug(s"$actor is dead, removing from peers")
-          nodeParams.peersDb.removePeer(remoteNodeId)
-          context become main(peers - remoteNodeId)
-      }
-
     case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _, _) =>
       // if this is an incoming connection, we might not yet have created the peer
-      val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
+      val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward auth
-      context become main(peers + (remoteNodeId -> peer))
 
-    case r: Rebroadcast => peers.values.foreach(_ forward r)
+    case r: Rebroadcast => context.children.foreach(_ forward r)
 
-    case 'peers => sender ! peers
+    case 'peers => sender ! context.children
 
   }
 
+  def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
+
+  def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
+
   /**
     *
-    * @param peers
     * @param remoteNodeId
     * @param previousKnownAddress only to be set if we know for sure that this ip worked in the past
     * @param offlineChannels
     * @return
     */
-  def createOrGetPeer(peers: Map[PublicKey, ActorRef], remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]) = {
-    peers.get(remoteNodeId) match {
+  def createOrGetPeer(remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]) = {
+    getPeer(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
-        log.info(s"creating new peer current=${peers.size}")
-        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet), name = s"peer-$remoteNodeId")
+        log.info(s"creating new peer current=${context.children.size}")
+        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet), name = peerActorName(remoteNodeId))
         peer ! Peer.Init(previousKnownAddress, offlineChannels)
-        context watch (peer)
         peer
     }
   }

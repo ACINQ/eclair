@@ -162,7 +162,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
     val mockService = new MockService(defaultMockKit.copy(
       switchboard = system.actorOf(Props(new {} with MockActor {
         override def receive = {
-          case 'peers => sender() ! Map(Alice.nodeParams.nodeId -> mockAlicePeer, Bob.nodeParams.nodeId -> mockBobPeer)
+          case 'peers => sender() ! List(mockAlicePeer, mockBobPeer)
         }
       }))
     ))
