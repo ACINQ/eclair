@@ -501,8 +501,6 @@ class TestVectorsSpec extends FunSuite with Logging {
 
     val (commitTx, htlcTxs) = run(spec)
 
-    val rawHtlcTxs = htlcTxs.map(htlcTx => Transaction.write(htlcTx.tx).toString)
-
     assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
     assert(commitTx.tx.txOut.length == 5)
 
