@@ -18,7 +18,7 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{PublicKey, ripemd160}
 import fr.acinq.bitcoin.Script._
-import fr.acinq.bitcoin.{BinaryData, LexicographicalOrdering, LockTimeThreshold, OP_0, OP_1, OP_1NEGATE, OP_2, OP_2DROP, OP_ADD, OP_CHECKLOCKTIMEVERIFY, OP_CHECKMULTISIG, OP_CHECKSEQUENCEVERIFY, OP_CHECKSIG, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHDATA, OP_SIZE, OP_SWAP, Satoshi, Script, ScriptElt, ScriptWitness, Transaction, TxIn}
+import fr.acinq.bitcoin.{BinaryData, LexicographicalOrdering, LockTimeThreshold, OP_0, OP_1, OP_10, OP_1NEGATE, OP_2, OP_2DROP, OP_ADD, OP_CHECKLOCKTIMEVERIFY, OP_CHECKMULTISIG, OP_CHECKSEQUENCEVERIFY, OP_CHECKSIG, OP_DEPTH, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHDATA, OP_SIZE, OP_SWAP, Satoshi, Script, ScriptElt, ScriptWitness, Transaction, TxIn}
 
 /**
   * Created by PM on 02/12/2016.
@@ -246,6 +246,20 @@ object Scripts {
             OP_DROP :: encodeNumber(lockTime) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
             OP_CHECKSIG ::
         OP_ENDIF ::
+    OP_ENDIF :: Nil
+    // @formatter:on
+  }
+
+  /**
+    * Use with `option_simplified_commitment`
+    */
+  def pushMeSimplified(pubkey: PublicKey): List[ScriptElt] = {
+    // @formatter:off
+    OP_DEPTH ::
+    OP_IF ::
+      OP_PUSHDATA(pubkey) :: OP_CHECKSIG ::
+    OP_ELSE ::
+      OP_10 :: OP_CHECKSEQUENCEVERIFY ::
     OP_ENDIF :: Nil
     // @formatter:on
   }
