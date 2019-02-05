@@ -815,7 +815,10 @@ object Router {
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes).toList match {
       case Nil => throw RouteNotFound
       case route :: Nil if route.path.isEmpty => throw RouteNotFound
-      case foundRoutes => foundRoutes
+      case routes => routes.find(_.path.size == 1) match {
+        case Some(directRoute) => directRoute :: Nil
+        case _ => routes
+      }
     }
 
     // minimum cost
