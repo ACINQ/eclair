@@ -288,7 +288,6 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         * download this header chunk.
         * We don't have this header because it's most likely older than our current checkpoint, downloading the whole header
         * chunk (2016 headers) is quick and they're easy to verify.
-        * @param height header height
         */
       def downloadHeadersIfMissing(height: Int): Unit = {
         if (data.blockchain.getHeader(height).orElse(params.walletDb.getHeader(height)).isEmpty) {
