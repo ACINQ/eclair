@@ -82,6 +82,7 @@ case class NodeParams(keyManager: KeyManager,
                       maxPendingPaymentRequests: Int,
                       maxPaymentFee: Double,
                       minFundingSatoshis: Long,
+                      randomizeRouteSelection: Boolean,
                       socksProxy_opt: Option[Socks5ProxyParams]) {
 
   val privateKey = keyManager.nodeKey.privateKey
@@ -230,7 +231,7 @@ object NodeParams {
       paymentsDb = paymentsDb,
       auditDb = auditDb,
       revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
-      routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
+      routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
       pingDisconnect = config.getBoolean("ping-disconnect"),
@@ -239,12 +240,13 @@ object NodeParams {
       autoReconnect = config.getBoolean("auto-reconnect"),
       chainHash = chainHash,
       channelFlags = config.getInt("channel-flags").toByte,
-      channelExcludeDuration = FiniteDuration(config.getDuration("channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
+      channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
       watcherType = watcherType,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"),
       maxPaymentFee = config.getDouble("max-payment-fee"),
       minFundingSatoshis = config.getLong("min-funding-satoshis"),
+      randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
       socksProxy_opt = socksProxy_opt
     )
   }

@@ -87,6 +87,7 @@ object TestConstants {
       maxPendingPaymentRequests = 10000000,
       maxPaymentFee = 0.03,
       minFundingSatoshis = 1000L,
+      randomizeRouteSelection = true,
       socksProxy_opt = None)
 
     def channelParams = Peer.makeChannelParams(
@@ -147,6 +148,7 @@ object TestConstants {
       maxPendingPaymentRequests = 10000000,
       maxPaymentFee = 0.03,
       minFundingSatoshis = 1000L,
+      randomizeRouteSelection = true,
       socksProxy_opt = None)
 
     def channelParams = Peer.makeChannelParams(
