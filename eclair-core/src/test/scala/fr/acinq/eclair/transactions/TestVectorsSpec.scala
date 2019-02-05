@@ -182,6 +182,7 @@ class TestVectorsSpec extends FunSuite with Logging {
 
     val commitTx = {
       val tx = Transactions.makeCommitTx(
+        isSimplifiedCommitment = false,
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,
@@ -196,7 +197,7 @@ class TestVectorsSpec extends FunSuite with Logging {
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
-    val baseFee = Transactions.commitTxFee(Local.dustLimit, spec)
+    val baseFee = Transactions.commitTxFee(Local.dustLimit, spec, simplifiedCommitment = false)
     logger.info(s"# base commitment transaction fee = ${baseFee.toLong}")
     val actualFee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
     logger.info(s"# actual commitment transaction fee = ${actualFee.toLong}")
@@ -212,6 +213,7 @@ class TestVectorsSpec extends FunSuite with Logging {
 
     {
       val tx = Transactions.makeCommitTx(
+        isSimplifiedCommitment = false,
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,

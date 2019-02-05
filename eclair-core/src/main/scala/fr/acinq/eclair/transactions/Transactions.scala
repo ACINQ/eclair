@@ -93,8 +93,11 @@ object Transactions {
     * these values are defined in the RFC
     */
   val commitWeight = 724
+  val simplifiedCommitWeight = 1116
   val htlcTimeoutWeight = 663
   val htlcSuccessWeight = 703
+  val simplifiedFeerateKw = 253
+  val pushMeValue = Satoshi(1000)
 
   /**
     * these values specific to us and used to estimate fees
@@ -132,11 +135,11 @@ object Transactions {
       .toSeq
   }
 
-  def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = {
+  def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec, simplifiedCommitment: Boolean): Satoshi = {
     val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec)
     val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec)
-    val weight = commitWeight + 172 * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
-    weight2fee(spec.feeratePerKw, weight)
+    val weight = (if(simplifiedCommitment) simplifiedCommitWeight else commitWeight) + 172 * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
+    weight2fee(if(simplifiedCommitment) simplifiedFeerateKw else spec.feeratePerKw, weight)
   }
 
   /**
@@ -185,13 +188,14 @@ object Transactions {
 
   def decodeTxNumber(sequence: Long, locktime: Long): Long = ((sequence & 0xffffffL) << 24) + (locktime & 0xffffffL)
 
-  def makeCommitTx(commitTxInput: InputInfo, commitTxNumber: Long, localPaymentBasePoint: Point, remotePaymentBasePoint: Point, localIsFunder: Boolean, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, remotePaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec): CommitTx = {
-    val commitFee = commitTxFee(localDustLimit, spec)
+  def makeCommitTx(isSimplifiedCommitment: Boolean, commitTxInput: InputInfo, commitTxNumber: Long, localPaymentBasePoint: Point, remotePaymentBasePoint: Point, localIsFunder: Boolean, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, remotePaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec): CommitTx = {
+    val commitFee = commitTxFee(localDustLimit, spec, isSimplifiedCommitment)
+    val pushMeValueTotal = if(isSimplifiedCommitment) pushMeValue * 2 else Satoshi(0) // funder pays the total amount of pushme outputs
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
-      (millisatoshi2satoshi(MilliSatoshi(spec.toLocalMsat)) - commitFee, millisatoshi2satoshi(MilliSatoshi(spec.toRemoteMsat)))
+      (millisatoshi2satoshi(MilliSatoshi(spec.toLocalMsat)) - commitFee - pushMeValueTotal, millisatoshi2satoshi(MilliSatoshi(spec.toRemoteMsat)))
     } else {
-      (millisatoshi2satoshi(MilliSatoshi(spec.toLocalMsat)), millisatoshi2satoshi(MilliSatoshi(spec.toRemoteMsat)) - commitFee)
+      (millisatoshi2satoshi(MilliSatoshi(spec.toLocalMsat)), millisatoshi2satoshi(MilliSatoshi(spec.toRemoteMsat)) - commitFee - pushMeValueTotal)
     } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
     val toLocalDelayedOutput_opt = if (toLocalAmount >= localDustLimit) Some(TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)))) else None
@@ -202,13 +206,16 @@ object Transactions {
     val htlcReceivedOutputs = trimReceivedHtlcs(localDustLimit, spec)
       .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash), htlc.add.cltvExpiry))))
 
+    val toLocalPushMe_opt = if(isSimplifiedCommitment && toLocalDelayedOutput_opt.isDefined) Some(TxOut(pushMeValue, Scripts.pushMeSimplified(localDelayedPaymentPubkey))) else None
+    val toRemotePushMe_opt = if(isSimplifiedCommitment && toRemoteOutput_opt.isDefined) Some(TxOut(pushMeValue, Scripts.pushMeSimplified(remotePaymentPubkey))) else None
+
     val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, locktime) = encodeTxNumber(txnumber)
 
     val tx = Transaction(
       version = 2,
       txIn = TxIn(commitTxInput.outPoint, Array.emptyByteArray, sequence = sequence) :: Nil,
-      txOut = toLocalDelayedOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ htlcOfferedOutputs ++ htlcReceivedOutputs,
+      txOut = toLocalDelayedOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ htlcOfferedOutputs ++ htlcReceivedOutputs ++ toLocalPushMe_opt.toSeq ++ toRemotePushMe_opt.toSeq,
       lockTime = locktime)
     CommitTx(commitTxInput, LexicographicalOrdering.sort(tx))
   }

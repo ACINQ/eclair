@@ -68,8 +68,10 @@ class TransactionsSpec extends FunSuite with Logging {
       DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(800000).amount, Hash.Zeroes, 551, BinaryData.empty))
     )
     val spec = CommitmentSpec(htlcs, feeratePerKw = 5000, toLocalMsat = 0, toRemoteMsat = 0)
-    val fee = Transactions.commitTxFee(Satoshi(546), spec)
+    val fee = Transactions.commitTxFee(Satoshi(546), spec, simplifiedCommitment = false)
     assert(fee == Satoshi(5340))
+
+    //TODO add case for simplified commitment
   }
 
   test("check pre-computed transaction weights") {
@@ -203,7 +205,7 @@ class TransactionsSpec extends FunSuite with Logging {
 
     val commitTxNumber = 0x404142434445L
     val commitTx = {
-      val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
+      val txinfo = makeCommitTx(isSimplifiedCommitment = false, commitInput, commitTxNumber, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
       val localSig = Transactions.sign(txinfo, localPaymentPriv)
       val remoteSig = Transactions.sign(txinfo, remotePaymentPriv)
       Transactions.addSigs(txinfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
@@ -313,11 +315,6 @@ class TransactionsSpec extends FunSuite with Logging {
 
   }
 
-  def checkSuccessOrFailTest[T](input: Try[T]) = input match {
-    case Success(_) => ()
-    case Failure(t) => fail(t)
-  }
-
   def htlc(direction: Direction, amount: Satoshi): DirectedHtlc =
     DirectedHtlc(direction, UpdateAddHtlc("00" * 32, 0, amount.amount * 1000, "00" * 32, 144, ""))
 
@@ -360,7 +357,7 @@ class TransactionsSpec extends FunSuite with Logging {
 
     tests.foreach(test => {
       logger.info(s"running BOLT 2 test: '${test.name}'")
-      val fee = commitTxFee(test.dustLimit, test.spec)
+      val fee = commitTxFee(test.dustLimit, test.spec, simplifiedCommitment = false)
       assert(fee === test.expectedFee)
     })
   }
