@@ -2019,7 +2019,3 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   initialize()
 
 }
-
-
-
-
