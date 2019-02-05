@@ -1303,14 +1303,18 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       forwarder ! r
 
       val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).getOrElse(Sphinx zeroes 32)
-      val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(d.commitments.localParams.channelKeyPath, d.commitments.localCommit.index)
+      val myCurrentPerCommitmentPoint = if(Helpers.isSimplifiedCommitment(d.commitments.localParams)) {
+        None
+      } else {
+        Some(keyManager.commitmentPoint(d.commitments.localParams.channelKeyPath, d.commitments.localCommit.index))
+      }
 
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
         nextLocalCommitmentNumber = d.commitments.localCommit.index + 1,
         nextRemoteRevocationNumber = d.commitments.remoteCommit.index,
         yourLastPerCommitmentSecret = Some(Scalar(yourLastPerCommitmentSecret)),
-        myCurrentPerCommitmentPoint = Some(myCurrentPerCommitmentPoint)
+        myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
       )
 
       // we update local/remote connection-local global/local features, we don't persist it right now
