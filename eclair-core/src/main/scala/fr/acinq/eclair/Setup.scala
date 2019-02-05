@@ -47,6 +47,7 @@ import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
+import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
 import fr.acinq.eclair.tor.{Controller, OnionAddress, TorProtocolHandler}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
@@ -306,8 +307,13 @@ class Setup(datadir: File,
   private def initTor(): Option[InetSocketAddress] = {
     if (config.getBoolean("tor.enabled")) {
       val promiseTorAddress = Promise[OnionAddress]()
+      val auth = config.getString("tor.auth") match {
+        case "password" => TorProtocolHandler.Password(config.getString("tor.password"))
+        case "safecookie" => TorProtocolHandler.SafeCookie()
+      }
       val protocolHandlerProps = TorProtocolHandler.props(
-        password = config.getString("tor.password"),
+        version = OnionServiceVersion(config.getString("tor.protocol")),
+        authentication = auth,
         privateKeyPath = new File(datadir, config.getString("tor.private-key-file")).toPath,
         virtualPort = config.getInt("server.port"),
         onionAdded = Some(promiseTorAddress))
