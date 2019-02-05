@@ -206,8 +206,8 @@ object Transactions {
     val htlcReceivedOutputs = trimReceivedHtlcs(localDustLimit, spec)
       .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash), htlc.add.cltvExpiry))))
 
-    val toLocalPushMe_opt = if(isSimplifiedCommitment && toLocalDelayedOutput_opt.isDefined) Some(TxOut(pushMeValue, Scripts.pushMeSimplified(localDelayedPaymentPubkey))) else None
-    val toRemotePushMe_opt = if(isSimplifiedCommitment && toRemoteOutput_opt.isDefined) Some(TxOut(pushMeValue, Scripts.pushMeSimplified(remotePaymentPubkey))) else None
+    val toLocalPushMe_opt = if(isSimplifiedCommitment && toLocalDelayedOutput_opt.isDefined) Some(TxOut(pushMeValue, pay2wsh(pushMeSimplified(localDelayedPaymentPubkey)))) else None
+    val toRemotePushMe_opt = if(isSimplifiedCommitment && toRemoteOutput_opt.isDefined) Some(TxOut(pushMeValue, pay2wsh(pushMeSimplified(remotePaymentPubkey)))) else None
 
     val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, locktime) = encodeTxNumber(txnumber)
