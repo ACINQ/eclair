@@ -90,17 +90,9 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
   val channelOpenFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
 
-  def close() = {
-    statusListeners.map(_ ! ElectrumDisconnected)
-    Option(context).foreach(ctx => {
-      statusListeners.map(_ ! ElectrumDisconnected)
-      ctx stop self
-    })
-  }
-
   def errorHandler(t: Throwable) = {
     log.info("server={} connection error (reason={})", serverAddress, t.getMessage)
-    close()
+    self ! Close
   }
 
   channelOpenFuture.addListeners(new ChannelFutureListener {
@@ -114,7 +106,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
               errorHandler(future.cause())
             } else {
               log.info("server={} channel closed: {}", serverAddress, future.channel())
-              close()
+              self ! Close
             }
           }
         })
@@ -208,7 +200,6 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   val headerSubscriptions = collection.mutable.HashSet.empty[ActorRef]
   val version = ServerVersion(CLIENT_NAME, PROTOCOL_VERSION)
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
-  val keepHeaders = 100
 
   var reqId = 0
 
@@ -226,6 +217,10 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       case RemoveStatusListener(actor) => statusListeners -= actor
 
       case PingResponse => ()
+
+      case Close =>
+        statusListeners.map(_ ! ElectrumDisconnected)
+        context.stop(self)
 
       case _ => log.warning("server={} unhandled message {}", serverAddress, message)
     }
@@ -276,7 +271,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
           context become waitingForTip(ctx)
         case ServerError(request, error) =>
           log.error("server={} sent error={} while processing request={}, disconnecting", serverAddress, error, request)
-          close()
+          self ! Close
       }
 
     case AddStatusListener(actor) => statusListeners += actor
@@ -459,6 +454,8 @@ object ElectrumClient {
     case object STRICT extends SSL
     case object LOOSE extends SSL
   }
+
+  case object Close
 
   // @formatter:on
 
