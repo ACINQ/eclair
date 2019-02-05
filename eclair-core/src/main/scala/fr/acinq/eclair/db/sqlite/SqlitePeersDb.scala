@@ -16,14 +16,12 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.net.InetSocketAddress
 import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.PeersDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
-import fr.acinq.eclair.tor.OnionAddress
 import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
 
@@ -37,8 +35,7 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
   }
 
-  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: InetSocketAddress): Unit = {
-    val nodeaddress = NodeAddress(address)
+  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeaddress: NodeAddress): Unit = {
     val data = LightningMessageCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
     using(sqlite.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
       update.setBytes(1, data)
@@ -60,19 +57,13 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb {
     }
   }
 
-  override def listPeers(): Map[PublicKey, InetSocketAddress] = {
+  override def listPeers(): Map[PublicKey, NodeAddress] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT node_id, data FROM peers")
-      var m: Map[PublicKey, InetSocketAddress] = Map()
+      var m: Map[PublicKey, NodeAddress] = Map()
       while (rs.next()) {
         val nodeid = PublicKey(rs.getBytes("node_id"))
-        val nodeaddress = LightningMessageCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value match {
-          case IPv4(ipv4, port) => new InetSocketAddress(ipv4, port)
-          case IPv6(ipv6, port) => new InetSocketAddress(ipv6, port)
-          case Tor2(tor2, port) => OnionAddress.fromParts(tor2, port).toInetSocketAddress
-          case Tor3(tor3, port) => OnionAddress.fromParts(tor3, port).toInetSocketAddress
-          case _ => ???
-        }
+        val nodeaddress = LightningMessageCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
         m += (nodeid -> nodeaddress)
       }
       m

@@ -22,8 +22,7 @@ import java.sql.DriverManager
 import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.tor.OnionAddressV2
-import fr.acinq.eclair.wire.Color
+import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
 import fr.acinq.eclair.{ShortChannelId, randomKey}
 import org.scalatest.FunSuite
 import org.sqlite.SQLiteException
@@ -43,10 +42,10 @@ class SqliteNetworkDbSpec extends FunSuite {
     val sqlite = inmem
     val db = new SqliteNetworkDb(sqlite)
 
-    val node_1 = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
-    val node_2 = Announcements.makeNodeAnnouncement(randomKey, "node-bob", Color(100.toByte, 200.toByte, 300.toByte), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
-    val node_3 = Announcements.makeNodeAnnouncement(randomKey, "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
-    val node_4 = Announcements.makeNodeAnnouncement(randomKey, "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), OnionAddressV2("aaaqeayeaudaocaj", 42000).toInetSocketAddress :: Nil)
+    val node_1 = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000)) :: Nil)
+    val node_2 = Announcements.makeNodeAnnouncement(randomKey, "node-bob", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000)) :: Nil)
+    val node_3 = Announcements.makeNodeAnnouncement(randomKey, "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000)) :: Nil)
+    val node_4 = Announcements.makeNodeAnnouncement(randomKey, "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), Tor2("aaaqeayeaudaocaj", 42000) :: Nil)
 
     assert(db.listNodes().toSet === Set.empty)
     db.addNode(node_1)
@@ -60,7 +59,7 @@ class SqliteNetworkDbSpec extends FunSuite {
     assert(db.listNodes().toSet === Set(node_1, node_3, node_4))
     db.updateNode(node_1)
 
-    assert(node_4.socketAddresses == List(new InetSocketAddress("aaaqeayeaudaocaj.onion", 42000)))
+    assert(node_4.addresses == List(Tor2("aaaqeayeaudaocaj", 42000)))
   }
 
   test("add/remove/list channels and channel_updates") {

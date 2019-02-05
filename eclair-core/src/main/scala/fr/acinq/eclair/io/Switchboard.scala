@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.io
 
-import java.net.InetSocketAddress
-
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
@@ -27,7 +25,7 @@ import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
-import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{NodeAddress, TemporaryNodeFailure, UpdateAddHtlc}
 import grizzled.slf4j.Logging
 
 import scala.util.Success
@@ -94,7 +92,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
           context become main(peers - remoteNodeId)
       }
 
-    case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _, _) =>
+    case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _) =>
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward auth
@@ -114,7 +112,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     * @param offlineChannels
     * @return
     */
-  def createOrGetPeer(peers: Map[PublicKey, ActorRef], remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]) = {
+  def createOrGetPeer(peers: Map[PublicKey, ActorRef], remoteNodeId: PublicKey, previousKnownAddress: Option[NodeAddress], offlineChannels: Set[HasCommitments]) = {
     peers.get(remoteNodeId) match {
       case Some(peer) => peer
       case None =>

@@ -8,6 +8,7 @@ import akka.util.ByteString
 import fr.acinq.bitcoin.toHexString
 import fr.acinq.eclair.randomBytes
 import fr.acinq.eclair.tor.Socks5Connection.{Credentials, Socks5Connect}
+import fr.acinq.eclair.wire._
 
 /**
   * Simple socks 5 client. It should be given a new connection, and will
@@ -128,9 +129,9 @@ class Socks5Connection(connection: ActorRef, credentials_opt: Option[Credentials
 object Socks5Connection {
   def props(tcpConnection: ActorRef, credentials_opt: Option[Credentials], command: Socks5Connect): Props = Props(new Socks5Connection(tcpConnection, credentials_opt, command))
 
-  case class Socks5Connected(address: InetSocketAddress) extends Tcp.Event
-
   case class Socks5Connect(address: InetSocketAddress) extends Tcp.Command
+
+  case class Socks5Connected(address: InetSocketAddress) extends Tcp.Event
 
   case class Socks5Error(message: String) extends RuntimeException(message)
 
@@ -205,11 +206,12 @@ case class Socks5ProxyParams(address: InetSocketAddress, credentials_opt: Option
 
 object Socks5ProxyParams {
 
-  def proxyAddress(remoteAddress: InetSocketAddress, proxyParams: Socks5ProxyParams): Option[InetSocketAddress] =
-    proxyParams.address.getAddress match {
-      case _ if remoteAddress.getHostString.endsWith(".onion") && proxyParams.useForTor => Some(proxyParams.address)
-      case _: Inet4Address if proxyParams.useForIPv4 => Some(proxyParams.address)
-      case _: Inet6Address if proxyParams.useForIPv6 => Some(proxyParams.address)
+  def proxyAddress(remoteAddress: NodeAddress, proxyParams: Socks5ProxyParams): Option[InetSocketAddress] =
+    remoteAddress match {
+      case _: IPv4 if proxyParams.useForIPv4 => Some(proxyParams.address)
+      case _: IPv6 if proxyParams.useForIPv6 => Some(proxyParams.address)
+      case _: Tor2 if proxyParams.useForTor => Some(proxyParams.address)
+      case _: Tor3 if proxyParams.useForTor => Some(proxyParams.address)
       case _ => None
     }
 

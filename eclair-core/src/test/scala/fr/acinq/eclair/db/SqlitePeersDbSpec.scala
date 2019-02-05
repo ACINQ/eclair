@@ -21,6 +21,7 @@ import java.sql.DriverManager
 
 import fr.acinq.eclair.db.sqlite.SqlitePeersDb
 import fr.acinq.eclair.randomKey
+import fr.acinq.eclair.wire.NodeAddress
 import org.scalatest.FunSuite
 
 
@@ -38,10 +39,10 @@ class SqlitePeersDbSpec extends FunSuite {
     val sqlite = inmem
     val db = new SqlitePeersDb(sqlite)
 
-    val peer_1 = (randomKey.publicKey, new InetSocketAddress(InetAddress.getLoopbackAddress, 1111))
-    val peer_1_bis = (peer_1._1, new InetSocketAddress(InetAddress.getLoopbackAddress, 1112))
-    val peer_2 = (randomKey.publicKey, new InetSocketAddress(InetAddress.getLoopbackAddress, 2222))
-    val peer_3 = (randomKey.publicKey, new InetSocketAddress(InetAddress.getLoopbackAddress, 3333))
+    val peer_1 = (randomKey.publicKey, NodeAddress(new InetSocketAddress(InetAddress.getLoopbackAddress, 1111)))
+    val peer_1_bis = (peer_1._1, NodeAddress(new InetSocketAddress(InetAddress.getLoopbackAddress, 1112)))
+    val peer_2 = (randomKey.publicKey, NodeAddress(new InetSocketAddress(InetAddress.getLoopbackAddress, 2222)))
+    val peer_3 = (randomKey.publicKey, NodeAddress(new InetSocketAddress(InetAddress.getLoopbackAddress, 3333)))
 
     assert(db.listPeers().toSet === Set.empty)
     db.addOrUpdatePeer(peer_1._1, peer_1._2)

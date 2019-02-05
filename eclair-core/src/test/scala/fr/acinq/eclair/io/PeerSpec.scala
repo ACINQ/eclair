@@ -9,10 +9,11 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.io.Authenticator.Outgoing
 import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements, SendPing}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
-import fr.acinq.eclair.wire.{Error, Ping, Pong}
+import fr.acinq.eclair.wire.{Error, NodeAddress, Ping, Pong}
 import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, wire}
 import org.scalatest.Outcome
 
@@ -45,7 +46,7 @@ class PeerSpec extends TestkitBaseClass {
     // let's simulate a connection
     val probe = TestProbe()
     probe.send(peer, Peer.Init(None, Set.empty))
-    authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, InetSocketAddress.createUnresolved("foo.bar", 42000), false, None))
+    authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, Outgoing(NodeAddress(new InetSocketAddress("1.2.3.4", 42000))), None))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
     transport.send(peer, wire.Init(Bob.nodeParams.globalFeatures, Bob.nodeParams.localFeatures))

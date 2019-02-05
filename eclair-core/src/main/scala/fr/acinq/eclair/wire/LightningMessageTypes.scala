@@ -20,9 +20,7 @@ import java.net.{Inet4Address, Inet6Address, InetSocketAddress}
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
-import fr.acinq.eclair.tor.{OnionAddress, OnionAddressV2, OnionAddressV3}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
-import scodec.bits.BitVector
 
 /**
   * Created by PM on 15/11/2016.
@@ -162,52 +160,38 @@ case class Color(r: Byte, g: Byte, b: Byte) {
 }
 
 // @formatter:off
-sealed trait NodeAddress {
-  def getHostString: String
-  def getPort: Int
-}
-case object NodeAddress {
-  def apply(inetSocketAddress: InetSocketAddress): NodeAddress =
-    OnionAddress.fromParts(inetSocketAddress.getHostString, inetSocketAddress.getPort) match {
-      case Some(OnionAddressV2(onionService, port)) => Tor2(BinaryData(OnionAddress.decodeHostname(onionService)), port)
-      case Some(OnionAddressV3(onionService, port)) => Tor3(BinaryData(OnionAddress.decodeHostname(onionService)), port)
-      case _ =>
-        inetSocketAddress.getAddress match {
-          case a: Inet4Address => IPv4(a, inetSocketAddress.getPort)
-          case a: Inet6Address => IPv6(a, inetSocketAddress.getPort)
-          case _ => throw new RuntimeException(s"Invalid socket address $inetSocketAddress")
-        }
-    }
-  def apply(onionAddress: OnionAddress): NodeAddress = {
-    onionAddress match {
-      case _: OnionAddressV2 => Tor2(BinaryData(onionAddress.decodedOnionService), onionAddress.getPort)
-      case _: OnionAddressV3 => Tor3(BinaryData(onionAddress.decodedOnionService), onionAddress.getPort)
+sealed trait NodeAddress { def socketAddress: InetSocketAddress }
+sealed trait OnionAddress extends NodeAddress
+object NodeAddress {
+  def apply(socketAddress: InetSocketAddress): NodeAddress = {
+    socketAddress match {
+      case _ if socketAddress.getHostString.endsWith(".onion") && socketAddress.getHostString.length == 22 => Tor2(socketAddress.getHostString.dropRight(6), socketAddress.getPort)
+      case _ if socketAddress.getHostString.endsWith(".onion") && socketAddress.getHostString.length == 62 => Tor3(socketAddress.getHostString.dropRight(6), socketAddress.getPort)
+      case _  => socketAddress.getAddress match {
+        case a: Inet4Address => IPv4(a, socketAddress.getPort)
+        case a: Inet6Address => IPv6(a, socketAddress.getPort)
+        case _ => throw new IllegalArgumentException(s"cannot convert $socketAddress to node address")
+      }
     }
   }
 }
-case object Padding extends NodeAddress {
-  override def getHostString: String = ""
-  override def getPort: Int = 0
-}
-case class IPv4(ipv4: Inet4Address, port: Int) extends NodeAddress {
-  override def getHostString: String = ipv4.getHostAddress
-  override def getPort: Int = port
-}
-case class IPv6(ipv6: Inet6Address, port: Int) extends NodeAddress {
-  override def getHostString: String = ipv6.getHostAddress
-  override def getPort: Int = port
-}
-case class Tor2(tor2: BinaryData, port: Int) extends NodeAddress {
-  require(tor2.size == 10)
-  override def getHostString: String = OnionAddress.hostString(tor2)
-  override def getPort: Int = port
-}
-case class Tor3(tor3: BinaryData, port: Int) extends NodeAddress {
-  require(tor3.size == 35)
-  override def getHostString: String = OnionAddress.hostString(tor3)
-  override def getPort: Int = port
-}
 // @formatter:on
+case class IPv4(ipv4: Inet4Address, port: Int) extends NodeAddress {
+  override def socketAddress = new InetSocketAddress(ipv4, port)
+}
+
+case class IPv6(ipv6: Inet6Address, port: Int) extends NodeAddress {
+  override def socketAddress = new InetSocketAddress(ipv6, port)
+}
+
+case class Tor2(tor2: String, port: Int) extends OnionAddress {
+  override def socketAddress = InetSocketAddress.createUnresolved(tor2 + ".onion", port)
+}
+
+case class Tor3(tor3: String, port: Int) extends OnionAddress {
+  override def socketAddress = InetSocketAddress.createUnresolved(tor3 + ".onion", port)
+}
+
 
 case class NodeAnnouncement(signature: BinaryData,
                             features: BinaryData,
@@ -215,14 +199,7 @@ case class NodeAnnouncement(signature: BinaryData,
                             nodeId: PublicKey,
                             rgbColor: Color,
                             alias: String,
-                            addresses: List[NodeAddress]) extends RoutingMessage with HasTimestamp {
-  def socketAddresses: List[InetSocketAddress] = addresses.collect {
-    case IPv4(a, port) => new InetSocketAddress(a, port)
-    case IPv6(a, port) => new InetSocketAddress(a, port)
-    case Tor2(a, port) => OnionAddress.fromParts(a, port).toInetSocketAddress
-    case Tor3(a, port) => OnionAddress.fromParts(a, port).toInetSocketAddress
-  }
-}
+                            addresses: List[NodeAddress]) extends RoutingMessage with HasTimestamp
 
 case class ChannelUpdate(signature: BinaryData,
                          chainHash: BinaryData,

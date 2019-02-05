@@ -1,5 +1,6 @@
 package fr.acinq.eclair.tor
 
+import java.net.InetSocketAddress
 import java.nio.file.attribute.PosixFilePermissions
 import java.nio.file.{Files, Path, Paths}
 import java.util
@@ -9,6 +10,7 @@ import akka.io.Tcp.Connected
 import akka.util.ByteString
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.tor.TorProtocolHandler.{Authentication, OnionServiceVersion}
+import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -34,14 +36,14 @@ class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
                          privateKeyPath: Path,
                          virtualPort: Int,
                          targetPorts: Seq[Int],
-                         onionAdded: Option[Promise[OnionAddress]]
+                         onionAdded: Option[Promise[NodeAddress]]
                         ) extends Actor with Stash with ActorLogging {
 
   import TorProtocolHandler._
 
   private var receiver: ActorRef = _
 
-  private var address: Option[OnionAddress] = None
+  private var address: Option[NodeAddress] = None
 
   override def receive: Receive = {
     case Connected(_, _) =>
@@ -99,8 +101,8 @@ class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
       if (ok(res)) {
         val serviceId = processOnionResponse(parseResponse(res))
         address = Some(onionServiceVersion match {
-          case V2 => OnionAddressV2(serviceId, virtualPort)
-          case V3 => OnionAddressV3(serviceId, virtualPort)
+          case V2 => Tor2(serviceId, virtualPort)
+          case V3 => Tor3(serviceId, virtualPort)
         })
         onionAdded.foreach(_.success(address.get))
         log.debug(s"Onion address: ${address.get}")
@@ -177,7 +179,7 @@ object TorProtocolHandler {
             privateKeyPath: Path,
             virtualPort: Int,
             targetPorts: Seq[Int] = Seq(),
-            onionAdded: Option[Promise[OnionAddress]] = None
+            onionAdded: Option[Promise[NodeAddress]] = None
            ): Props =
     Props(new TorProtocolHandler(version, authentication, privateKeyPath, virtualPort, targetPorts, onionAdded))
 

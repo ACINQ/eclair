@@ -9,7 +9,7 @@ import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
 import akka.util.ByteString
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.TestUtils
-import fr.acinq.eclair.wire.NodeAddress
+import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
 import org.scalatest._
 
 import scala.concurrent.duration._
@@ -36,7 +36,7 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
   }
 
   ignore("connect to real tor daemon") {
-    val promiseOnionAddress = Promise[OnionAddress]()
+    val promiseOnionAddress = Promise[NodeAddress]()
 
     val protocolHandlerProps = TorProtocolHandler.props(
       version = OnionServiceVersion("v2"),
@@ -49,13 +49,10 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
 
     val address = Await.result(promiseOnionAddress.future, 30 seconds)
     println(address)
-    println(address.onionService.length)
-    println((address.onionService + ".onion").length)
-    println(NodeAddress(address))
   }
 
   test("happy path v2") {
-    val promiseOnionAddress = Promise[OnionAddress]()
+    val promiseOnionAddress = Promise[NodeAddress]()
 
     val protocolHandler = TestActorRef(props(
       version = OnionServiceVersion("v2"),
@@ -86,18 +83,16 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
         "250 OK\r\n"
     )
     protocolHandler ! GetOnionAddress
-    expectMsg(Some(OnionAddressV2("z4zif3fy7fe7bpg3", 9999)))
+    expectMsg(Some(Tor2("z4zif3fy7fe7bpg3", 9999)))
 
     val address = Await.result(promiseOnionAddress.future, 3 seconds)
-    assert(address === OnionAddressV2("z4zif3fy7fe7bpg3", 9999))
-    assert(address.toOnion === "z4zif3fy7fe7bpg3.onion:9999")
-    assert(NodeAddress(address).toString === "Tor2(cf3282ecb8f949f0bcdb,9999)")
+    assert(address === Tor2("z4zif3fy7fe7bpg3", 9999))
 
     assert(readString(PkFilePath) === "RSA1024:private-key")
   }
 
   test("happy path v3") {
-    val promiseOnionAddress = Promise[OnionAddress]()
+    val promiseOnionAddress = Promise[NodeAddress]()
 
     val protocolHandler = TestActorRef(props(
       version = OnionServiceVersion("v3"),
@@ -129,12 +124,10 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
     )
 
     protocolHandler ! GetOnionAddress
-    expectMsg(Some(OnionAddressV3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 9999)))
+    expectMsg(Some(Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 9999)))
 
     val address = Await.result(promiseOnionAddress.future, 3 seconds)
-    assert(address === OnionAddressV3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 9999))
-    assert(address.toOnion === "mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd.onion:9999")
-    assert(NodeAddress(address).toString === "Tor3(6457a1ed0b38a73d56dc866accec93ca6af68bc316568874478dc9399cc1a0b3431b03,9999)")
+    assert(address === Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 9999))
 
     assert(readString(PkFilePath) === "ED25519-V3:private-key")
   }
@@ -150,7 +143,7 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
   }
 
   test("authentication method errors") {
-    val promiseOnionAddress = Promise[OnionAddress]()
+    val promiseOnionAddress = Promise[NodeAddress]()
 
     val protocolHandler = TestActorRef(props(
       version = OnionServiceVersion("v2"),
@@ -175,7 +168,7 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
   }
 
   test("invalid server hash") {
-    val promiseOnionAddress = Promise[OnionAddress]()
+    val promiseOnionAddress = Promise[NodeAddress]()
 
     Files.write(CookieFilePath, fr.acinq.eclair.randomBytes(32))
 
@@ -208,7 +201,7 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
 
 
   test("AUTHENTICATE failure") {
-    val promiseOnionAddress = Promise[OnionAddress]()
+    val promiseOnionAddress = Promise[NodeAddress]()
 
     Files.write(CookieFilePath, BinaryData(AuthCookie))
 
@@ -245,7 +238,7 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
   }
 
   test("ADD_ONION failure") {
-    val promiseOnionAddress = Promise[OnionAddress]()
+    val promiseOnionAddress = Promise[NodeAddress]()
 
     Files.write(CookieFilePath, BinaryData(AuthCookie))
 

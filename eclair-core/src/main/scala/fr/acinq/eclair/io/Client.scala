@@ -26,6 +26,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.io.Client.ConnectionFailed
 import fr.acinq.eclair.tor.Socks5Connection.{Socks5Connect, Socks5Connected}
 import fr.acinq.eclair.tor.{Socks5Connection, Socks5ProxyParams}
+import fr.acinq.eclair.wire.NodeAddress
 import fr.acinq.eclair.{Logs, NodeParams}
 
 import scala.concurrent.duration._
@@ -34,7 +35,7 @@ import scala.concurrent.duration._
   * Created by PM on 27/10/2015.
   *
   */
-class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]) extends Actor with DiagnosticActorLogging {
+class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: NodeAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]) extends Actor with DiagnosticActorLogging {
 
   import context.system
 
@@ -48,8 +49,9 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Ine
           log.info(s"connecting to SOCKS5 proxy ${str(proxyAddress)}")
           proxyAddress
         case None =>
-          log.info(s"connecting to ${str(remoteAddress)}")
-          remoteAddress
+          val peerAddress = remoteAddress.socketAddress
+          log.info(s"connecting to ${str(peerAddress)}")
+          peerAddress
       }
       IO(Tcp) ! Tcp.Connect(addressToConnect, timeout = Some(50 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
       context become connecting(addressToConnect)
@@ -68,20 +70,21 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Ine
       nodeParams.socksProxy_opt match {
         case Some(proxyParams) =>
           val proxyAddress = peerOrProxyAddress
+          val peerAddress = remoteAddress.socketAddress
           log.info(s"connected to proxy ${str(proxyAddress)}")
-          val proxy = context.actorOf(Socks5Connection.props(sender(), Socks5ProxyParams.proxyCredentials(proxyParams), Socks5Connect(remoteAddress)))
+          val proxy = context.actorOf(Socks5Connection.props(sender(), Socks5ProxyParams.proxyCredentials(proxyParams), Socks5Connect(peerAddress)))
           context become {
             case Tcp.CommandFailed(_: Socks5Connect) =>
-              log.info(s"connection failed to ${str(remoteAddress)} via SOCKS5 ${str(proxyAddress)}")
+              log.info(s"connection failed to ${str(peerAddress)} via SOCKS5 ${str(proxyAddress)}")
               origin_opt.map(_ ! Status.Failure(ConnectionFailed(remoteAddress)))
               context stop self
             case Socks5Connected(_) =>
-              log.info(s"connected to ${str(remoteAddress)} via SOCKS5 proxy ${str(proxyAddress)}")
+              log.info(s"connected to ${str(peerAddress)} via SOCKS5 proxy ${str(proxyAddress)}")
               auth(proxy)
               context become connected(proxy)
           }
         case None =>
-          log.info(s"connected to ${str(remoteAddress)}")
+          log.info(s"connected to ${str(to)}")
           auth(connection)
           context become connected(connection)
       }
@@ -103,12 +106,12 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Ine
 
   private def str(address: InetSocketAddress): String = s"${address.getHostString}:${address.getPort}"
 
-  def auth(connection: ActorRef) = authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = Some(remoteNodeId), address = remoteAddress, origin_opt = origin_opt)
+  def auth(connection: ActorRef) = authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = Some(remoteNodeId), address = Authenticator.Outgoing(remoteAddress), origin_opt = origin_opt)
 }
 
 object Client {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin_opt))
+  def props(nodeParams: NodeParams, authenticator: ActorRef, address: NodeAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin_opt))
 
-  case class ConnectionFailed(address: InetSocketAddress) extends RuntimeException(s"connection failed to $address")
+  case class ConnectionFailed(address: NodeAddress) extends RuntimeException(s"connection failed to $address")
 }

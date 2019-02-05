@@ -102,16 +102,16 @@ class LightningMessageCodecsSpec extends FunSuite {
       assert(nodeaddr === nodeaddr2)
     }
     {
-      val nodeaddr = Tor2(Array.tabulate(10)(_.toByte), 4231)
+      val nodeaddr = Tor2("z4zif3fy7fe7bpg3", 4231)
       val bin = nodeaddress.encode(nodeaddr).require
-      assert(bin === hex"03 00 01 02 03 04 05 06 07 08 09 10 87".toBitVector)
+      assert(bin === hex"03 cf3282ecb8f949f0bcdb 1087".toBitVector)
       val nodeaddr2 = nodeaddress.decode(bin).require.value
       assert(nodeaddr === nodeaddr2)
     }
     {
-      val nodeaddr = Tor3(Array.tabulate(35)(_.toByte), 4231)
+      val nodeaddr = Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 4231)
       val bin = nodeaddress.encode(nodeaddr).require
-      assert(bin === hex"04 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 10 87".toBitVector)
+      assert(bin === hex"04 6457a1ed0b38a73d56dc866accec93ca6af68bc316568874478dc9399cc1a0b3431b03 1087".toBitVector)
       val nodeaddr2 = nodeaddress.decode(bin).require.value
       assert(nodeaddr === nodeaddr2)
     }

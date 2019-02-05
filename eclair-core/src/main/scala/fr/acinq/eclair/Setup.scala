@@ -48,7 +48,8 @@ import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
-import fr.acinq.eclair.tor.{Controller, OnionAddress, TorProtocolHandler}
+import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
+import fr.acinq.eclair.wire.NodeAddress
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 
@@ -278,7 +279,7 @@ class Setup(datadir: File,
               port = config.getInt("server.port"),
               chainHash = nodeParams.chainHash,
               blockHeight = Globals.blockCount.intValue(),
-              publicAddresses = nodeParams.publicAddresses.map(_.getHostString)))
+              publicAddresses = nodeParams.publicAddresses.map(_.socketAddress.getHostString)))
 
           override def appKit: Kit = kit
 
@@ -304,9 +305,9 @@ class Setup(datadir: File,
       throw e
   }
 
-  private def initTor(): Option[InetSocketAddress] = {
+  private def initTor(): Option[NodeAddress] = {
     if (config.getBoolean("tor.enabled")) {
-      val promiseTorAddress = Promise[OnionAddress]()
+      val promiseTorAddress = Promise[NodeAddress]()
       val auth = config.getString("tor.auth") match {
         case "password" => TorProtocolHandler.Password(config.getString("tor.password"))
         case "safecookie" => TorProtocolHandler.SafeCookie()
@@ -323,8 +324,8 @@ class Setup(datadir: File,
         protocolHandlerProps = protocolHandlerProps), "tor", SupervisorStrategy.Stop))
 
       val torAddress = await(promiseTorAddress.future, 30 seconds, "tor did not respond after 30 seconds")
-      logger.info(s"Tor address ${torAddress.toOnion}")
-      Some(torAddress.toInetSocketAddress)
+      logger.info(s"Tor address $torAddress")
+      Some(torAddress)
     } else {
       None
     }

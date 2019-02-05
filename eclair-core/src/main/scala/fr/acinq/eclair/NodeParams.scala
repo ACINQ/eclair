@@ -24,7 +24,6 @@ import java.util.concurrent.TimeUnit
 
 import com.google.common.net.InetAddresses
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.WatcherType
@@ -33,7 +32,7 @@ import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.wire.Color
+import fr.acinq.eclair.wire.{Color, NodeAddress}
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
@@ -44,7 +43,7 @@ import scala.concurrent.duration.FiniteDuration
 case class NodeParams(keyManager: KeyManager,
                       alias: String,
                       color: Color,
-                      publicAddresses: List[InetSocketAddress],
+                      publicAddresses: List[NodeAddress],
                       globalFeatures: BinaryData,
                       localFeatures: BinaryData,
                       overrideFeatures: Map[PublicKey, (BinaryData, BinaryData)],
@@ -131,7 +130,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, torAddressOpt: Option[InetSocketAddress]): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress]): NodeParams = {
 
     datadir.mkdirs()
 
@@ -197,13 +196,17 @@ object NodeParams {
       None
     }
 
+    val addresses = config.getStringList("server.public-ips")
+      .toList
+      .map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port")))
+      .map(NodeAddress(_)) ++ torAddress_opt
+
+
     NodeParams(
       keyManager = keyManager,
       alias = nodeAlias,
       color = Color(color.data(0), color.data(1), color.data(2)),
-      publicAddresses = config.getStringList("server.public-ips").toList
-        .map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port")))
-        ++ torAddressOpt.map(List(_)).getOrElse(List()),
+      publicAddresses = addresses,
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),
       overrideFeatures = overrideFeatures,

@@ -25,7 +25,7 @@ import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.wire.Color
+import fr.acinq.eclair.wire.{Color, NodeAddress}
 
 import scala.concurrent.duration._
 
@@ -48,7 +48,7 @@ object TestConstants {
       keyManager = keyManager,
       alias = "alice",
       color = Color(1, 2, 3),
-      publicAddresses = new InetSocketAddress("localhost", 9731) :: Nil,
+      publicAddresses = NodeAddress(new InetSocketAddress("localhost", 9731)) :: Nil,
       globalFeatures = "",
       localFeatures = "00",
       overrideFeatures = Map.empty,
@@ -108,7 +108,7 @@ object TestConstants {
       keyManager = keyManager,
       alias = "bob",
       color = Color(4, 5, 6),
-      publicAddresses = new InetSocketAddress("localhost", 9732) :: Nil,
+      publicAddresses = NodeAddress(new InetSocketAddress("localhost", 9732)) :: Nil,
       globalFeatures = "",
       localFeatures = "00", // no announcement
       overrideFeatures = Map.empty,
