@@ -24,7 +24,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, UInt64}
+import fr.acinq.eclair.{Features, Globals, UInt64}
 
 import scala.util.{Failure, Success}
 
@@ -71,8 +71,6 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
   def announceChannel: Boolean = (channelFlags & 0x01) != 0
-
-  def isSimplifiedCommitment: Boolean = (channelFlags & 0x02) != 0 // FIXME: the bit hasn't been chosen yet!
 
   def availableBalanceForSendMsat: Long = {
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)

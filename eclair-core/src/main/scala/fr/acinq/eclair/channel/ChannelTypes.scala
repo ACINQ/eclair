@@ -182,6 +182,11 @@ final case class DATA_CLOSING(commitments: Commitments,
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
+trait ParamsWithFeatures {
+  val globalFeatures: BinaryData
+  val localFeatures: BinaryData
+}
+
 final case class LocalParams(nodeId: PublicKey,
                              channelKeyPath: DeterministicWallet.KeyPath,
                              dustLimitSatoshis: Long,
@@ -193,7 +198,7 @@ final case class LocalParams(nodeId: PublicKey,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: BinaryData,
                              globalFeatures: BinaryData,
-                             localFeatures: BinaryData)
+                             localFeatures: BinaryData) extends ParamsWithFeatures
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimitSatoshis: Long,
@@ -208,7 +213,7 @@ final case class RemoteParams(nodeId: PublicKey,
                               delayedPaymentBasepoint: Point,
                               htlcBasepoint: Point,
                               globalFeatures: BinaryData,
-                              localFeatures: BinaryData)
+                              localFeatures: BinaryData) extends ParamsWithFeatures
 
 object ChannelFlags {
   val AnnounceChannel = 0x01.toByte

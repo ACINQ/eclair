@@ -27,8 +27,7 @@ import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, NodeParams, ShortChannelId, addressToPublicKeyScript}
-
+import fr.acinq.eclair._
 import scala.concurrent.Await
 import scala.util.{Failure, Success, Try}
 
@@ -313,6 +312,8 @@ object Helpers {
         false
     }
   }
+
+  def isSimplifiedCommitment[T <: ParamsWithFeatures](params: T) = Features.hasFeature(params.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_OPTIONAL)
 
 
   object Closing {
