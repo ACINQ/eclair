@@ -489,12 +489,12 @@ class TestVectorsSpec extends FunSuite with Logging {
   test("commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage") {
     val name = "commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage"
 
-    val preimage = paymentPreimages.head
+    val preimage = BinaryData("0505050505050505050505050505050505050505050505050505050505050505")
 
     val someHtlc = Seq(
-      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Crypto.sha256(preimage), 500, BinaryData.empty)),
-      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(2000000).amount, Crypto.sha256(preimage), 502, BinaryData.empty)),
-      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(2000000).amount, Crypto.sha256(preimage), 503, BinaryData.empty))
+      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Crypto.sha256(paymentPreimages(0)), 500, BinaryData.empty)),
+      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(5000000).amount, Crypto.sha256(preimage), 505, BinaryData.empty)),
+      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(5000000).amount, Crypto.sha256(preimage), 506, BinaryData.empty))
     )
 
     val spec = CommitmentSpec(htlcs = someHtlc.toSet, feeratePerKw = 253, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
@@ -504,13 +504,9 @@ class TestVectorsSpec extends FunSuite with Logging {
     assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
     assert(commitTx.tx.txOut.length == 5)
 
-    val expectedHtlcsTx = List(
-      Transaction.read(results(name)("output htlc_success_tx 0")),
-      Transaction.read(results(name)("output htlc_timeout_tx 1")),
-      Transaction.read(results(name)("output htlc_timeout_tx 2"))
-    )
-
     assert(htlcTxs.size == 3) // one htlc-success-tx + two htlc-timeout-tx
-    assert(htlcTxs.map(_.tx) == expectedHtlcsTx)
+    assert(htlcTxs.map(_.tx).apply(0) == Transaction.read(results(name)("output htlc_success_tx 0")))
+    assert(htlcTxs.map(_.tx).apply(1) == Transaction.read(results(name)("output htlc_timeout_tx 1")))
+    assert(htlcTxs.map(_.tx).apply(2) == Transaction.read(results(name)("output htlc_timeout_tx 2")))
   }
 }
