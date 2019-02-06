@@ -25,6 +25,7 @@ import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.Color
 
 import scala.concurrent.duration._
@@ -72,7 +73,6 @@ object TestConstants {
       paymentsDb = new SqlitePaymentsDb(sqlite),
       auditDb = new SqliteAuditDb(sqlite),
       revocationTimeout = 20 seconds,
-      routerBroadcastInterval = 60 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
@@ -81,13 +81,20 @@ object TestConstants {
       autoReconnect = false,
       chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
-      channelExcludeDuration = 5 seconds,
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000,
       maxPaymentFee = 0.03,
       minFundingSatoshis = 1000L,
-      randomizeRouteSelection = true
+      routerConf = RouterConf(
+        randomizeRouteSelection = false,
+        channelExcludeDuration = 60 seconds,
+        routerBroadcastInterval = 5 seconds,
+        searchMaxFeeBaseMsat = 21000,
+        searchMaxFeePct = 0.03,
+        searchMaxCltv = 2016,
+        searchMaxRouteLength = 20
+      )
     )
 
     def channelParams = Peer.makeChannelParams(
@@ -133,7 +140,6 @@ object TestConstants {
       paymentsDb = new SqlitePaymentsDb(sqlite),
       auditDb = new SqliteAuditDb(sqlite),
       revocationTimeout = 20 seconds,
-      routerBroadcastInterval = 60 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
@@ -142,13 +148,21 @@ object TestConstants {
       autoReconnect = false,
       chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
-      channelExcludeDuration = 5 seconds,
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000,
       maxPaymentFee = 0.03,
       minFundingSatoshis = 1000L,
-      randomizeRouteSelection = true)
+      routerConf = RouterConf(
+        randomizeRouteSelection = false,
+        channelExcludeDuration = 60 seconds,
+        routerBroadcastInterval = 5 seconds,
+        searchMaxFeeBaseMsat = 21000,
+        searchMaxFeePct = 0.03,
+        searchMaxCltv = 2016,
+        searchMaxRouteLength = 20
+      )
+    )
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

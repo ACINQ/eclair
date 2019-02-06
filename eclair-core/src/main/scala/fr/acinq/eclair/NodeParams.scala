@@ -31,8 +31,8 @@ import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
+import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.Color
-
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
 
@@ -66,7 +66,6 @@ case class NodeParams(keyManager: KeyManager,
                       paymentsDb: PaymentsDb,
                       auditDb: AuditDb,
                       revocationTimeout: FiniteDuration,
-                      routerBroadcastInterval: FiniteDuration,
                       pingInterval: FiniteDuration,
                       pingTimeout: FiniteDuration,
                       pingDisconnect: Boolean,
@@ -75,14 +74,12 @@ case class NodeParams(keyManager: KeyManager,
                       autoReconnect: Boolean,
                       chainHash: BinaryData,
                       channelFlags: Byte,
-                      channelExcludeDuration: FiniteDuration,
                       watcherType: WatcherType,
                       paymentRequestExpiry: FiniteDuration,
                       maxPendingPaymentRequests: Int,
                       maxPaymentFee: Double,
                       minFundingSatoshis: Long,
-                      randomizeRouteSelection: Boolean
-                     ) {
+                      routerConf: RouterConf) {
 
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
@@ -211,7 +208,6 @@ object NodeParams {
       paymentsDb = paymentsDb,
       auditDb = auditDb,
       revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
-      routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
       pingDisconnect = config.getBoolean("ping-disconnect"),
@@ -220,13 +216,20 @@ object NodeParams {
       autoReconnect = config.getBoolean("auto-reconnect"),
       chainHash = chainHash,
       channelFlags = config.getInt("channel-flags").toByte,
-      channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
       watcherType = watcherType,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"),
       maxPaymentFee = config.getDouble("max-payment-fee"),
       minFundingSatoshis = config.getLong("min-funding-satoshis"),
-      randomizeRouteSelection = config.getBoolean("router.randomize-route-selection")
+      routerConf = RouterConf(
+        channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
+        routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
+        randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
+        searchMaxRouteLength = config.getInt("router.search-max-length"),
+        searchMaxCltv = config.getInt("router.search-max-cltv"),
+        searchMaxFeeBaseMsat = config.getLong("router.search-fee-base-msat"),
+        searchMaxFeePct = config.getDouble("router.search-max-fee-pct")
+      )
     )
   }
 }

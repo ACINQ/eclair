@@ -60,7 +60,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
   var nodes: Map[String, Kit] = Map()
 
-  val integrationTestRouteParams = RouteParams(maxFeeBaseMsat = Long.MaxValue, maxFeePct = Double.MaxValue, routeMaxCltv = Int.MaxValue, routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH)
+  val integrationTestRouteParams = Some(RouteParams(maxFeeBaseMsat = Long.MaxValue, maxFeePct = Double.MaxValue, routeMaxCltv = Int.MaxValue, routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH))
 
   implicit val formats = DefaultFormats
 

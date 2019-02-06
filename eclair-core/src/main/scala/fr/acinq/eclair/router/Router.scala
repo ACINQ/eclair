@@ -44,6 +44,7 @@ import scala.util.{Random, Try}
 
 // @formatter:off
 
+case class RouterConf(randomizeRouteSelection: Boolean, channelExcludeDuration: FiniteDuration, routerBroadcastInterval: FiniteDuration, searchMaxFeeBaseMsat: Long, searchMaxFeePct: Double, searchMaxRouteLength: Int, searchMaxCltv: Int)
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
 case class RouteParams(maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int)
@@ -54,7 +55,7 @@ case class RouteRequest(source: PublicKey,
                         ignoreNodes: Set[PublicKey] = Set.empty,
                         ignoreChannels: Set[ChannelDesc] = Set.empty,
                         randomize: Option[Boolean] = None,
-                        routeParams: RouteParams = Router.DEFAULT_ROUTE_PARAMS)
+                        routeParams: Option[RouteParams] = None)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
   require(hops.size > 0, "route cannot be empty")
 }
@@ -103,10 +104,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
 
-  setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerBroadcastInterval, repeat = true)
+  setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval, repeat = true)
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
 
   val SHORTID_WINDOW = 100
+
+  val defaultRouteParams = RouteParams(nodeParams.routerConf.searchMaxFeeBaseMsat, nodeParams.routerConf.searchMaxFeePct, nodeParams.routerConf.searchMaxRouteLength, nodeParams.routerConf.searchMaxCltv)
 
   val db = nodeParams.networkDb
 
@@ -353,7 +356,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates, graph = graph1)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
-      val banDuration = nodeParams.channelExcludeDuration
+      val banDuration = nodeParams.routerConf.channelExcludeDuration
       log.info("excluding shortChannelId={} from nodeId={} for duration={}", shortChannelId, nodeId, banDuration)
       context.system.scheduler.scheduleOnce(banDuration, self, LiftChannelExclusion(desc))
       stay using d.copy(excludedChannels = d.excludedChannels + desc)
@@ -382,7 +385,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! d
       stay
 
-    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, randomize, params), d) =>
+    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, randomize_opt, params_opt), d) =>
       // we convert extra routing info provided in the payment request to fake channel_update
       // it takes precedence over all other channel_updates we know
       val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end)).toMap
@@ -392,8 +395,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
       // if we want to randomize we ask the router to make a random selection among the three best routes
-      val routesToFind = if(randomize.getOrElse(nodeParams.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
-      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, routeParams = params)
+      val routesToFind = if(randomize_opt.getOrElse(nodeParams.routerConf.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
+      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, routeParams = params_opt.getOrElse(defaultRouteParams))
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -796,19 +799,14 @@ object Router {
   val DEFAULT_ROUTE_MAX_LENGTH = 20
 
   // Max allowed CLTV for a route
-  val DEFAULT_ROUTE_MAX_CLTV = 2016
+  val DEFAULT_ROUTE_MAX_CLTV = 1008
 
   // The default amount of routes we'll search for when findRoute is called
   val DEFAULT_ROUTES_COUNT = 3
 
-  // The default params used for route searching, can be overridden by the caller
-  val DEFAULT_ROUTE_PARAMS = RouteParams(maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 144, routeMaxLength = 6)
-
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.
-    * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result,
-    * the 'route-set' from where we select the result is made of the k-shortest path given that none of them
-    * exceeds a 10% spread with the cheapest route
+    * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result.
     *
     * @param g
     * @param localNodeId
@@ -817,6 +815,7 @@ object Router {
     * @param numRoutes    the number of shortest-paths to find
     * @param extraEdges   a set of extra edges we want to CONSIDER during the search
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
+    * @param routeParams  a set of parameters that can restrict the route search
     * @return the computed route to the destination @targetNodeId
     */
   def findRoute(g: DirectedGraph,
@@ -826,7 +825,7 @@ object Router {
                 numRoutes: Int,
                 extraEdges: Set[GraphEdge] = Set.empty,
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
-                routeParams: RouteParams = DEFAULT_ROUTE_PARAMS): Try[Seq[Hop]] = Try {
+                routeParams: RouteParams): Try[Seq[Hop]] = Try {
 
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 

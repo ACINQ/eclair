@@ -201,7 +201,7 @@ object PaymentLifecycle {
                          maxAttempts: Int = 5,
                          maxFeePct: Double = 0.03,
                          randomize: Option[Boolean] = None,
-                         routeParams: RouteParams = Router.DEFAULT_ROUTE_PARAMS) {
+                         routeParams: Option[RouteParams] = None) {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
   case class CheckPayment(paymentHash: BinaryData)
