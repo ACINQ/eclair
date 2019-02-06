@@ -2,68 +2,81 @@
 
 ### Installing Tor on your node
 
-For Linux:
+#### Linux:
 
 ```shell
 sudo apt install tor
 ```
 
-For Mac OS X:
+#### Mac OS X:
 
 ```shell
 brew install tor
 ```
 
-For Windows:
+#### Windows:
   
-Download the "Expert Bundle" from https://www.torproject.org/download/download.html and extract it to the root of your drive (e.g. `C:\tor`).
+[Download the "Expert Bundle"](https://www.torproject.org/download/download.html) from Tor's website and extract it to `C:\tor`.
 
 ### Configuring Tor
 
-First pick a password and hash it with this command:
+#### Linux and Max OS X:
 
-```shell
-$ tor --hash-password this-is-an-example-password-change-it
-16:94A50709CAA98333602756426F43E6AC6760B9ADEF217F58219E639E5A
-```
+Eclair requires safe cookie authentication as well as SOCKS5 and control connections to be enabled.
 
-Edit Tor configuration file:
- - `/etc/tor/torrc` (Linux)
- - `/usr/local/etc/tor/torrc` (Mac OS X)
- - `C:\tor\conf\torrc` (Windows)
-
-Replace the value for `HashedControlPassword` with the result of the command above.
+Edit Tor configuration file `/etc/tor/torrc` (Linux) or `/usr/local/etc/tor/torrc` (Mac OS X).
 
 ```
 SOCKSPort 9050
 ControlPort 9051
-HashedControlPassword 16:--REPLACE--THIS--WITH--THE--HASH--OF--YOUR--PASSWORD
-ExitPolicy reject *:*
+CookieAuthentication 1
+ExitPolicy reject *:* # don't change this unless you really know what you are doing
 ```
 
-Eclair requires password authentication as well as SOCKS5 and control connections to be enabled.
-Change the value of the `ExitPolicy` parameter only if you really know what you are doing.
+Make sure eclair is allowed to read Tor's cookie file (typically `/var/run/tor/control.authcookie`).
+
+#### Windows:
+
+On Windows it is easier to use the password authentication mechanism.
+
+First pick a password and hash it with this command:
+
+```shell
+$ cd c:\tor\Tor
+$ tor --hash-password this-is-an-example-password-change-it
+16:94A50709CAA98333602756426F43E6AC6760B9ADEF217F58219E639E5A
+```
+
+Create a Tor configuration file (`C:\tor\Conf\torrc`), edit it and replace the value for `HashedControlPassword` with the result of the command above.
+
+```
+SOCKSPort 9050
+ControlPort 9051
+HashedControlPassword 16:--REPLACE--THIS--WITH--THE--HASH--OF--YOUR--PASSWORD--
+ExitPolicy reject *:* # don't change this unless you really know what you are doing
+```
 
 ### Start Tor
 
-For Linux:
+#### Linux:
 
 ```shell
 sudo systemctl start tor
 ```
 
-For Mac OS X:
+#### Mac OS X:
 
 ```shell
 brew services start tor
 ```
 
-For Windows:
+#### Windows:
 
 Open a CMD with administrator access
 
 ```shell
-tor --service install
+cd c:\tor\Tor
+tor --service install -options -f c:\tor\Conf\torrc
 ```
 
 ### Configure Tor hidden service
