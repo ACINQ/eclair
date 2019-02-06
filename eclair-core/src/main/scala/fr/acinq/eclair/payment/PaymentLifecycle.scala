@@ -200,7 +200,7 @@ object PaymentLifecycle {
                          finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
                          maxAttempts: Int = 5,
                          maxFeePct: Double = 0.03,
-                         randomize: Boolean = true,
+                         randomize: Option[Boolean] = None,
                          routeParams: RouteParams = Router.DEFAULT_ROUTE_PARAMS) {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
