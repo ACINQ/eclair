@@ -212,7 +212,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
         port = 9735,
         chainHash = Alice.nodeParams.chainHash,
         blockHeight = 123456,
-        publicAddresses = Alice.nodeParams.publicAddresses.map(_.socketAddress.getHostString)
+        publicAddresses = Alice.nodeParams.publicAddresses
       ))
     }
     import mockService.formats

@@ -279,7 +279,7 @@ class Setup(datadir: File,
               port = config.getInt("server.port"),
               chainHash = nodeParams.chainHash,
               blockHeight = Globals.blockCount.intValue(),
-              publicAddresses = nodeParams.publicAddresses.map(_.socketAddress.getHostString)))
+              publicAddresses = nodeParams.publicAddresses))
 
           override def appKit: Kit = kit
 
