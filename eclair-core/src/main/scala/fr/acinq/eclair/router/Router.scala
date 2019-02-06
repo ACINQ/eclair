@@ -393,8 +393,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
       // if we want to randomize we ask the router to make a random selection among the three best routes
       val routesToFind = if(randomize.getOrElse(nodeParams.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
-      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet)
-      val routesToFind = if(randomize) DEFAULT_ROUTES_COUNT else 1
       findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, routeParams = params)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
@@ -842,7 +840,10 @@ object Router {
       case Nil if routeParams.routeMaxLength < DEFAULT_ROUTE_MAX_LENGTH =>
         return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
       case Nil => throw RouteNotFound
-      case routes => routes
+      case routes => routes.find(_.path.size == 1) match {
+        case Some(directRoute) => directRoute :: Nil
+        case _ => routes
+      }
     }
 
     Random.shuffle(foundRoutes).head.path.map(graphEdgeToHop)

@@ -57,7 +57,7 @@ object Graph {
     // main loop
     for(k <- 1 until pathsToFind) {
 
-      if ( !allSpurPathsFound ) {
+      if (!allSpurPathsFound) {
 
         // for every edge in the path
         for (i <- shortestPaths(k - 1).path.indices) {
@@ -68,12 +68,12 @@ object Graph {
           val spurEdge = prevShortestPath(i)
 
           // select the subpath from the source to the spur node of the k-th previous shortest path
-          val rootPathEdges = if(i == 0) prevShortestPath.head :: Nil else prevShortestPath.take(i)
+          val rootPathEdges = if (i == 0) prevShortestPath.head :: Nil else prevShortestPath.take(i)
           val rootPathWeight = pathWeight(rootPathEdges, amountMsat, isPartial = true)
 
           // links to be removed that are part of the previous shortest path and which share the same root path
           val edgesToIgnore = shortestPaths.flatMap { weightedPath =>
-            if ( (i == 0 && (weightedPath.path.head :: Nil) == rootPathEdges) || weightedPath.path.take(i) == rootPathEdges ) {
+            if ((i == 0 && (weightedPath.path.head :: Nil) == rootPathEdges) || weightedPath.path.take(i) == rootPathEdges) {
               weightedPath.path(i).desc :: Nil
             } else {
               Nil
@@ -84,7 +84,7 @@ object Graph {
           val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges, rootPathWeight, boundaries)
 
           // if there wasn't a path the spur will be empty
-          if(spurPath.nonEmpty) {
+          if (spurPath.nonEmpty) {
 
             // candidate k-shortest path is made of the rootPath and the new spurPath
             val totalPath = rootPathEdges.head.desc.a == spurPath.head.desc.a match {
@@ -102,7 +102,7 @@ object Graph {
         }
       }
 
-      if(candidates.isEmpty) {
+      if (candidates.isEmpty) {
         // handles the case of having exhausted all possible spur paths and it's impossible to reach the target from the source
         allSpurPathsFound = true
       } else {
