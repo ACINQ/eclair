@@ -5,7 +5,7 @@ import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{ValidateRequest, ValidateResult}
+import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.transactions.Scripts
@@ -38,7 +38,7 @@ class RoutingSyncWithChecksumsSpec extends TestKit(ActorSystem("test")) with Fun
           txIn = Seq.empty[TxIn],
           txOut = List.fill(outputIndex + 1)(TxOut(Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
           lockTime = 0)
-        sender ! ValidateResult(c, Some(fakeFundingTx), true, None)
+        sender ! ValidateResult(c, Right(fakeFundingTx, UtxoStatus.Unspent))
     }
   }
 

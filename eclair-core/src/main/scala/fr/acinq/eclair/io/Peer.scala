@@ -56,20 +56,27 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   when(DISCONNECTED) {
-    case Event(Peer.Connect(NodeURI(_, address)), _) =>
-      // even if we are in a reconnection loop, we immediately process explicit connection requests
-      context.actorOf(Client.props(nodeParams, authenticator, new InetSocketAddress(address.getHost, address.getPort), remoteNodeId, origin_opt = Some(sender())))
-      stay
+    case Event(Peer.Connect(NodeURI(_, hostAndPort)), d: DisconnectedData) =>
+      val address = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
+      if (d.address_opt == Some(address)) {
+        // we already know this address, we'll reconnect automatically
+        sender ! "reconnection in progress"
+        stay
+      } else {
+        // we immediately process explicit connection requests to new addresses
+        context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender())))
+        stay
+      }
 
-    case Event(Reconnect, d@DisconnectedData(address_opt, channels, attempts)) =>
-      address_opt match {
+    case Event(Reconnect, d: DisconnectedData) =>
+      d.address_opt match {
         case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
-        case _ if channels.isEmpty => stay // no-op (no more channels with this peer)
+        case _ if d.channels.isEmpty => stay // no-op (no more channels with this peer)
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           // exponential backoff retry with a finite max
-          setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, attempts), 60) seconds, repeat = false)
-          stay using d.copy(attempts = attempts + 1)
+          setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 60) seconds, repeat = false)
+          stay using d.copy(attempts = d.attempts + 1)
       }
 
     case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, address, outgoing, origin_opt), d: DisconnectedData) =>
@@ -373,7 +380,15 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           }
           log.error(s"peer sent us a routing message with invalid sig: r=$r bin=$bin")
           // for now we just return an error, maybe ban the peer in the future?
+          // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
           d.transport ! Error(CHANNELID_ZERO, s"bad announcement sig! bin=$bin".getBytes())
+          d.behavior
+        case InvalidAnnouncement(c) =>
+          // they seem to be sending us fake announcements?
+          log.error(s"couldn't find funding tx with valid scripts for shortChannelId=${c.shortChannelId}")
+          // for now we just return an error, maybe ban the peer in the future?
+          // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
+          d.transport ! Error(CHANNELID_ZERO, s"couldn't verify channel! shortChannelId=${c.shortChannelId}".getBytes())
           d.behavior
         case ChannelClosed(_) =>
           if (d.behavior.ignoreNetworkAnnouncement) {
@@ -385,18 +400,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
             log.warning(s"peer sent us too many channel announcements with funding tx already spent (count=${d.behavior.fundingTxAlreadySpentCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
             setTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, repeat = false)
             d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1, ignoreNetworkAnnouncement = true)
-          }
-        case NonexistingChannel(_) =>
-          // this should never happen, unless we are not in sync or there is a 6+ blocks reorg
-          if (d.behavior.ignoreNetworkAnnouncement) {
-            // we already are ignoring announcements, we may have additional notifications for announcements that were received right before our ban
-            d.behavior.copy(fundingTxNotFoundCount = d.behavior.fundingTxNotFoundCount + 1)
-          } else if (d.behavior.fundingTxNotFoundCount < MAX_FUNDING_TX_NOT_FOUND) {
-            d.behavior.copy(fundingTxNotFoundCount = d.behavior.fundingTxNotFoundCount + 1)
-          } else {
-            log.warning(s"peer sent us too many channel announcements with non-existing funding tx (count=${d.behavior.fundingTxNotFoundCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
-            setTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, repeat = false)
-            d.behavior.copy(fundingTxNotFoundCount = d.behavior.fundingTxNotFoundCount + 1, ignoreNetworkAnnouncement = true)
           }
       }
       stay using d.copy(behavior = behavior1)
@@ -452,6 +455,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(_: TransportHandler.ReadAck, _) => stay // ignored
 
+    case Event(Peer.Reconnect, _) => stay // we got connected in the meantime
+
     case Event(SendPing, _) => stay // we got disconnected in the meantime
 
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
@@ -462,6 +467,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   onTransition {
+    case INSTANTIATING -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => self ! Reconnect // we reconnect right away if we just started the peer
     case _ -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
     case DISCONNECTED -> _ if nodeParams.autoReconnect && stateData.address_opt.isDefined => cancelTimer(RECONNECT_TIMER)
   }
@@ -547,8 +553,8 @@ object Peer {
 
   sealed trait BadMessage
   case class InvalidSignature(r: RoutingMessage) extends BadMessage
+  case class InvalidAnnouncement(c: ChannelAnnouncement) extends BadMessage
   case class ChannelClosed(c: ChannelAnnouncement) extends BadMessage
-  case class NonexistingChannel(c: ChannelAnnouncement) extends BadMessage
 
   case class Behavior(fundingTxAlreadySpentCount: Int = 0, fundingTxNotFoundCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 
