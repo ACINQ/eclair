@@ -834,18 +834,9 @@ object Router {
     }
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, boundaries).toList match {
-      case Nil =>
-        if(routeParams.routeMaxLength < DEFAULT_ROUTE_MAX_LENGTH){
-          return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH))
-        } else {
-          throw RouteNotFound
-        }
-      case route :: Nil if route.path.isEmpty =>
-        if(routeParams.routeMaxLength < DEFAULT_ROUTE_MAX_LENGTH){
-          return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH))
-        } else {
-          throw RouteNotFound
-        }
+      case Nil if routeParams.routeMaxLength < DEFAULT_ROUTE_MAX_LENGTH =>
+        return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH))
+      case Nil => throw RouteNotFound
       case routes => routes
     }
 

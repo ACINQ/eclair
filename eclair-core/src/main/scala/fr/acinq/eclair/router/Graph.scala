@@ -51,6 +51,9 @@ object Graph {
     val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, RichWeight(amountMsat, 0, 0), boundaries)
     shortestPaths += WeightedPath(shortestPath, pathWeight(shortestPath, amountMsat, isPartial = false))
 
+    // avoid returning a list with an empty path
+    if(shortestPath.isEmpty) return Seq.empty
+
     // main loop
     for(k <- 1 until pathsToFind) {
 
