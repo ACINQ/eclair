@@ -22,7 +22,7 @@ import java.nio.file.Files
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
-import com.google.common.net.InetAddresses
+import com.google.common.net.{HostAndPort, InetAddresses}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Block}
@@ -199,9 +199,8 @@ object NodeParams {
 
     val addresses = config.getStringList("server.public-ips")
       .toList
-      .map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port")))
-      .map(NodeAddress(_)) ++ torAddress_opt
-
+      .map(ip => HostAndPort.fromParts(InetAddresses.forString(ip).getHostAddress, config.getInt("server.port")))
+      .map(NodeAddress.from(_).get) ++ torAddress_opt
 
     NodeParams(
       keyManager = keyManager,

@@ -16,11 +16,14 @@
 
 package fr.acinq.eclair.wire
 
-import java.net.{Inet4Address, Inet6Address, InetSocketAddress}
+import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
+
+import scala.util.{Success, Try}
 
 /**
   * Created by PM on 15/11/2016.
@@ -163,14 +166,24 @@ case class Color(r: Byte, g: Byte, b: Byte) {
 sealed trait NodeAddress { def socketAddress: InetSocketAddress }
 sealed trait OnionAddress extends NodeAddress
 object NodeAddress {
-  def apply(socketAddress: InetSocketAddress): NodeAddress = {
-    socketAddress match {
-      case _ if socketAddress.getHostString.endsWith(".onion") && socketAddress.getHostString.length == 22 => Tor2(socketAddress.getHostString.dropRight(6), socketAddress.getPort)
-      case _ if socketAddress.getHostString.endsWith(".onion") && socketAddress.getHostString.length == 62 => Tor3(socketAddress.getHostString.dropRight(6), socketAddress.getPort)
-      case _  => socketAddress.getAddress match {
-        case a: Inet4Address => IPv4(a, socketAddress.getPort)
-        case a: Inet6Address => IPv6(a, socketAddress.getPort)
-        case _ => throw new IllegalArgumentException(s"cannot convert $socketAddress to node address")
+  /**
+    * Creates a NodeAddress from a HostPort.
+    *
+    * Note that non-onion hosts will be resolved.
+    *
+    * We don't attempt to resolve onion addresses (it will be done by the tor proxy), so we just recognize them based on
+    * the .onion TLD and rely on their length to separate v2/v3.
+    *
+    * @param hostPort
+    * @return
+    */
+  def from(hostPort: HostAndPort): Try[NodeAddress] = Try {
+    hostPort match {
+      case _ if hostPort.getHost.endsWith(".onion") && hostPort.getHost.length == 22 => Tor2(hostPort.getHost.dropRight(6), hostPort.getPort)
+      case _ if hostPort.getHost.endsWith(".onion") && hostPort.getHost.length == 62 => Tor3(hostPort.getHost.dropRight(6), hostPort.getPort)
+      case _  => InetAddress.getByName(hostPort.getHost) match {
+        case a: Inet4Address => IPv4(a, hostPort.getPort)
+        case a: Inet6Address => IPv6(a, hostPort.getPort)
       }
     }
   }

@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair
 
-import java.net.InetSocketAddress
 import java.sql.DriverManager
 
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
@@ -48,7 +48,7 @@ object TestConstants {
       keyManager = keyManager,
       alias = "alice",
       color = Color(1, 2, 3),
-      publicAddresses = NodeAddress(new InetSocketAddress("localhost", 9731)) :: Nil,
+      publicAddresses = NodeAddress.from(HostAndPort.fromParts("localhost", 9731)).get :: Nil,
       globalFeatures = "",
       localFeatures = "00",
       overrideFeatures = Map.empty,
@@ -109,7 +109,7 @@ object TestConstants {
       keyManager = keyManager,
       alias = "bob",
       color = Color(4, 5, 6),
-      publicAddresses = NodeAddress(new InetSocketAddress("localhost", 9732)) :: Nil,
+      publicAddresses = NodeAddress.from(HostAndPort.fromParts("localhost", 9732)).get :: Nil,
       globalFeatures = "",
       localFeatures = "00", // no announcement
       overrideFeatures = Map.empty,

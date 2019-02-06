@@ -34,7 +34,7 @@ import scodec.Attempt
 
 import scala.compat.Platform
 import scala.concurrent.duration._
-import scala.util.Random
+import scala.util.{Failure, Random, Success}
 
 /**
   * Created by PM on 26/08/2016.
@@ -57,16 +57,17 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
   when(DISCONNECTED) {
     case Event(Peer.Connect(NodeURI(_, hostAndPort)), d: DisconnectedData) =>
-      val nodeAddress = NodeAddress(new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort))
-      if (d.address_opt.contains(nodeAddress)) {
-        // we already know this address, we'll reconnect automatically
-        sender ! "reconnection in progress"
-        stay
-      } else {
-        // we immediately process explicit connection requests to new addresses
-        context.actorOf(Client.props(nodeParams, authenticator, nodeAddress, remoteNodeId, origin_opt = Some(sender())))
-        stay
+      NodeAddress.from(hostAndPort) match {
+        case Failure(_) =>
+          sender ! "couldn't resolve address"
+        case Success(nodeAddress) if d.address_opt.contains(nodeAddress) =>
+          // we already know this address, we'll reconnect automatically
+          sender ! "reconnection in progress"
+        case Success(nodeAddress) =>
+          // we immediately process explicit connection requests to new addresses
+          context.actorOf(Client.props(nodeParams, authenticator, nodeAddress, remoteNodeId, origin_opt = Some(sender())))
       }
+      stay
 
     case Event(Reconnect, d: DisconnectedData) =>
       d.address_opt match {
@@ -134,7 +135,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
         // let's bring existing/requested channels online
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport, d.localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }) forMax(30 seconds) // forMax will trigger a StateTimeout
+        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }) forMax (30 seconds) // forMax will trigger a StateTimeout
       } else {
         log.warning(s"incompatible features, disconnecting")
         d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))

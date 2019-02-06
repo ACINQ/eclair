@@ -18,6 +18,7 @@ package fr.acinq.eclair.api
 
 import java.net.{InetAddress, InetSocketAddress}
 
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.{BinaryData, OutPoint}
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.transactions.{IN, OUT}
@@ -50,8 +51,8 @@ class JsonSerializersSpec extends FunSuite with Matchers {
   }
 
   test("NodeAddress serialization") {
-    val ipv4 = NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array(10, 0, 0, 1)), 8888))
-    val ipv6LocalHost = NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)), 9735))
+    val ipv4 = NodeAddress.from(HostAndPort.fromParts("10.0.0.1", 8888)).get
+    val ipv6LocalHost = NodeAddress.from(HostAndPort.fromParts(InetAddress.getByAddress(Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)).getHostAddress, 9735)).get
     val tor2 = Tor2("aaaqeayeaudaocaj", 7777)
     val tor3 = Tor3("aaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypsaijc", 9999)
 
