@@ -795,6 +795,9 @@ object Router {
     */
   val DEFAULT_ROUTE_MAX_LENGTH = 20
 
+  // Max allowed CLTV for a route
+  val DEFAULT_ROUTE_MAX_CLTV = 2016
+
   // The default amount of routes we'll search for when findRoute is called
   val DEFAULT_ROUTES_COUNT = 3
 
@@ -835,7 +838,7 @@ object Router {
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, boundaries).toList match {
       case Nil if routeParams.routeMaxLength < DEFAULT_ROUTE_MAX_LENGTH =>
-        return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH))
+        return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
       case Nil => throw RouteNotFound
       case routes => routes
     }
