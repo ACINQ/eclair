@@ -28,6 +28,7 @@ import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import scodec.Attempt
@@ -201,18 +202,9 @@ object PaymentLifecycle {
                          maxAttempts: Int = 5,
                          maxFeePct: Double = 0.03,
                          randomize: Option[Boolean] = None,
-                         routeParams: Option[RouteParams] = None) {
-  case class SendPayment(amountMsat: Long,
-                         paymentHash: BinaryData,
-                         targetNodeId: PublicKey,
-                         assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                         finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
-                         maxAttempts: Int = 5,
-                         maxFeeBaseMsat:Long = 21000,
-                         maxFeePct: Double = 0.03,
-                         wr_opt: Option[WeightRatios] = None,
-                         randomize: Boolean = false,
-                         maxCltv: Int = 2016) {
+                         routeParams: Option[RouteParams] = None,
+                         wr_opt: Option[WeightRatios] = None) {
+
 
     require(amountMsat > 0, s"amountMsat must be > 0")
   }

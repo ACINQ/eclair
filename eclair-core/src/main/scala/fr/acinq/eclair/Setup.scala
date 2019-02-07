@@ -258,12 +258,6 @@ class Setup(datadir: File,
         implicit val materializer = ActorMaterializer()
         val api = new Service {
 
-          override val routeWeightRatios = WeightRatios(
-            ageFactor = config.getDouble("router.weight-ratio-fees"),
-            cltvDeltaFactor= config.getDouble("router.weight-ratio-cltv"),
-            capacityFactor = config.getDouble("router.weight-ratio-score")
-          )
-
           override def scheduler = system.scheduler
 
           override val password = {
