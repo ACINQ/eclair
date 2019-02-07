@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.io
 
+import java.net.InetSocketAddress
+
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
@@ -25,7 +27,7 @@ import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
-import fr.acinq.eclair.wire.{NodeAddress, TemporaryNodeFailure, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import grizzled.slf4j.Logging
 
 import scala.util.Success
@@ -58,8 +60,9 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
         case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
       }
       .map {
-        case (remoteNodeId, states, address_opt) =>
+        case (remoteNodeId, states, nodeaddress_opt) =>
           // we might not have an address if we didn't initiate the connection in the first place
+          val address_opt = nodeaddress_opt.map(_.socketAddress)
           val peer = createOrGetPeer(Map(), remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
           remoteNodeId -> peer
       }.toMap
@@ -112,7 +115,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     * @param offlineChannels
     * @return
     */
-  def createOrGetPeer(peers: Map[PublicKey, ActorRef], remoteNodeId: PublicKey, previousKnownAddress: Option[NodeAddress], offlineChannels: Set[HasCommitments]) = {
+  def createOrGetPeer(peers: Map[PublicKey, ActorRef], remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]) = {
     peers.get(remoteNodeId) match {
       case Some(peer) => peer
       case None =>

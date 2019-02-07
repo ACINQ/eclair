@@ -40,8 +40,8 @@ class SqlitePeersDbSpec extends FunSuite {
     val sqlite = inmem
     val db = new SqlitePeersDb(sqlite)
 
-    val peer_1 = (randomKey.publicKey, NodeAddress.from(HostAndPort.fromParts("127.0.0.1", 42000)).get)
-    val peer_1_bis = (peer_1._1, NodeAddress.from(HostAndPort.fromParts("127.0.0.1", 1112)).get)
+    val peer_1 = (randomKey.publicKey, NodeAddress.fromParts("127.0.0.1", 42000).get)
+    val peer_1_bis = (peer_1._1, NodeAddress.fromParts("127.0.0.1", 1112).get)
     val peer_2 = (randomKey.publicKey, Tor2("z4zif3fy7fe7bpg3", 4231))
     val peer_3 = (randomKey.publicKey, Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 4231))
 

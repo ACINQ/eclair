@@ -35,7 +35,7 @@ import scala.concurrent.duration._
   * Created by PM on 27/10/2015.
   *
   */
-class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: NodeAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]) extends Actor with DiagnosticActorLogging {
+class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]) extends Actor with DiagnosticActorLogging {
 
   import context.system
 
@@ -49,9 +49,8 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Nod
           log.info(s"connecting to SOCKS5 proxy ${str(proxyAddress)}")
           proxyAddress
         case None =>
-          val peerAddress = remoteAddress.socketAddress
-          log.info(s"connecting to ${str(peerAddress)}")
-          peerAddress
+          log.info(s"connecting to ${str(remoteAddress)}")
+          remoteAddress
       }
       IO(Tcp) ! Tcp.Connect(addressToConnect, timeout = Some(50 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
       context become connecting(addressToConnect)
@@ -70,17 +69,16 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Nod
       nodeParams.socksProxy_opt match {
         case Some(proxyParams) =>
           val proxyAddress = peerOrProxyAddress
-          val peerAddress = remoteAddress.socketAddress
           log.info(s"connected to SOCKS5 proxy ${str(proxyAddress)}")
-          log.info(s"connecting to ${str(peerAddress)} via SOCKS5 ${str(proxyAddress)}")
-          val proxy = context.actorOf(Socks5Connection.props(sender(), Socks5ProxyParams.proxyCredentials(proxyParams), Socks5Connect(peerAddress)))
+          log.info(s"connecting to ${str(remoteAddress)} via SOCKS5 ${str(proxyAddress)}")
+          val proxy = context.actorOf(Socks5Connection.props(sender(), Socks5ProxyParams.proxyCredentials(proxyParams), Socks5Connect(remoteAddress)))
           context become {
             case Tcp.CommandFailed(_: Socks5Connect) =>
-              log.info(s"connection failed to ${str(peerAddress)} via SOCKS5 ${str(proxyAddress)}")
+              log.info(s"connection failed to ${str(remoteAddress)} via SOCKS5 ${str(proxyAddress)}")
               origin_opt.map(_ ! Status.Failure(ConnectionFailed(remoteAddress)))
               context stop self
             case Socks5Connected(_) =>
-              log.info(s"connected to ${str(peerAddress)} via SOCKS5 proxy ${str(proxyAddress)}")
+              log.info(s"connected to ${str(remoteAddress)} via SOCKS5 proxy ${str(proxyAddress)}")
               auth(proxy)
               context become connected(proxy)
           }
@@ -112,7 +110,7 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Nod
 
 object Client {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, address: NodeAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin_opt))
+  def props(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin_opt))
 
-  case class ConnectionFailed(address: NodeAddress) extends RuntimeException(s"connection failed to $address")
+  case class ConnectionFailed(address: InetSocketAddress) extends RuntimeException(s"connection failed to $address")
 }

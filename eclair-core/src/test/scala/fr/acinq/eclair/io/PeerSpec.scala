@@ -63,7 +63,7 @@ class PeerSpec extends TestkitBaseClass {
     // let's simulate a connection
     val probe = TestProbe()
     probe.send(peer, Peer.Init(None, Set.empty))
-    authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, Outgoing(NodeAddress.from(HostAndPort.fromParts("1.2.3.4", 42000)).get), None))
+    authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, Outgoing(new InetSocketAddress("1.2.3.4", 42000)), None))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
     transport.send(peer, wire.Init(Bob.nodeParams.globalFeatures, Bob.nodeParams.localFeatures))

@@ -90,12 +90,12 @@ object Authenticator {
   // @formatter:off
 
   sealed trait ConnectionDirection { def socketAddress: InetSocketAddress }
-  case class Incoming(address: InetSocketAddress) extends ConnectionDirection { override def socketAddress = address }
-  case class Outgoing(nodeAddress: NodeAddress) extends ConnectionDirection { override def socketAddress = nodeAddress.socketAddress }
+  case class Incoming(socketAddress: InetSocketAddress) extends ConnectionDirection
+  case class Outgoing(socketAddress: InetSocketAddress) extends ConnectionDirection
 
   case class OutgoingConnection(remoteNodeId: PublicKey, address: NodeAddress)
   case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: ConnectionDirection, origin_opt: Option[ActorRef])
-  case class Authenticated(connection: ActorRef, transport: ActorRef, remoteNodeId: PublicKey, address: ConnectionDirection, origin_opt: Option[ActorRef])
+  case class Authenticated(connection: ActorRef, transport: ActorRef, remoteNodeId: PublicKey, direction: ConnectionDirection, origin_opt: Option[ActorRef])
   case class AuthenticationFailed(address: ConnectionDirection) extends RuntimeException(s"connection failed to $address")
   // @formatter:on
 

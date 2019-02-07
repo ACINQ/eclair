@@ -51,8 +51,8 @@ class JsonSerializersSpec extends FunSuite with Matchers {
   }
 
   test("NodeAddress serialization") {
-    val ipv4 = NodeAddress.from(HostAndPort.fromParts("10.0.0.1", 8888)).get
-    val ipv6LocalHost = NodeAddress.from(HostAndPort.fromParts(InetAddress.getByAddress(Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)).getHostAddress, 9735)).get
+    val ipv4 = NodeAddress.fromParts("10.0.0.1", 8888).get
+    val ipv6LocalHost = NodeAddress.fromParts(InetAddress.getByAddress(Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)).getHostAddress, 9735).get
     val tor2 = Tor2("aaaqeayeaudaocaj", 7777)
     val tor3 = Tor3("aaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypsaijc", 9999)
 

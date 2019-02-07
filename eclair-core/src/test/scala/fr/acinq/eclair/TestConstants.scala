@@ -48,7 +48,7 @@ object TestConstants {
       keyManager = keyManager,
       alias = "alice",
       color = Color(1, 2, 3),
-      publicAddresses = NodeAddress.from(HostAndPort.fromParts("localhost", 9731)).get :: Nil,
+      publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       globalFeatures = "",
       localFeatures = "00",
       overrideFeatures = Map.empty,
@@ -109,7 +109,7 @@ object TestConstants {
       keyManager = keyManager,
       alias = "bob",
       color = Color(4, 5, 6),
-      publicAddresses = NodeAddress.from(HostAndPort.fromParts("localhost", 9732)).get :: Nil,
+      publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
       globalFeatures = "",
       localFeatures = "00", // no announcement
       overrideFeatures = Map.empty,

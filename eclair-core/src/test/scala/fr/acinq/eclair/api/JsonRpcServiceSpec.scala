@@ -159,7 +159,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
         case GetPeerInfo => sender() ! PeerInfo(
           nodeId = Alice.nodeParams.nodeId,
           state = "CONNECTED",
-          address = Some(Alice.nodeParams.publicAddresses.head),
+          address = Some(Alice.nodeParams.publicAddresses.head.socketAddress),
           channels = 1)
       }
     }))

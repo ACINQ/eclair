@@ -57,17 +57,16 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
   when(DISCONNECTED) {
     case Event(Peer.Connect(NodeURI(_, hostAndPort)), d: DisconnectedData) =>
-      NodeAddress.from(hostAndPort) match {
-        case Failure(_) =>
-          sender ! "couldn't resolve address"
-        case Success(nodeAddress) if d.address_opt.contains(nodeAddress) =>
-          // we already know this address, we'll reconnect automatically
-          sender ! "reconnection in progress"
-        case Success(nodeAddress) =>
-          // we immediately process explicit connection requests to new addresses
-          context.actorOf(Client.props(nodeParams, authenticator, nodeAddress, remoteNodeId, origin_opt = Some(sender())))
+      val address = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
+      if (d.address_opt.contains(address)) {
+        // we already know this address, we'll reconnect automatically
+        sender ! "reconnection in progress"
+        stay
+      } else {
+        // we immediately process explicit connection requests to new addresses
+        context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender())))
+        stay
       }
-      stay
 
     case Event(Reconnect, d: DisconnectedData) =>
       d.address_opt match {
@@ -80,9 +79,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           stay using d.copy(attempts = d.attempts + 1)
       }
 
-    case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, address, origin_opt), d: DisconnectedData) =>
+    case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, direction, origin_opt), d: DisconnectedData) =>
       require(remoteNodeId == remoteNodeId1, s"invalid nodeid: $remoteNodeId != $remoteNodeId1")
-      log.debug(s"got authenticated connection to $remoteNodeId@${address.socketAddress.getHostString}:${address.socketAddress.getPort}")
+      log.debug(s"got authenticated connection to $remoteNodeId@${direction.socketAddress.getHostString}:${direction.socketAddress.getPort}")
       transport ! TransportHandler.Listener(self)
       context watch transport
       val localInit = nodeParams.overrideFeatures.get(remoteNodeId) match {
@@ -92,11 +91,15 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.info(s"using globalFeatures=${localInit.globalFeatures} and localFeatures=${localInit.localFeatures}")
       transport ! localInit
 
-      val address_opt = address match {
-        case Authenticator.Outgoing(nodeAddress) =>
-          // we store the ip upon successful outgoing connection, keeping only the most recent one
-          nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, nodeAddress)
-          Some(nodeAddress)
+      val address_opt = direction match {
+        case Authenticator.Outgoing(address) =>
+          NodeAddress.fromParts(address.getHostString, address.getPort) match {
+            case Success(nodeAddress) =>
+              // we store the ip upon successful outgoing connection, keeping only the most recent one
+              nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, nodeAddress)
+            case _ =>  ()
+          }
+          Some(address)
         case Authenticator.Incoming(_) => None
       }
       goto(INITIALIZING) using InitializingData(address_opt, transport, d.channels, origin_opt, localInit)
@@ -503,13 +506,13 @@ object Peer {
   case class FinalChannelId(id: BinaryData) extends ChannelId
 
   sealed trait Data {
-    def address_opt: Option[NodeAddress]
+    def address_opt: Option[InetSocketAddress]
     def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
   }
   case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
-  case class DisconnectedData(address_opt: Option[NodeAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
-  case class InitializingData(address_opt: Option[NodeAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef], localInit: wire.Init) extends Data
-  case class ConnectedData(address_opt: Option[NodeAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
+  case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
+  case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef], localInit: wire.Init) extends Data
+  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
   case class ExpectedPong(ping: Ping, timestamp: Long = Platform.currentTime)
   case class PingTimeout(ping: Ping)
 
@@ -519,7 +522,7 @@ object Peer {
   case object INITIALIZING extends State
   case object CONNECTED extends State
 
-  case class Init(previousKnownAddress: Option[NodeAddress], storedChannels: Set[HasCommitments])
+  case class Init(previousKnownAddress: Option[InetSocketAddress], storedChannels: Set[HasCommitments])
   case class Connect(uri: NodeURI)
   case object Reconnect
   case object Disconnect
@@ -533,7 +536,7 @@ object Peer {
   }
   case object GetPeerInfo
   case object SendPing
-  case class PeerInfo(nodeId: PublicKey, state: String, address: Option[NodeAddress], channels: Int)
+  case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 
   case class PeerRoutingMessage(transport: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage)
 

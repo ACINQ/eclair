@@ -199,8 +199,7 @@ object NodeParams {
 
     val addresses = config.getStringList("server.public-ips")
       .toList
-      .map(ip => HostAndPort.fromParts(InetAddresses.forString(ip).getHostAddress, config.getInt("server.port")))
-      .map(NodeAddress.from(_).get) ++ torAddress_opt
+      .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ torAddress_opt
 
     NodeParams(
       keyManager = keyManager,

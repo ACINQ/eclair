@@ -26,6 +26,8 @@ import fr.acinq.eclair.randomBytes
 import fr.acinq.eclair.tor.Socks5Connection.{Credentials, Socks5Connect}
 import fr.acinq.eclair.wire._
 
+import scala.util.Success
+
 /**
   * Simple socks 5 client. It should be given a new connection, and will
   *
@@ -221,13 +223,12 @@ case class Socks5ProxyParams(address: InetSocketAddress, credentials_opt: Option
 
 object Socks5ProxyParams {
 
-  def proxyAddress(remoteAddress: NodeAddress, proxyParams: Socks5ProxyParams): Option[InetSocketAddress] =
-    remoteAddress match {
-      case _: IPv4 if proxyParams.useForIPv4 => Some(proxyParams.address)
-      case _: IPv6 if proxyParams.useForIPv6 => Some(proxyParams.address)
-      case _: Tor2 if proxyParams.useForTor => Some(proxyParams.address)
-      case _: Tor3 if proxyParams.useForTor => Some(proxyParams.address)
-      case _ => None
+  def proxyAddress(socketAddress: InetSocketAddress, proxyParams: Socks5ProxyParams): Option[InetSocketAddress] =
+    NodeAddress.fromParts(socketAddress.getHostString, socketAddress.getPort).toOption map {
+      case _: IPv4 if proxyParams.useForIPv4 => proxyParams.address
+      case _: IPv6 if proxyParams.useForIPv6 => proxyParams.address
+      case _: Tor2 if proxyParams.useForTor => proxyParams.address
+      case _: Tor3 if proxyParams.useForTor => proxyParams.address
     }
 
   def proxyCredentials(proxyParams: Socks5ProxyParams): Option[Socks5Connection.Credentials] =
