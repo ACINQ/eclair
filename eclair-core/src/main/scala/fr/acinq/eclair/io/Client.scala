@@ -71,7 +71,8 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Nod
         case Some(proxyParams) =>
           val proxyAddress = peerOrProxyAddress
           val peerAddress = remoteAddress.socketAddress
-          log.info(s"connected to proxy ${str(proxyAddress)}")
+          log.info(s"connected to SOCKS5 proxy ${str(proxyAddress)}")
+          log.info(s"connecting to ${str(peerAddress)} via SOCKS5 ${str(proxyAddress)}")
           val proxy = context.actorOf(Socks5Connection.props(sender(), Socks5ProxyParams.proxyCredentials(proxyParams), Socks5Connect(peerAddress)))
           context become {
             case Tcp.CommandFailed(_: Socks5Connect) =>

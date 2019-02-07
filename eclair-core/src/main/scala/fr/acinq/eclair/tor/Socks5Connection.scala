@@ -111,7 +111,6 @@ class Socks5Connection(connection: ActorRef, credentials_opt: Option[Credentials
             case _ => throw Socks5Error(s"Unrecognized address type")
           }
           context become connected
-          log.info(s"connected $connectedAddress")
           context.parent ! Socks5Connected(connectedAddress)
           isConnected = false
         }
