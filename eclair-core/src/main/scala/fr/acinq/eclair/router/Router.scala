@@ -27,11 +27,11 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChannel, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidAnnouncement, InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{Weight, WeightRatios, WeightedPath}
+import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios, WeightedPath}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 
@@ -44,19 +44,10 @@ import scala.util.{Random, Try}
 
 // @formatter:off
 
+case class RouterConf(randomizeRouteSelection: Boolean, channelExcludeDuration: FiniteDuration, routerBroadcastInterval: FiniteDuration, searchMaxFeeBaseMsat: Long, searchMaxFeePct: Double, searchMaxRouteLength: Int, searchMaxCltv: Int)
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteRequest(source: PublicKey,
-                        target: PublicKey,
-                        amountMsat: Long,
-                        assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                        ignoreNodes: Set[PublicKey] = Set.empty,
-                        ignoreChannels: Set[ChannelDesc] = Set.empty,
-                        wr_opt: Option[WeightRatios] = None,
-                        maxFeeBaseMsat:Long = 21000,
-                        maxFeePct: Double = 0.03D,
-                        randomize: Boolean = false,
-                        maxCltv: Int = 2016)
+case class RouteRequest(source: PublicKey, target: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
   require(hops.size > 0, "route cannot be empty")
 }
@@ -105,10 +96,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
 
-  setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerBroadcastInterval, repeat = true)
+  setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval, repeat = true)
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
 
   val SHORTID_WINDOW = 100
+
+  val defaultRouteParams = RouteParams(nodeParams.routerConf.searchMaxFeeBaseMsat, nodeParams.routerConf.searchMaxFeePct, nodeParams.routerConf.searchMaxRouteLength, nodeParams.routerConf.searchMaxCltv)
 
   val db = nodeParams.networkDb
 
@@ -205,25 +198,26 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! RoutingState(d.channels.values, d.updates.values, d.nodes.values)
       stay
 
-    case Event(v@ValidateResult(c, _, _, _), d0) =>
+    case Event(v@ValidateResult(c, _), d0) =>
       d0.awaiting.get(c) match {
         case Some(origin +: others) => origin ! TransportHandler.ReadAck(c) // now we can acknowledge the message, we only need to do it for the first peer that sent us the announcement
         case _ => ()
       }
       log.info("got validation result for shortChannelId={} (awaiting={} stash.nodes={} stash.updates={})", c.shortChannelId, d0.awaiting.size, d0.stash.nodes.size, d0.stash.updates.size)
       val success = v match {
-        case ValidateResult(c, _, _, Some(t)) =>
+        case ValidateResult(c, Left(t)) =>
           log.warning("validation failure for shortChannelId={} reason={}", c.shortChannelId, t.getMessage)
           false
-        case ValidateResult(c, Some(tx), true, None) =>
+        case ValidateResult(c, Right((tx, UtxoStatus.Unspent))) =>
           val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
           // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
           val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
-          if (tx.txOut.size < outputIndex + 1) {
-            log.error("invalid script for shortChannelId={}: txid={} does not have outputIndex={} ann={}", c.shortChannelId, tx.txid, outputIndex, c)
-            false
-          } else if (fundingOutputScript != tx.txOut(outputIndex).publicKeyScript) {
-            log.error("invalid script for shortChannelId={} txid={} ann={}", c.shortChannelId, tx.txid, c)
+          if (tx.txOut.size < outputIndex + 1 || fundingOutputScript != tx.txOut(outputIndex).publicKeyScript) {
+            log.error(s"invalid script for shortChannelId={}: txid={} does not have script=$fundingOutputScript at outputIndex=$outputIndex ann={}", c.shortChannelId, tx.txid, c)
+            d0.awaiting.get(c) match {
+              case Some(origins) => origins.foreach(_ ! InvalidAnnouncement(c))
+              case _ => ()
+            }
             false
           } else {
             watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
@@ -241,22 +235,19 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
             }
             true
           }
-        case ValidateResult(c, Some(tx), false, None) =>
-          log.warning("ignoring shortChannelId={} tx={} (funding tx already spent)", c.shortChannelId, tx.txid)
-          d0.awaiting.get(c) match {
-            case Some(origins) => origins.foreach(_ ! ChannelClosed(c))
-            case _ => ()
+        case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
+          if (fundingTxStatus.spendingTxConfirmed) {
+            log.warning("ignoring shortChannelId={} tx={} (funding tx already spent and spending tx is confirmed)", c.shortChannelId, tx.txid)
+            // the funding tx has been spent by a transaction that is now confirmed: peer shouldn't send us those
+            d0.awaiting.get(c) match {
+              case Some(origins) => origins.foreach(_ ! ChannelClosed(c))
+              case _ => ()
+            }
+          } else {
+            log.debug("ignoring shortChannelId={} tx={} (funding tx already spent but spending tx isn't confirmed)", c.shortChannelId, tx.txid)
           }
           // there may be a record if we have just restarted
           db.removeChannel(c.shortChannelId)
-          false
-        case ValidateResult(c, None, _, None) =>
-          // we couldn't find the funding tx in the blockchain, this is highly suspicious because it should have at least 6 confirmations to be announced
-          log.warning("could not retrieve tx for shortChannelId={}", c.shortChannelId)
-          d0.awaiting.get(c) match {
-            case Some(origins) => origins.foreach(_ ! NonexistingChannel(c))
-            case _ => ()
-          }
           false
       }
 
@@ -342,7 +333,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       }
 
       val staleChannelsToRemove = new mutable.MutableList[ChannelDesc]
-      staleChannels.map(d.channels).foreach( ca => {
+      staleChannels.map(d.channels).foreach(ca => {
         staleChannelsToRemove += ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)
         staleChannelsToRemove += ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)
       })
@@ -357,7 +348,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates, graph = graph1)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
-      val banDuration = nodeParams.channelExcludeDuration
+      val banDuration = nodeParams.routerConf.channelExcludeDuration
       log.info("excluding shortChannelId={} from nodeId={} for duration={}", shortChannelId, nodeId, banDuration)
       context.system.scheduler.scheduleOnce(banDuration, self, LiftChannelExclusion(desc))
       stay using d.copy(excludedChannels = d.excludedChannels + desc)
@@ -386,6 +377,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! d
       stay
 
+    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, randomize_opt, params_opt), d) =>
     case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, wr_opt, maxFeeBaseMsat, maxFeePct, randomize, maxCltv), d) =>
       // we convert extra routing info provided in the payment request to fake channel_update
       // it takes precedence over all other channel_updates we know
@@ -395,9 +387,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
-      // if we're randomizing we ask the router to make a random selection among the N best routes, otherwise we ask for 1 only
-      val numRoutes = if(randomize) DEFAULT_ROUTES_COUNT else 1
-      findRoute(d.graph, start, end, amount, numRoutes = numRoutes, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, wr_opt.getOrElse(COST_OPTIMIZED_WEIGHT_RATIO), maxFeeBaseMsat, maxFeePct, maxCltv)
+      // if we want to randomize we ask the router to make a random selection among the three best routes
+      val routesToFind = if(randomize_opt.getOrElse(nodeParams.routerConf.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
+      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, routeParams = params_opt.getOrElse(defaultRouteParams))
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -797,7 +789,10 @@ object Router {
   /**
     * https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
     */
-  val ROUTE_MAX_LENGTH = 20
+  val DEFAULT_ROUTE_MAX_LENGTH = 20
+
+  // Max allowed CLTV for a route
+  val DEFAULT_ROUTE_MAX_CLTV = 1008
 
   // The default amount of routes we'll search for when findRoute is called
   val DEFAULT_ROUTES_COUNT = 3
@@ -807,9 +802,7 @@ object Router {
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.
-    * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result,
-    * the 'route-set' from where we select the result is made of the k-shortest path given that none of them
-    * exceeds a 10% spread with the cheapest route
+    * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result.
     *
     * @param g
     * @param localNodeId
@@ -818,9 +811,8 @@ object Router {
     * @param numRoutes    the number of shortest-paths to find
     * @param extraEdges   a set of extra edges we want to CONSIDER during the search
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
+    * @param routeParams  a set of parameters that can restrict the route search
     * @param wr an object containing the ratios used to 'weight' edges when searching for the shortest path
-    * @param maxFeeBaseMsat a threshold fixed fee above which we enforce the @param maxFeePct.
-    * @param maxFeePct a threshold amount-percentage fee, routes found must pay less than this.
     * @return the computed route to the destination @targetNodeId
     */
   def findRoute(g: DirectedGraph,
@@ -830,23 +822,24 @@ object Router {
                 numRoutes: Int,
                 extraEdges: Set[GraphEdge] = Set.empty,
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
-                wr: WeightRatios = COST_OPTIMIZED_WEIGHT_RATIO,
-                maxFeeBaseMsat: Long = 21000,
-                maxFeePct: Double = 0.03D,
-                maxCltv: Int = 2016): Try[Seq[Hop]] = Try {
+                routeParams: RouteParams): Try[Seq[Hop]] = Try {
+
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    val currentBlockHeight = Globals.blockCount.get()
-
-    val ensureFeeCap: Weight => Boolean = { cp =>
-      (cp.feeCostMsat < maxFeeBaseMsat || cp.feeCostMsat < maxFeePct * amountMsat) &&
-      (cp.cltvCumulative < maxCltv)
+    val boundaries: RichWeight => Boolean = { weight =>
+      ((weight.cost - amountMsat) < routeParams.maxFeeBaseMsat || (weight.cost - amountMsat) < (routeParams.maxFeePct * amountMsat)) &&
+      weight.length <= routeParams.routeMaxLength && weight.length <= DEFAULT_ROUTE_MAX_LENGTH &&
+      weight.cltv <= routeParams.routeMaxCltv
     }
 
-    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, wr, currentBlockHeight, ensureFeeCap).toList match {
+    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, boundaries).toList match {
+      case Nil if routeParams.routeMaxLength < DEFAULT_ROUTE_MAX_LENGTH =>
+        return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
       case Nil => throw RouteNotFound
-      case route :: Nil  if route.path.isEmpty => throw RouteNotFound
-      case routes => routes
+      case routes => routes.find(_.path.size == 1) match {
+        case Some(directRoute) => directRoute :: Nil
+        case _ => routes
+      }
     }
 
     Random.shuffle(foundRoutes).head.path.map(graphEdgeToHop)

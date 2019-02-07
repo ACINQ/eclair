@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.TxCoordinates
-import fr.acinq.eclair.blockchain.ValidateResult
+import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateResult}
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import org.json4s.JsonAST._
 
@@ -153,8 +153,16 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       }
       tx <- getRawTransaction(txid)
       unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
-    } yield ValidateResult(c, Some(Transaction.read(tx)), unspent, None)
+      fundingTxStatus <- if (unspent) {
+        Future.successful(UtxoStatus.Unspent)
+      } else {
+        // if this returns true, it means that the spending tx is *not* in the blockchain
+        isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map {
+          case res => UtxoStatus.Spent(spendingTxConfirmed = !res)
+        }
+      }
+    } yield ValidateResult(c, Right((Transaction.read(tx), fundingTxStatus)))
 
-  } recover { case t: Throwable => ValidateResult(c, None, false, Some(t)) }
+  } recover { case t: Throwable => ValidateResult(c, Left(t)) }
 
 }
