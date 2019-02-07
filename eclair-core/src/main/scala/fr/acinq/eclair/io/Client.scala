@@ -44,29 +44,29 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Ine
 
   def receive: Receive = {
     case 'connect =>
-      val addressToConnect = nodeParams.socksProxy_opt.flatMap(proxyParams => Socks5ProxyParams.proxyAddress(remoteAddress, proxyParams)) match {
-        case Some(proxyAddress) =>
+      val (peerOrProxyAddress, proxyParams_opt) = nodeParams.socksProxy_opt.map(proxyParams => (proxyParams, Socks5ProxyParams.proxyAddress(remoteAddress, proxyParams))) match {
+          case Some((proxyParams, Some(proxyAddress))) =>
           log.info(s"connecting to SOCKS5 proxy ${str(proxyAddress)}")
-          proxyAddress
-        case None =>
+          (proxyAddress, Some(proxyParams))
+        case _ =>
           log.info(s"connecting to ${str(remoteAddress)}")
-          remoteAddress
+          (remoteAddress, None)
       }
-      IO(Tcp) ! Tcp.Connect(addressToConnect, timeout = Some(50 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
-      context become connecting(addressToConnect)
+      IO(Tcp) ! Tcp.Connect(peerOrProxyAddress, timeout = Some(50 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
+      context become connecting(proxyParams_opt)
   }
 
-  def connecting(to: InetSocketAddress): Receive = {
-    case Tcp.CommandFailed(_: Tcp.Connect) =>
-      log.info(s"connection failed to ${str(to)}")
+  def connecting(proxyParams: Option[Socks5ProxyParams]): Receive = {
+    case Tcp.CommandFailed(c: Tcp.Connect) =>
+      val peerOrProxyAddress = c.remoteAddress
+      log.info(s"connection failed to ${str(peerOrProxyAddress)}")
       origin_opt.map(_ ! Status.Failure(ConnectionFailed(remoteAddress)))
       context stop self
 
     case Tcp.Connected(peerOrProxyAddress, _) =>
       val connection = sender()
       context watch connection
-
-      nodeParams.socksProxy_opt match {
+      proxyParams match {
         case Some(proxyParams) =>
           val proxyAddress = peerOrProxyAddress
           log.info(s"connected to SOCKS5 proxy ${str(proxyAddress)}")
@@ -83,7 +83,8 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Ine
               context become connected(proxy)
           }
         case None =>
-          log.info(s"connected to ${str(to)}")
+          val peerAddress = peerOrProxyAddress
+          log.info(s"connected to ${str(peerAddress)}")
           auth(connection)
           context become connected(connection)
       }

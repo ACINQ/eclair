@@ -224,7 +224,7 @@ case class Socks5ProxyParams(address: InetSocketAddress, credentials_opt: Option
 object Socks5ProxyParams {
 
   def proxyAddress(socketAddress: InetSocketAddress, proxyParams: Socks5ProxyParams): Option[InetSocketAddress] =
-    NodeAddress.fromParts(socketAddress.getHostString, socketAddress.getPort).toOption map {
+    NodeAddress.fromParts(socketAddress.getHostString, socketAddress.getPort).toOption collect {
       case _: IPv4 if proxyParams.useForIPv4 => proxyParams.address
       case _: IPv6 if proxyParams.useForIPv6 => proxyParams.address
       case _: Tor2 if proxyParams.useForTor => proxyParams.address
