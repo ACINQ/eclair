@@ -123,7 +123,7 @@ eclair.socks5.enabled = true
 You can use SOCKS5 proxy only for specific types of addresses. Use `eclair.socks5.use-for-ipv4`, `eclair.socks5.use-for-ipv6`
 or `eclair.socks5.use-for-tor` for fine tuning.
 
-To create a new Tor circuit for every connection, use `stream-isolation` parameter:
+To create a new Tor circuit for every connection, use `randomize-credentials` parameter:
 
 ```
 eclair.socks5.randomize-credentials = true
