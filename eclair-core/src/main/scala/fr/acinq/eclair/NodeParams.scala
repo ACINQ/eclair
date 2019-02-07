@@ -188,7 +188,7 @@ object NodeParams {
       Some(Socks5ProxyParams(
         address = new InetSocketAddress(config.getString("socks5.host"), config.getInt("socks5.port")),
         credentials_opt = None,
-        randomizeCredentials = config.getBoolean("tor.stream-isolation"),
+        randomizeCredentials = config.getBoolean("socks5.randomize-credentials"),
         useForIPv4 = config.getBoolean("socks5.use-for-ipv4"),
         useForIPv6 = config.getBoolean("socks5.use-for-ipv6"),
         useForTor = config.getBoolean("socks5.use-for-tor")

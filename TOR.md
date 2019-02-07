@@ -108,12 +108,6 @@ value   | description
 Tor protocol v3 (supported by Tor version 0.3.3.6 and higher) is backwards compatible and supports 
 both v2 and v3 addresses. 
 
-To create a new Tor circuit for every connection, use `stream-isolation` parameter:
-
-```
-eclair.tor.stream-isolation = true
-```
-
 For increased privacy do not advertise your IP address in the `server.public-ips` list, and set your binding IP to `localhost`:
 ```
 eclair.server.binding-ip = "127.0.0.1"
@@ -128,6 +122,12 @@ eclair.socks5.enabled = true
 ```
 You can use SOCKS5 proxy only for specific types of addresses. Use `eclair.socks5.use-for-ipv4`, `eclair.socks5.use-for-ipv6`
 or `eclair.socks5.use-for-tor` for fine tuning.
+
+To create a new Tor circuit for every connection, use `stream-isolation` parameter:
+
+```
+eclair.socks5.randomize-credentials = true
+```
 
 :warning: Tor hidden service and SOCKS5 are independent options. You can use just one of them, but if you want to get the most privacy 
 features from using Tor use both.  
