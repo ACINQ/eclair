@@ -59,4 +59,6 @@ object Features {
     * We just ignore unknown odd bits.
     */
   def areSupported(features: ByteVector): Boolean = areSupported(BitSet.valueOf(features.reverse.toArray))
+
+  def isBitSet(pos: Int, bitfield: Byte) = (bitfield & (1 << pos)) == (1 << pos)
 }

@@ -51,4 +51,10 @@ class FeaturesSpec extends FunSuite {
     assert(areSupported(hex"0141") == false)
   }
 
+  test("channel features") {
+    assert(!isBitSet(0, 0.toByte) && !isBitSet(3, 0.toByte)) // private ordinary channel
+    assert(isBitSet(0, 1.toByte) && !isBitSet(3, 1.toByte)) // public ordinary channel
+    assert(!isBitSet(0, 8.toByte) && isBitSet(3, 8.toByte)) // private turbo channel
+    assert(isBitSet(0, 9.toByte) && isBitSet(3, 9.toByte)) // public turbo channel
+  }
 }

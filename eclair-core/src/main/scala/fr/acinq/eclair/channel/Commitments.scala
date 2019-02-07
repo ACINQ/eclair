@@ -24,10 +24,9 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, UInt64}
-import scodec.bits.ByteVector
-
+import fr.acinq.eclair.{Features, Globals, UInt64}
 import scala.util.{Failure, Success}
+import scodec.bits.ByteVector
 
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
@@ -71,7 +70,9 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
-  def announceChannel: Boolean = (channelFlags & 0x01) != 0
+  def announceChannel: Boolean = Features.isBitSet(0, channelFlags)
+
+  def turboChannel: Boolean = Features.isBitSet(3, channelFlags)
 
   def availableBalanceForSendMsat: Long = {
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
