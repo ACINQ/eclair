@@ -69,7 +69,7 @@ class Register extends Actor with ActorLogging {
       }
 
     case fwd@ForwardShortId(shortChannelId, msg) =>
-      shortIds.get(shortChannelId).flatMap(channels.get(_)) match {
+      shortIds.get(shortChannelId).flatMap(channels.get) match {
         case Some(channel) => channel forward msg
         case None => sender ! Failure(ForwardShortIdFailure(fwd))
       }
