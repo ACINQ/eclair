@@ -216,6 +216,7 @@ final case class RemoteParams(nodeId: PublicKey,
                               localFeatures: ByteVector)
 
 object ChannelFlags {
+  val PrivateTurbo = 0x08.toByte
   val AnnounceChannel = 0x01.toByte
   val Empty = 0x00.toByte
 }
