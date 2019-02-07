@@ -840,7 +840,6 @@ object Router {
 
     val currentBlockHeight = Globals.blockCount.get()
 
-
     val boundaries: RichWeight => Boolean = { weight =>
       ((weight.cost - amountMsat) < routeParams.maxFeeBaseMsat || (weight.cost - amountMsat) < (routeParams.maxFeePct * amountMsat)) &&
       weight.length <= routeParams.routeMaxLength && weight.length <= DEFAULT_ROUTE_MAX_LENGTH &&

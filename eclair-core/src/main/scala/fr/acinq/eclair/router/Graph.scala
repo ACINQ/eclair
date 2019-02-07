@@ -10,8 +10,8 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 
 object Graph {
 
-  // A compound weight for an edge, score is obtained with (cost X factor),'feeCost' contains the actual fees in millisatoshi, 'cltvCumulative' the total CLTV necessary to reach this edge
-  case class RichWeight(cost: Long, length: Int, cltv: Int, score: Double)
+  // A compound weight for an edge, score is obtained with (cost X factor),'cost' contains the actual amount+fees in millisatoshi, 'cltvCumulative' the total CLTV necessary to reach this edge
+  case class RichWeight(cost: Long, length: Int, cltv: Int, weight: Double)
   case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) // The ratios that will be used to calculate the 'factor'
   case class WeightedNode(key: PublicKey, weight: RichWeight)
   case class WeightedPath(path: Seq[GraphEdge], weight: RichWeight)
@@ -22,14 +22,14 @@ object Graph {
     */
   object QueueComparator extends Ordering[WeightedNode] {
     override def compare(x: WeightedNode, y: WeightedNode): Int = {
-      val weightCmp = x.weight.score.compareTo(y.weight.score)
+      val weightCmp = x.weight.weight.compareTo(y.weight.weight)
       if (weightCmp == 0) x.key.toString().compareTo(y.key.toString())
       else weightCmp
     }
   }
 
   implicit object PathComparator extends Ordering[WeightedPath] {
-    override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.score.compare(x.weight.score)
+    override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.weight.compare(x.weight.weight)
   }
   /**
     * Yen's algorithm to find the k-shortest (loopless) paths in a graph, uses dijkstra as search algo. Is guaranteed to terminate finding
@@ -215,7 +215,7 @@ object Graph {
             }
 
             // if this neighbor has a shorter distance than previously known
-            if (newMinimumKnownWeight.score < neighborCost.score) {
+            if (newMinimumKnownWeight.weight < neighborCost.weight) {
 
               // update the visiting tree
               prev.put(neighbor, edge)
@@ -267,24 +267,25 @@ object Graph {
     val cltvFactor = normalize(channelCltvDelta, CLTV_LOW, CLTV_HIGH)
 
     // NB. 'edgeFees' here is only the fee that must be paid to traverse this @param edge
-    val edgeFees = if(isNeighborTarget) 0 else edgeCost(edge, amountMsat + prev.cost) - amountMsat
+    val edgeCost = if(isNeighborTarget) prev.cost else edgeFeeCost(edge, prev.cost)
 
     val factor = (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor) match {
       case 0 => 0.00001 // if the factor turns out to be 0 we default to a very small number to avoid having a weight of 0 and still take into account the cost
       case other => other
     }
 
-    ??? //RichWeight(edgeFees * factor, edgeFees, prev.cltvCumulative + channelCltvDelta)
+    val edgeWeight = if(isNeighborTarget) prev.weight else edgeCost * factor
+
+    RichWeight(cost = edgeCost, length = prev.length + 1, cltv = prev.cltv + channelCltvDelta, weight = edgeWeight)
   }
 
   /**
     *
     * @param edge the edge for which we want to compute the weight
     * @param amountWithFees the value that this edge will have to carry along
-    * @param isNeighborTarget true if the receiving vertex of this edge is the target node (source in a reversed graph), which has cost 0
     * @return the new amount updated with the necessary fees for this edge
     */
-  private def edgeCost(edge: GraphEdge, amountWithFees: Long): Long = {
+  private def edgeFeeCost(edge: GraphEdge, amountWithFees: Long): Long = {
     amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
   }
 
