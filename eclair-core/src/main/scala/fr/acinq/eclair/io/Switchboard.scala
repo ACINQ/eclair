@@ -95,7 +95,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
           context become main(peers - remoteNodeId)
       }
 
-    case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _) =>
+    case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _, _) =>
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward auth

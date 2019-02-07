@@ -106,7 +106,7 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Ine
 
   private def str(address: InetSocketAddress): String = s"${address.getHostString}:${address.getPort}"
 
-  def auth(connection: ActorRef) = authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = Some(remoteNodeId), address = Authenticator.Outgoing(remoteAddress), origin_opt = origin_opt)
+  def auth(connection: ActorRef) = authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = Some(remoteNodeId), address = remoteAddress, origin_opt = origin_opt)
 }
 
 object Client {

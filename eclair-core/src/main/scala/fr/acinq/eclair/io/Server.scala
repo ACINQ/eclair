@@ -57,7 +57,7 @@ class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
     case Connected(remote, _) =>
       log.info(s"connected to $remote")
       val connection = sender
-      authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = None, address = Authenticator.Incoming(remote), origin_opt = None)
+      authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = None, address = remote, origin_opt = None)
       listener ! ResumeAccepting(batchSize = 1)
   }
 

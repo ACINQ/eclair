@@ -34,7 +34,7 @@ import scodec.Attempt
 
 import scala.compat.Platform
 import scala.concurrent.duration._
-import scala.util.{Failure, Random, Success}
+import scala.util.Random
 
 /**
   * Created by PM on 26/08/2016.
@@ -79,9 +79,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           stay using d.copy(attempts = d.attempts + 1)
       }
 
-    case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, direction, origin_opt), d: DisconnectedData) =>
+    case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, address, outgoing, origin_opt), d: DisconnectedData) =>
       require(remoteNodeId == remoteNodeId1, s"invalid nodeid: $remoteNodeId != $remoteNodeId1")
-      log.debug(s"got authenticated connection to $remoteNodeId@${direction.socketAddress.getHostString}:${direction.socketAddress.getPort}")
+      log.debug(s"got authenticated connection to $remoteNodeId@${address.getHostString}:${address.getPort}")
       transport ! TransportHandler.Listener(self)
       context watch transport
       val localInit = nodeParams.overrideFeatures.get(remoteNodeId) match {
@@ -91,17 +91,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.info(s"using globalFeatures=${localInit.globalFeatures} and localFeatures=${localInit.localFeatures}")
       transport ! localInit
 
-      val address_opt = direction match {
-        case Authenticator.Outgoing(address) =>
-          NodeAddress.fromParts(address.getHostString, address.getPort) match {
-            case Success(nodeAddress) =>
-              // we store the ip upon successful outgoing connection, keeping only the most recent one
-              nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, nodeAddress)
-            case _ =>  ()
-          }
-          Some(address)
-        case Authenticator.Incoming(_) => None
-      }
+      val address_opt = if (outgoing) {
+        // we store the node address upon successful outgoing connection, so we can reconnect later
+        // any previous address is overwritten
+        NodeAddress.fromParts(address.getHostString, address.getPort).map(nodeAddress => nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, nodeAddress))
+        Some(address)
+      } else None
+
       goto(INITIALIZING) using InitializingData(address_opt, transport, d.channels, origin_opt, localInit)
 
     case Event(Terminated(actor), d@DisconnectedData(_, channels, _)) if channels.exists(_._2 == actor) =>
@@ -146,7 +142,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         stay
       }
 
-    case Event(Authenticator.Authenticated(connection, _, _, _, origin_opt), _) =>
+    case Event(Authenticator.Authenticated(connection, _, _, _, _, origin_opt), _) =>
       // two connections in parallel
       origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("there is another connection attempt in progress")))
       // we kill this one

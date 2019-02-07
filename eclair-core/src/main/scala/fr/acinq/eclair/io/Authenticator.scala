@@ -25,7 +25,7 @@ import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.io.Authenticator.{Authenticated, AuthenticationFailed, PendingAuth}
-import fr.acinq.eclair.wire.{LightningMessageCodecs, NodeAddress}
+import fr.acinq.eclair.wire.LightningMessageCodecs
 import fr.acinq.eclair.{Logs, NodeParams}
 
 /**
@@ -42,7 +42,7 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
 
   def ready(switchboard: ActorRef, authenticating: Map[ActorRef, PendingAuth]): Receive = {
     case pending@PendingAuth(connection, remoteNodeId_opt, address, _) =>
-      log.debug(s"authenticating connection to ${address.socketAddress.getHostString}:${address.socketAddress.getPort} (pending=${authenticating.size} handlers=${context.children.size})")
+      log.debug(s"authenticating connection to ${address.getHostString}:${address.getPort} (pending=${authenticating.size} handlers=${context.children.size})")
       val transport = context.actorOf(TransportHandler.props(
         KeyPair(nodeParams.nodeId.toBin, nodeParams.privateKey.toBin),
         remoteNodeId_opt.map(_.toBin),
@@ -55,8 +55,8 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
       val pendingAuth = authenticating(transport)
       import pendingAuth.{address, remoteNodeId_opt}
       val outgoing = remoteNodeId_opt.isDefined
-      log.info(s"connection authenticated with $remoteNodeId@${address.socketAddress.getHostString}:${address.socketAddress.getPort} direction=${if (outgoing) "outgoing" else "incoming"}")
-      switchboard ! Authenticated(connection, transport, remoteNodeId, address, pendingAuth.origin_opt)
+      log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (outgoing) "outgoing" else "incoming"}")
+      switchboard ! Authenticated(connection, transport, remoteNodeId, address, remoteNodeId_opt.isDefined, pendingAuth.origin_opt)
       context become ready(switchboard, authenticating - transport)
 
     case Terminated(transport) =>
@@ -88,15 +88,10 @@ object Authenticator {
   def props(nodeParams: NodeParams): Props = Props(new Authenticator(nodeParams))
 
   // @formatter:off
-
-  sealed trait ConnectionDirection { def socketAddress: InetSocketAddress }
-  case class Incoming(socketAddress: InetSocketAddress) extends ConnectionDirection
-  case class Outgoing(socketAddress: InetSocketAddress) extends ConnectionDirection
-
-  case class OutgoingConnection(remoteNodeId: PublicKey, address: NodeAddress)
-  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: ConnectionDirection, origin_opt: Option[ActorRef])
-  case class Authenticated(connection: ActorRef, transport: ActorRef, remoteNodeId: PublicKey, direction: ConnectionDirection, origin_opt: Option[ActorRef])
-  case class AuthenticationFailed(address: ConnectionDirection) extends RuntimeException(s"connection failed to $address")
+  case class OutgoingConnection(remoteNodeId: PublicKey, address: InetSocketAddress)
+  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef])
+  case class Authenticated(connection: ActorRef, transport: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, origin_opt: Option[ActorRef])
+  case class AuthenticationFailed(address: InetSocketAddress) extends RuntimeException(s"connection failed to $address")
   // @formatter:on
 
 }
