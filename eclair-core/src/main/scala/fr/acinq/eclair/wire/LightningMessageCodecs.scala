@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire
 
 import java.math.BigInteger
-import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
+import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import com.google.common.cache.{CacheBuilder, CacheLoader}
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
@@ -25,9 +25,11 @@ import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.{Generators, Sphinx}
 import fr.acinq.eclair.wire.FixedSizeStrictCodec.bytesStrict
 import fr.acinq.eclair.{ShortChannelId, UInt64, wire}
+import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
+import shapeless.nat._
 
 import scala.util.{Failure, Success, Try}
 
@@ -58,15 +60,16 @@ object LightningMessageCodecs {
 
   def ipv6address: Codec[Inet6Address] = bytes(16).exmap(b => attemptFromTry(Inet6Address.getByAddress(null, b.toArray, null)), a => attemptFromTry(ByteVector(a.getAddress)))
 
+  def base32(size: Int): Codec[String] = bytes(size).xmap(b => new Base32().encodeAsString(b.toArray).toLowerCase, a => ByteVector(new Base32().decode(a.toUpperCase())))
+
   def nodeaddress: Codec[NodeAddress] =
     discriminated[NodeAddress].by(uint8)
-      .typecase(0, provide(Padding))
-      .typecase(1, (ipv4address ~ uint16).xmap[IPv4](x => new IPv4(x._1, x._2), x => (x.ipv4, x.port)))
-      .typecase(2, (ipv6address ~ uint16).xmap[IPv6](x => new IPv6(x._1, x._2), x => (x.ipv6, x.port)))
-      .typecase(3, (binarydata(10) ~ uint16).xmap[Tor2](x => new Tor2(x._1, x._2), x => (x.tor2, x.port)))
-      .typecase(4, (binarydata(35) ~ uint16).xmap[Tor3](x => new Tor3(x._1, x._2), x => (x.tor3, x.port)))
+      .typecase(1, (ipv4address :: uint16).as[IPv4])
+      .typecase(2, (ipv6address :: uint16).as[IPv6])
+      .typecase(3, (base32(10) :: uint16).as[Tor2])
+      .typecase(4, (base32(35) :: uint16).as[Tor3])
 
-  // this one is a bit different from most other codecs: the first 'len' element is * not * the number of items
+  // this one is a bit different from most other codecs: the first 'len' element is *not* the number of items
   // in the list but rather the  number of bytes of the encoded list. The rationale is once we've read this
   // number of bytes we can just skip to the next field
   def listofnodeaddresses: Codec[List[NodeAddress]] = variableSizeBytes(uint16, list(nodeaddress))
@@ -280,15 +283,18 @@ object LightningMessageCodecs {
     ("signature" | signature) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
-  val channelUpdateWitnessCodec = (
+  val channelUpdateWitnessCodec =
     ("chainHash" | binarydata(32)) ::
       ("shortChannelId" | shortchannelid) ::
       ("timestamp" | uint32) ::
-      ("flags" | binarydata(2)) ::
-      ("cltvExpiryDelta" | uint16) ::
-      ("htlcMinimumMsat" | uint64) ::
-      ("feeBaseMsat" | uint32) ::
-      ("feeProportionalMillionths" | uint32))
+      (("messageFlags" | byte) >>:~ { messageFlags =>
+        ("channelFlags" | byte) ::
+          ("cltvExpiryDelta" | uint16) ::
+          ("htlcMinimumMsat" | uint64) ::
+          ("feeBaseMsat" | uint32) ::
+          ("feeProportionalMillionths" | uint32) ::
+          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64))
+      })
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (
     ("signature" | signature) ::
@@ -322,7 +328,7 @@ object LightningMessageCodecs {
     ("chainHash" | binarydata(32)) ::
       ("firstTimestamp" | uint32) ::
       ("timestampRange" | uint32)
-  ).as[GossipTimestampFilter]
+    ).as[GossipTimestampFilter]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)

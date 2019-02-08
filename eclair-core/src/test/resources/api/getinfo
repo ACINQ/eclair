@@ -1,0 +1,11 @@
+{
+  "result" : {
+    "publicAddresses" : [ "localhost:9731" ],
+    "alias" : "alice",
+    "port" : 9735,
+    "chainHash" : "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+    "blockHeight" : 123456,
+    "nodeId" : "03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0"
+  },
+  "id" : "eclair-node"
+}

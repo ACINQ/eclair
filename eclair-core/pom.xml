@@ -126,21 +126,39 @@
             <artifactId>akka-slf4j_${scala.version.short}</artifactId>
             <version>${akka.version}</version>
         </dependency>
+        <!-- HTTP SERVER -->
         <dependency>
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-http-core_${scala.version.short}</artifactId>
-            <version>10.0.11</version>
+            <version>${akka.http.version}</version>
+        </dependency>
+        <!-- HTTP CLIENT -->
+        <dependency>
+            <groupId>com.softwaremill.sttp</groupId>
+            <artifactId>okhttp-backend_${scala.version.short}</artifactId>
+            <version>${sttp.version}</version>
         </dependency>
         <!-- JSON -->
         <dependency>
             <groupId>org.json4s</groupId>
             <artifactId>json4s-jackson_${scala.version.short}</artifactId>
-            <version>3.5.3</version>
+            <version>3.6.0</version>
         </dependency>
         <dependency>
             <groupId>de.heikoseeberger</groupId>
             <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
             <version>1.19.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.softwaremill.sttp</groupId>
+            <artifactId>json4s_${scala.version.short}</artifactId>
+            <version>${sttp.version}</version>
+        </dependency>
+        <!-- TCP -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+            <version>4.1.32.Final</version>
         </dependency>
         <!-- BITCOIN -->
         <dependency>
@@ -165,6 +183,11 @@
             <artifactId>scodec-core_${scala.version.short}</artifactId>
             <version>1.10.3</version>
         </dependency>
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+            <version>1.9</version>
+        </dependency>
         <!-- LOGGING -->
         <dependency>
             <groupId>org.clapper</groupId>
@@ -173,25 +196,14 @@
         </dependency>
         <!-- OTHER -->
         <dependency>
+            <groupId>org.jheaps</groupId>
+            <artifactId>jheaps</artifactId>
+            <version>0.9</version>
+        </dependency>
+        <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
             <version>3.21.0.1</version>
-        </dependency>
-        <dependency>
-            <groupId>org.jgrapht</groupId>
-            <artifactId>jgrapht-core</artifactId>
-            <version>1.0.1</version>
-        </dependency>
-        <dependency>
-            <groupId>org.jgrapht</groupId>
-            <artifactId>jgrapht-ext</artifactId>
-            <version>1.0.1</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.tinyjee.jgraphx</groupId>
-                    <artifactId>jgraphx</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <!-- This is to get rid of '[WARNING] warning: Class javax.annotation.Nonnull not found - continuing with a stub.' compile errors -->
@@ -206,15 +218,21 @@
         </dependency>
         <!-- TESTS -->
         <dependency>
+            <groupId>com.softwaremill.quicklens</groupId>
+            <artifactId>quicklens_${scala.version.short}</artifactId>
+            <version>1.4.11</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>com.whisk</groupId>
             <artifactId>docker-testkit-scalatest_${scala.version.short}</artifactId>
-            <version>0.9.5</version>
+            <version>0.9.8</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.whisk</groupId>
             <artifactId>docker-testkit-impl-spotify_${scala.version.short}</artifactId>
-            <version>0.9.5</version>
+            <version>0.9.8</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -227,6 +245,12 @@
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
             <version>1.2.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-http-testkit_${scala.version.short}</artifactId>
+            <version>${akka.http.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

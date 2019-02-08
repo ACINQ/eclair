@@ -101,4 +101,6 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
       q
     }
   }
+
+  override def close(): Unit = sqlite.close
 }

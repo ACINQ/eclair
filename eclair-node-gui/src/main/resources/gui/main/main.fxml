@@ -209,51 +209,40 @@
             </center>
             <bottom>
                 <HBox fx:id="statusBarBox" styleClass="status-bar" spacing="10">
-                    <children>
-                        <HBox alignment="CENTER_LEFT" HBox.hgrow="ALWAYS" onContextMenuRequested="#openNodeIdContext">
-                            <children>
-                                <ImageView fitHeight="16.0" fitWidth="27.0" opacity="0.52" pickOnBounds="true"
-                                           preserveRatio="true">
-                                    <image>
-                                        <Image url="@../commons/images/eclair-shape.png"/>
-                                    </image>
-                                </ImageView>
-                                <Label fx:id="labelNodeId" text="N/A"/>
-                            </children>
-                        </HBox>
-                        <HBox alignment="CENTER_LEFT" HBox.hgrow="SOMETIMES" minWidth="80.0">
-                            <children>
-                                <Separator orientation="VERTICAL"/>
-                                <Rectangle fx:id="rectRGB" width="7" height="7" fill="transparent"/>
-                                <Label fx:id="labelAlias" text="N/A"/>
-                            </children>
-                        </HBox>
-                        <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="85.0">
-                            <children>
-                                <Separator orientation="VERTICAL"/>
-                                <Label text="HTTP" styleClass="badge, badge-http"/>
-                                <Label fx:id="labelApi" styleClass="value" text="N/A"/>
-                            </children>
-                        </HBox>
-                        <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="85.0">
-                            <children>
-                                <Separator orientation="VERTICAL"/>
-                                <Label text="TCP" styleClass="badge, badge-tcp"/>
-                                <Label fx:id="labelServer" text="N/A"/>
-                            </children>
-                        </HBox>
-                        <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="6.0">
-                            <children>
-                                <Separator orientation="VERTICAL"/>
-                            </children>
-                        </HBox>
-                        <HBox alignment="CENTER_RIGHT" HBox.hgrow="SOMETIMES" minWidth="195.0">
-                            <children>
-                                <Label fx:id="bitcoinWallet" text="N/A" textAlignment="RIGHT" textOverrun="CLIP"/>
-                                <Label fx:id="bitcoinChain" styleClass="chain" text="(N/A)" textOverrun="CLIP"/>
-                            </children>
-                        </HBox>
-                    </children>
+                    <HBox alignment="CENTER_LEFT" HBox.hgrow="ALWAYS" onContextMenuRequested="#openNodeIdContext">
+                        <ImageView fitHeight="16.0" fitWidth="27.0" opacity="0.52" pickOnBounds="true"
+                                   preserveRatio="true">
+                            <Image url="@../commons/images/eclair-shape.png" />
+                        </ImageView>
+                        <Label fx:id="labelNodeId" text="N/A" />
+                    </HBox>
+                    <HBox alignment="CENTER_LEFT" HBox.hgrow="SOMETIMES" minWidth="160.0">
+                        <Separator orientation="VERTICAL" />
+                        <Label text="TOTAL" styleClass="badge" />
+                        <Label fx:id="statusBalanceLabel" styleClass="value" text="N/A" />
+                    </HBox>
+                    <HBox alignment="CENTER_LEFT" HBox.hgrow="SOMETIMES" minWidth="85.0">
+                        <Separator orientation="VERTICAL" />
+                        <Rectangle fx:id="rectRGB" width="7" height="7" fill="transparent" />
+                        <Label fx:id="labelAlias" text="N/A" />
+                    </HBox>
+                    <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="85.0">
+                        <Separator orientation="VERTICAL" />
+                        <Label text="HTTP" styleClass="badge, badge-http" />
+                        <Label fx:id="labelApi" styleClass="value" text="N/A" />
+                    </HBox>
+                    <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="80.0">
+                        <Separator orientation="VERTICAL" />
+                        <Label text="TCP" styleClass="badge, badge-tcp" />
+                        <Label fx:id="labelServer" text="N/A" />
+                    </HBox>
+                    <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="6.0">
+                        <Separator orientation="VERTICAL" />
+                    </HBox>
+                    <HBox alignment="CENTER_RIGHT" HBox.hgrow="SOMETIMES" minWidth="155.0">
+                        <Label fx:id="bitcoinWallet" text="N/A" textAlignment="RIGHT" textOverrun="CLIP" />
+                        <Label fx:id="bitcoinChain" styleClass="chain" text="(N/A)" textOverrun="CLIP" />
+                    </HBox>
                 </HBox>
             </bottom>
             <top>
@@ -290,12 +279,6 @@
                                                             shortcut="UP"/>
                                     </accelerator>
                                 </MenuItem>
-                            </items>
-                        </Menu>
-                        <Menu mnemonicParsing="false" text="Tools">
-                            <items>
-                                <MenuItem mnemonicParsing="false" onAction="#handleExportDot"
-                                          text="Export Graph to .dot"/>
                             </items>
                         </Menu>
                         <Menu mnemonicParsing="false" text="Help">

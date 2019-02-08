@@ -16,16 +16,16 @@
 
 package fr.acinq.eclair
 
-import java.net.InetSocketAddress
 import java.sql.DriverManager
 
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.wire.Color
+import fr.acinq.eclair.wire.{Color, NodeAddress}
 
 import scala.concurrent.duration._
 
@@ -48,9 +48,10 @@ object TestConstants {
       keyManager = keyManager,
       alias = "alice",
       color = Color(1, 2, 3),
-      publicAddresses = new InetSocketAddress("localhost", 9731) :: Nil,
+      publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       globalFeatures = "",
       localFeatures = "00",
+      overrideFeatures = Map.empty,
       dustLimitSatoshis = 1100,
       maxHtlcValueInFlightMsat = UInt64(150000000),
       maxAcceptedHtlcs = 100,
@@ -70,8 +71,11 @@ object TestConstants {
       pendingRelayDb = new SqlitePendingRelayDb(sqlite),
       paymentsDb = new SqlitePaymentsDb(sqlite),
       auditDb = new SqliteAuditDb(sqlite),
+      revocationTimeout = 20 seconds,
       routerBroadcastInterval = 60 seconds,
       pingInterval = 30 seconds,
+      pingTimeout = 10 seconds,
+      pingDisconnect = true,
       maxFeerateMismatch = 1.5,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
@@ -82,7 +86,9 @@ object TestConstants {
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000,
       maxPaymentFee = 0.03,
-      minFundingSatoshis = 1000L)
+      minFundingSatoshis = 1000L,
+      randomizeRouteSelection = true,
+      socksProxy_opt = None)
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -103,9 +109,10 @@ object TestConstants {
       keyManager = keyManager,
       alias = "bob",
       color = Color(4, 5, 6),
-      publicAddresses = new InetSocketAddress("localhost", 9732) :: Nil,
+      publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
       globalFeatures = "",
       localFeatures = "00", // no announcement
+      overrideFeatures = Map.empty,
       dustLimitSatoshis = 1000,
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
@@ -125,8 +132,11 @@ object TestConstants {
       pendingRelayDb = new SqlitePendingRelayDb(sqlite),
       paymentsDb = new SqlitePaymentsDb(sqlite),
       auditDb = new SqliteAuditDb(sqlite),
+      revocationTimeout = 20 seconds,
       routerBroadcastInterval = 60 seconds,
       pingInterval = 30 seconds,
+      pingTimeout = 10 seconds,
+      pingDisconnect = true,
       maxFeerateMismatch = 1.0,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
@@ -137,7 +147,9 @@ object TestConstants {
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000,
       maxPaymentFee = 0.03,
-      minFundingSatoshis = 1000L)
+      minFundingSatoshis = 1000L,
+      randomizeRouteSelection = true,
+      socksProxy_opt = None)
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
