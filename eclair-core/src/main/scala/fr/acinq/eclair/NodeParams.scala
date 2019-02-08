@@ -223,10 +223,10 @@ object NodeParams {
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
-        searchMaxRouteLength = config.getInt("router.search-max-length"),
-        searchMaxCltv = config.getInt("router.search-max-cltv"),
-        searchMaxFeeBaseMsat = config.getLong("router.search-fee-base-msat"),
-        searchMaxFeePct = config.getDouble("router.search-max-fee-pct")
+        searchMaxRouteLength = config.getInt("router.search.route-max-length"),
+        searchMaxCltv = config.getInt("router.search.route-max-cltv"),
+        searchMaxFeeBaseMsat = config.getLong("router.search.route-fee-base-msat"),
+        searchMaxFeePct = config.getDouble("router.search.route-max-fee-pct")
       )
     )
   }
