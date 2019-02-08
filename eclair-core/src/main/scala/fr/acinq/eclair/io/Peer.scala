@@ -58,7 +58,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   when(DISCONNECTED) {
     case Event(Peer.Connect(NodeURI(_, hostAndPort)), d: DisconnectedData) =>
       val address = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
-      if (d.address_opt == Some(address)) {
+      if (d.address_opt.contains(address)) {
         // we already know this address, we'll reconnect automatically
         sender ! "reconnection in progress"
         stay
@@ -91,11 +91,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.info(s"using globalFeatures=${localInit.globalFeatures} and localFeatures=${localInit.localFeatures}")
       transport ! localInit
 
-      // we store the ip upon successful outgoing connection, keeping only the most recent one
-      if (outgoing) {
-        nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, address)
-      }
-      goto(INITIALIZING) using InitializingData(if (outgoing) Some(address) else None, transport, d.channels, origin_opt, localInit)
+      val address_opt = if (outgoing) {
+        // we store the node address upon successful outgoing connection, so we can reconnect later
+        // any previous address is overwritten
+        NodeAddress.fromParts(address.getHostString, address.getPort).map(nodeAddress => nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, nodeAddress))
+        Some(address)
+      } else None
+
+      goto(INITIALIZING) using InitializingData(address_opt, transport, d.channels, origin_opt, localInit)
 
     case Event(Terminated(actor), d@DisconnectedData(_, channels, _)) if channels.exists(_._2 == actor) =>
       val h = channels.filter(_._2 == actor).keys
@@ -131,7 +134,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
         // let's bring existing/requested channels online
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport, d.localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }) forMax(30 seconds) // forMax will trigger a StateTimeout
+        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }) forMax (30 seconds) // forMax will trigger a StateTimeout
       } else {
         log.warning(s"incompatible features, disconnecting")
         d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
@@ -490,7 +493,7 @@ object Peer {
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet: EclairWallet))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet))
 
   // @formatter:off
 

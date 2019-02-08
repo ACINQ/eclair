@@ -22,7 +22,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Stat
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.{HasCommitments, _}
 import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
@@ -60,8 +60,9 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
         case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
       }
       .map {
-        case (remoteNodeId, states, address_opt) =>
+        case (remoteNodeId, states, nodeaddress_opt) =>
           // we might not have an address if we didn't initiate the connection in the first place
+          val address_opt = nodeaddress_opt.map(_.socketAddress)
           val peer = createOrGetPeer(Map(), remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
           remoteNodeId -> peer
       }.toMap

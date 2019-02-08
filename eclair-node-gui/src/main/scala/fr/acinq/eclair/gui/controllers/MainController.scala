@@ -195,7 +195,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     })
     networkNodesIPColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
       def call(pn: CellDataFeatures[NodeAnnouncement, String]) = {
-        val address = pn.getValue.socketAddresses.map(a => HostAndPort.fromParts(a.getHostString, a.getPort)).mkString(",")
+        val address = pn.getValue.addresses.map(a => HostAndPort.fromParts(a.socketAddress.getHostString, a.socketAddress.getPort)).mkString(",")
         new SimpleStringProperty(address)
       }
     })
@@ -365,7 +365,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     bitcoinChain.getStyleClass.add(setup.chain)
 
     val nodeURI_opt = setup.nodeParams.publicAddresses.headOption.map(address => {
-      s"${setup.nodeParams.nodeId}@${HostAndPort.fromParts(address.getHostString, address.getPort)}"
+      s"${setup.nodeParams.nodeId}@${HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort)}"
     })
 
     contextMenu = ContextMenuUtils.buildCopyContext(List(CopyAction("Copy Pubkey", setup.nodeParams.nodeId.toString())))
@@ -456,8 +456,8 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     copyURI.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent): Unit = Option(row.getItem) match {
         case Some(pn) => ContextMenuUtils.copyToClipboard(
-          pn.socketAddresses.headOption match {
-            case Some(firstAddress) => s"${pn.nodeId.toString}@${HostAndPort.fromParts(firstAddress.getHostString, firstAddress.getPort)}"
+          pn.addresses.headOption match {
+            case Some(firstAddress) => s"${pn.nodeId.toString}@${HostAndPort.fromParts(firstAddress.socketAddress.getHostString, firstAddress.socketAddress.getPort)}"
             case None => "no URI Known"
           })
         case None =>
