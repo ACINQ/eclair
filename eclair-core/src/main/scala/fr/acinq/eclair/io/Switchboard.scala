@@ -95,7 +95,17 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   }
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
-  
+
+  /**
+    * Retrieves a peer based on its public key.
+    *
+    * NB: Internally akka uses a TreeMap to store the binding, so this lookup is O(log(N)). We could make it O(1) by
+    * using our own HashMap, but it creates other problems when we need to clean up peers. This seems like a reasonable
+    * trade-off because we make only make this call once per connection.
+    *
+    * @param remoteNodeId
+    * @return
+    */
   def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
 
   /**
