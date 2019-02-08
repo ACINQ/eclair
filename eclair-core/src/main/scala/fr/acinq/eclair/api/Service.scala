@@ -31,7 +31,6 @@ import akka.pattern.ask
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
 import akka.util.Timeout
-import com.typesafe.config.Config
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -41,14 +40,12 @@ import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JBool, JInt, JString}
 import org.json4s.{JValue, jackson}
-import com.typesafe.config.Config._
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -290,7 +287,7 @@ trait Service extends Logging {
                             // optional cltv expiry
                             val sendPayment = pr.minFinalCltvExpiry match {
                               case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId)
-                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry, maxFeePct = nodeParams.maxPaymentFee)
+                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry)
                             }
                             completeRpcFuture(req.id, (paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
                               case s: PaymentSucceeded => s
