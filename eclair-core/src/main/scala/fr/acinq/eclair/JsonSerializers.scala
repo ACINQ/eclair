@@ -9,7 +9,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, IPv4, IPv6, Init, NodeAddress, OpenChannel, Padding, Shutdown, Tor2, Tor3, UpdateAddHtlc, UpdateFailHtlc, UpdateMessage}
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, IPv4, IPv6, Init, NodeAddress, OpenChannel, Shutdown, Tor2, Tor3, UpdateAddHtlc, UpdateFailHtlc, UpdateMessage}
 
 object JsonSerializers {
 
@@ -73,13 +73,7 @@ object JsonSerializers {
   implicit val channelUpdateReadWriter: ReadWriter[ChannelUpdate] = macroRW
   implicit val shutdownReadWriter: ReadWriter[Shutdown] = macroRW
   implicit val closingSigndeReadWriter: ReadWriter[ClosingSigned] = macroRW
-  implicit val nodeAddressReadWriter: ReadWriter[NodeAddress] = readwriter[String].bimap[NodeAddress](_ match {
-    case IPv4(a, p) => HostAndPort.fromParts(a.getHostAddress, p).toString
-    case IPv6(a, p) => HostAndPort.fromParts(a.getHostAddress, p).toString
-    case Tor2(b, p) => s"${b.toString}:$p"
-    case Tor3(b, p) => s"${b.toString}:$p"
-    case Padding => ""
-  }, s => null)
+  implicit val nodeAddressReadWriter: ReadWriter[NodeAddress] = readwriter[String].bimap[NodeAddress](n => HostAndPort.fromParts(n.socketAddress.getHostString, n.socketAddress.getPort).toString, s => null)
 
   implicit val inputInitFunderReadWriter: ReadWriter[INPUT_INIT_FUNDER] = macroRW
   implicit val inputInitFundeeReadWriter: ReadWriter[INPUT_INIT_FUNDEE] = macroRW

@@ -32,8 +32,8 @@ class JsonSerializersSpec extends FunSuite with Logging {
   }
 
   test("NodeAddress serialization") {
-    val ipv4 = NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array(10, 0, 0, 1)), 8888))
-    val ipv6LocalHost = NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)), 9735))
+    val ipv4 = NodeAddress.fromParts("10.0.0.1", 8888).get
+    val ipv6LocalHost = NodeAddress.fromParts("[0:0:0:0:0:0:0:1]", 9735).get
 
     assert(write(ipv4) === s""""10.0.0.1:8888"""")
     assert(write(ipv6LocalHost) === s""""[0:0:0:0:0:0:0:1]:9735"""")

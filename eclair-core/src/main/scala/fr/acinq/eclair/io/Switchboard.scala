@@ -18,20 +18,18 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.{HasCommitments, _}
 import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
-import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import grizzled.slf4j.Logging
 
 import scala.util.Success
-import fr.acinq.eclair.channel.HasCommitments
 
 /**
   * Ties network connections to peers.
@@ -44,7 +42,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   authenticator ! self
 
   // we load peers and channels from database
-  private val initialPeers = {
+  {
     val channels = nodeParams.channelsDb.listChannels()
     val peers = nodeParams.peersDb.listPeers()
 
@@ -60,67 +58,68 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
       .map {
         case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
       }
-      .map {
-        case (remoteNodeId, states, address_opt) =>
+      .foreach {
+        case (remoteNodeId, states, nodeaddress_opt) =>
           // we might not have an address if we didn't initiate the connection in the first place
-          val peer = createOrGetPeer(Map(), remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
-          remoteNodeId -> peer
-      }.toMap
+          val address_opt = nodeaddress_opt.map(_.socketAddress)
+          createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
+      }
   }
 
-  def receive: Receive = main(initialPeers)
-
-  def main(peers: Map[PublicKey, ActorRef]): Receive = {
+  def receive: Receive = {
 
     case Peer.Connect(NodeURI(publicKey, _)) if publicKey == nodeParams.nodeId =>
       sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
     case c@Peer.Connect(NodeURI(remoteNodeId, _)) =>
       // we create a peer if it doesn't exist
-      val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
+      val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward c
-      context become main(peers + (remoteNodeId -> peer))
 
     case o@Peer.OpenChannel(remoteNodeId, _, _, _, _) =>
-      peers.get(remoteNodeId) match {
+      getPeer(remoteNodeId) match {
         case Some(peer) => peer forward o
         case None => sender ! Status.Failure(new RuntimeException("no connection to peer"))
       }
 
-    case Terminated(actor) =>
-      peers.collectFirst {
-        case (remoteNodeId, peer) if peer == actor =>
-          log.debug(s"$actor is dead, removing from peers")
-          nodeParams.peersDb.removePeer(remoteNodeId)
-          context become main(peers - remoteNodeId)
-      }
-
     case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _, _) =>
       // if this is an incoming connection, we might not yet have created the peer
-      val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
+      val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward auth
-      context become main(peers + (remoteNodeId -> peer))
 
-    case 'peers => sender ! peers
+    case 'peers => sender ! context.children
 
   }
 
+  def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
+
+  /**
+    * Retrieves a peer based on its public key.
+    *
+    * NB: Internally akka uses a TreeMap to store the binding, so this lookup is O(log(N)) where N is the number of
+    * peers. We could make it O(1) by using our own HashMap, but it creates other problems when we need to remove an
+    * existing peer. This seems like a reasonable trade-off because we only make this call once per connection, and N
+    * should never be very big anyway.
+    *
+    * @param remoteNodeId
+    * @return
+    */
+  def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
+
   /**
     *
-    * @param peers
     * @param remoteNodeId
     * @param previousKnownAddress only to be set if we know for sure that this ip worked in the past
     * @param offlineChannels
     * @return
     */
-  def createOrGetPeer(peers: Map[PublicKey, ActorRef], remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]) = {
-    peers.get(remoteNodeId) match {
+  def createOrGetPeer(remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]) = {
+    getPeer(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
-        log.info(s"creating new peer current=${peers.size}")
-        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet), name = s"peer-$remoteNodeId")
+        log.info(s"creating new peer current=${context.children.size}")
+        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet), name = peerActorName(remoteNodeId))
         peer ! Peer.Init(previousKnownAddress, offlineChannels)
-        context watch (peer)
         peer
     }
   }

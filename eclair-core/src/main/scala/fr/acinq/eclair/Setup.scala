@@ -40,18 +40,17 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
 
+import scala.concurrent._
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future, Promise}
-
 
 /**
   * Setup eclair from a data directory.
   *
   * Created by PM on 25/01/2016.
   *
-  * @param datadir  directory where eclair-core will write/read its data.
+  * @param datadir          directory where eclair-core will write/read its data.
   * @param overrideDefaults use this parameter to programmatically override the node configuration .
-  * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
+  * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
   */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
@@ -66,7 +65,7 @@ class Setup(datadir: File,
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
+  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, torAddress_opt = None)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")

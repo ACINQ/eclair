@@ -21,7 +21,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
-import fr.acinq.eclair.blockchain.{ValidateRequest, ValidateResult, WatchSpentBasic}
+import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
@@ -115,7 +115,7 @@ object PruningSpec {
       case ValidateRequest(ann) =>
         val txOut = TxOut(Satoshi(1000000), Script.pay2wsh(Scripts.multiSig2of2(ann.bitcoinKey1, ann.bitcoinKey2)))
         val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(ann.shortChannelId)
-        sender ! ValidateResult(ann, Some(Transaction(version = 0, txIn = Nil, txOut = List.fill(outputIndex + 1)(txOut), lockTime = 0)), true, None)
+        sender ! ValidateResult(ann, Right(Transaction(version = 0, txIn = Nil, txOut = List.fill(outputIndex + 1)(txOut), lockTime = 0), UtxoStatus.Unspent))
       case unexpected => println(s"unexpected : $unexpected")
     }
   }

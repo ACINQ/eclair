@@ -247,7 +247,7 @@ class RouterSpec extends BaseRouterSpec {
     probe.send(router, PeerRoutingMessage(null, remoteNodeId, announcement))
     watcher.expectMsgType[ValidateRequest]
     probe.send(router, PeerRoutingMessage(null, remoteNodeId, update))
-    watcher.send(router, ValidateResult(announcement, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true, None))
+    watcher.send(router, ValidateResult(announcement, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
 
     probe.send(router, TickPruneStaleChannels)
     val sender = TestProbe()

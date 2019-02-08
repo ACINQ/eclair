@@ -22,7 +22,7 @@ import akka.actor.{Actor, ActorLogging, ActorSystem, Props, ReceiveTimeout, Supe
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Satoshi, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.{ValidateRequest, ValidateResult}
+import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.{Authenticator, NodeURI, Peer}
 import fr.acinq.eclair.router._
@@ -49,7 +49,7 @@ class SyncLiteSetup(datadir: File,
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val chain = config.getString("chain")
   val keyManager = new LocalKeyManager(PrivateKey(randomBytes(32), compressed = true).toBin, NodeParams.makeChainHash(chain))
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
+  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, torAddress_opt = None)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
@@ -87,7 +87,7 @@ class YesWatcher extends Actor with ActorLogging {
         txIn = Seq.empty[TxIn],
         txOut = List.fill(outputIndex + 1)(TxOut(Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
         lockTime = 0)
-      sender ! ValidateResult(c, Some(fakeFundingTx), true, None)
+      sender ! ValidateResult(c, Right(fakeFundingTx, UtxoStatus.Unspent))
   }
 }
 
