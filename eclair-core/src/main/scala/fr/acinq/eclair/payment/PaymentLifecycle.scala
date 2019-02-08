@@ -55,15 +55,8 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       val finalExpiry = Globals.blockCount.get().toInt + c.finalCltvExpiry.toInt + 1
 
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
-      val feePct = (cmd.amountMsat - c.amountMsat) / c.amountMsat.toDouble // c.amountMsat is required to be > 0, have to convert to double, otherwise will be rounded
-      if (feePct > c.maxFeePct) {
-        log.info(s"cheapest route found is too expensive: feePct=$feePct maxFeePct=${c.maxFeePct}")
-        reply(s, PaymentFailed(c.paymentHash, failures = failures :+ LocalFailure(RouteTooExpensive(feePct, c.maxFeePct))))
-        stop(FSM.Normal)
-      } else {
-        register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
-        goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
-      }
+      register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
+      goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
     case Event(Status.Failure(t), WaitingForRoute(s, c, failures)) =>
       reply(s, PaymentFailed(c.paymentHash, failures = failures :+ LocalFailure(t)))
@@ -199,7 +192,6 @@ object PaymentLifecycle {
                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                          finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
                          maxAttempts: Int = 5,
-                         maxFeePct: Double = 0.03,
                          randomize: Option[Boolean] = None,
                          routeParams: Option[RouteParams] = None) {
     require(amountMsat > 0, s"amountMsat must be > 0")
@@ -223,10 +215,6 @@ object PaymentLifecycle {
   case object WAITING_FOR_REQUEST extends State
   case object WAITING_FOR_ROUTE extends State
   case object WAITING_FOR_PAYMENT_COMPLETE extends State
-
-  val percentageFormatter = NumberFormat.getPercentInstance(Locale.US) // force US locale to always get "fee=0.272% max=0.1%" (otherwise depending on locale it can be "fee=0,272 % max=0,1 %")
-  percentageFormatter.setMaximumFractionDigits(3)
-  case class RouteTooExpensive(feePct: Double, maxFeePct: Double) extends RuntimeException(s"cheapest route found is too expensive: fee=${percentageFormatter.format(feePct)} max=${percentageFormatter.format(maxFeePct)}")
 
   // @formatter:on
 

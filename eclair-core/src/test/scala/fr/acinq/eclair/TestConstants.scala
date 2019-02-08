@@ -84,7 +84,6 @@ object TestConstants {
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000,
-      maxPaymentFee = 0.03,
       minFundingSatoshis = 1000L,
       routerConf = RouterConf(
         randomizeRouteSelection = false,
@@ -151,7 +150,6 @@ object TestConstants {
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000,
-      maxPaymentFee = 0.03,
       minFundingSatoshis = 1000L,
       routerConf = RouterConf(
         randomizeRouteSelection = false,
