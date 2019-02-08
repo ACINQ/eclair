@@ -9,9 +9,11 @@ import Router._
 
 object Graph {
 
+  // @formatter:off
   case class RichWeight(cost: Long, length: Int, cltv: Int)
   case class WeightedNode(key: PublicKey, weight: RichWeight)
   case class WeightedPath(path: Seq[GraphEdge], weight: RichWeight)
+  // @formatter:on
 
   /**
     * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
