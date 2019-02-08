@@ -20,6 +20,7 @@ import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
 import java.nio.ByteOrder
 
+import akka.actor.{Actor, ActorRef, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -227,6 +228,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         case Some(ExpectedPong(ping, timestamp)) if ping.pongLength == data.length =>
           // we use the pong size to correlate between pings and pongs
           val latency = Platform.currentTime - timestamp
+          ping_hist.update(latency)
           log.debug(s"received pong with latency=$latency")
           cancelTimer(PingTimeout.toString())
           // pings are sent periodically with some randomization
@@ -307,11 +309,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           c + 1
       }
 
-      log.info(s"sending all announcements to {}", remoteNodeId)
+      log.debug(s"sending all announcements to {}", remoteNodeId)
       val channelsSent = send(channels)
       val nodesSent = send(nodes)
       val updatesSent = send(updates)
-      log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
+      log.debug(s"sent all announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       stay
 
     case Event(rebroadcast: Rebroadcast, d: ConnectedData) =>
@@ -336,7 +338,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val nodesSent = sendAndCount(rebroadcast.nodes)
 
       if (channelsSent > 0 || updatesSent > 0 || nodesSent > 0) {
-        log.info(s"sent announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
+        log.debug(s"sent announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       }
       stay
 
@@ -497,6 +499,19 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   initialize()
 
   override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
+
+  val msg_in_meter = nodeParams.metrics.meter(s"peer.$remoteNodeId.msg.in")
+  //val msg_out_meter = nodeParams.metrics.meter(s"peer.$remoteNodeId.msg.out")
+  val ping_hist = nodeParams.metrics.histogram(s"peer.$remoteNodeId.latency")
+
+  override def aroundReceive(receive: Actor.Receive, msg: Any): Unit = {
+    msg match {
+      case _: LightningMessage => msg_in_meter.mark()
+      case _ =>
+    }
+    super.aroundReceive(receive, msg)
+  }
+
 }
 
 object Peer {

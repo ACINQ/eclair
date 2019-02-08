@@ -17,26 +17,23 @@
 package fr.acinq.eclair.router
 
 import akka.Done
-import akka.actor.{ActorRef, Props, Status}
+import akka.actor.{Actor, ActorRef, Props, Status}
 import akka.event.Logging.MDC
-import akka.pattern.pipe
-import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, InvalidAnnouncement, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidAnnouncement, InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.WeightedPath
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 
-import scala.collection.{SortedSet, mutable}
 import scala.collection.immutable.{SortedMap, TreeMap}
+import scala.collection.{SortedSet, mutable}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise}
@@ -690,6 +687,28 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     case SendChannelQuery(remoteNodeId, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
     case PeerRoutingMessage(_, remoteNodeId, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
     case _ => akka.event.Logging.emptyMDC
+  }
+
+  val msg_in_meter = nodeParams.metrics.meter(s"router.msg.in")
+  val nodes_in_meter = nodeParams.metrics.meter(s"router.nodes.in")
+  val channels_in_meter = nodeParams.metrics.meter(s"router.channels.in")
+  val updates_in_meter = nodeParams.metrics.meter(s"router.updates.in")
+  val others_in_meter = nodeParams.metrics.meter(s"router.others.in")
+  //val msg_out_meter = nodeParams.metrics.meter(s"peer.$remoteNodeId.msg.out")
+
+  override def aroundReceive(receive: Actor.Receive, msg: Any): Unit = {
+    msg match {
+      case PeerRoutingMessage(_, _, lnmsg) =>
+        msg_in_meter.mark()
+        lnmsg match {
+          case _: NodeAnnouncement => nodes_in_meter.mark()
+          case _: ChannelAnnouncement => channels_in_meter.mark()
+          case _: ChannelUpdate => updates_in_meter.mark()
+          case _ => others_in_meter.mark()
+        }
+      case _ =>
+    }
+    super.aroundReceive(receive, msg)
   }
 }
 

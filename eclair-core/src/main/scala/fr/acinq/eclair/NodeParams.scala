@@ -22,6 +22,8 @@ import java.nio.file.Files
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
+import com.codahale.metrics.MetricRegistry
+import com.google.common.net.InetAddresses
 import com.google.common.net.{HostAndPort, InetAddresses}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -40,7 +42,8 @@ import scala.concurrent.duration.FiniteDuration
 /**
   * Created by PM on 26/02/2017.
   */
-case class NodeParams(keyManager: KeyManager,
+case class NodeParams(metrics: MetricRegistry = new MetricRegistry(),
+                      keyManager: KeyManager,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],

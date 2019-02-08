@@ -216,6 +216,11 @@
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
         </dependency>
+        <dependency>
+            <groupId>io.dropwizard.metrics</groupId>
+            <artifactId>metrics-core</artifactId>
+            <version>4.0.3</version>
+        </dependency>
         <!-- TESTS -->
         <dependency>
             <groupId>com.softwaremill.quicklens</groupId>

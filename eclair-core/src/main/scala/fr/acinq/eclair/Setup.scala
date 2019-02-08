@@ -16,6 +16,9 @@
 
 package fr.acinq.eclair
 
+import com.codahale.metrics._
+import org.slf4j.LoggerFactory
+import java.util.concurrent.TimeUnit
 import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Paths
@@ -99,6 +102,33 @@ class Setup(datadir: File,
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
+
+  Slf4jReporter
+    .forRegistry(nodeParams.metrics)
+    .outputTo(LoggerFactory.getLogger("fr.acinq.eclair.metrics"))
+    .convertRatesTo(TimeUnit.SECONDS)
+    .convertDurationsTo(TimeUnit.MILLISECONDS)
+    .filter(MetricFilter.startsWith("router"))
+    .build
+    .start(1, TimeUnit.MINUTES)
+
+  Slf4jReporter
+    .forRegistry(nodeParams.metrics)
+    .outputTo(LoggerFactory.getLogger("fr.acinq.eclair.metrics"))
+    .convertRatesTo(TimeUnit.SECONDS)
+    .convertDurationsTo(TimeUnit.MILLISECONDS)
+    .filter(MetricFilter.startsWith("peer"))
+    .filter(new MetricFilter {
+      override def matches(s: String, metric: Metric): Boolean = {
+        metric match {
+            // only display meters if they report significant values
+          case m: Meter => m.getOneMinuteRate > 1 || m.getFiveMinuteRate > 1 || m.getFifteenMinuteRate > 1
+          case _ => true
+        }
+      }
+    })
+    .build
+    .start(1, TimeUnit.HOURS)
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>
