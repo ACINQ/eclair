@@ -20,14 +20,14 @@ import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
-import fr.acinq.bitcoin.{BinaryData, Block}
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, NonexistingChannel, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, InvalidAnnouncement, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -46,7 +46,7 @@ import scala.util.{Random, Try}
 
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteRequest(source: PublicKey, target: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty)
+case class RouteRequest(source: PublicKey, target: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty, randomize: Option[Boolean] = None)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
   require(hops.size > 0, "route cannot be empty")
 }
@@ -195,25 +195,26 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! RoutingState(d.channels.values, d.updates.values, d.nodes.values)
       stay
 
-    case Event(v@ValidateResult(c, _, _, _), d0) =>
+    case Event(v@ValidateResult(c, _), d0) =>
       d0.awaiting.get(c) match {
         case Some(origin +: others) => origin ! TransportHandler.ReadAck(c) // now we can acknowledge the message, we only need to do it for the first peer that sent us the announcement
         case _ => ()
       }
       log.info("got validation result for shortChannelId={} (awaiting={} stash.nodes={} stash.updates={})", c.shortChannelId, d0.awaiting.size, d0.stash.nodes.size, d0.stash.updates.size)
       val success = v match {
-        case ValidateResult(c, _, _, Some(t)) =>
+        case ValidateResult(c, Left(t)) =>
           log.warning("validation failure for shortChannelId={} reason={}", c.shortChannelId, t.getMessage)
           false
-        case ValidateResult(c, Some(tx), true, None) =>
+        case ValidateResult(c, Right((tx, UtxoStatus.Unspent))) =>
           val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
           // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
           val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
-          if (tx.txOut.size < outputIndex + 1) {
-            log.error("invalid script for shortChannelId={}: txid={} does not have outputIndex={} ann={}", c.shortChannelId, tx.txid, outputIndex, c)
-            false
-          } else if (fundingOutputScript != tx.txOut(outputIndex).publicKeyScript) {
-            log.error("invalid script for shortChannelId={} txid={} ann={}", c.shortChannelId, tx.txid, c)
+          if (tx.txOut.size < outputIndex + 1 || fundingOutputScript != tx.txOut(outputIndex).publicKeyScript) {
+            log.error(s"invalid script for shortChannelId={}: txid={} does not have script=$fundingOutputScript at outputIndex=$outputIndex ann={}", c.shortChannelId, tx.txid, c)
+            d0.awaiting.get(c) match {
+              case Some(origins) => origins.foreach(_ ! InvalidAnnouncement(c))
+              case _ => ()
+            }
             false
           } else {
             watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
@@ -231,22 +232,19 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
             }
             true
           }
-        case ValidateResult(c, Some(tx), false, None) =>
-          log.warning("ignoring shortChannelId={} tx={} (funding tx already spent)", c.shortChannelId, tx.txid)
-          d0.awaiting.get(c) match {
-            case Some(origins) => origins.foreach(_ ! ChannelClosed(c))
-            case _ => ()
+        case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
+          if (fundingTxStatus.spendingTxConfirmed) {
+            log.warning("ignoring shortChannelId={} tx={} (funding tx already spent and spending tx is confirmed)", c.shortChannelId, tx.txid)
+            // the funding tx has been spent by a transaction that is now confirmed: peer shouldn't send us those
+            d0.awaiting.get(c) match {
+              case Some(origins) => origins.foreach(_ ! ChannelClosed(c))
+              case _ => ()
+            }
+          } else {
+            log.debug("ignoring shortChannelId={} tx={} (funding tx already spent but spending tx isn't confirmed)", c.shortChannelId, tx.txid)
           }
           // there may be a record if we have just restarted
           db.removeChannel(c.shortChannelId)
-          false
-        case ValidateResult(c, None, _, None) =>
-          // we couldn't find the funding tx in the blockchain, this is highly suspicious because it should have at least 6 confirmations to be announced
-          log.warning("could not retrieve tx for shortChannelId={}", c.shortChannelId)
-          d0.awaiting.get(c) match {
-            case Some(origins) => origins.foreach(_ ! NonexistingChannel(c))
-            case _ => ()
-          }
           false
       }
 
@@ -332,7 +330,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       }
 
       val staleChannelsToRemove = new mutable.MutableList[ChannelDesc]
-      staleChannels.map(d.channels).foreach( ca => {
+      staleChannels.map(d.channels).foreach(ca => {
         staleChannelsToRemove += ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)
         staleChannelsToRemove += ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)
       })
@@ -376,7 +374,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! d
       stay
 
-    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels), d) =>
+    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, randomize), d) =>
       // we convert extra routing info provided in the payment request to fake channel_update
       // it takes precedence over all other channel_updates we know
       val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end)).toMap
@@ -385,8 +383,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
-      // we ask the router to make a random selection among the three best routes, numRoutes = 3
-      findRoute(d.graph, start, end, amount, numRoutes = DEFAULT_ROUTES_COUNT, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet)
+      // if we want to randomize we ask the router to make a random selection among the three best routes
+      val routesToFind = if(randomize.getOrElse(nodeParams.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
+      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -815,15 +814,18 @@ object Router {
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes).toList match {
       case Nil => throw RouteNotFound
-      case route :: Nil  if route.path.isEmpty => throw RouteNotFound
-      case foundRoutes => foundRoutes
+      case route :: Nil if route.path.isEmpty => throw RouteNotFound
+      case routes => routes.find(_.path.size == 1) match {
+        case Some(directRoute) => directRoute :: Nil
+        case _ => routes
+      }
     }
 
     // minimum cost
     val minimumCost = foundRoutes.head.weight
 
     // routes paying at most minimumCost + 10%
-    val eligibleRoutes = foundRoutes.filter(_.weight  <= (minimumCost + minimumCost * DEFAULT_ALLOWED_SPREAD).round)
+    val eligibleRoutes = foundRoutes.filter(_.weight <= (minimumCost + minimumCost * DEFAULT_ALLOWED_SPREAD).round)
     Random.shuffle(eligibleRoutes).head.path.map(graphEdgeToHop)
   }
 }

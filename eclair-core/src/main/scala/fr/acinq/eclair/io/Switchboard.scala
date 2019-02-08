@@ -18,11 +18,11 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.{HasCommitments, _}
 import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
@@ -60,8 +60,9 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
         case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
       }
       .foreach {
-        case (remoteNodeId, states, address_opt) =>
+        case (remoteNodeId, states, nodeaddress_opt) =>
           // we might not have an address if we didn't initiate the connection in the first place
+          val address_opt = nodeaddress_opt.map(_.socketAddress)
           createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
       }
   }
@@ -94,7 +95,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   }
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
-
+  
   def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
 
   /**
