@@ -99,9 +99,10 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   /**
     * Retrieves a peer based on its public key.
     *
-    * NB: Internally akka uses a TreeMap to store the binding, so this lookup is O(log(N)). We could make it O(1) by
-    * using our own HashMap, but it creates other problems when we need to clean up peers. This seems like a reasonable
-    * trade-off because we make only make this call once per connection.
+    * NB: Internally akka uses a TreeMap to store the binding, so this lookup is O(log(N)) where N is the number of
+    * peers. We could make it O(1) by using our own HashMap, but it creates other problems when we need to remove an
+    * existing peer. This seems like a reasonable trade-off because we only make this call once per connection, and N
+    * should never be very big anyway.
     *
     * @param remoteNodeId
     * @return
