@@ -653,7 +653,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
                 self ! TickRefreshChannelUpdate
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
-              context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, nextRemoteCommit.spec.toRemoteMsat)) // note that remoteCommit.toRemote == toLocal
+              if (nextRemoteCommit.spec.toRemoteMsat != d.commitments.remoteCommit.spec.toRemoteMsat) {
+                // we send this event only when our balance changes (note that remoteCommit.toRemote == toLocal)
+                context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, nextRemoteCommit.spec.toRemoteMsat, commitments1))
+              }
               // we expect a quick response from our peer
               setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer = context.parent), timeout = nodeParams.revocationTimeout, repeat = false)
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
@@ -1269,6 +1272,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       closeType_opt match {
         case Some(closeType) =>
           log.info(s"channel closed (type=$closeType)")
+          context.system.eventStream.publish(ChannelClosed(self, d.channelId, closeType, d.commitments))
           goto(CLOSED) using store(d1)
         case None =>
           stay using store(d1)

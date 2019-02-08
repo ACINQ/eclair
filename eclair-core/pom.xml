@@ -183,6 +183,11 @@
             <artifactId>scodec-core_${scala.version.short}</artifactId>
             <version>1.10.3</version>
         </dependency>
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+            <version>1.9</version>
+        </dependency>
         <!-- LOGGING -->
         <dependency>
             <groupId>org.clapper</groupId>
@@ -212,6 +217,12 @@
             <version>${guava.version}</version>
         </dependency>
         <!-- TESTS -->
+        <dependency>
+            <groupId>com.softwaremill.quicklens</groupId>
+            <artifactId>quicklens_${scala.version.short}</artifactId>
+            <version>1.4.11</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>com.whisk</groupId>
             <artifactId>docker-testkit-scalatest_${scala.version.short}</artifactId>
