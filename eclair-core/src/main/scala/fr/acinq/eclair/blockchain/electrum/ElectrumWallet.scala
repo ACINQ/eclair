@@ -155,7 +155,6 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         log.info("performing full sync")
         // now ask for the first header after our latest checkpoint
         client ! ElectrumClient.GetHeaders(data.blockchain.checkpoints.size * RETARGETING_PERIOD, RETARGETING_PERIOD)
-        // make sure there is not last ready message
         goto(SYNCING) using data
       } else if (header == data.blockchain.tip.header) {
         // nothing to sync
