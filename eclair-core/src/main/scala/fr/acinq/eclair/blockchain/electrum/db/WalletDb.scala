@@ -18,6 +18,7 @@ package fr.acinq.eclair.blockchain.electrum.db
 
 import fr.acinq.bitcoin.{BinaryData, BlockHeader, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 
 trait HeaderDb {
   def addHeader(height: Int, header: BlockHeader): Unit
@@ -34,12 +35,8 @@ trait HeaderDb {
   def getTip: Option[(Int, BlockHeader)]
 }
 
-trait TransactionDb {
-  def addTransaction(tx: Transaction, proof: GetMerkleResponse): Unit
+trait WalletDb extends HeaderDb {
+  def persist(data: PersistentData): Unit
 
-  def getTransaction(txid: BinaryData): Option[(Transaction, GetMerkleResponse)]
-
-  def getTransactions(): Seq[(Transaction, GetMerkleResponse)]
+  def readPersistentData(): Option[PersistentData]
 }
-
-trait WalletDb extends HeaderDb with TransactionDb
