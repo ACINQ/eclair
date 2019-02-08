@@ -21,6 +21,7 @@ import java.net.InetSocketAddress
 import java.nio.ByteOrder
 
 import akka.actor.{Actor, ActorRef, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
@@ -56,20 +57,27 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   when(DISCONNECTED) {
-    case Event(Peer.Connect(NodeURI(_, address)), _) =>
-      // even if we are in a reconnection loop, we immediately process explicit connection requests
-      context.actorOf(Client.props(nodeParams, authenticator, new InetSocketAddress(address.getHost, address.getPort), remoteNodeId, origin_opt = Some(sender())))
-      stay
+    case Event(Peer.Connect(NodeURI(_, hostAndPort)), d: DisconnectedData) =>
+      val address = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
+      if (d.address_opt.contains(address)) {
+        // we already know this address, we'll reconnect automatically
+        sender ! "reconnection in progress"
+        stay
+      } else {
+        // we immediately process explicit connection requests to new addresses
+        context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender())))
+        stay
+      }
 
-    case Event(Reconnect, d@DisconnectedData(address_opt, channels, attempts)) =>
-      address_opt match {
+    case Event(Reconnect, d: DisconnectedData) =>
+      d.address_opt match {
         case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
-        case _ if channels.isEmpty => stay // no-op (no more channels with this peer)
+        case _ if d.channels.isEmpty => stay // no-op (no more channels with this peer)
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           // exponential backoff retry with a finite max
-          setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, attempts), 60) seconds, repeat = false)
-          stay using d.copy(attempts = attempts + 1)
+          setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 60) seconds, repeat = false)
+          stay using d.copy(attempts = d.attempts + 1)
       }
 
     case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, address, outgoing, origin_opt), d: DisconnectedData) =>
@@ -84,16 +92,25 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.info(s"using globalFeatures=${localInit.globalFeatures} and localFeatures=${localInit.localFeatures}")
       transport ! localInit
 
-      // we store the ip upon successful outgoing connection, keeping only the most recent one
-      if (outgoing) {
-        nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, address)
-      }
-      goto(INITIALIZING) using InitializingData(if (outgoing) Some(address) else None, transport, d.channels, origin_opt, localInit)
+      val address_opt = if (outgoing) {
+        // we store the node address upon successful outgoing connection, so we can reconnect later
+        // any previous address is overwritten
+        NodeAddress.fromParts(address.getHostString, address.getPort).map(nodeAddress => nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, nodeAddress))
+        Some(address)
+      } else None
 
-    case Event(Terminated(actor), d@DisconnectedData(_, channels, _)) if channels.exists(_._2 == actor) =>
-      val h = channels.filter(_._2 == actor).keys
+      goto(INITIALIZING) using InitializingData(address_opt, transport, d.channels, origin_opt, localInit)
+
+    case Event(Terminated(actor), d: DisconnectedData) if d.channels.exists(_._2 == actor) =>
+      val h = d.channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${h.mkString("/")}")
-      stay using d.copy(channels = channels -- h)
+      val channels1 = d.channels -- h
+      if (channels1.isEmpty) {
+        // we have no existing channels, we can forget about this peer
+        stopPeer()
+      } else {
+        stay using d.copy(channels = channels1)
+      }
 
     case Event(_: wire.LightningMessage, _) => stay // we probably just got disconnected and that's the last messages we received
   }
@@ -124,7 +141,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
         // let's bring existing/requested channels online
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport, d.localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }) forMax(30 seconds) // forMax will trigger a StateTimeout
+        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }) forMax (30 seconds) // forMax will trigger a StateTimeout
       } else {
         log.warning(s"incompatible features, disconnecting")
         d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
@@ -153,7 +170,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(Terminated(actor), d: InitializingData) if d.channels.exists(_._2 == actor) =>
       val h = d.channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${h.mkString("/")}")
-      stay using d.copy(channels = d.channels -- h)
+      val channels1 = d.channels -- h
+      if (channels1.isEmpty) {
+        // we have no existing channels, we can forget about this peer
+        stopPeer()
+      } else {
+        stay using d.copy(channels = channels1)
+      }
   }
 
   when(CONNECTED) {
@@ -356,7 +379,15 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           }
           log.error(s"peer sent us a routing message with invalid sig: r=$r bin=$bin")
           // for now we just return an error, maybe ban the peer in the future?
+          // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
           d.transport ! Error(CHANNELID_ZERO, s"bad announcement sig! bin=$bin".getBytes())
+          d.behavior
+        case InvalidAnnouncement(c) =>
+          // they seem to be sending us fake announcements?
+          log.error(s"couldn't find funding tx with valid scripts for shortChannelId=${c.shortChannelId}")
+          // for now we just return an error, maybe ban the peer in the future?
+          // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
+          d.transport ! Error(CHANNELID_ZERO, s"couldn't verify channel! shortChannelId=${c.shortChannelId}".getBytes())
           d.behavior
         case ChannelClosed(_) =>
           if (d.behavior.ignoreNetworkAnnouncement) {
@@ -368,18 +399,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
             log.warning(s"peer sent us too many channel announcements with funding tx already spent (count=${d.behavior.fundingTxAlreadySpentCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
             setTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, repeat = false)
             d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1, ignoreNetworkAnnouncement = true)
-          }
-        case NonexistingChannel(_) =>
-          // this should never happen, unless we are not in sync or there is a 6+ blocks reorg
-          if (d.behavior.ignoreNetworkAnnouncement) {
-            // we already are ignoring announcements, we may have additional notifications for announcements that were received right before our ban
-            d.behavior.copy(fundingTxNotFoundCount = d.behavior.fundingTxNotFoundCount + 1)
-          } else if (d.behavior.fundingTxNotFoundCount < MAX_FUNDING_TX_NOT_FOUND) {
-            d.behavior.copy(fundingTxNotFoundCount = d.behavior.fundingTxNotFoundCount + 1)
-          } else {
-            log.warning(s"peer sent us too many channel announcements with non-existing funding tx (count=${d.behavior.fundingTxNotFoundCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
-            setTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, repeat = false)
-            d.behavior.copy(fundingTxNotFoundCount = d.behavior.fundingTxNotFoundCount + 1, ignoreNetworkAnnouncement = true)
           }
       }
       stay using d.copy(behavior = behavior1)
@@ -394,8 +413,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(Terminated(actor), d: ConnectedData) if actor == d.transport =>
       log.info(s"lost connection to $remoteNodeId")
-      d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-      goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+      if (d.channels.isEmpty) {
+        // we have no existing channels, we can forget about this peer
+        stopPeer()
+      } else {
+        d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+        goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+      }
 
     case Event(Terminated(actor), d: ConnectedData) if d.channels.values.toSet.contains(actor) =>
       // we will have at most 2 ids: a TemporaryChannelId and a FinalChannelId
@@ -435,16 +459,17 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(_: TransportHandler.ReadAck, _) => stay // ignored
 
+    case Event(Peer.Reconnect, _) => stay // we got connected in the meantime
+
     case Event(SendPing, _) => stay // we got disconnected in the meantime
 
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
 
     case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
-
-    case Event(_: Terminated, _) => stay // this channel got closed before having a commitment and we got disconnected (e.g. a funding error occured)
   }
 
   onTransition {
+    case INSTANTIATING -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => self ! Reconnect // we reconnect right away if we just started the peer
     case _ -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
     case DISCONNECTED -> _ if nodeParams.autoReconnect && stateData.address_opt.isDefined => cancelTimer(RECONNECT_TIMER)
   }
@@ -460,6 +485,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     val channel = context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, router, relayer, origin_opt))
     context watch channel
     channel
+  }
+
+  def stopPeer() = {
+    log.info("removing peer from db")
+    nodeParams.peersDb.removePeer(remoteNodeId)
+    stop(FSM.Normal)
   }
 
   // a failing channel won't be restarted, it should handle its states
@@ -497,7 +528,7 @@ object Peer {
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet: EclairWallet))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet))
 
   // @formatter:off
 
@@ -542,8 +573,8 @@ object Peer {
 
   sealed trait BadMessage
   case class InvalidSignature(r: RoutingMessage) extends BadMessage
+  case class InvalidAnnouncement(c: ChannelAnnouncement) extends BadMessage
   case class ChannelClosed(c: ChannelAnnouncement) extends BadMessage
-  case class NonexistingChannel(c: ChannelAnnouncement) extends BadMessage
 
   case class Behavior(fundingTxAlreadySpentCount: Int = 0, fundingTxNotFoundCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 

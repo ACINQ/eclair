@@ -167,15 +167,15 @@ class RouteCalculationSpec extends FunSuite {
 
     val updates = List(
       makeUpdate(1L, f, g, 0, 0),
-      makeUpdate(4L, f, h, 50, 0), // our starting node F has a direct channel with H, no routing fees are paid to traverse that
+      makeUpdate(4L, f, i, 50, 0), // our starting node F has a direct channel with I
       makeUpdate(2L, g, h, 0, 0),
       makeUpdate(3L, h, i, 0, 0)
     ).toMap
 
     val graph = makeGraph(updates)
 
-    val route = Router.findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 1)
-    assert(route.map(hops2Ids) === Success(4 :: 3 :: Nil))
+    val route = Router.findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 2)
+    assert(route.map(hops2Ids) === Success(4 :: Nil))
   }
 
   test("if there are multiple channels between the same node, select the cheapest") {

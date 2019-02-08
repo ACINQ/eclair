@@ -18,10 +18,14 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.channel.NetworkFeePaid
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 
 trait AuditDb {
+
+  def add(availableBalanceChanged: AvailableBalanceChanged)
+
+  def add(channelLifecycle: ChannelLifecycleEvent)
 
   def add(paymentSent: PaymentSent)
 
@@ -44,6 +48,8 @@ trait AuditDb {
   def close: Unit
 
 }
+
+case class ChannelLifecycleEvent(channelId: BinaryData, remoteNodeId: PublicKey, capacitySat: Long, isFunder: Boolean, isPrivate: Boolean, event: String)
 
 case class NetworkFee(remoteNodeId: PublicKey, channelId: BinaryData, txId: BinaryData, feeSat: Long, txType: String, timestamp: Long)
 

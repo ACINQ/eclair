@@ -131,7 +131,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val address = node2.nodeParams.publicAddresses.head
     sender.send(node1.switchboard, Peer.Connect(NodeURI(
       nodeId = node2.nodeParams.nodeId,
-      address = HostAndPort.fromParts(address.getHostString, address.getPort))))
+      address = HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort))))
     sender.expectMsgAnyOf(10 seconds, "connected", "already connected")
     sender.send(node1.switchboard, Peer.OpenChannel(
       remoteNodeId = node2.nodeParams.nodeId,
@@ -250,15 +250,20 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val amountMsat = MilliSatoshi(4200000)
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
-    // then we make the actual payment
-    val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId)
+    // then we make the actual payment, do not randomize the route to make sure we route through node B
+    val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId, randomize = Some(false))
     sender.send(nodes("A").paymentInitiator, sendReq)
     // A will receive an error from B that include the updated channel update, then will retry the payment
     sender.expectMsgType[PaymentSucceeded](5 seconds)
-    // in the meantime, the router will have updated its state
-    sender.send(nodes("A").router, 'updatesMap)
-    assert(sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)) === channelUpdateBC)
-    // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
+
+    awaitCond({
+      // in the meantime, the router will have updated its state
+      sender.send(nodes("A").router, 'updatesMap)
+      // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
+      val update = sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]](10 seconds).apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
+      update == channelUpdateBC
+    }, max = 30 seconds, interval = 1 seconds)
+
     // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
     sender.expectNoMsg(3 seconds)
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, TickRefreshChannelUpdate))
@@ -411,8 +416,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
     // we then kill the connection between C and F
     sender.send(nodes("F1").switchboard, 'peers)
-    val peers = sender.expectMsgType[Map[PublicKey, ActorRef]]
-    peers(nodes("C").nodeParams.nodeId) ! Disconnect
+    val peers = sender.expectMsgType[Iterable[ActorRef]]
+    // F's only node is C
+    peers.head ! Disconnect
     // we then wait for F to be in disconnected state
     awaitCond({
       sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_GETSTATE))
@@ -489,8 +495,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
     // we then kill the connection between C and F
     sender.send(nodes("F2").switchboard, 'peers)
-    val peers = sender.expectMsgType[Map[PublicKey, ActorRef]]
-    peers(nodes("C").nodeParams.nodeId) ! Disconnect
+    val peers = sender.expectMsgType[Iterable[ActorRef]]
+    // F's only node is C
+    peers.head ! Disconnect
     // we then wait for F to be in disconnected state
     awaitCond({
       sender.send(nodes("F2").register, Forward(htlc.channelId, CMD_GETSTATE))

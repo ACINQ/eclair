@@ -69,7 +69,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
 
   // wallet sends a receive address notification as soon as it is created
   listener.expectMsgType[NewWalletReceiveAddress]
-  
+
   def makeHeader(previousHeader: BlockHeader, timestamp: Long): BlockHeader = {
     var template = previousHeader.copy(hashPreviousBlock = previousHeader.hash, time = timestamp, nonce = 0)
     while (!BlockHeader.checkProofOfWork(template)) {
@@ -185,7 +185,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
 
     client.expectMsg(GetTransaction(tx.txid))
     wallet ! GetTransactionResponse(tx)
-    val TransactionReceived(_, _, Satoshi(100000), _, _) = listener.expectMsgType[TransactionReceived]
+    val TransactionReceived(_, _, Satoshi(100000), _, _, _) = listener.expectMsgType[TransactionReceived]
     // we think we have some unconfirmed funds
     val WalletReady(Satoshi(100000), _, _, _) = listener.expectMsgType[WalletReady]
 
