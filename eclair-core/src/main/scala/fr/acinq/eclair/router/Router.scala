@@ -20,7 +20,7 @@ import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
-import fr.acinq.bitcoin.{BinaryData, Block}
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -800,7 +800,7 @@ object Router {
   /**
     * https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
     */
-  val DEFAULT_ROUTE_MAX_LENGTH = 20
+  val ROUTE_MAX_LENGTH = 20
 
   // Max allowed CLTV for a route
   val DEFAULT_ROUTE_MAX_CLTV = 1008
@@ -842,12 +842,12 @@ object Router {
 
     val boundaries: RichWeight => Boolean = { weight =>
       ((weight.cost - amountMsat) < routeParams.maxFeeBaseMsat || (weight.cost - amountMsat) < (routeParams.maxFeePct * amountMsat)) &&
-      weight.length <= routeParams.routeMaxLength && weight.length <= DEFAULT_ROUTE_MAX_LENGTH &&
+      weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
       weight.cltv <= routeParams.routeMaxCltv
     }
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, wr, currentBlockHeight, boundaries).toList match {
-      case Nil if routeParams.routeMaxLength < DEFAULT_ROUTE_MAX_LENGTH =>
+      case Nil if routeParams.routeMaxLength < DEFAULT_ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
         return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, wr, routeParams.copy(routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
       case Nil => throw RouteNotFound
       case routes => routes.find(_.path.size == 1) match {
@@ -856,6 +856,7 @@ object Router {
       }
     }
 
+    // At this point 'foundRoutes' cannot be empty
     Random.shuffle(foundRoutes).head.path.map(DirectedGraph.graphEdgeToHop)
   }
 }

@@ -1,3 +1,19 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.PublicKey
 
@@ -11,10 +27,12 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 object Graph {
 
   // A compound weight for an edge, score is obtained with (cost X factor),'cost' contains the actual amount+fees in millisatoshi, 'cltvCumulative' the total CLTV necessary to reach this edge
+  // @formatter:off
   case class RichWeight(cost: Long, length: Int, cltv: Int, weight: Double)
   case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) // The ratios that will be used to calculate the 'factor'
   case class WeightedNode(key: PublicKey, weight: RichWeight)
   case class WeightedPath(path: Seq[GraphEdge], weight: RichWeight)
+  // @formatter:on
 
   /**
     * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
@@ -237,7 +255,7 @@ object Graph {
       case false => Seq.empty[GraphEdge]
       case true =>
         // we traverse the list of "previous" backward building the final list of edges that make the shortest path
-        val edgePath = new mutable.ArrayBuffer[GraphEdge](DEFAULT_ROUTE_MAX_LENGTH)
+        val edgePath = new mutable.ArrayBuffer[GraphEdge](ROUTE_MAX_LENGTH)
         var current = prev.get(sourceNode)
 
         while (current != null) {

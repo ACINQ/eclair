@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKe
 import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, BlockHeader, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
-import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+import fr.acinq.eclair.blockchain.electrum.db.{HeaderDb, WalletDb}
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 
@@ -64,26 +64,37 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
   // +--------------------------------------------+
 
   /**
-    * Send a notification if the wallet is ready and its ready message has not
-    * already been sent
+    * If the wallet is ready and its state changed since the last time it was ready:
+    * - publish a `WalletReady` notification
+    * - persist state data
     *
     * @param data wallet data
     * @return the input data with an updated 'last ready message' if needed
     */
-  def notifyReady(data: ElectrumWallet.Data) : ElectrumWallet.Data = {
-    if(data.isReady(swipeRange)) {
+  def persistAndNotify(data: ElectrumWallet.Data): ElectrumWallet.Data = {
+    if (data.isReady(swipeRange)) {
       data.lastReadyMessage match {
         case Some(value) if value == data.readyMessage =>
           log.debug(s"ready message $value has already been sent")
           data
         case _ =>
+          log.info(s"checking wallet")
           val ready = data.readyMessage
           log.info(s"wallet is ready with $ready")
           context.system.eventStream.publish(ready)
           context.system.eventStream.publish(NewWalletReceiveAddress(data.currentReceiveAddress))
+          params.walletDb.persist(PersistentData(data))
           data.copy(lastReadyMessage = Some(ready))
       }
     } else data
+  }
+
+  // sent notifications for all wallet transactions
+  def advertiseTransactions(data: ElectrumWallet.Data): Unit = {
+    data.transactions.values.foreach(tx => data.computeTransactionDelta(tx).foreach {
+      case (received, sent, fee_opt) =>
+        context.system.eventStream.publish(TransactionReceived(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt, data.computeTimestamp(tx.txid, params.walletDb)))
+    })
   }
 
   startWith(DISCONNECTED, {
@@ -97,13 +108,33 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
     val headers = params.walletDb.getHeaders(blockchain.checkpoints.size * RETARGETING_PERIOD, None)
     log.info(s"loading ${headers.size} headers from db")
     val blockchain1 = Blockchain.addHeadersChunk(blockchain, blockchain.checkpoints.size * RETARGETING_PERIOD, headers)
-    val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
-    val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
-    val transactions = walletDb.getTransactions().map(_._1)
-    log.info(s"loading ${transactions.size} transactions from db")
-    val txs = transactions.map(tx => tx.txid -> tx).toMap
-    val data = Data(params, blockchain1, firstAccountKeys, firstChangeKeys).copy(transactions = txs)
+    val data = Try(params.walletDb.readPersistentData()) match {
+      case Success(Some(persisted)) =>
+        val firstAccountKeys = (0 until persisted.accountKeysCount).map(i => derivePrivateKey(accountMaster, i)).toVector
+        val firstChangeKeys = (0 until persisted.changeKeysCount).map(i => derivePrivateKey(changeMaster, i)).toVector
+
+        Data(blockchain1,
+          firstAccountKeys,
+          firstChangeKeys,
+          status = persisted.status,
+          transactions = persisted.transactions,
+          heights = persisted.heights,
+          history = persisted.history,
+          proofs = persisted.proofs,
+          locks = persisted.locks,
+          pendingHistoryRequests = Set(),
+          pendingHeadersRequests = Set(),
+          pendingTransactionRequests = Set(),
+          pendingTransactions = persisted.pendingTransactions,
+          lastReadyMessage = None)
+      case _ =>
+        log.info("starting with a default wallet")
+        val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
+        val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
+        Data(params, blockchain1, firstAccountKeys, firstChangeKeys)
+    }
     context.system.eventStream.publish(NewWalletReceiveAddress(data.currentReceiveAddress))
+    log.info(s"restored wallet balance=${data.balance}")
     data
   })
 
@@ -124,17 +155,19 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         log.info("performing full sync")
         // now ask for the first header after our latest checkpoint
         client ! ElectrumClient.GetHeaders(data.blockchain.checkpoints.size * RETARGETING_PERIOD, RETARGETING_PERIOD)
-        // make sure there is not last ready message
-        goto(SYNCING) using data.copy(lastReadyMessage = None)
+        goto(SYNCING) using data
       } else if (header == data.blockchain.tip.header) {
         // nothing to sync
         data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
-        goto(RUNNING) using notifyReady(data.copy(lastReadyMessage = None))
+        advertiseTransactions(data)
+        // tell everyone we're ready
+        goto(RUNNING) using persistAndNotify(data)
       } else {
         client ! ElectrumClient.GetHeaders(data.blockchain.tip.height + 1, RETARGETING_PERIOD)
-        log.info(s"syncing headers from ${data.blockchain.height} to ${height}")
-        goto(SYNCING) using data.copy(lastReadyMessage = None)
+        log.info(s"syncing headers from ${data.blockchain.height} to ${height}, ready=${data.isReady(params.swipeRange)}")
+        // tell everyone we're ready while we catch up
+        goto(SYNCING) using persistAndNotify(data)
       }
   }
 
@@ -145,7 +178,8 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         log.info(s"headers sync complete, tip=${data.blockchain.tip}")
         data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
-        goto(RUNNING) using notifyReady(data)
+        advertiseTransactions(data)
+        goto(RUNNING) using persistAndNotify(data)
       } else {
         Try(Blockchain.addHeaders(data.blockchain, start, headers)) match {
           case Success(blockchain1) =>
@@ -185,11 +219,11 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
             data.heights.collect {
               case (txid, txheight) if txheight > 0 =>
                 val confirmations = computeDepth(height, txheight)
-                context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
+                context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations, data.computeTimestamp(txid, params.walletDb)))
             }
             val (blockchain2, saveme) = Blockchain.optimize(blockchain1)
             saveme.grouped(RETARGETING_PERIOD).foreach(chunk => params.walletDb.addHeaders(chunk.head.height, chunk.map(_.header)))
-            stay using notifyReady(data.copy(blockchain = blockchain2))
+            stay using persistAndNotify(data.copy(blockchain = blockchain2))
           case Failure(error) =>
             log.error(error, s"electrum server sent bad header, disconnecting")
             sender ! PoisonPill
@@ -198,7 +232,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       }
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash) == Some(status) =>
-      stay using notifyReady(data)// we already have it
+      stay using persistAndNotify(data) // we already have it
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if !data.accountKeyMap.contains(scriptHash) && !data.changeKeyMap.contains(scriptHash) =>
       log.warning(s"received status=$status for scriptHash=$scriptHash which does not match any of our keys")
@@ -206,7 +240,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if status == "" =>
       val data1 = data.copy(status = data.status + (scriptHash -> status)) // empty status, nothing to do
-      stay using notifyReady(data1)
+      stay using persistAndNotify(data1)
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) =>
       val key = data.accountKeyMap.getOrElse(scriptHash, data.changeKeyMap(scriptHash))
@@ -234,7 +268,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         status = data.status + (scriptHash -> status),
         pendingHistoryRequests = data.pendingHistoryRequests + scriptHash)
 
-      stay using notifyReady(data1)
+      stay using persistAndNotify(data1)
 
     case Event(ElectrumClient.GetScriptHashHistoryResponse(scriptHash, items), data) =>
       log.debug(s"scriptHash=$scriptHash has history=$items")
@@ -245,15 +279,35 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       shadow_items.foreach(item => log.warning(s"keeping shadow item for txid=${item.tx_hash}"))
       val items0 = items ++ shadow_items
 
+      val pendingHeadersRequests1 = collection.mutable.HashSet.empty[GetHeaders]
+      pendingHeadersRequests1 ++= data.pendingHeadersRequests
+
+      /**
+        * If we don't already have a header at this height, or a pending request to download the header chunk it's in,
+        * download this header chunk.
+        * We don't have this header because it's most likely older than our current checkpoint, downloading the whole header
+        * chunk (2016 headers) is quick and they're easy to verify.
+        */
+      def downloadHeadersIfMissing(height: Int): Unit = {
+        if (data.blockchain.getHeader(height).orElse(params.walletDb.getHeader(height)).isEmpty) {
+          // we don't have this header, probably because it is older than our checkpoints
+          // request the entire chunk, we will be able to check it efficiently and then store it
+          val start = (height / RETARGETING_PERIOD) * RETARGETING_PERIOD
+          val request = GetHeaders(start, RETARGETING_PERIOD)
+          // there may be already a pending request for this chunk of headers
+          if (!pendingHeadersRequests1.contains(request)) {
+            client ! request
+            pendingHeadersRequests1.add(request)
+          }
+        }
+      }
+
       val (heights1, pendingTransactionRequests1) = items0.foldLeft((data.heights, data.pendingTransactionRequests)) {
         case ((heights, hashes), item) if !data.transactions.contains(item.tx_hash) && !data.pendingTransactionRequests.contains(item.tx_hash) =>
           // we retrieve the tx if we don't have it and haven't yet requested it
           client ! GetTransaction(item.tx_hash)
           if (item.height > 0) { // don't ask for merkle proof for unconfirmed transactions
-            if (data.blockchain.getHeader(item.height).orElse(params.walletDb.getHeader(item.height)).isEmpty) {
-              val start = (item.height / RETARGETING_PERIOD) * RETARGETING_PERIOD
-              client ! GetHeaders(start, RETARGETING_PERIOD)
-            }
+            downloadHeadersIfMissing(item.height)
             client ! GetMerkle(item.tx_hash, item.height)
           }
           (heights + (item.tx_hash -> item.height), hashes + item.tx_hash)
@@ -271,54 +325,84 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
             // height=0 => unconfirmed, height=-1 => unconfirmed and one input is unconfirmed
             case (None, height) if height > 0 =>
               // first time we get a height for this tx: either it was just confirmed, or we restarted the wallet
-              context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
+              context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations, data.computeTimestamp(txid, params.walletDb)))
+              downloadHeadersIfMissing(height.toInt)
+              client ! GetMerkle(txid, height.toInt)
             case (Some(previousHeight), height) if previousHeight != height =>
               // there was a reorg
-              context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
+              context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations, data.computeTimestamp(txid, params.walletDb)))
+              downloadHeadersIfMissing(height.toInt)
+              client ! GetMerkle(txid, height.toInt)
+            case (Some(previousHeight), height) if previousHeight == height && data.proofs.get(txid).isEmpty =>
+              downloadHeadersIfMissing(height.toInt)
+              client ! GetMerkle(txid, height.toInt)
             case (Some(previousHeight), height) if previousHeight == height =>
             // no reorg, nothing to do
           }
       }
-      val data1 = data.copy(heights = heights1, history = data.history + (scriptHash -> items0), pendingHistoryRequests = data.pendingHistoryRequests - scriptHash, pendingTransactionRequests = pendingTransactionRequests1)
-      stay using notifyReady(data1)
+      val data1 = data.copy(
+        heights = heights1,
+        history = data.history + (scriptHash -> items0),
+        pendingHistoryRequests = data.pendingHistoryRequests - scriptHash,
+        pendingTransactionRequests = pendingTransactionRequests1,
+        pendingHeadersRequests = pendingHeadersRequests1.toSet)
+      stay using persistAndNotify(data1)
+
+    case Event(ElectrumClient.GetHeadersResponse(start, headers, _), data) =>
+      Try(Blockchain.addHeadersChunk(data.blockchain, start, headers)) match {
+        case Success(blockchain1) =>
+          params.walletDb.addHeaders(start, headers)
+          stay() using data.copy(blockchain = blockchain1)
+        case Failure(error) =>
+          log.error("electrum server sent bad headers, disconnecting", error)
+          sender ! PoisonPill
+          goto(DISCONNECTED) using data
+      }
 
     case Event(GetTransactionResponse(tx), data) =>
       log.debug(s"received transaction ${tx.txid}")
       data.computeTransactionDelta(tx) match {
         case Some((received, sent, fee_opt)) =>
           log.info(s"successfully connected txid=${tx.txid}")
-          context.system.eventStream.publish(TransactionReceived(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt))
+          context.system.eventStream.publish(TransactionReceived(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt, data.computeTimestamp(tx.txid, params.walletDb)))
           // when we have successfully processed a new tx, we retry all pending txes to see if they can be added now
           data.pendingTransactions.foreach(self ! GetTransactionResponse(_))
           val data1 = data.copy(transactions = data.transactions + (tx.txid -> tx), pendingTransactionRequests = data.pendingTransactionRequests - tx.txid, pendingTransactions = Nil)
-          stay using notifyReady(data1)
+          stay using persistAndNotify(data1)
         case None =>
           // missing parents
           log.info(s"couldn't connect txid=${tx.txid}")
           val data1 = data.copy(pendingTransactions = data.pendingTransactions :+ tx)
-          stay using notifyReady(data1)
+          stay using persistAndNotify(data1)
       }
 
     case Event(response@GetMerkleResponse(txid, _, height, _), data) =>
       data.blockchain.getHeader(height).orElse(params.walletDb.getHeader(height)) match {
         case Some(header) if header.hashMerkleRoot == response.root =>
           log.info(s"transaction $txid has been verified")
-          data.transactions.get(txid).orElse(data.pendingTransactions.find(_.txid == txid)) match {
-            case Some(tx) =>
-              log.info(s"saving ${tx.txid} to our db")
-              walletDb.addTransaction(tx, response)
-            case None => log.warning(s"we received a Merkle proof for transaction $txid that we don't have")
+          val data1 = if (data.transactions.get(txid).isEmpty && !data.pendingTransactionRequests.contains(txid) && !data.pendingTransactions.exists(_.txid == txid)) {
+            log.warning(s"we received a Merkle proof for transaction $txid that we don't have")
+            data
+          } else {
+            data.copy(proofs = data.proofs + (txid -> response))
           }
-          stay()
-        case Some(header) =>
+          stay using data1
+        case Some(_) =>
           log.error(s"server sent an invalid proof for $txid, disconnecting")
           sender ! PoisonPill
           stay() using data.copy(transactions = data.transactions - txid)
         case None =>
           // this is probably because the tx is old and within our checkpoints => request the whole header chunk
           val start = (height / RETARGETING_PERIOD) * RETARGETING_PERIOD
-          client ! GetHeaders(start, RETARGETING_PERIOD)
-          stay()
+          val request = GetHeaders(start, RETARGETING_PERIOD)
+          val pendingHeadersRequest1 = if (data.pendingHeadersRequests.contains(request)) {
+            data.pendingHeadersRequests
+          } else {
+            client ! request
+            self ! response
+            data.pendingHeadersRequests + request
+          }
+          stay() using data.copy(pendingHeadersRequests = pendingHeadersRequest1)
       }
 
     case Event(CompleteTransaction(tx, feeRatePerKw), data) =>
@@ -339,12 +423,12 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       // we know all the parents
       val (received, sent, Some(fee)) = data.computeTransactionDelta(tx).get
       // we notify here because the tx won't be downloaded again (it has been added to the state at commit)
-      context.system.eventStream.publish(TransactionReceived(tx, data1.computeTransactionDepth(tx.txid), received, sent, Some(fee)))
-      stay using notifyReady(data1) replying CommitTransactionResponse(tx) // goto instead of stay because we want to fire transitions
+      context.system.eventStream.publish(TransactionReceived(tx, data1.computeTransactionDepth(tx.txid), received, sent, Some(fee), None))
+      stay using persistAndNotify(data1) replying CommitTransactionResponse(tx) // goto instead of stay because we want to fire transitions
 
     case Event(CancelTransaction(tx), data) =>
       log.info(s"cancelling txid=${tx.txid}")
-      stay using notifyReady(data.cancelTransaction(tx)) replying CancelTransactionResponse(tx)
+      stay using persistAndNotify(data.cancelTransaction(tx)) replying CancelTransactionResponse(tx)
 
     case Event(bc@ElectrumClient.BroadcastTransaction(tx), _) =>
       log.info(s"broadcasting txid=${tx.txid}")
@@ -359,10 +443,8 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       goto(DISCONNECTED) using data.copy(
         pendingHistoryRequests = Set(),
         pendingTransactionRequests = Set(),
-        pendingTransactions = Seq(),
-        status = Map(),
-        heights = Map(),
-        history = Map()
+        pendingHeadersRequests = Set(),
+        lastReadyMessage = None
       )
 
     case Event(GetCurrentReceiveAddress, data) => stay replying GetCurrentReceiveAddressResponse(data.currentReceiveAddress)
@@ -373,7 +455,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(GetData, data) => stay replying GetDataResponse(data)
 
-    case Event(GetXpub ,_) => {
+    case Event(GetXpub, _) => {
       val (xpub, path) = computeXpub(master, chainHash)
       stay replying GetXpubResponse(xpub, path)
     }
@@ -443,8 +525,8 @@ object ElectrumWallet {
     * @param sent
     * @param feeOpt is set only when we know it (i.e. for outgoing transactions)
     */
-  case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi]) extends WalletEvent
-  case class TransactionConfidenceChanged(txid: BinaryData, depth: Long) extends WalletEvent
+  case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi], timestamp: Option[Long]) extends WalletEvent
+  case class TransactionConfidenceChanged(txid: BinaryData, depth: Long, timestamp: Option[Long]) extends WalletEvent
   case class NewWalletReceiveAddress(address: String) extends WalletEvent
   case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, timestamp: Long) extends WalletEvent
   // @formatter:on
@@ -481,7 +563,7 @@ object ElectrumWallet {
     */
   def computeScriptHashFromPublicKey(key: PublicKey): BinaryData = Crypto.sha256(Script.write(computePublicKeyScript(key))).reverse
 
-  def accountPath(chainHash: BinaryData) : List[Long] = chainHash match {
+  def accountPath(chainHash: BinaryData): List[Long] = chainHash match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(49) :: hardened(1) :: hardened(0) :: Nil
     case Block.LivenetGenesisBlock.hash => hardened(49) :: hardened(0) :: hardened(0) :: Nil
   }
@@ -497,11 +579,12 @@ object ElectrumWallet {
 
   /**
     * Compute the wallet's xpub
-    * @param master master key
+    *
+    * @param master    master key
     * @param chainHash chain hash
     * @return a (xpub, path) tuple where xpub is the encoded account public key, and path is the derivation path for the account key
     */
-  def computeXpub(master: ExtendedPrivateKey, chainHash: BinaryData) : (String, String) = {
+  def computeXpub(master: ExtendedPrivateKey, chainHash: BinaryData): (String, String) = {
     val xpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, accountPath(chainHash)))
     // we use the tpub/xpub prefix instead of upub/ypub because it is more widely understood
     val prefix = chainHash match {
@@ -583,11 +666,13 @@ object ElectrumWallet {
                   status: Map[BinaryData, String],
                   transactions: Map[BinaryData, Transaction],
                   heights: Map[BinaryData, Long],
-                  history: Map[BinaryData, Seq[ElectrumClient.TransactionHistoryItem]],
+                  history: Map[BinaryData, List[ElectrumClient.TransactionHistoryItem]],
+                  proofs: Map[BinaryData, GetMerkleResponse],
                   locks: Set[Transaction],
                   pendingHistoryRequests: Set[BinaryData],
                   pendingTransactionRequests: Set[BinaryData],
-                  pendingTransactions: Seq[Transaction],
+                  pendingHeadersRequests: Set[GetHeaders],
+                  pendingTransactions: List[Transaction],
                   lastReadyMessage: Option[WalletReady]) extends Logging {
     val chainHash = blockchain.chainHash
 
@@ -662,6 +747,19 @@ object ElectrumWallet {
     def isMine(txOut: TxOut): Boolean = publicScriptMap.contains(txOut.publicKeyScript)
 
     def computeTransactionDepth(txid: BinaryData): Long = heights.get(txid).map(height => if (height > 0) computeDepth(blockchain.tip.height, height) else 0).getOrElse(0)
+
+    /**
+      *
+      * @param txid     transaction id
+      * @param headerDb header db
+      * @return the timestamp of the block this tx was included in
+      */
+    def computeTimestamp(txid: BinaryData, headerDb: HeaderDb): Option[Long] = {
+      for {
+        height <- heights.get(txid).map(_.toInt)
+        header <- blockchain.getHeader(height).orElse(headerDb.getHeader(height))
+      } yield header.time
+    }
 
     /**
       *
@@ -862,7 +960,7 @@ object ElectrumWallet {
       (data1, tx3, fee3)
     }
 
-    def signTransaction(tx: Transaction) : Transaction = {
+    def signTransaction(tx: Transaction): Transaction = {
       tx.copy(txIn = tx.txIn.zipWithIndex.map { case (txIn, i) =>
         val utxo = utxos.find(_.outPoint == txIn.outPoint).getOrElse(throw new RuntimeException(s"cannot sign input that spends from ${txIn.outPoint}"))
         val key = utxo.key
@@ -896,9 +994,9 @@ object ElectrumWallet {
         .foldLeft(this.history) {
           case (history, scriptHash) =>
             val entry = history.get(scriptHash) match {
-              case None => Seq(TransactionHistoryItem(0, tx.txid))
+              case None => List(TransactionHistoryItem(0, tx.txid))
               case Some(items) if items.map(_.tx_hash).contains(tx.txid) => items
-              case Some(items) => items :+ TransactionHistoryItem(0, tx.txid)
+              case Some(items) => TransactionHistoryItem(0, tx.txid) :: items
             }
             history + (scriptHash -> entry)
         }
@@ -908,12 +1006,13 @@ object ElectrumWallet {
     /**
       * spend all our balance, including unconfirmed utxos and locked utxos (i.e utxos
       * that are used in funding transactions that have not been published yet
+      *
       * @param publicKeyScript script to send all our funds to
-      * @param feeRatePerKw fee rate in satoshi per kiloweight
+      * @param feeRatePerKw    fee rate in satoshi per kiloweight
       * @return a (tx, fee) tuple, tx is a signed transaction that spends all our balance and
       *         fee is the associated bitcoin network fee
       */
-    def spendAll(publicKeyScript: BinaryData, feeRatePerKw: Long) : (Transaction, Satoshi) = {
+    def spendAll(publicKeyScript: BinaryData, feeRatePerKw: Long): (Transaction, Satoshi) = {
       // use confirmed and unconfirmed balance
       val amount = balance._1 + balance._2
       val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, publicKeyScript) :: Nil, lockTime = 0)
@@ -925,14 +1024,28 @@ object ElectrumWallet {
       (tx3, fee)
     }
 
-    def spendAll(publicKeyScript: Seq[ScriptElt], feeRatePerKw: Long) : (Transaction, Satoshi) = spendAll(Script.write(publicKeyScript), feeRatePerKw)
+    def spendAll(publicKeyScript: Seq[ScriptElt], feeRatePerKw: Long): (Transaction, Satoshi) = spendAll(Script.write(publicKeyScript), feeRatePerKw)
   }
 
   object Data {
     def apply(params: ElectrumWallet.WalletParameters, blockchain: Blockchain, accountKeys: Vector[ExtendedPrivateKey], changeKeys: Vector[ExtendedPrivateKey]): Data
-    = Data(blockchain, accountKeys, changeKeys, Map(), Map(), Map(), Map(), Set(), Set(), Set(), Seq(), None)
+    = Data(blockchain, accountKeys, changeKeys, Map(), Map(), Map(), Map(), Map(), Set(), Set(), Set(), Set(), List(), None)
   }
 
   case class InfiniteLoopException(data: Data, tx: Transaction) extends Exception
+
+  case class PersistentData(accountKeysCount: Int,
+                            changeKeysCount: Int,
+                            status: Map[BinaryData, String],
+                            transactions: Map[BinaryData, Transaction],
+                            heights: Map[BinaryData, Long],
+                            history: Map[BinaryData, List[ElectrumClient.TransactionHistoryItem]],
+                            proofs: Map[BinaryData, GetMerkleResponse],
+                            pendingTransactions: List[Transaction],
+                            locks: Set[Transaction])
+
+  object PersistentData {
+    def apply(data: Data) = new PersistentData(data.accountKeys.length, data.changeKeys.length, data.status, data.transactions, data.heights, data.history, data.proofs, data.pendingTransactions, data.locks)
+  }
 
 }
