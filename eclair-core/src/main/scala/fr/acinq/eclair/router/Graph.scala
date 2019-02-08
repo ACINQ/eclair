@@ -218,7 +218,7 @@ object Graph {
       case false => Seq.empty[GraphEdge]
       case true =>
         // we traverse the list of "previous" backward building the final list of edges that make the shortest path
-        val edgePath = new mutable.ArrayBuffer[GraphEdge](DEFAULT_ROUTE_MAX_LENGTH)
+        val edgePath = new mutable.ArrayBuffer[GraphEdge](ROUTE_MAX_LENGTH)
         var current = prev.get(sourceNode)
 
         while (current != null) {

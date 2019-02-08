@@ -37,7 +37,7 @@ import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
 import fr.acinq.eclair.payment.{LocalPaymentHandler, PaymentRequest}
-import fr.acinq.eclair.router.Router.DEFAULT_ROUTE_MAX_LENGTH
+import fr.acinq.eclair.router.Router.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, ChannelDesc, RouteParams}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
@@ -60,7 +60,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
   var nodes: Map[String, Kit] = Map()
 
-  val integrationTestRouteParams = Some(RouteParams(maxFeeBaseMsat = Long.MaxValue, maxFeePct = Double.MaxValue, routeMaxCltv = Int.MaxValue, routeMaxLength = DEFAULT_ROUTE_MAX_LENGTH))
+  val integrationTestRouteParams = Some(RouteParams(maxFeeBaseMsat = Long.MaxValue, maxFeePct = Double.MaxValue, routeMaxCltv = Int.MaxValue, routeMaxLength = ROUTE_MAX_LENGTH))
 
   implicit val formats = DefaultFormats
 
