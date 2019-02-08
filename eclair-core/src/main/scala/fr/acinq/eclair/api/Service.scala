@@ -266,7 +266,7 @@ trait Service extends Logging {
                         case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
                           (Try(BinaryData(paymentHash)), Try(PublicKey(nodeId))) match {
                             case (Success(ph), Success(pk)) => completeRpcFuture(req.id, (paymentInitiator ?
-                              SendPayment(amountMsat.toLong, ph, pk, maxFeePct = nodeParams.maxPaymentFee)).mapTo[PaymentResult].map {
+                              SendPayment(amountMsat.toLong, ph, pk)).mapTo[PaymentResult].map {
                               case s: PaymentSucceeded => s
                               case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
                             })
@@ -286,8 +286,8 @@ trait Service extends Logging {
                             logger.debug(s"api call for sending payment with amount_msat=$amount_msat")
                             // optional cltv expiry
                             val sendPayment = pr.minFinalCltvExpiry match {
-                              case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, maxFeePct = nodeParams.maxPaymentFee)
-                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry, maxFeePct = nodeParams.maxPaymentFee)
+                              case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId)
+                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry)
                             }
                             completeRpcFuture(req.id, (paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
                               case s: PaymentSucceeded => s
