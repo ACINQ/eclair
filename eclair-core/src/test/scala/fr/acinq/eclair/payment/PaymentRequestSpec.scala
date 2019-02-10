@@ -19,10 +19,11 @@ package fr.acinq.eclair.payment
 import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Bech32, BinaryData, Block, Btc, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, Block, Btc, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.payment.PaymentRequest._
 import org.scalatest.FunSuite
+import scodec.bits.BitVector
 
 /**
   * Created by fabrice on 15/05/17.
@@ -54,6 +55,35 @@ class PaymentRequestSpec extends FunSuite {
     assert(Some(MilliSatoshi(100000000)) == Amount.decode("1000000n"))
     assert(Some(MilliSatoshi(100000000)) == Amount.decode("1000000000p"))
   }
+
+  test("data string -> bitvector") {
+    import scodec.bits._
+    assert(string2Bits("p") === bin"00001")
+    assert(string2Bits("pz") === bin"0000100010")
+  }
+
+//  test("basic tests") {
+//    val input = "lntb1pw9mnp5pp5lfx73hl6qmkq4aahqfydanm0tumlcce9dj220sm7880f9e5k4xdsdqqxqrrssrzjqwfn3p9278ttzzpe0e00uhyxhned3j5d9acqak5emwfpflp8z2cng93hl5qqqqsqqyqqqqlgqqqqqeqqjqrzjqwfn3p9278ttzzpe0e00uhyxhned3j5d9acqak5emwfpflp8z2cng93hfgqqqygqqqqqqqlgqqqqqeqqjqrzjqwfn3p9278ttzzpe0e00uhyxhned3j5d9acqak5emwfpflp8z2cng93hlgqqqdsqqqqqqqlgqqqqqeqqjqwy8hnvh7ys94ee6feyljvq3zjzapak65pkgm0uxx9pc49uzezuj5z6nf7svc8wrhw282uzqvnr26gjrtn8t9vs2c847f6mqfh2c4mtgpxgchxz"
+//    val (hrp, data, checksum) = Bolt11Codec.decomposeBech32(input)
+//    val req = bolt11DataCodec.decode(data).require.value
+//    println(req)
+//    val pr = PaymentRequest.read(input)
+//    assert(Bolt11Codec.writeCodec(pr.amount, pr.prefix, req) == input)
+//
+//    val start1 = Platform.currentTime
+//    for (i <- 0 to 10000) {
+//      assert(PaymentRequest.write(pr) == input)
+//    }
+//    val end1 = Platform.currentTime
+//    println(end1 - start1)
+//
+//    val start2 = Platform.currentTime
+//    for (i <- 0 to 10000) {
+//      assert(Bolt11Codec.writeCodec(pr.amount, pr.prefix, req) == input)
+//    }
+//    val end2 = Platform.currentTime
+//    println(end2 - start2)
+//  }
 
   test("Please make a donation of any amount using payment_hash 0001020304050607080900010203040506070809000102030405060708090102 to me @03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad") {
     val ref = "lnbc1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq8rkx3yf5tcsyz3d73gafnh3cax9rn449d9p5uxz9ezhhypd0elx87sjle52x86fux2ypatgddc6k63n7erqz25le42c4u4ecky03ylcqca784w"
@@ -200,12 +230,6 @@ class PaymentRequestSpec extends FunSuite {
   }
 
   test("ignore unknown tags") {
-    // create a new tag that we don't know about
-    class MyExpiryTag(override val seconds: Long) extends ExpiryTag(seconds) {
-      // replace the tag with 'j'  which is not used yet
-      override def toInt5s = super.toInt5s.updated(0, Bech32.map('j'))
-    }
-
     val pr = PaymentRequest(
       prefix = "lntb",
       amount = Some(MilliSatoshi(100000L)),
@@ -214,14 +238,12 @@ class PaymentRequestSpec extends FunSuite {
       tags = List(
         PaymentHashTag(BinaryData("01" * 32)),
         DescriptionTag("description"),
-        new MyExpiryTag(42L)
+        UnknownTag21(BitVector("some data we don't understand".getBytes))
       ),
       signature = BinaryData.empty).sign(priv)
 
     val serialized = PaymentRequest write pr
     val pr1 = PaymentRequest read serialized
-    val Some(unknownTag) = pr1.tags.collectFirst { case u: UnknownTag => u }
-    assert(unknownTag.tag == Bech32.map('j'))
-    assert(unknownTag.toInt5s == (new MyExpiryTag(42L)).toInt5s)
+    val Some(unknownTag) = pr1.tags.collectFirst { case u: UnknownTag21 => u }
   }
 }
