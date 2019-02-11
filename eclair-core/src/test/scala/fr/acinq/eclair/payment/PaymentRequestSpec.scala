@@ -236,8 +236,8 @@ class PaymentRequestSpec extends FunSuite {
       timestamp = System.currentTimeMillis() / 1000L,
       nodeId = nodeId,
       tags = List(
-        PaymentHashTag(BinaryData("01" * 32)),
-        DescriptionTag("description"),
+        PaymentHash(BinaryData("01" * 32)),
+        Description("description"),
         UnknownTag21(BitVector("some data we don't understand".getBytes))
       ),
       signature = BinaryData.empty).sign(priv)

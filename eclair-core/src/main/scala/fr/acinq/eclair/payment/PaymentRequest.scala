@@ -39,25 +39,25 @@ import scala.util.Try
   * @param tags      payment tags; must include a single PaymentHash tag
   * @param signature request signature that will be checked against node id
   */
-case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.Tag], signature: BinaryData) {
+case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.TaggedField], signature: BinaryData) {
 
   amount.map(a => require(a.amount > 0 && a.amount <= PaymentRequest.MAX_AMOUNT.amount, s"amount is not valid"))
-  require(tags.collect { case _: PaymentRequest.PaymentHashTag => {} }.size == 1, "there must be exactly one payment hash tag")
-  require(tags.collect { case PaymentRequest.DescriptionTag(_) | PaymentRequest.DescriptionHashTag(_) => {} }.size == 1, "there must be exactly one description tag or one description hash tag")
+  require(tags.collect { case _: PaymentRequest.PaymentHash => {} }.size == 1, "there must be exactly one payment hash tag")
+  require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => {} }.size == 1, "there must be exactly one description tag or one description hash tag")
 
   /**
     *
     * @return the payment hash
     */
-  lazy val paymentHash = tags.collectFirst { case p: PaymentRequest.PaymentHashTag => p }.get.hash
+  lazy val paymentHash = tags.collectFirst { case p: PaymentRequest.PaymentHash => p }.get.hash
 
   /**
     *
     * @return the description of the payment, or its hash
     */
   lazy val description: Either[String, BinaryData] = tags.collectFirst {
-    case PaymentRequest.DescriptionTag(d) => Left(d)
-    case PaymentRequest.DescriptionHashTag(h) => Right(h)
+    case PaymentRequest.Description(d) => Left(d)
+    case PaymentRequest.DescriptionHash(h) => Right(h)
   }.get
 
   /**
@@ -65,17 +65,17 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     * @return the fallback address if any. It could be a script address, pubkey address, ..
     */
   def fallbackAddress(): Option[String] = tags.collectFirst {
-    case f: PaymentRequest.FallbackAddressTag => PaymentRequest.FallbackAddressTag.toAddress(f, prefix)
+    case f: PaymentRequest.FallbackAddress => PaymentRequest.FallbackAddress.toAddress(f, prefix)
   }
 
-  lazy val routingInfo: Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfoTag => t.path }
+  lazy val routingInfo: Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfo => t.path }
 
   lazy val expiry: Option[Long] = tags.collectFirst {
-    case expiry: PaymentRequest.ExpiryTag => expiry.toLong
+    case expiry: PaymentRequest.Expiry => expiry.toLong
   }
 
   lazy val minFinalCltvExpiry: Option[Long] = tags.collectFirst {
-    case cltvExpiry: PaymentRequest.MinFinalCltvExpiryTag => cltvExpiry.toLong
+    case cltvExpiry: PaymentRequest.MinFinalCltvExpiry => cltvExpiry.toLong
   }
 
   /**
@@ -126,104 +126,106 @@ object PaymentRequest {
       timestamp = timestamp,
       nodeId = privateKey.publicKey,
       tags = List(
-        Some(PaymentHashTag(paymentHash)),
-        Some(DescriptionTag(description)),
-        fallbackAddress.map(FallbackAddressTag(_)),
-        expirySeconds.map(ExpiryTag(_))
-      ).flatten ++ extraHops.map(RoutingInfoTag(_)),
+        Some(PaymentHash(paymentHash)),
+        Some(Description(description)),
+        fallbackAddress.map(FallbackAddress(_)),
+        expirySeconds.map(Expiry(_))
+      ).flatten ++ extraHops.map(RoutingInfo(_)),
       signature = BinaryData.empty)
       .sign(privateKey)
   }
 
-  case class Bolt11Data(timestamp: Long, taggedFields: List[Tag], signature: BinaryData)
+  case class Bolt11Data(timestamp: Long, taggedFields: List[TaggedField], signature: BinaryData)
 
-  sealed trait Tag
+  sealed trait TaggedField
+
+  sealed trait UnknownTaggedField extends TaggedField
 
   // @formatter:off
-  case class UnknownTag0(data: BitVector) extends Tag
-  case class UnknownTag1(data: BitVector) extends Tag
-  case class UnknownTag2(data: BitVector) extends Tag
-  case class UnknownTag4(data: BitVector) extends Tag
-  case class UnknownTag5(data: BitVector) extends Tag
-  case class UnknownTag7(data: BitVector) extends Tag
-  case class UnknownTag8(data: BitVector) extends Tag
-  case class UnknownTag10(data: BitVector) extends Tag
-  case class UnknownTag11(data: BitVector) extends Tag
-  case class UnknownTag12(data: BitVector) extends Tag
-  case class UnknownTag14(data: BitVector) extends Tag
-  case class UnknownTag15(data: BitVector) extends Tag
-  case class UnknownTag16(data: BitVector) extends Tag
-  case class UnknownTag17(data: BitVector) extends Tag
-  case class UnknownTag18(data: BitVector) extends Tag
-  case class UnknownTag19(data: BitVector) extends Tag
-  case class UnknownTag20(data: BitVector) extends Tag
-  case class UnknownTag21(data: BitVector) extends Tag
-  case class UnknownTag22(data: BitVector) extends Tag
-  case class UnknownTag25(data: BitVector) extends Tag
-  case class UnknownTag26(data: BitVector) extends Tag
-  case class UnknownTag27(data: BitVector) extends Tag
-  case class UnknownTag28(data: BitVector) extends Tag
-  case class UnknownTag29(data: BitVector) extends Tag
-  case class UnknownTag30(data: BitVector) extends Tag
-  case class UnknownTag31(data: BitVector) extends Tag
+  case class UnknownTag0(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag1(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag2(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag4(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag5(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag7(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag8(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag10(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag11(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag12(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag14(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag15(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag16(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag17(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag18(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag19(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag20(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag21(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag22(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag25(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag26(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag27(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag28(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag29(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag30(data: BitVector) extends UnknownTaggedField
+  case class UnknownTag31(data: BitVector) extends UnknownTaggedField
   // @formatter:on
 
   /**
-    * Payment Hash Tag
+    * Payment Hash
     *
     * @param hash payment hash
     */
-  case class PaymentHashTag(hash: BinaryData) extends Tag
+  case class PaymentHash(hash: BinaryData) extends TaggedField
 
   /**
-    * Description Tag
+    * Description
     *
     * @param description a free-format string that will be included in the payment request
     */
-  case class DescriptionTag(description: String) extends Tag
+  case class Description(description: String) extends TaggedField
 
   /**
-    * Hash Tag
+    * Hash
     *
     * @param hash hash that will be included in the payment request, and can be checked against the hash of a
     *             long description, an invoice, ...
     */
-  case class DescriptionHashTag(hash: BinaryData) extends Tag
+  case class DescriptionHash(hash: BinaryData) extends TaggedField
 
   /**
-    * Fallback Payment Tag that specifies a fallback payment address to be used if LN payment cannot be processed
+    * Fallback Payment that specifies a fallback payment address to be used if LN payment cannot be processed
     *
     */
-  case class FallbackAddressTag(version: Byte, data: ByteVector) extends Tag
+  case class FallbackAddress(version: Byte, data: ByteVector) extends TaggedField
 
-  object FallbackAddressTag {
+  object FallbackAddress {
     /**
       *
       * @param address valid base58 or bech32 address
       * @return a FallbackAddressTag instance
       */
-    def apply(address: String): FallbackAddressTag = {
+    def apply(address: String): FallbackAddress = {
       Try(fromBase58Address(address)).orElse(Try(fromBech32Address(address))).get
     }
 
-    def apply(version: Byte, data: BinaryData): FallbackAddressTag = FallbackAddressTag(version, ByteVector(data.toArray))
+    def apply(version: Byte, data: BinaryData): FallbackAddress = FallbackAddress(version, ByteVector(data.toArray))
 
-    def fromBase58Address(address: String): FallbackAddressTag = {
+    def fromBase58Address(address: String): FallbackAddress = {
       val (prefix, hash) = Base58Check.decode(address)
       prefix match {
-        case Base58.Prefix.PubkeyAddress => FallbackAddressTag(17.toByte, hash)
-        case Base58.Prefix.PubkeyAddressTestnet => FallbackAddressTag(17.toByte, hash)
-        case Base58.Prefix.ScriptAddress => FallbackAddressTag(18.toByte, hash)
-        case Base58.Prefix.ScriptAddressTestnet => FallbackAddressTag(18.toByte, hash)
+        case Base58.Prefix.PubkeyAddress => FallbackAddress(17.toByte, hash)
+        case Base58.Prefix.PubkeyAddressTestnet => FallbackAddress(17.toByte, hash)
+        case Base58.Prefix.ScriptAddress => FallbackAddress(18.toByte, hash)
+        case Base58.Prefix.ScriptAddressTestnet => FallbackAddress(18.toByte, hash)
       }
     }
 
-    def fromBech32Address(address: String): FallbackAddressTag = {
+    def fromBech32Address(address: String): FallbackAddress = {
       val (_, version, hash) = Bech32.decodeWitnessAddress(address)
-      FallbackAddressTag(version, hash)
+      FallbackAddress(version, hash)
     }
 
-    def toAddress(f: FallbackAddressTag, prefix: String): String = {
+    def toAddress(f: FallbackAddress, prefix: String): String = {
       val data = BinaryData(f.data.toArray)
       f.version match {
         case 17 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.PubkeyAddress, data)
@@ -248,28 +250,28 @@ object PaymentRequest {
   case class ExtraHop(nodeId: PublicKey, shortChannelId: ShortChannelId, feeBaseMsat: Long, feeProportionalMillionths: Long, cltvExpiryDelta: Int)
 
   /**
-    * Routing Info Tag
+    * Routing Info
     *
     * @param path one or more entries containing extra routing information for a private route
     */
-  case class RoutingInfoTag(path: List[ExtraHop]) extends Tag
+  case class RoutingInfo(path: List[ExtraHop]) extends TaggedField
 
   /**
     * Expiry Date
     */
-  case class ExpiryTag(bin: BitVector) extends Tag {
+  case class Expiry(bin: BitVector) extends TaggedField {
     def toLong: Long = bin.toLong(signed = false)
   }
 
-  object ExpiryTag {
+  object Expiry {
     /**
       * @param seconds expiry data for this payment request
       */
-    def apply(seconds: Long): ExpiryTag = {
+    def apply(seconds: Long): Expiry = {
       // 32 bits is enough to store an expiry of 100 years
       // TODO: could be optimized
       require(seconds < 0xFFFFFFFFL, "expiry too big")
-      ExpiryTag(BitVector.fromLong(seconds, size = 32))
+      Expiry(BitVector.fromLong(seconds, size = 32))
     }
   }
 
@@ -277,21 +279,21 @@ object PaymentRequest {
     * Min final CLTV expiry
     *
     */
-  case class MinFinalCltvExpiryTag(bin: BitVector) extends Tag {
+  case class MinFinalCltvExpiry(bin: BitVector) extends TaggedField {
     def toLong: Long = bin.toLong(signed = false)
   }
 
-  object MinFinalCltvExpiryTag {
+  object MinFinalCltvExpiry {
     /**
       * Min final CLTV expiry
       *
       * @param blocks min final cltv expiry, in blocks
       */
-    def apply(blocks: Long): MinFinalCltvExpiryTag = {
+    def apply(blocks: Long): MinFinalCltvExpiry = {
       // 32 bits is enough to store an expiry of 14400 years
       // TODO: could be optimized
       require(blocks < 0xFFFFFFFFL, "cltv expiry too big")
-      MinFinalCltvExpiryTag(BitVector.fromLong(blocks, size = 32))
+      MinFinalCltvExpiry(BitVector.fromLong(blocks, size = 32))
     }
   }
 
@@ -324,21 +326,21 @@ object PaymentRequest {
 
     def dataCodec[A](valueCodec: Codec[A]): Codec[A] = paddedVarAlignedBits(dataLengthCodec, valueCodec, multipleForPadding = 5)
 
-    val taggedFieldCodec: Codec[Tag] = discriminated[Tag].by(ubyte(5))
+    val taggedFieldCodec: Codec[TaggedField] = discriminated[TaggedField].by(ubyte(5))
       .typecase(0, dataCodec(bits).as[UnknownTag0])
-      .typecase(1, dataCodec(binarydata(32)).as[PaymentHashTag])
+      .typecase(1, dataCodec(binarydata(32)).as[PaymentHash])
       .typecase(2, dataCodec(bits).as[UnknownTag2])
-      .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfoTag])
+      .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo])
       .typecase(4, dataCodec(bits).as[UnknownTag4])
       .typecase(5, dataCodec(bits).as[UnknownTag5])
-      .typecase(6, dataCodec(bits).as[ExpiryTag])
+      .typecase(6, dataCodec(bits).as[Expiry])
       .typecase(7, dataCodec(bits).as[UnknownTag7])
       .typecase(8, dataCodec(bits).as[UnknownTag8])
-      .typecase(9, dataCodec(ubyte(5) :: alignedBytesCodec(bytes)).as[FallbackAddressTag])
+      .typecase(9, dataCodec(ubyte(5) :: alignedBytesCodec(bytes)).as[FallbackAddress])
       .typecase(10, dataCodec(bits).as[UnknownTag10])
       .typecase(11, dataCodec(bits).as[UnknownTag11])
       .typecase(12, dataCodec(bits).as[UnknownTag12])
-      .typecase(13, dataCodec(alignedBytesCodec(utf8)).as[DescriptionTag])
+      .typecase(13, dataCodec(alignedBytesCodec(utf8)).as[Description])
       .typecase(14, dataCodec(bits).as[UnknownTag14])
       .typecase(15, dataCodec(bits).as[UnknownTag15])
       .typecase(16, dataCodec(bits).as[UnknownTag16])
@@ -348,8 +350,8 @@ object PaymentRequest {
       .typecase(20, dataCodec(bits).as[UnknownTag20])
       .typecase(21, dataCodec(bits).as[UnknownTag21])
       .typecase(22, dataCodec(bits).as[UnknownTag22])
-      .typecase(23, dataCodec(binarydata(32)).as[DescriptionHashTag])
-      .typecase(24, dataCodec(bits).as[MinFinalCltvExpiryTag])
+      .typecase(23, dataCodec(binarydata(32)).as[DescriptionHash])
+      .typecase(24, dataCodec(bits).as[MinFinalCltvExpiry])
       .typecase(25, dataCodec(bits).as[UnknownTag25])
       .typecase(26, dataCodec(bits).as[UnknownTag26])
       .typecase(27, dataCodec(bits).as[UnknownTag27])
