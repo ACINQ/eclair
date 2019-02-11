@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -27,6 +28,15 @@ object Logs {
       remoteNodeId_opt.map(n => "nodeId" -> s" n:$n"), // nb: we preformat MDC values so that there is no white spaces in logs
       channelId_opt.map(c => "channelId" -> s" c:$c")
     ).flatten.toMap
+
+  def withMdc(mdc: MDC)(f: => Any)(implicit log: DiagnosticLoggingAdapter) = {
+    try {
+      log.mdc(mdc)
+      f
+    } finally {
+      log.clearMDC()
+    }
+  }
 
 }
 
