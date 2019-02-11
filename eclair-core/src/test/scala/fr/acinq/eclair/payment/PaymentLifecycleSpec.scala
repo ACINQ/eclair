@@ -68,11 +68,11 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
 
-    val request = SendPayment(defaultAmountMsat, defaultPaymentHash, d, maxFeePct = 0.001)
+    val request = SendPayment(defaultAmountMsat, defaultPaymentHash, d, routeParams = Some(RouteParams(maxFeeBaseMsat = 0, maxFeePct = 0.001, routeMaxLength = 20, routeMaxCltv = 2016)))
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
-    val Seq(LocalFailure(RouteTooExpensive(_, _))) = sender.expectMsgType[PaymentFailed].failures
+    val Seq(LocalFailure(RouteNotFound)) = sender.expectMsgType[PaymentFailed].failures
   }
 
   test("payment failed (unparsable failure)") { fixture =>

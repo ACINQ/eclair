@@ -175,7 +175,7 @@
         <dependency>
             <groupId>org.scodec</groupId>
             <artifactId>scodec-core_${scala.version.short}</artifactId>
-            <version>1.10.3</version>
+            <version>1.11.2</version>
         </dependency>
         <dependency>
             <groupId>commons-codec</groupId>
