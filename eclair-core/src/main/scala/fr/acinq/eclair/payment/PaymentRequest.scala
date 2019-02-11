@@ -315,12 +315,12 @@ object PaymentRequest {
       (wire: BitVector) => Attempt.successful(DecodeResult(wire.size.toInt / 408, wire)) // we infer the number of items by the size of the data
     )
 
-    val dataLengthCodec: Codec[Long] = uint(10).xmap(_ * 5, s => (s / 5 + (if (s % 5 == 0) 0 else 1)).toInt)
-
-    def alignedCodec[A](valueCodec: Codec[A]): Codec[A] = Codec[A](
+    def alignedBytesCodec[A](valueCodec: Codec[A]): Codec[A] = Codec[A](
       (value: A) => valueCodec.encode(value),
       (wire: BitVector) => limitedSizeBits(wire.size - wire.size % 8, valueCodec).decode(wire)
     )
+
+    val dataLengthCodec: Codec[Long] = uint(10).xmap(_ * 5, s => (s / 5 + (if (s % 5 == 0) 0 else 1)).toInt)
 
     def dataCodec[A](valueCodec: Codec[A]): Codec[A] = paddedVarAlignedBits(dataLengthCodec, valueCodec, multipleForPadding = 5)
 
@@ -334,11 +334,11 @@ object PaymentRequest {
       .typecase(6, dataCodec(bits).as[ExpiryTag])
       .typecase(7, dataCodec(bits).as[UnknownTag7])
       .typecase(8, dataCodec(bits).as[UnknownTag8])
-      .typecase(9, dataCodec(ubyte(5) :: alignedCodec(bytes)).as[FallbackAddressTag])
+      .typecase(9, dataCodec(ubyte(5) :: alignedBytesCodec(bytes)).as[FallbackAddressTag])
       .typecase(10, dataCodec(bits).as[UnknownTag10])
       .typecase(11, dataCodec(bits).as[UnknownTag11])
       .typecase(12, dataCodec(bits).as[UnknownTag12])
-      .typecase(13, dataCodec(alignedCodec(utf8)).as[DescriptionTag])
+      .typecase(13, dataCodec(alignedBytesCodec(utf8)).as[DescriptionTag])
       .typecase(14, dataCodec(bits).as[UnknownTag14])
       .typecase(15, dataCodec(bits).as[UnknownTag15])
       .typecase(16, dataCodec(bits).as[UnknownTag16])
