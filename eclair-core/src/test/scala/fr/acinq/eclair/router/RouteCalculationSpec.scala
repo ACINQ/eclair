@@ -678,11 +678,17 @@ class RouteCalculationSpec extends FunSuite {
     // simple graph with only 2 possible paths from A to F
     val edges = Seq(
       makeUpdate(1L, a, b, 1, 0),
+      makeUpdate(1L, b, a, 1, 0),
       makeUpdate(2L, b, c, 1, 0),
+      makeUpdate(2L, c, b, 1, 0),
       makeUpdate(3L, c, f, 1, 0),
+      makeUpdate(3L, f, c, 1, 0),
       makeUpdate(4L, c, d, 1, 0),
+      makeUpdate(4L, d, c, 1, 0),
       makeUpdate(5L, d, e, 1, 0),
-      makeUpdate(6L, e, f, 1, 0)
+      makeUpdate(5L, e, d, 1, 0),
+      makeUpdate(6L, e, f, 1, 0),
+      makeUpdate(6L, f, e, 1, 0)
     )
 
     val graph = DirectedGraph().addEdges(edges)

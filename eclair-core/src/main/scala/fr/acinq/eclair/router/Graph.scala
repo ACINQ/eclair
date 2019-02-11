@@ -91,8 +91,16 @@ object Graph {
             }
           }
 
+          // if i > 0 remove the previous edge too to avoid going back from where we arrived (previous iteration)
+          val returningEdge = if(i > 0) {
+            val prevDesc = prevShortestPath(i - 1).desc
+            Set(prevDesc.copy(a = prevDesc.b, b = prevDesc.a)) // we remove the reverse of the previous edge to make sure the path doesn't go backward
+          } else {
+            Set.empty
+          }
+
           // find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
-          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges)
+          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet ++ returningEdge, extraEdges)
 
           // if there wasn't a path the spur will be empty
           if(spurPath.nonEmpty) {
