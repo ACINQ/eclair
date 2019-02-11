@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.{BinaryData, Block, Btc, Crypto, MilliBtc, MilliSatoshi,
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.payment.PaymentRequest._
 import org.scalatest.FunSuite
+import scodec.DecodeResult
 import scodec.bits.BitVector
 
 /**
@@ -72,28 +73,15 @@ class PaymentRequestSpec extends FunSuite {
     assert(long2bits(3600) == bin"111000010000")
   }
 
-//  test("basic tests") {
-//    val input = "lntb1pw9mnp5pp5lfx73hl6qmkq4aahqfydanm0tumlcce9dj220sm7880f9e5k4xdsdqqxqrrssrzjqwfn3p9278ttzzpe0e00uhyxhned3j5d9acqak5emwfpflp8z2cng93hl5qqqqsqqyqqqqlgqqqqqeqqjqrzjqwfn3p9278ttzzpe0e00uhyxhned3j5d9acqak5emwfpflp8z2cng93hfgqqqygqqqqqqqlgqqqqqeqqjqrzjqwfn3p9278ttzzpe0e00uhyxhned3j5d9acqak5emwfpflp8z2cng93hlgqqqdsqqqqqqqlgqqqqqeqqjqwy8hnvh7ys94ee6feyljvq3zjzapak65pkgm0uxx9pc49uzezuj5z6nf7svc8wrhw282uzqvnr26gjrtn8t9vs2c847f6mqfh2c4mtgpxgchxz"
-//    val (hrp, data, checksum) = Bolt11Codec.decomposeBech32(input)
-//    val req = bolt11DataCodec.decode(data).require.value
-//    println(req)
-//    val pr = PaymentRequest.read(input)
-//    assert(Bolt11Codec.writeCodec(pr.amount, pr.prefix, req) == input)
-//
-//    val start1 = Platform.currentTime
-//    for (i <- 0 to 10000) {
-//      assert(PaymentRequest.write(pr) == input)
-//    }
-//    val end1 = Platform.currentTime
-//    println(end1 - start1)
-//
-//    val start2 = Platform.currentTime
-//    for (i <- 0 to 10000) {
-//      assert(Bolt11Codec.writeCodec(pr.amount, pr.prefix, req) == input)
-//    }
-//    val end2 = Platform.currentTime
-//    println(end2 - start2)
-//  }
+  test("verify that padding is zero") {
+    import scodec.bits._
+    import scodec.codecs._
+    val codec = PaymentRequest.Codecs.alignedBytesCodec(bits)
+
+    assert(codec.decode(bin"1010101000").require == DecodeResult(bin"10101010", BitVector.empty))
+    assert(codec.decode(bin"1010101001").isFailure) // non-zero padding
+
+  }
 
   test("Please make a donation of any amount using payment_hash 0001020304050607080900010203040506070809000102030405060708090102 to me @03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad") {
     val ref = "lnbc1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq8rkx3yf5tcsyz3d73gafnh3cax9rn449d9p5uxz9ezhhypd0elx87sjle52x86fux2ypatgddc6k63n7erqz25le42c4u4ecky03ylcqca784w"

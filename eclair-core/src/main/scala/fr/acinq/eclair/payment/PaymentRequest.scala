@@ -322,7 +322,7 @@ object PaymentRequest {
 
     def alignedBytesCodec[A](valueCodec: Codec[A]): Codec[A] = Codec[A](
       (value: A) => valueCodec.encode(value),
-      (wire: BitVector) => limitedSizeBits(wire.size - wire.size % 8, valueCodec).decode(wire)
+      (wire: BitVector) => (limitedSizeBits(wire.size - wire.size % 8, valueCodec) ~ constant(BitVector.fill(wire.size % 8)(false))).map(_._1).decode(wire) // the 'constant' codec ensures that padding is zero
     )
 
     val dataLengthCodec: Codec[Long] = uint(10).xmap(_ * 5, s => (s / 5 + (if (s % 5 == 0) 0 else 1)).toInt)
