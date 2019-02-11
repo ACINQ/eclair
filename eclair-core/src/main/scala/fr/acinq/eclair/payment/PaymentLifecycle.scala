@@ -43,7 +43,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPayment, WaitingForRequest) =>
-      router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, randomize = c.randomize)
+      router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, randomize = c.randomize, routeParams = c.routeParams)
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 
@@ -55,15 +55,8 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       val finalExpiry = Globals.blockCount.get().toInt + c.finalCltvExpiry.toInt + 1
 
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
-      val feePct = (cmd.amountMsat - c.amountMsat) / c.amountMsat.toDouble // c.amountMsat is required to be > 0, have to convert to double, otherwise will be rounded
-      if (feePct > c.maxFeePct) {
-        log.info(s"cheapest route found is too expensive: feePct=$feePct maxFeePct=${c.maxFeePct}")
-        reply(s, PaymentFailed(c.paymentHash, failures = failures :+ LocalFailure(RouteTooExpensive(feePct, c.maxFeePct))))
-        stop(FSM.Normal)
-      } else {
-        register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
-        goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
-      }
+      register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
+      goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
     case Event(Status.Failure(t), WaitingForRoute(s, c, failures)) =>
       reply(s, PaymentFailed(c.paymentHash, failures = failures :+ LocalFailure(t)))
@@ -103,12 +96,12 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
           // in that case we don't know which node is sending garbage, let's try to blacklist all nodes except the one we are directly connected to and the destination node
           val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1)
           log.warning(s"blacklisting intermediate nodes=${blacklist.mkString(",")}")
-          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes ++ blacklist, ignoreChannels, c.randomize)
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes ++ blacklist, ignoreChannels, c.randomize, c.routeParams)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ UnreadableRemoteFailure(hops))
         case Success(e@ErrorPacket(nodeId, failureMessage: Node)) =>
           log.info(s"received 'Node' type error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
           // let's try to route around this node
-          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, c.randomize)
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, c.randomize, c.routeParams)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
         case Success(e@ErrorPacket(nodeId, failureMessage: Update)) =>
           log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
@@ -136,18 +129,18 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
             // in any case, we forward the update to the router
             router ! failureMessage.update
             // let's try again, router will have updated its state
-            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels, c.randomize)
+            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels, c.randomize, c.routeParams)
           } else {
             // this node is fishy, it gave us a bad sig!! let's filter it out
             log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
-            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, c.randomize)
+            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, c.randomize, c.routeParams)
           }
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
         case Success(e@ErrorPacket(nodeId, failureMessage)) =>
           log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
           // let's try again without the channel outgoing from nodeId
           val faultyChannel = hops.find(_.nodeId == nodeId).map(hop => ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId))
-          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels ++ faultyChannel.toSet, c.randomize)
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels ++ faultyChannel.toSet, c.randomize, c.routeParams)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
       }
 
@@ -166,7 +159,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       } else {
         log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
         val faultyChannel = ChannelDesc(hops.head.lastUpdate.shortChannelId, hops.head.nodeId, hops.head.nextNodeId)
-        router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels + faultyChannel, c.randomize)
+        router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels + faultyChannel, c.randomize, c.routeParams)
         goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ LocalFailure(t))
       }
 
@@ -193,7 +186,14 @@ object PaymentLifecycle {
   /**
     * @param maxFeePct set by default to 3% as a safety measure (even if a route is found, if fee is higher than that payment won't be attempted)
     */
-  case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY, maxAttempts: Int = 5, maxFeePct: Double = 0.03, randomize: Option[Boolean] = None) {
+  case class SendPayment(amountMsat: Long,
+                         paymentHash: BinaryData,
+                         targetNodeId: PublicKey,
+                         assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                         finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
+                         maxAttempts: Int = 5,
+                         randomize: Option[Boolean] = None,
+                         routeParams: Option[RouteParams] = None) {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
   case class CheckPayment(paymentHash: BinaryData)
@@ -215,10 +215,6 @@ object PaymentLifecycle {
   case object WAITING_FOR_REQUEST extends State
   case object WAITING_FOR_ROUTE extends State
   case object WAITING_FOR_PAYMENT_COMPLETE extends State
-
-  val percentageFormatter = NumberFormat.getPercentInstance(Locale.US) // force US locale to always get "fee=0.272% max=0.1%" (otherwise depending on locale it can be "fee=0,272 % max=0,1 %")
-  percentageFormatter.setMaximumFractionDigits(3)
-  case class RouteTooExpensive(feePct: Double, maxFeePct: Double) extends RuntimeException(s"cheapest route found is too expensive: fee=${percentageFormatter.format(feePct)} max=${percentageFormatter.format(maxFeePct)}")
 
   // @formatter:on
 
