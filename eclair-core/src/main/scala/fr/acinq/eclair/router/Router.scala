@@ -111,7 +111,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
   val defaultRouteParams = RouteParams(
     maxFeeBaseMsat = nodeParams.routerConf.searchMaxFeeBaseSat * 1000,
-    maxFeePct =  nodeParams.routerConf.searchMaxFeePct,
+    maxFeePct = nodeParams.routerConf.searchMaxFeePct,
     routeMaxLength = nodeParams.routerConf.searchMaxRouteLength,
     routeMaxCltv = nodeParams.routerConf.searchMaxCltv
   )
@@ -400,7 +400,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
       // if we want to randomize we ask the router to make a random selection among the three best routes
-      val routesToFind = if(randomize_opt.getOrElse(nodeParams.routerConf.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
+      val routesToFind = if (randomize_opt.getOrElse(nodeParams.routerConf.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
       findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, routeParams = params_opt.getOrElse(defaultRouteParams))
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
@@ -836,8 +836,8 @@ object Router {
 
     val boundaries: RichWeight => Boolean = { weight =>
       ((weight.cost - amountMsat) < routeParams.maxFeeBaseMsat || (weight.cost - amountMsat) < (routeParams.maxFeePct * amountMsat)) &&
-      weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
-      weight.cltv <= routeParams.routeMaxCltv
+        weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
+        weight.cltv <= routeParams.routeMaxCltv
     }
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, boundaries).toList match {
