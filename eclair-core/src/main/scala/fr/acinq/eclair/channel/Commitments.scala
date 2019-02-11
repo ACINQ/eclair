@@ -72,7 +72,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def announceChannel: Boolean = Features.isBitSet(0, channelFlags)
 
-  def turboChannel: Boolean = Features.isBitSet(3, channelFlags)
+  def zeroconfSpendablePushChannel: Boolean = Features.isBitSet(3, channelFlags)
 
   def availableBalanceForSendMsat: Long = {
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)

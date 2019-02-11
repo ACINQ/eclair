@@ -452,7 +452,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               // NB: funding tx isn't confirmed at this point, so technically we didn't really pay the network fee yet, so this is a (fair) approximation
               feePaid(fundingTxFee, fundingTx, "funding", commitments.channelId)
               replyToUser(Right(s"created channel $channelId"))
-              if (commitments.turboChannel) {
+              if (commitments.zeroconfSpendablePushChannel) {
                 // Real BITCOIN_FUNDING_DEPTHOK will also be sent later and ignored if channel is NORMAL by then
                 // or it will work as a fallback case if we get Failure on committing here but funding still gets published
                 log.info(s"channel=$channelId is turbo, proceeding with unconfirmed txid=${fundingTx.txid}")
