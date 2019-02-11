@@ -90,7 +90,7 @@ object TestConstants {
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
-        searchMaxFeeBaseMsat = 21000,
+        searchMaxFeeBaseSat = 21,
         searchMaxFeePct = 0.03,
         searchMaxCltv = 2016,
         searchMaxRouteLength = 20
@@ -157,7 +157,7 @@ object TestConstants {
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
-        searchMaxFeeBaseMsat = 21000,
+        searchMaxFeeBaseSat = 21,
         searchMaxFeePct = 0.03,
         searchMaxCltv = 2016,
         searchMaxRouteLength = 20

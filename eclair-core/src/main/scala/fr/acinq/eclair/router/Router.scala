@@ -44,7 +44,7 @@ import scala.util.{Random, Try}
 
 // @formatter:off
 
-case class RouterConf(randomizeRouteSelection: Boolean, channelExcludeDuration: FiniteDuration, routerBroadcastInterval: FiniteDuration, searchMaxFeeBaseMsat: Long, searchMaxFeePct: Double, searchMaxRouteLength: Int, searchMaxCltv: Int)
+case class RouterConf(randomizeRouteSelection: Boolean, channelExcludeDuration: FiniteDuration, routerBroadcastInterval: FiniteDuration, searchMaxFeeBaseSat: Long, searchMaxFeePct: Double, searchMaxRouteLength: Int, searchMaxCltv: Int)
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
 case class RouteParams(maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int)
@@ -109,7 +109,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
   val SHORTID_WINDOW = 100
 
-  val defaultRouteParams = RouteParams(nodeParams.routerConf.searchMaxFeeBaseMsat, nodeParams.routerConf.searchMaxFeePct, nodeParams.routerConf.searchMaxRouteLength, nodeParams.routerConf.searchMaxCltv)
+  val defaultRouteParams = RouteParams(
+    maxFeeBaseMsat = nodeParams.routerConf.searchMaxFeeBaseSat * 1000,
+    maxFeePct =  nodeParams.routerConf.searchMaxFeePct,
+    routeMaxLength = nodeParams.routerConf.searchMaxRouteLength,
+    routeMaxCltv = nodeParams.routerConf.searchMaxCltv
+  )
 
   val db = nodeParams.networkDb
 
