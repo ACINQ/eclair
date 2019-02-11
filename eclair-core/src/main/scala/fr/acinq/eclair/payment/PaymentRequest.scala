@@ -239,6 +239,19 @@ object PaymentRequest {
   }
 
   /**
+    * This returns a bitvector with the minimum size necessary to encode the long
+    * @param l
+    */
+  def long2bits(l: Long) = {
+    val bin = BitVector.fromLong(l)
+    var highest = -1
+    for (i <- 0 until bin.size.toInt) {
+      if (highest == -1 && bin(i)) highest = i
+    }
+    if (highest == -1) BitVector.empty else bin.drop(highest)
+  }
+
+  /**
     * Extra hop contained in RoutingInfoTag
     *
     * @param nodeId                    start of the channel
@@ -267,12 +280,7 @@ object PaymentRequest {
     /**
       * @param seconds expiry data for this payment request
       */
-    def apply(seconds: Long): Expiry = {
-      // 32 bits is enough to store an expiry of 100 years
-      // TODO: could be optimized
-      require(seconds < 0xFFFFFFFFL, "expiry too big")
-      Expiry(BitVector.fromLong(seconds, size = 32))
-    }
+    def apply(seconds: Long): Expiry = Expiry(long2bits(seconds))
   }
 
   /**
@@ -289,12 +297,7 @@ object PaymentRequest {
       *
       * @param blocks min final cltv expiry, in blocks
       */
-    def apply(blocks: Long): MinFinalCltvExpiry = {
-      // 32 bits is enough to store an expiry of 14400 years
-      // TODO: could be optimized
-      require(blocks < 0xFFFFFFFFL, "cltv expiry too big")
-      MinFinalCltvExpiry(BitVector.fromLong(blocks, size = 32))
-    }
+    def apply(blocks: Long): MinFinalCltvExpiry = MinFinalCltvExpiry(long2bits(blocks))
   }
 
   object Codecs {

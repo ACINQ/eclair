@@ -62,6 +62,16 @@ class PaymentRequestSpec extends FunSuite {
     assert(string2Bits("pz") === bin"0000100010")
   }
 
+  test("minimal length long") {
+    import scodec.bits._
+    assert(long2bits(0) == bin"")
+    assert(long2bits(1) == bin"1")
+    assert(long2bits(42) == bin"101010")
+    assert(long2bits(255) == bin"11111111")
+    assert(long2bits(256) == bin"100000000")
+    assert(long2bits(3600) == bin"111000010000")
+  }
+
 //  test("basic tests") {
 //    val input = "lntb1pw9mnp5pp5lfx73hl6qmkq4aahqfydanm0tumlcce9dj220sm7880f9e5k4xdsdqqxqrrssrzjqwfn3p9278ttzzpe0e00uhyxhned3j5d9acqak5emwfpflp8z2cng93hl5qqqqsqqyqqqqlgqqqqqeqqjqrzjqwfn3p9278ttzzpe0e00uhyxhned3j5d9acqak5emwfpflp8z2cng93hfgqqqygqqqqqqqlgqqqqqeqqjqrzjqwfn3p9278ttzzpe0e00uhyxhned3j5d9acqak5emwfpflp8z2cng93hlgqqqdsqqqqqqqlgqqqqqeqqjqwy8hnvh7ys94ee6feyljvq3zjzapak65pkgm0uxx9pc49uzezuj5z6nf7svc8wrhw282uzqvnr26gjrtn8t9vs2c847f6mqfh2c4mtgpxgchxz"
 //    val (hrp, data, checksum) = Bolt11Codec.decomposeBech32(input)
