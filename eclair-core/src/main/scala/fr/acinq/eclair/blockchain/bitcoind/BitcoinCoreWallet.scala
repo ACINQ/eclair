@@ -48,13 +48,14 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
   def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toString(), lockUnspents, feeRatePerKw)
 
   def signTransaction(hex: String): Future[SignTransactionResponse] =
-    rpcClient.invoke("signrawtransaction", hex).map(json => {
+    rpcClient.invoke("signrawtransactionwithwallet", hex).map(json => {
       val JString(hex) = json \ "hex"
       val JBool(complete) = json \ "complete"
       if (!complete) {
         val message = json \ "errors" match {
-          case value: JValue => Serialization.write(value)(DefaultFormats)
-          case _ => "signrawtransaction failed"
+          case value: JValue =>
+            Serialization.write(value)(DefaultFormats)
+          case _ => "signrawtransactionwithwallet failed"
         }
         throw new JsonRPCError(Error(-1, message))
       }

@@ -67,7 +67,7 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     val json = sender.expectMsgType[JValue]
     val JString(unsignedtx) = json \ "hex"
     val JInt(changePos) = json \ "changepos"
-    bitcoinClient.invoke("signrawtransaction", unsignedtx).pipeTo(sender.ref)
+    bitcoinClient.invoke("signrawtransactionwithwallet", unsignedtx).pipeTo(sender.ref)
     val JString(signedTx) = sender.expectMsgType[JValue] \ "hex"
     val tx = Transaction.read(signedTx)
     val txid = tx.txid.toString()
@@ -92,7 +92,7 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
       val pos = if (changePos == 0) 1 else 0
       bitcoinClient.invoke("createrawtransaction", Array(Map("txid" -> txid, "vout" -> pos)), Map(address -> 5.99999)).pipeTo(sender.ref)
       val JString(unsignedtx) = sender.expectMsgType[JValue]
-      bitcoinClient.invoke("signrawtransaction", unsignedtx).pipeTo(sender.ref)
+      bitcoinClient.invoke("signrawtransactionwithwallet", unsignedtx).pipeTo(sender.ref)
       val JString(signedTx) = sender.expectMsgType[JValue] \ "hex"
       signedTx
     }
