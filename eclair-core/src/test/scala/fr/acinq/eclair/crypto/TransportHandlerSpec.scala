@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.crypto
 
+import java.net.InetSocketAddress
 import java.nio.charset.Charset
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, OneForOneStrategy, Props, Stash, SupervisorStrategy, Terminated}

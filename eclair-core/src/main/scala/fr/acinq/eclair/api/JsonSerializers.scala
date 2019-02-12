@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.RouteResponse
 import fr.acinq.eclair.transactions.Direction
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
@@ -122,13 +123,24 @@ class FailureMessageSerializer extends CustomSerializer[FailureMessage](format =
 }))
 
 class NodeAddressSerializer extends CustomSerializer[NodeAddress](format => ({ null},{
-  case IPv4(a, p) => JString(HostAndPort.fromParts(a.getHostAddress, p).toString)
-  case IPv6(a, p) => JString(HostAndPort.fromParts(a.getHostAddress, p).toString)
-  case Tor2(b, p) => JString(s"${b.toString}:$p")
-  case Tor3(b, p) => JString(s"${b.toString}:$p")
+  case n: NodeAddress => JString(HostAndPort.fromParts(n.socketAddress.getHostString, n.socketAddress.getPort).toString)
 }))
 
 class DirectionSerializer extends CustomSerializer[Direction](format => ({ null },{
   case d: Direction => JString(d.toString)
 }))
 
+class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format => ({ null },{
+  case p: PaymentRequest => JObject(JField("prefix", JString(p.prefix)) ::
+    JField("amount", if (p.amount.isDefined) JLong(p.amount.get.toLong) else JNull) ::
+    JField("timestamp", JLong(p.timestamp)) ::
+    JField("nodeId", JString(p.nodeId.toString())) ::
+    JField("description", JString(p.description match {
+      case Left(l) => l.toString()
+      case Right(r) => r.toString()
+    })) ::
+    JField("paymentHash", JString(p.paymentHash.toString())) ::
+    JField("expiry", if (p.expiry.isDefined) JLong(p.expiry.get) else JNull) ::
+    JField("minFinalCltvExpiry", if (p.minFinalCltvExpiry.isDefined) JLong(p.minFinalCltvExpiry.get) else JNull) ::
+    Nil)
+}))

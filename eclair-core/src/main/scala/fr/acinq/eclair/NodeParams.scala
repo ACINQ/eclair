@@ -22,7 +22,7 @@ import java.nio.file.Files
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
-import com.google.common.net.InetAddresses
+import com.google.common.net.{HostAndPort, InetAddresses}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Block}
@@ -31,8 +31,10 @@ import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
+import fr.acinq.eclair.tor.Socks5ProxyParams
+import fr.acinq.eclair.wire.{Color, NodeAddress}
+import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.Color
-
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
 
@@ -42,7 +44,7 @@ import scala.concurrent.duration.FiniteDuration
 case class NodeParams(keyManager: KeyManager,
                       alias: String,
                       color: Color,
-                      publicAddresses: List[InetSocketAddress],
+                      publicAddresses: List[NodeAddress],
                       globalFeatures: BinaryData,
                       localFeatures: BinaryData,
                       overrideFeatures: Map[PublicKey, (BinaryData, BinaryData)],
@@ -66,7 +68,6 @@ case class NodeParams(keyManager: KeyManager,
                       paymentsDb: PaymentsDb,
                       auditDb: AuditDb,
                       revocationTimeout: FiniteDuration,
-                      routerBroadcastInterval: FiniteDuration,
                       pingInterval: FiniteDuration,
                       pingTimeout: FiniteDuration,
                       pingDisconnect: Boolean,
@@ -75,12 +76,13 @@ case class NodeParams(keyManager: KeyManager,
                       autoReconnect: Boolean,
                       chainHash: BinaryData,
                       channelFlags: Byte,
-                      channelExcludeDuration: FiniteDuration,
                       watcherType: WatcherType,
                       paymentRequestExpiry: FiniteDuration,
                       maxPendingPaymentRequests: Int,
-                      maxPaymentFee: Double,
-                      minFundingSatoshis: Long) {
+                      minFundingSatoshis: Long,
+                      routerConf: RouterConf,
+                      socksProxy_opt: Option[Socks5ProxyParams]) {
+
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
 }
@@ -127,7 +129,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress]): NodeParams = {
 
     datadir.mkdirs()
 
@@ -170,6 +172,9 @@ object NodeParams {
     val offeredCLTV = config.getInt("to-remote-delay-blocks")
     require(maxToLocalCLTV <= Channel.MAX_TO_SELF_DELAY && offeredCLTV <= Channel.MAX_TO_SELF_DELAY, s"CLTV delay values too high, max is ${Channel.MAX_TO_SELF_DELAY}")
 
+    val nodeAlias = config.getString("node-alias")
+    require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
+
     val overrideFeatures: Map[PublicKey, (BinaryData, BinaryData)] = config.getConfigList("override-features").map { e =>
       val p = PublicKey(e.getString("nodeid"))
       val gf = BinaryData(e.getString("global-features"))
@@ -177,11 +182,28 @@ object NodeParams {
       (p -> (gf, lf))
     }.toMap
 
+    val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {
+      Some(Socks5ProxyParams(
+        address = new InetSocketAddress(config.getString("socks5.host"), config.getInt("socks5.port")),
+        credentials_opt = None,
+        randomizeCredentials = config.getBoolean("socks5.randomize-credentials"),
+        useForIPv4 = config.getBoolean("socks5.use-for-ipv4"),
+        useForIPv6 = config.getBoolean("socks5.use-for-ipv6"),
+        useForTor = config.getBoolean("socks5.use-for-tor")
+      ))
+    } else {
+      None
+    }
+
+    val addresses = config.getStringList("server.public-ips")
+      .toList
+      .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ torAddress_opt
+
     NodeParams(
       keyManager = keyManager,
-      alias = config.getString("node-alias").take(32),
+      alias = nodeAlias,
       color = Color(color.data(0), color.data(1), color.data(2)),
-      publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(InetAddresses.forString(ip), config.getInt("server.port"))),
+      publicAddresses = addresses,
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),
       overrideFeatures = overrideFeatures,
@@ -205,7 +227,6 @@ object NodeParams {
       paymentsDb = paymentsDb,
       auditDb = auditDb,
       revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
-      routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
       pingDisconnect = config.getBoolean("ping-disconnect"),
@@ -214,12 +235,20 @@ object NodeParams {
       autoReconnect = config.getBoolean("auto-reconnect"),
       chainHash = chainHash,
       channelFlags = config.getInt("channel-flags").toByte,
-      channelExcludeDuration = FiniteDuration(config.getDuration("channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
       watcherType = watcherType,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"),
-      maxPaymentFee = config.getDouble("max-payment-fee"),
-      minFundingSatoshis = config.getLong("min-funding-satoshis")
+      minFundingSatoshis = config.getLong("min-funding-satoshis"),
+      routerConf = RouterConf(
+        channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
+        routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
+        randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
+        searchMaxRouteLength = config.getInt("router.path-finding.max-route-length"),
+        searchMaxCltv = config.getInt("router.path-finding.max-cltv"),
+        searchMaxFeeBaseSat = config.getLong("router.path-finding.fee-threshold-sat"),
+        searchMaxFeePct = config.getDouble("router.path-finding.max-fee-pct")
+      ),
+      socksProxy_opt = socksProxy_opt
     )
   }
 }

@@ -25,10 +25,11 @@ import akka.pattern.pipe
 import akka.testkit.{TestKitBase, TestProbe}
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
+import fr.acinq.eclair.TestUtils
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.integration.IntegrationSpec
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JInt, JValue}
+import org.json4s.JsonAST.JValue
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -41,16 +42,15 @@ trait BitcoindService extends Logging {
 
   import scala.sys.process._
 
-  val INTEGRATION_TMP_DIR = s"${System.getProperty("buildDirectory")}/integration-${UUID.randomUUID().toString}"
+  val INTEGRATION_TMP_DIR = new File(TestUtils.BUILD_DIRECTORY, s"integration-${UUID.randomUUID()}")
   logger.info(s"using tmp dir: $INTEGRATION_TMP_DIR")
 
-  val PATH_BITCOIND = new File(System.getProperty("buildDirectory"), "bitcoin-0.17.1/bin/bitcoind")
+  val PATH_BITCOIND = new File(TestUtils.BUILD_DIRECTORY, "bitcoin-0.17.1/bin/bitcoind")
   val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
 
   var bitcoind: Process = null
   var bitcoinrpcclient: BitcoinJsonRPCClient = null
   var bitcoincli: ActorRef = null
-  var bitcoinVersion: Int = _
 
   case class BitcoinReq(method: String, params: Any*)
 
@@ -84,13 +84,7 @@ trait BitcoindService extends Logging {
     logger.info(s"waiting for bitcoind to initialize...")
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("getnetworkinfo"))
-      sender.receiveOne(5 second) match {
-        case info: JValue =>
-          val JInt(version) = info \ "version"
-          bitcoinVersion = version.intValue()
-          true
-        case _ => false
-      }
+      sender.receiveOne(5 second).isInstanceOf[JValue]
     }, max = 30 seconds, interval = 500 millis)
     logger.info(s"generating initial blocks...")
     sender.send(bitcoincli, BitcoinReq("generate", 500))

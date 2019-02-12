@@ -48,7 +48,7 @@ case class ChannelUnavailable                  (override val channelId: BinaryDa
 case class InvalidFinalScript                  (override val channelId: BinaryData) extends ChannelException(channelId, "invalid final script")
 case class FundingTxTimedout                   (override val channelId: BinaryData) extends ChannelException(channelId, "funding tx timed out")
 case class FundingTxSpent                      (override val channelId: BinaryData, spendingTx: Transaction) extends ChannelException(channelId, s"funding tx has been spent by txid=${spendingTx.txid}")
-case class HtlcTimedout                        (override val channelId: BinaryData) extends ChannelException(channelId, "one or more htlcs timed out")
+case class HtlcTimedout                        (override val channelId: BinaryData, htlcs: Set[UpdateAddHtlc]) extends ChannelException(channelId, s"one or more htlcs timed out: ids=${htlcs.take(10).map(_.id).mkString}") // we only display the first 10 ids
 case class HtlcOverridenByLocalCommit          (override val channelId: BinaryData) extends ChannelException(channelId, "htlc was overriden by local commit")
 case class FeerateTooSmall                     (override val channelId: BinaryData, remoteFeeratePerKw: Long) extends ChannelException(channelId, s"remote fee rate is too small: remoteFeeratePerKw=$remoteFeeratePerKw")
 case class FeerateTooDifferent                 (override val channelId: BinaryData, localFeeratePerKw: Long, remoteFeeratePerKw: Long) extends ChannelException(channelId, s"local/remote feerates are too different: remoteFeeratePerKw=$remoteFeeratePerKw localFeeratePerKw=$localFeeratePerKw")

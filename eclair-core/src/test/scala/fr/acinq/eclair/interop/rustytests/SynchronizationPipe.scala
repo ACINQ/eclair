@@ -21,6 +21,7 @@ import java.util.concurrent.CountDownLatch
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.bitcoin.BinaryData
+import fr.acinq.eclair.TestUtils
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.{IN, OUT}
 
@@ -48,7 +49,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
   val echo = "echo (.*)".r
   val dump = "(.):dump".r
 
-  val fout = new BufferedWriter(new FileWriter(s"${System.getProperty("buildDirectory")}/result.tmp"))
+  val fout = new BufferedWriter(new FileWriter(new File(TestUtils.BUILD_DIRECTORY, "result.tmp")))
 
   def exec(script: List[String], a: ActorRef, b: ActorRef): Unit = {
     def resolve(x: String) = if (x == "A") a else b

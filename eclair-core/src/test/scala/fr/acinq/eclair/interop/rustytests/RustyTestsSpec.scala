@@ -21,7 +21,7 @@ import java.util.concurrent.{CountDownLatch, TimeUnit}
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
-import fr.acinq.eclair.Globals
+import fr.acinq.eclair.{Globals, TestUtils}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
@@ -75,7 +75,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
       pipe ! new File(getClass.getResource(s"/scenarii/${test.name}.script").getFile)
       latch.await(30, TimeUnit.SECONDS)
       val ref = Source.fromFile(getClass.getResource(s"/scenarii/${test.name}.script.expected").getFile).getLines().filterNot(_.startsWith("#")).toList
-      val res = Source.fromFile(new File(s"${System.getProperty("buildDirectory")}/result.tmp")).getLines().filterNot(_.startsWith("#")).toList
+      val res = Source.fromFile(new File(TestUtils.BUILD_DIRECTORY, "result.tmp")).getLines().filterNot(_.startsWith("#")).toList
       withFixture(test.toNoArgTest(FixtureParam(ref, res)))
     }
   }

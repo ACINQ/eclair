@@ -18,9 +18,11 @@ package fr.acinq.eclair.api
 
 import java.net.{InetAddress, InetSocketAddress}
 
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.{BinaryData, OutPoint}
+import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.transactions.{IN, OUT}
-import fr.acinq.eclair.wire.NodeAddress
+import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
 import org.json4s.jackson.Serialization
 import org.scalatest.{FunSuite, Matchers}
 
@@ -49,11 +51,15 @@ class JsonSerializersSpec extends FunSuite with Matchers {
   }
 
   test("NodeAddress serialization") {
-    val ipv4 = NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array(10, 0, 0, 1)), 8888))
-    val ipv6LocalHost = NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)), 9735))
+    val ipv4 = NodeAddress.fromParts("10.0.0.1", 8888).get
+    val ipv6LocalHost = NodeAddress.fromParts(InetAddress.getByAddress(Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)).getHostAddress, 9735).get
+    val tor2 = Tor2("aaaqeayeaudaocaj", 7777)
+    val tor3 = Tor3("aaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypsaijc", 9999)
 
     Serialization.write(ipv4)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""10.0.0.1:8888""""
     Serialization.write(ipv6LocalHost)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""[0:0:0:0:0:0:0:1]:9735""""
+    Serialization.write(tor2)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""aaaqeayeaudaocaj.onion:7777""""
+    Serialization.write(tor3)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""aaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypsaijc.onion:9999""""
   }
 
   test("Direction serialization") {
@@ -61,4 +67,9 @@ class JsonSerializersSpec extends FunSuite with Matchers {
     Serialization.write(OUT)(org.json4s.DefaultFormats + new DirectionSerializer) shouldBe s""""OUT""""
   }
 
+  test("Payment Request") {
+    val ref = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
+    val pr = PaymentRequest.read(ref)
+    Serialization.write(pr)(org.json4s.DefaultFormats + new PaymentRequestSerializer) shouldBe """{"prefix":"lnbc","amount":250000000,"timestamp":1496314658,"nodeId":"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad","description":"1 cup coffee","paymentHash":"0001020304050607080900010203040506070809000102030405060708090102","expiry":60,"minFinalCltvExpiry":null}"""
+  }
 }

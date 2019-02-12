@@ -55,9 +55,11 @@ class RelayerSpec extends TestkitBaseClass {
   val channelId_ab: BinaryData = randomBytes(32)
   val channelId_bc: BinaryData = randomBytes(32)
 
-  def makeCommitments(channelId: BinaryData) = Commitments(null, null, 0.toByte, null,
+  def makeCommitments(channelId: BinaryData) = new Commitments(null, null, 0.toByte, null,
     RemoteCommit(42, CommitmentSpec(Set.empty, 20000, 5000000, 100000000), "00" * 32, randomKey.toPoint),
-    null, null, 0, 0, Map.empty, null, null, null, channelId)
+    null, null, 0, 0, Map.empty, null, null, null, channelId) {
+    override def availableBalanceForSendMsat: Long = remoteCommit.spec.toRemoteMsat // approximation
+  }
 
   test("relay an htlc-add") { f =>
     import f._
@@ -322,10 +324,10 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, ChannelUnavailable(channelId_bc), origin, Some(channelUpdate_bc_disabled), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(ChannelDisabled(channelUpdate_bc_disabled.messageFlags, channelUpdate_bc_disabled.channelFlags, channelUpdate_bc_disabled)))
 
-    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcTimedout(channelId_bc), origin, None, None)))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcTimedout(channelId_bc, Set.empty), origin, None, None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(PermanentChannelFailure))
 
-    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcTimedout(channelId_bc), origin, Some(channelUpdate_bc), None)))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcTimedout(channelId_bc, Set.empty), origin, Some(channelUpdate_bc), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(PermanentChannelFailure))
 
     register.expectNoMsg(100 millis)
