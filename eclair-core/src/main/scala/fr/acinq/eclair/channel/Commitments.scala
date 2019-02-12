@@ -25,7 +25,6 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Features, Globals, UInt64}
-
 import scala.util.{Failure, Success}
 
 // @formatter:off
@@ -41,34 +40,34 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, rem
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 // @formatter:on
 
-/**
-  * about remoteNextCommitInfo:
-  * we either:
-  * - have built and signed their next commit tx with their next revocation hash which can now be discarded
-  * - have their next per-commitment point
-  * So, when we've signed and sent a commit message and are waiting for their revocation message,
-  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
-  */
-case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
-                       channelFlags: Byte,
-                       localCommit: LocalCommit, remoteCommit: RemoteCommit,
-                       localChanges: LocalChanges, remoteChanges: RemoteChanges,
-                       localNextHtlcId: Long, remoteNextHtlcId: Long,
-                       originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, the id of the previous channel
-                       remoteNextCommitInfo: Either[WaitingForRevocation, Point],
-                       commitInput: InputInfo,
-                       remotePerCommitmentSecrets: ShaChain, channelId: BinaryData) {
+sealed trait Commitments {
+
+  val localParams: LocalParams
+  val remoteParams: RemoteParams
+  val channelFlags: Byte
+  val localCommit: LocalCommit
+  val remoteCommit: RemoteCommit
+  val localChanges: LocalChanges
+  val remoteChanges: RemoteChanges
+  val localNextHtlcId: Long
+  val remoteNextHtlcId: Long
+  val originChannels: Map[Long, Origin] // for outgoing htlcs relayed through us, the id of the previous channel
+  val remoteNextCommitInfo: Either[WaitingForRevocation, Point]
+  val commitInput: InputInfo
+  val remotePerCommitmentSecrets: ShaChain
+  val channelId: BinaryData
+
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
+
+  def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
+
+  def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
   def timedoutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
     (localCommit.spec.htlcs.filter(htlc => htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry) ++
       remoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry) ++
       remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry)).getOrElse(Set.empty[DirectedHtlc])).map(_.add)
-
-  def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
-
-  def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
   def announceChannel: Boolean = (channelFlags & 0x01) != 0
 
@@ -78,7 +77,39 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
     val fees = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced, Helpers.isSimplifiedCommitment(localParams)).amount else 0
     reduced.toRemoteMsat / 1000 - remoteParams.channelReserveSatoshis - fees
   }
+
 }
+
+/**
+  * about remoteNextCommitInfo:
+  * we either:
+  * - have built and signed their next commit tx with their next revocation hash which can now be discarded
+  * - have their next per-commitment point
+  * So, when we've signed and sent a commit message and are waiting for their revocation message,
+  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
+  */
+case class CommitmentsV1(localParams: LocalParams, remoteParams: RemoteParams,
+                         channelFlags: Byte,
+                         localCommit: LocalCommit, remoteCommit: RemoteCommit,
+                         localChanges: LocalChanges, remoteChanges: RemoteChanges,
+                         localNextHtlcId: Long, remoteNextHtlcId: Long,
+                         originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, the id of the previous channel
+                         remoteNextCommitInfo: Either[WaitingForRevocation, Point],
+                         commitInput: InputInfo,
+                         remotePerCommitmentSecrets: ShaChain, channelId: BinaryData) extends Commitments
+
+
+case class SimplifiedCommitment(localParams: LocalParams, remoteParams: RemoteParams,
+                                channelFlags: Byte,
+                                localCommit: LocalCommit, remoteCommit: RemoteCommit,
+                                localChanges: LocalChanges, remoteChanges: RemoteChanges,
+                                localNextHtlcId: Long,
+                                remoteNextHtlcId: Long,
+                                originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, the id of the previous channel
+                                remoteNextCommitInfo: Either[WaitingForRevocation, Point],
+                                commitInput: InputInfo,
+                                remotePerCommitmentSecrets: ShaChain,
+                                channelId: BinaryData) extends Commitments
 
 object Commitments {
   /**
@@ -88,11 +119,15 @@ object Commitments {
     * @param proposal
     * @return an updated commitment instance
     */
-  private def addLocalProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
-    commitments.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed :+ proposal))
+  def addLocalProposal(commitments: Commitments, proposal: UpdateMessage): Commitments = commitments match {
+    case c: CommitmentsV1 => c.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed :+ proposal))
+    case _: SimplifiedCommitment => ???
+  }
 
-  private def addRemoteProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
-    commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
+  def addRemoteProposal(commitments: Commitments, proposal: UpdateMessage): Commitments = commitments match {
+    case c: CommitmentsV1 => c.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
+    case _: SimplifiedCommitment => ???
+  }
 
   /**
     *
@@ -125,7 +160,10 @@ object Commitments {
     // let's compute the current commitment *as seen by them* with this change taken into account
     val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amountMsat, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     // we increment the local htlc index and add an entry to the origins map
-    val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1, originChannels = commitments.originChannels + (add.id -> origin))
+    val commitments1 = addLocalProposal(commitments, add) match {
+      case c: CommitmentsV1 => c.copy(localNextHtlcId = commitments.localNextHtlcId + 1, originChannels = commitments.originChannels + (add.id -> origin))
+      case _: SimplifiedCommitment => ???
+    }
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val remoteCommit1 = commitments1.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments1.remoteCommit)
     val reduced = CommitmentSpec.reduce(remoteCommit1.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
@@ -167,7 +205,10 @@ object Commitments {
     }
 
     // let's compute the current commitment *as seen by us* including this change
-    val commitments1 = addRemoteProposal(commitments, add).copy(remoteNextHtlcId = commitments.remoteNextHtlcId + 1)
+    val commitments1 = addRemoteProposal(commitments, add) match {
+      case c: CommitmentsV1 => c.copy(remoteNextHtlcId = commitments.remoteNextHtlcId + 1)
+      case _: SimplifiedCommitment => ???
+    }
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
     val incomingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
@@ -298,7 +339,10 @@ object Commitments {
     // let's compute the current commitment *as seen by them* with this change taken into account
     val fee = UpdateFee(commitments.channelId, cmd.feeratePerKw)
     // update_fee replace each other, so we can remove previous ones
-    val commitments1 = commitments.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
+    val commitments1 = commitments match {
+      case c: CommitmentsV1 => c.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
+      case _: SimplifiedCommitment => ???
+    }
     val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
@@ -333,7 +377,10 @@ object Commitments {
 
     // let's compute the current commitment *as seen by us* including this change
     // update_fee replace each other, so we can remove previous ones
-    val commitments1 = commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
+    val commitments1 = commitments match {
+      case c: CommitmentsV1 => c.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
+      case _: SimplifiedCommitment => ???
+    }
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
@@ -382,10 +429,15 @@ object Commitments {
           htlcSignatures = htlcSigs.toList
         )
 
-        val commitments1 = commitments.copy(
-          remoteNextCommitInfo = Left(WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig, commitments.localCommit.index)),
-          localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
-          remoteChanges = remoteChanges.copy(acked = Nil, signed = remoteChanges.acked))
+        val commitments1 = commitments match {
+          case c: CommitmentsV1 => c.copy(
+            remoteNextCommitInfo = Left(WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig, commitments.localCommit.index)),
+            localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
+            remoteChanges = remoteChanges.copy(acked = Nil, signed = remoteChanges.acked))
+          case _: SimplifiedCommitment => ???
+        }
+
+
         (commitments1, commitSig)
       case Left(_) =>
         throw CannotSignBeforeRevocation(commitments.channelId)
@@ -462,7 +514,10 @@ object Commitments {
       publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs))
     val ourChanges1 = localChanges.copy(acked = Nil)
     val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
-    val commitments1 = commitments.copy(localCommit = localCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
+    val commitments1 = commitments match {
+      case c: CommitmentsV1 => c.copy(localCommit = localCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
+      case _: SimplifiedCommitment => ???
+    }
 
     (commitments1, revocation)
   }
@@ -474,7 +529,7 @@ object Commitments {
       case Left(_) if revocation.perCommitmentSecret.toPoint != remoteCommit.remotePerCommitmentPoint =>
         throw InvalidRevocation(commitments.channelId)
       case Left(WaitingForRevocation(theirNextCommit, _, _, _)) =>
-         val forwards = commitments.remoteChanges.signed collect {
+        val forwards = commitments.remoteChanges.signed collect {
           // we forward adds downstream only when they have been committed by both sides
           // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
           case add: UpdateAddHtlc => ForwardAdd(add)
@@ -495,13 +550,17 @@ object Commitments {
         val completedOutgoingHtlcs = commitments.remoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add.id) -- theirNextCommit.spec.htlcs.filter(_.direction == IN).map(_.add.id)
         // we remove the newly completed htlcs from the origin map
         val originChannels1 = commitments.originChannels -- completedOutgoingHtlcs
-        val commitments1 = commitments.copy(
-          localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
-          remoteChanges = remoteChanges.copy(signed = Nil),
-          remoteCommit = theirNextCommit,
-          remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
-          remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index),
-          originChannels = originChannels1)
+        val commitments1 = commitments match {
+          case c: CommitmentsV1 => c.copy(
+            localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
+            remoteChanges = remoteChanges.copy(signed = Nil),
+            remoteCommit = theirNextCommit,
+            remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
+            remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index),
+            originChannels = originChannels1)
+          case _: SimplifiedCommitment => ???
+        }
+
         (commitments1, forwards)
       case Right(_) =>
         throw UnexpectedRevocation(commitments.channelId)

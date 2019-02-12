@@ -357,13 +357,17 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             channelId = channelId,
             signature = localSigOfRemoteTx
           )
-          val commitments = Commitments(localParams, remoteParams, channelFlags,
+          val commitments = CommitmentsV1(localParams, remoteParams, channelFlags,
             LocalCommit(0, localSpec, PublishableTxs(signedLocalCommitTx, Nil)), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
             originChannels = Map.empty,
             remoteNextCommitInfo = Right(randomKey.publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
             commitInput, ShaChain.init, channelId = channelId)
+
+
+
+
           context.parent ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
           context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
@@ -394,7 +398,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           handleLocalError(InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx), d, Some(msg))
         case Success(_) =>
           val commitInput = localCommitTx.input
-          val commitments = Commitments(localParams, remoteParams, channelFlags,
+          val commitments = CommitmentsV1(localParams, remoteParams, channelFlags,
             LocalCommit(0, localSpec, PublishableTxs(signedLocalCommitTx, Nil)), remoteCommit,
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
@@ -484,7 +488,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   })
 
   when(WAIT_FOR_FUNDING_LOCKED)(handleExceptions {
-    case Event(FundingLocked(_, nextPerCommitmentPoint), d@DATA_WAIT_FOR_FUNDING_LOCKED(commitments, shortChannelId, _)) =>
+    case Event(FundingLocked(_, nextPerCommitmentPoint), d@DATA_WAIT_FOR_FUNDING_LOCKED(commitments: CommitmentsV1, shortChannelId, _)) =>
       // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
       blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
       context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortChannelId))
@@ -603,7 +607,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
 
-    case Event(c@CMD_SIGN, d: DATA_NORMAL) =>
+    case Event(c@CMD_SIGN, d@DATA_NORMAL(commisments: CommitmentsV1, _, _, _, _, _, _)) =>
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
@@ -641,7 +645,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           }
         case Left(waitForRevocation) =>
           log.debug(s"already in the process of signing, will sign again as soon as possible")
-          val commitments1 = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
+          val commitments1 = commisments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
           stay using d.copy(commitments = commitments1)
       }
 
@@ -700,7 +704,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         handleCommandSuccess(sender, store(d.copy(localShutdown = Some(shutdown)))) sending shutdown
       }
 
-    case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d: DATA_NORMAL) =>
+    case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(commitments: CommitmentsV1, _, _, _, _, _, _)) =>
       // they have pending unsigned htlcs         => they violated the spec, close the channel
       // they don't have pending unsigned htlcs
       //    we have pending unsigned htlcs
@@ -726,7 +730,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         d.commitments.remoteNextCommitInfo match {
           case Left(waitForRevocation) =>
             // yes, let's just schedule a new signature ASAP, which will include all pending unsigned htlcs
-            val commitments1 = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
+            val commitments1 = commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
             // in the meantime we won't send new htlcs
             stay using d.copy(commitments = commitments1, remoteShutdown = Some(remoteShutdown))
           case Right(_) =>
@@ -936,7 +940,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
 
-    case Event(c@CMD_SIGN, d: DATA_SHUTDOWN) =>
+    case Event(c@CMD_SIGN, d@DATA_SHUTDOWN(commitments: CommitmentsV1, _, _)) =>
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
@@ -958,7 +962,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           }
         case Left(waitForRevocation) =>
           log.debug(s"already in the process of signing, will sign again as soon as possible")
-          stay using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
+          stay using d.copy(commitments = commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
       }
 
     case Event(commit: CommitSig, d@DATA_SHUTDOWN(_, localShutdown, remoteShutdown)) =>
@@ -1889,11 +1893,16 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     // first we clean up unacknowledged updates
     log.debug(s"discarding proposed OUT: ${d.commitments.localChanges.proposed.map(Commitments.msg2String(_)).mkString(",")}")
     log.debug(s"discarding proposed IN: ${d.commitments.remoteChanges.proposed.map(Commitments.msg2String(_)).mkString(",")}")
-    val commitments1 = d.commitments.copy(
-      localChanges = d.commitments.localChanges.copy(proposed = Nil),
-      remoteChanges = d.commitments.remoteChanges.copy(proposed = Nil),
-      localNextHtlcId = d.commitments.localNextHtlcId - d.commitments.localChanges.proposed.collect { case u: UpdateAddHtlc => u }.size,
-      remoteNextHtlcId = d.commitments.remoteNextHtlcId - d.commitments.remoteChanges.proposed.collect { case u: UpdateAddHtlc => u }.size)
+    val commitments1 = d.commitments match {
+      case c: CommitmentsV1 => c.copy(
+        localChanges = d.commitments.localChanges.copy(proposed = Nil),
+        remoteChanges = d.commitments.remoteChanges.copy(proposed = Nil),
+        localNextHtlcId = d.commitments.localNextHtlcId - d.commitments.localChanges.proposed.collect { case u: UpdateAddHtlc => u }.size,
+        remoteNextHtlcId = d.commitments.remoteNextHtlcId - d.commitments.remoteChanges.proposed.collect { case u: UpdateAddHtlc => u }.size)
+      case _: SimplifiedCommitment => ???
+    }
+
+
     log.debug(s"localNextHtlcId=${d.commitments.localNextHtlcId}->${commitments1.localNextHtlcId}")
     log.debug(s"remoteNextHtlcId=${d.commitments.remoteNextHtlcId}->${commitments1.remoteNextHtlcId}")
 

@@ -60,9 +60,13 @@ object Helpers {
     * @return
     */
   def updateFeatures(data: HasCommitments, localInit: Init, remoteInit: Init): HasCommitments = {
-    val commitments1 = data.commitments.copy(
-      localParams = data.commitments.localParams.copy(globalFeatures = localInit.globalFeatures, localFeatures = localInit.localFeatures),
-      remoteParams = data.commitments.remoteParams.copy(globalFeatures = remoteInit.globalFeatures, localFeatures = remoteInit.localFeatures))
+    val commitments1 = data.commitments match {
+      case c: CommitmentsV1 => c.copy(
+        localParams = data.commitments.localParams.copy(globalFeatures = localInit.globalFeatures, localFeatures = localInit.localFeatures),
+        remoteParams = data.commitments.remoteParams.copy(globalFeatures = remoteInit.globalFeatures, localFeatures = remoteInit.localFeatures))
+      case _: SimplifiedCommitment => ???
+    }
+
     data match {
       case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = commitments1)
       case d: DATA_WAIT_FOR_FUNDING_LOCKED => d.copy(commitments = commitments1)
