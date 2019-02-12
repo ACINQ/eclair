@@ -78,7 +78,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val updates = List(
       makeUpdate(1L, a, b, feeBaseMsat = 1, feeProportionalMillionth = 200, minHtlcMsat = 0),
-      makeUpdate(4L, a, e, feeBaseMsat = 1, feeProportionalMillionth =  200, minHtlcMsat = 0),
+      makeUpdate(4L, a, e, feeBaseMsat = 1, feeProportionalMillionth = 200, minHtlcMsat = 0),
       makeUpdate(2L, b, c, feeBaseMsat = 1, feeProportionalMillionth = 300, minHtlcMsat = 0),
       makeUpdate(3L, c, d, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0),
       makeUpdate(5L, e, f, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0),
@@ -104,10 +104,10 @@ class RouteCalculationSpec extends FunSuite {
   test("calculate route considering the direct channel pays no fees") {
     val updates = List(
       makeUpdate(1L, a, b, 5, 0), // a -> b
-      makeUpdate(2L, a, d, 15, 0),// a -> d  this goes a bit closer to the target and asks for higher fees but is a direct channel
+      makeUpdate(2L, a, d, 15, 0), // a -> d  this goes a bit closer to the target and asks for higher fees but is a direct channel
       makeUpdate(3L, b, c, 5, 0), // b -> c
       makeUpdate(4L, c, d, 5, 0), // c -> d
-      makeUpdate(5L, d, e, 5, 0)  // d -> e
+      makeUpdate(5L, d, e, 5, 0) // d -> e
     ).toMap
 
     val g = makeGraph(updates)
@@ -441,7 +441,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1 , ignoredEdges = Set(ChannelDesc(ShortChannelId(3L), c, d)), routeParams = DEFAULT_ROUTE_PARAMS)
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, ignoredEdges = Set(ChannelDesc(ShortChannelId(3L), c, d)), routeParams = DEFAULT_ROUTE_PARAMS)
     assert(route1.map(hops2Ids) === Failure(RouteNotFound))
 
     // verify that we left the graph untouched
@@ -546,7 +546,7 @@ class RouteCalculationSpec extends FunSuite {
     val updates = nodes
       .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
       .zipWithIndex // ((0, 1), 0) :: ((1, 2), 1) :: ...
-      .map {case ((na, nb), index) => makeUpdate(index, na, nb, 5, 0)}
+      .map { case ((na, nb), index) => makeUpdate(index, na, nb, 5, 0) }
       .toMap
 
     val g = makeGraph(updates)
@@ -564,7 +564,7 @@ class RouteCalculationSpec extends FunSuite {
     val updates = nodes
       .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
       .zipWithIndex // ((0, 1), 0) :: ((1, 2), 1) :: ...
-      .map {case ((na, nb), index) => makeUpdate(index, na, nb, 1, 0)}
+      .map { case ((na, nb), index) => makeUpdate(index, na, nb, 1, 0) }
       .toMap
 
     val updates2 = updates + makeUpdate(99, nodes(2), nodes(48), 1000, 0) // expensive shorter route
@@ -622,7 +622,7 @@ class RouteCalculationSpec extends FunSuite {
     val g = makeGraph(updates)
 
     val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
-    assert(route1.map(hops2Ids) === Success(1 :: 2  :: 4 :: 5 :: Nil))
+    assert(route1.map(hops2Ids) === Success(1 :: 2 :: 4 :: 5 :: Nil))
   }
 
 
@@ -679,7 +679,7 @@ class RouteCalculationSpec extends FunSuite {
       PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), //e
       PublicKey("029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c"), //f
       PublicKey("02f38f4e37142cc05df44683a83e22dea608cf4691492829ff4cf99888c5ec2d3a"), //g
-      PublicKey("03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc")  //h
+      PublicKey("03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc") //h
     )
 
 
@@ -707,7 +707,7 @@ class RouteCalculationSpec extends FunSuite {
     assert(hops2Ids(secondShortest.path.map(graphEdgeToHop)) === 10 :: 60 :: 90 :: Nil) // C -> E -> G -> H
   }
 
-  test("terminate looking for k-shortest path if there are no more alternative paths than k"){
+  test("terminate looking for k-shortest path if there are no more alternative paths than k") {
 
     val f = randomKey.publicKey
 
@@ -754,7 +754,7 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(7L, e, c, feeBaseMsat = 9, 0)
     ).toMap)
 
-    (for { _ <- 0 to 10 } yield Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3, routeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBaseMsat = 7, maxFeePct = 0))).map {
+    (for {_ <- 0 to 10} yield Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3, routeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBaseMsat = 7, maxFeePct = 0))).map {
       case Failure(_) => assert(false)
       case Success(someRoute) =>
 
