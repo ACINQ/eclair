@@ -721,6 +721,7 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(3L, f, c, 1, 0),
       makeUpdate(4L, c, d, 1, 0),
       makeUpdate(4L, d, c, 1, 0),
+      makeUpdate(41L, d, c, 1, 0), // there is more than one D -> C channel
       makeUpdate(5L, d, e, 1, 0),
       makeUpdate(5L, e, d, 1, 0),
       makeUpdate(6L, e, f, 1, 0),

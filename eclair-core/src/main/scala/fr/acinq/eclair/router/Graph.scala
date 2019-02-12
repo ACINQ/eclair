@@ -87,7 +87,7 @@ object Graph {
           // select the spur node as the i-th element of the k-th previous shortest path (k -1)
           val spurEdge = prevShortestPath(i)
 
-          // select the subpath from the source to the spur node of the k-th previous shortest path
+          // select the sub-path from the source to the spur node of the k-th previous shortest path
           val rootPathEdges = if (i == 0) prevShortestPath.head :: Nil else prevShortestPath.take(i)
           val rootPathWeight = pathWeight(rootPathEdges, amountMsat, isPartial = true)
 
@@ -100,16 +100,11 @@ object Graph {
             }
           }
 
-          // if i > 0 remove the previous edge too to avoid going back from where we arrived (previous iteration)
-          val returningEdge = if (i > 0) {
-            val prevDesc = prevShortestPath(i - 1).desc
-            Set(prevDesc.copy(a = prevDesc.b, b = prevDesc.a)) // we remove the reverse of the previous edge to make sure the path doesn't go backward
-          } else {
-            Set.empty
-          }
+          // remove any link that can lead back to the previous vertex to avoid going back from where we arrived (previous iteration)
+          val returningEdges = rootPathEdges.lastOption.map(last => graph.getEdgesBetween(last.desc.b, last.desc.a)).toSeq.flatten.map(_.desc)
 
-          // find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
-          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet ++ returningEdge, extraEdges, rootPathWeight, boundaries)
+          // find the "spur" path, a sub-path going from the spur edge to the target avoiding previously found sub-paths
+          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet ++ returningEdges, extraEdges, rootPathWeight, boundaries)
 
           // if there wasn't a path the spur will be empty
           if (spurPath.nonEmpty) {
