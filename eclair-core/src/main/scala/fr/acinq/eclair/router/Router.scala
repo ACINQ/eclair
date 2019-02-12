@@ -29,6 +29,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidAnnouncement, InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios, WeightedPath}
 import fr.acinq.eclair.transactions.Scripts
@@ -43,9 +44,18 @@ import scala.util.{Random, Try}
 
 // @formatter:off
 
-case class RouterConf(randomizeRouteSelection: Boolean, channelExcludeDuration: FiniteDuration, routerBroadcastInterval: FiniteDuration, searchMaxFeeBaseMsat: Long, searchMaxFeePct: Double, searchMaxRouteLength: Int, searchMaxCltv: Int)
+case class RouterConf(randomizeRouteSelection: Boolean, channelExcludeDuration: FiniteDuration, routerBroadcastInterval: FiniteDuration, searchMaxFeeBaseSat: Long, searchMaxFeePct: Double, searchMaxRouteLength: Int, searchMaxCltv: Int)
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
+case class RouteParams(maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int)
+case class RouteRequest(source: PublicKey,
+                        target: PublicKey,
+                        amountMsat: Long,
+                        assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                        ignoreNodes: Set[PublicKey] = Set.empty,
+                        ignoreChannels: Set[ChannelDesc] = Set.empty,
+                        randomize: Option[Boolean] = None,
+                        routeParams: Option[RouteParams] = None)
 case class RouteParams(maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int)
 case class RouteRequest(source: PublicKey,
                         target: PublicKey,
@@ -110,7 +120,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
   val SHORTID_WINDOW = 100
 
-  val defaultRouteParams = RouteParams(nodeParams.routerConf.searchMaxFeeBaseMsat, nodeParams.routerConf.searchMaxFeePct, nodeParams.routerConf.searchMaxRouteLength, nodeParams.routerConf.searchMaxCltv)
+  val defaultRouteParams = RouteParams(
+    maxFeeBaseMsat = nodeParams.routerConf.searchMaxFeeBaseSat * 1000,
+    maxFeePct = nodeParams.routerConf.searchMaxFeePct,
+    routeMaxLength = nodeParams.routerConf.searchMaxRouteLength,
+    routeMaxCltv = nodeParams.routerConf.searchMaxCltv
+  )
 
   val db = nodeParams.networkDb
 
@@ -842,13 +857,13 @@ object Router {
 
     val boundaries: RichWeight => Boolean = { weight =>
       ((weight.cost - amountMsat) < routeParams.maxFeeBaseMsat || (weight.cost - amountMsat) < (routeParams.maxFeePct * amountMsat)) &&
-      weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
-      weight.cltv <= routeParams.routeMaxCltv
+        weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
+        weight.cltv <= routeParams.routeMaxCltv
     }
 
-    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, wr, currentBlockHeight, boundaries).toList match {
+    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, boundaries).toList match {
       case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
-        return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, wr, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
+        return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
       case Nil => throw RouteNotFound
       case routes => routes.find(_.path.size == 1) match {
         case Some(directRoute) => directRoute :: Nil
@@ -857,6 +872,6 @@ object Router {
     }
 
     // At this point 'foundRoutes' cannot be empty
-    Random.shuffle(foundRoutes).head.path.map(DirectedGraph.graphEdgeToHop)
+    Random.shuffle(foundRoutes).head.path.map(graphEdgeToHop)
   }
 }

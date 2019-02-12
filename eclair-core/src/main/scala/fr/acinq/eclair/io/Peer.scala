@@ -20,7 +20,7 @@ import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
 import java.nio.ByteOrder
 
-import akka.actor.{ActorRef, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
@@ -100,10 +100,16 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
       goto(INITIALIZING) using InitializingData(address_opt, transport, d.channels, origin_opt, localInit)
 
-    case Event(Terminated(actor), d@DisconnectedData(_, channels, _)) if channels.exists(_._2 == actor) =>
-      val h = channels.filter(_._2 == actor).keys
+    case Event(Terminated(actor), d: DisconnectedData) if d.channels.exists(_._2 == actor) =>
+      val h = d.channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${h.mkString("/")}")
-      stay using d.copy(channels = channels -- h)
+      val channels1 = d.channels -- h
+      if (channels1.isEmpty) {
+        // we have no existing channels, we can forget about this peer
+        stopPeer()
+      } else {
+        stay using d.copy(channels = channels1)
+      }
 
     case Event(_: wire.LightningMessage, _) => stay // we probably just got disconnected and that's the last messages we received
   }
@@ -163,7 +169,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(Terminated(actor), d: InitializingData) if d.channels.exists(_._2 == actor) =>
       val h = d.channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${h.mkString("/")}")
-      stay using d.copy(channels = d.channels -- h)
+      val channels1 = d.channels -- h
+      if (channels1.isEmpty) {
+        // we have no existing channels, we can forget about this peer
+        stopPeer()
+      } else {
+        stay using d.copy(channels = channels1)
+      }
   }
 
   when(CONNECTED) {
@@ -399,8 +411,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(Terminated(actor), d: ConnectedData) if actor == d.transport =>
       log.info(s"lost connection to $remoteNodeId")
-      d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-      goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+      if (d.channels.isEmpty) {
+        // we have no existing channels, we can forget about this peer
+        stopPeer()
+      } else {
+        d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+        goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+      }
 
     case Event(Terminated(actor), d: ConnectedData) if d.channels.values.toSet.contains(actor) =>
       // we will have at most 2 ids: a TemporaryChannelId and a FinalChannelId
@@ -447,8 +464,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
 
     case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
-
-    case Event(_: Terminated, _) => stay // this channel got closed before having a commitment and we got disconnected (e.g. a funding error occured)
   }
 
   onTransition {
@@ -470,13 +485,18 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     channel
   }
 
+  def stopPeer() = {
+    log.info("removing peer from db")
+    nodeParams.peersDb.removePeer(remoteNodeId)
+    stop(FSM.Normal)
+  }
+
   // a failing channel won't be restarted, it should handle its states
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
 
   initialize()
 
   override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
-
 }
 
 object Peer {

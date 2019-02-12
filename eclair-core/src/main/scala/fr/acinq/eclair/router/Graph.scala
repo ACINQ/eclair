@@ -49,9 +49,11 @@ object Graph {
   implicit object PathComparator extends Ordering[WeightedPath] {
     override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.weight.compare(x.weight.weight)
   }
+
   /**
     * Yen's algorithm to find the k-shortest (loopless) paths in a graph, uses dijkstra as search algo. Is guaranteed to terminate finding
     * at most @pathsToFind paths sorted by cost (the cheapest is in position 0).
+    *
     * @param graph
     * @param sourceNode
     * @param targetNode
@@ -88,7 +90,7 @@ object Graph {
     if(shortestPath.isEmpty) return Seq.empty
 
     // main loop
-    for(k <- 1 until pathsToFind) {
+    for (k <- 1 until pathsToFind) {
 
       if (!allSpurPathsFound) {
 
@@ -152,15 +154,15 @@ object Graph {
     * the shortest path from the target to the source (this is because we want to calculate the weight of the
     * edges correctly). The graph @param g is optimized for querying the incoming edges given a vertex.
     *
-    * @param g the graph on which will be performed the search
-    * @param sourceNode the starting node of the path we're looking for
-    * @param targetNode the destination node of the path
-    * @param amountMsat the amount (in millisatoshis) we want to transmit
+    * @param g            the graph on which will be performed the search
+    * @param sourceNode   the starting node of the path we're looking for
+    * @param targetNode   the destination node of the path
+    * @param amountMsat   the amount (in millisatoshis) we want to transmit
     * @param ignoredEdges a list of edges we do not want to consider
-    * @param extraEdges a list of extra edges we want to consider but are not currently in the graph
-    * @param wr an object containing the ratios used to 'weight' edges when searching for the shortest path
+    * @param extraEdges   a list of extra edges we want to consider but are not currently in the graph
+    * @param wr           an object containing the ratios used to 'weight' edges when searching for the shortest path
     * @param currentBlockHeight the height of the chain tip (latest block)
-    * @param boundaries a predicate function that can be used to impose limits on the outcome of the search
+    * @param boundaries   a predicate function that can be used to impose limits on the outcome of the search
     * @return
     */
 
@@ -342,7 +344,7 @@ object Graph {
     /**
       * Representation of an edge of the graph
       *
-      * @param desc channel description
+      * @param desc   channel description
       * @param update channel info
       */
     case class GraphEdge(desc: ChannelDesc, update: ChannelUpdate)
@@ -419,6 +421,7 @@ object Graph {
 
       /**
         * The the incoming edges for vertex @param keyB
+        *
         * @param keyB
         * @return
         */
@@ -451,6 +454,7 @@ object Graph {
 
       /**
         * Note this operation will traverse all edges in the graph (expensive)
+        *
         * @param key
         * @return a list of the outgoing edges of vertex @param key, if the edge doesn't exists an empty list is returned
         */
@@ -530,4 +534,5 @@ object Graph {
     }
 
   }
+
 }
