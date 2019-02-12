@@ -54,6 +54,11 @@ class SyncLiteSetup(datadir: File,
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
 
+  /**
+    * Perform a network sync
+    * @return true if sync succeeded
+    *         false otherwise
+    */
   def sync: Future[Boolean] = {
     val watcher = system.actorOf(Props[YesWatcher], "yes-watcher")
     val relayer = system.deadLetters
