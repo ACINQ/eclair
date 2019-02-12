@@ -246,7 +246,7 @@ object NodeParams {
         searchMaxRouteLength = config.getInt("router.path-finding.max-route-length"),
         searchMaxCltv = config.getInt("router.path-finding.max-cltv"),
         searchMaxFeeBaseSat = config.getLong("router.path-finding.fee-threshold-sat"),
-        searchMaxFeePct = config.getDouble("router.path-finding.route-max-fee-pct")
+        searchMaxFeePct = config.getDouble("router.path-finding.max-fee-pct")
       ),
       socksProxy_opt = socksProxy_opt
     )
