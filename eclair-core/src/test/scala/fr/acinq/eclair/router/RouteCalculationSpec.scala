@@ -707,7 +707,7 @@ class RouteCalculationSpec extends FunSuite {
     assert(hops2Ids(secondShortest.path.map(graphEdgeToHop)) === 10 :: 60 :: 90 :: Nil) // C -> E -> G -> H
   }
 
-  test("terminate looking for k-shortest path if there are no more alternative paths than k") {
+  test("terminate looking for k-shortest path if there are no more alternative paths than k, must not consider routes going back on their steps") {
 
     val f = randomKey.publicKey
 
