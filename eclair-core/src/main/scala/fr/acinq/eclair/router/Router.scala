@@ -31,10 +31,9 @@ import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidAnnouncement, InvalidSigna
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios, WeightedPath}
+import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-
 import scala.collection.{SortedSet, mutable}
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
@@ -47,15 +46,6 @@ import scala.util.{Random, Try}
 case class RouterConf(randomizeRouteSelection: Boolean, channelExcludeDuration: FiniteDuration, routerBroadcastInterval: FiniteDuration, searchMaxFeeBaseSat: Long, searchMaxFeePct: Double, searchMaxRouteLength: Int, searchMaxCltv: Int)
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteParams(maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int)
-case class RouteRequest(source: PublicKey,
-                        target: PublicKey,
-                        amountMsat: Long,
-                        assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                        ignoreNodes: Set[PublicKey] = Set.empty,
-                        ignoreChannels: Set[ChannelDesc] = Set.empty,
-                        randomize: Option[Boolean] = None,
-                        routeParams: Option[RouteParams] = None)
 case class RouteParams(maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int)
 case class RouteRequest(source: PublicKey,
                         target: PublicKey,
@@ -823,7 +813,7 @@ object Router {
   // The default amount of routes we'll search for when findRoute is called
   val DEFAULT_ROUTES_COUNT = 3
 
-  // A weight reatiponm
+  // A weight ratio optimized for cost
   val COST_OPTIMIZED_WEIGHT_RATIO = WeightRatios(cltvDeltaFactor = 0, ageFactor = 0, capacityFactor = 0)
 
   /**
@@ -861,9 +851,9 @@ object Router {
         weight.cltv <= routeParams.routeMaxCltv
     }
 
-    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, boundaries).toList match {
+    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, wr, currentBlockHeight, boundaries).toList match {
       case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
-        return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
+        return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, wr, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
       case Nil => throw RouteNotFound
       case routes => routes.find(_.path.size == 1) match {
         case Some(directRoute) => directRoute :: Nil

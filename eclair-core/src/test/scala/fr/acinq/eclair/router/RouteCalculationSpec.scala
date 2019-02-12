@@ -340,36 +340,36 @@ class RouteCalculationSpec extends FunSuite {
     assert(Crypto.isDERSignature(sig :+ 1.toByte))
   }
 
-//  test("calculate route and return metadata") {
-//
-//    val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
-//
-//    val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 0L, 0, 0, 1, 42, 2500, 140, None)
-//    val uba = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 1L, 0, 1, 1, 43, 2501, 141, None)
-//    val ubc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, 0, 0, 1, 44, 2502, 142, None)
-//    val ucb = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, 0, 1, 1, 45, 2503, 143, None)
-//    val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, 1, 0, 1, 46, 2504, 144, Some(500000000L))
-//    val udc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, 0, 1, 1, 47, 2505, 145, None)
-//    val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 0, 1, 48, 2506, 146, None)
-//    val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 1, 1, 49, 2507, 147, None)
-//
-//    val updates = Map(
-//      ChannelDesc(ShortChannelId(1L), a, b) -> uab,
-//      ChannelDesc(ShortChannelId(1L), b, a) -> uba,
-//      ChannelDesc(ShortChannelId(2L), b, c) -> ubc,
-//      ChannelDesc(ShortChannelId(2L), c, b) -> ucb,
-//      ChannelDesc(ShortChannelId(3L), c, d) -> ucd,
-//      ChannelDesc(ShortChannelId(3L), d, c) -> udc,
-//      ChannelDesc(ShortChannelId(4L), d, e) -> ude,
-//      ChannelDesc(ShortChannelId(4L), e, d) -> ued
-//    )
-//
-//    val g = makeGraph(updates)
-//
-//    val hops = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, wr = Router.COST_OPTIMIZED_WEIGHT_RATIO).get
-//
-//    assert(hops === Hop(a, b, uab) :: Hop(b, c, ubc) :: Hop(c, d, ucd) :: Hop(d, e, ude) :: Nil)
-//  }
+  test("calculate route and return metadata") {
+
+    val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
+
+    val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 0L, 0, 0, 1, 42, 2500, 140, None)
+    val uba = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 1L, 0, 1, 1, 43, 2501, 141, None)
+    val ubc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, 0, 0, 1, 44, 2502, 142, None)
+    val ucb = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, 0, 1, 1, 45, 2503, 143, None)
+    val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, 1, 0, 1, 46, 2504, 144, Some(500000000L))
+    val udc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, 0, 1, 1, 47, 2505, 145, None)
+    val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 0, 1, 48, 2506, 146, None)
+    val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 1, 1, 49, 2507, 147, None)
+
+    val updates = Map(
+      ChannelDesc(ShortChannelId(1L), a, b) -> uab,
+      ChannelDesc(ShortChannelId(1L), b, a) -> uba,
+      ChannelDesc(ShortChannelId(2L), b, c) -> ubc,
+      ChannelDesc(ShortChannelId(2L), c, b) -> ucb,
+      ChannelDesc(ShortChannelId(3L), c, d) -> ucd,
+      ChannelDesc(ShortChannelId(3L), d, c) -> udc,
+      ChannelDesc(ShortChannelId(4L), d, e) -> ude,
+      ChannelDesc(ShortChannelId(4L), e, d) -> ued
+    )
+
+    val g = makeGraph(updates)
+
+    val hops = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, wr = Router.COST_OPTIMIZED_WEIGHT_RATIO).get
+
+    assert(hops === Hop(a, b, uab) :: Hop(b, c, ubc) :: Hop(c, d, ucd) :: Hop(d, e, ude) :: Nil)
+  }
 
   test("convert extra hops to channel_update") {
     val a = randomKey.publicKey
@@ -838,7 +838,7 @@ object RouteCalculationSpec {
 
   val DEFAULT_AMOUNT_MSAT = 10000000
 
-  val DEFAULT_ROUTE_PARAMS = RouteParams(maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 144, routeMaxLength = 6)
+  val DEFAULT_ROUTE_PARAMS = RouteParams(maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 2016, routeMaxLength = 6)
 
   val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
 
