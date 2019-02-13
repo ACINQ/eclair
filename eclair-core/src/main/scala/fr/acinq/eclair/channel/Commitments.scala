@@ -25,6 +25,8 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Features, Globals, UInt64}
+import sun.reflect.generics.reflectiveObjects.NotImplementedException
+
 import scala.util.{Failure, Success}
 
 // @formatter:off
@@ -40,6 +42,7 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, rem
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 // @formatter:on
 
+//TODO seal this!
 trait Commitments {
 
   val localParams: LocalParams
@@ -74,7 +77,7 @@ trait Commitments {
   // TODO subtract the pushMe value from the balance?
   def availableBalanceForSendMsat: Long = {
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-    val fees = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced, Helpers.isSimplifiedCommitment(localParams)).amount else 0
+    val fees = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced, Helpers.hasOptionSimplifiedCommitment(localParams)).amount else 0
     reduced.toRemoteMsat / 1000 - remoteParams.channelReserveSatoshis - fees
   }
 
@@ -136,6 +139,10 @@ object Commitments {
     * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
     */
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
+    val isSimplifiedCommitment = commitments match {
+      case c: CommitmentsV1 => false
+      case s: SimplifiedCommitment => true
+    }
 
     if (cmd.paymentHash.size != 32) {
       return Left(InvalidPaymentHash(commitments.channelId))
@@ -182,7 +189,7 @@ object Commitments {
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     // we look from remote's point of view, so if local is funder remote doesn't pay the fees
-    val fees = if (commitments1.localParams.isFunder) Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced, Helpers.isSimplifiedCommitment(commitments.localParams)).amount else 0
+    val fees = if (commitments1.localParams.isFunder) Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced, isSimplifiedCommitment).amount else 0
     val missing = reduced.toRemoteMsat / 1000 - commitments1.remoteParams.channelReserveSatoshis - fees
     if (missing < 0) {
       return Left(InsufficientFunds(commitments.channelId, amountMsat = cmd.amountMsat, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.remoteParams.channelReserveSatoshis, feesSatoshis = fees))
@@ -192,6 +199,11 @@ object Commitments {
   }
 
   def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Commitments = {
+    val isSimplifiedCommitment = commitments match {
+      case c: CommitmentsV1 => false
+      case s: SimplifiedCommitment => true
+    }
+
     if (add.id != commitments.remoteNextHtlcId) {
       throw UnexpectedHtlcId(commitments.channelId, expected = commitments.remoteNextHtlcId, actual = add.id)
     }
@@ -222,7 +234,7 @@ object Commitments {
     }
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    val fees = if (commitments1.localParams.isFunder) 0 else Transactions.commitTxFee(Satoshi(commitments1.localParams.dustLimitSatoshis), reduced, Helpers.isSimplifiedCommitment(commitments.localParams)).amount
+    val fees = if (commitments1.localParams.isFunder) 0 else Transactions.commitTxFee(Satoshi(commitments1.localParams.dustLimitSatoshis), reduced, isSimplifiedCommitment).amount
     val missing = reduced.toRemoteMsat / 1000 - commitments1.localParams.channelReserveSatoshis - fees
     if (missing < 0) {
       throw InsufficientFunds(commitments.channelId, amountMsat = add.amountMsat, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.localParams.channelReserveSatoshis, feesSatoshis = fees)
@@ -379,7 +391,7 @@ object Commitments {
     // update_fee replace each other, so we can remove previous ones
     val commitments1 = commitments match {
       case c: CommitmentsV1 => c.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-      case _: SimplifiedCommitment => ???
+      case _: SimplifiedCommitment => throw new IllegalStateException("Should not update the fee on simplified_commitment")
     }
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
 
@@ -407,40 +419,42 @@ object Commitments {
 
   def sendCommit(commitments: Commitments, keyManager: KeyManager)(implicit log: LoggingAdapter): (Commitments, CommitSig) = {
     import commitments._
-    commitments.remoteNextCommitInfo match {
-      case Right(_) if !localHasChanges(commitments) =>
-        throw CannotSignWithoutChanges(commitments.channelId)
-      case Right(remoteNextPerCommitmentPoint) =>
-        // remote commitment will includes all local changes + remote acked changes
-        val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-        val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(keyManager, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
-        val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath))
 
-        val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
-        val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), remoteNextPerCommitmentPoint))
+    commitments match {
+      case _: SimplifiedCommitment => throw new NotImplementedException
+      case c: CommitmentsV1 =>
+        c.remoteNextCommitInfo match {
+          case Right(_) if !localHasChanges(c) =>
+            throw CannotSignWithoutChanges(c.channelId)
+          case Right(remoteNextPerCommitmentPoint) =>
+            // remote commitment will includes all local changes + remote acked changes
+            val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
+            val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(false, keyManager, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
+            val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath))
 
-        // NB: IN/OUT htlcs are inverted because this is the remote commit
-        log.info(s"built remote commit number=${remoteCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), remoteCommitTx.tx)
+            val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
+            val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), remoteNextPerCommitmentPoint))
 
-        // don't sign if they don't get paid
-        val commitSig = CommitSig(
-          channelId = commitments.channelId,
-          signature = sig,
-          htlcSignatures = htlcSigs.toList
-        )
+            // NB: IN/OUT htlcs are inverted because this is the remote commit
+            log.info(s"built remote commit number=${remoteCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), remoteCommitTx.tx)
 
-        val commitments1 = commitments match {
-          case c: CommitmentsV1 => c.copy(
-            remoteNextCommitInfo = Left(WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig, commitments.localCommit.index)),
-            localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
-            remoteChanges = remoteChanges.copy(acked = Nil, signed = remoteChanges.acked))
-          case _: SimplifiedCommitment => ???
+            // don't sign if they don't get paid
+            val commitSig = CommitSig(
+              channelId = c.channelId,
+              signature = sig,
+              htlcSignatures = htlcSigs.toList
+            )
+
+            val commitments1 = c.copy(
+              remoteNextCommitInfo = Left(WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig, commitments.localCommit.index)),
+              localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
+              remoteChanges = remoteChanges.copy(acked = Nil, signed = remoteChanges.acked))
+
+            (commitments1, commitSig)
+          case Left(_) =>
+            throw CannotSignBeforeRevocation(commitments.channelId)
         }
 
-
-        (commitments1, commitSig)
-      case Left(_) =>
-        throw CannotSignBeforeRevocation(commitments.channelId)
     }
   }
 
@@ -458,13 +472,18 @@ object Commitments {
     if (!remoteHasChanges(commitments))
       throw CannotSignWithoutChanges(commitments.channelId)
 
+    val isSimplifiedCommitment = commitments match {
+      case _: SimplifiedCommitment => true
+      case _: CommitmentsV1 => false
+    }
+
     // check that their signature is valid
     // signatures are now optional in the commit message, and will be sent only if the other party is actually
     // receiving money i.e its commit tx has one output for them
 
     val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
     val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, commitments.localCommit.index + 1)
-    val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(keyManager, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
+    val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(isSimplifiedCommitment, keyManager, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
     val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath))
 
     log.info(s"built local commit number=${localCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), localCommitTx.tx)
@@ -567,24 +586,24 @@ object Commitments {
     }
   }
 
-  def makeLocalTxs(keyManager: KeyManager, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, localPerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+  def makeLocalTxs(isSimplifiedCommitment: Boolean, keyManager: KeyManager, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, localPerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(localParams.channelKeyPath).publicKey, localPerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(localParams.channelKeyPath).publicKey, localPerCommitmentPoint)
 
-    val remotePaymentPubkey = Helpers.isSimplifiedCommitment(localParams) match {
+    val remotePaymentPubkey = isSimplifiedCommitment match {
       case true => PublicKey(remoteParams.paymentBasepoint)
       case false => Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
     }
 
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
     val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-    val commitTx = Transactions.makeCommitTx(Helpers.isSimplifiedCommitment(localParams), commitmentInput, commitTxNumber, keyManager.paymentPoint(localParams.channelKeyPath).publicKey, remoteParams.paymentBasepoint, localParams.isFunder, Satoshi(localParams.dustLimitSatoshis), localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec)
+    val commitTx = Transactions.makeCommitTx(isSimplifiedCommitment, commitmentInput, commitTxNumber, keyManager.paymentPoint(localParams.channelKeyPath).publicKey, remoteParams.paymentBasepoint, localParams.isFunder, Satoshi(localParams.dustLimitSatoshis), localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec)
     val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, Satoshi(localParams.dustLimitSatoshis), localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec)
     (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
   }
 
-  def makeRemoteTxs(keyManager: KeyManager, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, remotePerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
-    val localPaymentPubkey = Helpers.isSimplifiedCommitment(localParams) match {
+  def makeRemoteTxs(isSimplifiedCommitment: Boolean, keyManager: KeyManager, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, remotePerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+    val localPaymentPubkey = isSimplifiedCommitment match {
       case true => keyManager.paymentPoint(localParams.channelKeyPath).publicKey
       case false => Generators.derivePubKey(keyManager.paymentPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
     }
@@ -592,7 +611,7 @@ object Commitments {
     val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
     val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
-    val commitTx = Transactions.makeCommitTx(Helpers.isSimplifiedCommitment(localParams), commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, keyManager.paymentPoint(localParams.channelKeyPath).publicKey, !localParams.isFunder, Satoshi(remoteParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, spec)
+    val commitTx = Transactions.makeCommitTx(isSimplifiedCommitment, commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, keyManager.paymentPoint(localParams.channelKeyPath).publicKey, !localParams.isFunder, Satoshi(remoteParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, spec)
     val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, Satoshi(remoteParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, spec)
     (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
   }

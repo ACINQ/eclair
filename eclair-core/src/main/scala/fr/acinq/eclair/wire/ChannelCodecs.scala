@@ -27,7 +27,7 @@ import fr.acinq.eclair.wire.LightningMessageCodecs._
 import grizzled.slf4j.Logging
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec, Decoder, Encoder, Err, GenCodec, Transformer}
+import scodec.{Attempt, Codec, Decoder, Encoder, Err, GenCodec, SizeBound, Transformer}
 import shapeless.{Generic, HNil}
 
 /**
@@ -225,24 +225,21 @@ object ChannelCodecs extends Logging {
        SSSSSSSSSSSSSSS         TTTTTTTTTTTAAAAAAA                   AAAAAAATTTTTTTTTTT      EEEEEEEEEEEEEEEEEEEEEE     DDDDDDDDDDDDD   AAAAAAA                   AAAAAAATTTTTTTTTTTAAAAAAA                   AAAAAAA
  */
 
+  val COMMITMENTv1_VERSION_BYTE = 0x00
+  val COMMITMENT_SIMPLIFIED_VERSION_BYTE = 0x01
+
   def encodeT[T <: Commitments]: T => Attempt[Commitments] = { t =>
     Attempt.successful(t.asInstanceOf[Commitments])
   }
 
-//  def decodeT[T <: Commitments]: Commitments => Attempt[T] = {
-//    case c: CommitmentsV1 => Attempt.successful(c)
-//    case s: SimplifiedCommitment => Attempt.successful(s)
-//    case _ => Attempt.failure(Err("Wrong type"))
-//  }
-
   private val decodeCommitV1ToGeneric: Commitments => Attempt[CommitmentsV1] = {
     case c: CommitmentsV1 => Attempt.successful(c)
-    case _                => Attempt.failure(Err("Wrong type"))
+    case _ => Attempt.failure(Err("Wrong type!!"))
   }
 
   private val decodeSimplifiedToGeneric: Commitments => Attempt[SimplifiedCommitment] = {
     case s: SimplifiedCommitment => Attempt.successful(s)
-    case _                => Attempt.failure(Err("Wrong type"))
+    case _ => Attempt.failure(Err("Wrong type??"))
   }
 
   val commitmentsV1Codec: Codec[Commitments] = (
@@ -332,8 +329,21 @@ object ChannelCodecs extends Logging {
     .typecase(0x06, DATA_CLOSING_Codec(commitCodec))
     .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitCodec))
 
-  val genericStateDataCodec: Codec[HasCommitments] = discriminated[HasCommitments].by(uint8)
-    .typecase(0x00, stateDataCodec(commitmentsV1Codec))
-    .typecase(0x01, stateDataCodec(simplifiedCommitmentCodec))
+  private val genericStateDataDecoder = discriminated[HasCommitments].by(uint8)
+    .typecase(COMMITMENTv1_VERSION_BYTE, stateDataCodec(commitmentsV1Codec))
+    .typecase(COMMITMENT_SIMPLIFIED_VERSION_BYTE, stateDataCodec(simplifiedCommitmentCodec)).asDecoder
+
+  private val genericStateDataEncoder = new Encoder[HasCommitments] {
+    override def encode(value: HasCommitments): Attempt[BitVector] = value.commitments match {
+      case _: CommitmentsV1 => stateDataCodec(commitmentsV1Codec).encode(value).map(bv => BitVector(COMMITMENTv1_VERSION_BYTE) ++ bv)
+      case _: SimplifiedCommitment => stateDataCodec(simplifiedCommitmentCodec).encode(value).map(bv => BitVector(COMMITMENT_SIMPLIFIED_VERSION_BYTE) ++ bv)
+      case _ => Attempt.failure(Err("Unknown type"))
+    }
+
+    override def sizeBound: SizeBound = SizeBound(0, None)
+  }
+
+  val genericStateDataCodec = GenCodec(genericStateDataEncoder, genericStateDataDecoder).fuse
+
 
 }

@@ -366,8 +366,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             commitInput, ShaChain.init, channelId = channelId)
 
 
-
-
           context.parent ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
           context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
@@ -1307,10 +1305,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       forwarder ! r
 
       val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).getOrElse(Sphinx zeroes 32)
-      val myCurrentPerCommitmentPoint = if(Helpers.isSimplifiedCommitment(d.commitments.localParams)) {
-        None
-      } else {
-        Some(keyManager.commitmentPoint(d.commitments.localParams.channelKeyPath, d.commitments.localCommit.index))
+      val myCurrentPerCommitmentPoint = d.commitments match {
+        case c: CommitmentsV1 => Some(keyManager.commitmentPoint(d.commitments.localParams.channelKeyPath, d.commitments.localCommit.index))
+        case s: SimplifiedCommitment => None
       }
 
       val channelReestablish = ChannelReestablish(

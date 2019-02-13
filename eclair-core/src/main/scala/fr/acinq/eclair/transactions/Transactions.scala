@@ -138,8 +138,8 @@ object Transactions {
   def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec, simplifiedCommitment: Boolean): Satoshi = {
     val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec)
     val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec)
-    val weight = (if(simplifiedCommitment) simplifiedCommitWeight else commitWeight) + 172 * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
-    weight2fee(if(simplifiedCommitment) simplifiedFeerateKw else spec.feeratePerKw, weight)
+    val weight = (if (simplifiedCommitment) simplifiedCommitWeight else commitWeight) + 172 * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
+    weight2fee(if (simplifiedCommitment) simplifiedFeerateKw else spec.feeratePerKw, weight)
   }
 
   /**
@@ -190,7 +190,7 @@ object Transactions {
 
   def makeCommitTx(isSimplifiedCommitment: Boolean, commitTxInput: InputInfo, commitTxNumber: Long, localPaymentBasePoint: Point, remotePaymentBasePoint: Point, localIsFunder: Boolean, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, remotePaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec): CommitTx = {
     val commitFee = commitTxFee(localDustLimit, spec, isSimplifiedCommitment)
-    val pushMeValueTotal = if(isSimplifiedCommitment) pushMeValue * 2 else Satoshi(0) // funder pays the total amount of pushme outputs
+    val pushMeValueTotal = if (isSimplifiedCommitment) pushMeValue * 2 else Satoshi(0) // funder pays the total amount of pushme outputs
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
       (millisatoshi2satoshi(MilliSatoshi(spec.toLocalMsat)) - commitFee - pushMeValueTotal, millisatoshi2satoshi(MilliSatoshi(spec.toRemoteMsat)))
@@ -206,8 +206,8 @@ object Transactions {
     val htlcReceivedOutputs = trimReceivedHtlcs(localDustLimit, spec)
       .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash), htlc.add.cltvExpiry))))
 
-    val toLocalPushMe_opt = if(isSimplifiedCommitment && toLocalDelayedOutput_opt.isDefined) Some(TxOut(pushMeValue, pay2wsh(pushMeSimplified(localDelayedPaymentPubkey)))) else None
-    val toRemotePushMe_opt = if(isSimplifiedCommitment && toRemoteOutput_opt.isDefined) Some(TxOut(pushMeValue, pay2wsh(pushMeSimplified(remotePaymentPubkey)))) else None
+    val toLocalPushMe_opt = if (isSimplifiedCommitment && toLocalDelayedOutput_opt.isDefined) Some(TxOut(pushMeValue, pay2wsh(pushMeSimplified(localDelayedPaymentPubkey)))) else None
+    val toRemotePushMe_opt = if (isSimplifiedCommitment && toRemoteOutput_opt.isDefined) Some(TxOut(pushMeValue, pay2wsh(pushMeSimplified(remotePaymentPubkey)))) else None
 
     val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, locktime) = encodeTxNumber(txnumber)
@@ -254,6 +254,7 @@ object Transactions {
       lockTime = 0), htlc.paymentHash)
   }
 
+  //TODO adjust for option_simplified_commitment
   def makeHtlcTxs(commitTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
     val htlcTimeoutTxs = trimOfferedHtlcs(localDustLimit, spec).map { htlc =>
@@ -472,7 +473,7 @@ object Transactions {
   def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: BinaryData, outputsAlreadyUsed: Set[Int], amount_opt: Option[Satoshi]): Int = {
     val outputIndex = tx.txOut
       .zipWithIndex
-      .indexWhere { case (txOut, index) => amount_opt.map(_ == txOut.amount).getOrElse(true) && txOut.publicKeyScript == pubkeyScript && !outputsAlreadyUsed.contains(index)} // it's not enough to only resolve on pubkeyScript because we may have duplicates
+      .indexWhere { case (txOut, index) => amount_opt.map(_ == txOut.amount).getOrElse(true) && txOut.publicKeyScript == pubkeyScript && !outputsAlreadyUsed.contains(index) } // it's not enough to only resolve on pubkeyScript because we may have duplicates
     if (outputIndex >= 0) {
       outputIndex
     } else {

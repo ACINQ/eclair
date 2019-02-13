@@ -39,9 +39,10 @@ class ChannelStateSpec extends FunSuite {
 
   test("basic serialization test (NORMAL - CommitmentV1)") {
     val data = normal
-    val bin = ChannelCodecs.DATA_NORMAL_Codec(ChannelCodecs.commitmentsV1Codec).encode(data).require
-    val check = ChannelCodecs.DATA_NORMAL_Codec(ChannelCodecs.commitmentsV1Codec).decodeValue(bin).require
+    val bin = ChannelCodecs.genericStateDataCodec.encode(data).require
+    val check = ChannelCodecs.genericStateDataCodec.decodeValue(bin).require
 
+    assert(bin.take(8).toByte(signed = false) == ChannelCodecs.COMMITMENTv1_VERSION_BYTE)
     assert(data.commitments.localCommit.spec === check.commitments.localCommit.spec)
     assert(data === check)
     assert(data.commitments.isInstanceOf[CommitmentsV1])
@@ -49,9 +50,10 @@ class ChannelStateSpec extends FunSuite {
 
   test("basic serialization test (NORMAL - SimplifiedCommitment)") {
     val data = normalSimplified
-    val bin = ChannelCodecs.DATA_NORMAL_Codec(ChannelCodecs.simplifiedCommitmentCodec).encode(data).require
-    val check = ChannelCodecs.DATA_NORMAL_Codec(ChannelCodecs.simplifiedCommitmentCodec).decodeValue(bin).require
+    val bin = ChannelCodecs.genericStateDataCodec.encode(data).require
+    val check = ChannelCodecs.genericStateDataCodec.decodeValue(bin).require
 
+    assert(bin.take(8).toByte(signed = false) == ChannelCodecs.COMMITMENT_SIMPLIFIED_VERSION_BYTE)
     assert(data.commitments.localCommit.spec === check.commitments.localCommit.spec)
     assert(data === check)
     assert(data.commitments.isInstanceOf[SimplifiedCommitment])
