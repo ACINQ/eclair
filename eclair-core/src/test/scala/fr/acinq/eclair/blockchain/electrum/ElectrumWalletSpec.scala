@@ -38,7 +38,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
 
-class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService  with BeforeAndAfterAll with Logging {
+class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
 
   import ElectrumWallet._
 
@@ -196,7 +196,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       unconfirmed1 - unconfirmed == Satoshi(100000000L)
     }, max = 30 seconds, interval = 1 second)
 
-    val TransactionReceived(tx, 0, received, sent, _) = listener.receiveOne(5 seconds)
+    val TransactionReceived(tx, 0, received, sent, _, _) = listener.receiveOne(5 seconds)
     assert(tx.txid === BinaryData(txid))
     assert(received === Satoshi(100000000))
 
@@ -211,7 +211,10 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
     awaitCond({
       val msg = listener.receiveOne(5 seconds)
-      msg == TransactionConfidenceChanged(BinaryData(txid), 1)
+      msg match {
+        case TransactionConfidenceChanged(BinaryData(txid), 1, _) => true
+        case _ => false
+      }
     }, max = 30 seconds, interval = 1 second)
   }
 
