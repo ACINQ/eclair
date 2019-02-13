@@ -75,6 +75,7 @@ trait Commitments {
   def announceChannel: Boolean = (channelFlags & 0x01) != 0
 
   // TODO subtract the pushMe value from the balance?
+  // TODO figure out the type of commitment from the type of this?
   def availableBalanceForSendMsat: Long = {
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
     val fees = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced, Helpers.hasOptionSimplifiedCommitment(localParams)).amount else 0

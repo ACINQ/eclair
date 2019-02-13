@@ -605,13 +605,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
 
-    case Event(c@CMD_SIGN, d@DATA_NORMAL(commisments: CommitmentsV1, _, _, _, _, _, _)) =>
-      d.commitments.remoteNextCommitInfo match {
-        case _ if !Commitments.localHasChanges(d.commitments) =>
+    case Event(c@CMD_SIGN, d@DATA_NORMAL(commitments: CommitmentsV1, _, _, _, _, _, _)) =>
+      commitments.remoteNextCommitInfo match {
+        case _ if !Commitments.localHasChanges(commitments) =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
           stay
         case Right(_) =>
-          Try(Commitments.sendCommit(d.commitments, keyManager)) match {
+          Try(Commitments.sendCommit(commitments, keyManager)) match {
             case Success((commitments1, commit)) =>
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
               commitments1.localChanges.signed.collect {
@@ -629,7 +629,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
                   log.info(s"adding paymentHash=${u.paymentHash} cltvExpiry=${u.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
                   nodeParams.channelsDb.addOrUpdateHtlcInfo(d.channelId, nextCommitNumber, u.paymentHash, u.cltvExpiry)
               }
-              if (!Helpers.aboveReserve(d.commitments) && Helpers.aboveReserve(commitments1)) {
+              if (!Helpers.aboveReserve(commitments) && Helpers.aboveReserve(commitments1)) {
                 // we just went above reserve (can't go below), let's refresh our channel_update to enable/disable it accordingly
                 log.info(s"updating channel_update aboveReserve=${Helpers.aboveReserve(commitments1)}")
                 self ! TickRefreshChannelUpdate
@@ -643,7 +643,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           }
         case Left(waitForRevocation) =>
           log.debug(s"already in the process of signing, will sign again as soon as possible")
-          val commitments1 = commisments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
+          val commitments1 = commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
           stay using d.copy(commitments = commitments1)
       }
 
@@ -1306,8 +1306,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
       val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).getOrElse(Sphinx zeroes 32)
       val myCurrentPerCommitmentPoint = d.commitments match {
-        case c: CommitmentsV1 => Some(keyManager.commitmentPoint(d.commitments.localParams.channelKeyPath, d.commitments.localCommit.index))
-        case s: SimplifiedCommitment => None
+        case _: CommitmentsV1 => Some(keyManager.commitmentPoint(d.commitments.localParams.channelKeyPath, d.commitments.localCommit.index))
+        case _: SimplifiedCommitment => None
       }
 
       val channelReestablish = ChannelReestablish(

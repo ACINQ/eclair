@@ -245,7 +245,7 @@ object Helpers {
       if (!localParams.isFunder) {
         // they are funder, therefore they pay the fee: we need to make sure they can afford it!
         val toRemoteMsat = remoteSpec.toLocalMsat
-        val fees = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), remoteSpec, Helpers.hasOptionSimplifiedCommitment(localParams)).amount
+        val fees = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), remoteSpec, isSimplifiedCommitment).amount
         val missing = toRemoteMsat / 1000 - localParams.channelReserveSatoshis - fees
         if (missing < 0) {
           throw CannotAffordFees(temporaryChannelId, missingSatoshis = -1 * missing, reserveSatoshis = localParams.channelReserveSatoshis, feesSatoshis = fees)
