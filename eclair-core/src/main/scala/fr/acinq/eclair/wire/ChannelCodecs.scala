@@ -27,7 +27,8 @@ import fr.acinq.eclair.wire.LightningMessageCodecs._
 import grizzled.slf4j.Logging
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.{Attempt, Codec, Decoder, Encoder, Err, GenCodec, Transformer}
+import shapeless.{Generic, HNil}
 
 /**
   * Created by PM on 02/06/2017.
@@ -178,22 +179,6 @@ object ChannelCodecs extends Logging {
     (wire: BitVector) => spentListCodec.decode(wire).map(_.map(_.toMap))
   )
 
-  val commitmentsCodec: Codec[Commitments] = (
-    ("localParams" | localParamsCodec) ::
-      ("remoteParams" | remoteParamsCodec) ::
-      ("channelFlags" | byte) ::
-      ("localCommit" | localCommitCodec) ::
-      ("remoteCommit" | remoteCommitCodec) ::
-      ("localChanges" | localChangesCodec) ::
-      ("remoteChanges" | remoteChangesCodec) ::
-      ("localNextHtlcId" | uint64) ::
-      ("remoteNextHtlcId" | uint64) ::
-      ("originChannels" | originsMapCodec) ::
-      ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, point)) ::
-      ("commitInput" | inputInfoCodec) ::
-      ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
-      ("channelId" | binarydata(32))).as[Commitments]
-
   val closingTxProposedCodec: Codec[ClosingTxProposed] = (
     ("unsignedTx" | txCodec) ::
       ("localClosingSigned" | closingSignedCodec)).as[ClosingTxProposed]
@@ -221,18 +206,90 @@ object ChannelCodecs extends Logging {
       ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, txCodec)) ::
       ("spent" | spentMapCodec)).as[RevokedCommitPublished]
 
-  val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
-    ("commitments" | commitmentsCodec) ::
+  /*
+         SSSSSSSSSSSSSSS TTTTTTTTTTTTTTTTTTTTTTT         AAA         TTTTTTTTTTTTTTTTTTTTTTTEEEEEEEEEEEEEEEEEEEEEE     DDDDDDDDDDDDD                  AAA         TTTTTTTTTTTTTTTTTTTTTTT         AAA
+       SS:::::::::::::::ST:::::::::::::::::::::T        A:::A        T:::::::::::::::::::::TE::::::::::::::::::::E     D::::::::::::DDD              A:::A        T:::::::::::::::::::::T        A:::A
+      S:::::SSSSSS::::::ST:::::::::::::::::::::T       A:::::A       T:::::::::::::::::::::TE::::::::::::::::::::E     D:::::::::::::::DD           A:::::A       T:::::::::::::::::::::T       A:::::A
+      S:::::S     SSSSSSST:::::TT:::::::TT:::::T      A:::::::A      T:::::TT:::::::TT:::::TEE::::::EEEEEEEEE::::E     DDD:::::DDDDD:::::D         A:::::::A      T:::::TT:::::::TT:::::T      A:::::::A
+      S:::::S            TTTTTT  T:::::T  TTTTTT     A:::::::::A     TTTTTT  T:::::T  TTTTTT  E:::::E       EEEEEE       D:::::D    D:::::D       A:::::::::A     TTTTTT  T:::::T  TTTTTT     A:::::::::A
+      S:::::S                    T:::::T            A:::::A:::::A            T:::::T          E:::::E                    D:::::D     D:::::D     A:::::A:::::A            T:::::T            A:::::A:::::A
+       S::::SSSS                 T:::::T           A:::::A A:::::A           T:::::T          E::::::EEEEEEEEEE          D:::::D     D:::::D    A:::::A A:::::A           T:::::T           A:::::A A:::::A
+        SS::::::SSSSS            T:::::T          A:::::A   A:::::A          T:::::T          E:::::::::::::::E          D:::::D     D:::::D   A:::::A   A:::::A          T:::::T          A:::::A   A:::::A
+          SSS::::::::SS          T:::::T         A:::::A     A:::::A         T:::::T          E:::::::::::::::E          D:::::D     D:::::D  A:::::A     A:::::A         T:::::T         A:::::A     A:::::A
+             SSSSSS::::S         T:::::T        A:::::AAAAAAAAA:::::A        T:::::T          E::::::EEEEEEEEEE          D:::::D     D:::::D A:::::AAAAAAAAA:::::A        T:::::T        A:::::AAAAAAAAA:::::A
+                  S:::::S        T:::::T       A:::::::::::::::::::::A       T:::::T          E:::::E                    D:::::D     D:::::DA:::::::::::::::::::::A       T:::::T       A:::::::::::::::::::::A
+                  S:::::S        T:::::T      A:::::AAAAAAAAAAAAA:::::A      T:::::T          E:::::E       EEEEEE       D:::::D    D:::::DA:::::AAAAAAAAAAAAA:::::A      T:::::T      A:::::AAAAAAAAAAAAA:::::A
+      SSSSSSS     S:::::S      TT:::::::TT   A:::::A             A:::::A   TT:::::::TT      EE::::::EEEEEEEE:::::E     DDD:::::DDDDD:::::DA:::::A             A:::::A   TT:::::::TT   A:::::A             A:::::A
+      S::::::SSSSSS:::::S      T:::::::::T  A:::::A               A:::::A  T:::::::::T      E::::::::::::::::::::E     D:::::::::::::::DDA:::::A               A:::::A  T:::::::::T  A:::::A               A:::::A
+      S:::::::::::::::SS       T:::::::::T A:::::A                 A:::::A T:::::::::T      E::::::::::::::::::::E     D::::::::::::DDD A:::::A                 A:::::A T:::::::::T A:::::A                 A:::::A
+       SSSSSSSSSSSSSSS         TTTTTTTTTTTAAAAAAA                   AAAAAAATTTTTTTTTTT      EEEEEEEEEEEEEEEEEEEEEE     DDDDDDDDDDDDD   AAAAAAA                   AAAAAAATTTTTTTTTTTAAAAAAA                   AAAAAAA
+ */
+
+  def encodeT[T <: Commitments]: T => Attempt[Commitments] = { t =>
+    Attempt.successful(t.asInstanceOf[Commitments])
+  }
+
+//  def decodeT[T <: Commitments]: Commitments => Attempt[T] = {
+//    case c: CommitmentsV1 => Attempt.successful(c)
+//    case s: SimplifiedCommitment => Attempt.successful(s)
+//    case _ => Attempt.failure(Err("Wrong type"))
+//  }
+
+  private val decodeCommitV1ToGeneric: Commitments => Attempt[CommitmentsV1] = {
+    case c: CommitmentsV1 => Attempt.successful(c)
+    case _                => Attempt.failure(Err("Wrong type"))
+  }
+
+  private val decodeSimplifiedToGeneric: Commitments => Attempt[SimplifiedCommitment] = {
+    case s: SimplifiedCommitment => Attempt.successful(s)
+    case _                => Attempt.failure(Err("Wrong type"))
+  }
+
+  val commitmentsV1Codec: Codec[Commitments] = (
+    ("localParams" | localParamsCodec) ::
+      ("remoteParams" | remoteParamsCodec) ::
+      ("channelFlags" | byte) ::
+      ("localCommit" | localCommitCodec) ::
+      ("remoteCommit" | remoteCommitCodec) ::
+      ("localChanges" | localChangesCodec) ::
+      ("remoteChanges" | remoteChangesCodec) ::
+      ("localNextHtlcId" | uint64) ::
+      ("remoteNextHtlcId" | uint64) ::
+      ("originChannels" | originsMapCodec) ::
+      ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, point)) ::
+      ("commitInput" | inputInfoCodec) ::
+      ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
+      ("channelId" | binarydata(32))).as[CommitmentsV1].exmap(encodeT[CommitmentsV1], decodeCommitV1ToGeneric)
+
+  val simplifiedCommitmentCodec: Codec[Commitments] = (
+    ("localParams" | localParamsCodec) ::
+      ("remoteParams" | remoteParamsCodec) ::
+      ("channelFlags" | byte) ::
+      ("localCommit" | localCommitCodec) ::
+      ("remoteCommit" | remoteCommitCodec) ::
+      ("localChanges" | localChangesCodec) ::
+      ("remoteChanges" | remoteChangesCodec) ::
+      ("localNextHtlcId" | uint64) ::
+      ("remoteNextHtlcId" | uint64) ::
+      ("originChannels" | originsMapCodec) ::
+      ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, point)) ::
+      ("commitInput" | inputInfoCodec) ::
+      ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
+      ("channelId" | binarydata(32))).as[SimplifiedCommitment].exmap(encodeT[SimplifiedCommitment], decodeSimplifiedToGeneric)
+
+
+  def DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitCodec: Codec[Commitments]): Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
+    ("commitments" | commitCodec) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
 
-  val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_WAIT_FOR_FUNDING_LOCKED_Codec(commitCodec: Codec[Commitments]): Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
+    ("commitments" | commitCodec) ::
       ("shortChannelId" | shortchannelid) ::
       ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
-  val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_NORMAL_Codec(commitCodec: Codec[Commitments]): Codec[DATA_NORMAL] = (
+    ("commitments" | commitCodec) ::
       ("shortChannelId" | shortchannelid) ::
       ("buried" | bool) ::
       ("channelAnnouncement" | optional(bool, channelAnnouncementCodec)) ::
@@ -240,20 +297,20 @@ object ChannelCodecs extends Logging {
       ("localShutdown" | optional(bool, shutdownCodec)) ::
       ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL]
 
-  val DATA_SHUTDOWN_Codec: Codec[DATA_SHUTDOWN] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_SHUTDOWN_Codec(commitCodec: Codec[Commitments]): Codec[DATA_SHUTDOWN] = (
+    ("commitments" | commitCodec) ::
       ("localShutdown" | shutdownCodec) ::
       ("remoteShutdown" | shutdownCodec)).as[DATA_SHUTDOWN]
 
-  val DATA_NEGOTIATING_Codec: Codec[DATA_NEGOTIATING] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_NEGOTIATING_Codec(commitCodec: Codec[Commitments]): Codec[DATA_NEGOTIATING] = (
+    ("commitments" | commitCodec) ::
       ("localShutdown" | shutdownCodec) ::
       ("remoteShutdown" | shutdownCodec) ::
       ("closingTxProposed" | listOfN(uint16, listOfN(uint16, closingTxProposedCodec))) ::
       ("bestUnpublishedClosingTx_opt" | optional(bool, txCodec))).as[DATA_NEGOTIATING]
 
-  val DATA_CLOSING_Codec: Codec[DATA_CLOSING] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_CLOSING_Codec(commitCodec: Codec[Commitments]): Codec[DATA_CLOSING] = (
+    ("commitments" | commitCodec) ::
       ("mutualCloseProposed" | listOfN(uint16, txCodec)) ::
       ("mutualClosePublished" | listOfN(uint16, txCodec)) ::
       ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::
@@ -262,17 +319,21 @@ object ChannelCodecs extends Logging {
       ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
 
-  val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitCodec: Codec[Commitments]): Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
+    ("commitments" | commitCodec) ::
       ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
 
-  val stateDataCodec: Codec[HasCommitments] = ("version" | constant(0x00)) ~> discriminated[HasCommitments].by(uint16)
-    .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-    .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-    .typecase(0x03, DATA_NORMAL_Codec)
-    .typecase(0x04, DATA_SHUTDOWN_Codec)
-    .typecase(0x05, DATA_NEGOTIATING_Codec)
-    .typecase(0x06, DATA_CLOSING_Codec)
-    .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
+  private def stateDataCodec(commitCodec: Codec[Commitments]): Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
+    .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitCodec))
+    .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec(commitCodec))
+    .typecase(0x03, DATA_NORMAL_Codec(commitCodec))
+    .typecase(0x04, DATA_SHUTDOWN_Codec(commitCodec))
+    .typecase(0x05, DATA_NEGOTIATING_Codec(commitCodec))
+    .typecase(0x06, DATA_CLOSING_Codec(commitCodec))
+    .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitCodec))
+
+  val genericStateDataCodec: Codec[HasCommitments] = discriminated[HasCommitments].by(uint8)
+    .typecase(0x00, stateDataCodec(commitmentsV1Codec))
+    .typecase(0x01, stateDataCodec(simplifiedCommitmentCodec))
 
 }

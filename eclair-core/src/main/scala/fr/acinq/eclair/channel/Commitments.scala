@@ -40,7 +40,7 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, rem
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 // @formatter:on
 
-sealed trait Commitments {
+trait Commitments {
 
   val localParams: LocalParams
   val remoteParams: RemoteParams

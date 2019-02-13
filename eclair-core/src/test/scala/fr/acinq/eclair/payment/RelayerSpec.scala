@@ -55,7 +55,7 @@ class RelayerSpec extends TestkitBaseClass {
   val channelId_ab: BinaryData = randomBytes(32)
   val channelId_bc: BinaryData = randomBytes(32)
 
-  def makeCommitments(channelId: BinaryData) = new Commitments(null, null, 0.toByte, null,
+  def makeCommitments(channelId: BinaryData) = new CommitmentsV1(null, null, 0.toByte, null,
     RemoteCommit(42, CommitmentSpec(Set.empty, 20000, 5000000, 100000000), "00" * 32, randomKey.toPoint),
     null, null, 0, 0, Map.empty, null, null, null, channelId) {
     override def availableBalanceForSendMsat: Long = remoteCommit.spec.toRemoteMsat // approximation

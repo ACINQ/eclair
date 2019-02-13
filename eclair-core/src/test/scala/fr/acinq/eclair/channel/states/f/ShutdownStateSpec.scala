@@ -114,8 +114,10 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.expectMsg("ok")
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
     awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))))
+      commitments = initialState.commitments match {
+        case c: CommitmentsV1 => c.copy(
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))
+      }))
   }
 
   test("recv CMD_FULFILL_HTLC (unknown htlc id)") { f =>
@@ -142,7 +144,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     val fulfill = UpdateFulfillHtlc("00" * 32, 0, "11" * 32)
     sender.send(alice, fulfill)
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill)))
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == (initialState.commitments match {
+      case c: CommitmentsV1 => c.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill))
+    }))
   }
 
   test("recv UpdateFulfillHtlc (unknown htlc id)") { f =>
@@ -186,8 +190,10 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.expectMsg("ok")
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+      commitments = initialState.commitments match {
+        case c: CommitmentsV1 => c.copy(
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))
+      }))
   }
 
   test("recv CMD_FAIL_HTLC (unknown htlc id)") { f =>
@@ -207,8 +213,10 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.expectMsg("ok")
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+      commitments = initialState.commitments match {
+        case c: CommitmentsV1 => c.copy(
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))
+      }))
   }
 
   test("recv CMD_FAIL_MALFORMED_HTLC (unknown htlc id)") { f =>
@@ -235,7 +243,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     val fail = UpdateFailHtlc("00" * 32, 1, "00" * 152)
     sender.send(alice, fail)
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail)))
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == (initialState.commitments match {
+      case c: CommitmentsV1 => c.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))
+    }))
   }
 
   test("recv UpdateFailHtlc (unknown htlc id)") { f =>
@@ -260,7 +270,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     val fail = UpdateFailMalformedHtlc("00" * 32, 1, Crypto.sha256(BinaryData.empty), FailureMessageCodecs.BADONION)
     sender.send(alice, fail)
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail)))
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == (initialState.commitments match {
+      case c: CommitmentsV1 => c.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))
+    }))
   }
 
   test("recv UpdateFailMalformedHtlc (invalid failure_code)") { f =>
@@ -503,8 +515,10 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.expectMsg("ok")
     val fee = alice2bob.expectMsgType[UpdateFee]
     awaitCond(alice.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee))))
+      commitments = initialState.commitments match {
+        case c: CommitmentsV1 => c.copy(
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee))
+      }))
   }
 
   test("recv CMD_UPDATE_FEE (when fundee)") { f =>
@@ -521,7 +535,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialData = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     val fee = UpdateFee("00" * 32, 12000)
     bob ! fee
-    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee))))
+    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments match {
+      case c: CommitmentsV1 => c.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee))
+    }))
   }
 
   test("recv UpdateFee (when sender is not funder)") { f =>
