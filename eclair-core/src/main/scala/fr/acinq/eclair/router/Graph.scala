@@ -119,7 +119,7 @@ object Graph {
           val returningEdges = rootPathEdges.lastOption.map(last => graph.getEdgesBetween(last.desc.b, last.desc.a)).toSeq.flatten.map(_.desc)
 
           // find the "spur" path, a sub-path going from the spur edge to the target avoiding previously found sub-paths
-          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr)
+          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet ++ returningEdges.toSet, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr)
 
           // if there wasn't a path the spur will be empty
           if (spurPath.nonEmpty) {
