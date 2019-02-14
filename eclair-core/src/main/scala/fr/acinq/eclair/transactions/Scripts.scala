@@ -255,7 +255,7 @@ object Scripts {
     */
   def pushMeSimplified(pubkey: PublicKey): List[ScriptElt] = {
     // @formatter:off
-    OP_DEPTH ::
+    OP_DEPTH :: // Puts the number of stack items onto the stack.
     OP_IF ::
       OP_PUSHDATA(pubkey) :: OP_CHECKSIG ::
     OP_ELSE ::
@@ -263,6 +263,19 @@ object Scripts {
     OP_ENDIF :: Nil
     // @formatter:on
   }
+
+  /**
+    * The script spending 'pushMeSimplified' outputs, signature based version
+    * @param sig
+    * @return
+    */
+  def claimPushMeOutputWithKey(sig: BinaryData) = ScriptWitness( sig :: Nil )
+
+  /**
+    * The script spending 'pushMeSimplified' outputs, 10 block delay - no signature - version.
+    * @return
+    */
+  def claimPushMeOutputDelayed() = ScriptWitness(Seq.empty)
 
   /**
     * This is the witness script of the 2nd-stage HTLC Timeout transaction (consumes htlcReceived script from commit tx)
