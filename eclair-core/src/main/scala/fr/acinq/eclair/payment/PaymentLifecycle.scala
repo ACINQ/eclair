@@ -153,16 +153,26 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       stay
 
     case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
-      if (failures.size + 1 >= c.maxAttempts) {
-        reply(s, PaymentFailed(c.paymentHash, failures :+ LocalFailure(t)))
-        stop(FSM.Normal)
-      } else {
-        log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
-        val faultyChannel = ChannelDesc(hops.head.lastUpdate.shortChannelId, hops.head.nodeId, hops.head.nextNodeId)
-        router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels + faultyChannel, c.randomize, c.routeParams)
-        goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ LocalFailure(t))
+      t match {
+        case Register.ForwardShortIdFailure(fwd) =>
+          // On Android we don't actively clean the routing table so we may have cases where we are not aware that a local public channel as in fact been closed
+          // if this happens we will tell the router to forget about it
+          // note that if the channel is in fact still alive, we will get it again via network announcements anyway
+          log.warning(s"local shortChannelId=${fwd.shortChannelId} doesn't seem to exist, excluding it from routes")
+          router ! WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(fwd.shortChannelId))
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, randomize = c.randomize, routeParams = c.routeParams)
+          goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures)
+        case _ =>
+          if (failures.size + 1 >= c.maxAttempts) {
+            reply(s, PaymentFailed(c.paymentHash, failures :+ LocalFailure(t)))
+            stop(FSM.Normal)
+          } else {
+            log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
+            val faultyChannel = ChannelDesc(hops.head.lastUpdate.shortChannelId, hops.head.nodeId, hops.head.nextNodeId)
+            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels + faultyChannel, c.randomize, c.routeParams)
+            goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ LocalFailure(t))
+          }
       }
-
   }
 
   whenUnhandled {
