@@ -32,10 +32,10 @@ class SqliteOnChainRefundsDb(sqlite: Connection) extends OnChainRefundsDb {
   using(sqlite.createStatement()) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS settling_on_chain (payment_hash BLOB NOT NULL, tx_id BLOB NOT NULL, refund_type STRING NOT NULL, is_done INTEGER NOT NULL, off_chain_amount INTEGER NOT NULL, on_chain_amount INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS lost_on_chain (payment_hash BLOB NOT NULL UNIQUE, lost_amount INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS lost_on_chain (payment_hash BLOB NOT NULL, lost_amount INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
 
-    // lost_on_chain(payment_hash) INDEX is already there because it's unique
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON settling_on_chain(payment_hash)")
+    statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_settling_on_chain_idx ON settling_on_chain(payment_hash)")
+    statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_lost_on_chain_idx ON lost_on_chain(payment_hash)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS tx_id_idx ON settling_on_chain(tx_id)")
   }
 

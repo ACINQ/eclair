@@ -21,6 +21,7 @@ import java.sql.DriverManager
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi, Transaction}
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, NetworkFeePaid}
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
+import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.{ShortChannelId, randomBytes, randomKey}
 import org.scalatest.FunSuite
@@ -95,5 +96,32 @@ class SqliteAuditDbSpec extends FunSuite {
       Stats(channelId = c2, avgPaymentAmountSatoshi = 40, paymentCount = 1, relayFeeSatoshi = 2, networkFeeSatoshi = 500),
       Stats(channelId = c3, avgPaymentAmountSatoshi = 0, paymentCount = 0, relayFeeSatoshi = 0, networkFeeSatoshi = 400)
     ))
+  }
+
+  test("received payment details") {
+    val sqlite = inmem
+    val db = new SqliteAuditDb(sqlite)
+
+    val e2 = PaymentReceived(MilliSatoshi(42000), randomBytes(32), randomBytes(32))
+    db.add(e2)
+    assert(db.receivedPaymentInfo(e2.paymentHash).contains(e2))
+  }
+
+  test("sent payment details") {
+    val sqlite = inmem
+    val db = new SqliteAuditDb(sqlite)
+
+    val e1 = PaymentSent(MilliSatoshi(42000), MilliSatoshi(1000), randomBytes(32), randomBytes(32), randomBytes(32))
+    db.add(e1)
+    assert(db.sentPaymentInfo(e1.paymentHash).contains(e1))
+  }
+
+  test("failed payment details") {
+    val sqlite = inmem
+    val db = new SqliteAuditDb(sqlite)
+
+    val e1 = PaymentFailed(randomBytes(32), Nil)
+    db.add(e1)
+    assert(db.failedPaymentInfo(e1.paymentHash).contains(e1))
   }
 }

@@ -32,6 +32,7 @@ import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import scodec.Attempt
 
+import scala.compat.Platform
 import scala.util.{Failure, Success}
 
 /**
@@ -204,7 +205,7 @@ object PaymentLifecycle {
   case class LocalFailure(t: Throwable) extends PaymentFailure
   case class RemoteFailure(route: Seq[Hop], e: ErrorPacket) extends PaymentFailure
   case class UnreadableRemoteFailure(route: Seq[Hop]) extends PaymentFailure
-  case class PaymentFailed(paymentHash: BinaryData, failures: Seq[PaymentFailure]) extends PaymentResult
+  case class PaymentFailed(paymentHash: BinaryData, failures: Seq[PaymentFailure], timestamp: Long = Platform.currentTime / 1000, tag: String = "PaymentFailed") extends PaymentResult
 
   sealed trait Data
   case object WaitingForRequest extends Data

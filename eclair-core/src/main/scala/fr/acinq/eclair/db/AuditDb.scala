@@ -19,6 +19,7 @@ package fr.acinq.eclair.db
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 
 trait AuditDb {
@@ -34,6 +35,14 @@ trait AuditDb {
   def add(paymentRelayed: PaymentRelayed)
 
   def add(networkFeePaid: NetworkFeePaid)
+
+  def add(paymentFailed: PaymentFailed)
+
+  def receivedPaymentInfo(paymentHash: BinaryData): Option[PaymentReceived]
+
+  def sentPaymentInfo(paymentHash: BinaryData): Option[PaymentSent]
+
+  def failedPaymentInfo(paymentHash: BinaryData): Option[PaymentFailed]
 
   def listSent(from: Long, to: Long): Seq[PaymentSent]
 
