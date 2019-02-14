@@ -62,7 +62,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
 
     case paymentResult: PaymentResult =>
       paymentResult match {
-        case PaymentFailed(_, _ :+ RemoteFailure(_, ErrorPacket(targetNodeId, UnknownPaymentHash))) =>
+        case PaymentFailed(_, _ :+ RemoteFailure(_, ErrorPacket(targetNodeId, UnknownPaymentHash)), _, _) =>
           log.info(s"payment probe successful to node=$targetNodeId")
         case _ =>
           log.info(s"payment probe failed with paymentResult=$paymentResult")
