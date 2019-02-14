@@ -15,8 +15,8 @@
  */
 
 package fr.acinq.eclair.router
-import fr.acinq.bitcoin.Crypto.PublicKey
 
+import fr.acinq.bitcoin.Crypto.PublicKey
 import scala.collection.mutable
 import fr.acinq.eclair._
 import fr.acinq.eclair.wire.ChannelUpdate
@@ -102,7 +102,7 @@ object Graph {
           // select the spur node as the i-th element of the k-th previous shortest path (k -1)
           val spurEdge = prevShortestPath(i)
 
-          // select the subpath from the source to the spur node of the k-th previous shortest path
+          // select the sub-path from the source to the spur node of the k-th previous shortest path
           val rootPathEdges = if (i == 0) prevShortestPath.head :: Nil else prevShortestPath.take(i)
           val rootPathWeight = pathWeight(rootPathEdges, amountMsat, isPartial = true, currentBlockHeight, wr)
 
@@ -115,7 +115,10 @@ object Graph {
             }
           }
 
-          // find the "spur" path, a subpath going from the spur edge to the target avoiding previously found subpaths
+          // remove any link that can lead back to the previous vertex to avoid going back from where we arrived (previous iteration)
+          val returningEdges = rootPathEdges.lastOption.map(last => graph.getEdgesBetween(last.desc.b, last.desc.a)).toSeq.flatten.map(_.desc)
+
+          // find the "spur" path, a sub-path going from the spur edge to the target avoiding previously found sub-paths
           val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr)
 
           // if there wasn't a path the spur will be empty
