@@ -26,8 +26,8 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 
 object Graph {
 
-  // A compound weight for an edge, score is obtained with (cost X factor),'cost' contains the actual amount+fees in millisatoshi, 'cltvCumulative' the total CLTV necessary to reach this edge
   // @formatter:off
+  // A compound weight for an edge, weight is obtained with (cost X factor),'cost' contains the actual amount+fees in millisatoshi, 'cltvCumulative' the total CLTV necessary to reach this edge
   case class RichWeight(cost: Long, length: Int, cltv: Int, weight: Double)
   case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) // The ratios that will be used to calculate the 'factor'
   case class WeightedNode(key: PublicKey, weight: RichWeight)
@@ -59,9 +59,9 @@ object Graph {
     * @param targetNode
     * @param amountMsat
     * @param pathsToFind
-    * @param wr an object containing the ratios used to 'weight' edges when searching for the shortest path
+    * @param wr                 an object containing the ratios used to 'weight' edges when searching for the shortest path
     * @param currentBlockHeight the height of the chain tip (latest block)
-    * @param boundaries a predicate function that can be used to impose limits on the outcome of the search
+    * @param boundaries         a predicate function that can be used to impose limits on the outcome of the search
     * @return
     */
   def yenKshortestPaths(graph: DirectedGraph,
@@ -87,7 +87,7 @@ object Graph {
     shortestPaths += WeightedPath(shortestPath, pathWeight(shortestPath, amountMsat, isPartial = false, currentBlockHeight, wr))
 
     // avoid returning a list with an empty path
-    if(shortestPath.isEmpty) return Seq.empty
+    if (shortestPath.isEmpty) return Seq.empty
 
     // main loop
     for (k <- 1 until pathsToFind) {
@@ -157,15 +157,15 @@ object Graph {
     * the shortest path from the target to the source (this is because we want to calculate the weight of the
     * edges correctly). The graph @param g is optimized for querying the incoming edges given a vertex.
     *
-    * @param g            the graph on which will be performed the search
-    * @param sourceNode   the starting node of the path we're looking for
-    * @param targetNode   the destination node of the path
-    * @param amountMsat   the amount (in millisatoshis) we want to transmit
-    * @param ignoredEdges a list of edges we do not want to consider
-    * @param extraEdges   a list of extra edges we want to consider but are not currently in the graph
-    * @param wr           an object containing the ratios used to 'weight' edges when searching for the shortest path
+    * @param g                  the graph on which will be performed the search
+    * @param sourceNode         the starting node of the path we're looking for
+    * @param targetNode         the destination node of the path
+    * @param amountMsat         the amount (in millisatoshis) we want to transmit
+    * @param ignoredEdges       a list of edges we do not want to consider
+    * @param extraEdges         a list of extra edges we want to consider but are not currently in the graph
+    * @param wr                 an object containing the ratios used to 'weight' edges when searching for the shortest path
     * @param currentBlockHeight the height of the chain tip (latest block)
-    * @param boundaries   a predicate function that can be used to impose limits on the outcome of the search
+    * @param boundaries         a predicate function that can be used to impose limits on the outcome of the search
     * @return
     */
 
@@ -221,8 +221,8 @@ object Graph {
 
           val neighbor = edge.desc.a
 
-          // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
-          val newMinimumKnownWeight = edgeWeightCompound(amountMsat, edge, currentWeight, initialWeight.length == 0 && neighbor == sourceNode, currentBlockHeight, wr)
+          // note: 'newMinimumKnownWeight' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
+          val newMinimumKnownWeight = edgeWeight(edge, currentWeight, initialWeight.length == 0 && neighbor == sourceNode, currentBlockHeight, wr)
 
           // test for ignored edges
           if (edge.update.htlcMaximumMsat.forall(newMinimumKnownWeight.cost + amountMsat <= _) &&
@@ -274,14 +274,14 @@ object Graph {
   }
 
   // Computes the compound weight for the given @param edge, the weight is cumulative and must account for the previous edge's weight.
-  private def edgeWeightCompound(amountMsat: Long, edge: GraphEdge, prev: RichWeight, isNeighborTarget: Boolean, currentBlockHeight: Long, wr: WeightRatios): RichWeight = {
+  private def edgeWeight(edge: GraphEdge, prev: RichWeight, isNeighborTarget: Boolean, currentBlockHeight: Long, wr: WeightRatios): RichWeight = {
     import RoutingHeuristics._
 
     // Every edge is weighted by funding block height where older blocks add less weight, the window considered is 2 months.
     val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
     val ageFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_TWO_MONTHS, max = currentBlockHeight)
 
-    // Every edge is weighted by channel capacity, but larger channels add less weight
+    // Every edge is weighted by channel capacity, larger channels add less weight
     val edgeMaxCapacity = edge.update.htlcMaximumMsat.getOrElse(CAPACITY_CHANNEL_LOW_MSAT)
     val capFactor = 1 - normalize(edgeMaxCapacity, CAPACITY_CHANNEL_LOW_MSAT, CAPACITY_CHANNEL_HIGH_MSAT)
 
@@ -289,22 +289,22 @@ object Graph {
     val channelCltvDelta = edge.update.cltvExpiryDelta
     val cltvFactor = normalize(channelCltvDelta, CLTV_LOW, CLTV_HIGH)
 
-    // NB. 'edgeFees' here is only the fee that must be paid to traverse this @param edge
-    val edgeCost = if(isNeighborTarget) prev.cost else edgeFeeCost(edge, prev.cost)
+    // NB 'edgeCost' includes the amount to be sent plus the fees that must be paid to traverse this @param edge
+    val edgeCost = if (isNeighborTarget) prev.cost else edgeFeeCost(edge, prev.cost)
 
     val factor = (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor) match {
       case 0 => 0.00001 // if the factor turns out to be 0 we default to a very small number to avoid having a weight of 0 and still take into account the cost
       case other => other
     }
 
-    val edgeWeight = if(isNeighborTarget) prev.weight else edgeCost * factor
+    val edgeWeight = if (isNeighborTarget) prev.weight else edgeCost * factor
 
     RichWeight(cost = edgeCost, length = prev.length + 1, cltv = prev.cltv + channelCltvDelta, weight = edgeWeight)
   }
 
   /**
     *
-    * @param edge the edge for which we want to compute the weight
+    * @param edge           the edge for which we want to compute the weight
     * @param amountWithFees the value that this edge will have to carry along
     * @return the new amount updated with the necessary fees for this edge
     */
@@ -315,7 +315,7 @@ object Graph {
   // Calculates the total cost of a path (amount + fees), direct channels with the source will have a cost of 0 (pay no fees)
   def pathWeight(path: Seq[GraphEdge], amountMsat: Long, isPartial: Boolean, currentBlockHeight: Long, wr: WeightRatios): RichWeight = {
     path.drop(if (isPartial) 0 else 1).foldRight(RichWeight(amountMsat, 0, 0, 0)) { (edge, prev) =>
-      edgeWeightCompound(amountMsat, edge, prev, false, currentBlockHeight, wr)
+      edgeWeight(edge, prev, false, currentBlockHeight, wr)
     }
   }
 
@@ -339,6 +339,7 @@ object Graph {
       else (value - min) / (max - min)
     }
   }
+
   /**
     * A graph data structure that uses the adjacency lists, stores the incoming edges of the neighbors
     */
