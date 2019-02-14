@@ -198,8 +198,12 @@ object Transactions {
       (millisatoshi2satoshi(MilliSatoshi(spec.toLocalMsat)), millisatoshi2satoshi(MilliSatoshi(spec.toRemoteMsat)) - commitFee - pushMeValueTotal)
     } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
-    val toLocalDelayedOutput_opt = if (toLocalAmount >= localDustLimit) Some(TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)))) else None
-    val toRemoteOutput_opt = if (toRemoteAmount >= localDustLimit) Some(TxOut(toRemoteAmount, pay2wpkh(remotePaymentPubkey))) else None
+    val toLocalDelayedOutput_opt = if (toLocalAmount < localDustLimit) None else Some(TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey))))
+    val toRemoteOutput_opt = if (toRemoteAmount < localDustLimit) None else if(isSimplifiedCommitment) {
+      Some(TxOut(toRemoteAmount, pay2wsh(toRemoteDelayed(remotePaymentPubkey, toLocalDelay))))
+    } else {
+      Some(TxOut(toRemoteAmount, pay2wpkh(remotePaymentPubkey)))
+    }
 
     val htlcOfferedOutputs = trimOfferedHtlcs(localDustLimit, spec)
       .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash)))))

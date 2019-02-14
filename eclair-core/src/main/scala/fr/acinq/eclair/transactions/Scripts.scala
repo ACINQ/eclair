@@ -185,6 +185,24 @@ object Scripts {
   }
 
   /**
+    * Output script for the to_remote output of the commitment (must use with option_simplified_commitment)
+    * https://github.com/lightningnetwork/lightning-rfc/pull/513/files#diff-bfcf64bee684b75d7a670873c3ece6f2R117
+    *
+    * @param toSelfDelay  the delay that will encumber the output
+    * @param remotePubkey the recipient's pubkey
+    * @return
+    */
+  def toRemoteDelayed(remotePubkey: PublicKey, toSelfDelay: Int) = {
+    // @formatter:off
+    encodeNumber(toSelfDelay) ::
+    OP_CHECKSEQUENCEVERIFY ::
+    OP_DROP ::
+    OP_PUSHDATA(remotePubkey) ::
+    OP_CHECKSIG :: Nil
+    // @formatter:on
+  }
+
+  /**
     * This witness script spends a [[toLocalDelayed]] output using a local sig after a delay
     */
   def witnessToLocalDelayedAfterDelay(localSig: BinaryData, toLocalDelayedScript: BinaryData) =
@@ -266,13 +284,15 @@ object Scripts {
 
   /**
     * The script spending 'pushMeSimplified' outputs, signature based version
+    *
     * @param sig
     * @return
     */
-  def claimPushMeOutputWithKey(sig: BinaryData) = ScriptWitness( sig :: Nil )
+  def claimPushMeOutputWithKey(sig: BinaryData) = ScriptWitness(sig :: Nil)
 
   /**
     * The script spending 'pushMeSimplified' outputs, 10 block delay - no signature - version.
+    *
     * @return
     */
   def claimPushMeOutputDelayed() = ScriptWitness(Seq.empty)
