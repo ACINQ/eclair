@@ -82,7 +82,7 @@ object Transactions {
     *   - [[ClaimHtlcTimeoutTx]] spends htlc-sent outputs of [[CommitTx]] after a timeout TODO adjust for option_simplified_commitment
     *
     * When *remote* *revoked* [[CommitTx]] is published:
-    *   - [[ClaimP2WPKHOutputTx]] spends to-local output of [[CommitTx]] TODO adjust for option_simplified_commitment
+    *   - [[ClaimP2WPKHOutputTx]] spends to-local output of [[CommitTx]]
     *   - [[MainPenaltyTx]] spends remote main output using the per-commitment secret TODO adjust for option_simplified_commitment
     *   - [[HtlcSuccessTx]] spends htlc-sent outputs of [[CommitTx]] for which they have the preimage (published by remote)
     *     - [[ClaimDelayedOutputPenaltyTx]] spends [[HtlcSuccessTx]] using the revocation secret (published by local)
@@ -407,30 +407,39 @@ object Transactions {
     ClaimP2WPKHOutputTx(claimTx.input, tx1)
   }
 
-  def makeClaimDelayedOutputTx(delayedOutputTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: BinaryData, feeratePerKw: Long): ClaimDelayedOutputTx = {
-    val redeemScript = toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
-    val pubkeyScript = write(pay2wsh(redeemScript))
-    val outputIndex = findPubKeyScriptIndex(delayedOutputTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
-    val input = InputInfo(OutPoint(delayedOutputTx, outputIndex), delayedOutputTx.txOut(outputIndex), write(redeemScript))
+  def makeClaimDelayedOutputTx(delayedOutputTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: BinaryData, feeratePerKw: Long)(implicit commitmentContext: CommitmentContext): ClaimDelayedOutputTx = {
 
-    // unsigned transaction
-    val tx = Transaction(
-      version = 2,
-      txIn = TxIn(input.outPoint, Array.emptyByteArray, toLocalDelay) :: Nil,
-      txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-      lockTime = 0)
+    val claimTx = commitmentContext match {
+      case ContextCommitmentV1 =>
+        val redeemScript = toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
+        val pubkeyScript = write(pay2wsh(redeemScript))
+        val outputIndex = findPubKeyScriptIndex(delayedOutputTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
+        val input = InputInfo(OutPoint(delayedOutputTx, outputIndex), delayedOutputTx.txOut(outputIndex), write(redeemScript))
+
+        // unsigned transaction
+        val tx = Transaction(
+          version = 2,
+          txIn = TxIn(input.outPoint, Array.emptyByteArray, toLocalDelay) :: Nil,
+          txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
+          lockTime = 0)
+
+        ClaimDelayedOutputTx(input, tx)
+
+      case ContextSimplifiedCommitment => throw new NotImplementedError("makeClaimDelayedOutputTx with option_simplified_commitment")
+    }
+
 
     // compute weight with a dummy 73 bytes signature (the largest you can get)
-    val weight = Transactions.addSigs(ClaimDelayedOutputTx(input, tx), BinaryData("00" * 73)).tx.weight()
+    val weight = Transactions.addSigs(claimTx, BinaryData("00" * 73)).tx.weight()
     val fee = weight2fee(feeratePerKw, weight)
 
-    val amount = input.txOut.amount - fee
+    val amount = claimTx.input.txOut.amount - fee
     if (amount < localDustLimit) {
       throw AmountBelowDustLimit
     }
 
-    val tx1 = tx.copy(txOut = tx.txOut(0).copy(amount = amount) :: Nil)
-    ClaimDelayedOutputTx(input, tx1)
+    val tx1 = claimTx.tx.copy(txOut = claimTx.tx.txOut(0).copy(amount = amount) :: Nil)
+    ClaimDelayedOutputTx(claimTx.input, tx1)
   }
 
   def makeClaimDelayedOutputPenaltyTx(delayedOutputTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: BinaryData, feeratePerKw: Long): ClaimDelayedOutputPenaltyTx = {
