@@ -232,6 +232,14 @@ trait Service extends Logging {
                           completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description)).mapTo[PaymentRequest].map(PaymentRequest.write))
                         case JInt(amountMsat) :: JString(description) :: JInt(expirySeconds) :: Nil =>
                           completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description, Some(expirySeconds.toLong))).mapTo[PaymentRequest].map(PaymentRequest.write))
+                        case JString(description) :: JInt(expirySeconds) :: JString(fallbackAddress) :: Nil =>
+                          val isFallbackAddressCorrect = Try(fr.acinq.eclair.addressToPublicKeyScript(fallbackAddress, nodeParams.chainHash)).isSuccess
+                          if (!isFallbackAddressCorrect) reject(RpcValidationRejection(req.id, s"invalid fallback address '$fallbackAddress'"))
+                          else completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(None, description, Some(expirySeconds.toLong), Nil, Some(fallbackAddress))).mapTo[PaymentRequest].map(PaymentRequest.write))
+                        case JInt(amountMsat) :: JString(description) :: JInt(expirySeconds) :: JString(fallbackAddress) :: Nil =>
+                          val isFallbackAddressCorrect = Try(fr.acinq.eclair.addressToPublicKeyScript(fallbackAddress, nodeParams.chainHash)).isSuccess
+                          if (!isFallbackAddressCorrect) reject(RpcValidationRejection(req.id, s"invalid fallback address '$fallbackAddress'"))
+                          else completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description, Some(expirySeconds.toLong), Nil, Some(fallbackAddress))).mapTo[PaymentRequest].map(PaymentRequest.write))
                         case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description] or [amount, description, expiryDuration]"))
                       }
 
