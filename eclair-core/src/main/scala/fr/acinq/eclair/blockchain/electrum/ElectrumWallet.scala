@@ -331,9 +331,11 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
             case (Some(previousHeight), height) if previousHeight != height =>
               // there was a reorg
               context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations, data.computeTimestamp(txid, params.walletDb)))
-              downloadHeadersIfMissing(height.toInt)
-              client ! GetMerkle(txid, height.toInt)
-            case (Some(previousHeight), height) if previousHeight == height && data.proofs.get(txid).isEmpty =>
+              if (height > 0) {
+                downloadHeadersIfMissing(height.toInt)
+                client ! GetMerkle(txid, height.toInt)
+              }
+            case (Some(previousHeight), height) if previousHeight == height && height > 0 && data.proofs.get(txid).isEmpty =>
               downloadHeadersIfMissing(height.toInt)
               client ! GetMerkle(txid, height.toInt)
             case (Some(previousHeight), height) if previousHeight == height =>
@@ -650,8 +652,7 @@ object ElectrumWallet {
     * @param blockchain                 blockchain
     * @param accountKeys                account keys
     * @param changeKeys                 change keys
-    * @param status                     script hash -> status; "" means that the script hash has not been used
-    *                                   yet
+    * @param status                     script hash -> status; "" means that the script hash has not been used yet
     * @param transactions               wallet transactions
     * @param heights                    transactions heights
     * @param history                    script hash -> history
