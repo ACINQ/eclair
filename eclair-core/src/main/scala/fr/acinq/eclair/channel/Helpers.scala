@@ -473,12 +473,12 @@ object Helpers {
       *
       * @param commitments  our commitment data, which include payment preimages
       * @param remoteCommit the remote commitment data to use to claim outputs (it can be their current or next commitment)
-      * @param tx           the remote commitment transaction that has just been published
+      * @param commitTx           the remote commitment transaction that has just been published
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
+    def claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, commitTx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       import commitments.{commitInput, localParams, remoteParams}
-      require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
+      require(remoteCommit.txid == commitTx.txid, "txid mismatch, provided tx is not the current remote commit tx")
 
       val isSimplifiedCommitment = commitments match {
         case _: SimplifiedCommitment => true
@@ -486,7 +486,7 @@ object Helpers {
       }
 
       val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(isSimplifiedCommitment, keyManager, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
-      require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")
+      require(remoteCommitTx.tx.txid == commitTx.txid, "txid mismatch, cannot recompute the current remote commit tx")
 
       val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(localParams.channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
       val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
@@ -522,7 +522,7 @@ object Helpers {
         })
       }.toSeq.flatten
 
-      claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx).copy(
+      claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, commitTx).copy(
         claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
         claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
       )
@@ -530,30 +530,32 @@ object Helpers {
 
     /**
       *
-      * Claim our Main output only
+      * Claim our Main output, if the commitment was of type `option_simplified_commitment` we also claim the to_local_pushme output
       *
       * @param commitments              either our current commitment data in case of usual remote uncooperative closing
       *                                 or our outdated commitment data in case of data loss protection procedure; in any case it is used only
       *                                 to get some constant parameters, not commitment data
       * @param remotePerCommitmentPoint the remote perCommitmentPoint corresponding to this commitment
-      * @param tx                       the remote commitment transaction that has just been published
+      * @param commitTx                 the remote commitment transaction that has just been published
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: Point, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
+    def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: Point, commitTx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
+      implicit val commitmentContext = commitments.getContext
+
       val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(commitments.localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
 
       // no need to use a high fee rate for our main output (we are the only one who can spend it)
       val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
 
       val mainTx = generateTx("claim-p2wpkh-output")(Try {
-        val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(commitments.localParams.dustLimitSatoshis),
+        val claimMain = Transactions.makeClaimP2WPKHOutputTx(commitTx, Satoshi(commitments.localParams.dustLimitSatoshis),
           localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain)
         val sig = keyManager.sign(claimMain, keyManager.paymentPoint(commitments.localParams.channelKeyPath), remotePerCommitmentPoint)
         Transactions.addSigs(claimMain, localPubkey, sig)
       })
 
       RemoteCommitPublished(
-        commitTx = tx,
+        commitTx = commitTx,
         claimMainOutputTx = mainTx.map(_.tx),
         claimHtlcSuccessTxs = Nil,
         claimHtlcTimeoutTxs = Nil,
@@ -571,6 +573,8 @@ object Helpers {
       * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
       */
     def claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, db: ChannelsDb)(implicit log: LoggingAdapter): Option[RevokedCommitPublished] = {
+      implicit val commitmentContext = commitments.getContext
+
       import commitments._
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn(0).sequence, tx.lockTime)

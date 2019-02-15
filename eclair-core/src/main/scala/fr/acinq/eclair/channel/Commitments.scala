@@ -82,7 +82,14 @@ trait Commitments {
     reduced.toRemoteMsat / 1000 - remoteParams.channelReserveSatoshis - fees
   }
 
+  def getContext: CommitmentContext
+
 }
+
+sealed trait CommitmentContext
+object ContextCommitmentV1 extends CommitmentContext
+object ContextSimplifiedCommitment extends CommitmentContext
+
 
 /**
   * about remoteNextCommitInfo:
@@ -100,7 +107,10 @@ case class CommitmentsV1(localParams: LocalParams, remoteParams: RemoteParams,
                          originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, the id of the previous channel
                          remoteNextCommitInfo: Either[WaitingForRevocation, Point],
                          commitInput: InputInfo,
-                         remotePerCommitmentSecrets: ShaChain, channelId: BinaryData) extends Commitments
+                         remotePerCommitmentSecrets: ShaChain, channelId: BinaryData) extends Commitments {
+
+  override def getContext: CommitmentContext = ContextCommitmentV1
+}
 
 
 case class SimplifiedCommitment(localParams: LocalParams, remoteParams: RemoteParams,
@@ -113,7 +123,11 @@ case class SimplifiedCommitment(localParams: LocalParams, remoteParams: RemotePa
                                 remoteNextCommitInfo: Either[WaitingForRevocation, Point],
                                 commitInput: InputInfo,
                                 remotePerCommitmentSecrets: ShaChain,
-                                channelId: BinaryData) extends Commitments
+                                channelId: BinaryData) extends Commitments {
+
+
+  override def getContext: CommitmentContext = ContextSimplifiedCommitment
+}
 
 object Commitments {
   /**
