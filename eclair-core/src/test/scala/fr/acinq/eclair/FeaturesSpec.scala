@@ -42,6 +42,12 @@ class FeaturesSpec extends FunSuite {
     assert(areSupported(features) && hasFeature(features, OPTION_DATA_LOSS_PROTECT_OPTIONAL) && hasFeature(features, INITIAL_ROUTING_SYNC_BIT_OPTIONAL))
   }
 
+  test("'option_simplified_commitment' feature") {
+    val features = "0200"
+    assert(areSupported(features) && hasFeature(features, OPTION_SIMPLIFIED_COMMITMENT_OPTIONAL))
+  }
+
+
   test("features compatibility") {
     assert(areSupported(Protocol.writeUInt64(1l << INITIAL_ROUTING_SYNC_BIT_OPTIONAL, ByteOrder.BIG_ENDIAN)))
     assert(areSupported(Protocol.writeUInt64(1L << OPTION_DATA_LOSS_PROTECT_MANDATORY, ByteOrder.BIG_ENDIAN)))
