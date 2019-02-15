@@ -70,14 +70,14 @@ object Transactions {
 
   /**
     * When *local* *current* [[CommitTx]] is published:
-    *   - [[ClaimDelayedOutputTx]] spends to-local output of [[CommitTx]] after a delay -> TODO adjust for option_simplified_commitment
+    *   - [[ClaimDelayedOutputTx]] spends to-local output of [[CommitTx]] after a delay ->
     *   - [[HtlcSuccessTx]] spends htlc-received outputs of [[CommitTx]] for which we have the preimage
     *     - [[ClaimDelayedOutputTx]] spends [[HtlcSuccessTx]] after a delay
     *   - [[HtlcTimeoutTx]] spends htlc-sent outputs of [[CommitTx]] after a timeout
     *     - [[ClaimDelayedOutputTx]] spends [[HtlcTimeoutTx]] after a delay
     *
     * When *remote* *current* [[CommitTx]] is published:
-    *   - [[ClaimP2WPKHOutputTx]] spends to-local output of [[CommitTx]] TODO adjust for option_simplified_commitment
+    *   - [[ClaimP2WPKHOutputTx]] spends to-local output of [[CommitTx]]
     *   - [[ClaimHtlcSuccessTx]] spends htlc-received outputs of [[CommitTx]] for which we have the preimage TODO adjust for option_simplified_commitment
     *   - [[ClaimHtlcTimeoutTx]] spends htlc-sent outputs of [[CommitTx]] after a timeout TODO adjust for option_simplified_commitment
     *
@@ -469,30 +469,32 @@ object Transactions {
   }
 
   // TODO adjust for option_simplified_commitment -> sweep pushme outputs
-  def makeMainPenaltyTx(commitTx: Transaction, localDustLimit: Satoshi, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: BinaryData, toRemoteDelay: Int, remoteDelayedPaymentPubkey: PublicKey, feeratePerKw: Long): MainPenaltyTx = {
-    val redeemScript = toLocalDelayed(remoteRevocationPubkey, toRemoteDelay, remoteDelayedPaymentPubkey)
-    val pubkeyScript = write(pay2wsh(redeemScript))
-    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
-    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
+  def makeMainPenaltyTx(commitTx: Transaction, localDustLimit: Satoshi, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: BinaryData, toRemoteDelay: Int, remoteDelayedPaymentPubkey: PublicKey, feeratePerKw: Long)(implicit commitmentContext: CommitmentContext): MainPenaltyTx = commitmentContext match {
+    case ContextSimplifiedCommitment => throw new NotImplementedError("makeMainPenaltyTx with option_simplified_commitment")
+    case ContextCommitmentV1 =>
+      val redeemScript = toLocalDelayed(remoteRevocationPubkey, toRemoteDelay, remoteDelayedPaymentPubkey)
+      val pubkeyScript = write(pay2wsh(redeemScript))
+      val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
+      val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
 
-    // unsigned transaction
-    val tx = Transaction(
-      version = 2,
-      txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
-      txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-      lockTime = 0)
+      // unsigned transaction
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
+        txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
+        lockTime = 0)
 
-    // compute weight with a dummy 73 bytes signature (the largest you can get)
-    val weight = Transactions.addSigs(MainPenaltyTx(input, tx), BinaryData("00" * 73)).tx.weight()
-    val fee = weight2fee(feeratePerKw, weight)
+      // compute weight with a dummy 73 bytes signature (the largest you can get)
+      val weight = Transactions.addSigs(MainPenaltyTx(input, tx), BinaryData("00" * 73)).tx.weight()
+      val fee = weight2fee(feeratePerKw, weight)
 
-    val amount = input.txOut.amount - fee
-    if (amount < localDustLimit) {
-      throw AmountBelowDustLimit
-    }
+      val amount = input.txOut.amount - fee
+      if (amount < localDustLimit) {
+        throw AmountBelowDustLimit
+      }
 
-    val tx1 = tx.copy(txOut = tx.txOut(0).copy(amount = amount) :: Nil)
-    MainPenaltyTx(input, tx1)
+      val tx1 = tx.copy(txOut = tx.txOut(0).copy(amount = amount) :: Nil)
+      MainPenaltyTx(input, tx1)
   }
 
   /**
