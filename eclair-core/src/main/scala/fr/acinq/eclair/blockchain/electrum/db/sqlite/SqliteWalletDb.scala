@@ -194,9 +194,17 @@ object SqliteWalletDb {
     (wire: BitVector) => proofsListCodec.decode(wire).map(_.map(_.toMap))
   )
 
+  /**
+    * change this value
+    * -if the new codec is incompatible with the old one
+    * - OR if you want to force a full sync from Electrum servers
+    */
+  val version = 0x0000
+
   val persistentDataCodec: Codec[PersistentData] = (
-    ("accountKeysCount" | int32) ::
+    ("version" | constant(BitVector.fromInt(version))) ::
       ("accountKeysCount" | int32) ::
+      ("changeKeysCount" | int32) ::
       ("status" | statusCodec) ::
       ("transactions" | transactionsCodec) ::
       ("heights" | heightsCodec) ::

@@ -127,8 +127,13 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           pendingTransactionRequests = Set(),
           pendingTransactions = persisted.pendingTransactions,
           lastReadyMessage = None)
-      case _ =>
-        log.info("starting with a default wallet")
+      case Success(None) =>
+        log.info(s"wallet db is empty, starting with a default wallet")
+        val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
+        val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
+        Data(params, blockchain1, firstAccountKeys, firstChangeKeys)
+      case Failure(exception) =>
+        log.info(s"cannot read wallet db ($exception), starting with a default wallet")
         val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
         val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
         Data(params, blockchain1, firstAccountKeys, firstChangeKeys)
