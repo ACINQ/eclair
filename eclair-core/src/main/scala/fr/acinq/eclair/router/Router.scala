@@ -29,11 +29,12 @@ import fr.acinq.eclair.io.Peer.{InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.RichWeight
+import fr.acinq.eclair.router.Graph.{RichWeight, WeightedPath}
+import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 
-import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.collection.{SortedSet, mutable}
+import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise}
@@ -603,7 +604,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       d.copy(nodes = d.nodes + (n.nodeId -> n))
     } else if (d.channels.values.exists(c => isRelatedTo(c, n.nodeId))) {
       log.debug("added node nodeId={}", n.nodeId)
-      context.system.eventStream.publish(NodeDiscovered(n))
+      context.system.eventStream.publish(NodesDiscovered(n :: Nil))
       db.addNode(n)
       d.copy(nodes = d.nodes + (n.nodeId -> n))
     } else if (d.awaiting.keys.exists(c => isRelatedTo(c, n.nodeId))) {
@@ -639,9 +640,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         d
       } else if (d.updates.contains(desc)) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.updateChannelUpdate(u1)
-        // we also need to update the graph
+        // update the graph
         val graph1 = Announcements.isEnabled(u1.channelFlags) match {
           case true => d.graph.removeEdge(desc).addEdge(desc, u1)
           case false => d.graph.removeEdge(desc) // if the channel is now disabled, we remove it from the graph
@@ -649,7 +650,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         d.copy(updates = d.updates + (desc -> u1), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.addChannelUpdate(u1)
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u1)
@@ -682,13 +683,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         d
       } else if (d.privateUpdates.contains(desc)) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val graph1 = d.graph.removeEdge(desc).addEdge(desc, u1)
         d.copy(privateUpdates = d.privateUpdates + (desc -> u1), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u1)
         d.copy(privateUpdates = d.privateUpdates + (desc -> u1), graph = graph1)

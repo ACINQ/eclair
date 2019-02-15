@@ -26,16 +26,18 @@ import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncemen
   */
 trait NetworkEvent
 
-case class NodeDiscovered(ann: NodeAnnouncement) extends NetworkEvent
+case class NodesDiscovered(ann: Iterable[NodeAnnouncement]) extends NetworkEvent
 
 case class NodeUpdated(ann: NodeAnnouncement) extends NetworkEvent
 
 case class NodeLost(nodeId: PublicKey) extends NetworkEvent
 
-case class ChannelDiscovered(ann: ChannelAnnouncement, capacity: Satoshi) extends NetworkEvent
+case class SingleChannelDiscovered(ann: ChannelAnnouncement, capacity: Satoshi)
+
+case class ChannelsDiscovered(c: Iterable[SingleChannelDiscovered]) extends NetworkEvent
 
 case class ChannelLost(shortChannelId: ShortChannelId) extends NetworkEvent
 
-case class ChannelUpdateReceived(ann: ChannelUpdate) extends NetworkEvent
+case class ChannelUpdatesReceived(ann: Iterable[ChannelUpdate]) extends NetworkEvent
 
 case class SyncProgress(progress: Double) extends NetworkEvent
