@@ -160,10 +160,10 @@ object SqliteWalletDb {
     (wire: BitVector) => statusListCodec.decode(wire).map(_.map(_.toMap))
   )
 
-  val heightsListCodec: Codec[List[(BinaryData, Long)]] = listOfN(uint16, binarydata(32) ~ uint32)
+  val heightsListCodec: Codec[List[(BinaryData, Int)]] = listOfN(uint16, binarydata(32) ~ int32)
 
-  val heightsCodec: Codec[Map[BinaryData, Long]] = Codec[Map[BinaryData, Long]](
-    (map: Map[BinaryData, Long]) => heightsListCodec.encode(map.toList),
+  val heightsCodec: Codec[Map[BinaryData, Int]] = Codec[Map[BinaryData, Int]](
+    (map: Map[BinaryData, Int]) => heightsListCodec.encode(map.toList),
     (wire: BitVector) => heightsListCodec.decode(wire).map(_.map(_.toMap))
   )
 

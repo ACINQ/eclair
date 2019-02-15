@@ -669,7 +669,7 @@ object ElectrumWallet {
                   changeKeys: Vector[ExtendedPrivateKey],
                   status: Map[BinaryData, String],
                   transactions: Map[BinaryData, Transaction],
-                  heights: Map[BinaryData, Long],
+                  heights: Map[BinaryData, Int],
                   history: Map[BinaryData, List[ElectrumClient.TransactionHistoryItem]],
                   proofs: Map[BinaryData, GetMerkleResponse],
                   locks: Set[Transaction],
@@ -1004,7 +1004,7 @@ object ElectrumWallet {
             }
             history + (scriptHash -> entry)
         }
-      this.copy(locks = this.locks - tx, transactions = this.transactions + (tx.txid -> tx), heights = this.heights + (tx.txid -> 0L), history = history1)
+      this.copy(locks = this.locks - tx, transactions = this.transactions + (tx.txid -> tx), heights = this.heights + (tx.txid -> 0), history = history1)
     }
 
     /**
@@ -1042,7 +1042,7 @@ object ElectrumWallet {
                             changeKeysCount: Int,
                             status: Map[BinaryData, String],
                             transactions: Map[BinaryData, Transaction],
-                            heights: Map[BinaryData, Long],
+                            heights: Map[BinaryData, Int],
                             history: Map[BinaryData, List[ElectrumClient.TransactionHistoryItem]],
                             proofs: Map[BinaryData, GetMerkleResponse],
                             pendingTransactions: List[Transaction],
