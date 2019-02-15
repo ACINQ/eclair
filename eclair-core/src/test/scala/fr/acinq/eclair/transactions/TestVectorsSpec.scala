@@ -18,6 +18,7 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.channel.ContextCommitmentV1
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
@@ -182,14 +183,13 @@ class TestVectorsSpec extends FunSuite with Logging {
 
     val commitTx = {
       val tx = Transactions.makeCommitTx(
-        isSimplifiedCommitment = false,
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,
         Local.revocation_pubkey, Local.toSelfDelay,
         Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
         Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
-        spec)
+        spec)(ContextCommitmentV1)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
       val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
@@ -197,7 +197,7 @@ class TestVectorsSpec extends FunSuite with Logging {
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
-    val baseFee = Transactions.commitTxFee(Local.dustLimit, spec, simplifiedCommitment = false)
+    val baseFee = Transactions.commitTxFee(Local.dustLimit, spec)(ContextCommitmentV1)
     logger.info(s"# base commitment transaction fee = ${baseFee.toLong}")
     val actualFee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
     logger.info(s"# actual commitment transaction fee = ${actualFee.toLong}")
@@ -213,14 +213,13 @@ class TestVectorsSpec extends FunSuite with Logging {
 
     {
       val tx = Transactions.makeCommitTx(
-        isSimplifiedCommitment = false,
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,
         Local.revocation_pubkey, Local.toSelfDelay,
         Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
         Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
-        spec)
+        spec)(ContextCommitmentV1)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
       logger.info(s"# local_signature = ${toHexString(local_sig.dropRight(1))}")

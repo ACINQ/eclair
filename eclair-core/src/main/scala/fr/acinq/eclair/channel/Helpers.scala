@@ -234,7 +234,10 @@ object Helpers {
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
     def makeFirstCommitTxs(keyManager: KeyManager, temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
-      val isSimplifiedCommitment = Helpers.hasOptionSimplifiedCommitment(localParams)
+      implicit val commitmentContext = Helpers.hasOptionSimplifiedCommitment(localParams) match {
+        case true => ContextSimplifiedCommitment
+        case false => ContextCommitmentV1
+      }
 
       val toLocalMsat = if (localParams.isFunder) fundingSatoshis * 1000 - pushMsat else pushMsat
       val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingSatoshis * 1000 - pushMsat
@@ -245,7 +248,7 @@ object Helpers {
       if (!localParams.isFunder) {
         // they are funder, therefore they pay the fee: we need to make sure they can afford it!
         val toRemoteMsat = remoteSpec.toLocalMsat
-        val fees = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), remoteSpec, isSimplifiedCommitment).amount
+        val fees = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), remoteSpec).amount
         val missing = toRemoteMsat / 1000 - localParams.channelReserveSatoshis - fees
         if (missing < 0) {
           throw CannotAffordFees(temporaryChannelId, missingSatoshis = -1 * missing, reserveSatoshis = localParams.channelReserveSatoshis, feesSatoshis = fees)
@@ -254,8 +257,8 @@ object Helpers {
 
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(fundingSatoshis), keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey)
       val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, 0)
-      val (localCommitTx, _, _) = Commitments.makeLocalTxs(isSimplifiedCommitment, keyManager, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
-      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(isSimplifiedCommitment, keyManager, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
+      val (localCommitTx, _, _) = Commitments.makeLocalTxs(keyManager, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
+      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
 
       (localSpec, localCommitTx, remoteSpec, remoteCommitTx)
     }
@@ -480,12 +483,9 @@ object Helpers {
       import commitments.{commitInput, localParams, remoteParams}
       require(remoteCommit.txid == commitTx.txid, "txid mismatch, provided tx is not the current remote commit tx")
 
-      val isSimplifiedCommitment = commitments match {
-        case _: SimplifiedCommitment => true
-        case _: CommitmentsV1 => false
-      }
+      implicit val commitmentContext = commitments.getContext
 
-      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(isSimplifiedCommitment, keyManager, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
+      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
       require(remoteCommitTx.tx.txid == commitTx.txid, "txid mismatch, cannot recompute the current remote commit tx")
 
       val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(localParams.channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
