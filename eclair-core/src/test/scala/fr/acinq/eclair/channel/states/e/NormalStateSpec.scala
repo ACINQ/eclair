@@ -71,11 +71,13 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(htlc.id == 0 && htlc.paymentHash == h)
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments match {
+        case _: SimplifiedCommitment => throw new IllegalArgumentException("Shouldn't be here")
         case c: CommitmentsV1 => c.copy(
           localNextHtlcId = 1,
           localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
           originChannels = Map(0L -> Local(Some(sender.ref)))
-        )}
+        )
+      }
     ))
   }
 
@@ -104,6 +106,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(htlc.id == 0 && htlc.paymentHash == h)
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments match {
+        case _: SimplifiedCommitment => throw new IllegalArgumentException("Shouldn't be here")
         case c: CommitmentsV1 => c.copy(
       localNextHtlcId = 1,
       localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
@@ -301,6 +304,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val htlc = UpdateAddHtlc("00" * 32, 0, 150000, BinaryData("42" * 32), 400144, defaultOnion)
     bob ! htlc
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments match {
+      case _: SimplifiedCommitment => throw new IllegalArgumentException("Shouldn't be here")
       case c: CommitmentsV1 => c.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ htlc), remoteNextHtlcId = 1)
     }))
     // bob won't forward the add before it is cross-signed
@@ -814,7 +818,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
 
-
   test("recv RevokeAndAck (one htlc sent)") { f =>
     import f._
     val sender = TestProbe()
@@ -1045,6 +1048,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments match {
+        case _: SimplifiedCommitment => throw new IllegalArgumentException("Shouldn't be here")
         case c: CommitmentsV1 => c.copy(localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))
       }))
   }
@@ -1087,6 +1091,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments match {
+        case _: SimplifiedCommitment => throw new IllegalArgumentException("Shouldn't be here")
         case c: CommitmentsV1 => c.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill))
       }))
     // alice immediately propagates the fulfill upstream
@@ -1163,6 +1168,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments match {
+        case _: SimplifiedCommitment => throw new IllegalArgumentException("Shouldn't be here")
         case c: CommitmentsV1 => c.copy(
           localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))
       }))
@@ -1192,6 +1198,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments match {
+        case _: SimplifiedCommitment => throw new IllegalArgumentException("Shouldn't be here")
         case c: CommitmentsV1 => c.copy(
           localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))
       }))
@@ -1229,6 +1236,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments match {
+        case _: SimplifiedCommitment => throw new IllegalArgumentException("Shouldn't be here")
         case c: CommitmentsV1 => c.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))
       }))
     // alice won't forward the fail before it is cross-signed
@@ -1251,6 +1259,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments match {
+        case _: SimplifiedCommitment => throw new IllegalArgumentException("Shouldn't be here")
         case c: CommitmentsV1 => c.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))
       }))
     // alice won't forward the fail before it is cross-signed
@@ -1329,6 +1338,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fee = alice2bob.expectMsgType[UpdateFee]
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments match {
+        case _: SimplifiedCommitment => throw new IllegalArgumentException("Shouldn't be here")
         case c: CommitmentsV1 => c.copy(
           localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee))
       }))
@@ -1346,6 +1356,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fee2 = alice2bob.expectMsgType[UpdateFee]
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments match {
+        case _: SimplifiedCommitment => throw new IllegalArgumentException("Shouldn't be here")
         case c: CommitmentsV1 => c.copy(
           localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee2))
       }))
@@ -1360,6 +1371,15 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(initialState == bob.stateData)
   }
 
+  test("recv CMD_UPDATE_FEE (when option_simplified_commitment)", Tag("simplified_commitment")) { f =>
+    import f._
+    val sender = TestProbe()
+    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    sender.send(alice, CMD_UPDATE_FEE(20000))
+    sender.expectMsg(Failure(CannotUpdateFeeWithCommitmentType(channelId(bob))))
+    assert(initialState == alice.stateData)
+  }
+
   test("recv UpdateFee") { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
@@ -1368,8 +1388,21 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fee2 = UpdateFee("00" * 32, 14000)
     bob ! fee2
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments match {
+      case _: SimplifiedCommitment => throw new IllegalArgumentException("Shouldn't be here")
       case c: CommitmentsV1 => c.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee2), remoteNextHtlcId = 0)
     }))
+  }
+
+  test("recv UpdateFee (option_simplified_commitment)", Tag("simplified_commitment")) { f =>
+    import f._
+    val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
+    assert(initialData.commitments.getContext == ContextSimplifiedCommitment)
+
+    // Alice sends update_fee to Bob but this shouldn't happen with option_simplified_commitment so Bob will reply Error
+    val fee1 = UpdateFee("00" * 32, 12000)
+    bob ! fee1
+
+    bob2alice.expectMsgType[Error] // should bob close the channel? Yes
   }
 
   test("recv UpdateFee (two in a row)") { f =>
@@ -1378,6 +1411,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fee = UpdateFee("00" * 32, 12000)
     bob ! fee
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments match {
+      case _: SimplifiedCommitment => throw new IllegalArgumentException("Shouldn't be here")
       case c: CommitmentsV1 => c.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee), remoteNextHtlcId = 0)
     }))
   }

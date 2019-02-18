@@ -360,7 +360,7 @@ object Commitments {
     }
 
     if(commitments.getContext == ContextSimplifiedCommitment){
-      throw new IllegalArgumentException(s"Should not send fee update when using simplified_commitment=$commitments")
+      throw CannotUpdateFeeWithCommitmentType(commitments.channelId)
     }
 
     implicit val commitmentContext = commitments.getContext
@@ -400,7 +400,7 @@ object Commitments {
     }
 
     if(commitments.getContext == ContextSimplifiedCommitment){
-      throw new IllegalArgumentException(s"Should not send fee update when using simplified_commitment=$commitments")
+      throw CannotUpdateFeeWithCommitmentType(commitments.channelId)
     }
 
     implicit val commitmentContext = commitments.getContext

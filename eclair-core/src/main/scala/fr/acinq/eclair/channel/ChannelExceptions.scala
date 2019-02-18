@@ -70,6 +70,7 @@ case class InvalidHtlcPreimage                 (override val channelId: BinaryDa
 case class UnknownHtlcId                       (override val channelId: BinaryData, id: Long) extends ChannelException(channelId, s"unknown htlc id=$id")
 case class CannotExtractSharedSecret           (override val channelId: BinaryData, htlc: UpdateAddHtlc) extends ChannelException(channelId, s"can't extract shared secret: paymentHash=${htlc.paymentHash} onion=${htlc.onionRoutingPacket}")
 case class FundeeCannotSendUpdateFee           (override val channelId: BinaryData) extends ChannelException(channelId, s"only the funder should send update_fee messages")
+case class CannotUpdateFeeWithCommitmentType   (override val channelId: BinaryData) extends ChannelException(channelId, s"can't update fees when option_simplified_commitment is in use")
 case class CannotAffordFees                    (override val channelId: BinaryData, missingSatoshis: Long, reserveSatoshis: Long, feesSatoshis: Long) extends ChannelException(channelId, s"can't pay the fee: missingSatoshis=$missingSatoshis reserveSatoshis=$reserveSatoshis feesSatoshis=$feesSatoshis")
 case class CannotSignWithoutChanges            (override val channelId: BinaryData) extends ChannelException(channelId, "cannot sign when there are no changes")
 case class CannotSignBeforeRevocation          (override val channelId: BinaryData) extends ChannelException(channelId, "cannot sign until next revocation hash is received")

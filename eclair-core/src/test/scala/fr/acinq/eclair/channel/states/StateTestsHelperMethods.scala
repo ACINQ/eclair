@@ -72,7 +72,11 @@ trait StateTestsHelperMethods extends TestKitBase {
     import setup._
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val pushMsat = if (tags.contains("no_push_msat")) 0 else TestConstants.pushMsat
-    val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
+    val (aliceParams, bobParams) = if(tags.contains("simplified_commitment"))
+      (Alice.channelParams.copy(localFeatures = BinaryData("0200")), Bob.channelParams.copy(localFeatures = BinaryData("0200")))
+    else
+      (Alice.channelParams, Bob.channelParams)
+
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
     // reset global feerates (they may have been changed by previous tests)
