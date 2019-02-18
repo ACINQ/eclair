@@ -324,14 +324,14 @@ object Helpers {
   }
 
   def canUseSimplifiedCommitment[T <: ParamsWithFeatures](local: T, remote: T) = {
-    val localHasOptionalSupport = Features.hasFeature(local.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_OPTIONAL)
-    val localHasMandatorySupport = Features.hasFeature(local.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_MANDATORY)
-    val remoteHasOptionalSupport = Features.hasFeature(remote.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_OPTIONAL)
-    val remoteHasMandatorySupport = Features.hasFeature(remote.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_MANDATORY)
+    val localHasOptional = Features.hasFeature(local.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_OPTIONAL)
+    val localHasMandatory = Features.hasFeature(local.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_MANDATORY)
+    val remoteHasOptional = Features.hasFeature(remote.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_OPTIONAL)
+    val remoteHasMandatory = Features.hasFeature(remote.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_MANDATORY)
 
-    (remoteHasMandatorySupport && (localHasMandatorySupport || localHasOptionalSupport))  ||
-    (localHasMandatorySupport && (remoteHasMandatorySupport || remoteHasOptionalSupport)) ||
-    (localHasOptionalSupport && remoteHasOptionalSupport)
+    (remoteHasMandatory && (localHasMandatory || localHasOptional))  ||
+    (localHasMandatory && (remoteHasMandatory || remoteHasOptional)) ||
+    (localHasOptional && remoteHasOptional)
   }
 
   object Closing {
