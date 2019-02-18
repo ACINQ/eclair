@@ -448,7 +448,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
     case Event(ElectrumClient.ElectrumDisconnected, data) =>
       log.info(s"wallet got disconnected")
       // remove status for each script hash for which we have pending requests
-      // this will force to query scrip hash history again when we reconnect
+      // this will make us query script hash history for these script hashes again when we reconnect
       goto(DISCONNECTED) using data.copy(
         status = data.status -- data.pendingHistoryRequests,
         pendingHistoryRequests = Set(),
