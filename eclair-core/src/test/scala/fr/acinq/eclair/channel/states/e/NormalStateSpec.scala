@@ -311,6 +311,19 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     relayerB.expectNoMsg()
   }
 
+  test("recv UpdateAddHtlc (option_simplified_commitment)", Tag("simplified_commitment")) { f =>
+    import f._
+    val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val htlc = UpdateAddHtlc("00" * 32, 0, 150000, BinaryData("42" * 32), 400144, defaultOnion)
+    bob ! htlc
+    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments match {
+      case s: SimplifiedCommitment => s.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ htlc), remoteNextHtlcId = 1)
+      case _: CommitmentsV1 => throw new IllegalArgumentException("Shouldn't be here")
+    }))
+    // bob won't forward the add before it is cross-signed
+    relayerB.expectNoMsg()
+  }
+
   test("recv UpdateAddHtlc (unexpected id)") { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx

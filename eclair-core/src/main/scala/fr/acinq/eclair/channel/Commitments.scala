@@ -140,12 +140,12 @@ object Commitments {
     */
   def addLocalProposal(commitments: Commitments, proposal: UpdateMessage): Commitments = commitments match {
     case c: CommitmentsV1 => c.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed :+ proposal))
-    case _: SimplifiedCommitment => ???
+    case s: SimplifiedCommitment => s.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed :+ proposal))
   }
 
   def addRemoteProposal(commitments: Commitments, proposal: UpdateMessage): Commitments = commitments match {
     case c: CommitmentsV1 => c.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
-    case _: SimplifiedCommitment => ???
+    case s: SimplifiedCommitment => s.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
   }
 
   /**
@@ -182,7 +182,7 @@ object Commitments {
     // we increment the local htlc index and add an entry to the origins map
     val commitments1 = addLocalProposal(commitments, add) match {
       case c: CommitmentsV1 => c.copy(localNextHtlcId = commitments.localNextHtlcId + 1, originChannels = commitments.originChannels + (add.id -> origin))
-      case _: SimplifiedCommitment => throw new NotImplementedError
+      case s: SimplifiedCommitment => s.copy(localNextHtlcId = commitments.localNextHtlcId + 1, originChannels = commitments.originChannels + (add.id -> origin))
     }
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val remoteCommit1 = commitments1.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments1.remoteCommit)
@@ -229,7 +229,7 @@ object Commitments {
     // let's compute the current commitment *as seen by us* including this change
     val commitments1 = addRemoteProposal(commitments, add) match {
       case c: CommitmentsV1 => c.copy(remoteNextHtlcId = commitments.remoteNextHtlcId + 1)
-      case _: SimplifiedCommitment => ???
+      case s: SimplifiedCommitment => s.copy(remoteNextHtlcId = commitments.remoteNextHtlcId + 1)
     }
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
     val incomingHtlcs = reduced.htlcs.filter(_.direction == IN)

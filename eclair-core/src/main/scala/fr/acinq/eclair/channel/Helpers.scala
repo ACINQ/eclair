@@ -64,7 +64,7 @@ object Helpers {
       case c: CommitmentsV1 => c.copy(
         localParams = data.commitments.localParams.copy(globalFeatures = localInit.globalFeatures, localFeatures = localInit.localFeatures),
         remoteParams = data.commitments.remoteParams.copy(globalFeatures = remoteInit.globalFeatures, localFeatures = remoteInit.localFeatures))
-      case _: SimplifiedCommitment => ???
+      case _: SimplifiedCommitment => throw new NotImplementedError("Missing impl for simplified_commitment")
     }
 
     data match {
