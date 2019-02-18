@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -34,7 +35,7 @@ import scala.concurrent.duration._
 
 class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  case class FixtureParam(bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
@@ -44,17 +45,22 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     } else {
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
-    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
-    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
+
+    val aliceLocalFeatures = if(test.tags.contains("simplified_commitment")) BinaryData("0200") else Alice.channelParams.localFeatures
+    val bobLocalFeatures = if(test.tags.contains("simplified_commitment")) BinaryData("0200") else Bob.channelParams.localFeatures
+
+    val aliceInit = Init(Alice.channelParams.globalFeatures, aliceLocalFeatures)
+    val bobInit = Init(Bob.channelParams.globalFeatures, bobLocalFeatures)
+
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER("00" * 32, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
-      bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, bob2alice.ref, aliceInit)
+      alice ! INPUT_INIT_FUNDER("00" * 32, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams.copy(localFeatures = aliceLocalFeatures), alice2bob.ref, bobInit, ChannelFlags.Empty)
+      bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams.copy(localFeatures = bobLocalFeatures), bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
       awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
-      withFixture(test.toNoArgTest(FixtureParam(bob, alice2bob, bob2alice, bob2blockchain)))
+      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, bob2blockchain)))
     }
   }
 
@@ -90,6 +96,22 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     import f._
     bob ! CMD_CLOSE(None)
     awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv FundingCreated (option_simplified_commitment)", Tag("simplified_commitment")) { f =>
+    import f._
+
+    alice2bob.expectMsgType[FundingCreated]
+    alice2bob.forward(bob)
+
+    awaitCond({
+      bob.stateName == WAIT_FOR_FUNDING_CONFIRMED &&
+      bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.getContext == ContextSimplifiedCommitment
+    })
+
+    bob2alice.expectMsgType[FundingSigned]
+    bob2blockchain.expectMsgType[WatchSpent]
+    bob2blockchain.expectMsgType[WatchConfirmed]
   }
 
 }

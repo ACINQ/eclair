@@ -357,14 +357,23 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             channelId = channelId,
             signature = localSigOfRemoteTx
           )
-          val commitments = CommitmentsV1(localParams, remoteParams, channelFlags,
-            LocalCommit(0, localSpec, PublishableTxs(signedLocalCommitTx, Nil)), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
-            LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
-            localNextHtlcId = 0L, remoteNextHtlcId = 0L,
-            originChannels = Map.empty,
-            remoteNextCommitInfo = Right(randomKey.publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
-            commitInput, ShaChain.init, channelId = channelId)
 
+          val commitments = Helpers.canUseSimplifiedCommitment(localParams, remoteParams) match {
+            case true => SimplifiedCommitment(localParams, remoteParams, channelFlags,
+              LocalCommit(0, localSpec, PublishableTxs(signedLocalCommitTx, Nil)), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
+              LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
+              localNextHtlcId = 0L, remoteNextHtlcId = 0L,
+              originChannels = Map.empty,
+              remoteNextCommitInfo = Right(randomKey.publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
+              commitInput, ShaChain.init, channelId = channelId)
+            case false => CommitmentsV1(localParams, remoteParams, channelFlags,
+              LocalCommit(0, localSpec, PublishableTxs(signedLocalCommitTx, Nil)), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
+              LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
+              localNextHtlcId = 0L, remoteNextHtlcId = 0L,
+              originChannels = Map.empty,
+              remoteNextCommitInfo = Right(randomKey.publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
+              commitInput, ShaChain.init, channelId = channelId)
+          }
 
           context.parent ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
           context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
