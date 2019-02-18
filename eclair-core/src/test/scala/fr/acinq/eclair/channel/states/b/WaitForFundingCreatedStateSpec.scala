@@ -46,8 +46,8 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
 
-    val aliceLocalFeatures = if(test.tags.contains("simplified_commitment")) BinaryData("0200") else Alice.channelParams.localFeatures
-    val bobLocalFeatures = if(test.tags.contains("simplified_commitment")) BinaryData("0200") else Bob.channelParams.localFeatures
+    val aliceLocalFeatures = if (test.tags.contains("simplified_commitment")) BinaryData("0200") else Alice.channelParams.localFeatures
+    val bobLocalFeatures = if (test.tags.contains("simplified_commitment")) BinaryData("0200") else Bob.channelParams.localFeatures
 
     val aliceInit = Init(Alice.channelParams.globalFeatures, aliceLocalFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, bobLocalFeatures)
@@ -68,11 +68,28 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     import f._
     alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
-    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+    awaitCond({
+      bob.stateName == WAIT_FOR_FUNDING_CONFIRMED &&
+      bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.getContext == ContextCommitmentV1
+    })
     bob2alice.expectMsgType[FundingSigned]
     bob2blockchain.expectMsgType[WatchSpent]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
+
+  test("recv FundingCreated (option_simplified_commitment)", Tag("simplified_commitment")) { f =>
+    import f._
+    alice2bob.expectMsgType[FundingCreated]
+    alice2bob.forward(bob)
+    awaitCond({
+      bob.stateName == WAIT_FOR_FUNDING_CONFIRMED &&
+      bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.getContext == ContextSimplifiedCommitment
+    })
+    bob2alice.expectMsgType[FundingSigned]
+    bob2blockchain.expectMsgType[WatchSpent]
+    bob2blockchain.expectMsgType[WatchConfirmed]
+  }
+
 
   test("recv FundingCreated (funder can't pay fees)", Tag("funder_below_reserve")) { f =>
     import f._
@@ -97,21 +114,4 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     bob ! CMD_CLOSE(None)
     awaitCond(bob.stateName == CLOSED)
   }
-
-  test("recv FundingCreated (option_simplified_commitment)", Tag("simplified_commitment")) { f =>
-    import f._
-
-    alice2bob.expectMsgType[FundingCreated]
-    alice2bob.forward(bob)
-
-    awaitCond({
-      bob.stateName == WAIT_FOR_FUNDING_CONFIRMED &&
-      bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.getContext == ContextSimplifiedCommitment
-    })
-
-    bob2alice.expectMsgType[FundingSigned]
-    bob2blockchain.expectMsgType[WatchSpent]
-    bob2blockchain.expectMsgType[WatchConfirmed]
-  }
-
 }
