@@ -566,7 +566,7 @@ object Transactions {
     */
   def findPushMeOutputIndex(pubkey: PublicKey, simplifiedCommitTx: Transaction): Option[Int] = {
     simplifiedCommitTx.txOut.zipWithIndex.find { case (txOut, outputIndex) =>
-      txOut.publicKeyScript == Script.write(pushMeSimplified(pubkey))
+      txOut.publicKeyScript == Script.write(pay2wsh(pushMeSimplified(pubkey)))
     }.map(_._2)
   }
 
