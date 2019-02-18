@@ -234,7 +234,7 @@ object Helpers {
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
     def makeFirstCommitTxs(keyManager: KeyManager, temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
-      implicit val commitmentContext = Helpers.hasOptionSimplifiedCommitment(localParams) match {
+      implicit val commitmentContext = Helpers.canUseSimplifiedCommitment(localParams, remoteParams) match {
         case true => ContextSimplifiedCommitment
         case false => ContextCommitmentV1
       }
@@ -322,8 +322,16 @@ object Helpers {
     }
   }
 
-  def hasOptionSimplifiedCommitment[T <: ParamsWithFeatures](params: T) = Features.hasFeature(params.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_OPTIONAL)
+  def canUseSimplifiedCommitment[T <: ParamsWithFeatures](local: T, remote: T) = {
+    val localHasOptionalSupport = Features.hasFeature(local.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_OPTIONAL)
+    val localHasMandatorySupport = Features.hasFeature(local.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_MANDATORY)
+    val remoteHasOptionalSupport = Features.hasFeature(remote.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_OPTIONAL)
+    val remoteHasMandatorySupport = Features.hasFeature(remote.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_MANDATORY)
 
+    (remoteHasMandatorySupport && (localHasMandatorySupport || localHasOptionalSupport))  ||
+    (localHasMandatorySupport && (remoteHasMandatorySupport || remoteHasOptionalSupport)) ||
+    (localHasOptionalSupport && remoteHasOptionalSupport)
+  }
 
   object Closing {
 

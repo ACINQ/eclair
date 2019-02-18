@@ -18,8 +18,9 @@ package fr.acinq.eclair
 
 import java.nio.ByteOrder
 
-import fr.acinq.bitcoin.Protocol
+import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.Features._
+import fr.acinq.eclair.channel.{Helpers, LocalParams, ParamsWithFeatures}
 import org.scalatest.FunSuite
 
 /**
@@ -45,6 +46,33 @@ class FeaturesSpec extends FunSuite {
   test("'option_simplified_commitment' feature") {
     val features = "0200"
     assert(areSupported(features) && hasFeature(features, OPTION_SIMPLIFIED_COMMITMENT_OPTIONAL))
+  }
+
+  test("Helpers should correctly detect if the peers negotiated 'option_simplified_commitment'") {
+
+    val optionalSupport = BinaryData("0200")
+    val mandatorySupport = BinaryData("0100")
+
+    val channelParamNoSupport = new {} with ParamsWithFeatures {
+      override val globalFeatures: BinaryData = BinaryData.empty
+      override val localFeatures: BinaryData = BinaryData.empty
+    }
+
+    val channelParamOptSupport = new {} with ParamsWithFeatures {
+      override val globalFeatures: BinaryData = BinaryData.empty
+      override val localFeatures: BinaryData = optionalSupport
+    }
+
+    val channelParamMandatorySupport = new {} with ParamsWithFeatures {
+      override val globalFeatures: BinaryData = BinaryData.empty
+      override val localFeatures: BinaryData = mandatorySupport
+    }
+
+    assert(Helpers.canUseSimplifiedCommitment(local = channelParamOptSupport, remote = channelParamOptSupport) == true)
+    assert(Helpers.canUseSimplifiedCommitment(local = channelParamOptSupport, remote = channelParamNoSupport) == false)
+    assert(Helpers.canUseSimplifiedCommitment(local = channelParamOptSupport, remote = channelParamMandatorySupport) == true)
+    assert(Helpers.canUseSimplifiedCommitment(local = channelParamMandatorySupport, remote = channelParamMandatorySupport) == true)
+    assert(Helpers.canUseSimplifiedCommitment(local = channelParamNoSupport, remote = channelParamMandatorySupport) == false)
   }
 
 
