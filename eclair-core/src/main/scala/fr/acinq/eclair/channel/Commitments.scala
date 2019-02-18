@@ -42,8 +42,7 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, rem
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 // @formatter:on
 
-//TODO seal this!
-trait Commitments {
+sealed trait Commitments {
 
   val localParams: LocalParams
   val remoteParams: RemoteParams
@@ -371,6 +370,7 @@ object Commitments {
     // update_fee replace each other, so we can remove previous ones
     val commitments1 = commitments match {
       case c: CommitmentsV1 => c.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
+      case _: SimplifiedCommitment => throw new IllegalArgumentException(s"Should not send fee update when using simplified_commitment=$commitments")
     }
     val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
 
@@ -414,6 +414,7 @@ object Commitments {
     // update_fee replace each other, so we can remove previous ones
     val commitments1 = commitments match {
       case c: CommitmentsV1 => c.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
+      case _: SimplifiedCommitment => throw new IllegalArgumentException(s"Should not send fee update when using simplified_commitment=$commitments")
     }
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
 

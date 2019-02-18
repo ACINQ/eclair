@@ -239,6 +239,7 @@ object Helpers {
         case false => ContextCommitmentV1
       }
 
+      // TODO adjust for option_simplified_commitment
       val toLocalMsat = if (localParams.isFunder) fundingSatoshis * 1000 - pushMsat else pushMsat
       val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingSatoshis * 1000 - pushMsat
 

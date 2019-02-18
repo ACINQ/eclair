@@ -526,6 +526,7 @@ object Transactions {
     HtlcPenaltyTx(input, tx1)
   }
 
+  // TODO adjust for option_simplified_commitment
   def makeClosingTx(commitTxInput: InputInfo, localScriptPubKey: BinaryData, remoteScriptPubKey: BinaryData, localIsFunder: Boolean, dustLimit: Satoshi, closingFee: Satoshi, spec: CommitmentSpec): ClosingTx = {
     require(spec.htlcs.isEmpty, "there shouldn't be any pending htlcs")
 
