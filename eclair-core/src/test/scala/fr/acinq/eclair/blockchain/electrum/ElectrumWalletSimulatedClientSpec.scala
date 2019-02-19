@@ -229,4 +229,20 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     }
     wallet ! HeaderSubscriptionResponse(wallet.stateData.blockchain.tip.height + 1, bad)
   }
+
+  test("clear status when we have pending history requests") {
+    while (client.msgAvailable) {
+      client.receiveOne(100 milliseconds)
+    }
+    // tell wallet that there is something for our first account key
+    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(wallet.stateData.accountKeys(0).publicKey)
+    wallet ! ScriptHashSubscriptionResponse(scriptHash, "010101")
+    client.expectMsg(GetScriptHashHistory(scriptHash))
+    assert(wallet.stateData.status(scriptHash) == "010101")
+
+    // disconnect wallet
+    wallet ! ElectrumDisconnected
+    awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
+    assert(wallet.stateData.status.get(scriptHash).isEmpty)
+  }
 }
