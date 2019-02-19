@@ -95,7 +95,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     listener.expectMsgType[NewWalletReceiveAddress]
     listener.send(wallet, GetXpub)
     val GetXpubResponse(xpub, path) = listener.expectMsgType[GetXpubResponse]
-    assert(xpub == "tpubDCY62b4okoTERzMurvrtoCMgkswfLufejmhwfShqAKDBN2PPNUWpwx72cvyt4R8enGstorHvXNGS8StbkAsPb7XSbYFER8Wo6zPf1Z6m9w4")
+    assert(xpub == "upub5DffbMENbUsLcJbhufWvy1jourQfXfC6SoYyxhy2gPKeTSGzYHB3wKTnKH2LYCDemSzZwqzNcHNjnQZJCDn7Jy2LvvQeysQ6hrcK5ogp11B")
     assert(path == "m/49'/1'/0'")
   }
 
