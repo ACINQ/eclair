@@ -282,12 +282,12 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       val (height, header) = parseBlockHeader(json.result)
       log.debug("connected to server={}, tip={} height={}", serverAddress, header.hash, height)
       statusListeners.map(_ ! ElectrumReady(height, header, serverAddress))
-      context become connected(ctx, height, header, "", Map())
+      context become connected(ctx, height, header, Map())
 
     case AddStatusListener(actor) => statusListeners += actor
   }
 
-  def connected(ctx: ChannelHandlerContext, height: Int, tip: BlockHeader, buffer: String, requests: Map[String, (Request, ActorRef)]): Receive = {
+  def connected(ctx: ChannelHandlerContext, height: Int, tip: BlockHeader, requests: Map[String, (Request, ActorRef)]): Receive = {
     case AddStatusListener(actor) =>
       statusListeners += actor
       actor ! ElectrumReady(height, tip, serverAddress)
@@ -308,7 +308,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
           context watch actor
         case _ => ()
       }
-      context become connected(ctx, height, tip, buffer, requests + (curReqId -> (request, sender())))
+      context become connected(ctx, height, tip, requests + (curReqId -> (request, sender())))
 
     case Right(json: JsonRPCResponse) =>
       requests.get(json.id) match {
@@ -319,7 +319,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
         case None =>
           log.warning("server={} could not find requestor for reqId=${} response={}", serverAddress, json.id, json)
       }
-      context become connected(ctx, height, tip, buffer, requests - json.id)
+      context become connected(ctx, height, tip, requests - json.id)
 
     case Left(response: HeaderSubscriptionResponse) => headerSubscriptions.map(_ ! response)
 
@@ -329,7 +329,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
     case HeaderSubscriptionResponse(height, newtip) =>
       log.info("server={} new tip={}", serverAddress, newtip)
-      context become connected(ctx, height, newtip, buffer, requests)
+      context become connected(ctx, height, newtip, requests)
   }
 }
 
