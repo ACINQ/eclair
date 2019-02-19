@@ -115,8 +115,8 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments match {
-        case c: CommitmentsV1 => c.copy(
-          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))
+        case c: CommitmentsV1 => c.copy(localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))
+        case _: SimplifiedCommitment => ???
       }))
   }
 
@@ -146,6 +146,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, fulfill)
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == (initialState.commitments match {
       case c: CommitmentsV1 => c.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill))
+      case _: SimplifiedCommitment => ???
     }))
   }
 
@@ -191,6 +192,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments match {
+        case _: SimplifiedCommitment => ???
         case c: CommitmentsV1 => c.copy(
           localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))
       }))
@@ -214,6 +216,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments match {
+        case _: SimplifiedCommitment => ???
         case c: CommitmentsV1 => c.copy(
           localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))
       }))
@@ -244,6 +247,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fail = UpdateFailHtlc("00" * 32, 1, "00" * 152)
     sender.send(alice, fail)
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == (initialState.commitments match {
+      case _: SimplifiedCommitment => ???
       case c: CommitmentsV1 => c.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))
     }))
   }
@@ -271,6 +275,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fail = UpdateFailMalformedHtlc("00" * 32, 1, Crypto.sha256(BinaryData.empty), FailureMessageCodecs.BADONION)
     sender.send(alice, fail)
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == (initialState.commitments match {
+      case _: SimplifiedCommitment => ???
       case c: CommitmentsV1 => c.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))
     }))
   }
@@ -516,6 +521,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fee = alice2bob.expectMsgType[UpdateFee]
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments match {
+        case _: SimplifiedCommitment => ???
         case c: CommitmentsV1 => c.copy(
           localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee))
       }))
@@ -536,6 +542,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fee = UpdateFee("00" * 32, 12000)
     bob ! fee
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments match {
+      case _: SimplifiedCommitment => ???
       case c: CommitmentsV1 => c.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee))
     }))
   }

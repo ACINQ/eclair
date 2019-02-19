@@ -116,6 +116,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     val funding_pubkey = funding_privkey.publicKey
     val payment_privkey = Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
     val per_commitment_point = Point(BinaryData("022c76692fd70814a8d1ed9dedc833318afaaed8188db4d14727e2e99bc619d325"))
+    val delayed_payment_pubkey = Generators.derivePubKey(payment_basepoint, per_commitment_point)
   }
 
   val coinbaseTx = Transaction.read("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0100f2052a010000001976a9143ca33c2e4446f4a305f23c80df8ad1afdcf652f988ac00000000")
@@ -189,6 +190,7 @@ class TestVectorsSpec extends FunSuite with Logging {
         Local.revocation_pubkey, Local.toSelfDelay,
         Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
         Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
+        Remote.delayed_payment_pubkey,
         spec)(ContextCommitmentV1)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
@@ -219,6 +221,7 @@ class TestVectorsSpec extends FunSuite with Logging {
         Local.revocation_pubkey, Local.toSelfDelay,
         Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
         Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
+        Remote.delayed_payment_pubkey,
         spec)(ContextCommitmentV1)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey)

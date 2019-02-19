@@ -174,6 +174,7 @@ class TransactionsSpec extends FunSuite with Logging {
     val localPaymentPriv = PrivateKey(BinaryData("a4" * 32) :+ 1.toByte)
     val localDelayedPaymentPriv = PrivateKey(BinaryData("a5" * 32) :+ 1.toByte)
     val remotePaymentPriv = PrivateKey(BinaryData("a6" * 32) :+ 1.toByte)
+    val remoteDelayedPaymentPriv = PrivateKey(BinaryData("a9" * 32) :+ 1.toByte)
     val localHtlcPriv = PrivateKey(BinaryData("a7" * 32) :+ 1.toByte)
     val remoteHtlcPriv = PrivateKey(BinaryData("a8" * 32) :+ 1.toByte)
     val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(BinaryData("a9" * 32), true).publicKey))
@@ -205,21 +206,21 @@ class TransactionsSpec extends FunSuite with Logging {
       toRemoteMsat = millibtc2satoshi(MilliBtc(300)).amount * 1000)
 
     val commitTxNumber = 0x404142434445L
-    val commitTx = {
-      val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)(ContextCommitmentV1)
+    def commitTx(commitContext: CommitmentContext = ContextCommitmentV1) = {
+      val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey,  remoteDelayedPaymentPriv.publicKey, spec)(commitContext)
       val localSig = Transactions.sign(txinfo, localPaymentPriv)
       val remoteSig = Transactions.sign(txinfo, remotePaymentPriv)
       Transactions.addSigs(txinfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
     }
 
     {
-      assert(getCommitTxNumber(commitTx.tx, true, localPaymentPriv.publicKey, remotePaymentPriv.publicKey) == commitTxNumber)
+      assert(getCommitTxNumber(commitTx().tx, true, localPaymentPriv.publicKey, remotePaymentPriv.publicKey) == commitTxNumber)
       val hash: Array[Byte] = Crypto.sha256(localPaymentPriv.publicKey.toBin ++ remotePaymentPriv.publicKey.toBin)
       val num = Protocol.uint64(hash.takeRight(8), ByteOrder.BIG_ENDIAN) & 0xffffffffffffL
-      val check = ((commitTx.tx.txIn(0).sequence & 0xffffff) << 24) | (commitTx.tx.lockTime)
+      val check = ((commitTx().tx.txIn(0).sequence & 0xffffff) << 24) | (commitTx().tx.lockTime)
       assert((check ^ num) == commitTxNumber)
     }
-    val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
+    val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx().tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
 
     assert(htlcTimeoutTxs.size == 2) // htlc1 and htlc3
     assert(htlcSuccessTxs.size == 2) // htlc2 and htlc4
@@ -232,6 +233,19 @@ class TransactionsSpec extends FunSuite with Logging {
         val signed = addSigs(htlcTimeoutTx, localSig, remoteSig)
         assert(checkSpendable(signed).isSuccess)
       }
+    }
+
+    {
+      // Simplified commitment
+      val commitTransaction = commitTx(commitContext = ContextSimplifiedCommitment)
+      // there must be 2 push-me outputs
+      val toLocalPushMe = Script.write(pay2wsh(Scripts.pushMeSimplified(localDelayedPaymentPriv.publicKey)))    // to_local_pushme uses local_delayedpubkey
+      val toRemotePushMe = Script.write(pay2wsh(Scripts.pushMeSimplified(remoteDelayedPaymentPriv.publicKey)))  // to_remote_pushme uses remote_delayedpubkey
+      assert(commitTransaction.tx.txOut.exists(_.publicKeyScript == toLocalPushMe))
+      assert(commitTransaction.tx.txOut.exists(_.publicKeyScript == toRemotePushMe))
+      // to_remote is delayed with to_self_delay
+      val toRemoteDelayed = Script.write(pay2wsh(Scripts.toRemoteDelayed(remotePaymentPriv.publicKey, toLocalDelay)))
+      assert(commitTransaction.tx.txOut.exists(_.publicKeyScript == toRemoteDelayed))
     }
 
     {
@@ -249,7 +263,7 @@ class TransactionsSpec extends FunSuite with Logging {
     {
       // remote spends local->remote htlc1/htlc3 output directly in case of success
       for ((htlc, paymentPreimage) <- (htlc1, paymentPreimage1) :: (htlc3, paymentPreimage3) :: Nil) {
-        val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx.tx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
+        val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx().tx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
         val localSig = sign(claimHtlcSuccessTx, remoteHtlcPriv)
         val signed = addSigs(claimHtlcSuccessTx, localSig, paymentPreimage)
         assert(checkSpendable(signed).isSuccess)
@@ -282,7 +296,7 @@ class TransactionsSpec extends FunSuite with Logging {
 
     {
       // remote spends main output
-      val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)(ContextCommitmentV1)
+      val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx().tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)(ContextCommitmentV1)
       val localSig = sign(claimP2WPKHOutputTx, remotePaymentPriv)
       val signedTx = addSigs(claimP2WPKHOutputTx, remotePaymentPriv.publicKey, localSig)
       assert(checkSpendable(signedTx).isSuccess)
@@ -290,7 +304,7 @@ class TransactionsSpec extends FunSuite with Logging {
 
     {
       // remote spends remote->local htlc output directly in case of timeout
-      val claimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx.tx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc2, feeratePerKw)
+      val claimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx().tx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc2, feeratePerKw)
       val localSig = sign(claimHtlcTimeoutTx, remoteHtlcPriv)
       val signed = addSigs(claimHtlcTimeoutTx, localSig)
       assert(checkSpendable(signed).isSuccess)
@@ -299,7 +313,7 @@ class TransactionsSpec extends FunSuite with Logging {
     {
       // remote spends offered HTLC output with revocation key
       val script = Script.write(Scripts.htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc1.paymentHash)))
-      val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx.tx, outputsAlreadyUsed = Set.empty, script, localDustLimit, finalPubKeyScript, feeratePerKw)
+      val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx().tx, outputsAlreadyUsed = Set.empty, script, localDustLimit, finalPubKeyScript, feeratePerKw)
       val sig = sign(htlcPenaltyTx, localRevocationPriv)
       val signed = addSigs(htlcPenaltyTx, sig, localRevocationPriv.publicKey)
       assert(checkSpendable(signed).isSuccess)
@@ -308,7 +322,7 @@ class TransactionsSpec extends FunSuite with Logging {
     {
       // remote spends received HTLC output with revocation key
       val script = Script.write(Scripts.htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc2.paymentHash), htlc2.cltvExpiry))
-      val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx.tx, outputsAlreadyUsed = Set.empty, script, localDustLimit, finalPubKeyScript, feeratePerKw)
+      val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx().tx, outputsAlreadyUsed = Set.empty, script, localDustLimit, finalPubKeyScript, feeratePerKw)
       val sig = sign(htlcPenaltyTx, localRevocationPriv)
       val signed = addSigs(htlcPenaltyTx, sig, localRevocationPriv.publicKey)
       assert(checkSpendable(signed).isSuccess)

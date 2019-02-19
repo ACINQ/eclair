@@ -192,7 +192,7 @@ object Transactions {
 
   def decodeTxNumber(sequence: Long, locktime: Long): Long = ((sequence & 0xffffffL) << 24) + (locktime & 0xffffffL)
 
-  def makeCommitTx(commitTxInput: InputInfo, commitTxNumber: Long, localPaymentBasePoint: Point, remotePaymentBasePoint: Point, localIsFunder: Boolean, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, remotePaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec)(implicit commitmentContext: CommitmentContext): CommitTx = commitmentContext match {
+  def makeCommitTx(commitTxInput: InputInfo, commitTxNumber: Long, localPaymentBasePoint: Point, remotePaymentBasePoint: Point, localIsFunder: Boolean, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, remotePaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, remoteDelayedPaymentPubkey: PublicKey, spec: CommitmentSpec)(implicit commitmentContext: CommitmentContext): CommitTx = commitmentContext match {
 
     case ContextCommitmentV1 =>
       val commitFee = commitTxFee(localDustLimit, spec)
@@ -240,7 +240,7 @@ object Transactions {
         .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash), htlc.add.cltvExpiry))))
 
       val toLocalPushMe_opt = if (toLocalDelayedOutput_opt.isDefined) Some(TxOut(pushMeValue, pay2wsh(pushMeSimplified(localDelayedPaymentPubkey)))) else None
-      val toRemotePushMe_opt = if (toRemoteOutput_opt.isDefined) Some(TxOut(pushMeValue, pay2wsh(pushMeSimplified(remotePaymentPubkey)))) else None
+      val toRemotePushMe_opt = if (toRemoteOutput_opt.isDefined) Some(TxOut(pushMeValue, pay2wsh(pushMeSimplified(remoteDelayedPaymentPubkey)))) else None
 
       val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
       val (sequence, locktime) = encodeTxNumber(txnumber)
