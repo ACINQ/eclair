@@ -127,8 +127,13 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           pendingTransactionRequests = Set(),
           pendingTransactions = persisted.pendingTransactions,
           lastReadyMessage = None)
-      case _ =>
-        log.info("starting with a default wallet")
+      case Success(None) =>
+        log.info(s"wallet db is empty, starting with a default wallet")
+        val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
+        val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
+        Data(params, blockchain1, firstAccountKeys, firstChangeKeys)
+      case Failure(exception) =>
+        log.info(s"cannot read wallet db ($exception), starting with a default wallet")
         val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
         val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
         Data(params, blockchain1, firstAccountKeys, firstChangeKeys)
@@ -331,9 +336,11 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
             case (Some(previousHeight), height) if previousHeight != height =>
               // there was a reorg
               context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations, data.computeTimestamp(txid, params.walletDb)))
-              downloadHeadersIfMissing(height.toInt)
-              client ! GetMerkle(txid, height.toInt)
-            case (Some(previousHeight), height) if previousHeight == height && data.proofs.get(txid).isEmpty =>
+              if (height > 0) {
+                downloadHeadersIfMissing(height.toInt)
+                client ! GetMerkle(txid, height.toInt)
+              }
+            case (Some(previousHeight), height) if previousHeight == height && height > 0 && data.proofs.get(txid).isEmpty =>
               downloadHeadersIfMissing(height.toInt)
               client ! GetMerkle(txid, height.toInt)
             case (Some(previousHeight), height) if previousHeight == height =>
@@ -440,7 +447,10 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(ElectrumClient.ElectrumDisconnected, data) =>
       log.info(s"wallet got disconnected")
+      // remove status for each script hash for which we have pending requests
+      // this will make us query script hash history for these script hashes again when we reconnect
       goto(DISCONNECTED) using data.copy(
+        status = data.status -- data.pendingHistoryRequests,
         pendingHistoryRequests = Set(),
         pendingTransactionRequests = Set(),
         pendingHeadersRequests = Set(),
@@ -650,8 +660,7 @@ object ElectrumWallet {
     * @param blockchain                 blockchain
     * @param accountKeys                account keys
     * @param changeKeys                 change keys
-    * @param status                     script hash -> status; "" means that the script hash has not been used
-    *                                   yet
+    * @param status                     script hash -> status; "" means that the script hash has not been used yet
     * @param transactions               wallet transactions
     * @param heights                    transactions heights
     * @param history                    script hash -> history
@@ -665,7 +674,7 @@ object ElectrumWallet {
                   changeKeys: Vector[ExtendedPrivateKey],
                   status: Map[BinaryData, String],
                   transactions: Map[BinaryData, Transaction],
-                  heights: Map[BinaryData, Long],
+                  heights: Map[BinaryData, Int],
                   history: Map[BinaryData, List[ElectrumClient.TransactionHistoryItem]],
                   proofs: Map[BinaryData, GetMerkleResponse],
                   locks: Set[Transaction],
@@ -1000,7 +1009,7 @@ object ElectrumWallet {
             }
             history + (scriptHash -> entry)
         }
-      this.copy(locks = this.locks - tx, transactions = this.transactions + (tx.txid -> tx), heights = this.heights + (tx.txid -> 0L), history = history1)
+      this.copy(locks = this.locks - tx, transactions = this.transactions + (tx.txid -> tx), heights = this.heights + (tx.txid -> 0), history = history1)
     }
 
     /**
@@ -1038,7 +1047,7 @@ object ElectrumWallet {
                             changeKeysCount: Int,
                             status: Map[BinaryData, String],
                             transactions: Map[BinaryData, Transaction],
-                            heights: Map[BinaryData, Long],
+                            heights: Map[BinaryData, Int],
                             history: Map[BinaryData, List[ElectrumClient.TransactionHistoryItem]],
                             proofs: Map[BinaryData, GetMerkleResponse],
                             pendingTransactions: List[Transaction],
