@@ -56,15 +56,10 @@ deprecatedrpc=signrawtransaction
 
 The released binaries can be downloaded [here](https://github.com/ACINQ/eclair/releases).
 
-#### Windows
-
-Just use the windows installer, it should create a shortcut on your desktop.
-
-#### Linux, macOS or manual install on Windows
+#### Installing Java
 
 You need to first install java. Eclair will run on [Oracle JRE 1.8](http://www.oracle.com/technetwork/java/javase/downloads/jre8-downloads-2133155.html), [Oracle JDK 11](https://www.oracle.com/technetwork/java/javase/downloads/jdk11-downloads-5066655.html) and [Open JDK 11](https://jdk.java.net/11/).
-We recommend that use use [Open JDK 11](https://jdk.java.net/11/). You can download binaries for your OS from [adoptopenjdk](https://adoptopenjdk.net/), which packages both JDK (Java Development Kit) and JRE (Java Runtime Environment, which
-is a stripped down version of the JDK minus development tools). If you don't plan to build eclair you should download the JRE binaries.
+We recommend that use use [Open JDK 11](https://jdk.java.net/11/).
 
 Then download the latest fat jar and depending on whether or not you want a GUI run the following command:
 * with GUI:
