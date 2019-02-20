@@ -629,7 +629,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
 
-    case Event(c@CMD_SIGN, d@DATA_NORMAL(commitments: CommitmentsV1, _, _, _, _, _, _)) =>
+    case Event(c@CMD_SIGN, d@DATA_NORMAL(commitments: Commitments, _, _, _, _, _, _)) =>
       commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(commitments) =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
@@ -667,7 +667,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           }
         case Left(waitForRevocation) =>
           log.debug(s"already in the process of signing, will sign again as soon as possible")
-          val commitments1 = commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
+          val commitments1 = commitments match {
+            case c: CommitmentsV1 => c.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
+            case s: SimplifiedCommitment => s.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
+          }
           stay using d.copy(commitments = commitments1)
       }
 

@@ -30,6 +30,7 @@ case object OUT extends Direction { def opposite = IN }
 
 case class DirectedHtlc(direction: Direction, add: UpdateAddHtlc)
 
+// TODO consider option_simplified_commitment
 final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocalMsat: Long, toRemoteMsat: Long) {
   val totalFunds = toLocalMsat + toRemoteMsat + htlcs.toSeq.map(_.add.amountMsat).sum
 }

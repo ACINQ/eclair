@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.states.e
 import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.Scalar
+import fr.acinq.bitcoin.Crypto.{PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
@@ -847,6 +847,36 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localChanges.acked.size == 1)
+  }
+
+  test("recv RevokeAndAck (one htlc sent, simplified_commitment)", Tag("simplified_commitment")) { f =>
+    import f._
+    val sender = TestProbe()
+
+    val aliceStatePre = alice.stateData.asInstanceOf[DATA_NORMAL]
+
+    // get the remote pubkey (used in to_remote output)
+    val startingPaymentPubkey = PublicKey(aliceStatePre.commitments.remoteParams.paymentBasepoint)
+
+    // now alice offers to bob an htlc
+    addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+
+    // alice signs it's state and sends a commit to bob
+    sender.send(alice, CMD_SIGN)
+    sender.expectMsg("ok")
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+
+    // bob acknowledges and sends back revoke_and_ack
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+
+    // TEST in alice's view bob remotePaymentPubkey (remote_pubkey) stays the same across commitments
+    awaitCond({
+      alice.stateName == NORMAL &&
+      PublicKey(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteParams.paymentBasepoint) == startingPaymentPubkey
+    })
+
   }
 
   test("recv RevokeAndAck (one htlc received)") { f =>

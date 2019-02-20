@@ -445,44 +445,44 @@ object Commitments {
 
     import commitments._
 
-    commitments match {
-      case _: SimplifiedCommitment => ???
-      case c: CommitmentsV1 =>
-        c.remoteNextCommitInfo match {
-          case Right(_) if !localHasChanges(c) =>
-            throw CannotSignWithoutChanges(c.channelId)
-          case Right(remoteNextPerCommitmentPoint) =>
-            // remote commitment will includes all local changes + remote acked changes
-            val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-            val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, commitments.localCommit.index + 1)
-            val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(keyManager, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, localPerCommitmentPoint, spec)
-            val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath))
+    commitments.remoteNextCommitInfo match {
+      case Right(_) if !localHasChanges(commitments) =>
+        throw CannotSignWithoutChanges(commitments.channelId)
+      case Right(remoteNextPerCommitmentPoint) =>
+        // remote commitment will includes all local changes + remote acked changes
+        val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
+        val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, commitments.localCommit.index + 1)
+        val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(keyManager, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, localPerCommitmentPoint, spec)
+        val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath))
 
-            val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
-            val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), remoteNextPerCommitmentPoint))
+        val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
+        val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), remoteNextPerCommitmentPoint))
 
-            // NB: IN/OUT htlcs are inverted because this is the remote commit
-            log.info(s"built remote commit number=${remoteCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), remoteCommitTx.tx)
+        // NB: IN/OUT htlcs are inverted because this is the remote commit
+        log.info(s"built remote commit number=${remoteCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), remoteCommitTx.tx)
 
-            // don't sign if they don't get paid
-            val commitSig = CommitSig(
-              channelId = c.channelId,
-              signature = sig,
-              htlcSignatures = htlcSigs.toList
-            )
+        // don't sign if they don't get paid
+        val commitSig = CommitSig(
+          channelId = commitments.channelId,
+          signature = sig,
+          htlcSignatures = htlcSigs.toList
+        )
 
-            val commitments1 = c.copy(
-              remoteNextCommitInfo = Left(WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig, commitments.localCommit.index)),
-              localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
-              remoteChanges = remoteChanges.copy(acked = Nil, signed = remoteChanges.acked))
-
-            (commitments1, commitSig)
-          case Left(_) =>
-            throw CannotSignBeforeRevocation(commitments.channelId)
+        val commitments1 = commitments match {
+          case c:CommitmentsV1 => c.copy(
+            remoteNextCommitInfo = Left(WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig, commitments.localCommit.index)),
+            localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
+            remoteChanges = remoteChanges.copy(acked = Nil, signed = remoteChanges.acked))
+          case s: SimplifiedCommitment => s.copy(
+            remoteNextCommitInfo = Left(WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig, commitments.localCommit.index)),
+            localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
+            remoteChanges = remoteChanges.copy(acked = Nil, signed = remoteChanges.acked))
         }
 
-    }
-  }
+        (commitments1, commitSig)
+      case Left(_) =>
+        throw CannotSignBeforeRevocation(commitments.channelId)
+    }  }
 
   def receiveCommit(commitments: Commitments, commit: CommitSig, keyManager: KeyManager)(implicit log: LoggingAdapter): (Commitments, RevokeAndAck) = {
     implicit val commitmentContext = commitments.getContext
@@ -563,7 +563,7 @@ object Commitments {
     val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
     val commitments1 = commitments match {
       case c: CommitmentsV1 => c.copy(localCommit = localCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
-      case _: SimplifiedCommitment => ???
+      case s: SimplifiedCommitment => s.copy(localCommit = localCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
     }
 
     (commitments1, revocation)
@@ -605,7 +605,13 @@ object Commitments {
             remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
             remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index),
             originChannels = originChannels1)
-          case _: SimplifiedCommitment => ???
+          case s: SimplifiedCommitment => s.copy(
+            localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
+            remoteChanges = remoteChanges.copy(signed = Nil),
+            remoteCommit = theirNextCommit,
+            remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
+            remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index),
+            originChannels = originChannels1)
         }
 
         (commitments1, forwards)
