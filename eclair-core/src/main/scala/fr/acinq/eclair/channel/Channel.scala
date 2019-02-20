@@ -1705,12 +1705,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     context.system.eventStream.publish(ChannelFailed(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, RemoteError(e)))
 
     d match {
-      case dd: HasCommitments if Closing.nothingAtStake(dd) => goto(CLOSED)
       case _: DATA_CLOSING => stay // nothing to do, there is already a spending tx published
       case negotiating@DATA_NEGOTIATING(_, _, _, _, Some(bestUnpublishedClosingTx)) =>
         // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
         handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
-      case hasCommitments: HasCommitments => spendLocalCurrent(hasCommitments)
+      case hasCommitments: HasCommitments => spendLocalCurrent(hasCommitments) // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
       case _ => goto(CLOSED) // when there is no commitment yet, we just go to CLOSED state in case an error occurs
     }
   }
