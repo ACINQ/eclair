@@ -414,7 +414,7 @@ object Commitments {
     // update_fee replace each other, so we can remove previous ones
     val commitments1 = commitments match {
       case c: CommitmentsV1 => c.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-`      case _: SimplifiedCommitment => throw CannotUpdateFeeWithCommitmentType(commitments.channelId)
+      case _: SimplifiedCommitment => throw CannotUpdateFeeWithCommitmentType(commitments.channelId)
     }
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
 
