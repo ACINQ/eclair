@@ -49,7 +49,10 @@ case class RouterConf(randomizeRouteSelection: Boolean,
                       searchMaxFeeBaseSat: Long,
                       searchMaxFeePct: Double,
                       searchMaxRouteLength: Int,
-                      searchMaxCltv: Int)
+                      searchMaxCltv: Int,
+                      searchRatioCltv: Double,
+                      searchRatioChannelAge: Double,
+                      searchRatioChannelCapacity: Double)
 
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
@@ -122,9 +125,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     routeMaxLength = nodeParams.routerConf.searchMaxRouteLength,
     routeMaxCltv = nodeParams.routerConf.searchMaxCltv,
     ratios = WeightRatios(
-      cltvDeltaFactor = 0,
-      ageFactor = 0,
-      capacityFactor = 0
+      cltvDeltaFactor = nodeParams.routerConf.searchRatioCltv,
+      ageFactor = nodeParams.routerConf.searchRatioChannelAge,
+      capacityFactor = nodeParams.routerConf.searchRatioChannelCapacity
     )
   )
 
