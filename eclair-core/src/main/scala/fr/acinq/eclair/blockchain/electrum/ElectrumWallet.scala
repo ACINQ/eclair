@@ -485,10 +485,9 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(GetData, data) => stay replying GetDataResponse(data)
 
-    case Event(GetXpub, _) => {
+    case Event(GetXpub, _) =>
       val (xpub, path) = computeXpub(master, chainHash)
       stay replying GetXpubResponse(xpub, path)
-    }
 
     case Event(ElectrumClient.BroadcastTransaction(tx), _) => stay replying ElectrumClient.BroadcastTransactionResponse(tx, Some(Error(-1, "wallet is not connected")))
   }
