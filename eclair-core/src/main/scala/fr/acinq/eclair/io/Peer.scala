@@ -70,13 +70,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(Reconnect, d: DisconnectedData) =>
       d.address_opt match {
-        case None => stay()// no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
-        case _ if d.channels.isEmpty => stay()// no-op (no more channels with this peer)
+        case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
+        case _ if d.channels.isEmpty => stay // no-op (no more channels with this peer)
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           // exponential backoff retry with a finite max
           setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 60) seconds, repeat = false)
-          stay()using d.copy(attempts = d.attempts + 1)
+          stay using d.copy(attempts = d.attempts + 1)
       }
 
     case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, address, outgoing, origin_opt), d: DisconnectedData) =>
@@ -108,10 +108,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         // we have no existing channels, we can forget about this peer
         stopPeer()
       } else {
-        stay()using d.copy(channels = channels1)
+        stay using d.copy(channels = channels1)
       }
 
-    case Event(_: wire.LightningMessage, _) => stay()// we probably just got disconnected and that's the last messages we received
+    case Event(_: wire.LightningMessage, _) => stay // we probably just got disconnected and that's the last messages we received
   }
 
   when(INITIALIZING) {
@@ -174,7 +174,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         // we have no existing channels, we can forget about this peer
         stopPeer()
       } else {
-        stay()using d.copy(channels = channels1)
+        stay using d.copy(channels = channels1)
       }
   }
 
@@ -196,7 +196,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         val ping = wire.Ping(pongSize, BinaryData("00" * pingSize))
         setTimer(PingTimeout.toString, PingTimeout(ping), nodeParams.pingTimeout, repeat = false)
         d.transport ! ping
-        stay()using d.copy(expectedPong_opt = Some(ExpectedPong(ping)))
+        stay using d.copy(expectedPong_opt = Some(ExpectedPong(ping)))
       } else {
         log.warning(s"can't send ping, already have one in flight")
         stay
@@ -235,7 +235,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         case None =>
           log.debug(s"received unexpected pong with size=${data.length}")
       }
-      stay()using d.copy(expectedPong_opt = None)
+      stay using d.copy(expectedPong_opt = None)
 
     case Event(err@wire.Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>
       d.transport ! TransportHandler.ReadAck(err)
@@ -260,7 +260,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val channelFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
       val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(Globals.feeratesPerKw.get.blocks_6)
       channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.transport, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
-      stay()using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+      stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
     case Event(msg: wire.OpenChannel, d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(msg)
@@ -271,7 +271,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           val temporaryChannelId = msg.temporaryChannelId
           channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.transport, d.remoteInit)
           channel ! msg
-          stay()using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+          stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
         case Some(_) =>
           log.warning(s"ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}")
           stay
@@ -297,7 +297,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
       // NB: we keep the temporary channel id because the switch is not always acknowledged at this point (see https://github.com/lightningnetwork/lightning-rfc/pull/151)
       // we won't clean it up, but we won't remember the temporary id on channel termination
-      stay()using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
+      stay using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
 
     case Event(RoutingState(channels, updates, nodes), d: ConnectedData) =>
       // let's send the messages
@@ -349,7 +349,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       } else {
         log.info(s"setting up gossipTimestampFilter=$msg")
         // update their timestamp filter
-        stay()using d.copy(gossipTimestampFilter = Some(msg))
+        stay using d.copy(gossipTimestampFilter = Some(msg))
       }
 
     case Event(msg: wire.RoutingMessage, d: ConnectedData) =>
@@ -399,11 +399,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
             d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1, ignoreNetworkAnnouncement = true)
           }
       }
-      stay()using d.copy(behavior = behavior1)
+      stay using d.copy(behavior = behavior1)
 
     case Event(ResumeAnnouncements, d: ConnectedData) =>
       log.info(s"resuming processing of network announcements for peer")
-      stay()using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
+      stay using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
 
     case Event(Disconnect, d: ConnectedData) =>
       d.transport ! PoisonPill
@@ -427,7 +427,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         log.info(s"that was the last open channel, closing the connection")
         d.transport ! PoisonPill
       }
-      stay()using d.copy(channels = d.channels -- channelIds)
+      stay using d.copy(channels = d.channels -- channelIds)
 
     case Event(h: Authenticator.Authenticated, d: ConnectedData) =>
       log.info(s"got new transport while already connected, switching to new transport")
@@ -451,19 +451,19 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       sender ! PeerInfo(remoteNodeId, stateName.toString, d.address_opt, d.channels.values.toSet.size) // we use toSet to dedup because a channel can have a TemporaryChannelId + a ChannelId
       stay
 
-    case Event(_: Rebroadcast, _) => stay()// ignored
+    case Event(_: Rebroadcast, _) => stay // ignored
 
-    case Event(_: RoutingState, _) => stay()// ignored
+    case Event(_: RoutingState, _) => stay // ignored
 
-    case Event(_: TransportHandler.ReadAck, _) => stay()// ignored
+    case Event(_: TransportHandler.ReadAck, _) => stay // ignored
 
-    case Event(Peer.Reconnect, _) => stay()// we got connected in the meantime
+    case Event(Peer.Reconnect, _) => stay // we got connected in the meantime
 
-    case Event(SendPing, _) => stay()// we got disconnected in the meantime
+    case Event(SendPing, _) => stay // we got disconnected in the meantime
 
-    case Event(_: Pong, _) => stay()// we got disconnected before receiving the pong
+    case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
 
-    case Event(_: PingTimeout, _) => stay()// we got disconnected after sending a ping
+    case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
   }
 
   onTransition {

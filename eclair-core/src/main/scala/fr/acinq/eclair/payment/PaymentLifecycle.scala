@@ -166,7 +166,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
   }
 
   whenUnhandled {
-    case Event(_: TransportHandler.ReadAck, _) => stay()// ignored, router replies with this when we forward a channel_update
+    case Event(_: TransportHandler.ReadAck, _) => stay // ignored, router replies with this when we forward a channel_update
   }
 
   def reply(to: ActorRef, e: PaymentResult) = {

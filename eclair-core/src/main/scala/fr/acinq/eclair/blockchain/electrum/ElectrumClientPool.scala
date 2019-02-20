@@ -95,7 +95,7 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
       if (tips1.isEmpty) {
         goto(Disconnected) using DisconnectedData // no more connections
       } else if (d.master != actor) {
-        stay()using d.copy(tips = tips1) // we don't care, this wasn't our master
+        stay using d.copy(tips = tips1) // we don't care, this wasn't our master
       } else {
         // we choose next best candidate as master
         val tips1 = d.tips - actor
@@ -119,7 +119,7 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
       stay
 
     case Event(ElectrumClient.ElectrumDisconnected, _) =>
-      stay()// ignored, we rely on Terminated messages to detect disconnections
+      stay // ignored, we rely on Terminated messages to detect disconnections
   }
 
   onTransition {
@@ -157,7 +157,7 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
         goto(Connected) using d.copy(master = connection, tips = d.tips + (connection -> (height, tip)))
       case Some(d) =>
         log.debug("received tip {} from {} at {}", tip, remoteAddress, height)
-        stay()using d.copy(tips = d.tips + (connection -> (height, tip)))
+        stay using d.copy(tips = d.tips + (connection -> (height, tip)))
     }
   }
 
