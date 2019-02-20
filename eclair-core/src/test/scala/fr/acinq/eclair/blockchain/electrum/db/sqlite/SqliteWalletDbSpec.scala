@@ -75,7 +75,9 @@ class SqliteWalletDbSpec extends FunSuite {
       0L
     )
 
-    def randomHistoryItem = ElectrumClient.TransactionHistoryItem(random.nextInt(1000000), randomBytes(32))
+    def randomHeight = if (random.nextBoolean()) random.nextInt(500000) else -1
+
+    def randomHistoryItem = ElectrumClient.TransactionHistoryItem(randomHeight, randomBytes(32))
 
     def randomHistoryItems = (0 to random.nextInt(100)).map(_ => randomHistoryItem).toList
 
@@ -89,7 +91,7 @@ class SqliteWalletDbSpec extends FunSuite {
         changeKeysCount = 10,
         status = (for (i <- 0 until random.nextInt(100)) yield randomBytes(32) -> random.nextInt(100000).toHexString).toMap,
         transactions = transactions.map(tx => tx.hash -> tx).toMap,
-        heights = transactions.map(tx => tx.hash -> random.nextInt(500000).toLong).toMap,
+        heights = transactions.map(tx => tx.hash -> randomHeight).toMap,
         history = (for (i <- 0 until random.nextInt(100)) yield randomBytes(32) -> randomHistoryItems).toMap,
         proofs = (for (i <- 0 until random.nextInt(100)) yield randomBytes(32) -> randomProof).toMap,
         pendingTransactions = transactions.toList,
