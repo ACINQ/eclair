@@ -414,7 +414,7 @@ object Commitments {
     // update_fee replace each other, so we can remove previous ones
     val commitments1 = commitments match {
       case c: CommitmentsV1 => c.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-      case _: SimplifiedCommitment => throw new IllegalArgumentException(s"Should not send fee update when using simplified_commitment=$commitments")
+`      case _: SimplifiedCommitment => throw CannotUpdateFeeWithCommitmentType(commitments.channelId)
     }
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
 
@@ -507,7 +507,7 @@ object Commitments {
     val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
     val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, commitments.localCommit.index + 1)
     val remotePerCommitmentPoint = remoteNextCommitInfo match {
-      case Left(_) => throw new IllegalArgumentException("Received commit while waiting for revocation")
+      case Left(_) => commitments.remoteCommit.remotePerCommitmentPoint
       case Right(point) => point
     }
 

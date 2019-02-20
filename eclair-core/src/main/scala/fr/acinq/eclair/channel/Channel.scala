@@ -729,7 +729,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         handleCommandSuccess(sender, store(d.copy(localShutdown = Some(shutdown)))) sending shutdown
       }
 
-    case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(commitments: CommitmentsV1, _, _, _, _, _, _)) =>
+    case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d: DATA_NORMAL) =>
       // they have pending unsigned htlcs         => they violated the spec, close the channel
       // they don't have pending unsigned htlcs
       //    we have pending unsigned htlcs
@@ -755,7 +755,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         d.commitments.remoteNextCommitInfo match {
           case Left(waitForRevocation) =>
             // yes, let's just schedule a new signature ASAP, which will include all pending unsigned htlcs
-            val commitments1 = commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
+            val commitments1 = d.commitments match {
+              case c: CommitmentsV1 => c.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
+              case s: SimplifiedCommitment => s.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
+
+            }
             // in the meantime we won't send new htlcs
             stay using d.copy(commitments = commitments1, remoteShutdown = Some(remoteShutdown))
           case Right(_) =>
@@ -1923,7 +1927,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         remoteChanges = d.commitments.remoteChanges.copy(proposed = Nil),
         localNextHtlcId = d.commitments.localNextHtlcId - d.commitments.localChanges.proposed.collect { case u: UpdateAddHtlc => u }.size,
         remoteNextHtlcId = d.commitments.remoteNextHtlcId - d.commitments.remoteChanges.proposed.collect { case u: UpdateAddHtlc => u }.size)
-      case _: SimplifiedCommitment => ???
+      case s: SimplifiedCommitment => s.copy(
+        localChanges = d.commitments.localChanges.copy(proposed = Nil),
+        remoteChanges = d.commitments.remoteChanges.copy(proposed = Nil),
+        localNextHtlcId = d.commitments.localNextHtlcId - d.commitments.localChanges.proposed.collect { case u: UpdateAddHtlc => u }.size,
+        remoteNextHtlcId = d.commitments.remoteNextHtlcId - d.commitments.remoteChanges.proposed.collect { case u: UpdateAddHtlc => u }.size)
     }
 
 
