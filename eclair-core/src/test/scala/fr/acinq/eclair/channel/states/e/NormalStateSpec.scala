@@ -849,14 +849,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localChanges.acked.size == 1)
   }
 
-  test("recv RevokeAndAck (one htlc sent, simplified_commitment)", Tag("simplified_commitment")) { f =>
+  test("recv RevokeAndAck (simplified_commitment - non rotating remote_pubkey)", Tag("simplified_commitment")) { f =>
     import f._
     val sender = TestProbe()
 
-    val aliceStatePre = alice.stateData.asInstanceOf[DATA_NORMAL]
-
-    // get the remote pubkey (used in to_remote output)
-    val startingPaymentPubkey = PublicKey(aliceStatePre.commitments.remoteParams.paymentBasepoint)
+    // get the remote pubkey (used in to_remote output) before the payment has been sent
+    val startingPaymentPubkey = PublicKey(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteParams.paymentBasepoint)
 
     // now alice offers to bob an htlc
     addHtlc(50000000, alice, bob, alice2bob, bob2alice)
