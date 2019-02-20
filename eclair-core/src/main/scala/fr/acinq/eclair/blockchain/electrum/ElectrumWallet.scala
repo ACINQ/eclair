@@ -228,7 +228,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
             }
             val (blockchain2, saveme) = Blockchain.optimize(blockchain1)
             saveme.grouped(RETARGETING_PERIOD).foreach(chunk => params.walletDb.addHeaders(chunk.head.height, chunk.map(_.header)))
-            stay using persistAndNotify(data.copy(blockchain = blockchain2))
+            stay()using persistAndNotify(data.copy(blockchain = blockchain2))
           case Failure(error) =>
             log.error(error, s"electrum server sent bad header, disconnecting")
             sender ! PoisonPill
@@ -237,7 +237,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       }
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash) == Some(status) =>
-      stay using persistAndNotify(data) // we already have it
+      stay()using persistAndNotify(data) // we already have it
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if !data.accountKeyMap.contains(scriptHash) && !data.changeKeyMap.contains(scriptHash) =>
       log.warning(s"received status=$status for scriptHash=$scriptHash which does not match any of our keys")
@@ -245,7 +245,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if status == "" =>
       val data1 = data.copy(status = data.status + (scriptHash -> status)) // empty status, nothing to do
-      stay using persistAndNotify(data1)
+      stay()using persistAndNotify(data1)
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) =>
       val key = data.accountKeyMap.getOrElse(scriptHash, data.changeKeyMap(scriptHash))
@@ -273,7 +273,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         status = data.status + (scriptHash -> status),
         pendingHistoryRequests = data.pendingHistoryRequests + scriptHash)
 
-      stay using persistAndNotify(data1)
+      stay()using persistAndNotify(data1)
 
     case Event(ElectrumClient.GetScriptHashHistoryResponse(scriptHash, items), data) =>
       log.debug(s"scriptHash=$scriptHash has history=$items")
@@ -353,7 +353,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         pendingHistoryRequests = data.pendingHistoryRequests - scriptHash,
         pendingTransactionRequests = pendingTransactionRequests1,
         pendingHeadersRequests = pendingHeadersRequests1.toSet)
-      stay using persistAndNotify(data1)
+      stay()using persistAndNotify(data1)
 
     case Event(ElectrumClient.GetHeadersResponse(start, headers, _), data) =>
       Try(Blockchain.addHeadersChunk(data.blockchain, start, headers)) match {
@@ -375,12 +375,12 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           // when we have successfully processed a new tx, we retry all pending txes to see if they can be added now
           data.pendingTransactions.foreach(self ! GetTransactionResponse(_))
           val data1 = data.copy(transactions = data.transactions + (tx.txid -> tx), pendingTransactionRequests = data.pendingTransactionRequests - tx.txid, pendingTransactions = Nil)
-          stay using persistAndNotify(data1)
+          stay()using persistAndNotify(data1)
         case None =>
           // missing parents
           log.info(s"couldn't connect txid=${tx.txid}")
           val data1 = data.copy(pendingTransactions = data.pendingTransactions :+ tx)
-          stay using persistAndNotify(data1)
+          stay()using persistAndNotify(data1)
       }
 
     case Event(response@GetMerkleResponse(txid, _, height, _), data) =>
@@ -393,7 +393,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           } else {
             data.copy(proofs = data.proofs + (txid -> response))
           }
-          stay using data1
+          stay()using data1
         case Some(_) =>
           log.error(s"server sent an invalid proof for $txid, disconnecting")
           sender ! PoisonPill
@@ -414,13 +414,13 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(CompleteTransaction(tx, feeRatePerKw), data) =>
       Try(data.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, allowSpendUnconfirmed)) match {
-        case Success((data1, tx1, fee1)) => stay using data1 replying CompleteTransactionResponse(tx1, fee1, None)
-        case Failure(t) => stay replying CompleteTransactionResponse(tx, Satoshi(0), Some(t))
+        case Success((data1, tx1, fee1)) => stay()using data1 replying CompleteTransactionResponse(tx1, fee1, None)
+        case Failure(t) => stay()replying CompleteTransactionResponse(tx, Satoshi(0), Some(t))
       }
 
     case Event(SendAll(publicKeyScript, feeRatePerKw), data) =>
       val (tx, fee) = data.spendAll(publicKeyScript, feeRatePerKw)
-      stay replying SendAllResponse(tx, fee)
+      stay()replying SendAllResponse(tx, fee)
 
     case Event(CommitTransaction(tx), data) =>
       log.info(s"committing txid=${tx.txid}")
@@ -431,11 +431,11 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       val (received, sent, Some(fee)) = data.computeTransactionDelta(tx).get
       // we notify here because the tx won't be downloaded again (it has been added to the state at commit)
       context.system.eventStream.publish(TransactionReceived(tx, data1.computeTransactionDepth(tx.txid), received, sent, Some(fee), None))
-      stay using persistAndNotify(data1) replying CommitTransactionResponse(tx) // goto instead of stay because we want to fire transitions
+      stay()using persistAndNotify(data1) replying CommitTransactionResponse(tx) // goto instead of stay()because we want to fire transitions
 
     case Event(CancelTransaction(tx), data) =>
       log.info(s"cancelling txid=${tx.txid}")
-      stay using persistAndNotify(data.cancelTransaction(tx)) replying CancelTransactionResponse(tx)
+      stay()using persistAndNotify(data.cancelTransaction(tx)) replying CancelTransactionResponse(tx)
 
     case Event(bc@ElectrumClient.BroadcastTransaction(tx), _) =>
       log.info(s"broadcasting txid=${tx.txid}")
@@ -477,19 +477,19 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
         lastReadyMessage = None
       )
 
-    case Event(GetCurrentReceiveAddress, data) => stay replying GetCurrentReceiveAddressResponse(data.currentReceiveAddress)
+    case Event(GetCurrentReceiveAddress, data) => stay()replying GetCurrentReceiveAddressResponse(data.currentReceiveAddress)
 
     case Event(GetBalance, data) =>
       val (confirmed, unconfirmed) = data.balance
-      stay replying GetBalanceResponse(confirmed, unconfirmed)
+      stay()replying GetBalanceResponse(confirmed, unconfirmed)
 
-    case Event(GetData, data) => stay replying GetDataResponse(data)
+    case Event(GetData, data) => stay()replying GetDataResponse(data)
 
     case Event(GetXpub, _) =>
       val (xpub, path) = computeXpub(master, chainHash)
-      stay replying GetXpubResponse(xpub, path)
+      stay()replying GetXpubResponse(xpub, path)
 
-    case Event(ElectrumClient.BroadcastTransaction(tx), _) => stay replying ElectrumClient.BroadcastTransactionResponse(tx, Some(Error(-1, "wallet is not connected")))
+    case Event(ElectrumClient.BroadcastTransaction(tx), _) => stay()replying ElectrumClient.BroadcastTransactionResponse(tx, Some(Error(-1, "wallet is not connected")))
   }
 
   initialize()

@@ -161,27 +161,27 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       d.channels.get(shortChannelId) match {
         case Some(_) =>
           // channel has already been announced and router knows about it, we can process the channel_update
-          stay using handle(u, self, d)
+          stay()using handle(u, self, d)
         case None =>
           channelAnnouncement_opt match {
             case Some(c) if d.awaiting.contains(c) =>
               // channel is currently being verified, we can process the channel_update right away (it will be stashed)
-              stay using handle(u, self, d)
+              stay()using handle(u, self, d)
             case Some(c) =>
               // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
               watcher ! ValidateRequest(c)
               val d1 = d.copy(awaiting = d.awaiting + (c -> Nil)) // no origin
               // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
               db.removeFromPruned(c.shortChannelId)
-              stay using handle(u, self, d1)
+              stay()using handle(u, self, d1)
             case None if d.privateChannels.contains(shortChannelId) =>
               // channel isn't announced but we already know about it, we can process the channel_update
-              stay using handle(u, self, d)
+              stay()using handle(u, self, d)
             case None =>
               // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
               // let's create a corresponding private channel and process the channel_update
               log.info("adding unannounced local channel to remote={} shortChannelId={}", remoteNodeId, shortChannelId)
-              stay using handle(u, self, d.copy(privateChannels = d.privateChannels + (shortChannelId -> remoteNodeId)))
+              stay()using handle(u, self, d.copy(privateChannels = d.privateChannels + (shortChannelId -> remoteNodeId)))
           }
       }
 
@@ -201,7 +201,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
           .removeEdge(desc1)
           .removeEdge(desc2)
         // and we remove the channel and channel_update from our state
-        stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates - desc1 - desc2, graph = graph1)
+        stay()using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates - desc1 - desc2, graph = graph1)
       } else {
         stay
       }
@@ -287,9 +287,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         val d3 = reprocessNodes.foldLeft(d2) {
           case (d, (n, origins)) => origins.foldLeft(d) { case (d, origin) => handle(n, origin, d) } // we reprocess the same node_announcement for every origins (to preserve origin information)
         }
-        stay using d3
+        stay()using d3
       } else {
-        stay using d0.copy(stash = stash1, awaiting = awaiting1)
+        stay()using d0.copy(stash = stash1, awaiting = awaiting1)
       }
 
     case Event(WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)), d) if d.channels.contains(shortChannelId) =>
@@ -313,7 +313,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
-      stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.shortChannelId != shortChannelId), graph = graph1)
+      stay()using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.shortChannelId != shortChannelId), graph = graph1)
 
     case Event(TickBroadcast, d) =>
       if (d.rebroadcast.channels.isEmpty && d.rebroadcast.updates.isEmpty && d.rebroadcast.nodes.isEmpty) {
@@ -322,7 +322,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         log.debug("broadcasting routing messages")
         log.debug("staggered broadcast details: channels={} updates={} nodes={}", d.rebroadcast.channels.size, d.rebroadcast.updates.size, d.rebroadcast.nodes.size)
         context.actorSelection(context.system / "*" / "switchboard") ! d.rebroadcast
-        stay using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
+        stay()using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
 
     case Event(TickPruneStaleChannels, d) =>
@@ -358,17 +358,17 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
-      stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates, graph = graph1)
+      stay()using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates, graph = graph1)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       val banDuration = nodeParams.routerConf.channelExcludeDuration
       log.info("excluding shortChannelId={} from nodeId={} for duration={}", shortChannelId, nodeId, banDuration)
       context.system.scheduler.scheduleOnce(banDuration, self, LiftChannelExclusion(desc))
-      stay using d.copy(excludedChannels = d.excludedChannels + desc)
+      stay()using d.copy(excludedChannels = d.excludedChannels + desc)
 
     case Event(LiftChannelExclusion(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       log.info("reinstating shortChannelId={} from nodeId={}", shortChannelId, nodeId)
-      stay using d.copy(excludedChannels = d.excludedChannels - desc)
+      stay()using d.copy(excludedChannels = d.excludedChannels - desc)
 
     case Event('nodes, d) =>
       sender ! d.nodes.values
@@ -423,7 +423,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
       // clean our sync state for this peer: we receive a SendChannelQuery just when we connect/reconnect to a peer and
       // will start a new complete sync process
-      stay using d.copy(sync = d.sync - remoteNodeId)
+      stay()using d.copy(sync = d.sync - remoteNodeId)
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), d) if routingMessage.chainHash != nodeParams.chainHash =>
@@ -434,12 +434,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     case Event(u: ChannelUpdate, d: Data) =>
       // it was sent by us, routing messages that are sent by  our peers are now wrapped in a PeerRoutingMessage
       log.debug("received channel update from {}", sender)
-      stay using handle(u, sender, d)
+      stay()using handle(u, sender, d)
 
     case Event(PeerRoutingMessage(transport, remoteNodeId, u: ChannelUpdate), d) =>
       sender ! TransportHandler.ReadAck(u)
       log.debug("received channel update for shortChannelId={}", u.shortChannelId)
-      stay using handle(u, sender, d, remoteNodeId_opt = Some(remoteNodeId), transport_opt = Some(transport))
+      stay()using handle(u, sender, d, remoteNodeId_opt = Some(remoteNodeId), transport_opt = Some(transport))
 
     case Event(PeerRoutingMessage(_, _, c: ChannelAnnouncement), d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
@@ -452,7 +452,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         log.debug("ignoring {} (being verified)", c)
         // adding the sender to the list of origins so that we don't send back the same announcement to this peer later
         val origins = d.awaiting(c) :+ sender
-        stay using d.copy(awaiting = d.awaiting + (c -> origins))
+        stay()using d.copy(awaiting = d.awaiting + (c -> origins))
       } else if (db.isPruned(c.shortChannelId)) {
         sender ! TransportHandler.ReadAck(c)
         // channel was pruned and we haven't received a recent channel_update, so we have no reason to revalidate it
@@ -467,18 +467,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         log.info("validating shortChannelId={}", c.shortChannelId)
         watcher ! ValidateRequest(c)
         // we don't acknowledge the message just yet
-        stay using d.copy(awaiting = d.awaiting + (c -> Seq(sender)))
+        stay()using d.copy(awaiting = d.awaiting + (c -> Seq(sender)))
       }
 
     case Event(n: NodeAnnouncement, d: Data) =>
       // it was sent by us, routing messages that are sent by  our peers are now wrapped in a PeerRoutingMessage
       log.debug("received node announcement from {}", sender)
-      stay using handle(n, sender, d)
+      stay()using handle(n, sender, d)
 
     case Event(PeerRoutingMessage(_, _, n: NodeAnnouncement), d: Data) =>
       sender ! TransportHandler.ReadAck(n)
       log.debug("received node announcement for nodeId={}", n.nodeId)
-      stay using handle(n, sender, d)
+      stay()using handle(n, sender, d)
 
     case Event(PeerRoutingMessage(transport, _, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
@@ -516,7 +516,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         }
       } else d
       context.system.eventStream.publish(syncProgress(d1))
-      stay using d1
+      stay()using d1
 
     case Event(PeerRoutingMessage(transport, _, routingMessage@QueryShortChannelIds(chainHash, data)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
@@ -552,7 +552,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
           d
       }
       context.system.eventStream.publish(syncProgress(d1))
-      stay using d1
+      stay()using d1
   }
 
   initialize()
