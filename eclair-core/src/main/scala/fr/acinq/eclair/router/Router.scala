@@ -134,9 +134,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     val graph = DirectedGraph.makeGraph(initChannelUpdates)
     val initNodes = nodes.map(n => (n.nodeId -> n)).toMap
     // send events for remaining channels/nodes
-    initChannels.values.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))
-    initChannelUpdates.values.foreach(u => context.system.eventStream.publish(ChannelUpdateReceived(u)))
-    initNodes.values.foreach(n => context.system.eventStream.publish(NodeDiscovered(n)))
+    context.system.eventStream.publish(ChannelsDiscovered(initChannels.values.map(c => SingleChannelDiscovered(c, channels(c)._2))))
+    context.system.eventStream.publish(ChannelUpdatesReceived(initChannelUpdates.values))
+    context.system.eventStream.publish(NodesDiscovered(initNodes.values))
 
     // watch the funding tx of all these channels
     // note: some of them may already have been spent, in that case we will receive the watch event immediately
@@ -238,7 +238,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
             // TODO: check feature bit set
             log.debug("added channel channelId={}", c.shortChannelId)
             val capacity = tx.txOut(outputIndex).amount
-            context.system.eventStream.publish(ChannelDiscovered(c, capacity))
+            context.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(c, capacity) :: Nil))
             db.addChannel(c, tx.txid, capacity)
 
             // in case we just validated our first local channel, we announce the local node
@@ -584,7 +584,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> Set(origin))))
     } else if (d.channels.values.exists(c => isRelatedTo(c, n.nodeId))) {
       log.debug("added node nodeId={}", n.nodeId)
-      context.system.eventStream.publish(NodeDiscovered(n))
+      context.system.eventStream.publish(NodesDiscovered(n :: Nil))
       db.addNode(n)
       d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> Set(origin))))
     } else if (d.awaiting.keys.exists(c => isRelatedTo(c, n.nodeId))) {
@@ -619,7 +619,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         d
       } else if (d.updates.contains(desc)) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.updateChannelUpdate(u)
         // update the graph
         val graph1 = Announcements.isEnabled(u.channelFlags) match {
@@ -629,7 +629,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.addChannelUpdate(u)
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u)
@@ -662,13 +662,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         d
       } else if (d.privateUpdates.contains(desc)) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val graph1 = d.graph.removeEdge(desc).addEdge(desc, u)
         d.copy(privateUpdates = d.privateUpdates + (desc -> u), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u)
         d.copy(privateUpdates = d.privateUpdates + (desc -> u), graph = graph1)
