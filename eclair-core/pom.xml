@@ -235,6 +235,7 @@
             <version>0.9.8</version>
             <scope>test</scope>
         </dependency>
+	<!-- neeeded for our docker tests, see  https://github.com/spotify/dockerfile-maven/issues/90 -->
         <dependency>
             <groupId>javax.activation</groupId>
             <artifactId>activation</artifactId>

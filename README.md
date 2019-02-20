@@ -58,8 +58,8 @@ The released binaries can be downloaded [here](https://github.com/ACINQ/eclair/r
 
 #### Installing Java
 
-You need to first install java. Eclair will run on [Oracle JRE 1.8](http://www.oracle.com/technetwork/java/javase/downloads/jre8-downloads-2133155.html), [Oracle JDK 11](https://www.oracle.com/technetwork/java/javase/downloads/jdk11-downloads-5066655.html) and [Open JDK 11](https://jdk.java.net/11/).
-We recommend that use use [Open JDK 11](https://jdk.java.net/11/).
+You first need to install [Open JDK 11](https://jdk.java.net/11/). Eclair will also run on [Oracle JRE 1.8](http://www.oracle.com/technetwork/java/javase/downloads/jre8-downloads-2133155.html), [Oracle JDK 11](https://www.oracle.com/technetwork/java/javase/downloads/jdk11-downloads-5066655.html) and other versions of OpenJDK but we don't recommend it.
+
 
 Then download the latest fat jar and depending on whether or not you want a GUI run the following command:
 * with GUI:
