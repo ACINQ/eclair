@@ -21,7 +21,7 @@ import akka.actor.{Actor, ActorLogging}
 import fr.acinq.bitcoin.{Block, Transaction}
 import fr.acinq.eclair.blockchain.{NewBlock, NewTransaction}
 import org.zeromq.ZMQ.Event
-import org.zeromq.{ZContext, ZMQ, ZMsg}
+import org.zeromq.{SocketType, ZContext, ZMQ, ZMsg}
 
 import scala.annotation.tailrec
 import scala.concurrent.duration._
@@ -37,13 +37,13 @@ class ZMQActor(address: String, connected: Option[Promise[Done]] = None) extends
 
   val ctx = new ZContext
 
-  val subscriber = ctx.createSocket(ZMQ.SUB)
+  val subscriber = ctx.createSocket(SocketType.SUB)
   subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
   subscriber.connect(address)
   subscriber.subscribe("rawblock".getBytes(ZMQ.CHARSET))
   subscriber.subscribe("rawtx".getBytes(ZMQ.CHARSET))
 
-  val monitor = ctx.createSocket(ZMQ.PAIR)
+  val monitor = ctx.createSocket(SocketType.PAIR)
   monitor.connect("inproc://events")
 
   implicit val ec: ExecutionContext = context.system.dispatcher
