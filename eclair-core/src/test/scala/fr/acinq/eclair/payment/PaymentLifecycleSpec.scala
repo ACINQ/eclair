@@ -27,7 +27,6 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
-import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 
@@ -59,7 +58,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.expectMsg(PaymentFailed(request.paymentHash, LocalFailure(RouteNotFound) :: Nil))
   }
 
-  ignore("payment failed (route too expensive)") { fixture =>
+  test("payment failed (route too expensive)") { fixture =>
     import fixture._
     val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref))
     val monitor = TestProbe()
@@ -68,7 +67,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
 
-    val request = SendPayment(defaultAmountMsat, defaultPaymentHash, d, routeParams = Some(RouteParams(maxFeeBaseMsat = 0, maxFeePct = 0.001, routeMaxLength = 20, routeMaxCltv = 2016, ratios = None)))
+    val request = SendPayment(defaultAmountMsat, defaultPaymentHash, d, routeParams = Some(RouteParams(maxFeeBaseMsat = 100, maxFeePct = 0.0, routeMaxLength = 20, routeMaxCltv = 2016, ratios = None)))
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
