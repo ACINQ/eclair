@@ -54,19 +54,13 @@ deprecatedrpc=signrawtransaction
 
 ### Installing Eclair
 
-The released binaries can be downloaded [here](https://github.com/ACINQ/eclair/releases).
+Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful functional language that runs on the JVM, and is packaged as a JAR (Java Archive) file. We provide 2 different packages, which internally use the same core libraries:
+* eclair-node, which is a headless application that you can run on servers and desktops, and control from the command line
+* eclair-node-gui, which also includes a JavaFX GUI
 
-#### Windows
+To run Eclair, you first need to install Java, we recommend that you use [OpenJDK 11](https://jdk.java.net/11/). Eclair will also run on Oracle JDK 1.8, Oracle JDK 11, and other versions of OpenJDK but we don't recommend using them.
 
-Just use the windows installer, it should create a shortcut on your desktop.
-
-#### Linux, macOS or manual install on Windows
-
-You need to first install java, more precisely a [JRE 1.8](http://www.oracle.com/technetwork/java/javase/downloads/jre8-downloads-2133155.html).
-
- :warning: If you are using the OpenJDK JRE, you will need to build OpenJFX yourself, or run the application in headless mode (see below).
-
-Then download the latest fat jar and depending on whether or not you want a GUI run the following command:
+Then download our latest [release](https://github.com/ACINQ/eclair/releases) and depending on whether or not you want a GUI run the following command:
 * with GUI:
 ```shell
 java -jar eclair-node-gui-<version>-<commit_id>.jar
