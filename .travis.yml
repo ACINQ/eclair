@@ -19,7 +19,7 @@ cache:
   - .autoconf
   - $HOME/.m2
 jdk:
- - oraclejdk8
+ - openjdk11
 notifications:
  email:
   - ops@acinq.fr

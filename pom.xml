@@ -63,7 +63,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <scala.version>2.11.11</scala.version>
+        <scala.version>2.11.12</scala.version>
         <scala.version.short>2.11</scala.version.short>
         <akka.version>2.4.20</akka.version>
         <akka.http.version>10.0.11</akka.http.version>
@@ -127,6 +127,8 @@
                         <arg>-unchecked</arg>
                         <arg>-Xmax-classfile-name</arg>
                         <arg>140</arg>
+			<!-- needed to compile Scala code on JDK9+ -->
+                        <arg>-nobootcp</arg>
                     </args>
                     <scalaCompatVersion>${scala.version.short}</scalaCompatVersion>
                 </configuration>
