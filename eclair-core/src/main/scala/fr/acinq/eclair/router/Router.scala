@@ -413,6 +413,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       // TODO: in case of duplicates, d.updates will be overridden by assistedUpdates even if they are more recent!
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
+      log.info(s"finding a route with randomize={} params={}", randomize_opt.getOrElse(nodeParams.routerConf.randomizeRouteSelection), params_opt.getOrElse(defaultRouteParams))
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
       // if we want to randomize we ask the router to make a random selection among the three best routes
       val routesToFind = if(randomize_opt.getOrElse(nodeParams.routerConf.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
