@@ -90,7 +90,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val Success(route) = Router.findRoute(graph, a, d, amountMsat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
 
-    val totalCost = Graph.pathWeight(hops2Edges(route), amountMsat, false, 0, COST_OPTIMIZED_WEIGHT_RATIO).cost
+    val totalCost = Graph.pathWeight(hops2Edges(route), amountMsat, false, 0, None).cost
 
     assert(hops2Ids(route) === 4 :: 5 :: 6 :: Nil)
     assert(totalCost === expectedCost)
@@ -628,7 +628,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val graph = DirectedGraph.makeGraph(edges)
 
-    val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 4, COST_OPTIMIZED_WEIGHT_RATIO, 0, noopBoundaries)
+    val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 4, None, 0, noopBoundaries)
 
     assert(fourShortestPaths.size === 4)
     assert(hops2Ids(fourShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
@@ -662,7 +662,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val graph = DirectedGraph().addEdges(edges)
 
-    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 2, COST_OPTIMIZED_WEIGHT_RATIO, 0, noopBoundaries)
+    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 2, None, 0, noopBoundaries)
 
     assert(twoShortestPaths.size === 2)
     val shortest = twoShortestPaths(0)
@@ -696,7 +696,7 @@ class RouteCalculationSpec extends FunSuite {
     val graph = DirectedGraph().addEdges(edges)
 
     //we ask for 3 shortest paths but only 2 can be found
-    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 3, COST_OPTIMIZED_WEIGHT_RATIO, 0, noopBoundaries)
+    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 3, None, 0, noopBoundaries)
 
     assert(foundPaths.size === 2)
     assert(hops2Ids(foundPaths(0).path.map(graphEdgeToHop)) === 1 :: 2 :: 3 :: Nil) // A -> B -> C -> F
@@ -724,7 +724,7 @@ class RouteCalculationSpec extends FunSuite {
       case Failure(thr) => assert(false, thr)
       case Success(someRoute) =>
 
-        val routeCost = Graph.pathWeight(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, isPartial = false, 0, COST_OPTIMIZED_WEIGHT_RATIO).cost - DEFAULT_AMOUNT_MSAT
+        val routeCost = Graph.pathWeight(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, isPartial = false, 0, None).cost - DEFAULT_AMOUNT_MSAT
 
         // over the three routes we could only get the 2 cheapest because the third is too expensive (over 7msat of fees)
         assert(routeCost == 5 || routeCost == 6)
@@ -753,19 +753,19 @@ class RouteCalculationSpec extends FunSuite {
     val Success(routeFeeOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, routeParams = DEFAULT_ROUTE_PARAMS)
     assert(hops2Nodes(routeFeeOptimized) === (a, b) :: (b, c) :: (c, d) :: Nil)
 
-    val Success(routeCltvOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(
+    val Success(routeCltvOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
       cltvDeltaFactor = 1,
       ageFactor = 0,
       capacityFactor = 0
-    )))
+    ))))
 
     assert(hops2Nodes(routeCltvOptimized) === (a, e) :: (e, f) :: (f, d) :: Nil)
 
-    val Success(routeCapacityOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(
+    val Success(routeCapacityOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
       cltvDeltaFactor = 0,
       ageFactor = 0,
       capacityFactor = 1
-    )))
+    ))))
 
     assert(hops2Nodes(routeCapacityOptimized) === (a, e) :: (e, c) :: (c, d) :: Nil)
   }
@@ -785,11 +785,11 @@ class RouteCalculationSpec extends FunSuite {
 
     Globals.blockCount.set(currentBlockHeight)
 
-    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(
-      ageFactor = 1,
-      cltvDeltaFactor = 1,
-      capacityFactor = 1
-    )))
+    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
+      ageFactor = 0.33,
+      cltvDeltaFactor = 0.33,
+      capacityFactor = 0.33
+    ))))
 
     assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b,c) :: (c, d) :: Nil)
   }
@@ -806,11 +806,11 @@ class RouteCalculationSpec extends FunSuite {
     ).toMap)
 
 
-    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(
-      ageFactor = 1,
-      cltvDeltaFactor = 1,
-      capacityFactor = 1
-    )))
+    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
+      ageFactor = 0.33,
+      cltvDeltaFactor = 0.33,
+      capacityFactor = 0.33
+    ))))
 
     assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b,c) :: (c, d) :: Nil)
   }
@@ -829,11 +829,11 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdateShort(ShortChannelId(s"0x0x6"), f, d, feeBaseMsat = 10, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144)
     ).toMap)
 
-    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(
-      ageFactor = 1,
-      cltvDeltaFactor = 1,
-      capacityFactor = 1
-    )))
+    val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
+      ageFactor = 0.33,
+      cltvDeltaFactor = 0.33,
+      capacityFactor = 0.33
+    ))))
 
     assert(hops2Nodes(routeScoreOptimized) === (a, e) :: (e, f) :: (f, d) :: Nil)
   }
@@ -845,9 +845,7 @@ object RouteCalculationSpec {
 
   val DEFAULT_AMOUNT_MSAT = 10000000
 
-  val COST_OPTIMIZED_WEIGHT_RATIO = WeightRatios(0, 0, 0)
-
-  val DEFAULT_ROUTE_PARAMS = RouteParams(maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 2016, routeMaxLength = 6, ratios = COST_OPTIMIZED_WEIGHT_RATIO)
+  val DEFAULT_ROUTE_PARAMS = RouteParams(maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 2016, routeMaxLength = 6, ratios = None)
 
   val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
 

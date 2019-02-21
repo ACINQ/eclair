@@ -66,7 +66,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     maxFeePct = Double.MaxValue,
     routeMaxCltv = Int.MaxValue,
     routeMaxLength = ROUTE_MAX_LENGTH,
-    ratios = WeightRatios(0, 0, 0) // cost optimized
+    ratios = None // cost optimized
   ))
 
   implicit val formats = DefaultFormats

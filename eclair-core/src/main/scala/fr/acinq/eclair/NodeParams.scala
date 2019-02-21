@@ -247,6 +247,7 @@ object NodeParams {
         searchMaxCltv = config.getInt("router.path-finding.max-cltv"),
         searchMaxFeeBaseSat = config.getLong("router.path-finding.fee-threshold-sat"),
         searchMaxFeePct = config.getDouble("router.path-finding.max-fee-pct"),
+        searchHeuristicsEnabled = config.getBoolean("router.path-finding.heuristics-enable"),
         searchRatioCltv = config.getDouble("router.path-finding.ratio-cltv"),
         searchRatioChannelAge = config.getDouble("router.path-finding.ratio-channel-age"),
         searchRatioChannelCapacity = config.getDouble("router.path-finding.ratio-channel-capacity")

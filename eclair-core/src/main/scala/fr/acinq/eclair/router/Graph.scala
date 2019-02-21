@@ -30,7 +30,7 @@ object Graph {
   // A compound weight for an edge, weight is obtained with (cost X factor),'cost' contains the actual amount+fees in millisatoshi, 'cltvCumulative' the total CLTV necessary to reach this edge
   case class RichWeight(cost: Long, length: Int, cltv: Int, weight: Double)
   case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) { // The ratios that will be used to calculate the 'factor'
-    require(0 < cltvDeltaFactor + ageFactor + capacityFactor && cltvDeltaFactor + ageFactor + capacityFactor <= 1)
+    require(0 < cltvDeltaFactor + ageFactor + capacityFactor && cltvDeltaFactor + ageFactor + capacityFactor <= 1, "The sum of heuristics ratios must be between 0 and 1 (included)")
   }
   case class WeightedNode(key: PublicKey, weight: RichWeight)
   case class WeightedPath(path: Seq[GraphEdge], weight: RichWeight)
@@ -73,7 +73,7 @@ object Graph {
                         ignoredEdges: Set[ChannelDesc],
                         extraEdges: Set[GraphEdge],
                         pathsToFind: Int,
-                        wr: WeightRatios,
+                        wr: Option[WeightRatios],
                         currentBlockHeight: Long,
                         boundaries: RichWeight => Boolean): Seq[WeightedPath] = {
 
@@ -180,7 +180,7 @@ object Graph {
                            initialWeight: RichWeight,
                            boundaries: RichWeight => Boolean,
                            currentBlockHeight: Long,
-                           wr: WeightRatios): Seq[GraphEdge] = {
+                           wr: Option[WeightRatios]): Seq[GraphEdge] = {
 
     //  the graph does not contain source/destination nodes
     if (!g.containsVertex(sourceNode)) return Seq.empty
@@ -276,32 +276,34 @@ object Graph {
   }
 
   // Computes the compound weight for the given @param edge, the weight is cumulative and must account for the previous edge's weight.
-  private def edgeWeight(edge: GraphEdge, prev: RichWeight, isNeighborTarget: Boolean, currentBlockHeight: Long, wr: WeightRatios): RichWeight = {
-    import RoutingHeuristics._
+  private def edgeWeight(edge: GraphEdge, prev: RichWeight, isNeighborTarget: Boolean, currentBlockHeight: Long, weightRatios: Option[WeightRatios]): RichWeight = weightRatios match {
+    case None =>
+      val edgeCost = if (isNeighborTarget) prev.cost else edgeFeeCost(edge, prev.cost)
+      RichWeight(cost = edgeCost, length = prev.length + 1, cltv = prev.cltv + edge.update.cltvExpiryDelta, weight = edgeCost)
 
-    // Every edge is weighted by funding block height where older blocks add less weight, the window considered is 2 months.
-    val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
-    val ageFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_TWO_MONTHS, max = currentBlockHeight)
+    case Some(wr) =>
+      import RoutingHeuristics._
 
-    // Every edge is weighted by channel capacity, larger channels add less weight
-    val edgeMaxCapacity = edge.update.htlcMaximumMsat.getOrElse(CAPACITY_CHANNEL_LOW_MSAT)
-    val capFactor = 1 - normalize(edgeMaxCapacity, CAPACITY_CHANNEL_LOW_MSAT, CAPACITY_CHANNEL_HIGH_MSAT)
+      // Every edge is weighted by funding block height where older blocks add less weight, the window considered is 2 months.
+      val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
+      val ageFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_TWO_MONTHS, max = currentBlockHeight)
 
-    // Every edge is weighted by its clvt-delta value, normalized
-    val channelCltvDelta = edge.update.cltvExpiryDelta
-    val cltvFactor = normalize(channelCltvDelta, CLTV_LOW, CLTV_HIGH)
+      // Every edge is weighted by channel capacity, larger channels add less weight
+      val edgeMaxCapacity = edge.update.htlcMaximumMsat.getOrElse(CAPACITY_CHANNEL_LOW_MSAT)
+      val capFactor = 1 - normalize(edgeMaxCapacity, CAPACITY_CHANNEL_LOW_MSAT, CAPACITY_CHANNEL_HIGH_MSAT)
 
-    // NB 'edgeCost' includes the amount to be sent plus the fees that must be paid to traverse this @param edge
-    val edgeCost = if (isNeighborTarget) prev.cost else edgeFeeCost(edge, prev.cost)
+      // Every edge is weighted by its clvt-delta value, normalized
+      val channelCltvDelta = edge.update.cltvExpiryDelta
+      val cltvFactor = normalize(channelCltvDelta, CLTV_LOW, CLTV_HIGH)
 
-    val factor = (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor) match {
-      case 0 => 1 // if the factor turns out to be 0 we still take into account the cost
-      case other => other
-    }
+      // NB 'edgeCost' includes the amount to be sent plus the fees that must be paid to traverse this @param edge
+      val edgeCost = if (isNeighborTarget) prev.cost else edgeFeeCost(edge, prev.cost)
 
-    val edgeWeight = if (isNeighborTarget) prev.weight else edgeCost * factor
+      // NB we're guaranteed to have weightRatios and factors > 0
+      val factor = (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor)
+      val edgeWeight = if (isNeighborTarget) prev.weight else edgeCost * factor
 
-    RichWeight(cost = edgeCost, length = prev.length + 1, cltv = prev.cltv + channelCltvDelta, weight = edgeWeight)
+      RichWeight(cost = edgeCost, length = prev.length + 1, cltv = prev.cltv + channelCltvDelta, weight = edgeWeight)
   }
 
   /**
@@ -315,7 +317,7 @@ object Graph {
   }
 
   // Calculates the total cost of a path (amount + fees), direct channels with the source will have a cost of 0 (pay no fees)
-  def pathWeight(path: Seq[GraphEdge], amountMsat: Long, isPartial: Boolean, currentBlockHeight: Long, wr: WeightRatios): RichWeight = {
+  def pathWeight(path: Seq[GraphEdge], amountMsat: Long, isPartial: Boolean, currentBlockHeight: Long, wr: Option[WeightRatios]): RichWeight = {
     path.drop(if (isPartial) 0 else 1).foldRight(RichWeight(amountMsat, 0, 0, 0)) { (edge, prev) =>
       edgeWeight(edge, prev, false, currentBlockHeight, wr)
     }
@@ -335,6 +337,14 @@ object Graph {
     val CLTV_LOW = 9
     val CLTV_HIGH = 2016
 
+    /**
+      * Normalize the given value between (0, 1). If the @param value is outside the min/max window we flatten it to something very close to the
+      * extremes but always bigger than zero so it's guaranteed to never return zero
+      * @param value
+      * @param min
+      * @param max
+      * @return
+      */
     def normalize(value: Double, min: Double, max: Double) = {
       if (value <= min) 0.00001D
       else if (value > max) 0.99999D

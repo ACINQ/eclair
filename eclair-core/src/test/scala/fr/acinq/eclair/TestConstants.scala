@@ -94,6 +94,7 @@ object TestConstants {
         searchMaxFeePct = 0.03,
         searchMaxCltv = 2016,
         searchMaxRouteLength = 20,
+        searchHeuristicsEnabled = false,
         searchRatioCltv = 0.0,
         searchRatioChannelAge = 0.0,
         searchRatioChannelCapacity = 0.0
@@ -164,6 +165,7 @@ object TestConstants {
         searchMaxFeePct = 0.03,
         searchMaxCltv = 2016,
         searchMaxRouteLength = 20,
+        searchHeuristicsEnabled = false,
         searchRatioCltv = 0.0,
         searchRatioChannelAge = 0.0,
         searchRatioChannelCapacity = 0.0

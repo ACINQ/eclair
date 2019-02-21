@@ -50,13 +50,14 @@ case class RouterConf(randomizeRouteSelection: Boolean,
                       searchMaxFeePct: Double,
                       searchMaxRouteLength: Int,
                       searchMaxCltv: Int,
+                      searchHeuristicsEnabled: Boolean,
                       searchRatioCltv: Double,
                       searchRatioChannelAge: Double,
                       searchRatioChannelCapacity: Double)
 
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteParams(maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int, ratios: WeightRatios)
+case class RouteParams(maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int, ratios: Option[WeightRatios])
 case class RouteRequest(source: PublicKey,
                         target: PublicKey,
                         amountMsat: Long,
@@ -120,15 +121,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
   val SHORTID_WINDOW = 100
 
   val defaultRouteParams = RouteParams(
-    maxFeeBaseMsat = nodeParams.routerConf.searchMaxFeeBaseSat * 1000,
+    maxFeeBaseMsat = nodeParams.routerConf.searchMaxFeeBaseSat * 1000, // converting sat -> msat
     maxFeePct = nodeParams.routerConf.searchMaxFeePct,
     routeMaxLength = nodeParams.routerConf.searchMaxRouteLength,
     routeMaxCltv = nodeParams.routerConf.searchMaxCltv,
-    ratios = WeightRatios(
-      cltvDeltaFactor = nodeParams.routerConf.searchRatioCltv,
-      ageFactor = nodeParams.routerConf.searchRatioChannelAge,
-      capacityFactor = nodeParams.routerConf.searchRatioChannelCapacity
-    )
+    ratios = nodeParams.routerConf.searchHeuristicsEnabled match {
+      case false => None
+      case true => Some(WeightRatios(
+        cltvDeltaFactor = nodeParams.routerConf.searchRatioCltv,
+        ageFactor = nodeParams.routerConf.searchRatioChannelAge,
+        capacityFactor = nodeParams.routerConf.searchRatioChannelCapacity
+      ))
+    }
   )
 
   val db = nodeParams.networkDb
