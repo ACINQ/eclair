@@ -596,10 +596,9 @@ object ElectrumWallet {
     */
   def computeXpub(master: ExtendedPrivateKey, chainHash: BinaryData): (String, String) = {
     val xpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, accountPath(chainHash)))
-    // we use the tpub/xpub prefix instead of upub/ypub because it is more widely understood
     val prefix = chainHash match {
-      case Block.LivenetGenesisBlock.hash => DeterministicWallet.xpub
-      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.tpub
+      case Block.LivenetGenesisBlock.hash => DeterministicWallet.ypub
+      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.upub
     }
     (DeterministicWallet.encode(xpub, prefix), xpub.path.toString())
   }
