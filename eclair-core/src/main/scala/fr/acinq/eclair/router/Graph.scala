@@ -28,8 +28,10 @@ object Graph {
 
   // @formatter:off
   // A compound weight for an edge, weight is obtained with (cost X factor),'cost' contains the actual amount+fees in millisatoshi, 'cltvCumulative' the total CLTV necessary to reach this edge
-  case class RichWeight(cost: Long, length: Int, cltv: Int, weight: Double)
-  case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) { // The ratios that will be used to calculate the 'factor'
+  case class RichWeight(cost: Long, length: Int, cltv: Int, weight: Double) extends Ordered[RichWeight] {
+    override def compare(that:  RichWeight): Int = this.weight.compareTo(that.weight)
+  }
+  case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) {
     require(0 < cltvDeltaFactor + ageFactor + capacityFactor && cltvDeltaFactor + ageFactor + capacityFactor <= 1, "The sum of heuristics ratios must be between 0 and 1 (included)")
   }
   case class WeightedNode(key: PublicKey, weight: RichWeight)
@@ -42,14 +44,14 @@ object Graph {
     */
   object QueueComparator extends Ordering[WeightedNode] {
     override def compare(x: WeightedNode, y: WeightedNode): Int = {
-      val weightCmp = x.weight.weight.compareTo(y.weight.weight)
+      val weightCmp = x.weight.compareTo(y.weight)
       if (weightCmp == 0) x.key.toString().compareTo(y.key.toString())
       else weightCmp
     }
   }
 
   implicit object PathComparator extends Ordering[WeightedPath] {
-    override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.weight.compare(x.weight.weight)
+    override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.compare(x.weight)
   }
 
   /**
@@ -340,6 +342,7 @@ object Graph {
     /**
       * Normalize the given value between (0, 1). If the @param value is outside the min/max window we flatten it to something very close to the
       * extremes but always bigger than zero so it's guaranteed to never return zero
+      *
       * @param value
       * @param min
       * @param max
