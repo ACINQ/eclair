@@ -239,15 +239,16 @@ class TransactionsSpec extends FunSuite with Logging {
     }
 
     {
+      // Simplified commitment
+      val commitTransaction = commitTx(commitContext = ContextSimplifiedCommitment)
+
       // local is funder, pays for fees + push_me outputs
       val expectedToLocalAmount = Satoshi(spec.toLocalMsat / 1000) - Transactions.pushMeValue * 2 - commitTxFee(localDustLimit, spec)(ContextSimplifiedCommitment)
       val expectedToRemoteAmount = Satoshi(spec.toRemoteMsat / 1000)
 
-      // Simplified commitment
-      val commitTransaction = commitTx(commitContext = ContextSimplifiedCommitment)
       // there must be 2 push-me outputs
-      val toLocalPushMe = Script.write(pay2wsh(Scripts.pushMeSimplified(localDelayedPaymentPriv.publicKey)))    // to_local_pushme uses local_delayedpubkey
-      val toRemotePushMe = Script.write(pay2wsh(Scripts.pushMeSimplified(remoteDelayedPaymentPriv.publicKey)))  // to_remote_pushme uses remote_delayedpubkey
+      val toLocalPushMe = Script.write(pay2wsh(Scripts.pushMeSimplified(localDelayedPaymentPriv.publicKey)))
+      val toRemotePushMe = Script.write(pay2wsh(Scripts.pushMeSimplified(remoteDelayedPaymentPriv.publicKey)))
       assert(commitTransaction.tx.txOut.exists(_.publicKeyScript == toLocalPushMe))
       assert(commitTransaction.tx.txOut.exists(_.publicKeyScript == toRemotePushMe))
 
