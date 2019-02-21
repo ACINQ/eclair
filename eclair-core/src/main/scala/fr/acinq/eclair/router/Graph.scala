@@ -29,7 +29,9 @@ object Graph {
   // @formatter:off
   // A compound weight for an edge, weight is obtained with (cost X factor),'cost' contains the actual amount+fees in millisatoshi, 'cltvCumulative' the total CLTV necessary to reach this edge
   case class RichWeight(cost: Long, length: Int, cltv: Int, weight: Double)
-  case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) // The ratios that will be used to calculate the 'factor'
+  case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) { // The ratios that will be used to calculate the 'factor'
+    require(0 < cltvDeltaFactor + ageFactor + capacityFactor && cltvDeltaFactor + ageFactor + capacityFactor <= 1)
+  }
   case class WeightedNode(key: PublicKey, weight: RichWeight)
   case class WeightedPath(path: Seq[GraphEdge], weight: RichWeight)
   // @formatter:on
@@ -293,7 +295,7 @@ object Graph {
     val edgeCost = if (isNeighborTarget) prev.cost else edgeFeeCost(edge, prev.cost)
 
     val factor = (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor) match {
-      case 0 => 0.00001 // if the factor turns out to be 0 we default to a very small number to avoid having a weight of 0 and still take into account the cost
+      case 0 => 1 // if the factor turns out to be 0 we still take into account the cost
       case other => other
     }
 
@@ -334,8 +336,8 @@ object Graph {
     val CLTV_HIGH = 2016
 
     def normalize(value: Double, min: Double, max: Double) = {
-      if (value <= min) 0D
-      else if (value > max) 1D
+      if (value <= min) 0.00001D
+      else if (value > max) 0.99999D
       else (value - min) / (max - min)
     }
   }
