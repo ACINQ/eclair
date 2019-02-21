@@ -61,18 +61,21 @@ class TransactionsSpec extends FunSuite with Logging {
   }
 
   test("compute fees") {
+
+    val expectedSizeSimplifiedCommitment = weight2fee(simplifiedFeerateKw , simplifiedCommitWeight + 172 * 2)
+    val expectedSizeCommitmentV1 = Satoshi(5340)
+
     // see BOLT #3 specs
     val htlcs = Set(
-      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(5000000).amount, Hash.Zeroes, 552, BinaryData.empty)),
+      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(5000000).amount, Hash.Zeroes, 552, BinaryData.empty)), // trimmed
       DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Hash.Zeroes, 553, BinaryData.empty)),
-      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(7000000).amount, Hash.Zeroes, 550, BinaryData.empty)),
+      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(7000000).amount, Hash.Zeroes, 550, BinaryData.empty)),  // trimmed
       DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(800000).amount, Hash.Zeroes, 551, BinaryData.empty))
     )
     val spec = CommitmentSpec(htlcs, feeratePerKw = 5000, toLocalMsat = 0, toRemoteMsat = 0)
-    val fee = Transactions.commitTxFee(Satoshi(546), spec)(ContextCommitmentV1)
-    assert(fee == Satoshi(5340))
 
-    //TODO add case for simplified commitment
+    assert(commitTxFee(Satoshi(546), spec)(ContextSimplifiedCommitment) == expectedSizeSimplifiedCommitment)
+    assert(commitTxFee(Satoshi(546), spec)(ContextCommitmentV1) == expectedSizeCommitmentV1)
   }
 
   test("check pre-computed transaction weights") {
@@ -236,6 +239,10 @@ class TransactionsSpec extends FunSuite with Logging {
     }
 
     {
+      // local is funder, pays for fees + push_me outputs
+      val expectedToLocalAmount = Satoshi(spec.toLocalMsat / 1000) - Transactions.pushMeValue * 2 - commitTxFee(localDustLimit, spec)(ContextSimplifiedCommitment)
+      val expectedToRemoteAmount = Satoshi(spec.toRemoteMsat / 1000)
+
       // Simplified commitment
       val commitTransaction = commitTx(commitContext = ContextSimplifiedCommitment)
       // there must be 2 push-me outputs
@@ -243,9 +250,16 @@ class TransactionsSpec extends FunSuite with Logging {
       val toRemotePushMe = Script.write(pay2wsh(Scripts.pushMeSimplified(remoteDelayedPaymentPriv.publicKey)))  // to_remote_pushme uses remote_delayedpubkey
       assert(commitTransaction.tx.txOut.exists(_.publicKeyScript == toLocalPushMe))
       assert(commitTransaction.tx.txOut.exists(_.publicKeyScript == toRemotePushMe))
+
       // to_remote is delayed with to_self_delay
-      val toRemoteDelayed = Script.write(pay2wsh(Scripts.toRemoteDelayed(remotePaymentPriv.publicKey, toLocalDelay)))
-      assert(commitTransaction.tx.txOut.exists(_.publicKeyScript == toRemoteDelayed))
+      val toRemoteDelayedScript = Script.write(pay2wsh(Scripts.toRemoteDelayed(remotePaymentPriv.publicKey, toLocalDelay)))
+      val Some(toRemoteMainOut) = commitTransaction.tx.txOut.find(_.publicKeyScript == toRemoteDelayedScript)
+
+      val toLocalMainScript = Script.write(pay2wsh(Scripts.toLocalDelayed(localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey)))
+      val Some(toLocalMainOut) = commitTransaction.tx.txOut.find(_.publicKeyScript == toLocalMainScript)
+
+      assert(toLocalMainOut.amount == expectedToLocalAmount)
+      assert(toRemoteMainOut.amount == expectedToRemoteAmount)
     }
 
     {
