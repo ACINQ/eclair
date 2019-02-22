@@ -396,7 +396,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     awaitCond({
       sender.send(nodes("A").router, 'channels)
-      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).exists( chanAnn => chanAnn.nodeId1 == nodes("G").nodeParams.nodeId || chanAnn.nodeId2 == nodes("G").nodeParams.nodeId)
+      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).exists(chanAnn => chanAnn.nodeId1 == nodes("G").nodeParams.nodeId || chanAnn.nodeId2 == nodes("G").nodeParams.nodeId)
     }, max = 60 seconds, interval = 3 seconds)
 
     val amountMsat = MilliSatoshi(2000)

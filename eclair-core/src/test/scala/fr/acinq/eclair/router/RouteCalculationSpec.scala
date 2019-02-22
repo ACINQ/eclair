@@ -406,7 +406,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1 , ignoredEdges = Set(ChannelDesc(ShortChannelId(3L), c, d)), routeParams = DEFAULT_ROUTE_PARAMS)
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, ignoredEdges = Set(ChannelDesc(ShortChannelId(3L), c, d)), routeParams = DEFAULT_ROUTE_PARAMS)
     assert(route1.map(hops2Ids) === Failure(RouteNotFound))
 
     // verify that we left the graph untouched
@@ -587,7 +587,7 @@ class RouteCalculationSpec extends FunSuite {
     val g = makeGraph(updates)
 
     val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
-    assert(route1.map(hops2Ids) === Success(1 :: 2  :: 4 :: 5 :: Nil))
+    assert(route1.map(hops2Ids) === Success(1 :: 2 :: 4 :: 5 :: Nil))
   }
 
 
@@ -720,7 +720,7 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(7L, e, c, feeBaseMsat = 9, 0)
     ).toMap)
 
-    (for { _ <- 0 to 10 } yield Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3, routeParams = strictFeeParams)).map {
+    (for {_ <- 0 to 10} yield Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3, routeParams = strictFeeParams)).map {
       case Failure(thr) => assert(false, thr)
       case Success(someRoute) =>
 
@@ -791,7 +791,7 @@ class RouteCalculationSpec extends FunSuite {
       capacityFactor = 0.33
     ))))
 
-    assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b,c) :: (c, d) :: Nil)
+    assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b, c) :: (c, d) :: Nil)
   }
 
   test("prefer a route with a smaller total CLTV if fees and score are the same") {
@@ -812,7 +812,7 @@ class RouteCalculationSpec extends FunSuite {
       capacityFactor = 0.33
     ))))
 
-    assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b,c) :: (c, d) :: Nil)
+    assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b, c) :: (c, d) :: Nil)
   }
 
 

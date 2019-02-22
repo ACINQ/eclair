@@ -416,13 +416,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       // we also filter out updates corresponding to channels/nodes that are blacklisted for this particular request
       // TODO: in case of duplicates, d.updates will be overridden by assistedUpdates even if they are more recent!
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
-      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
-      log.info(s"finding a route with randomize={} params={}", randomize_opt.getOrElse(nodeParams.routerConf.randomizeRouteSelection), params_opt.getOrElse(defaultRouteParams))
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
-      // if we want to randomize we ask the router to make a random selection among the three best routes
-      val routesToFind = if(randomize_opt.getOrElse(nodeParams.routerConf.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
+      val routesToFind = if (randomize_opt.getOrElse(nodeParams.routerConf.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
       val params = params_opt.getOrElse(defaultRouteParams)
 
+      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
+      log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
       findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, routeParams = params)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
@@ -843,7 +842,7 @@ object Router {
     * @param extraEdges   a set of extra edges we want to CONSIDER during the search
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
     * @param routeParams  a set of parameters that can restrict the route search
-    * @param wr an object containing the ratios used to 'weight' edges when searching for the shortest path
+    * @param wr           an object containing the ratios used to 'weight' edges when searching for the shortest path
     * @return the computed route to the destination @targetNodeId
     */
   def findRoute(g: DirectedGraph,
