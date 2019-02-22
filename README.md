@@ -88,6 +88,7 @@ To change your node's configuration, create a file named `eclair.conf` in `~/.ec
 eclair.chain=testnet
 eclair.node-alias=eclair
 eclair.node-color=49daaa
+eclair.server.public-ips.0="YOUR_IP_HERE"
 ```
 
 Here are some of the most common options:
