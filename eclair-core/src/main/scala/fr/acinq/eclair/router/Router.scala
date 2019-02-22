@@ -19,22 +19,19 @@ package fr.acinq.eclair.router
 import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
-import akka.pattern.pipe
-import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, InvalidAnnouncement, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidAnnouncement, InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{RichWeight, WeightedPath}
+import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-
 import scala.collection.{SortedSet, mutable}
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
@@ -44,10 +41,21 @@ import scala.util.{Random, Try}
 
 // @formatter:off
 
-case class RouterConf(randomizeRouteSelection: Boolean, channelExcludeDuration: FiniteDuration, routerBroadcastInterval: FiniteDuration, searchMaxFeeBaseSat: Long, searchMaxFeePct: Double, searchMaxRouteLength: Int, searchMaxCltv: Int)
+case class RouterConf(randomizeRouteSelection: Boolean,
+                      channelExcludeDuration: FiniteDuration,
+                      routerBroadcastInterval: FiniteDuration,
+                      searchMaxFeeBaseSat: Long,
+                      searchMaxFeePct: Double,
+                      searchMaxRouteLength: Int,
+                      searchMaxCltv: Int,
+                      searchHeuristicsEnabled: Boolean,
+                      searchRatioCltv: Double,
+                      searchRatioChannelAge: Double,
+                      searchRatioChannelCapacity: Double)
+
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteParams(maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int)
+case class RouteParams(maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int, ratios: Option[WeightRatios])
 case class RouteRequest(source: PublicKey,
                         target: PublicKey,
                         amountMsat: Long,
@@ -56,6 +64,7 @@ case class RouteRequest(source: PublicKey,
                         ignoreChannels: Set[ChannelDesc] = Set.empty,
                         randomize: Option[Boolean] = None,
                         routeParams: Option[RouteParams] = None)
+
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
   require(hops.size > 0, "route cannot be empty")
 }
@@ -110,10 +119,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
   val SHORTID_WINDOW = 100
 
   val defaultRouteParams = RouteParams(
-    maxFeeBaseMsat = nodeParams.routerConf.searchMaxFeeBaseSat * 1000,
+    maxFeeBaseMsat = nodeParams.routerConf.searchMaxFeeBaseSat * 1000, // converting sat -> msat
     maxFeePct = nodeParams.routerConf.searchMaxFeePct,
     routeMaxLength = nodeParams.routerConf.searchMaxRouteLength,
-    routeMaxCltv = nodeParams.routerConf.searchMaxCltv
+    routeMaxCltv = nodeParams.routerConf.searchMaxCltv,
+    ratios = nodeParams.routerConf.searchHeuristicsEnabled match {
+      case false => None
+      case true => Some(WeightRatios(
+        cltvDeltaFactor = nodeParams.routerConf.searchRatioCltv,
+        ageFactor = nodeParams.routerConf.searchRatioChannelAge,
+        capacityFactor = nodeParams.routerConf.searchRatioChannelCapacity
+      ))
+    }
   )
 
   val db = nodeParams.networkDb
@@ -397,11 +414,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       // we also filter out updates corresponding to channels/nodes that are blacklisted for this particular request
       // TODO: in case of duplicates, d.updates will be overridden by assistedUpdates even if they are more recent!
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
-      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
-      // if we want to randomize we ask the router to make a random selection among the three best routes
       val routesToFind = if (randomize_opt.getOrElse(nodeParams.routerConf.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
-      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, routeParams = params_opt.getOrElse(defaultRouteParams))
+      val params = params_opt.getOrElse(defaultRouteParams)
+
+      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
+      log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
+      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, routeParams = params)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -821,6 +840,7 @@ object Router {
     * @param extraEdges   a set of extra edges we want to CONSIDER during the search
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
     * @param routeParams  a set of parameters that can restrict the route search
+    * @param wr           an object containing the ratios used to 'weight' edges when searching for the shortest path
     * @return the computed route to the destination @targetNodeId
     */
   def findRoute(g: DirectedGraph,
@@ -834,13 +854,15 @@ object Router {
 
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
+    val currentBlockHeight = Globals.blockCount.get()
+
     val boundaries: RichWeight => Boolean = { weight =>
       ((weight.cost - amountMsat) < routeParams.maxFeeBaseMsat || (weight.cost - amountMsat) < (routeParams.maxFeePct * amountMsat)) &&
         weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
         weight.cltv <= routeParams.routeMaxCltv
     }
 
-    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, boundaries).toList match {
+    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList match {
       case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
         return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
       case Nil => throw RouteNotFound
