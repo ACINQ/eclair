@@ -73,7 +73,18 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     ))
   ))
 
-  val commonConfig = ConfigFactory.parseMap(Map("eclair.chain" -> "regtest", "eclair.server.public-ips.1" -> "127.0.0.1", "eclair.bitcoind.port" -> 28333, "eclair.bitcoind.rpcport" -> 28332, "eclair.bitcoind.zmqblock" -> "tcp://127.0.0.1:28334", "eclair.bitcoind.zmqtx" -> "tcp://127.0.0.1:28335", "eclair.mindepth-blocks" -> 2, "eclair.max-htlc-value-in-flight-msat" -> 100000000000L, "eclair.router.broadcast-interval" -> "2 second", "eclair.auto-reconnect" -> false))
+  val commonConfig = ConfigFactory.parseMap(Map(
+    "eclair.chain" -> "regtest",
+    "eclair.server.public-ips.1" -> "127.0.0.1",
+    "eclair.bitcoind.port" -> 28333,
+    "eclair.bitcoind.rpcport" -> 28332,
+    "eclair.bitcoind.zmqblock" -> "tcp://127.0.0.1:28334",
+    "eclair.bitcoind.zmqtx" -> "tcp://127.0.0.1:28335",
+    "eclair.mindepth-blocks" -> 2,
+    "eclair.max-htlc-value-in-flight-msat" -> 100000000000L,
+    "eclair.router.broadcast-interval" -> "2 second",
+    "eclair.auto-reconnect" -> false,
+    "eclair.to-remote-delay-blocks" -> 144))
 
   implicit val formats = DefaultFormats
 
