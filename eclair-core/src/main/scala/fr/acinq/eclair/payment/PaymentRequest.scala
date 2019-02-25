@@ -427,10 +427,11 @@ object PaymentRequest {
   def read(input: String): PaymentRequest = {
     // used only for data validation
     Bech32.decode(input)
-    val separatorIndex = input.lastIndexOf('1')
-    val hrp = input.take(separatorIndex)
+    val lowercaseInput = input.toLowerCase
+    val separatorIndex = lowercaseInput.lastIndexOf('1')
+    val hrp = lowercaseInput.take(separatorIndex)
     val prefix: String = prefixes.values.find(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
-    val data = string2Bits(input.slice(separatorIndex + 1, input.size - 6)) // 6 == checksum size
+    val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.size - 6)) // 6 == checksum size
     val bolt11Data = Codecs.bolt11DataCodec.decode(data).require.value
     val signature = bolt11Data.signature
     val r = new BigInteger(1, signature.take(32).toArray)
