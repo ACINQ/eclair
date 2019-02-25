@@ -31,7 +31,7 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: BinaryData)(implicit
 
   override def getBalance = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(balance => balance.confirmed + balance.unconfirmed)
 
-  override def getFinalAddress = (wallet ? GetCurrentReceiveAddress).mapTo[GetCurrentReceiveAddressResponse].map(_.address)
+  override def getFinalAddress = (wallet ? GetCurrentChangeAddress).mapTo[GetCurrentChangeAddressResponse].map(_.address)
 
   def getXpub: Future[GetXpubResponse] = (wallet ? GetXpub).mapTo[GetXpubResponse]
 

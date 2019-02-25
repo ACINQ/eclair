@@ -276,4 +276,38 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       confirmed1 < confirmed - Btc(1) && confirmed1 > confirmed - Btc(1) - Satoshi(50000)
     }, max = 30 seconds, interval = 1 second)
   }
+
+  test ("rotate change addresses") {
+    val probe = TestProbe()
+    probe.send(wallet, GetCurrentChangeAddress)
+    val GetCurrentChangeAddressResponse(address1) = probe.expectMsgType[GetCurrentChangeAddressResponse]
+
+    // create a publish a tx to an address that is not ours
+    // this is what happens when you create a new channel
+    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(address) = probe.expectMsgType[JValue]
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
+    probe.send(wallet, CompleteTransaction(tx, 20000))
+    val CompleteTransactionResponse(tx1, fee1, None) = probe.expectMsgType[CompleteTransactionResponse]
+
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[WalletEvent])
+
+    // publish the tx, but don't generate new blocks
+    logger.info(s"sending 1 btc to $address with tx ${tx1.txid}")
+    probe.send(wallet, BroadcastTransaction(tx1))
+    val BroadcastTransactionResponse(_, None) = probe.expectMsgType[BroadcastTransactionResponse]
+
+    // there should be a notification for a new incoming tx (because there's change for us)
+    listener.expectMsgType[TransactionReceived]
+
+    // and another notification to tell us that the wallet is ready
+    // both notifications are used by eclair mobile
+    listener.expectMsgType[WalletReady]
+
+    // we should now have a different change address
+    probe.send(wallet, GetCurrentChangeAddress)
+    val GetCurrentChangeAddressResponse(address2) = probe.expectMsgType[GetCurrentChangeAddressResponse]
+    assert(address2 != address1)
+  }
 }

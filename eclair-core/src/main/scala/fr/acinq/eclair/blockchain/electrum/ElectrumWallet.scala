@@ -459,6 +459,8 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(GetCurrentReceiveAddress, data) => stay replying GetCurrentReceiveAddressResponse(data.currentReceiveAddress)
 
+    case Event(GetCurrentChangeAddress, data) => stay replying GetCurrentChangeAddressResponse(data.currentChangeAddress)
+
     case Event(GetBalance, data) =>
       val (confirmed, unconfirmed) = data.balance
       stay replying GetBalanceResponse(confirmed, unconfirmed)
@@ -500,6 +502,9 @@ object ElectrumWallet {
 
   case object GetCurrentReceiveAddress extends Request
   case class GetCurrentReceiveAddressResponse(address: String) extends Response
+
+  case object GetCurrentChangeAddress extends Request
+  case class GetCurrentChangeAddressResponse(address: String) extends Response
 
   case object GetData extends Request
   case class GetDataResponse(state: Data) extends Response
