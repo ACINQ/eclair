@@ -571,13 +571,13 @@ object Transactions {
     }.map(_._2)
   }
 
-  def sign(tx: Transaction, inputIndex: Int, redeemScript: BinaryData, amount: Satoshi, key: PrivateKey): BinaryData = {
-    Transaction.signInput(tx, inputIndex, redeemScript, SIGHASH_ALL, amount, SIGVERSION_WITNESS_V0, key)
+  def sign(tx: Transaction, inputIndex: Int, redeemScript: BinaryData, amount: Satoshi, key: PrivateKey, sigHash: Int): BinaryData = {
+    Transaction.signInput(tx, inputIndex, redeemScript, sigHash, amount, SIGVERSION_WITNESS_V0, key)
   }
 
-  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey): BinaryData = {
+  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sigHash: Int): BinaryData = {
     require(txinfo.tx.txIn.lengthCompare(1) == 0, "only one input allowed")
-    sign(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, txinfo.input.txOut.amount, key)
+    sign(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, txinfo.input.txOut.amount, key, sigHash)
   }
 
   def addSigs(commitTx: CommitTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: BinaryData, remoteSig: BinaryData): CommitTx = {
@@ -638,8 +638,8 @@ object Transactions {
   def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] =
     Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.tx.txIn.head.outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
-  def checkSig(txinfo: TransactionWithInputInfo, sig: BinaryData, pubKey: PublicKey): Boolean = {
-    val data = Transaction.hashForSigning(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, SIGHASH_ALL, txinfo.input.txOut.amount, SIGVERSION_WITNESS_V0)
+  def checkSig(txinfo: TransactionWithInputInfo, sig: BinaryData, pubKey: PublicKey, sigHash: Int): Boolean = {
+    val data = Transaction.hashForSigning(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, sigHash, txinfo.input.txOut.amount, SIGVERSION_WITNESS_V0)
     Crypto.verifySignature(data, sig, pubKey)
   }
 

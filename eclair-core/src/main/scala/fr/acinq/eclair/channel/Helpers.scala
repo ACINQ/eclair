@@ -375,7 +375,7 @@ object Helpers {
       // TODO: check that
       val dustLimitSatoshis = Satoshi(Math.max(localParams.dustLimitSatoshis, remoteParams.dustLimitSatoshis))
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
-      val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.channelKeyPath))
+      val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.channelKeyPath), SIGHASH_ALL)
       val closingSigned = ClosingSigned(channelId, closingFee.amount, localClosingSig)
       log.info(s"signed closing txid=${closingTx.tx.txid} with closingFeeSatoshis=${closingSigned.feeSatoshis}")
       log.debug(s"closingTxid=${closingTx.tx.txid} closingTx=${closingTx.tx}}")
@@ -431,7 +431,7 @@ object Helpers {
       // first we will claim our main output as soon as the delay is over
       val mainDelayedTx = generateTx("main-delayed-output")(Try {
         val claimDelayed = Transactions.makeClaimDelayedOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
-        val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelKeyPath), localPerCommitmentPoint)
+        val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelKeyPath), localPerCommitmentPoint, SIGHASH_ALL)
         Transactions.addSigs(claimDelayed, sig)
       })
 
@@ -466,7 +466,7 @@ object Helpers {
               remoteParams.toSelfDelay,
               localDelayedPubkey,
               localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
-            val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelKeyPath), localPerCommitmentPoint)
+            val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelKeyPath), localPerCommitmentPoint, SIGHASH_ALL)
             Transactions.addSigs(claimDelayed, sig)
           })
       }
@@ -517,7 +517,7 @@ object Helpers {
           val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
           val txinfo = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, outputsAlreadyUsed, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
           outputsAlreadyUsed = outputsAlreadyUsed + txinfo.input.outPoint.index.toInt
-          val sig = keyManager.sign(txinfo, keyManager.htlcPoint(localParams.channelKeyPath), remoteCommit.remotePerCommitmentPoint)
+          val sig = keyManager.sign(txinfo, keyManager.htlcPoint(localParams.channelKeyPath), remoteCommit.remotePerCommitmentPoint, SIGHASH_ALL)
           Transactions.addSigs(txinfo, sig, preimage)
         })
 
@@ -527,7 +527,7 @@ object Helpers {
         case DirectedHtlc(IN, add: UpdateAddHtlc) => generateTx("claim-htlc-timeout")(Try {
           val txinfo = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, outputsAlreadyUsed, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
           outputsAlreadyUsed = outputsAlreadyUsed + txinfo.input.outPoint.index.toInt
-          val sig = keyManager.sign(txinfo, keyManager.htlcPoint(localParams.channelKeyPath), remoteCommit.remotePerCommitmentPoint)
+          val sig = keyManager.sign(txinfo, keyManager.htlcPoint(localParams.channelKeyPath), remoteCommit.remotePerCommitmentPoint, SIGHASH_ALL)
           Transactions.addSigs(txinfo, sig)
         })
       }.toSeq.flatten
@@ -560,7 +560,7 @@ object Helpers {
       val mainTx = generateTx("claim-p2wpkh-output")(Try {
         val claimMain = Transactions.makeClaimP2WPKHOutputTx(commitTx, Satoshi(commitments.localParams.dustLimitSatoshis),
           localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-        val sig = keyManager.sign(claimMain, keyManager.paymentPoint(commitments.localParams.channelKeyPath), remotePerCommitmentPoint)
+        val sig = keyManager.sign(claimMain, keyManager.paymentPoint(commitments.localParams.channelKeyPath), remotePerCommitmentPoint, SIGHASH_ALL)
         Transactions.addSigs(claimMain, localPubkey, sig)
       })
 
@@ -611,14 +611,14 @@ object Helpers {
           // first we will claim our main output right away
           val mainTx = generateTx("claim-p2wpkh-output")(Try {
             val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(localParams.channelKeyPath), remotePerCommitmentPoint)
+            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(localParams.channelKeyPath), remotePerCommitmentPoint, SIGHASH_ALL)
             Transactions.addSigs(claimMain, localPubkey, sig)
           })
 
           // then we punish them by stealing their main output
           val mainPenaltyTx = generateTx("main-penalty")(Try {
             val txinfo = Transactions.makeMainPenaltyTx(tx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty)
-            val sig = keyManager.sign(txinfo, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret)
+            val sig = keyManager.sign(txinfo, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret, SIGHASH_ALL)
             Transactions.addSigs(txinfo, sig)
           })
 
@@ -639,7 +639,7 @@ object Helpers {
           generateTx("htlc-penalty")(Try {
             val htlcPenalty = Transactions.makeHtlcPenaltyTx(tx, outputsAlreadyUsed, htlcRedeemScript, Satoshi(localParams.dustLimitSatoshis), localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
             outputsAlreadyUsed = outputsAlreadyUsed + htlcPenalty.input.outPoint.index.toInt
-            val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret)
+            val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret, SIGHASH_ALL)
             Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
           })
         }.toList.flatten
@@ -694,7 +694,7 @@ object Helpers {
 
             generateTx("claim-htlc-delayed-penalty")(Try {
               val htlcDelayedPenalty = Transactions.makeClaimDelayedOutputPenaltyTx(htlcTx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
-              val sig = keyManager.sign(htlcDelayedPenalty, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret)
+              val sig = keyManager.sign(htlcDelayedPenalty, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret, SIGHASH_ALL)
               val signedTx = Transactions.addSigs(htlcDelayedPenalty, sig)
               // we need to make sure that the tx is indeed valid
               Transaction.correctlySpends(signedTx.tx, Seq(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
