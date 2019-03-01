@@ -41,7 +41,7 @@ import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JBool, JInt, JString}
@@ -56,7 +56,7 @@ case class JsonRPCBody(jsonrpc: String = "1.0", id: String = "eclair-node", meth
 case class Error(code: Int, message: String)
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 case class Status(node_id: String)
-case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: BinaryData, blockHeight: Int)
+case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: BinaryData, blockHeight: Int, publicAddresses: Seq[NodeAddress])
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 trait RPCRejection extends Rejection {
   def requestId: String
@@ -184,8 +184,8 @@ trait Service extends Logging {
                         }
                         // local network methods
                         case "peers" => completeRpcFuture(req.id, for {
-                          peers <- (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]]
-                          peerinfos <- Future.sequence(peers.values.map(peer => (peer ? GetPeerInfo).mapTo[PeerInfo]))
+                          peers <- (switchboard ? 'peers).mapTo[Iterable[ActorRef]]
+                          peerinfos <- Future.sequence(peers.map(peer => (peer ? GetPeerInfo).mapTo[PeerInfo]))
                         } yield peerinfos)
                         case "channels" => req.params match {
                           case Nil =>
@@ -266,7 +266,7 @@ trait Service extends Logging {
                         case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
                           (Try(BinaryData(paymentHash)), Try(PublicKey(nodeId))) match {
                             case (Success(ph), Success(pk)) => completeRpcFuture(req.id, (paymentInitiator ?
-                              SendPayment(amountMsat.toLong, ph, pk, maxFeePct = nodeParams.maxPaymentFee)).mapTo[PaymentResult].map {
+                              SendPayment(amountMsat.toLong, ph, pk)).mapTo[PaymentResult].map {
                               case s: PaymentSucceeded => s
                               case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
                             })
@@ -286,8 +286,8 @@ trait Service extends Logging {
                             logger.debug(s"api call for sending payment with amount_msat=$amount_msat")
                             // optional cltv expiry
                             val sendPayment = pr.minFinalCltvExpiry match {
-                              case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, maxFeePct = nodeParams.maxPaymentFee)
-                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry, maxFeePct = nodeParams.maxPaymentFee)
+                              case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId)
+                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry)
                             }
                             completeRpcFuture(req.id, (paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
                               case s: PaymentSucceeded => s

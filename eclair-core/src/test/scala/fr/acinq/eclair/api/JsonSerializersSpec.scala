@@ -18,10 +18,11 @@ package fr.acinq.eclair.api
 
 import java.net.{InetAddress, InetSocketAddress}
 
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.{BinaryData, OutPoint}
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.transactions.{IN, OUT}
-import fr.acinq.eclair.wire.NodeAddress
+import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
 import org.json4s.jackson.Serialization
 import org.scalatest.{FunSuite, Matchers}
 
@@ -50,11 +51,15 @@ class JsonSerializersSpec extends FunSuite with Matchers {
   }
 
   test("NodeAddress serialization") {
-    val ipv4 = NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array(10, 0, 0, 1)), 8888))
-    val ipv6LocalHost = NodeAddress(new InetSocketAddress(InetAddress.getByAddress(Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)), 9735))
+    val ipv4 = NodeAddress.fromParts("10.0.0.1", 8888).get
+    val ipv6LocalHost = NodeAddress.fromParts(InetAddress.getByAddress(Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)).getHostAddress, 9735).get
+    val tor2 = Tor2("aaaqeayeaudaocaj", 7777)
+    val tor3 = Tor3("aaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypsaijc", 9999)
 
     Serialization.write(ipv4)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""10.0.0.1:8888""""
     Serialization.write(ipv6LocalHost)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""[0:0:0:0:0:0:0:1]:9735""""
+    Serialization.write(tor2)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""aaaqeayeaudaocaj.onion:7777""""
+    Serialization.write(tor3)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""aaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypsaijc.onion:9999""""
   }
 
   test("Direction serialization") {
