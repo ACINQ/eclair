@@ -638,6 +638,14 @@ object Transactions {
   def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] =
     Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.tx.txIn.head.outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
+  /**
+    *
+    * @param txinfo  the transaction containing the signature to check
+    * @param sig     the signature that is going to be checked against
+    * @param pubKey  pubkey of the signature
+    * @param sigHash the type used to produce the hash for signing
+    * @return
+    */
   def checkSig(txinfo: TransactionWithInputInfo, sig: BinaryData, pubKey: PublicKey, sigHash: Int): Boolean = {
     val data = Transaction.hashForSigning(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, sigHash, txinfo.input.txOut.amount, SIGVERSION_WITNESS_V0)
     Crypto.verifySignature(data, sig, pubKey)

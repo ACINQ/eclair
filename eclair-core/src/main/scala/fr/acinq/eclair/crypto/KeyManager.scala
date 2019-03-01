@@ -45,6 +45,7 @@ trait KeyManager {
     *
     * @param tx        input transaction
     * @param publicKey extended public key
+    * @param sigHash   the sigHash type used to sign
     * @return a signature generated with the private key that matches the input
     *         extended public key
     */
@@ -56,6 +57,7 @@ trait KeyManager {
     * @param tx          input transaction
     * @param publicKey   extended public key
     * @param remotePoint remote point
+    * @param sigHash   the sigHash type used to sign
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote point.
     */
@@ -67,6 +69,7 @@ trait KeyManager {
     * @param tx           input transaction
     * @param publicKey    extended public key
     * @param remoteSecret remote secret
+    * @param sigHash   the sigHash type used to sign
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote secret.
     */
