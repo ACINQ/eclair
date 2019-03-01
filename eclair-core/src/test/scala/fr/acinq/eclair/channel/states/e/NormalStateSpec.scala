@@ -659,6 +659,34 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.signed.size == 1)
   }
 
+  test("recv CommitSig (one htlc received, option_simplified_commitment)", Tag("simplified_commitment")) { f =>
+    import f._
+    val sender = TestProbe()
+
+    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+    sender.send(alice, CMD_SIGN)
+    sender.expectMsg("ok")
+
+    // actual test begins
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+
+    bob2alice.expectMsgType[RevokeAndAck]
+    // bob replies immediately with a signature
+    bob2alice.expectMsgType[CommitSig]
+
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc.id && h.direction == IN))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.getContext == ContextSimplifiedCommitment)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.getContext == ContextSimplifiedCommitment)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.size == 1)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocalMsat == initialState.commitments.localCommit.spec.toLocalMsat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.acked.size == 0)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.signed.size == 1)
+  }
+
+
   test("recv CommitSig (one htlc sent)") { f =>
     import f._
     val sender = TestProbe()
@@ -678,6 +706,31 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc.id && h.direction == OUT))
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.size == 1)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocalMsat == initialState.commitments.localCommit.spec.toLocalMsat)
+  }
+
+  test("recv CommitSig (one htlc sent, option_simplified_commitment)", Tag("simplified_commitment")) { f =>
+    import f._
+    val sender = TestProbe()
+
+    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+    sender.send(alice, CMD_SIGN)
+    sender.expectMsg("ok")
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+
+    // actual test begins (note that channel sends a CMD_SIGN to itself when it receives RevokeAndAck and there are changes)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc.id && h.direction == OUT))
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.getContext == ContextSimplifiedCommitment)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.getContext == ContextSimplifiedCommitment)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.size == 1)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocalMsat == initialState.commitments.localCommit.spec.toLocalMsat)
   }
