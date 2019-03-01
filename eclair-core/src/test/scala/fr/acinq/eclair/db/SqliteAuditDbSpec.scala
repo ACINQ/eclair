@@ -48,7 +48,7 @@ class SqliteAuditDbSpec extends FunSuite {
     val e4 = NetworkFeePaid(null, randomKey.publicKey, randomBytes(32), Transaction(0, Seq.empty, Seq.empty, 0), Satoshi(42), "mutual")
     val e5 = PaymentSent(MilliSatoshi(42000), MilliSatoshi(1000), randomBytes(32), randomBytes(32), randomBytes(32), timestamp = 0)
     val e6 = PaymentSent(MilliSatoshi(42000), MilliSatoshi(1000), randomBytes(32), randomBytes(32), randomBytes(32), timestamp = Platform.currentTime * 2)
-    val e7 = AvailableBalanceChanged(null, randomBytes(32), ShortChannelId(500000, 42, 1), 456123000, ChannelStateSpec.commitments)
+    val e7 = AvailableBalanceChanged(null, randomBytes(32), ShortChannelId(500000, 42, 1), 456123000, ChannelStateSpec.commitmentsV1)
     val e8 = ChannelLifecycleEvent(randomBytes(32), randomKey.publicKey, 456123000, true, false, "mutual")
 
     db.add(e1)

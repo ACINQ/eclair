@@ -99,7 +99,7 @@ object Transactions {
   val htlcTimeoutWeight = 663
   val htlcSuccessWeight = 703
   val simplifiedFeerateKw = 253
-  val pushMeValue = Satoshi(1000)
+  val pushMeValue = Satoshi(1000) // used in option_simplified_commitment
 
   /**
     * these values specific to us and used to estimate fees

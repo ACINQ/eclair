@@ -73,11 +73,10 @@ sealed trait Commitments {
   def announceChannel: Boolean = (channelFlags & 0x01) != 0
 
   // TODO subtract the pushMe value from the balance?
-  // TODO figure out the type of commitment from the type of this?
   def availableBalanceForSendMsat: Long = {
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-    val fees = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced)(commitmentContext = getContext).amount else 0
-    reduced.toRemoteMsat / 1000 - remoteParams.channelReserveSatoshis - fees
+    val feesMsat = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced)(commitmentContext = getContext).amount * 1000 else 0
+    reduced.toRemoteMsat - remoteParams.channelReserveSatoshis * 1000 - feesMsat
   }
 
   // get the context for this commitment
@@ -126,11 +125,6 @@ case class SimplifiedCommitment(localParams: LocalParams, remoteParams: RemotePa
                                 channelId: BinaryData) extends Commitments {
 
 
-  def availableBalanceForSendMsat: Long = {
-    val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-    val feesMsat = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced).amount * 1000 else 0
-    reduced.toRemoteMsat - remoteParams.channelReserveSatoshis * 1000 - feesMsat
-  }
   override def getContext: CommitmentContext = ContextSimplifiedCommitment
 }
 
