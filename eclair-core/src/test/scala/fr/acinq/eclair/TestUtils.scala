@@ -14,19 +14,18 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db
+package fr.acinq.eclair
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.wire.NodeAddress
+import java.io.File
 
-trait PeersDb {
+object TestUtils {
 
-  def addOrUpdatePeer(nodeId: PublicKey, address: NodeAddress)
-
-  def removePeer(nodeId: PublicKey)
-
-  def listPeers(): Map[PublicKey, NodeAddress]
-
-  def close(): Unit
+  /**
+    * Get the module's target directory (works from command line and within intellij)
+    */
+  val BUILD_DIRECTORY = sys
+    .props
+    .get("buildDirectory") // this is defined if we run from maven
+    .getOrElse(new File(sys.props("user.dir"), "target").getAbsolutePath) // otherwise we probably are in intellij, so we build it manually assuming that user.dir == path to the module
 
 }

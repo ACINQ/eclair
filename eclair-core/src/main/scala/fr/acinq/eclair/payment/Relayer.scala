@@ -76,9 +76,9 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId")
       context become main(channelUpdates - shortChannelId, node2channels.removeBinding(remoteNodeId, shortChannelId))
 
-    case AvailableBalanceChanged(_, _, shortChannelId, _, availableBalanceForSendMsat) =>
+    case AvailableBalanceChanged(_, _, shortChannelId, _, commitments) =>
       val channelUpdates1 = channelUpdates.get(shortChannelId) match {
-        case Some(c: OutgoingChannel) => channelUpdates + (shortChannelId -> c.copy(availableBalanceMsat = availableBalanceForSendMsat))
+        case Some(c: OutgoingChannel) => channelUpdates + (shortChannelId -> c.copy(availableBalanceMsat = commitments.availableBalanceForSendMsat))
         case None => channelUpdates // we only consider the balance if we have the channel_update
       }
       context become main(channelUpdates1, node2channels)

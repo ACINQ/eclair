@@ -126,6 +126,11 @@ case class SimplifiedCommitment(localParams: LocalParams, remoteParams: RemotePa
                                 channelId: BinaryData) extends Commitments {
 
 
+  def availableBalanceForSendMsat: Long = {
+    val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
+    val feesMsat = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced).amount * 1000 else 0
+    reduced.toRemoteMsat - remoteParams.channelReserveSatoshis * 1000 - feesMsat
+  }
   override def getContext: CommitmentContext = ContextSimplifiedCommitment
 }
 
