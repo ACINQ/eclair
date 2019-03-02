@@ -21,7 +21,7 @@ import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{Block, MilliBtc, Satoshi, Script}
+import fr.acinq.bitcoin.{Block, MilliBtc, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.FundTransactionResponse
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError}
@@ -92,6 +92,32 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
       val FundTransactionResponse(_, _, fee) = sender.expectMsgType[FundTransactionResponse]
       assert(fee == Satoshi(satoshi))
     }
+  }
+
+  test("handle error when signing transactions") {
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+    val wallet = new BitcoinCoreWallet(bitcoinClient)
+
+    val sender = TestProbe()
+
+    // create and fund a transaction
+    wallet.getFinalAddress.pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+    val unsignedTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1000000), addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0)
+    wallet.fundTransaction(unsignedTx, false, 1500).pipeTo(sender.ref)
+    val FundTransactionResponse(fundedTx, _, _) = sender.expectMsgType[FundTransactionResponse]
+
+    // change the index of the UTXO that it spends
+    val fundedTx1 = fundedTx.copy(txIn = fundedTx.txIn.updated(0, fundedTx.txIn(0).copy(outPoint = fundedTx.txIn(0).outPoint.copy(index = fundedTx.txIn(0).outPoint.index + 1))))
+
+    // signing it should fail, and the error message should contain the txid of the UTXO that could not be used
+    wallet.signTransaction(fundedTx1).pipeTo(sender.ref)
+    val Failure(JsonRPCError(error)) = sender.expectMsgType[Failure]
+    assert(error.message.contains(fundedTx1.txIn(0).outPoint.txid.toString()))
   }
 
   test("create/commit/rollback funding txes") {

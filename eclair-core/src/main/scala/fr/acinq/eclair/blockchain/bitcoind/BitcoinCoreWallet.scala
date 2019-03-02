@@ -52,11 +52,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
       val JString(hex) = json \ "hex"
       val JBool(complete) = json \ "complete"
       if (!complete) {
-        val message = json \ "errors" match {
-          case value: JValue =>
-            Serialization.write(value)(DefaultFormats)
-          case _ => "signrawtransactionwithwallet failed"
-        }
+        val message = (json \ "errors" \\ classOf[JString]).mkString(",")
         throw new JsonRPCError(Error(-1, message))
       }
       SignTransactionResponse(Transaction.read(hex), complete)
