@@ -761,7 +761,7 @@ object Helpers {
       * @param tx a tx that has reached mindepth
       * @return a set of htlcs that need to be failed upstream
       */
-    def timedoutHtlcs(localCommit: LocalCommit, localDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
+    def timedoutHtlcs(localCommit: LocalCommit, localDustLimit: Satoshi, tx: Transaction)(implicit commitmentContext: CommitmentContext, log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (tx.txid == localCommit.publishableTxs.commitTx.tx.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
         (localCommit.spec.htlcs.filter(_.direction == OUT) -- Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec)).map(_.add)
@@ -785,7 +785,7 @@ object Helpers {
       * @param tx a tx that has reached mindepth
       * @return a set of htlcs that need to be failed upstream
       */
-    def timedoutHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
+    def timedoutHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction)(implicit commitmentContext: CommitmentContext, log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (tx.txid == remoteCommit.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
         (remoteCommit.spec.htlcs.filter(_.direction == IN) -- Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec)).map(_.add)

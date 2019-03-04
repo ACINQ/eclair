@@ -121,16 +121,22 @@ object Transactions {
     */
   def fee2rate(fee: Satoshi, weight: Int) = (fee.amount * 1000L) / weight
 
-  def trimOfferedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec): Seq[DirectedHtlc] = {
-    val htlcTimeoutFee = weight2fee(spec.feeratePerKw, htlcTimeoutWeight)
+  def trimOfferedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec)(implicit commitmentContext: CommitmentContext): Seq[DirectedHtlc] = {
+    val htlcTimeoutFee = commitmentContext match {
+      case ContextCommitmentV1 => weight2fee(spec.feeratePerKw, htlcTimeoutWeight)
+      case ContextSimplifiedCommitment => Satoshi(0)
+    }
     spec.htlcs
       .filter(_.direction == OUT)
       .filter(htlc => MilliSatoshi(htlc.add.amountMsat) >= (dustLimit + htlcTimeoutFee))
       .toSeq
   }
 
-  def trimReceivedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec): Seq[DirectedHtlc] = {
-    val htlcSuccessFee = weight2fee(spec.feeratePerKw, htlcSuccessWeight)
+  def trimReceivedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec)(implicit commitmentContext: CommitmentContext): Seq[DirectedHtlc] = {
+    val htlcSuccessFee = commitmentContext match {
+      case ContextCommitmentV1 => weight2fee(spec.feeratePerKw, htlcSuccessWeight)
+      case ContextSimplifiedCommitment => Satoshi(0)
+    }
     spec.htlcs
       .filter(_.direction == IN)
       .filter(htlc => MilliSatoshi(htlc.add.amountMsat) >= (dustLimit + htlcSuccessFee))
@@ -288,8 +294,7 @@ object Transactions {
       lockTime = 0), htlc.paymentHash)
   }
 
-  //TODO adjust for option_simplified_commitment?
-  def makeHtlcTxs(commitTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+  def makeHtlcTxs(commitTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec)(implicit commitmentContext: CommitmentContext): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
     val htlcTimeoutTxs = trimOfferedHtlcs(localDustLimit, spec).map { htlc =>
       val htlcTx = makeHtlcTimeoutTx(commitTx, outputsAlreadyUsed, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec.feeratePerKw, htlc.add)
