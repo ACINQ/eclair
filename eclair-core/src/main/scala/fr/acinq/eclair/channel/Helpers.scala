@@ -543,7 +543,8 @@ object Helpers {
 
     /**
       *
-      * Claim our Main output, if the commitment was of type `option_simplified_commitment` we also claim the to_local_pushme output
+      * Claim our Main output
+      *
       *
       * @param commitments              either our current commitment data in case of usual remote uncooperative closing
       *                                 or our outdated commitment data in case of data loss protection procedure; in any case it is used only
@@ -555,17 +556,28 @@ object Helpers {
     def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: Point, commitTx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       implicit val commitmentContext = commitments.getContext
 
-      val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(commitments.localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
-
       // no need to use a high fee rate for our main output (we are the only one who can spend it)
       val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
 
-      val mainTx = generateTx("claim-p2wpkh-output")(Try {
-        val claimMain = Transactions.makeClaimP2WPKHOutputTx(commitTx, Satoshi(commitments.localParams.dustLimitSatoshis),
-          localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-        val sig = keyManager.sign(claimMain, keyManager.paymentPoint(commitments.localParams.channelKeyPath), remotePerCommitmentPoint, SIGHASH_ALL)
-        Transactions.addSigs(claimMain, localPubkey, sig)
-      })
+      val mainTx = commitments.getContext match {
+        case ContextCommitmentV1 =>
+          val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(commitments.localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
+          generateTx("claim-p2wpkh-output")(Try {
+            val claimMain = Transactions.makeClaimP2WPKHOutputTx(commitTx, Satoshi(commitments.localParams.dustLimitSatoshis),
+              localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain, None)
+            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(commitments.localParams.channelKeyPath), remotePerCommitmentPoint, SIGHASH_ALL)
+            Transactions.addSigs(claimMain, localPubkey, sig)
+          })
+
+        case ContextSimplifiedCommitment =>
+          val localPubkey = keyManager.paymentPoint(commitments.localParams.channelKeyPath).publicKey
+          generateTx("claim-p2wpkh-output")(Try {
+            val claimMain = Transactions.makeClaimP2WPKHOutputTx(commitTx, Satoshi(commitments.localParams.dustLimitSatoshis),
+              localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain, Some(commitments.localParams.toSelfDelay))
+            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(commitments.localParams.channelKeyPath), remotePerCommitmentPoint, SIGHASH_ALL)
+            Transactions.addSigs(claimMain, localPubkey, sig)
+          })
+      }
 
       RemoteCommitPublished(
         commitTx = commitTx,
@@ -613,7 +625,7 @@ object Helpers {
 
           // first we will claim our main output right away
           val mainTx = generateTx("claim-p2wpkh-output")(Try {
-            val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain)
+            val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain, ???)
             val sig = keyManager.sign(claimMain, keyManager.paymentPoint(localParams.channelKeyPath), remotePerCommitmentPoint, SIGHASH_ALL)
             Transactions.addSigs(claimMain, localPubkey, sig)
           })

@@ -357,7 +357,7 @@ object Transactions {
     ClaimHtlcTimeoutTx(input, tx1)
   }
 
-  def makeClaimP2WPKHOutputTx(delayedOutputTx: Transaction, localDustLimit: Satoshi, localPaymentPubkey: PublicKey, localFinalScriptPubKey: BinaryData, feeratePerKw: Long)(implicit commitmentContext: CommitmentContext): ClaimP2WPKHOutputTx = {
+  def makeClaimP2WPKHOutputTx(delayedOutputTx: Transaction, localDustLimit: Satoshi, localPaymentPubkey: PublicKey, localFinalScriptPubKey: BinaryData, feeratePerKw: Long, toRemoteDelay: Option[Int])(implicit commitmentContext: CommitmentContext): ClaimP2WPKHOutputTx = {
 
     val claimTx = commitmentContext match {
       case ContextCommitmentV1 =>
@@ -376,28 +376,22 @@ object Transactions {
         // compute weight with a dummy 73 bytes signature (the largest you can get) and a dummy 33 bytes pubkey
         Transactions.addSigs(ClaimP2WPKHOutputTx(input, tx), BinaryData("00" * 33), BinaryData("00" * 73))
 
+      // here localPaymentPubkey == localDelayedPaymentPubkey
       case ContextSimplifiedCommitment =>
         val redeemScript = Script.pay2pkh(localPaymentPubkey)
-        val pubkeyScript = write(pay2wpkh(localPaymentPubkey))
+        val pubkeyScript = write(toRemoteDelayed(localPaymentPubkey, toRemoteDelay.getOrElse(throw new IllegalArgumentException("Error claiming the main output from remote commit, no 'toRemoteDelay' specified. (option_simplified_commitment)"))))
         val outputIndex = findPubKeyScriptIndex(delayedOutputTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
         val input = InputInfo(OutPoint(delayedOutputTx, outputIndex), delayedOutputTx.txOut(outputIndex), write(redeemScript))
-
-        val pushMeOutputIndex = findPushMeOutputIndex(localPaymentPubkey, delayedOutputTx).getOrElse {
-          throw new IllegalArgumentException("Could not find the push me output")
-        }
-        val pushMeOutputRedeemScript = Script.pay2wsh(Scripts.pushMeSimplified(localPaymentPubkey))
-        val pushMeInput = InputInfo(OutPoint(delayedOutputTx, pushMeOutputIndex), delayedOutputTx.txOut(pushMeOutputIndex), pushMeOutputRedeemScript)
 
         // unsigned tx
         val tx = Transaction(
           version = 2,
-          txIn = TxIn(input.outPoint, Array.emptyByteArray, 0x00000000L) :: TxIn(pushMeInput.outPoint, Array.emptyByteArray, 0x00000000L) :: Nil,
+          txIn = TxIn(input.outPoint, Array.emptyByteArray, 0x00000000L) :: Nil,
           txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
           lockTime = 0)
 
         // compute weight with a dummy 73 bytes signature (the largest you can get) and a dummy 33 bytes pubkey
-        val signed1 = Transactions.addSigs(ClaimP2WPKHOutputTx(input, tx), BinaryData("00" * 33), BinaryData("00" * 73)).tx
-        Transactions.addSigs(ClaimP2WPKHOutputTx(pushMeInput, signed1), BinaryData("00" * 33), BinaryData("00" * 73))
+        Transactions.addSigs(ClaimP2WPKHOutputTx(input, tx), BinaryData("00" * 33), BinaryData("00" * 73))
     }
 
 

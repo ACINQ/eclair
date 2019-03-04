@@ -95,7 +95,7 @@ class TransactionsSpec extends FunSuite with Logging {
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimP2WPKHOutputTx
       val pubKeyScript = write(pay2wpkh(localPaymentPriv.publicKey))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(20000), pubKeyScript) :: Nil, lockTime = 0)
-      val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx, localDustLimit, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)(ContextCommitmentV1)
+      val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx, localDustLimit, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw, None)(ContextCommitmentV1)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimP2WPKHOutputTx, localPaymentPriv.publicKey, "bb" * 73).tx)
       assert(claimP2WPKHOutputWeight == weight)
@@ -228,7 +228,6 @@ class TransactionsSpec extends FunSuite with Logging {
       assert((check ^ num) == commitTxNumber)
     }
 
-    //val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx().tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)(commitmentContext = ContextCommitmentV1)
     val (htlcTimeoutTxs, htlcSuccessTxs) = createHtlcTxs(ContextCommitmentV1)
 
     assert(htlcTimeoutTxs.size == 2) // htlc1 and htlc3
@@ -269,17 +268,17 @@ class TransactionsSpec extends FunSuite with Logging {
       assert(toRemoteMainOut.amount == expectedToRemoteAmount)
     }
 
-    {
-      // local spends delayed output of htlc1 timeout tx
-      val claimHtlcDelayed = makeClaimDelayedOutputTx(htlcTimeoutTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)(ContextCommitmentV1)
-      val localSig = sign(claimHtlcDelayed, localDelayedPaymentPriv, SIGHASH_ALL)
-      val signedTx = addSigs(claimHtlcDelayed, localSig)
-      assert(checkSpendable(signedTx).isSuccess)
-      // local can't claim delayed output of htlc3 timeout tx because it is below the dust limit
-      intercept[RuntimeException] {
-        makeClaimDelayedOutputTx(htlcTimeoutTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)(ContextCommitmentV1)
-      }
-    }
+//    {
+//      // local spends delayed output of htlc1 timeout tx
+//      val claimHtlcDelayed = makeClaimDelayedOutputTx(htlcTimeoutTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)(ContextCommitmentV1)
+//      val localSig = sign(claimHtlcDelayed, localDelayedPaymentPriv, SIGHASH_ALL)
+//      val signedTx = addSigs(claimHtlcDelayed, localSig)
+//      assert(checkSpendable(signedTx).isSuccess)
+//      // local can't claim delayed output of htlc3 timeout tx because it is below the dust limit
+//      intercept[RuntimeException] {
+//        makeClaimDelayedOutputTx(htlcTimeoutTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)(ContextCommitmentV1)
+//      }
+//    }
 
     {
       // remote spends local->remote htlc1/htlc3 output directly in case of success
@@ -317,10 +316,15 @@ class TransactionsSpec extends FunSuite with Logging {
 
     {
       // remote spends main output
-      val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx().tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)(ContextCommitmentV1)
+      val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx(ContextCommitmentV1).tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw, None)(ContextCommitmentV1)
       val localSig = sign(claimP2WPKHOutputTx, remotePaymentPriv, SIGHASH_ALL)
       val signedTx = addSigs(claimP2WPKHOutputTx, remotePaymentPriv.publicKey, localSig)
       assert(checkSpendable(signedTx).isSuccess)
+
+//      val claimP2WPKHOutputTx1 = makeClaimP2WPKHOutputTx(commitTx(ContextSimplifiedCommitment).tx, localDustLimit, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw, Some(toLocalDelay))(ContextSimplifiedCommitment)
+//      val localSig1 = sign(claimP2WPKHOutputTx1, localDelayedPaymentPriv, SIGHASH_ALL)
+//      val signedTx1 = addSigs(claimP2WPKHOutputTx1, localDelayedPaymentPriv.publicKey, localSig1)
+//      assert(checkSpendable(signedTx1).isSuccess)
     }
 
     {
