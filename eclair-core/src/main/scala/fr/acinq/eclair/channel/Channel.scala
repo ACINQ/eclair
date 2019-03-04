@@ -496,6 +496,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       context.system.scheduler.scheduleOnce(2 seconds, self, remoteAnnSigs)
       stay
 
+    case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingPublishFailed(d)
+
+    case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingTimeout(d)
+
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleInformationLeak(tx, d)
@@ -1354,6 +1358,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // we're in OFFLINE state, we don't broadcast the new update right away, we will do that when next time we go to NORMAL state
       stay using store(d.copy(channelUpdate = channelUpdate)) replying "ok"
 
+    case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingPublishFailed(d)
+
+    case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingTimeout(d)
+
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK | BITCOIN_FUNDING_DEEPLYBURIED, _, _), _) => stay
 
@@ -1473,6 +1481,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(c@CurrentBlockCount(count), d: HasCommitments) if d.commitments.timedoutOutgoingHtlcs(count).nonEmpty =>
       handleLocalError(HtlcTimedout(d.channelId, d.commitments.timedoutOutgoingHtlcs(count)), d, Some(c))
 
+    case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingPublishFailed(d)
+
+    case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingTimeout(d)
+
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK | BITCOIN_FUNDING_DEEPLYBURIED, _, _), _) => stay
 
@@ -1556,31 +1568,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     // when we realize we need to update our network fees, we send a CMD_UPDATE_FEE to ourselves which may result in this error being sent back to ourselves, this can be ignored
     case Event(Status.Failure(_: CannotAffordFees), _) => stay
 
-    // this event is here because we could be in state WAIT_FOR_FUNDING_CONFIRMED/OFFLINE/SYNCING
-    case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: HasCommitments) =>
-      d match {
-        case _: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
-          log.error(s"failed to publish funding tx")
-          val exc = ChannelFundingError(d.channelId)
-          val error = Error(d.channelId, exc.getMessage.getBytes)
-          // NB: we don't use the handleLocalError handler because it would result in the commit tx being published, which we don't want:
-          // implementation *guarantees* that in case of BITCOIN_FUNDING_PUBLISH_FAILED, the funding tx hasn't and will never be published, so we can close the channel right away
-          context.system.eventStream.publish(ChannelFailed(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc)))
-          goto(CLOSED) sending error
-        case _ => stay
-      }
-
-    // this event is here because we could be in state WAIT_FOR_FUNDING_CONFIRMED/OFFLINE/SYNCING
-    case Event(BITCOIN_FUNDING_TIMEOUT, d: HasCommitments) =>
-      d match {
-        case _: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
-          log.warning(s"funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE")
-          val exc = FundingTxTimedout(d.channelId)
-          val error = Error(d.channelId, exc.getMessage.getBytes)
-          context.system.eventStream.publish(ChannelFailed(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc)))
-          goto(ERR_FUNDING_TIMEOUT) sending error
-        case _ => stay // funding tx was confirmed in time, let's just ignore this
-      }
+    // funding tx was confirmed in time, let's just ignore this
+    case Event(BITCOIN_FUNDING_TIMEOUT, d: HasCommitments) => stay
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: HasCommitments) if tx.txid == d.commitments.localCommit.publishableTxs.commitTx.tx.txid =>
       log.warning(s"processing local commit spent in catch-all handler")
@@ -1664,6 +1653,24 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       case _ => log.error(cause, s"msg=$cmd stateData=$stateData ")
     }
     stay replying Status.Failure(cause)
+  }
+
+  def handleFundingPublishFailed(d: DATA_WAIT_FOR_FUNDING_CONFIRMED) = {
+    log.error(s"failed to publish funding tx")
+    val exc = ChannelFundingError(d.channelId)
+    val error = Error(d.channelId, exc.getMessage.getBytes)
+    // NB: we don't use the handleLocalError handler because it would result in the commit tx being published, which we don't want:
+    // implementation *guarantees* that in case of BITCOIN_FUNDING_PUBLISH_FAILED, the funding tx hasn't and will never be published, so we can close the channel right away
+    context.system.eventStream.publish(ChannelFailed(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc)))
+    goto(CLOSED) sending error
+  }
+
+  def handleFundingTimeout(d: DATA_WAIT_FOR_FUNDING_CONFIRMED) = {
+    log.warning(s"funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE")
+    val exc = FundingTxTimedout(d.channelId)
+    val error = Error(d.channelId, exc.getMessage.getBytes)
+    context.system.eventStream.publish(ChannelFailed(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc)))
+    goto(ERR_FUNDING_TIMEOUT) sending error
   }
 
   def handleRevocationTimeout(revocationTimeout: RevocationTimeout, d: HasCommitments) = {
