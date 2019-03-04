@@ -449,7 +449,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
       // detect if one of our transaction (i.e a transaction that spends from our wallet) has been double-spent
       val isDoubleSpent = data.heights.get(tx.txid) match {
         case Some(_) =>
-          // this tx is either in the mempool or has ben confirmed
+          // this tx is either in the mempool or has been confirmed, which means that it hasn't been confirmed
           false
         case None =>
           // tx has not been published and is not in the mempool
@@ -460,7 +460,8 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
           // list the tx utxos
           val utxos = tx.txIn.map(_.outPoint).toSet
 
-          // check if one of our transactions spends the same inputs as our tx
+          // check if one of our transactions spends the same inputs as our tx, if this is the case, then the tx
+          // has been double spent
           utxos.exists(utxo => ourSpentUtxos.contains(utxo))
       }
       stay() replying IsDoubleSpentResponse(tx, isDoubleSpent)
@@ -545,7 +546,6 @@ object ElectrumWallet {
   case class GetPrivateKeyResponse(address: String, key: Option[ExtendedPrivateKey]) extends Response
 
   case class IsDoubleSpent(tx: Transaction) extends Request
-
   case class IsDoubleSpentResponse(tx: Transaction, isDoubleSpent: Boolean) extends Response
 
   sealed trait WalletEvent

@@ -54,8 +54,7 @@ trait EclairWallet {
 
 
   /**
-    * Tests whether the inputs of the provided transaction have been spent by another transaction, in other words: this
-    * transaction will never reach the chain.
+    * Tests whether the inputs of the provided transaction have been spent by another transaction.
     *
     * Implementations may always return false if they don't want to implement it
     *
