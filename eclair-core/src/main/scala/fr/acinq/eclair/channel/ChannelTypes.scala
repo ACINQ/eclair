@@ -166,7 +166,7 @@ final case class DATA_NEGOTIATING(commitments: Commitments,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
                                   bestUnpublishedClosingTx_opt: Option[Transaction]) extends Data with HasCommitments {
   require(!closingTxProposed.isEmpty, "there must always be a list for the current negotiation")
-  require(!commitments.localParams.isFunder || closingTxProposed.forall(!_.isEmpty), "funder must have at least one closing signature for every negotation attempt because it initiates the closing")
+  require(commitments.getContext == ContextSimplifiedCommitment || !commitments.localParams.isFunder || closingTxProposed.forall(!_.isEmpty), "funder must have at least one closing signature for every negotation attempt because it initiates the closing")
 }
 final case class DATA_CLOSING(commitments: Commitments,
                               mutualCloseProposed: List[Transaction], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have

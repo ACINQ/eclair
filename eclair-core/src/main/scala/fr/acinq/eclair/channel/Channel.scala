@@ -784,13 +784,18 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         // are there pending signed htlcs on either side? we need to have received their last revocation!
         if (d.commitments.hasNoPendingHtlcs) {
           // there are no pending signed htlcs, let's go directly to NEGOTIATING
-          if (d.commitments.localParams.isFunder) {
-            // we are funder or we're using option_simplified_commitment, need to initiate the negotiation by sending the first closing_signed
+          if (d.commitments.localParams.isFunder && d.commitments.getContext == ContextCommitmentV1) {
+            // we are funder and we're using commitmentV1, need to initiate the negotiation by sending the first closing_signed
+            val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, d.commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
+            goto(NEGOTIATING) using store(DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTx_opt = None)) sending sendList :+ closingSigned
+          } else if(!d.commitments.localParams.isFunder && d.commitments.getContext == ContextSimplifiedCommitment) {
+            // we are fundee BUT we're using option_simplified_commitment, need to initiate the negotiation by sending the first closing_signed
             val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, d.commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
             goto(NEGOTIATING) using store(DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTx_opt = None)) sending sendList :+ closingSigned
           } else {
             // we are fundee, will wait for their closing_signed
             goto(NEGOTIATING) using store(DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None)) sending sendList
+
           }
 
         } else {
@@ -972,7 +977,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
 
-    case Event(c@CMD_SIGN, d@DATA_SHUTDOWN(commitments: CommitmentsV1, _, _)) =>
+    case Event(c@CMD_SIGN, d@DATA_SHUTDOWN(commitments: Commitments, _, _)) =>
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
@@ -994,7 +999,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           }
         case Left(waitForRevocation) =>
           log.debug(s"already in the process of signing, will sign again as soon as possible")
-          stay using d.copy(commitments = commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
+          commitments match {
+            case c: CommitmentsV1 => stay using d.copy(commitments = c.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
+            case s: SimplifiedCommitment => stay using d.copy(commitments = s.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
+          }
       }
 
     case Event(commit: CommitSig, d@DATA_SHUTDOWN(_, localShutdown, remoteShutdown)) =>
