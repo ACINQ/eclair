@@ -99,7 +99,7 @@ object Transactions {
   val htlcTimeoutWeight = 663
   val htlcSuccessWeight = 703
   val simplifiedFeerateKw = 253
-  val pushMeValue = Satoshi(1000)
+  val pushMeValue = Satoshi(1000) // used in option_simplified_commitment
 
   /**
     * these values specific to us and used to estimate fees
@@ -288,7 +288,7 @@ object Transactions {
       lockTime = 0), htlc.paymentHash)
   }
 
-  //TODO adjust for option_simplified_commitment
+  //TODO adjust for option_simplified_commitment?
   def makeHtlcTxs(commitTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
     val htlcTimeoutTxs = trimOfferedHtlcs(localDustLimit, spec).map { htlc =>
@@ -571,13 +571,13 @@ object Transactions {
     }.map(_._2)
   }
 
-  def sign(tx: Transaction, inputIndex: Int, redeemScript: BinaryData, amount: Satoshi, key: PrivateKey): BinaryData = {
-    Transaction.signInput(tx, inputIndex, redeemScript, SIGHASH_ALL, amount, SIGVERSION_WITNESS_V0, key)
+  def sign(tx: Transaction, inputIndex: Int, redeemScript: BinaryData, amount: Satoshi, key: PrivateKey, sigHash: Int): BinaryData = {
+    Transaction.signInput(tx, inputIndex, redeemScript, sigHash, amount, SIGVERSION_WITNESS_V0, key)
   }
 
-  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey): BinaryData = {
+  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sigHash: Int): BinaryData = {
     require(txinfo.tx.txIn.lengthCompare(1) == 0, "only one input allowed")
-    sign(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, txinfo.input.txOut.amount, key)
+    sign(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, txinfo.input.txOut.amount, key, sigHash)
   }
 
   def addSigs(commitTx: CommitTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: BinaryData, remoteSig: BinaryData): CommitTx = {
@@ -638,8 +638,16 @@ object Transactions {
   def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] =
     Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.tx.txIn.head.outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
-  def checkSig(txinfo: TransactionWithInputInfo, sig: BinaryData, pubKey: PublicKey): Boolean = {
-    val data = Transaction.hashForSigning(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, SIGHASH_ALL, txinfo.input.txOut.amount, SIGVERSION_WITNESS_V0)
+  /**
+    *
+    * @param txinfo  the transaction containing the signature to check
+    * @param sig     the signature that is going to be checked against
+    * @param pubKey  pubkey of the signature
+    * @param sigHash the type used to produce the hash for signing
+    * @return
+    */
+  def checkSig(txinfo: TransactionWithInputInfo, sig: BinaryData, pubKey: PublicKey, sigHash: Int): Boolean = {
+    val data = Transaction.hashForSigning(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, sigHash, txinfo.input.txOut.amount, SIGVERSION_WITNESS_V0)
     Crypto.verifySignature(data, sig, pubKey)
   }
 

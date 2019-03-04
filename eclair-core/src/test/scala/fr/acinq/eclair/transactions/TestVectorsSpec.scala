@@ -193,8 +193,8 @@ class TestVectorsSpec extends FunSuite with Logging {
         Remote.delayed_payment_pubkey,
         spec)(ContextCommitmentV1)
 
-      val local_sig = Transactions.sign(tx, Local.funding_privkey)
-      val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
+      val local_sig = Transactions.sign(tx, Local.funding_privkey, SIGHASH_ALL)
+      val remote_sig = Transactions.sign(tx, Remote.funding_privkey, SIGHASH_ALL)
 
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
@@ -224,9 +224,9 @@ class TestVectorsSpec extends FunSuite with Logging {
         Remote.delayed_payment_pubkey,
         spec)(ContextCommitmentV1)
 
-      val local_sig = Transactions.sign(tx, Local.funding_privkey)
+      val local_sig = Transactions.sign(tx, Local.funding_privkey, SIGHASH_ALL)
       logger.info(s"# local_signature = ${toHexString(local_sig.dropRight(1))}")
-      val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
+      val remote_sig = Transactions.sign(tx, Remote.funding_privkey, SIGHASH_ALL)
       logger.info(s"remote_signature: ${toHexString(remote_sig.dropRight(1))}")
     }
 
@@ -248,12 +248,12 @@ class TestVectorsSpec extends FunSuite with Logging {
 
     htlcTxs.collect {
       case tx: HtlcSuccessTx =>
-        val remoteSig = Transactions.sign(tx, Remote.payment_privkey)
+        val remoteSig = Transactions.sign(tx, Remote.payment_privkey, SIGHASH_ALL)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         logger.info(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
         logger.info(s"remote_htlc_signature: ${toHexString(remoteSig.dropRight(1))}")
       case tx: HtlcTimeoutTx =>
-        val remoteSig = Transactions.sign(tx, Remote.payment_privkey)
+        val remoteSig = Transactions.sign(tx, Remote.payment_privkey, SIGHASH_ALL)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         logger.info(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
         logger.info(s"remote_htlc_signature: ${toHexString(remoteSig.dropRight(1))}")
@@ -262,8 +262,8 @@ class TestVectorsSpec extends FunSuite with Logging {
     val signedTxs = htlcTxs collect {
       case tx: HtlcSuccessTx =>
         //val tx = tx0.copy(tx = tx0.tx.copy(txOut = tx0.tx.txOut(0).copy(amount = Satoshi(545)) :: Nil))
-        val localSig = Transactions.sign(tx, Local.payment_privkey)
-        val remoteSig = Transactions.sign(tx, Remote.payment_privkey)
+        val localSig = Transactions.sign(tx, Local.payment_privkey, SIGHASH_ALL)
+        val remoteSig = Transactions.sign(tx, Remote.payment_privkey, SIGHASH_ALL)
         val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig, preimage)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -272,8 +272,8 @@ class TestVectorsSpec extends FunSuite with Logging {
         logger.info(s"output htlc_success_tx ${htlcIndex}: ${tx1.tx}")
         tx1
       case tx: HtlcTimeoutTx =>
-        val localSig = Transactions.sign(tx, Local.payment_privkey)
-        val remoteSig = Transactions.sign(tx, Remote.payment_privkey)
+        val localSig = Transactions.sign(tx, Local.payment_privkey, SIGHASH_ALL)
+        val remoteSig = Transactions.sign(tx, Remote.payment_privkey, SIGHASH_ALL)
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# local_signature = ${toHexString(localSig.dropRight(1))}")

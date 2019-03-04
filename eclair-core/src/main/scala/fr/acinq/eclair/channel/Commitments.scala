@@ -25,8 +25,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Features, Globals, UInt64}
-import sun.reflect.generics.reflectiveObjects.NotImplementedException
-
+import fr.acinq.bitcoin._
 import scala.util.{Failure, Success}
 
 // @formatter:off
@@ -74,11 +73,10 @@ sealed trait Commitments {
   def announceChannel: Boolean = (channelFlags & 0x01) != 0
 
   // TODO subtract the pushMe value from the balance?
-  // TODO figure out the type of commitment from the type of this?
   def availableBalanceForSendMsat: Long = {
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-    val fees = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced)(commitmentContext = getContext).amount else 0
-    reduced.toRemoteMsat / 1000 - remoteParams.channelReserveSatoshis - fees
+    val feesMsat = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced)(commitmentContext = getContext).amount * 1000 else 0
+    reduced.toRemoteMsat - remoteParams.channelReserveSatoshis * 1000 - feesMsat
   }
 
   // get the context for this commitment
@@ -453,10 +451,13 @@ object Commitments {
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
         val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, commitments.localCommit.index + 1)
         val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(keyManager, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, localPerCommitmentPoint, spec)
-        val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath))
+        val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath), SIGHASH_ALL)
 
         val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
-        val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), remoteNextPerCommitmentPoint))
+        val htlcSigs = commitmentContext match {
+          case ContextCommitmentV1 => sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), remoteNextPerCommitmentPoint, SIGHASH_ALL))
+          case ContextSimplifiedCommitment => sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), remoteNextPerCommitmentPoint, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY))
+        }
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
         log.info(s"built remote commit number=${remoteCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), remoteCommitTx.tx)
@@ -512,7 +513,7 @@ object Commitments {
     }
 
     val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(keyManager, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, remotePerCommitmentPoint, spec)
-    val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath))
+    val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath), SIGHASH_ALL)
 
     log.info(s"built local commit number=${localCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), localCommitTx.tx)
 
@@ -528,7 +529,10 @@ object Commitments {
     if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
       throw new HtlcSigCountMismatch(commitments.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size)
     }
-    val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), localPerCommitmentPoint))
+    val htlcSigs = commitmentContext match {
+      case ContextCommitmentV1 => sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), localPerCommitmentPoint, SIGHASH_ALL))
+      case ContextSimplifiedCommitment => sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), localPerCommitmentPoint, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY))
+    }
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
     // combine the sigs to make signed txes
     val htlcTxsAndSigs = (sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped.toList.collect {
@@ -537,9 +541,15 @@ object Commitments {
           throw new InvalidHtlcSignature(commitments.channelId, htlcTx.tx)
         }
         HtlcTxAndSigs(htlcTx, localSig, remoteSig)
-      case (htlcTx: HtlcSuccessTx, localSig, remoteSig) =>
+      case (htlcTx: HtlcSuccessTx, localSig, remoteSig) if commitmentContext == ContextCommitmentV1 =>
         // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
-        if (Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey) == false) {
+        if (Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, SIGHASH_ALL) == false) {
+          throw new InvalidHtlcSignature(commitments.channelId, htlcTx.tx)
+        }
+        HtlcTxAndSigs(htlcTx, localSig, remoteSig)
+      case (htlcTx: HtlcSuccessTx, localSig, remoteSig) if commitmentContext == ContextSimplifiedCommitment =>
+        // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
+        if (Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY) == false) {
           throw new InvalidHtlcSignature(commitments.channelId, htlcTx.tx)
         }
         HtlcTxAndSigs(htlcTx, localSig, remoteSig)

@@ -97,12 +97,13 @@ class LocalKeyManager(seed: BinaryData, chainHash: BinaryData) extends KeyManage
     *
     * @param tx        input transaction
     * @param publicKey extended public key
+    * @param sigHash   the sigHash type used to sign
     * @return a signature generated with the private key that matches the input
     *         extended public key
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey): BinaryData = {
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, sigHash: Int): BinaryData = {
     val privateKey = privateKeys.get(publicKey.path)
-    Transactions.sign(tx, privateKey.privateKey)
+    Transactions.sign(tx, privateKey.privateKey, sigHash)
   }
 
   /**
@@ -111,13 +112,14 @@ class LocalKeyManager(seed: BinaryData, chainHash: BinaryData) extends KeyManage
     * @param tx          input transaction
     * @param publicKey   extended public key
     * @param remotePoint remote point
+    * @param sigHash   the sigHash type used to sign
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote point.
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: Point): BinaryData = {
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: Point, sigHash: Int): BinaryData = {
     val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
-    Transactions.sign(tx, currentKey)
+    Transactions.sign(tx, currentKey, sigHash)
   }
 
   /**
@@ -126,13 +128,14 @@ class LocalKeyManager(seed: BinaryData, chainHash: BinaryData) extends KeyManage
     * @param tx           input transaction
     * @param publicKey    extended public key
     * @param remoteSecret remote secret
+    * @param sigHash   the sigHash type used to sign
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote secret.
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar): BinaryData = {
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar, sigHash: Int): BinaryData = {
     val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.revocationPrivKey(privateKey.privateKey, remoteSecret)
-    Transactions.sign(tx, currentKey)
+    Transactions.sign(tx, currentKey, sigHash)
   }
 
   override def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: BinaryData, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData) = {

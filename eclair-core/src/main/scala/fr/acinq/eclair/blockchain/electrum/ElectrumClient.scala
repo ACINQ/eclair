@@ -90,14 +90,9 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
   val channelOpenFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
 
-  def close() = {
-    statusListeners.map(_ ! ElectrumDisconnected)
-    context stop self
-  }
-
   def errorHandler(t: Throwable) = {
     log.info("server={} connection error (reason={})", serverAddress, t.getMessage)
-    close()
+    self ! Close
   }
 
   channelOpenFuture.addListeners(new ChannelFutureListener {
@@ -111,7 +106,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
               errorHandler(future.cause())
             } else {
               log.info("server={} channel closed: {}", serverAddress, future.channel())
-              close()
+              self ! Close
             }
           }
         })
@@ -205,7 +200,6 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   val headerSubscriptions = collection.mutable.HashSet.empty[ActorRef]
   val version = ServerVersion(CLIENT_NAME, PROTOCOL_VERSION)
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
-  val keepHeaders = 100
 
   var reqId = 0
 
@@ -223,6 +217,10 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       case RemoveStatusListener(actor) => statusListeners -= actor
 
       case PingResponse => ()
+
+      case Close =>
+        statusListeners.map(_ ! ElectrumDisconnected)
+        context.stop(self)
 
       case _ => log.warning("server={} unhandled message {}", serverAddress, message)
     }
@@ -273,7 +271,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
           context become waitingForTip(ctx)
         case ServerError(request, error) =>
           log.error("server={} sent error={} while processing request={}, disconnecting", serverAddress, error, request)
-          close()
+          self ! Close
       }
 
     case AddStatusListener(actor) => statusListeners += actor
@@ -284,12 +282,12 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       val (height, header) = parseBlockHeader(json.result)
       log.debug("connected to server={}, tip={} height={}", serverAddress, header.hash, height)
       statusListeners.map(_ ! ElectrumReady(height, header, serverAddress))
-      context become connected(ctx, height, header, "", Map())
+      context become connected(ctx, height, header, Map())
 
     case AddStatusListener(actor) => statusListeners += actor
   }
 
-  def connected(ctx: ChannelHandlerContext, height: Int, tip: BlockHeader, buffer: String, requests: Map[String, (Request, ActorRef)]): Receive = {
+  def connected(ctx: ChannelHandlerContext, height: Int, tip: BlockHeader, requests: Map[String, (Request, ActorRef)]): Receive = {
     case AddStatusListener(actor) =>
       statusListeners += actor
       actor ! ElectrumReady(height, tip, serverAddress)
@@ -310,7 +308,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
           context watch actor
         case _ => ()
       }
-      context become connected(ctx, height, tip, buffer, requests + (curReqId -> (request, sender())))
+      context become connected(ctx, height, tip, requests + (curReqId -> (request, sender())))
 
     case Right(json: JsonRPCResponse) =>
       requests.get(json.id) match {
@@ -321,7 +319,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
         case None =>
           log.warning("server={} could not find requestor for reqId=${} response={}", serverAddress, json.id, json)
       }
-      context become connected(ctx, height, tip, buffer, requests - json.id)
+      context become connected(ctx, height, tip, requests - json.id)
 
     case Left(response: HeaderSubscriptionResponse) => headerSubscriptions.map(_ ! response)
 
@@ -331,7 +329,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
     case HeaderSubscriptionResponse(height, newtip) =>
       log.info("server={} new tip={}", serverAddress, newtip)
-      context become connected(ctx, height, newtip, buffer, requests)
+      context become connected(ctx, height, newtip, requests)
   }
 }
 
@@ -368,7 +366,7 @@ object ElectrumClient {
   case class GetAddressHistoryResponse(address: String, history: Seq[TransactionHistoryItem]) extends Response
 
   case class GetScriptHashHistory(scriptHash: BinaryData) extends Request
-  case class GetScriptHashHistoryResponse(scriptHash: BinaryData, history: Seq[TransactionHistoryItem]) extends Response
+  case class GetScriptHashHistoryResponse(scriptHash: BinaryData, history: List[TransactionHistoryItem]) extends Response
 
   case class AddressListUnspent(address: String) extends Request
   case class UnspentItem(tx_hash: BinaryData, tx_pos: Int, value: Long, height: Long) {
@@ -456,6 +454,8 @@ object ElectrumClient {
     case object STRICT extends SSL
     case object LOOSE extends SSL
   }
+
+  case object Close
 
   // @formatter:on
 

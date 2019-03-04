@@ -45,8 +45,11 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
     import setup._
+
+    val isSimplifiedCommitment = test.tags.contains("simplified_commitment")
+
     within(30 seconds) {
-      reachNormal(setup)
+      reachNormal(setup, test.tags)
       val sender = TestProbe()
       // alice initiates a closing
       if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4319)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(10000))
@@ -54,13 +57,16 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       bob2alice.expectMsgType[Shutdown]
       bob2alice.forward(alice)
       alice2bob.expectMsgType[Shutdown]
-      awaitCond(alice.stateName == NEGOTIATING)
-      // NB: at this point, alice has already computed and sent the first ClosingSigned message
-      // In order to force a fee negotiation, we will change the current fee before forwarding
-      // the Shutdown message to alice, so that alice computes a different initial closing fee.
-      if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4316)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(5000))
-      alice2bob.forward(bob)
-      awaitCond(bob.stateName == NEGOTIATING)
+      if(!isSimplifiedCommitment){
+        awaitCond(alice.stateName == NEGOTIATING)
+        // NB: at this point, alice has already computed and sent the first ClosingSigned message
+        // In order to force a fee negotiation, we will change the current fee before forwarding
+        // the Shutdown message to alice, so that alice computes a different initial closing fee.
+        if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4316)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(5000))
+        alice2bob.forward(bob)
+        awaitCond(bob.stateName == NEGOTIATING)
+      }
+
       withFixture(test.toNoArgTest(setup))
     }
   }
@@ -91,6 +97,25 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     // BOLT 2: If the receiver [doesn't agree with the fee] it SHOULD propose a value strictly between the received fee-satoshis and its previously-sent fee-satoshis
     assert(aliceCloseSig2.feeSatoshis < aliceCloseSig1.feeSatoshis && aliceCloseSig2.feeSatoshis > bobCloseSig1.feeSatoshis)
     awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.map(_.localClosingSigned) == initialState.closingTxProposed.last.map(_.localClosingSigned) :+ aliceCloseSig2)
+  }
+
+  test("recv ClosingSigned (option_simplified_commitment)", Tag("simplified_commitment")) { f =>
+    import f._
+
+    awaitCond(alice.stateName == NEGOTIATING)
+
+
+    val closingSig = alice2bob.expectMsgType[ClosingSigned]
+
+    assert(closingSig.feeSatoshis == 282)
+
+    bob2alice.forward(alice)
+
+    awaitCond(bob.stateName == NORMAL)
+
+    val bobCloseSig1 = bob2alice.expectMsgType[ClosingSigned] //err
+    bob2alice.forward(alice)
+    assert(1 == 1)
   }
 
   private def testFeeConverge(f: FixtureParam) = {
@@ -185,7 +210,6 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     alice2blockchain.expectNoMsg(100 millis)
     assert(alice.stateName == CLOSING)
   }
-
 
   test("recv CMD_CLOSE") { f =>
     import f._
