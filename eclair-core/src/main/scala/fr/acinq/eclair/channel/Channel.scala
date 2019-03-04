@@ -784,7 +784,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         // are there pending signed htlcs on either side? we need to have received their last revocation!
         if (d.commitments.hasNoPendingHtlcs) {
           // there are no pending signed htlcs, let's go directly to NEGOTIATING
-          if (d.commitments.localParams.isFunder || d.commitments.getContext == ContextSimplifiedCommitment) {
+          if (d.commitments.localParams.isFunder) {
             // we are funder or we're using option_simplified_commitment, need to initiate the negotiation by sending the first closing_signed
             val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, d.commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
             goto(NEGOTIATING) using store(DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTx_opt = None)) sending sendList :+ closingSigned
