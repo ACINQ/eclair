@@ -222,20 +222,13 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     bitcoinClient.invoke("signrawtransaction", unsignedtx2).pipeTo(sender.ref)
     val JString(signedTx2) = sender.expectMsgType[JValue] \ "hex"
     val tx2 = Transaction.read(signedTx2)
-    logger.info(s"tx1=$tx1")
-    logger.info(s"tx2=$tx2")
 
     // test starts here
 
     // tx1/tx2 haven't been published, so tx1 isn't double spent
     wallet.doubleSpent(tx1).pipeTo(sender.ref)
     sender.expectMsg(false)
-    // let's publish tx1
-//    bitcoinClient.invoke("sendrawtransaction", tx1.toString).pipeTo(sender.ref)
-//    val JString(_) = sender.expectMsgType[JValue]
-//    wallet.doubleSpent(tx1).pipeTo(sender.ref)
-//    sender.expectMsg(false)
-    // let's then publish tx2
+    // let's publish tx2
     bitcoinClient.invoke("sendrawtransaction", tx2.toString).pipeTo(sender.ref)
     val JString(_) = sender.expectMsgType[JValue]
     // this time tx1 has been double spent
