@@ -675,7 +675,7 @@ object Commitments {
 
   def changes2String(commitments: Commitments): String = {
     import commitments._
-    s"""commitments:
+    s"""(${commitments.getContext}) commitments:
        |    localChanges:
        |        proposed: ${localChanges.proposed.map(msg2String(_)).mkString(" ")}
        |        signed: ${localChanges.signed.map(msg2String(_)).mkString(" ")}
@@ -690,7 +690,7 @@ object Commitments {
   }
 
   def specs2String(commitments: Commitments): String = {
-    s"""specs:
+    s"""(${commitments.getContext}) specs:
        |localcommit:
        |  toLocal: ${commitments.localCommit.spec.toLocalMsat}
        |  toRemote: ${commitments.localCommit.spec.toRemoteMsat}
