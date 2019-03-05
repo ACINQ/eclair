@@ -329,9 +329,9 @@ object Helpers {
     val remoteHasOptional = Features.hasFeature(remote.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_OPTIONAL)
     val remoteHasMandatory = Features.hasFeature(remote.localFeatures, Features.OPTION_SIMPLIFIED_COMMITMENT_MANDATORY)
 
-    (remoteHasMandatory && (localHasMandatory || localHasOptional))  ||
-    (localHasMandatory && (remoteHasMandatory || remoteHasOptional)) ||
-    (localHasOptional && remoteHasOptional)
+    (remoteHasMandatory && (localHasMandatory || localHasOptional)) ||
+      (localHasMandatory && (remoteHasMandatory || remoteHasOptional)) ||
+      (localHasOptional && remoteHasOptional)
   }
 
   object Closing {
@@ -438,6 +438,17 @@ object Helpers {
         Transactions.addSigs(claimDelayed, sig)
       })
 
+      // the push-me trasaction attaches the fees to the commitmentTx
+      val pushMeTransaction = commitmentContext match {
+        case ContextCommitmentV1 => None
+        case ContextSimplifiedCommitment =>
+          generateTx("push-me-cpfp")(Try {
+            val pushMeTx = Transactions.makePushMeCPFP(tx, localDelayedPubkey, feeratePerKwDelayed, Satoshi(localParams.dustLimitSatoshis))
+            val sig = keyManager.sign(pushMeTx, keyManager.delayedPaymentPoint(localParams.channelKeyPath), SIGHASH_ALL) // TODO use SIGHASH_SINGLE
+            Transactions.addSigs(pushMeTx, sig)
+          })
+      }
+
       // those are the preimages to existing received htlcs
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
 
@@ -480,6 +491,7 @@ object Helpers {
         htlcSuccessTxs = htlcTxes.collect { case c: HtlcSuccessTx => c.tx },
         htlcTimeoutTxs = htlcTxes.collect { case c: HtlcTimeoutTx => c.tx },
         claimHtlcDelayedTxs = htlcDelayedTxes.map(_.tx),
+        pushMeTx = pushMeTransaction.map(_.tx),
         irrevocablySpent = Map.empty)
     }
 
@@ -489,7 +501,7 @@ object Helpers {
       *
       * @param commitments  our commitment data, which include payment preimages
       * @param remoteCommit the remote commitment data to use to claim outputs (it can be their current or next commitment)
-      * @param commitTx           the remote commitment transaction that has just been published
+      * @param commitTx     the remote commitment transaction that has just been published
       * @return a list of transactions (one per HTLC that we can claim)
       */
     def claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, commitTx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
@@ -545,7 +557,6 @@ object Helpers {
       *
       * Claim our Main output
       *
-      *
       * @param commitments              either our current commitment data in case of usual remote uncooperative closing
       *                                 or our outdated commitment data in case of data loss protection procedure; in any case it is used only
       *                                 to get some constant parameters, not commitment data
@@ -584,6 +595,7 @@ object Helpers {
         claimMainOutputTx = mainTx.map(_.tx),
         claimHtlcSuccessTxs = Nil,
         claimHtlcTimeoutTxs = Nil,
+        pushMeTx = None,
         irrevocablySpent = Map.empty
       )
     }
@@ -625,7 +637,7 @@ object Helpers {
 
           // first we will claim our main output right away
           val mainTx = generateTx("claim-p2wpkh-output")(Try {
-            val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain, ???)
+            val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain, Some(localParams.toSelfDelay))
             val sig = keyManager.sign(claimMain, keyManager.paymentPoint(localParams.channelKeyPath), remotePerCommitmentPoint, SIGHASH_ALL)
             Transactions.addSigs(claimMain, localPubkey, sig)
           })

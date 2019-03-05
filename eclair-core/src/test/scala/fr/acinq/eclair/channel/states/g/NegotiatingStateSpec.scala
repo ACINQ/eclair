@@ -106,7 +106,6 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     assert(closingSig.feeSatoshis == 282)
     bob2alice.forward(alice)
 
-
     val closingSig2 = alice2bob.expectMsgType[ClosingSigned]
     assert(closingSig2.feeSatoshis == 282) // alice sends back the same fees
     alice2bob.forward(bob)

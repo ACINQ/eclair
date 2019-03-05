@@ -189,6 +189,7 @@ object ChannelCodecs extends Logging {
       ("htlcSuccessTxs" | listOfN(uint16, txCodec)) ::
       ("htlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
       ("claimHtlcDelayedTx" | listOfN(uint16, txCodec)) ::
+      ("pushMeTx" | optional(bool, txCodec)) ::
       ("spent" | spentMapCodec)).as[LocalCommitPublished]
 
   val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
@@ -196,6 +197,7 @@ object ChannelCodecs extends Logging {
       ("claimMainOutputTx" | optional(bool, txCodec)) ::
       ("claimHtlcSuccessTxs" | listOfN(uint16, txCodec)) ::
       ("claimHtlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
+      ("pushMeTx" | optional(bool, txCodec)) ::
       ("spent" | spentMapCodec)).as[RemoteCommitPublished]
 
   val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (

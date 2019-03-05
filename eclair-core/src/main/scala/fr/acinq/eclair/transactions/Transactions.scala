@@ -61,6 +61,7 @@ object Transactions {
   case class MainPenaltyTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class HtlcPenaltyTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClosingTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
+  case class PushMeTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
 
   sealed trait TxGenerationSkipped extends RuntimeException
   case object OutputNotFound extends RuntimeException(s"output not found (probably trimmed)") with TxGenerationSkipped
@@ -408,24 +409,19 @@ object Transactions {
 
   def makeClaimDelayedOutputTx(delayedOutputTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: BinaryData, feeratePerKw: Long)(implicit commitmentContext: CommitmentContext): ClaimDelayedOutputTx = {
 
-    val claimTx = commitmentContext match {
-      case ContextCommitmentV1 =>
-        val redeemScript = toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
-        val pubkeyScript = write(pay2wsh(redeemScript))
-        val outputIndex = findPubKeyScriptIndex(delayedOutputTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
-        val input = InputInfo(OutPoint(delayedOutputTx, outputIndex), delayedOutputTx.txOut(outputIndex), write(redeemScript))
+    val redeemScript = toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
+    val pubkeyScript = write(pay2wsh(redeemScript))
+    val outputIndex = findPubKeyScriptIndex(delayedOutputTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
+    val input = InputInfo(OutPoint(delayedOutputTx, outputIndex), delayedOutputTx.txOut(outputIndex), write(redeemScript))
 
-        // unsigned transaction
-        val tx = Transaction(
-          version = 2,
-          txIn = TxIn(input.outPoint, Array.emptyByteArray, toLocalDelay) :: Nil,
-          txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-          lockTime = 0)
+    // unsigned transaction
+    val tx = Transaction(
+      version = 2,
+      txIn = TxIn(input.outPoint, Array.emptyByteArray, toLocalDelay) :: Nil,
+      txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
+      lockTime = 0)
 
-        ClaimDelayedOutputTx(input, tx)
-
-      case ContextSimplifiedCommitment => throw new NotImplementedError("makeClaimDelayedOutputTx with option_simplified_commitment")
-    }
+    val claimTx = ClaimDelayedOutputTx(input, tx)
 
 
     // compute weight with a dummy 73 bytes signature (the largest you can get)
@@ -546,6 +542,32 @@ object Transactions {
     ClosingTx(commitTxInput, LexicographicalOrdering.sort(tx))
   }
 
+  def makePushMeCPFP(commitTx: Transaction, toLocalDelayed: PublicKey, feeratePerKw: Long, localDustLimit: Satoshi): PushMeTx = {
+    val redeemScript = Scripts.pushMeSimplified(toLocalDelayed)
+    val pubKeyScript = write(pay2wsh(redeemScript))
+
+    val outputIndex = findPubKeyScriptIndex(commitTx, pubKeyScript, Set.empty, Some(pushMeValue))
+    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), redeemScript)
+
+    val tx = Transaction(
+      version = 2,
+      txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
+      txOut = TxOut(pushMeValue, List.empty) :: Nil,  // TODO to what do we spend the pushMe? FIXME
+      lockTime = 0
+    )
+
+    val weight = Transactions.addSigs(PushMeTx(input, tx), BinaryData("00" * 73)).tx.weight()
+    val fee = weight2fee(feeratePerKw, weight)
+
+    val amount = input.txOut.amount - fee
+    if (amount < localDustLimit) {
+      throw AmountBelowDustLimit
+    }
+
+    val tx1 = tx.copy(txOut = tx.txOut(0).copy(amount = amount) :: Nil)
+    PushMeTx(input, tx1)
+  }
+
   def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: BinaryData, outputsAlreadyUsed: Set[Int], amount_opt: Option[Satoshi]): Int = {
     val outputIndex = tx.txOut
       .zipWithIndex
@@ -555,19 +577,6 @@ object Transactions {
     } else {
       throw OutputNotFound
     }
-  }
-
-  /**
-    * Finds the output index of our push me output (see option_simplified_commitment)
-    *
-    * @param pubkey
-    * @param simplifiedCommitTx
-    * @return
-    */
-  def findPushMeOutputIndex(pubkey: PublicKey, simplifiedCommitTx: Transaction): Option[Int] = {
-    simplifiedCommitTx.txOut.zipWithIndex.find { case (txOut, outputIndex) =>
-      txOut.publicKeyScript == Script.write(pay2wsh(pushMeSimplified(pubkey)))
-    }.map(_._2)
   }
 
   def sign(tx: Transaction, inputIndex: Int, redeemScript: BinaryData, amount: Satoshi, key: PrivateKey, sigHash: Int): BinaryData = {
@@ -632,6 +641,11 @@ object Transactions {
   def addSigs(closingTx: ClosingTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: BinaryData, remoteSig: BinaryData): ClosingTx = {
     val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
     closingTx.copy(tx = closingTx.tx.updateWitness(0, witness))
+  }
+
+  def addSigs(pushMeTx: PushMeTx, localSig: BinaryData): PushMeTx = {
+    val witness = Scripts.claimPushMeOutputWithKey(localSig)
+    pushMeTx.copy(tx = pushMeTx.tx.updateWitness(0, witness))
   }
 
   def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] =

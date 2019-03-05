@@ -321,6 +321,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val signedTx = addSigs(claimP2WPKHOutputTx, remotePaymentPriv.publicKey, localSig)
       assert(checkSpendable(signedTx).isSuccess)
 
+      //FIXME
 //      val claimP2WPKHOutputTx1 = makeClaimP2WPKHOutputTx(commitTx(ContextSimplifiedCommitment).tx, localDustLimit, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw, Some(toLocalDelay))(ContextSimplifiedCommitment)
 //      val localSig1 = sign(claimP2WPKHOutputTx1, localDelayedPaymentPriv, SIGHASH_ALL)
 //      val signedTx1 = addSigs(claimP2WPKHOutputTx1, localDelayedPaymentPriv.publicKey, localSig1)

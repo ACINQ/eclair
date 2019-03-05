@@ -1465,6 +1465,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(initialState == bob.stateData)
   }
 
+  // TODO review, remove?
   test("recv CMD_UPDATE_FEE (when option_simplified_commitment)", Tag("simplified_commitment")) { f =>
     import f._
     val sender = TestProbe()
