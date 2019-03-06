@@ -50,7 +50,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
     case PurgeExpiredRequests =>
       context.become(run(hash2preimage.filterNot { case (_, pr) => hasExpired(pr) }))
 
-    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops) =>
+    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt) =>
       Try {
         if (hash2preimage.size > nodeParams.maxPendingPaymentRequests) {
           throw new RuntimeException(s"too many pending payment requests (max=${nodeParams.maxPendingPaymentRequests})")
@@ -58,7 +58,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         val paymentPreimage = randomBytes(32)
         val paymentHash = Crypto.sha256(paymentPreimage)
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
-        val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress = None, expirySeconds = Some(expirySeconds), extraHops = extraHops)
+        val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops)
         log.debug(s"generated payment request=${PaymentRequest.write(paymentRequest)} from amount=$amount_opt")
         sender ! paymentRequest
         context.become(run(hash2preimage + (paymentHash -> PendingPaymentRequest(paymentPreimage, paymentRequest))))

@@ -32,3 +32,5 @@ case class PaymentSent(amount: MilliSatoshi, feesPaid: MilliSatoshi, paymentHash
 case class PaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: BinaryData, fromChannelId: BinaryData, toChannelId: BinaryData, timestamp: Long = Platform.currentTime) extends PaymentEvent
 
 case class PaymentReceived(amount: MilliSatoshi, paymentHash: BinaryData, fromChannelId: BinaryData, timestamp: Long = Platform.currentTime) extends PaymentEvent
+
+case class PaymentSettlingOnChain(amount: MilliSatoshi, paymentHash: BinaryData, timestamp: Long = Platform.currentTime) extends PaymentEvent

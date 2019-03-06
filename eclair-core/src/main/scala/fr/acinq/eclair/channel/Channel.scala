@@ -1238,7 +1238,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         }
       }
       // we also need to fail outgoing htlcs that we know will never reach the blockchain
-      val overridenHtlcs = Closing.overriddenHtlcs(d.commitments.localCommit, d.commitments.remoteCommit, d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit), tx)
+      val overridenHtlcs = Closing.overriddenOutgoingHtlcs(d.commitments.localCommit, d.commitments.remoteCommit, d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit), tx)
       overridenHtlcs.foreach { add =>
         d.commitments.originChannels.get(add.id) match {
           case Some(origin) =>
@@ -1249,6 +1249,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             log.info(s"cannot fail overriden htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
         }
       }
+      // for our outgoing payments, let's send events if we know that they will settle on chain
+      Closing
+        .onchainOutgoingHtlcs(d.commitments.localCommit, d.commitments.remoteCommit, d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit), tx)
+        .filter(add => Closing.isSentByLocal(add.id, d.commitments.originChannels)) // we only care about htlcs for which we were the original sender here
+        .foreach(add => context.system.eventStream.publish(PaymentSettlingOnChain(amount = MilliSatoshi(add.amountMsat), add.paymentHash)))
       // then let's see if any of the possible close scenarii can be considered done
       val mutualCloseDone = d.mutualClosePublished.exists(_.txid == tx.txid) // this case is trivial, in a mutual close scenario we only need to make sure that one of the closing txes is confirmed
     val localCommitDone = localCommitPublished1.map(Closing.isLocalCommitDone(_)).getOrElse(false)

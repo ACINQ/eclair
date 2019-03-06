@@ -230,10 +230,10 @@ object PaymentRequest {
       f.version match {
         case 17 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.PubkeyAddress, data)
         case 18 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.ScriptAddress, data)
-        case 17 if prefix == "lntb" => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, data)
-        case 18 if prefix == "lntb" => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, data)
+        case 17 if prefix == "lntb" || prefix == "lnbcrt" => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, data)
+        case 18 if prefix == "lntb" || prefix == "lnbcrt" => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, data)
         case version if prefix == "lnbc" => Bech32.encodeWitnessAddress("bc", version, data)
-        case version if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, data)
+        case version if prefix == "lntb" || prefix == "lnbcrt" => Bech32.encodeWitnessAddress("tb", version, data)
       }
     }
   }

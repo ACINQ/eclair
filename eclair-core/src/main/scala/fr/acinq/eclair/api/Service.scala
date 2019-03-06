@@ -42,10 +42,11 @@ import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
+import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw, randomBytes}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JBool, JInt, JString}
-import org.json4s.{JValue, jackson}
+import org.json4s.jackson.Serialization
+import org.json4s.{JValue, ShortTypeHints, jackson}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -74,7 +75,7 @@ trait Service extends Logging {
   def scheduler: Scheduler
 
   implicit val serialization = jackson.Serialization
-  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer +new PaymentRequestSerializer
+  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer + new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer + new PaymentRequestSerializer
   implicit val timeout = Timeout(60 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
@@ -221,95 +222,97 @@ trait Service extends Logging {
                           case _ => completeRpcFuture(req.id, (router ? 'updates).mapTo[Iterable[ChannelUpdate]])
                         }
 
-                      // payment methods
-                      case "receive" => req.params match {
-                        // only the payment description is given: user may want to generate a donation payment request
-                        case JString(description) :: Nil =>
-                          completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(None, description)).mapTo[PaymentRequest].map(PaymentRequest.write))
-                        // the amount is now given with the description
-                        case JInt(amountMsat) :: JString(description) :: Nil =>
-                          completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description)).mapTo[PaymentRequest].map(PaymentRequest.write))
-                        case JInt(amountMsat) :: JString(description) :: JInt(expirySeconds) :: Nil =>
-                          completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description, Some(expirySeconds.toLong))).mapTo[PaymentRequest].map(PaymentRequest.write))
-                        case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description] or [amount, description, expiryDuration]"))
-                      }
+                        // payment methods
+                        case "receive" => req.params match {
+                          // only the payment description is given: user may want to generate a donation payment request
+                          case JString(description) :: Nil =>
+                            completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(None, description)).mapTo[PaymentRequest].map(PaymentRequest.write))
+                          // the amount is now given with the description
+                          case JInt(amountMsat) :: JString(description) :: Nil =>
+                            completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description)).mapTo[PaymentRequest].map(PaymentRequest.write))
+                          case JInt(amountMsat) :: JString(description) :: JInt(expirySeconds) :: Nil =>
+                            completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description, Some(expirySeconds.toLong))).mapTo[PaymentRequest].map(PaymentRequest.write))
+                          case JString(description) :: JInt(expirySeconds) :: JString(fallbackAddress) :: Nil =>
+                            val isFallbackAddressCorrect = Try(fr.acinq.eclair.addressToPublicKeyScript(fallbackAddress, nodeParams.chainHash)).isSuccess
+                            if (!isFallbackAddressCorrect) reject(RpcValidationRejection(req.id, s"invalid fallback address '$fallbackAddress'"))
+                            else completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(None, description, Some(expirySeconds.toLong), Nil, Some(fallbackAddress))).mapTo[PaymentRequest].map(PaymentRequest.write))
+                          case JInt(amountMsat) :: JString(description) :: JInt(expirySeconds) :: JString(fallbackAddress) :: Nil =>
+                            val isFallbackAddressCorrect = Try(fr.acinq.eclair.addressToPublicKeyScript(fallbackAddress, nodeParams.chainHash)).isSuccess
+                            if (!isFallbackAddressCorrect) reject(RpcValidationRejection(req.id, s"invalid fallback address '$fallbackAddress'"))
+                            else completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description, Some(expirySeconds.toLong), Nil, Some(fallbackAddress))).mapTo[PaymentRequest].map(PaymentRequest.write))
+                          case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description] or [amount, description, expiryDuration]"))
+                        }
 
-                      // checkinvoice deprecated.
-                      case "parseinvoice" | "checkinvoice" => req.params match {
-                        case JString(paymentRequest) :: Nil => Try(PaymentRequest.read(paymentRequest)) match {
-                          case Success(pr) => completeRpc(req.id,pr)
-                          case Failure(t) => reject(RpcValidationRejection(req.id, s"invalid payment request ${t.getMessage}"))
-                        }
-                        case _ => reject(UnknownParamsRejection(req.id, "[payment_request]"))
-                      }
-
-                      case "findroute" => req.params match {
-                        case JString(nodeId) :: JInt(amountMsat) :: Nil if nodeId.length() == 66 => Try(PublicKey(nodeId)) match {
-                          case Success(pk) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, pk, amountMsat.toLong)).mapTo[RouteResponse])
-                          case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid nodeId hash '$nodeId'"))
-                        }
-                        case JString(paymentRequest) :: Nil => Try(PaymentRequest.read(paymentRequest)) match {
-                          case Success(PaymentRequest(_, Some(amountMsat), _, nodeId , _, _)) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, nodeId, amountMsat.toLong)).mapTo[RouteResponse])
-                          case Success(_) => reject(RpcValidationRejection(req.id, s"payment request is missing amount, please specify it"))
-                          case Failure(t) => reject(RpcValidationRejection(req.id, s"invalid payment request ${t.getLocalizedMessage}"))
-                        }
-                        case JString(paymentRequest) :: JInt(amountMsat) :: Nil => Try(PaymentRequest.read(paymentRequest)) match {
-                          case Success(PaymentRequest(_, None, _, nodeId , _, _)) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, nodeId, amountMsat.toLong)).mapTo[RouteResponse])
-                          case Success(_) => reject(RpcValidationRejection(req.id, s"amount was specified both in payment request and api call"))
-                          case Failure(t) => reject(RpcValidationRejection(req.id, s"invalid payment request ${t.getLocalizedMessage}"))
-                        }
-                        case _ => reject(UnknownParamsRejection(req.id, "[payment_request] or [payment_request, amountMsat] or [nodeId, amountMsat]"))
-                      }
-
-                      case "send" => req.params match {
-                        // user manually sets the payment information
-                        case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
-                          (Try(BinaryData(paymentHash)), Try(PublicKey(nodeId))) match {
-                            case (Success(ph), Success(pk)) => completeRpcFuture(req.id, (paymentInitiator ?
-                              SendPayment(amountMsat.toLong, ph, pk)).mapTo[PaymentResult].map {
-                              case s: PaymentSucceeded => s
-                              case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
-                            })
-                            case (Failure(_), _) => reject(RpcValidationRejection(req.id, s"invalid payment hash '$paymentHash'"))
-                            case _ => reject(RpcValidationRejection(req.id, s"invalid node id '$nodeId'"))
+                        // checkinvoice deprecated.
+                        case "parseinvoice" | "checkinvoice" => req.params match {
+                          case JString(paymentRequest) :: Nil => Try(PaymentRequest.read(paymentRequest)) match {
+                            case Success(pr) => completeRpc(req.id, pr)
+                            case Failure(t) => reject(RpcValidationRejection(req.id, s"invalid payment request ${t.getMessage}"))
                           }
-                        // user gives a Lightning payment request
-                        case JString(paymentRequest) :: rest => Try(PaymentRequest.read(paymentRequest)) match {
-                          case Success(pr) =>
-                            // setting the payment amount
-                            val amount_msat: Long = (pr.amount, rest) match {
-                              // optional amount always overrides the amount in the payment request
-                              case (_, JInt(amount_msat_override) :: Nil) => amount_msat_override.toLong
-                              case (Some(amount_msat_pr), _) => amount_msat_pr.amount
-                              case _ => throw new RuntimeException("you must manually specify an amount for this payment request")
-                            }
-                            logger.debug(s"api call for sending payment with amount_msat=$amount_msat")
-                            // optional cltv expiry
-                            val sendPayment = pr.minFinalCltvExpiry match {
-                              case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId)
-                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry)
-                            }
-                            completeRpcFuture(req.id, (paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
-                              case s: PaymentSucceeded => s
-                              case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
-                            })
-                          case _ => reject(RpcValidationRejection(req.id, s"payment request is not valid"))
+                          case _ => reject(UnknownParamsRejection(req.id, "[payment_request]"))
                         }
-                        case _ => reject(UnknownParamsRejection(req.id, "[amountMsat, paymentHash, nodeId or [paymentRequest] or [paymentRequest, amountMsat]"))
-                      }
+
+                        case "findroute" => req.params match {
+                          case JString(nodeId) :: JInt(amountMsat) :: Nil if nodeId.length() == 66 => Try(PublicKey(nodeId)) match {
+                            case Success(pk) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, pk, amountMsat.toLong)).mapTo[RouteResponse])
+                            case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid nodeId hash '$nodeId'"))
+                          }
+                          case JString(paymentRequest) :: Nil => Try(PaymentRequest.read(paymentRequest)) match {
+                            case Success(PaymentRequest(_, Some(amountMsat), _, nodeId, _, _)) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, nodeId, amountMsat.toLong)).mapTo[RouteResponse])
+                            case Success(_) => reject(RpcValidationRejection(req.id, s"payment request is missing amount, please specify it"))
+                            case Failure(t) => reject(RpcValidationRejection(req.id, s"invalid payment request ${t.getLocalizedMessage}"))
+                          }
+                          case JString(paymentRequest) :: JInt(amountMsat) :: Nil => Try(PaymentRequest.read(paymentRequest)) match {
+                            case Success(PaymentRequest(_, None, _, nodeId, _, _)) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, nodeId, amountMsat.toLong)).mapTo[RouteResponse])
+                            case Success(_) => reject(RpcValidationRejection(req.id, s"amount was specified both in payment request and api call"))
+                            case Failure(t) => reject(RpcValidationRejection(req.id, s"invalid payment request ${t.getLocalizedMessage}"))
+                          }
+                          case _ => reject(UnknownParamsRejection(req.id, "[payment_request] or [payment_request, amountMsat] or [nodeId, amountMsat]"))
+                        }
+
+                        case "send" => req.params match {
+                          // user manually sets the payment information
+                          case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
+                            (Try(BinaryData(paymentHash)), Try(PublicKey(nodeId))) match {
+                              case (Success(ph), Success(pk)) => completeRpcFuture(req.id, (paymentInitiator ?
+                                SendPayment(amountMsat.toLong, ph, pk)).mapTo[PaymentResult].map {
+                                case s: PaymentSucceeded => s
+                                case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
+                              })
+                              case (Failure(_), _) => reject(RpcValidationRejection(req.id, s"invalid payment hash '$paymentHash'"))
+                              case _ => reject(RpcValidationRejection(req.id, s"invalid node id '$nodeId'"))
+                            }
+                          // user gives a Lightning payment request
+                          case JString(paymentRequest) :: rest => Try(PaymentRequest.read(paymentRequest)) match {
+                            case Success(pr) =>
+                              // setting the payment amount
+                              val amount_msat: Long = (pr.amount, rest) match {
+                                // optional amount always overrides the amount in the payment request
+                                case (_, JInt(amount_msat_override) :: Nil) => amount_msat_override.toLong
+                                case (Some(amount_msat_pr), _) => amount_msat_pr.amount
+                                case _ => throw new RuntimeException("you must manually specify an amount for this payment request")
+                              }
+                              logger.debug(s"api call for sending payment with amount_msat=$amount_msat")
+                              // optional cltv expiry
+                              val sendPayment = pr.minFinalCltvExpiry match {
+                                case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId)
+                                case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry)
+                              }
+                              completeRpcFuture(req.id, (paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
+                                case s: PaymentSucceeded => s
+                                case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
+                              })
+                            case _ => reject(RpcValidationRejection(req.id, s"payment request is not valid"))
+                          }
+                          case _ => reject(UnknownParamsRejection(req.id, "[amountMsat, paymentHash, nodeId or [paymentRequest] or [paymentRequest, amountMsat]"))
+                        }
 
                         // check received payments
                         case "checkpayment" => req.params match {
-                          case JString(identifier) :: Nil => completeRpcFuture(req.id, for {
-                            paymentHash <- Try(PaymentRequest.read(identifier)) match {
-                              case Success(pr) => Future.successful(pr.paymentHash)
-                              case _ => Try(BinaryData(identifier)) match {
-                                case Success(s) => Future.successful(s)
-                                case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
-                              }
-                            }
-                            found <- (paymentHandler ? CheckPayment(paymentHash)).map(found => new JBool(found.asInstanceOf[Boolean]))
-                          } yield found)
+                          case JString(identifier) :: Nil => extractPaymentHash(identifier) match {
+                            case Success(hash) => completeRpcFuture(req.id, (paymentHandler ? CheckPayment(hash)).map(found => new JBool(found.asInstanceOf[Boolean])))
+                            case _ => completeRpcFuture(req.id, Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash")))
+                          }
                           case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
                         }
 
@@ -352,15 +355,37 @@ trait Service extends Logging {
 
   def getInfoResponse: Future[GetInfoResponse]
 
+  private def extractPaymentHash(identifier: String) = Try(PaymentRequest.read(identifier).paymentHash) orElse Try(BinaryData(identifier))
+
   def makeSocketHandler(system: ActorSystem)(implicit materializer: ActorMaterializer): Flow[Message, TextMessage.Strict, NotUsed] = {
 
     // create a flow transforming a queue of string -> string
     val (flowInput, flowOutput) = Source.queue[String](10, OverflowStrategy.dropTail).toMat(BroadcastHub.sink[String])(Keep.both).run()
 
-    // register an actor that feeds the queue when a payment is received
+    val _formats = formats
+
+    // register an actor that feeds the queue on payment related events
     system.actorOf(Props(new Actor {
-      override def preStart: Unit = context.system.eventStream.subscribe(self, classOf[PaymentReceived])
-      def receive: Receive = { case received: PaymentReceived => flowInput.offer(received.paymentHash.toString) }
+
+      implicit val formats = _formats.withTypeHintFieldName("type") +
+        ShortTypeHints(List(
+          classOf[PaymentSent],
+          classOf[PaymentRelayed],
+          classOf[PaymentReceived],
+          classOf[PaymentSettlingOnChain],
+          classOf[PaymentFailed]))
+
+      override def preStart: Unit = {
+        context.system.eventStream.subscribe(self, classOf[PaymentFailed])
+        context.system.eventStream.subscribe(self, classOf[PaymentEvent])
+      }
+
+      def receive: Receive = {
+        case message: PaymentFailed => flowInput.offer(Serialization write message)
+        case message: PaymentEvent => flowInput.offer(Serialization write message)
+        case other => logger.info(s"Unexpected ws message: $other")
+      }
+
     }))
 
     Flow[Message]
