@@ -445,6 +445,27 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
   whenUnhandled {
 
+    case Event(IsDoubleSpent(tx), data) =>
+      // detect if one of our transaction (i.e a transaction that spends from our wallet) has been double-spent
+      val isDoubleSpent = data.heights.get(tx.txid) match {
+        case Some(_) =>
+          // this tx is either in the mempool or has been confirmed, which means that it hasn't been confirmed
+          false
+        case None =>
+          // tx has not been published and is not in the mempool
+
+          // list all our utxos that have been used
+          val ourSpentUtxos = data.transactions.values.flatMap(_.txIn).map(_.outPoint).toSet
+
+          // list the tx utxos
+          val utxos = tx.txIn.map(_.outPoint).toSet
+
+          // check if one of our transactions spends the same inputs as our tx, if this is the case, then the tx
+          // has been double spent
+          utxos.exists(utxo => ourSpentUtxos.contains(utxo))
+      }
+      stay() replying IsDoubleSpentResponse(tx, isDoubleSpent)
+
     case Event(ElectrumClient.ElectrumDisconnected, data) =>
       log.info(s"wallet got disconnected")
       // remove status for each script hash for which we have pending requests
@@ -465,10 +486,9 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
 
     case Event(GetData, data) => stay replying GetDataResponse(data)
 
-    case Event(GetXpub, _) => {
+    case Event(GetXpub, _) =>
       val (xpub, path) = computeXpub(master, chainHash)
       stay replying GetXpubResponse(xpub, path)
-    }
 
     case Event(ElectrumClient.BroadcastTransaction(tx), _) => stay replying ElectrumClient.BroadcastTransactionResponse(tx, Some(Error(-1, "wallet is not connected")))
   }
@@ -525,6 +545,8 @@ object ElectrumWallet {
   case class GetPrivateKey(address: String) extends Request
   case class GetPrivateKeyResponse(address: String, key: Option[ExtendedPrivateKey]) extends Response
 
+  case class IsDoubleSpent(tx: Transaction) extends Request
+  case class IsDoubleSpentResponse(tx: Transaction, isDoubleSpent: Boolean) extends Response
 
   sealed trait WalletEvent
   /**

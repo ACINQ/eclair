@@ -52,6 +52,17 @@ trait EclairWallet {
     */
   def rollback(tx: Transaction): Future[Boolean]
 
+
+  /**
+    * Tests whether the inputs of the provided transaction have been spent by another transaction.
+    *
+    * Implementations may always return false if they don't want to implement it
+    *
+    * @param tx
+    * @return
+    */
+  def doubleSpent(tx: Transaction): Future[Boolean]
+
 }
 
 final case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int, fee: Satoshi)
