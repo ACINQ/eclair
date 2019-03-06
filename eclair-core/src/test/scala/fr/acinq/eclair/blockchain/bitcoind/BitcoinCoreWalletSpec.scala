@@ -115,9 +115,9 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     wallet.getFinalAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
     val unknownTxids = Seq(
-      BinaryData("01"  *32),
-      BinaryData("02"  *32),
-      BinaryData("03"  *32)
+      BinaryData("01" * 32),
+      BinaryData("02" * 32),
+      BinaryData("03" * 32)
     )
     val unsignedTx = Transaction(version = 2,
       txIn = Seq(
