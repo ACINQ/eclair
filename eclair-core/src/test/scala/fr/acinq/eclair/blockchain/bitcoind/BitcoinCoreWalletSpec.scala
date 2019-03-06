@@ -21,7 +21,7 @@ import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{Block, MilliBtc, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Block, MilliBtc, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.FundTransactionResponse
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError}
@@ -101,7 +101,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     }
   }
 
-  test("handle error when signing transactions") {
+  test("handle errors when signing transactions") {
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
@@ -111,20 +111,27 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
 
     val sender = TestProbe()
 
-    // create and fund a transaction
+    // create a transaction that spends UTXOs that don't exist
     wallet.getFinalAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
-    val unsignedTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1000000), addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0)
-    wallet.fundTransaction(unsignedTx, false, 1500).pipeTo(sender.ref)
-    val FundTransactionResponse(fundedTx, _, _) = sender.expectMsgType[FundTransactionResponse]
+    val unknownTxids = Seq(
+      BinaryData("01"  *32),
+      BinaryData("02"  *32),
+      BinaryData("03"  *32)
+    )
+    val unsignedTx = Transaction(version = 2,
+      txIn = Seq(
+        TxIn(OutPoint(unknownTxids(0), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL),
+        TxIn(OutPoint(unknownTxids(1), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL),
+        TxIn(OutPoint(unknownTxids(2), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL)
+      ),
+      txOut = TxOut(Satoshi(1000000), addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil,
+      lockTime = 0)
 
-    // change the index of the UTXO that it spends
-    val fundedTx1 = fundedTx.copy(txIn = fundedTx.txIn.updated(0, fundedTx.txIn(0).copy(outPoint = fundedTx.txIn(0).outPoint.copy(index = fundedTx.txIn(0).outPoint.index + 1))))
-
-    // signing it should fail, and the error message should contain the txid of the UTXO that could not be used
-    wallet.signTransaction(fundedTx1).pipeTo(sender.ref)
+    // signing it should fail, and the error message should contain the txids of the UTXOs that could not be used
+    wallet.signTransaction(unsignedTx).pipeTo(sender.ref)
     val Failure(JsonRPCError(error)) = sender.expectMsgType[Failure]
-    assert(error.message.contains(fundedTx1.txIn(0).outPoint.txid.toString()))
+    unknownTxids.foreach(id => assert(error.message.contains(id.toString())))
   }
 
   test("create/commit/rollback funding txes") {
