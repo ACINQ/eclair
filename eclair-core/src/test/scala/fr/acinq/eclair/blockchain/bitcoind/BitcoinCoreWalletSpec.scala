@@ -68,7 +68,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
   }
 
   test("absence of rounding") {
-    val hexIn  = "020000000001404b4c0000000000220020822eb4234126c5fc84910e51a161a9b7af94eb67a2344f7031db247e0ecc2f9200000000"
+    val hexIn = "020000000001404b4c0000000000220020822eb4234126c5fc84910e51a161a9b7af94eb67a2344f7031db247e0ecc2f9200000000"
     val hexOut = "02000000013361e994f6bd5cbe9dc9e8cb3acdc12bc1510a3596469d9fc03cfddd71b223720000000000feffffff02c821354a00000000160014b6aa25d6f2a692517f2cf1ad55f243a5ba672cac404b4c0000000000220020822eb4234126c5fc84910e51a161a9b7af94eb67a2344f7031db247e0ecc2f9200000000"
 
     0 to 9 foreach { satoshi =>
@@ -234,4 +234,46 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     wallet.getBalance.pipeTo(sender.ref)
     assert(sender.expectMsgType[Satoshi] > Satoshi(0))
   }
+
+  test("detect if tx has been doublespent") {
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+    val wallet = new BitcoinCoreWallet(bitcoinClient)
+
+    val sender = TestProbe()
+
+    // first let's create a tx
+    val address = "n2YKngjUp139nkjKvZGnfLRN6HzzYxJsje"
+    bitcoinClient.invoke("createrawtransaction", Array.empty, Map(address -> 6)).pipeTo(sender.ref)
+    val JString(noinputTx1) = sender.expectMsgType[JString]
+    bitcoinClient.invoke("fundrawtransaction", noinputTx1).pipeTo(sender.ref)
+    val json = sender.expectMsgType[JValue]
+    val JString(unsignedtx1) = json \ "hex"
+    bitcoinClient.invoke("signrawtransactionwithwallet", unsignedtx1).pipeTo(sender.ref)
+    val JString(signedTx1) = sender.expectMsgType[JValue] \ "hex"
+    val tx1 = Transaction.read(signedTx1)
+    // let's then generate another tx that double spends the first one
+    val inputs = tx1.txIn.map(txIn => Map("txid" -> txIn.outPoint.txid.toString, "vout" -> txIn.outPoint.index)).toArray
+    bitcoinClient.invoke("createrawtransaction", inputs, Map(address -> tx1.txOut.map(_.amount.toLong).sum * 1.0 / 1e8)).pipeTo(sender.ref)
+    val JString(unsignedtx2) = sender.expectMsgType[JValue]
+    bitcoinClient.invoke("signrawtransactionwithwallet", unsignedtx2).pipeTo(sender.ref)
+    val JString(signedTx2) = sender.expectMsgType[JValue] \ "hex"
+    val tx2 = Transaction.read(signedTx2)
+
+    // test starts here
+
+    // tx1/tx2 haven't been published, so tx1 isn't double spent
+    wallet.doubleSpent(tx1).pipeTo(sender.ref)
+    sender.expectMsg(false)
+    // let's publish tx2
+    bitcoinClient.invoke("sendrawtransaction", tx2.toString).pipeTo(sender.ref)
+    val JString(_) = sender.expectMsgType[JValue]
+    // this time tx1 has been double spent
+    wallet.doubleSpent(tx1).pipeTo(sender.ref)
+    sender.expectMsg(true)
+  }
+
 }

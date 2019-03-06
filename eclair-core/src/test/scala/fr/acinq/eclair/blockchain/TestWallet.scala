@@ -36,6 +36,8 @@ class TestWallet extends EclairWallet {
   override def commit(tx: Transaction): Future[Boolean] = Future.successful(true)
 
   override def rollback(tx: Transaction): Future[Boolean] = Future.successful(true)
+
+  override def doubleSpent(tx: Transaction): Future[Boolean] = Future.successful(false)
 }
 
 object TestWallet {

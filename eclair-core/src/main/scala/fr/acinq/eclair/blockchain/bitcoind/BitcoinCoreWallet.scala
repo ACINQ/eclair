@@ -68,6 +68,8 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("lockunspent", true, outPoints.toList.map(outPoint => Utxo(outPoint.txid.toString, outPoint.index))) collect { case JBool(result) => result }
 
+  def isTransactionOutputSpendable(txId: String, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("gettxout", txId, outputIndex, true) collect { case j => j != JNull }
+
 
   override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDecimal(balance) => Satoshi(balance.bigDecimal.scaleByPowerOfTen(8).longValue()) }
 
@@ -113,6 +115,19 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     .recover { case _ => true } // in all other cases we consider that the tx has been published
 
   override def rollback(tx: Transaction): Future[Boolean] = unlockOutpoints(tx.txIn.map(_.outPoint)) // we unlock all utxos used by the tx
+
+  override def doubleSpent(tx: Transaction): Future[Boolean] =
+  for {
+    exists <- getTransaction(tx.txid).map(_ => true).recover { case _ => false }
+    doublespent <- if (exists) {
+      // if the tx is in the blockchain, it can't have been doublespent
+      Future.successful(false)
+    } else {
+      // if the tx wasn't in the blockchain and one of it's input has been spent, it is doublespent
+      Future.sequence(tx.txIn.map(txIn => isTransactionOutputSpendable(txIn.outPoint.txid.toString, txIn.outPoint.index.toInt))).map(_.exists(_ == false))
+    }
+  } yield doublespent // TODO: should we check confirmations of the overriding tx?
+
 }
 
 object BitcoinCoreWallet {
