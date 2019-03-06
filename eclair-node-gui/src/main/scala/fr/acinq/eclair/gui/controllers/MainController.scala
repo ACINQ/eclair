@@ -22,14 +22,15 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 import com.google.common.net.HostAndPort
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
 import fr.acinq.eclair.gui.stages._
-import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
+import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction, IndexedObservableList}
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
-import fr.acinq.eclair.{CoinUtils, Setup}
+import fr.acinq.eclair.{CoinUtils, Setup, ShortChannelId}
 import grizzled.slf4j.Logging
 import javafx.animation.{FadeTransition, ParallelTransition, SequentialTransition, TranslateTransition}
 import javafx.application.{HostServices, Platform}
@@ -95,7 +96,8 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   @FXML var channelsTab: Tab = _
 
   // all nodes tab
-  val networkNodesList = FXCollections.observableArrayList[NodeAnnouncement]()
+  val networkNodesMap = new IndexedObservableList[PublicKey, NodeAnnouncement]
+  private val networkNodesList = networkNodesMap.list
   @FXML var networkNodesTab: Tab = _
   @FXML var networkNodesTable: TableView[NodeAnnouncement] = _
   @FXML var networkNodesIdColumn: TableColumn[NodeAnnouncement, String] = _
@@ -104,7 +106,8 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   @FXML var networkNodesIPColumn: TableColumn[NodeAnnouncement, String] = _
 
   // all channels
-  val networkChannelsList = FXCollections.observableArrayList[ChannelInfo]()
+  val networkChannelsMap = new IndexedObservableList[ShortChannelId, ChannelInfo]
+  private val networkChannelsList = networkChannelsMap.list
   @FXML var networkChannelsTab: Tab = _
   @FXML var networkChannelsTable: TableView[ChannelInfo] = _
   @FXML var networkChannelsIdColumn: TableColumn[ChannelInfo, String] = _

@@ -30,7 +30,9 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, ShortChannelId, addressToPublicKeyScript}
 
+import scala.compat.Platform
 import scala.concurrent.Await
+import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -256,6 +258,23 @@ object Helpers {
       (localSpec, localCommitTx, remoteSpec, remoteCommitTx)
     }
 
+    /**
+      * This will return a delay, taking into account how much we already waited, and giving some slack
+      *
+      * @param now          current timet
+      * @param waitingSince we have been waiting since that time
+      * @param delay    the nominal delay that we were supposed to wait
+      * @param minDelay the minimum delay even if the nominal one has expired
+      * @return  the delay we will actually wait
+      */
+    def computeFundingTimeout(now: Long, waitingSince: Long, delay: FiniteDuration, minDelay: FiniteDuration): FiniteDuration = {
+      import scala.concurrent.duration._
+      val a = waitingSince seconds
+      val b = now seconds
+      val d = delay - (b - a)
+      d.max(minDelay)
+    }
+
   }
 
   /**
@@ -317,6 +336,19 @@ object Helpers {
 
 
   object Closing {
+
+    /**
+      * Indicates whether local has anything at stake in this channel
+      *
+      * @param data
+      * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
+      */
+    def nothingAtStake(data: HasCommitments): Boolean =
+      data.commitments.localCommit.index == 0 &&
+        data.commitments.localCommit.spec.toLocalMsat == 0 &&
+        data.commitments.remoteCommit.index == 0 &&
+        data.commitments.remoteCommit.spec.toRemoteMsat == 0 &&
+        data.commitments.remoteNextCommitInfo.isRight
 
     // used only to compute tx weights and estimate fees
     lazy val dummyPublicKey = PrivateKey(BinaryData("01" * 32), true).publicKey

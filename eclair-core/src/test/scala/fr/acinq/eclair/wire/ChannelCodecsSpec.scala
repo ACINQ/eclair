@@ -17,17 +17,17 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint, Transaction}
-import fr.acinq.eclair.channel.{HtlcTxAndSigs, LocalParams, PublishableTxs, RemoteParams}
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.{Local, Relayed}
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTimeoutTx, HtlcTimeoutTxLegacy, InputInfo}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
 import fr.acinq.eclair.{UInt64, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits.BitVector
 
+import scala.compat.Platform
 import scala.util.Random
 
 /**
@@ -168,32 +168,26 @@ class ChannelCodecsSpec extends FunSuite {
       OutPoint(randomBytes(32), 14502) -> randomBytes(32),
       OutPoint(randomBytes(32), 0) -> randomBytes(32),
       OutPoint(randomBytes(32), 454513) -> randomBytes(32)
-      )
+    )
     assert(spentMapCodec.decodeValue(spentMapCodec.encode(map).require).require === map)
   }
 
-  test("HtlcTimeoutTx compatibility") {
-    val tx1 = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
-    val tx2 = Transaction.read("020000000001012537488e9d066a8f3550cc9adc141a11668425e046e69e07f53bb831f3296cbf00000000000000000001bf8401000000000017a9143f398d81d3c42367b779ea869c7dd3b6826fbb7487024730440220477b961f6360ef6cb62a76898dcecbb130627c7e6a452646e3be601f04627c1f02202572313d0c0afecbfb0c7d0e47ba689427a54f3debaded6d406daa1f5da4918c01210291ed78158810ad867465377f5920036ea865a29b3a39a1b1808d0c3c351a4b4100000000")
-    val input1 = InputInfo(OutPoint(tx1, 0), tx1.txOut.head, randomBytes(32))
-    val input2 = InputInfo(OutPoint(tx2, 0), tx2.txOut.head, randomBytes(32))
-
-    val htlcTimeoutTx1 = HtlcTimeoutTx(input1, tx1, randomBytes(32))
-    val htlcTimeoutTx2 =
-    // This is an old `HtlcTimeoutTx` which should now be `HtlcTimeoutTxLegacy`
-      txWithInputInfoCodec.decodeValue(BitVector.fromHex("00030024d52085191bef26a0cc7fbf286c2bef9b85e9776155b94060120bc5d61c31b2b1000000000020bf840100000" +
-        "0000017a9143f398d81d3c42367b779ea869c7dd3b6826fbb74870020111111111111111111111111111111111111111111111111111111111111111100c00200000" +
-        "00001012537488e9d066a8f3550cc9adc141a11668425e046e69e07f53bb831f3296cbf00000000000000000001bf8401000000000017a9143f398d81d3c42367b77" +
-        "9ea869c7dd3b6826fbb7487024730440220477b961f6360ef6cb62a76898dcecbb130627c7e6a452646e3be601f04627c1f02202572313d0c0afecbfb0c7d0e47ba6" +
-        "89427a54f3debaded6d406daa1f5da4918c01210291ed78158810ad867465377f5920036ea865a29b3a39a1b1808d0c3c351a4b4100000000").get).require
-
-    val htlcTxAndSigs1 = HtlcTxAndSigs(htlcTimeoutTx1, randomBytes(64), randomBytes(64))
-    val htlcTxAndSigs2 = HtlcTxAndSigs(htlcTimeoutTx2, randomBytes(64), randomBytes(64))
-    val publishableTxs = PublishableTxs(CommitTx(input2, tx1), List(htlcTxAndSigs1, htlcTxAndSigs2))
-
-    val decoded = publishableTxsCodec.decodeValue(publishableTxsCodec.encode(publishableTxs).require).require
-    assert(decoded === publishableTxs)
-    assert(decoded.htlcTxsAndSigs(1).txinfo.isInstanceOf[HtlcTimeoutTxLegacy])
+  test("backwards compatibility DATA_WAIT_FOR_FUNDING_CONFIRMED") {
+    // this is a DATA_WAIT_FOR_FUNDING_CONFIRMED encoded with the previous version of the codec (at commit 997aceea82942769649bf03e95c5ea549a7beb0c)
+    val bin_old = BinaryData("000001033785fe882e8682340d11df42213f182755531bd587ae305e0062f563a52d841800049b86343ecd1baa49e0304a6e32dddeb50000000000000222000000012a05f2000000000000004e2000000000000000010090001e800bd48a66494d6275d73cc4b8e167bf840c9261a471271ec380000000c501c99c425578eb58841cbf2f7f2e435e796c654697b8076d4cedc90a7e1389589a0000000000000111000000009502f900000000000000271000000000000000008048000f01419f088c6cd366cadb656148952b730fdf73ccbcf030758c008e6a900f756bfb011fa7aae5886b9c34c5f264d996a7a1def7566424c0f90db8b688794b9ca43db8017331002fd85b09961fa68a1a6c2bc995e717ecf99f10c428a79457a46ce5d47b01325bcce8670aa8e0373c279531553ef280791c283189b1acdee55c21d239cdd90196e7a6fc79329b936e87a07b2d429e7b61ff89db92a4c66ec70e2562a14664570000000140410080000000000000000000000002ee000000003b9aca000000000000000000001278970eefbc9e9c7f44d0ab40555711618404aebd87d861ceca9867ce4f7bfe5d000000000015c0420f0000000000110010326963ce09728e7b80fd51c6d6b7f64d6e124cf55c0d2e887bc862499e325da00023a91081419f088c6cd366cadb656148952b730fdf73ccbcf030758c008e6a900f756bfb1081484d9633cfc4a9ab9f4220a7b3c679e648f18e53a7dadb7154242943b587415aa957009d81000000000080f8970eefbc9e9c7f44d0ab40555711618404aebd87d861ceca9867ce4f7bfe5d00000000007b7ef94000a1400f000000000011001013dc34f3aebaa16836581958168fcc55a5719f1a0c312ea9033c110afb4c677c82002418228110806fb9c53b82a46021cf2b48a18dc49434e9d207f3bff2f09c84e5df5f9526057481100c5bab065bd059dafb7ccef1ce14a850a4bb206b132b53cb9df70faa5be8812e00a39822011021c7d70a781a0ceb7605bed811e9aacdbff8c71f2904d54a7f57a46bd735c9f901101b6fde320e8cc9388538ab65bb2f55ac7cec1218163ec0d590e13ac3fbd7d60e80a3a91081419f088c6cd366cadb656148952b730fdf73ccbcf030758c008e6a900f756bfb1081484d9633cfc4a9ab9f4220a7b3c679e648f18e53a7dadb7154242943b587415aa95770612810000000000000000000000000000002ee0000000000000000000000003b9aca0030e78713eebb77ebfb57a70dee19a85a4e54a11fdf74c9fda7fc108ceaa942db8133978aafdb8e7232a61dca8495134873c1c9ceebb926c85256f432b73b111a9f00000000000000000000000000000000000000000000000000000000000040f5a7aef68b8bc802d20427a43145bfbeded7d322c363f661569a38c58064da6700093c4b8777de4f4e3fa26855a02aab88b0c202575ec3ec30e7654c33e727bdff2e80000000000ae0210780000000000880081934b1e704b9473dc07ea8e36b5bfb26b709267aae0697443de43124cf192ed00011d48840a0cf84463669b3656db2b0a44a95b987efb9e65e78183ac60047354807bab5fd8840a426cb19e7e254d5cfa11053d9e33cf32478c729d3ed6db8aa1214a1dac3a0ad54ab80001e25c3bbef27a71fd1342ad01555c45861012baf61f61873b2a619f393deff9740237cd8e4ea0093bb773bab03a938d5e35e9ebbb5b321ffd7ee031feff96eb82f8970eefbc9e9c7f44d0ab40555711618404aebd87d861ceca9867ce4f7bfe5d000006b0aade318a54c3339808654a781d421412758912d2df1b039399ffed52d3b784f698e9230da056f09212e8ac5cebe7ab1283c08aa3cd548ed5e1a4f81ebfe10")
+    // currently version=0 and discriminator type=1
+    assert(bin_old.data.startsWith(Seq[Byte](0, 0, 1)))
+    // let's decode the old data (this will use the old codec that provides default values for new fields)
+    val data_new = stateDataCodec.decode(BitVector(bin_old.data)).require.value
+    assert(data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx === None)
+    assert(Platform.currentTime / 1000 - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince < 3600) // we just set this timestamp to current time
+    // and re-encode it with the new codec
+    val bin_new = BinaryData(stateDataCodec.encode(data_new).require.toByteVector.toArray)
+    // data should now be encoded under the new format, with version=0 and type=8
+    assert(bin_new.data.startsWith(Seq[Byte](0, 0, 8)))
+    // now let's decode it again
+    val data_new2 = stateDataCodec.decode(BitVector(bin_new.data)).require.value
+    // data should match perfectly
+    assert(data_new === data_new2)
   }
-
 }

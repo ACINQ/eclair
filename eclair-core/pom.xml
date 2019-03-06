@@ -175,7 +175,7 @@
         <dependency>
             <groupId>org.zeromq</groupId>
             <artifactId>jeromq</artifactId>
-            <version>0.4.0</version>
+            <version>0.5.0</version>
         </dependency>
         <!-- SERIALIZATION -->
         <dependency>
@@ -233,6 +233,13 @@
             <groupId>com.whisk</groupId>
             <artifactId>docker-testkit-impl-spotify_${scala.version.short}</artifactId>
             <version>0.9.8</version>
+            <scope>test</scope>
+        </dependency>
+	<!-- neeeded for our docker tests, see  https://github.com/spotify/dockerfile-maven/issues/90 -->
+        <dependency>
+            <groupId>javax.activation</groupId>
+            <artifactId>activation</artifactId>
+            <version>1.1.1</version>
             <scope>test</scope>
         </dependency>
         <dependency>

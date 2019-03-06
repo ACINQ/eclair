@@ -89,4 +89,8 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: BinaryData)(implicit
   }
 
   override def rollback(tx: Transaction): Future[Boolean] = (wallet ? CancelTransaction(tx)).map(_ => true)
+
+  override def doubleSpent(tx: Transaction): Future[Boolean] = {
+    (wallet ? IsDoubleSpent(tx)).mapTo[IsDoubleSpentResponse].map(_.isDoubleSpent)
+  }
 }

@@ -94,7 +94,11 @@ object TestConstants {
         searchMaxFeeBaseSat = 21,
         searchMaxFeePct = 0.03,
         searchMaxCltv = 2016,
-        searchMaxRouteLength = 20
+        searchMaxRouteLength = 20,
+        searchHeuristicsEnabled = false,
+        searchRatioCltv = 0.0,
+        searchRatioChannelAge = 0.0,
+        searchRatioChannelCapacity = 0.0
       ),
       socksProxy_opt = None
     )
@@ -162,7 +166,11 @@ object TestConstants {
         searchMaxFeeBaseSat = 21,
         searchMaxFeePct = 0.03,
         searchMaxCltv = 2016,
-        searchMaxRouteLength = 20
+        searchMaxRouteLength = 20,
+        searchHeuristicsEnabled = false,
+        searchRatioCltv = 0.0,
+        searchRatioChannelAge = 0.0,
+        searchRatioChannelCapacity = 0.0
       ),
       socksProxy_opt = None
     )
