@@ -306,5 +306,6 @@ object ChannelCodecs extends Logging {
   val genericStateDataCodec = discriminated[HasCommitments].by(uint8)
     .\ (COMMITMENTv1_VERSION_BYTE) { case c if c.commitments.version == VersionCommitmentV1 => c } (stateDataCodec(VersionCommitmentV1))
     .\ (COMMITMENT_SIMPLIFIED_VERSION_BYTE) { case c if c.commitments.version == VersionSimplifiedCommitment => c } (stateDataCodec(VersionSimplifiedCommitment))
+    .complete // Converts this codec to a new codec that fails decoding if there are remaining bits.
 
 }
