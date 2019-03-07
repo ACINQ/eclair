@@ -522,7 +522,7 @@ object Commitments {
       case Left(_) if revocation.perCommitmentSecret.toPoint != remoteCommit.remotePerCommitmentPoint =>
         throw InvalidRevocation(commitments.channelId)
       case Left(WaitingForRevocation(theirNextCommit, _, _, _)) =>
-        val forwards = commitments.remoteChanges.signed collect {
+         val forwards = commitments.remoteChanges.signed collect {
           // we forward adds downstream only when they have been committed by both sides
           // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
           case add: UpdateAddHtlc => ForwardAdd(add)
@@ -550,7 +550,6 @@ object Commitments {
           remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
           remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index),
           originChannels = originChannels1)
-
         (commitments1, forwards)
       case Right(_) =>
         throw UnexpectedRevocation(commitments.channelId)

@@ -228,8 +228,8 @@ object ChannelCodecs extends Logging {
        SSSSSSSSSSSSSSS         TTTTTTTTTTTAAAAAAA                   AAAAAAATTTTTTTTTTT      EEEEEEEEEEEEEEEEEEEEEE     DDDDDDDDDDDDD   AAAAAAA                   AAAAAAATTTTTTTTTTTAAAAAAA                   AAAAAAA
  */
 
-  val COMMITMENTv1_VERSION_BYTE = 0x00
-  val COMMITMENT_SIMPLIFIED_VERSION_BYTE = 0x01
+  val COMMITMENTv1_VERSION_BYTE = 0x00.toByte
+  val COMMITMENT_SIMPLIFIED_VERSION_BYTE = 0x01.toByte
 
   def commitmentCodec(commitmentVersion: CommitmentVersion): Codec[Commitments] = {
     import shapeless.{::}
@@ -359,10 +359,11 @@ object ChannelCodecs extends Logging {
     .typecase(COMMITMENT_SIMPLIFIED_VERSION_BYTE, stateDataCodec(VersionSimplifiedCommitment)).asDecoder
 
   private val genericStateDataEncoder = new Encoder[HasCommitments] {
-    override def encode(value: HasCommitments): Attempt[BitVector] = value.commitments.version match {
-      case VersionCommitmentV1 => stateDataCodec(VersionCommitmentV1).encode(value).map(bv => BitVector(COMMITMENTv1_VERSION_BYTE) ++ bv)
-      case VersionSimplifiedCommitment => stateDataCodec(VersionSimplifiedCommitment).encode(value).map(bv => BitVector(COMMITMENT_SIMPLIFIED_VERSION_BYTE) ++ bv)
-      case _ => Attempt.failure(Err("Unknown type"))
+    override def encode(value: HasCommitments): Attempt[BitVector] = stateDataCodec(value.commitments.version).encode(value).map { serializedState =>
+      value.commitments.version match {
+        case VersionCommitmentV1 => BitVector(COMMITMENTv1_VERSION_BYTE) ++ serializedState
+        case VersionSimplifiedCommitment => BitVector(COMMITMENT_SIMPLIFIED_VERSION_BYTE) ++ serializedState
+      }
     }
 
     override def sizeBound: SizeBound = SizeBound(0, None)
