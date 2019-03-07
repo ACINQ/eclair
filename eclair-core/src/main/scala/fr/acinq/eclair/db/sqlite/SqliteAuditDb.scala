@@ -17,12 +17,14 @@
 package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
+import java.util.UUID
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, ChannelClosed, ChannelCreated, NetworkFeePaid}
+import fr.acinq.eclair.channel.{AvailableBalanceChanged, NetworkFeePaid}
 import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent, NetworkFee, Stats}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
+import fr.acinq.eclair.wire.ChannelCodecs
 
 import scala.collection.immutable.Queue
 import scala.compat.Platform
@@ -124,6 +126,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
       var q: Queue[PaymentSent] = Queue()
       while (rs.next()) {
         q = q :+ PaymentSent(
+          id = ChannelCodecs.UNKNOWN_UUID, // TODO: temporary! fix that
           amount = MilliSatoshi(rs.getLong("amount_msat")),
           feesPaid = MilliSatoshi(rs.getLong("fees_msat")),
           paymentHash = BinaryData(rs.getBytes("payment_hash")),

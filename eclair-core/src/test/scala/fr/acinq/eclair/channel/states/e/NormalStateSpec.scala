@@ -65,7 +65,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val sender = TestProbe()
     val h = BinaryData("42" * 32)
-    sender.send(alice, CMD_ADD_HTLC(50000000, h, 400144))
+    val add = CMD_ADD_HTLC(50000000, h, 400144)
+    sender.send(alice, add)
     sender.expectMsg("ok")
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     assert(htlc.id == 0 && htlc.paymentHash == h)
@@ -73,7 +74,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       commitments = initialState.commitments.copy(
         localNextHtlcId = 1,
         localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
-        originChannels = Map(0L -> Local(Some(sender.ref)))
+        originChannels = Map(0L -> Local(add.upstream.left.get, Some(sender.ref)))
       )))
   }
 
@@ -95,7 +96,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val h = BinaryData("42" * 32)
     val originHtlc = UpdateAddHtlc(channelId = "42" * 32, id = 5656, amountMsat = 50000000, cltvExpiry = 400144, paymentHash = h, onionRoutingPacket = "00" * 1254)
-    val cmd = CMD_ADD_HTLC(originHtlc.amountMsat - 10000, h, originHtlc.cltvExpiry - 7, upstream_opt = Some(originHtlc))
+    val cmd = CMD_ADD_HTLC(originHtlc.amountMsat - 10000, h, originHtlc.cltvExpiry - 7, upstream = Right(originHtlc))
     sender.send(alice, cmd)
     sender.expectMsg("ok")
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -115,7 +116,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add = CMD_ADD_HTLC(500000000, "11" * 42, cltvExpiry = 400144)
     sender.send(alice, add)
     val error = InvalidPaymentHash(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -128,7 +129,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = expiryTooSmall)
     sender.send(alice, add)
     val error = ExpiryTooSmall(channelId(alice), currentBlockCount + Channel.MIN_CLTV_EXPIRY, expiryTooSmall, currentBlockCount)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -141,7 +142,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = expiryTooBig)
     sender.send(alice, add)
     val error = ExpiryTooBig(channelId(alice), maximum = currentBlockCount + Channel.MAX_CLTV_EXPIRY, actual = expiryTooBig, blockCount = currentBlockCount)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -152,7 +153,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add = CMD_ADD_HTLC(50, "11" * 32, 400144)
     sender.send(alice, add)
     val error = HtlcValueTooSmall(channelId(alice), 1000, 50)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -163,7 +164,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add = CMD_ADD_HTLC(Int.MaxValue, "11" * 32, 400144)
     sender.send(alice, add)
     val error = InsufficientFunds(channelId(alice), amountMsat = Int.MaxValue, missingSatoshis = 1376443, reserveSatoshis = 20000, feesSatoshis = 8960)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -183,7 +184,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add = CMD_ADD_HTLC(1000000, "44" * 32, 400144)
     sender.send(alice, add)
     val error = InsufficientFunds(channelId(alice), amountMsat = 1000000, missingSatoshis = 1000, reserveSatoshis = 20000, feesSatoshis = 12400)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -200,7 +201,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add = CMD_ADD_HTLC(500000000, "33" * 32, 400144)
     sender.send(alice, add)
     val error = InsufficientFunds(channelId(alice), amountMsat = 500000000, missingSatoshis = 332400, reserveSatoshis = 20000, feesSatoshis = 12400)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -211,7 +212,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add = CMD_ADD_HTLC(151000000, "11" * 32, 400144)
     sender.send(bob, add)
     val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000, actual = 151000000)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     bob2alice.expectNoMsg(200 millis)
   }
 
@@ -228,7 +229,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add = CMD_ADD_HTLC(10000000, "33" * 32, 400144)
     sender.send(alice, add)
     val error = TooManyAcceptedHtlcs(channelId(alice), maximum = 30)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -247,7 +248,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add2 = CMD_ADD_HTLC(TestConstants.fundingSatoshis * 2 / 3 * 1000, "22" * 32, 400144)
     sender.send(alice, add2)
     val error = InsufficientFunds(channelId(alice), add2.amountMsat, 564012, 20000, 10680)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Local(add2.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -264,7 +265,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = 400144)
     sender.send(alice, add)
     val error = NoMoreHtlcsClosingInProgress(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -288,7 +289,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     sender.send(alice, add2)
     val error = NoMoreHtlcsClosingInProgress(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Local(add2.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
   }
 
   test("recv UpdateAddHtlc") { f =>

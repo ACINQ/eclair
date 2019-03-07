@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.channel.states.f
 
+import java.util.UUID
+
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.Scalar
@@ -51,7 +53,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val h1: BinaryData = Crypto.sha256(r1)
       val amount1 = 300000000
       val expiry1 = 400144
-      val cmd1 = PaymentLifecycle.buildCommand(amount1, expiry1, h1, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil)._1.copy(commit = false)
+      val cmd1 = PaymentLifecycle.buildCommand(UUID.randomUUID, amount1, expiry1, h1, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil)._1.copy(commit = false)
       sender.send(alice, cmd1)
       sender.expectMsg("ok")
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -62,7 +64,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val h2: BinaryData = Crypto.sha256(r2)
       val amount2 = 200000000
       val expiry2 = 400144
-      val cmd2 = PaymentLifecycle.buildCommand(amount2, expiry2, h2, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil)._1.copy(commit = false)
+      val cmd2 = PaymentLifecycle.buildCommand(UUID.randomUUID, amount2, expiry2, h2, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil)._1.copy(commit = false)
       sender.send(alice, cmd2)
       sender.expectMsg("ok")
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -102,7 +104,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = 300000)
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), None, Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), None, Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 

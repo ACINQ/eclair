@@ -16,6 +16,9 @@
 
 package fr.acinq.eclair.wire
 
+import java.util.UUID
+
+import akka.actor.ActorRef
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
@@ -154,14 +157,23 @@ object ChannelCodecs extends Logging {
       ("sentAfterLocalCommitIndex" | uint64) ::
       ("reSignAsap" | bool)).as[WaitingForRevocation]
 
+  val localCodec: Codec[Local] = (
+    ("id" | uuid) ::
+      ("sender" | provide(Option.empty[ActorRef]))
+    ).as[Local]
+
   val relayedCodec: Codec[Relayed] = (
     ("originChannelId" | binarydata(32)) ::
       ("originHtlcId" | int64) ::
       ("amountMsatIn" | uint64) ::
       ("amountMsatOut" | uint64)).as[Relayed]
 
+  // this is for backward compatibility to handle legacy payments that didn't have identifiers
+  val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
+
   val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
-    .typecase(0x01, provide(Local(None)))
+    .typecase(0x03, localCodec) // backward compatible
+    .typecase(0x01, provide(Local(UNKNOWN_UUID, None)))
     .typecase(0x02, relayedCodec)
 
   val originsListCodec: Codec[List[(Long, Origin)]] = listOfN(uint16, int64 ~ originCodec)

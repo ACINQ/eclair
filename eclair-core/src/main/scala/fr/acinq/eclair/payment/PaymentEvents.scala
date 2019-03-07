@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.payment
 
+import java.util.UUID
+
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 
 import scala.compat.Platform
@@ -27,10 +29,10 @@ sealed trait PaymentEvent {
   val paymentHash: BinaryData
 }
 
-case class PaymentSent(amount: MilliSatoshi, feesPaid: MilliSatoshi, paymentHash: BinaryData, paymentPreimage: BinaryData, toChannelId: BinaryData, timestamp: Long = Platform.currentTime) extends PaymentEvent
+case class PaymentSent(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, paymentHash: BinaryData, paymentPreimage: BinaryData, toChannelId: BinaryData, timestamp: Long = Platform.currentTime) extends PaymentEvent
 
 case class PaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: BinaryData, fromChannelId: BinaryData, toChannelId: BinaryData, timestamp: Long = Platform.currentTime) extends PaymentEvent
 
 case class PaymentReceived(amount: MilliSatoshi, paymentHash: BinaryData, fromChannelId: BinaryData, timestamp: Long = Platform.currentTime) extends PaymentEvent
 
-case class PaymentSettlingOnChain(amount: MilliSatoshi, paymentHash: BinaryData, timestamp: Long = Platform.currentTime) extends PaymentEvent
+case class PaymentSettlingOnChain(id: UUID, amount: MilliSatoshi, paymentHash: BinaryData, timestamp: Long = Platform.currentTime) extends PaymentEvent

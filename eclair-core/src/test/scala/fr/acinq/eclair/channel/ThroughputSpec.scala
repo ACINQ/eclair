@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel
 
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicLong
 

@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.db
 
+import java.util.UUID
+
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto, DeterministicWallet, MilliSatoshi, Satoshi, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -103,7 +105,7 @@ object ChannelStateSpec {
   val commitments = Commitments(localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 32L,
     remoteNextHtlcId = 4L,
-    originChannels = Map(42L -> Local(None), 15000L -> Relayed("42" * 32, 43, 11000000L, 10000000L)),
+    originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed("42" * 32, 43, 11000000L, 10000000L)),
     remoteNextCommitInfo = Right(randomKey.publicKey),
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32)
 

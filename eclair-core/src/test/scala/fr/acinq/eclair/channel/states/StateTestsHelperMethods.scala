@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.channel.states
 
+import java.util.UUID
+
 import akka.actor.Actor
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
@@ -116,7 +118,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     val sender = TestProbe()
     val receiverPubkey = r.underlyingActor.nodeParams.nodeId
     val expiry = 400144
-    val cmd = PaymentLifecycle.buildCommand(amountMsat, expiry, H, Hop(null, receiverPubkey, null) :: Nil)._1.copy(commit = false)
+    val cmd = PaymentLifecycle.buildCommand(UUID.randomUUID, amountMsat, expiry, H, Hop(null, receiverPubkey, null) :: Nil)._1.copy(commit = false)
     sender.send(s, cmd)
     sender.expectMsg("ok")
     val htlc = s2r.expectMsgType[UpdateAddHtlc]

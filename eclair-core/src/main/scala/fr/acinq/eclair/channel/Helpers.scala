@@ -803,15 +803,6 @@ object Helpers {
       }
 
     /**
-      * Tells if we were the origin of this outgoing htlc
-      *
-      * @param htlcId
-      * @param originChannels
-      * @return
-      */
-    def isSentByLocal(htlcId: Long, originChannels: Map[Long, Origin]) = (originChannels.get(htlcId) collect { case l: Local => l }).isDefined
-
-    /**
       * As soon as a local or remote commitment reaches min_depth, we know which htlcs will be settled on-chain (whether
       * or not they actually have an output in the commitment tx).
       *
