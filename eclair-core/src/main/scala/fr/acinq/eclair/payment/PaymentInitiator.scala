@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.payment
 
+import java.util.UUID
+
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
@@ -27,7 +29,10 @@ class PaymentInitiator(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
   override def receive: Receive = {
     case c: SendPayment =>
-      val payFsm = context.actorOf(PaymentLifecycle.props(sourceNodeId, router, register))
+      val paymentId = UUID.randomUUID()
+      val payFsm = context.actorOf(PaymentLifecycle.props(paymentId, sourceNodeId, router, register))
+      // TODO: here we should probably send  the payment id back to the sender so that it knows how to query the api later
+      //sender ! paymentId
       payFsm forward c
   }
 

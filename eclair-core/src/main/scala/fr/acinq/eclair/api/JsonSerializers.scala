@@ -17,6 +17,7 @@
 package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
+import java.util.UUID
 
 import akka.http.scaladsl.model.MediaType
 import akka.http.scaladsl.model.MediaTypes._
@@ -154,6 +155,10 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format =
     Nil)
 }))
 
+class JavaUUIDSerializer extends CustomSerializer[UUID](format => ({ null }, {
+  case id: UUID => JString(id.toString)
+}))
+
 object JsonSupport extends Json4sSupport {
 
   implicit val serialization = jackson.Serialization
@@ -182,7 +187,8 @@ object JsonSupport extends Json4sSupport {
     new FailureMessageSerializer +
     new NodeAddressSerializer +
     new DirectionSerializer +
-    new PaymentRequestSerializer
+    new PaymentRequestSerializer +
+    new JavaUUIDSerializer
 
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 

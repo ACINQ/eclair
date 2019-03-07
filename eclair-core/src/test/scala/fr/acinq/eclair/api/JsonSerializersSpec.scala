@@ -17,6 +17,7 @@
 package fr.acinq.eclair.api
 
 import java.net.InetAddress
+import java.util.UUID
 
 import fr.acinq.bitcoin.{MilliSatoshi, OutPoint}
 import fr.acinq.eclair._
@@ -79,7 +80,7 @@ class JsonSerializersSpec extends FunSuite with Matchers {
 
   test("type hints") {
     implicit val formats = DefaultFormats.withTypeHintFieldName("type") + CustomTypeHints(Map(classOf[PaymentSettlingOnChain] -> "payment-settling-onchain")) + new MilliSatoshiSerializer
-    val e1 = PaymentSettlingOnChain(MilliSatoshi(42), randomBytes32)
+    val e1 = PaymentSettlingOnChain(UUID.randomUUID, MilliSatoshi(42), randomBytes32)
     assert(Serialization.writePretty(e1).contains("\"type\" : \"payment-settling-onchain\""))
   }
 }
