@@ -79,7 +79,7 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelp
     bob2alice.forward(alice)
 
     val aliceStateData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
-    assert(aliceStateData.commitments.getContext == VersionSimplifiedCommitment)
+    assert(aliceStateData.commitments.version == VersionSimplifiedCommitment)
 
     // there should be 2 push-me outputs with amount 1000 sat
     val aliceLocalCommitTx = aliceStateData.commitments.localCommit.publishableTxs.commitTx.tx

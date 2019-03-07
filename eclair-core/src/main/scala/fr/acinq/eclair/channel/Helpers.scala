@@ -231,9 +231,9 @@ object Helpers {
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
     def makeFirstCommitTxs(keyManager: KeyManager, temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
-      implicit val commitmentContext = Helpers.canUseSimplifiedCommitment(localParams, remoteParams) match {
-        case true => VersionSimplifiedCommitment
+      implicit val commitmentVersion = Helpers.canUseSimplifiedCommitment(localParams, remoteParams) match {
         case false => VersionCommitmentV1
+        case true => VersionSimplifiedCommitment
       }
 
       // TODO adjust for option_simplified_commitment
@@ -346,7 +346,7 @@ object Helpers {
       }
     }
 
-    def firstClosingFee(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData)(implicit log: LoggingAdapter): Satoshi = commitments.getContext match {
+    def firstClosingFee(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData)(implicit log: LoggingAdapter): Satoshi = commitments.version match {
       case VersionCommitmentV1 =>
         import commitments._
         // this is just to estimate the weight, it depends on size of the pubkey scripts
@@ -419,7 +419,7 @@ object Helpers {
     def claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction)(implicit log: LoggingAdapter): LocalCommitPublished = {
       import commitments._
       require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
-      implicit val commitmentContext = commitments.getContext
+      implicit val commitmentVersion = commitments.version
 
       val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, commitments.localCommit.index.toInt)
       val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
@@ -436,7 +436,7 @@ object Helpers {
       })
 
       // the push-me trasaction attaches the fees to the commitmentTx
-      val pushMeTransaction = commitmentContext match {
+      val pushMeTransaction = commitmentVersion match {
         case VersionCommitmentV1 => None
         case VersionSimplifiedCommitment =>
           generateTx("push-me-cpfp")(Try {
@@ -505,7 +505,7 @@ object Helpers {
       import commitments.{commitInput, localParams, remoteParams}
       require(remoteCommit.txid == commitTx.txid, "txid mismatch, provided tx is not the current remote commit tx")
 
-      implicit val commitmentContext = commitments.getContext
+      implicit val commitmentVersion = commitments.version
 
       val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, commitments.localCommit.index.toInt)
       val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, localPerCommitmentPoint, remoteCommit.spec)
@@ -562,12 +562,12 @@ object Helpers {
       * @return a list of transactions (one per HTLC that we can claim)
       */
     def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: Point, commitTx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
-      implicit val commitmentContext = commitments.getContext
+      implicit val commitmentVersion = commitments.version
 
       // no need to use a high fee rate for our main output (we are the only one who can spend it)
       val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
 
-      val mainTx = commitments.getContext match {
+      val mainTx = commitments.version match {
         case VersionCommitmentV1 =>
           val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(commitments.localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
           generateTx("claim-p2wpkh-output")(Try {
@@ -607,7 +607,7 @@ object Helpers {
       * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
       */
     def claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, db: ChannelsDb)(implicit log: LoggingAdapter): Option[RevokedCommitPublished] = {
-      implicit val commitmentContext = commitments.getContext
+      implicit val commitmentVersion = commitments.version
 
       import commitments._
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
@@ -782,7 +782,7 @@ object Helpers {
       * @param tx a tx that has reached mindepth
       * @return a set of htlcs that need to be failed upstream
       */
-    def timedoutHtlcs(localCommit: LocalCommit, localDustLimit: Satoshi, tx: Transaction)(implicit commitmentContext: CommitmentVersion, log: LoggingAdapter): Set[UpdateAddHtlc] =
+    def timedoutHtlcs(localCommit: LocalCommit, localDustLimit: Satoshi, tx: Transaction)(implicit commitmentVersion: CommitmentVersion, log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (tx.txid == localCommit.publishableTxs.commitTx.tx.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
         (localCommit.spec.htlcs.filter(_.direction == OUT) -- Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec)).map(_.add)
@@ -806,7 +806,7 @@ object Helpers {
       * @param tx a tx that has reached mindepth
       * @return a set of htlcs that need to be failed upstream
       */
-    def timedoutHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction)(implicit commitmentContext: CommitmentVersion, log: LoggingAdapter): Set[UpdateAddHtlc] =
+    def timedoutHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction)(implicit commitmentVersion: CommitmentVersion, log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (tx.txid == remoteCommit.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
         (remoteCommit.spec.htlcs.filter(_.direction == IN) -- Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec)).map(_.add)

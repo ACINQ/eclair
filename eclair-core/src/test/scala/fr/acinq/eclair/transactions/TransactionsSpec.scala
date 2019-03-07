@@ -216,8 +216,8 @@ class TransactionsSpec extends FunSuite with Logging {
       Transactions.addSigs(txinfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
     }
 
-    def createHtlcTxs(commitmentContext: CommitmentVersion = VersionCommitmentV1):(Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
-      makeHtlcTxs(commitTx(commitmentContext).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)(commitmentContext)
+    def createHtlcTxs(commitmentVersion: CommitmentVersion = VersionCommitmentV1):(Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+      makeHtlcTxs(commitTx(commitmentVersion).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)(commitmentVersion)
     }
 
     {
