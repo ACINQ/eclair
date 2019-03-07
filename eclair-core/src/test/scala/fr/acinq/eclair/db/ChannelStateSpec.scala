@@ -45,7 +45,6 @@ class ChannelStateSpec extends FunSuite {
     assert(bin.take(8).toByte(signed = false) == ChannelCodecs.COMMITMENTv1_VERSION_BYTE)
     assert(data.commitments.localCommit.spec === check.commitments.localCommit.spec)
     assert(data === check)
-    assert(data.commitments.isInstanceOf[CommitmentsV1])
   }
 
   test("basic serialization test (NORMAL - SimplifiedCommitment)") {
@@ -56,7 +55,6 @@ class ChannelStateSpec extends FunSuite {
     assert(bin.take(8).toByte(signed = false) == ChannelCodecs.COMMITMENT_SIMPLIFIED_VERSION_BYTE)
     assert(data.commitments.localCommit.spec === check.commitments.localCommit.spec)
     assert(data === check)
-    assert(data.commitments.isInstanceOf[SimplifiedCommitment])
   }
 
 }
@@ -115,19 +113,19 @@ object ChannelStateSpec {
 
   val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000, 70000000), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
   val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, 50000, 700000), BinaryData("0303030303030303030303030303030303030303030303030303030303030303"), Scalar(BinaryData("04" * 32)).toPoint)
-  val commitmentsV1 = CommitmentsV1(localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
+  val commitmentsV1 = Commitments(localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 32L,
     remoteNextHtlcId = 4L,
     originChannels = Map(42L -> Local(None), 15000L -> Relayed("42" * 32, 43, 11000000L, 10000000L)),
     remoteNextCommitInfo = Right(randomKey.publicKey),
-    commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32)
+    commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32, version = ContextCommitmentV1)
 
-  val simplifiedCommitment = SimplifiedCommitment(localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
+  val simplifiedCommitment = Commitments(localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 32L,
     remoteNextHtlcId = 4L,
     originChannels = Map(42L -> Local(None), 15000L -> Relayed("42" * 32, 43, 11000000L, 10000000L)),
     remoteNextCommitInfo = Right(randomKey.publicKey),
-    commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32)
+    commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32, version = ContextSimplifiedCommitment)
 
   val channelUpdate = Announcements.makeChannelUpdate("11" * 32, randomKey, randomKey.publicKey, ShortChannelId(142553), 42, 15, 575, 53, Channel.MAX_FUNDING_SATOSHIS * 1000L)
 

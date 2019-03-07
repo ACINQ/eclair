@@ -60,12 +60,9 @@ object Helpers {
     * @return
     */
   def updateFeatures(data: HasCommitments, localInit: Init, remoteInit: Init): HasCommitments = {
-    val commitments1 = data.commitments match {
-      case c: CommitmentsV1 => c.copy(
-        localParams = data.commitments.localParams.copy(globalFeatures = localInit.globalFeatures, localFeatures = localInit.localFeatures),
-        remoteParams = data.commitments.remoteParams.copy(globalFeatures = remoteInit.globalFeatures, localFeatures = remoteInit.localFeatures))
-      case _: SimplifiedCommitment => throw new NotImplementedError("Missing impl for simplified_commitment")
-    }
+    val commitments1 = data.commitments.copy(
+      localParams = data.commitments.localParams.copy(globalFeatures = localInit.globalFeatures, localFeatures = localInit.localFeatures),
+      remoteParams = data.commitments.remoteParams.copy(globalFeatures = remoteInit.globalFeatures, localFeatures = remoteInit.localFeatures))
 
     data match {
       case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = commitments1)
@@ -349,8 +346,8 @@ object Helpers {
       }
     }
 
-    def firstClosingFee(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData)(implicit log: LoggingAdapter): Satoshi = commitments match {
-      case c: CommitmentsV1 =>
+    def firstClosingFee(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData)(implicit log: LoggingAdapter): Satoshi = commitments.getContext match {
+      case ContextCommitmentV1 =>
         import commitments._
         // this is just to estimate the weight, it depends on size of the pubkey scripts
         val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
@@ -359,7 +356,7 @@ object Helpers {
         val feeratePerKw = Math.min(Globals.feeratesPerKw.get.blocks_6, commitments.localCommit.spec.feeratePerKw)
         log.info(s"using feeratePerKw=$feeratePerKw for initial closing tx")
         Transactions.weight2fee(feeratePerKw, closingWeight)
-      case s: SimplifiedCommitment =>
+      case ContextSimplifiedCommitment =>
         Satoshi(282)
     }
 

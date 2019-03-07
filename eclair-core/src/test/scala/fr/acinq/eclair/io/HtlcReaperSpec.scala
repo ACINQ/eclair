@@ -63,10 +63,7 @@ class HtlcReaperSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     channel.expectNoMsg(100 millis)
 
     // let's now assume that the channel get's reconnected, and it had the time to fail the htlcs
-    val data1 = data.copy(commitments = data.commitments match {
-      case _: SimplifiedCommitment => ???
-      case c: CommitmentsV1 => c.copy(localCommit = data.commitments.localCommit.copy(spec = data.commitments.localCommit.spec.copy(htlcs = Set.empty)))
-    })
+    val data1 = data.copy(commitments = data.commitments.copy(localCommit = data.commitments.localCommit.copy(spec = data.commitments.localCommit.spec.copy(htlcs = Set.empty))))
     sender.send(brokenHtlcKiller, ChannelStateChanged(channel.ref, system.deadLetters, data.commitments.remoteParams.nodeId, OFFLINE, NORMAL, data1))
     channel.expectNoMsg(100 millis)
 
