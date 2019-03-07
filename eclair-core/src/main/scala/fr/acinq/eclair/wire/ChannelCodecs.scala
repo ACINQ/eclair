@@ -28,7 +28,7 @@ import fr.acinq.eclair.wire.LightningMessageCodecs._
 import grizzled.slf4j.Logging
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec, Decoder, Encoder, Err, GenCodec, SizeBound, Transformer}
+import scodec.{Attempt, Codec, DecodeResult, Decoder, Encoder, Err, GenCodec, SizeBound, Transformer}
 import shapeless.{Generic, HList, HNil}
 
 /**
@@ -232,72 +232,21 @@ object ChannelCodecs extends Logging {
   val COMMITMENT_SIMPLIFIED_VERSION_BYTE = 0x01.toByte
 
   def commitmentCodec(commitmentVersion: CommitmentVersion): Codec[Commitments] = {
-    import shapeless.{::}
     (("localParams" | localParamsCodec) ::
-        ("remoteParams" | remoteParamsCodec) ::
-        ("channelFlags" | byte) ::
-        ("localCommit" | localCommitCodec) ::
-        ("remoteCommit" | remoteCommitCodec) ::
-        ("localChanges" | localChangesCodec) ::
-        ("remoteChanges" | remoteChangesCodec) ::
-        ("localNextHtlcId" | uint64) ::
-        ("remoteNextHtlcId" | uint64) ::
-        ("originChannels" | originsMapCodec) ::
-        ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, point)) ::
-        ("commitInput" | inputInfoCodec) ::
-        ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
-        ("channelId" | binarydata(32))).xmap(
-      f = {
-        case
-          localParams ::
-            remoteParams ::
-            flags ::
-            localCommit ::
-            remoteCommit ::
-            localChanges ::
-            remoteChanges ::
-            localNextHtlcId ::
-            remoteNextHtlcId ::
-            originChannels ::
-            remoteNextCommitInfo ::
-            commitInput ::
-            remotePerCommitmentSecrets ::
-            channelId ::
-            HNil => Commitments(
-          localParams,
-          remoteParams,
-          flags,
-          localCommit,
-          remoteCommit,
-          localChanges,
-          remoteChanges,
-          localNextHtlcId,
-          remoteNextHtlcId,
-          originChannels,
-          remoteNextCommitInfo,
-          commitInput,
-          remotePerCommitmentSecrets,
-          channelId,
-          version = commitmentVersion
-        )
-      },
-      g = { c: Commitments =>
-        c.localParams ::
-          c.remoteParams ::
-          c.channelFlags ::
-          c.localCommit ::
-          c.remoteCommit ::
-          c.localChanges ::
-          c.remoteChanges ::
-          c.localNextHtlcId ::
-          c.remoteNextHtlcId ::
-          c.originChannels ::
-          c.remoteNextCommitInfo ::
-          c.commitInput ::
-          c.remotePerCommitmentSecrets ::
-          c.channelId :: HNil
-      }
-    )
+      ("remoteParams" | remoteParamsCodec) ::
+      ("channelFlags" | byte) ::
+      ("localCommit" | localCommitCodec) ::
+      ("remoteCommit" | remoteCommitCodec) ::
+      ("localChanges" | localChangesCodec) ::
+      ("remoteChanges" | remoteChangesCodec) ::
+      ("localNextHtlcId" | uint64) ::
+      ("remoteNextHtlcId" | uint64) ::
+      ("originChannels" | originsMapCodec) ::
+      ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, point)) ::
+      ("commitInput" | inputInfoCodec) ::
+      ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
+      ("channelId" | binarydata(32)) ::
+      ("version" | provide(commitmentVersion))).as[Commitments]
   }
 
   def DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
@@ -354,22 +303,8 @@ object ChannelCodecs extends Logging {
     .typecase(0x06, DATA_CLOSING_Codec(commitmentVersion))
     .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitmentVersion))
 
-  private val genericStateDataDecoder = discriminated[HasCommitments].by(uint8)
-    .typecase(COMMITMENTv1_VERSION_BYTE, stateDataCodec(VersionCommitmentV1))
-    .typecase(COMMITMENT_SIMPLIFIED_VERSION_BYTE, stateDataCodec(VersionSimplifiedCommitment)).asDecoder
-
-  private val genericStateDataEncoder = new Encoder[HasCommitments] {
-    override def encode(value: HasCommitments): Attempt[BitVector] = stateDataCodec(value.commitments.version).encode(value).map { serializedState =>
-      value.commitments.version match {
-        case VersionCommitmentV1 => BitVector(COMMITMENTv1_VERSION_BYTE) ++ serializedState
-        case VersionSimplifiedCommitment => BitVector(COMMITMENT_SIMPLIFIED_VERSION_BYTE) ++ serializedState
-      }
-    }
-
-    override def sizeBound: SizeBound = SizeBound(0, None)
-  }
-
-  val genericStateDataCodec = GenCodec(genericStateDataEncoder, genericStateDataDecoder).fuse
-
+  val genericStateDataCodec = discriminated[HasCommitments].by(uint8)
+    .\ (COMMITMENTv1_VERSION_BYTE) { case c if c.commitments.version == VersionCommitmentV1 => c } (stateDataCodec(VersionCommitmentV1))
+    .\ (COMMITMENT_SIMPLIFIED_VERSION_BYTE) { case c if c.commitments.version == VersionSimplifiedCommitment => c } (stateDataCodec(VersionSimplifiedCommitment))
 
 }

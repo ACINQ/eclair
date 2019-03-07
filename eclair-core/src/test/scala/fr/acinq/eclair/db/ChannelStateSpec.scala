@@ -67,9 +67,10 @@ class ChannelStateSpec extends FunSuite {
     val bin = ChannelCodecs.genericStateDataCodec.encode(state).require
     val state1 = ChannelCodecs.genericStateDataCodec.decodeValue(bin).require
 
+    assert(BitVector(rawCommitment.data).toByteArray.length === rawCommitment.data.size)
+
     assert(state === state1)
-    assert(bin.size === 0)                      // 15329
-    assert(BitVector(rawCommitment.data) === 0) // 15336
+    assert(bin === BitVector(rawCommitment.data))
   }
 
 }
