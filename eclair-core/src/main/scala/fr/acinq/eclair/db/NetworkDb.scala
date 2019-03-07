@@ -50,8 +50,6 @@ trait NetworkDb {
 
   def listChannelUpdates(): Seq[ChannelUpdate]
 
-  def addToPruned(shortChannelId: ShortChannelId): Unit = addToPruned(Seq(shortChannelId))
-
   def addToPruned(shortChannelIds: Seq[ShortChannelId]): Unit
 
   def removeFromPruned(shortChannelId: ShortChannelId)
