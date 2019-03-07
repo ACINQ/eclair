@@ -70,7 +70,7 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     alice2bob.forward(bob)
     awaitCond({
       bob.stateName == WAIT_FOR_FUNDING_CONFIRMED &&
-      bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.getContext == ContextCommitmentV1
+      bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.getContext == VersionCommitmentV1
     })
     bob2alice.expectMsgType[FundingSigned]
     bob2blockchain.expectMsgType[WatchSpent]
@@ -83,7 +83,7 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     alice2bob.forward(bob)
     awaitCond({
       bob.stateName == WAIT_FOR_FUNDING_CONFIRMED &&
-      bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.getContext == ContextSimplifiedCommitment
+      bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.getContext == VersionSimplifiedCommitment
     })
     bob2alice.expectMsgType[FundingSigned]
     bob2blockchain.expectMsgType[WatchSpent]

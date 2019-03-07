@@ -118,14 +118,14 @@ object ChannelStateSpec {
     remoteNextHtlcId = 4L,
     originChannels = Map(42L -> Local(None), 15000L -> Relayed("42" * 32, 43, 11000000L, 10000000L)),
     remoteNextCommitInfo = Right(randomKey.publicKey),
-    commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32, version = ContextCommitmentV1)
+    commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32, version = VersionCommitmentV1)
 
   val simplifiedCommitment = Commitments(localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 32L,
     remoteNextHtlcId = 4L,
     originChannels = Map(42L -> Local(None), 15000L -> Relayed("42" * 32, 43, 11000000L, 10000000L)),
     remoteNextCommitInfo = Right(randomKey.publicKey),
-    commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32, version = ContextSimplifiedCommitment)
+    commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32, version = VersionSimplifiedCommitment)
 
   val channelUpdate = Announcements.makeChannelUpdate("11" * 32, randomKey, randomKey.publicKey, ShortChannelId(142553), 42, 15, 575, 53, Channel.MAX_FUNDING_SATOSHIS * 1000L)
 

@@ -18,7 +18,7 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.channel.ContextCommitmentV1
+import fr.acinq.eclair.channel.VersionCommitmentV1
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
@@ -191,7 +191,7 @@ class TestVectorsSpec extends FunSuite with Logging {
         Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
         Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
         Remote.delayed_payment_pubkey,
-        spec)(ContextCommitmentV1)
+        spec)(VersionCommitmentV1)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey, SIGHASH_ALL)
       val remote_sig = Transactions.sign(tx, Remote.funding_privkey, SIGHASH_ALL)
@@ -199,7 +199,7 @@ class TestVectorsSpec extends FunSuite with Logging {
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
-    val baseFee = Transactions.commitTxFee(Local.dustLimit, spec)(ContextCommitmentV1)
+    val baseFee = Transactions.commitTxFee(Local.dustLimit, spec)(VersionCommitmentV1)
     logger.info(s"# base commitment transaction fee = ${baseFee.toLong}")
     val actualFee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
     logger.info(s"# actual commitment transaction fee = ${actualFee.toLong}")
@@ -222,7 +222,7 @@ class TestVectorsSpec extends FunSuite with Logging {
         Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
         Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
         Remote.delayed_payment_pubkey,
-        spec)(ContextCommitmentV1)
+        spec)(VersionCommitmentV1)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey, SIGHASH_ALL)
       logger.info(s"# local_signature = ${toHexString(local_sig.dropRight(1))}")
@@ -240,7 +240,7 @@ class TestVectorsSpec extends FunSuite with Logging {
       Local.revocation_pubkey,
       Local.toSelfDelay, Local.delayed_payment_privkey.publicKey,
       Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
-      spec)(commitmentContext = ContextCommitmentV1)
+      spec)(commitmentContext = VersionCommitmentV1)
 
     logger.info(s"num_htlcs: ${(unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).length}")
     val htlcTxs: Seq[TransactionWithInputInfo] = (unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).sortBy(_.input.outPoint.index)

@@ -359,8 +359,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           )
 
           val commitmentVersion = Helpers.canUseSimplifiedCommitment(localParams, remoteParams) match {
-            case true => ContextSimplifiedCommitment
-            case false => ContextCommitmentV1
+            case true => VersionSimplifiedCommitment
+            case false => VersionCommitmentV1
           }
 
           val commitments = Commitments(localParams, remoteParams, channelFlags,
@@ -402,8 +402,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Success(_) =>
           val commitInput = localCommitTx.input
           val commitmentVersion = Helpers.canUseSimplifiedCommitment(localParams, remoteParams) match {
-            case true => ContextSimplifiedCommitment
-            case false => ContextCommitmentV1
+            case true => VersionSimplifiedCommitment
+            case false => VersionCommitmentV1
           }
 
           val commitments = Commitments(localParams, remoteParams, channelFlags,
@@ -764,11 +764,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         // are there pending signed htlcs on either side? we need to have received their last revocation!
         if (d.commitments.hasNoPendingHtlcs) {
           // there are no pending signed htlcs, let's go directly to NEGOTIATING
-          if (d.commitments.localParams.isFunder && d.commitments.getContext == ContextCommitmentV1) {
+          if (d.commitments.localParams.isFunder && d.commitments.getContext == VersionCommitmentV1) {
             // we are funder and we're using commitmentV1, need to initiate the negotiation by sending the first closing_signed
             val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, d.commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
             goto(NEGOTIATING) using store(DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTx_opt = None)) sending sendList :+ closingSigned
-          } else if(!d.commitments.localParams.isFunder && d.commitments.getContext == ContextSimplifiedCommitment) {
+          } else if(!d.commitments.localParams.isFunder && d.commitments.getContext == VersionSimplifiedCommitment) {
             // we are fundee BUT we're using option_simplified_commitment, need to initiate the negotiation by sending the first closing_signed
             val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, d.commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
             goto(NEGOTIATING) using store(DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTx_opt = None)) sending sendList :+ closingSigned
@@ -1024,7 +1024,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           }
           if (commitments1.hasNoPendingHtlcs) {
             log.debug(s"switching to NEGOTIATING spec:\n${Commitments.specs2String(commitments1)}")
-            if (d.commitments.localParams.isFunder || commitments1.getContext == ContextSimplifiedCommitment) {
+            if (d.commitments.localParams.isFunder || commitments1.getContext == VersionSimplifiedCommitment) {
               // we are funder or we're using option_simplified_commitmemt, need to initiate the negotiation by sending the first closing_signed
               val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
               goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTx_opt = None)) sending closingSigned
@@ -1326,8 +1326,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
       val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).getOrElse(Sphinx zeroes 32)
       val myCurrentPerCommitmentPoint = d.commitments.getContext match {
-        case ContextCommitmentV1 => Some(keyManager.commitmentPoint(d.commitments.localParams.channelKeyPath, d.commitments.localCommit.index))
-        case ContextSimplifiedCommitment => None
+        case VersionCommitmentV1 => Some(keyManager.commitmentPoint(d.commitments.localParams.channelKeyPath, d.commitments.localCommit.index))
+        case VersionSimplifiedCommitment => None
       }
 
       val channelReestablish = ChannelReestablish(
@@ -1460,7 +1460,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
       // negotiation restarts from the beginning, and is initialized by the funder
       // note: in any case we still need to keep all previously sent closing_signed, because they may publish one of them
-      if (d.commitments.localParams.isFunder || d.commitments.getContext == ContextSimplifiedCommitment) {
+      if (d.commitments.localParams.isFunder || d.commitments.getContext == VersionSimplifiedCommitment) {
         // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
         val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey)
         val closingTxProposed1 = d.closingTxProposed :+ List(ClosingTxProposed(closingTx.tx, closingSigned))

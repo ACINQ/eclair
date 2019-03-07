@@ -306,7 +306,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
     val htlc = UpdateAddHtlc("00" * 32, 0, 150000, BinaryData("42" * 32), 400144, defaultOnion)
     bob ! htlc
-    awaitCond(initialData.commitments.getContext == ContextSimplifiedCommitment)
+    awaitCond(initialData.commitments.getContext == VersionSimplifiedCommitment)
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ htlc), remoteNextHtlcId = 1)))
     // bob won't forward the add before it is cross-signed
     relayerB.expectNoMsg()
@@ -666,8 +666,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectMsgType[CommitSig]
 
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc.id && h.direction == IN))
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.getContext == ContextSimplifiedCommitment)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.getContext == ContextSimplifiedCommitment)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.getContext == VersionSimplifiedCommitment)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.getContext == VersionSimplifiedCommitment)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.size == 1)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocalMsat == initialState.commitments.localCommit.spec.toLocalMsat)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.acked.size == 0)
@@ -717,8 +717,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc.id && h.direction == OUT))
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.getContext == ContextSimplifiedCommitment)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.getContext == ContextSimplifiedCommitment)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.getContext == VersionSimplifiedCommitment)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.getContext == VersionSimplifiedCommitment)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.size == 1)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocalMsat == initialState.commitments.localCommit.spec.toLocalMsat)
   }
@@ -1453,7 +1453,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateFee (option_simplified_commitment)", Tag("simplified_commitment")) { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialData.commitments.getContext == ContextSimplifiedCommitment)
+    assert(initialData.commitments.getContext == VersionSimplifiedCommitment)
 
     // Alice sends update_fee to Bob but this shouldn't happen with option_simplified_commitment so Bob will reply Error
     val fee1 = UpdateFee("00" * 32, 12000)

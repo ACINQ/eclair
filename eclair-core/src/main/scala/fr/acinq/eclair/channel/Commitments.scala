@@ -58,7 +58,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                                 remoteNextCommitInfo: Either[WaitingForRevocation, Point],
                                 commitInput: InputInfo,
                                 remotePerCommitmentSecrets: ShaChain, channelId: BinaryData,
-                                version: CommitmentContext = ContextCommitmentV1
+                                version: CommitmentVersion = VersionCommitmentV1
                                ) {
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
@@ -85,9 +85,9 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 }
 
 // @formatter: off
-sealed trait CommitmentContext
-object ContextCommitmentV1 extends CommitmentContext
-object ContextSimplifiedCommitment extends CommitmentContext
+sealed trait CommitmentVersion
+object VersionCommitmentV1 extends CommitmentVersion
+object VersionSimplifiedCommitment extends CommitmentVersion
 // @formatter: on
 
 object Commitments {
@@ -309,7 +309,7 @@ object Commitments {
       throw FundeeCannotSendUpdateFee(commitments.channelId)
     }
 
-    if(commitments.getContext == ContextSimplifiedCommitment){
+    if(commitments.getContext == VersionSimplifiedCommitment){
       throw CannotUpdateFeeWithCommitmentType(commitments.channelId)
     }
 
@@ -346,7 +346,7 @@ object Commitments {
       throw FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw)
     }
 
-    if(commitments.getContext == ContextSimplifiedCommitment){
+    if(commitments.getContext == VersionSimplifiedCommitment){
       throw CannotUpdateFeeWithCommitmentType(commitments.channelId)
     }
 
@@ -401,8 +401,8 @@ object Commitments {
 
         val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
         val htlcSigs = commitmentContext match {
-          case ContextCommitmentV1 => sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), remoteNextPerCommitmentPoint, SIGHASH_ALL))
-          case ContextSimplifiedCommitment => sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), remoteNextPerCommitmentPoint, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY))
+          case VersionCommitmentV1 => sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), remoteNextPerCommitmentPoint, SIGHASH_ALL))
+          case VersionSimplifiedCommitment => sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), remoteNextPerCommitmentPoint, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY))
         }
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
@@ -470,8 +470,8 @@ object Commitments {
       throw new HtlcSigCountMismatch(commitments.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size)
     }
     val htlcSigs = commitmentContext match {
-      case ContextCommitmentV1 => sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), localPerCommitmentPoint, SIGHASH_ALL))
-      case ContextSimplifiedCommitment => sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), localPerCommitmentPoint, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY))
+      case VersionCommitmentV1 => sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), localPerCommitmentPoint, SIGHASH_ALL))
+      case VersionSimplifiedCommitment => sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), localPerCommitmentPoint, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY))
     }
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
     // combine the sigs to make signed txes
@@ -481,13 +481,13 @@ object Commitments {
           throw new InvalidHtlcSignature(commitments.channelId, htlcTx.tx)
         }
         HtlcTxAndSigs(htlcTx, localSig, remoteSig)
-      case (htlcTx: HtlcSuccessTx, localSig, remoteSig) if commitmentContext == ContextCommitmentV1 =>
+      case (htlcTx: HtlcSuccessTx, localSig, remoteSig) if commitmentContext == VersionCommitmentV1 =>
         // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
         if (Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, SIGHASH_ALL) == false) {
           throw new InvalidHtlcSignature(commitments.channelId, htlcTx.tx)
         }
         HtlcTxAndSigs(htlcTx, localSig, remoteSig)
-      case (htlcTx: HtlcSuccessTx, localSig, remoteSig) if commitmentContext == ContextSimplifiedCommitment =>
+      case (htlcTx: HtlcSuccessTx, localSig, remoteSig) if commitmentContext == VersionSimplifiedCommitment =>
         // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
         if (Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY) == false) {
           throw new InvalidHtlcSignature(commitments.channelId, htlcTx.tx)
@@ -558,13 +558,13 @@ object Commitments {
     }
   }
 
-  def makeLocalTxs(keyManager: KeyManager, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, localPerCommitmentPoint: Point, remotePerCommitmentPoint: Point, spec: CommitmentSpec)(implicit commitmentContext: CommitmentContext): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+  def makeLocalTxs(keyManager: KeyManager, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, localPerCommitmentPoint: Point, remotePerCommitmentPoint: Point, spec: CommitmentSpec)(implicit commitmentContext: CommitmentVersion): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(localParams.channelKeyPath).publicKey, localPerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(localParams.channelKeyPath).publicKey, localPerCommitmentPoint)
 
     val remotePaymentPubkey = commitmentContext match {
-      case ContextSimplifiedCommitment => PublicKey(remoteParams.paymentBasepoint)
-      case ContextCommitmentV1 => Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
+      case VersionSimplifiedCommitment => PublicKey(remoteParams.paymentBasepoint)
+      case VersionCommitmentV1 => Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
     }
     val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
@@ -574,10 +574,10 @@ object Commitments {
     (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
   }
 
-  def makeRemoteTxs(keyManager: KeyManager, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, remotePerCommitmentPoint: Point, localPerCommitmentPoint: Point, spec: CommitmentSpec)(implicit commitmentContext: CommitmentContext): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+  def makeRemoteTxs(keyManager: KeyManager, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, remotePerCommitmentPoint: Point, localPerCommitmentPoint: Point, spec: CommitmentSpec)(implicit commitmentContext: CommitmentVersion): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     val localPaymentPubkey = commitmentContext match {
-      case ContextSimplifiedCommitment => keyManager.paymentPoint(localParams.channelKeyPath).publicKey
-      case ContextCommitmentV1 => Generators.derivePubKey(keyManager.paymentPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
+      case VersionSimplifiedCommitment => keyManager.paymentPoint(localParams.channelKeyPath).publicKey
+      case VersionCommitmentV1 => Generators.derivePubKey(keyManager.paymentPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
     }
     val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(localParams.channelKeyPath).publicKey, localPerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)

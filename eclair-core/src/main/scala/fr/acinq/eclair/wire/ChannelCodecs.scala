@@ -231,7 +231,7 @@ object ChannelCodecs extends Logging {
   val COMMITMENTv1_VERSION_BYTE = 0x00
   val COMMITMENT_SIMPLIFIED_VERSION_BYTE = 0x01
 
-  def commitmentCodec(commitmentContext: CommitmentContext): Codec[Commitments] = {
+  def commitmentCodec(commitmentContext: CommitmentVersion): Codec[Commitments] = {
     import shapeless.{::}
     (("localParams" | localParamsCodec) ::
         ("remoteParams" | remoteParamsCodec) ::
@@ -300,17 +300,17 @@ object ChannelCodecs extends Logging {
     )
   }
 
-  def DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitmentContext: CommitmentContext): Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
+  def DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitmentContext: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentCodec(commitmentContext)) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
 
-  def DATA_WAIT_FOR_FUNDING_LOCKED_Codec(commitmentContext: CommitmentContext): Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
+  def DATA_WAIT_FOR_FUNDING_LOCKED_Codec(commitmentContext: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
     ("commitments" | commitmentCodec(commitmentContext)) ::
       ("shortChannelId" | shortchannelid) ::
       ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
-  def DATA_NORMAL_Codec(commitmentContext: CommitmentContext): Codec[DATA_NORMAL] = (
+  def DATA_NORMAL_Codec(commitmentContext: CommitmentVersion): Codec[DATA_NORMAL] = (
     ("commitments" | commitmentCodec(commitmentContext)) ::
       ("shortChannelId" | shortchannelid) ::
       ("buried" | bool) ::
@@ -319,19 +319,19 @@ object ChannelCodecs extends Logging {
       ("localShutdown" | optional(bool, shutdownCodec)) ::
       ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL]
 
-  def DATA_SHUTDOWN_Codec(commitmentContext: CommitmentContext): Codec[DATA_SHUTDOWN] = (
+  def DATA_SHUTDOWN_Codec(commitmentContext: CommitmentVersion): Codec[DATA_SHUTDOWN] = (
     ("commitments" | commitmentCodec(commitmentContext)) ::
       ("localShutdown" | shutdownCodec) ::
       ("remoteShutdown" | shutdownCodec)).as[DATA_SHUTDOWN]
 
-  def DATA_NEGOTIATING_Codec(commitmentContext: CommitmentContext): Codec[DATA_NEGOTIATING] = (
+  def DATA_NEGOTIATING_Codec(commitmentContext: CommitmentVersion): Codec[DATA_NEGOTIATING] = (
     ("commitments" | commitmentCodec(commitmentContext)) ::
       ("localShutdown" | shutdownCodec) ::
       ("remoteShutdown" | shutdownCodec) ::
       ("closingTxProposed" | listOfN(uint16, listOfN(uint16, closingTxProposedCodec))) ::
       ("bestUnpublishedClosingTx_opt" | optional(bool, txCodec))).as[DATA_NEGOTIATING]
 
-  def DATA_CLOSING_Codec(commitmentContext: CommitmentContext): Codec[DATA_CLOSING] = (
+  def DATA_CLOSING_Codec(commitmentContext: CommitmentVersion): Codec[DATA_CLOSING] = (
     ("commitments" | commitmentCodec(commitmentContext)) ::
       ("mutualCloseProposed" | listOfN(uint16, txCodec)) ::
       ("mutualClosePublished" | listOfN(uint16, txCodec)) ::
@@ -341,11 +341,11 @@ object ChannelCodecs extends Logging {
       ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
 
-  def DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitmentContext: CommitmentContext): Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
+  def DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitmentContext: CommitmentVersion): Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
     ("commitments" | commitmentCodec(commitmentContext)) ::
       ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
 
-  def stateDataCodec(commitmentContext: CommitmentContext): Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
+  def stateDataCodec(commitmentContext: CommitmentVersion): Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
     .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitmentContext))
     .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec(commitmentContext))
     .typecase(0x03, DATA_NORMAL_Codec(commitmentContext))
@@ -355,13 +355,13 @@ object ChannelCodecs extends Logging {
     .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitmentContext))
 
   private val genericStateDataDecoder = discriminated[HasCommitments].by(uint8)
-    .typecase(COMMITMENTv1_VERSION_BYTE, stateDataCodec(ContextCommitmentV1))
-    .typecase(COMMITMENT_SIMPLIFIED_VERSION_BYTE, stateDataCodec(ContextSimplifiedCommitment)).asDecoder
+    .typecase(COMMITMENTv1_VERSION_BYTE, stateDataCodec(VersionCommitmentV1))
+    .typecase(COMMITMENT_SIMPLIFIED_VERSION_BYTE, stateDataCodec(VersionSimplifiedCommitment)).asDecoder
 
   private val genericStateDataEncoder = new Encoder[HasCommitments] {
     override def encode(value: HasCommitments): Attempt[BitVector] = value.commitments.getContext match {
-      case ContextCommitmentV1 => stateDataCodec(ContextCommitmentV1).encode(value).map(bv => BitVector(COMMITMENTv1_VERSION_BYTE) ++ bv)
-      case ContextSimplifiedCommitment => stateDataCodec(ContextSimplifiedCommitment).encode(value).map(bv => BitVector(COMMITMENT_SIMPLIFIED_VERSION_BYTE) ++ bv)
+      case VersionCommitmentV1 => stateDataCodec(VersionCommitmentV1).encode(value).map(bv => BitVector(COMMITMENTv1_VERSION_BYTE) ++ bv)
+      case VersionSimplifiedCommitment => stateDataCodec(VersionSimplifiedCommitment).encode(value).map(bv => BitVector(COMMITMENT_SIMPLIFIED_VERSION_BYTE) ++ bv)
       case _ => Attempt.failure(Err("Unknown type"))
     }
 
