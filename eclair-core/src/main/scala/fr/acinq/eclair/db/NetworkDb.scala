@@ -36,7 +36,7 @@ trait NetworkDb {
   def removeChannel(shortChannelId: ShortChannelId) = removeChannels(Seq(shortChannelId))
 
   /**
-    * This methods removes channel announcements and associated channel updates for a list of channel ids
+    * This method removes channel announcements and associated channel updates for a list of channel ids
     *
     * @param shortChannelIds list of short channel ids
     */
