@@ -209,28 +209,6 @@ object ChannelCodecs extends Logging {
       ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, txCodec)) ::
       ("spent" | spentMapCodec)).as[RevokedCommitPublished]
 
-  /*
-         SSSSSSSSSSSSSSS TTTTTTTTTTTTTTTTTTTTTTT         AAA         TTTTTTTTTTTTTTTTTTTTTTTEEEEEEEEEEEEEEEEEEEEEE     DDDDDDDDDDDDD                  AAA         TTTTTTTTTTTTTTTTTTTTTTT         AAA
-       SS:::::::::::::::ST:::::::::::::::::::::T        A:::A        T:::::::::::::::::::::TE::::::::::::::::::::E     D::::::::::::DDD              A:::A        T:::::::::::::::::::::T        A:::A
-      S:::::SSSSSS::::::ST:::::::::::::::::::::T       A:::::A       T:::::::::::::::::::::TE::::::::::::::::::::E     D:::::::::::::::DD           A:::::A       T:::::::::::::::::::::T       A:::::A
-      S:::::S     SSSSSSST:::::TT:::::::TT:::::T      A:::::::A      T:::::TT:::::::TT:::::TEE::::::EEEEEEEEE::::E     DDD:::::DDDDD:::::D         A:::::::A      T:::::TT:::::::TT:::::T      A:::::::A
-      S:::::S            TTTTTT  T:::::T  TTTTTT     A:::::::::A     TTTTTT  T:::::T  TTTTTT  E:::::E       EEEEEE       D:::::D    D:::::D       A:::::::::A     TTTTTT  T:::::T  TTTTTT     A:::::::::A
-      S:::::S                    T:::::T            A:::::A:::::A            T:::::T          E:::::E                    D:::::D     D:::::D     A:::::A:::::A            T:::::T            A:::::A:::::A
-       S::::SSSS                 T:::::T           A:::::A A:::::A           T:::::T          E::::::EEEEEEEEEE          D:::::D     D:::::D    A:::::A A:::::A           T:::::T           A:::::A A:::::A
-        SS::::::SSSSS            T:::::T          A:::::A   A:::::A          T:::::T          E:::::::::::::::E          D:::::D     D:::::D   A:::::A   A:::::A          T:::::T          A:::::A   A:::::A
-          SSS::::::::SS          T:::::T         A:::::A     A:::::A         T:::::T          E:::::::::::::::E          D:::::D     D:::::D  A:::::A     A:::::A         T:::::T         A:::::A     A:::::A
-             SSSSSS::::S         T:::::T        A:::::AAAAAAAAA:::::A        T:::::T          E::::::EEEEEEEEEE          D:::::D     D:::::D A:::::AAAAAAAAA:::::A        T:::::T        A:::::AAAAAAAAA:::::A
-                  S:::::S        T:::::T       A:::::::::::::::::::::A       T:::::T          E:::::E                    D:::::D     D:::::DA:::::::::::::::::::::A       T:::::T       A:::::::::::::::::::::A
-                  S:::::S        T:::::T      A:::::AAAAAAAAAAAAA:::::A      T:::::T          E:::::E       EEEEEE       D:::::D    D:::::DA:::::AAAAAAAAAAAAA:::::A      T:::::T      A:::::AAAAAAAAAAAAA:::::A
-      SSSSSSS     S:::::S      TT:::::::TT   A:::::A             A:::::A   TT:::::::TT      EE::::::EEEEEEEE:::::E     DDD:::::DDDDD:::::DA:::::A             A:::::A   TT:::::::TT   A:::::A             A:::::A
-      S::::::SSSSSS:::::S      T:::::::::T  A:::::A               A:::::A  T:::::::::T      E::::::::::::::::::::E     D:::::::::::::::DDA:::::A               A:::::A  T:::::::::T  A:::::A               A:::::A
-      S:::::::::::::::SS       T:::::::::T A:::::A                 A:::::A T:::::::::T      E::::::::::::::::::::E     D::::::::::::DDD A:::::A                 A:::::A T:::::::::T A:::::A                 A:::::A
-       SSSSSSSSSSSSSSS         TTTTTTTTTTTAAAAAAA                   AAAAAAATTTTTTTTTTT      EEEEEEEEEEEEEEEEEEEEEE     DDDDDDDDDDDDD   AAAAAAA                   AAAAAAATTTTTTTTTTTAAAAAAA                   AAAAAAA
- */
-
-  val COMMITMENTv1_VERSION_BYTE = 0x00.toByte
-  val COMMITMENT_SIMPLIFIED_VERSION_BYTE = 0x01.toByte
-
   def commitmentCodec(commitmentVersion: CommitmentVersion): Codec[Commitments] = {
     (("localParams" | localParamsCodec) ::
       ("remoteParams" | remoteParamsCodec) ::
@@ -303,9 +281,11 @@ object ChannelCodecs extends Logging {
     .typecase(0x06, DATA_CLOSING_Codec(commitmentVersion))
     .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitmentVersion))
 
+  val COMMITMENTv1_VERSION_BYTE = 0x00.toByte
+  val COMMITMENT_SIMPLIFIED_VERSION_BYTE = 0x01.toByte
+
   val genericStateDataCodec = discriminated[HasCommitments].by(uint8)
     .\ (COMMITMENTv1_VERSION_BYTE) { case c if c.commitments.version == VersionCommitmentV1 => c } (stateDataCodec(VersionCommitmentV1))
     .\ (COMMITMENT_SIMPLIFIED_VERSION_BYTE) { case c if c.commitments.version == VersionSimplifiedCommitment => c } (stateDataCodec(VersionSimplifiedCommitment))
-    .complete // Converts this codec to a new codec that fails decoding if there are remaining bits.
 
 }

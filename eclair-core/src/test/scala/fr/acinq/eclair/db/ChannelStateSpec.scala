@@ -58,7 +58,7 @@ class ChannelStateSpec extends FunSuite {
     assert(data === check)
   }
 
-  test("backward compatible with previously stored commitments") {
+  test("backward compatible READING of previously stored commitments") {
     val state = ChannelCodecs.genericStateDataCodec.decodeValue(BitVector(rawCommitment.data)).require
 
     assert(state.commitments.localParams.nodeId.raw == BinaryData("036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"))
@@ -67,10 +67,7 @@ class ChannelStateSpec extends FunSuite {
     val bin = ChannelCodecs.genericStateDataCodec.encode(state).require
     val state1 = ChannelCodecs.genericStateDataCodec.decodeValue(bin).require
 
-    assert(BitVector(rawCommitment.data).toByteArray.length === rawCommitment.data.size)
-
     assert(state === state1)
-    assert(bin === BitVector(rawCommitment.data))
   }
 
 }
