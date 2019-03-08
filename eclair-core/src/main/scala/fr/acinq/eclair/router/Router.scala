@@ -344,7 +344,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
     case Event(TickPruneStaleChannels, d) =>
       // first we select channels that we will prune
-      val staleChannels = getStaleChannels(d.channels.values, d.updates).toSeq
+      val staleChannels = getStaleChannels(d.channels.values, d.updates)
       // then we clean up the related channel updates
       val staleUpdates = staleChannels.map(d.channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
       // finally we remove nodes that aren't tied to any channels anymore (and deduplicate them)

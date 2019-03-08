@@ -83,9 +83,9 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
-  override def removeChannels(shortChannelIds: Seq[ShortChannelId]): Unit = {
+  override def removeChannels(shortChannelIds: Iterable[ShortChannelId]): Unit = {
 
-    def removeChannelsInternal(shortChannelIds: Seq[ShortChannelId]): Unit = {
+    def removeChannelsInternal(shortChannelIds: Iterable[ShortChannelId]): Unit = {
       val ids = shortChannelIds.map(_.toLong).mkString(",")
       using(sqlite.createStatement) { statement =>
         statement.execute("BEGIN TRANSACTION")
@@ -136,7 +136,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
-  override def addToPruned(shortChannelIds: Seq[ShortChannelId]): Unit = {
+  override def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)"), disableAutoCommit = true) { statement =>
       shortChannelIds.foreach(shortChannelId => {
         statement.setLong(1, shortChannelId.toLong)
