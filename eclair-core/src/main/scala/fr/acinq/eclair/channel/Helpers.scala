@@ -246,7 +246,7 @@ object Helpers {
       if (!localParams.isFunder) {
         // they are funder, therefore they pay the fee: we need to make sure they can afford it!
         val toRemoteMsat = remoteSpec.toLocalMsat
-        val fees = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), remoteSpec).amount
+        val fees = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), remoteSpec, commitmentVersion).amount
         val missing = toRemoteMsat / 1000 - localParams.channelReserveSatoshis - fees
         if (missing < 0) {
           throw CannotAffordFees(temporaryChannelId, missingSatoshis = -1 * missing, reserveSatoshis = localParams.channelReserveSatoshis, feesSatoshis = fees)
@@ -255,8 +255,8 @@ object Helpers {
 
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(fundingSatoshis), keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey)
       val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, 0)
-      val (localCommitTx, _, _) = Commitments.makeLocalTxs(keyManager, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, remoteFirstPerCommitmentPoint, localSpec)
-      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, localPerCommitmentPoint, remoteSpec)
+      val (localCommitTx, _, _) = Commitments.makeLocalTxs(keyManager, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, remoteFirstPerCommitmentPoint, localSpec, commitmentVersion)
+      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, localPerCommitmentPoint, remoteSpec, commitmentVersion)
 
       (localSpec, localCommitTx, remoteSpec, remoteCommitTx)
     }
@@ -430,7 +430,7 @@ object Helpers {
 
       // first we will claim our main output as soon as the delay is over
       val mainDelayedTx = generateTx("main-delayed-output")(Try {
-        val claimDelayed = Transactions.makeClaimDelayedOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
+        val claimDelayed = Transactions.makeClaimDelayedOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed, commitmentVersion)
         val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelKeyPath), localPerCommitmentPoint, SIGHASH_ALL)
         Transactions.addSigs(claimDelayed, sig)
       })
@@ -476,7 +476,7 @@ object Helpers {
               localRevocationPubkey,
               remoteParams.toSelfDelay,
               localDelayedPubkey,
-              localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
+              localParams.defaultFinalScriptPubKey, feeratePerKwDelayed, commitmentVersion)
             val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelKeyPath), localPerCommitmentPoint, SIGHASH_ALL)
             Transactions.addSigs(claimDelayed, sig)
           })
@@ -505,10 +505,8 @@ object Helpers {
       import commitments.{commitInput, localParams, remoteParams}
       require(remoteCommit.txid == commitTx.txid, "txid mismatch, provided tx is not the current remote commit tx")
 
-      implicit val commitmentVersion = commitments.version
-
       val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, commitments.localCommit.index.toInt)
-      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, localPerCommitmentPoint, remoteCommit.spec)
+      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, localPerCommitmentPoint, remoteCommit.spec, commitments.version)
       require(remoteCommitTx.tx.txid == commitTx.txid, "txid mismatch, cannot recompute the current remote commit tx")
 
       val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(localParams.channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
@@ -562,7 +560,6 @@ object Helpers {
       * @return a list of transactions (one per HTLC that we can claim)
       */
     def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: Point, commitTx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
-      implicit val commitmentVersion = commitments.version
 
       // no need to use a high fee rate for our main output (we are the only one who can spend it)
       val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
@@ -572,7 +569,7 @@ object Helpers {
           val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(commitments.localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
           generateTx("claim-p2wpkh-output")(Try {
             val claimMain = Transactions.makeClaimP2WPKHOutputTx(commitTx, Satoshi(commitments.localParams.dustLimitSatoshis),
-              localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain, None)
+              localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain, None, commitments.version)
             val sig = keyManager.sign(claimMain, keyManager.paymentPoint(commitments.localParams.channelKeyPath), remotePerCommitmentPoint, SIGHASH_ALL)
             Transactions.addSigs(claimMain, localPubkey, sig)
           })
@@ -581,7 +578,7 @@ object Helpers {
           val localPubkey = keyManager.paymentPoint(commitments.localParams.channelKeyPath).publicKey
           generateTx("claim-p2wpkh-output")(Try {
             val claimMain = Transactions.makeClaimP2WPKHOutputTx(commitTx, Satoshi(commitments.localParams.dustLimitSatoshis),
-              localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain, Some(commitments.localParams.toSelfDelay))
+              localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain, Some(commitments.localParams.toSelfDelay), commitments.version)
             val sig = keyManager.sign(claimMain, keyManager.paymentPoint(commitments.localParams.channelKeyPath), remotePerCommitmentPoint, SIGHASH_ALL)
             Transactions.addSigs(claimMain, localPubkey, sig)
           })
@@ -607,7 +604,6 @@ object Helpers {
       * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
       */
     def claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, db: ChannelsDb)(implicit log: LoggingAdapter): Option[RevokedCommitPublished] = {
-      implicit val commitmentVersion = commitments.version
 
       import commitments._
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
@@ -634,14 +630,14 @@ object Helpers {
 
           // first we will claim our main output right away
           val mainTx = generateTx("claim-p2wpkh-output")(Try {
-            val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain, Some(localParams.toSelfDelay))
+            val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain, Some(localParams.toSelfDelay), commitments.version)
             val sig = keyManager.sign(claimMain, keyManager.paymentPoint(localParams.channelKeyPath), remotePerCommitmentPoint, SIGHASH_ALL)
             Transactions.addSigs(claimMain, localPubkey, sig)
           })
 
           // then we punish them by stealing their main output
           val mainPenaltyTx = generateTx("main-penalty")(Try {
-            val txinfo = Transactions.makeMainPenaltyTx(tx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty)
+            val txinfo = Transactions.makeMainPenaltyTx(tx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty, commitments.version)
             val sig = keyManager.sign(txinfo, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret, SIGHASH_ALL)
             Transactions.addSigs(txinfo, sig)
           })
@@ -782,10 +778,10 @@ object Helpers {
       * @param tx a tx that has reached mindepth
       * @return a set of htlcs that need to be failed upstream
       */
-    def timedoutHtlcs(localCommit: LocalCommit, localDustLimit: Satoshi, tx: Transaction)(implicit commitmentVersion: CommitmentVersion, log: LoggingAdapter): Set[UpdateAddHtlc] =
+    def timedoutHtlcs(localCommit: LocalCommit, localDustLimit: Satoshi, tx: Transaction, commitmentVersion: CommitmentVersion)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (tx.txid == localCommit.publishableTxs.commitTx.tx.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
-        (localCommit.spec.htlcs.filter(_.direction == OUT) -- Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec)).map(_.add)
+        (localCommit.spec.htlcs.filter(_.direction == OUT) -- Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec, commitmentVersion)).map(_.add)
       } else {
         // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
         tx.txIn.map(_.witness match {
@@ -806,10 +802,10 @@ object Helpers {
       * @param tx a tx that has reached mindepth
       * @return a set of htlcs that need to be failed upstream
       */
-    def timedoutHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction)(implicit commitmentVersion: CommitmentVersion, log: LoggingAdapter): Set[UpdateAddHtlc] =
+    def timedoutHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction, commitmentVersion: CommitmentVersion)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (tx.txid == remoteCommit.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
-        (remoteCommit.spec.htlcs.filter(_.direction == IN) -- Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec)).map(_.add)
+        (remoteCommit.spec.htlcs.filter(_.direction == IN) -- Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec, commitmentVersion)).map(_.add)
       } else {
         // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
         tx.txIn.map(_.witness match {

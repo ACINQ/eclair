@@ -122,7 +122,7 @@ object Transactions {
     */
   def fee2rate(fee: Satoshi, weight: Int) = (fee.amount * 1000L) / weight
 
-  def trimOfferedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec)(implicit commitmentVersion: CommitmentVersion): Seq[DirectedHtlc] = {
+  def trimOfferedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec, commitmentVersion: CommitmentVersion): Seq[DirectedHtlc] = {
     val htlcTimeoutFee = commitmentVersion match {
       case VersionCommitmentV1 => weight2fee(spec.feeratePerKw, htlcTimeoutWeight)
       case VersionSimplifiedCommitment => Satoshi(0)
@@ -133,7 +133,7 @@ object Transactions {
       .toSeq
   }
 
-  def trimReceivedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec)(implicit commitmentVersion: CommitmentVersion): Seq[DirectedHtlc] = {
+  def trimReceivedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec, commitmentVersion: CommitmentVersion): Seq[DirectedHtlc] = {
     val htlcSuccessFee = commitmentVersion match {
       case VersionCommitmentV1 => weight2fee(spec.feeratePerKw, htlcSuccessWeight)
       case VersionSimplifiedCommitment => Satoshi(0)
@@ -144,9 +144,9 @@ object Transactions {
       .toSeq
   }
 
-  def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec)(implicit commitmentVersion: CommitmentVersion): Satoshi = {
-    val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec)
-    val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec)
+  def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec, commitmentVersion: CommitmentVersion): Satoshi = {
+    val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec, commitmentVersion)
+    val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec, commitmentVersion)
     commitmentVersion match {
       case VersionCommitmentV1 => weight2fee(spec.feeratePerKw , commitWeight + 172 * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size))
       case VersionSimplifiedCommitment => weight2fee(simplifiedFeerateKw , simplifiedCommitWeight + 172 * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size))  // simplified commitment has an hardcoded feerate
@@ -199,10 +199,10 @@ object Transactions {
 
   def decodeTxNumber(sequence: Long, locktime: Long): Long = ((sequence & 0xffffffL) << 24) + (locktime & 0xffffffL)
 
-  def makeCommitTx(commitTxInput: InputInfo, commitTxNumber: Long, localPaymentBasePoint: Point, remotePaymentBasePoint: Point, localIsFunder: Boolean, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, remotePaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, remoteDelayedPaymentPubkey: PublicKey, spec: CommitmentSpec)(implicit commitmentVersion: CommitmentVersion): CommitTx = commitmentVersion match {
+  def makeCommitTx(commitTxInput: InputInfo, commitTxNumber: Long, localPaymentBasePoint: Point, remotePaymentBasePoint: Point, localIsFunder: Boolean, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, remotePaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, remoteDelayedPaymentPubkey: PublicKey, spec: CommitmentSpec, commitmentVersion: CommitmentVersion): CommitTx = commitmentVersion match {
 
     case VersionCommitmentV1 =>
-      val commitFee = commitTxFee(localDustLimit, spec)
+      val commitFee = commitTxFee(localDustLimit, spec, commitmentVersion)
 
       val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
         (millisatoshi2satoshi(MilliSatoshi(spec.toLocalMsat)) - commitFee, millisatoshi2satoshi(MilliSatoshi(spec.toRemoteMsat)))
@@ -213,9 +213,9 @@ object Transactions {
       val toLocalDelayedOutput_opt = if (toLocalAmount >= localDustLimit) Some(TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)))) else None
       val toRemoteOutput_opt = if (toRemoteAmount >= localDustLimit) Some(TxOut(toRemoteAmount, pay2wpkh(remotePaymentPubkey))) else None
 
-      val htlcOfferedOutputs = trimOfferedHtlcs(localDustLimit, spec)
+      val htlcOfferedOutputs = trimOfferedHtlcs(localDustLimit, spec, commitmentVersion)
         .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash)))))
-      val htlcReceivedOutputs = trimReceivedHtlcs(localDustLimit, spec)
+      val htlcReceivedOutputs = trimReceivedHtlcs(localDustLimit, spec, commitmentVersion)
         .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash), htlc.add.cltvExpiry))))
 
       val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
@@ -229,7 +229,7 @@ object Transactions {
       CommitTx(commitTxInput, LexicographicalOrdering.sort(tx))
 
     case VersionSimplifiedCommitment =>
-      val commitFee = commitTxFee(localDustLimit, spec)
+      val commitFee = commitTxFee(localDustLimit, spec, commitmentVersion)
       val pushMeValueTotal = pushMeValue * 2 // funder pays the total amount of pushme outputs
 
       val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
@@ -241,9 +241,9 @@ object Transactions {
       val toLocalDelayedOutput_opt = if (toLocalAmount < localDustLimit) None else Some(TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey))))
       val toRemoteOutput_opt = if (toRemoteAmount < localDustLimit) None else Some(TxOut(toRemoteAmount, pay2wsh(toRemoteDelayed(remotePaymentPubkey, toLocalDelay))))
 
-      val htlcOfferedOutputs = trimOfferedHtlcs(localDustLimit, spec)
+      val htlcOfferedOutputs = trimOfferedHtlcs(localDustLimit, spec, commitmentVersion)
         .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash)))))
-      val htlcReceivedOutputs = trimReceivedHtlcs(localDustLimit, spec)
+      val htlcReceivedOutputs = trimReceivedHtlcs(localDustLimit, spec, commitmentVersion)
         .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash), htlc.add.cltvExpiry))))
 
       val toLocalPushMe_opt = if (toLocalDelayedOutput_opt.isDefined) Some(TxOut(pushMeValue, pay2wsh(pushMeSimplified(localDelayedPaymentPubkey)))) else None
@@ -295,14 +295,14 @@ object Transactions {
       lockTime = 0), htlc.paymentHash)
   }
 
-  def makeHtlcTxs(commitTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec)(implicit commitmentVersion: CommitmentVersion): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+  def makeHtlcTxs(commitTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec, commitmentVersion: CommitmentVersion): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
-    val htlcTimeoutTxs = trimOfferedHtlcs(localDustLimit, spec).map { htlc =>
+    val htlcTimeoutTxs = trimOfferedHtlcs(localDustLimit, spec, commitmentVersion).map { htlc =>
       val htlcTx = makeHtlcTimeoutTx(commitTx, outputsAlreadyUsed, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec.feeratePerKw, htlc.add)
       outputsAlreadyUsed = outputsAlreadyUsed + htlcTx.input.outPoint.index.toInt
       htlcTx
     }
-    val htlcSuccessTxs = trimReceivedHtlcs(localDustLimit, spec).map { htlc =>
+    val htlcSuccessTxs = trimReceivedHtlcs(localDustLimit, spec, commitmentVersion).map { htlc =>
       val htlcTx = makeHtlcSuccessTx(commitTx, outputsAlreadyUsed, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec.feeratePerKw, htlc.add)
       outputsAlreadyUsed = outputsAlreadyUsed + htlcTx.input.outPoint.index.toInt
       htlcTx
@@ -358,7 +358,7 @@ object Transactions {
     ClaimHtlcTimeoutTx(input, tx1)
   }
 
-  def makeClaimP2WPKHOutputTx(delayedOutputTx: Transaction, localDustLimit: Satoshi, localPaymentPubkey: PublicKey, localFinalScriptPubKey: BinaryData, feeratePerKw: Long, toRemoteDelay: Option[Int])(implicit commitmentVersion: CommitmentVersion): ClaimP2WPKHOutputTx = {
+  def makeClaimP2WPKHOutputTx(delayedOutputTx: Transaction, localDustLimit: Satoshi, localPaymentPubkey: PublicKey, localFinalScriptPubKey: BinaryData, feeratePerKw: Long, toRemoteDelay: Option[Int], commitmentVersion: CommitmentVersion): ClaimP2WPKHOutputTx = {
 
     val claimTx = commitmentVersion match {
       case VersionCommitmentV1 =>
@@ -407,7 +407,7 @@ object Transactions {
     ClaimP2WPKHOutputTx(claimTx.input, tx1)
   }
 
-  def makeClaimDelayedOutputTx(delayedOutputTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: BinaryData, feeratePerKw: Long)(implicit commitmentVersion: CommitmentVersion): ClaimDelayedOutputTx = {
+  def makeClaimDelayedOutputTx(delayedOutputTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: BinaryData, feeratePerKw: Long, commitmentVersion: CommitmentVersion): ClaimDelayedOutputTx = {
 
     val redeemScript = toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
     val pubkeyScript = write(pay2wsh(redeemScript))
@@ -464,7 +464,7 @@ object Transactions {
   }
 
   // TODO adjust for option_simplified_commitment -> sweep pushme outputs
-  def makeMainPenaltyTx(commitTx: Transaction, localDustLimit: Satoshi, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: BinaryData, toRemoteDelay: Int, remoteDelayedPaymentPubkey: PublicKey, feeratePerKw: Long)(implicit commitmentVersion: CommitmentVersion): MainPenaltyTx = commitmentVersion match {
+  def makeMainPenaltyTx(commitTx: Transaction, localDustLimit: Satoshi, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: BinaryData, toRemoteDelay: Int, remoteDelayedPaymentPubkey: PublicKey, feeratePerKw: Long, commitmentVersion: CommitmentVersion): MainPenaltyTx = commitmentVersion match {
     case VersionSimplifiedCommitment => throw new NotImplementedError("makeMainPenaltyTx with option_simplified_commitment")
     case VersionCommitmentV1 =>
       val redeemScript = toLocalDelayed(remoteRevocationPubkey, toRemoteDelay, remoteDelayedPaymentPubkey)
