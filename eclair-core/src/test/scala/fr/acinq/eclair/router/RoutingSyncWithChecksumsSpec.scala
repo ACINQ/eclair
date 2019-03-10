@@ -52,22 +52,26 @@ class RoutingSyncWithChecksumsSpec extends TestKit(ActorSystem("test")) with Fun
     val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
 
     // ask router to send a channel range query
-    sender.send(router, SendChannelQueryWithChecksums(remoteNodeId, sender.ref))
-    val QueryChannelRangeWithChecksums(chainHash, firstBlockNum, numberOfBlocks) = sender.expectMsgType[QueryChannelRangeWithChecksums]
+    sender.send(router, SendChannelQuery(remoteNodeId, sender.ref, Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS)))
+    val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, Some(optionExtendedQueryFlags)) = sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
 
     // send back all our ids and timestamps
-    val block = ReplyChannelRangeWithChecksums(chainHash, firstBlockNum, numberOfBlocks, 1, EncodedShortChannelIdsWithChecksums(EncodingTypes.UNCOMPRESSED, shortChannelIds.toList.map(Router.getChannelDigestInfo(initChannels, initChannelUpdates))))
+    val block = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1,
+      shortChannelIds = EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, shortChannelIds.toList),
+      optionExtendedQueryFlags_opt = Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS),
+      extendedInfo_opt = Some(ExtendedInfo(shortChannelIds.toList.map(Router.getChannelDigestInfo(initChannels, initChannelUpdates))))
+    )
     sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, block))
 
     // router should ask for our first block of ids
-    val shortChannelIdAndFlags = block.data.array.map(info => ShortChannelIdAndFlag(info.shortChannelId, (FlagTypes.INCLUDE_ANNOUNCEMENT | FlagTypes.INCLUDE_CHANNEL_UPDATE_1 | FlagTypes.INCLUDE_CHANNEL_UPDATE_2).toByte))
+    val shortChannelIdAndFlags = block.shortChannelIds.array.map(shortChannelId => ShortChannelIdAndFlag(shortChannelId, (QueryFlagTypes.INCLUDE_ANNOUNCEMENT | QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_1 | QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_2).toByte))
     val shortChannelIdAndFlags1 = shortChannelIdAndFlags.take(Router.SHORTID_WINDOW)
-    assert(transport.expectMsgType[QueryShortChannelIdsWithFlags] === QueryShortChannelIdsWithFlags(chainHash, EncodedShortChannelIdsAndFlag(block.data.encoding, shortChannelIdAndFlags1)))
+    assert(transport.expectMsgType[QueryShortChannelIds] === QueryShortChannelIds(chainHash, EncodedShortChannelIds(block.shortChannelIds.encoding, shortChannelIdAndFlags1.map(_.shortChannelId)), Some(EncodedQueryFlags(block.shortChannelIds.encoding, shortChannelIdAndFlags1.map(_.flag)))))
 
     // send the first 50 items
-    shortChannelIdAndFlags1.take(50).foreach(id => {
-      val (ca, cu1, cu2, _, _) = fakeRoutingInfo(id.shortChannelId)
+    shortChannelIdAndFlags1.take(50).foreach(info => {
+      val (ca, cu1, cu2, _, _) = fakeRoutingInfo(info.shortChannelId)
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ca))
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu1))
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu2))
@@ -75,8 +79,8 @@ class RoutingSyncWithChecksumsSpec extends TestKit(ActorSystem("test")) with Fun
     sender.expectNoMsg(1 second)
 
     // send the last 50 items
-    shortChannelIdAndFlags1.drop(50).foreach(id => {
-      val (ca, cu1, cu2, _, _) = fakeRoutingInfo(id.shortChannelId)
+    shortChannelIdAndFlags1.drop(50).foreach(info => {
+      val (ca, cu1, cu2, _, _) = fakeRoutingInfo(info.shortChannelId)
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ca))
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu1))
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu2))
@@ -84,11 +88,11 @@ class RoutingSyncWithChecksumsSpec extends TestKit(ActorSystem("test")) with Fun
     sender.expectNoMsg(1 second)
 
     // now send our ReplyShortChannelIdsEnd message
-    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyShortChannelIdsWithFlagsEnd(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyShortChannelIdsEnd(chainHash, 1.toByte)))
 
     // router should ask for our second block of ids
     val shortChannelIdAndFlags2 = shortChannelIdAndFlags.drop(Router.SHORTID_WINDOW).take(Router.SHORTID_WINDOW)
-    assert(transport.expectMsgType[QueryShortChannelIdsWithFlags] === QueryShortChannelIdsWithFlags(chainHash, EncodedShortChannelIdsAndFlag(block.data.encoding, shortChannelIdAndFlags2)))
+    assert(transport.expectMsgType[QueryShortChannelIds] === QueryShortChannelIds(chainHash, EncodedShortChannelIds(block.shortChannelIds.encoding, shortChannelIdAndFlags2.map(_.shortChannelId)), Some(EncodedQueryFlags(block.shortChannelIds.encoding, shortChannelIdAndFlags2.map(_.flag)))))
 
     // send block #2
     shortChannelIdAndFlags2.foreach(id => {
@@ -97,11 +101,11 @@ class RoutingSyncWithChecksumsSpec extends TestKit(ActorSystem("test")) with Fun
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu1))
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu2))
     })
-    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyShortChannelIdsWithFlagsEnd(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyShortChannelIdsEnd(chainHash, 1.toByte)))
 
     // router should ask for our third block of ids
     val shortChannelIdAndFlags3 = shortChannelIdAndFlags.drop(2 * Router.SHORTID_WINDOW).take(Router.SHORTID_WINDOW)
-    assert(transport.expectMsgType[QueryShortChannelIdsWithFlags] === QueryShortChannelIdsWithFlags(chainHash, EncodedShortChannelIdsAndFlag(block.data.encoding, shortChannelIdAndFlags3)))
+    assert(transport.expectMsgType[QueryShortChannelIds] === QueryShortChannelIds(chainHash, EncodedShortChannelIds(block.shortChannelIds.encoding, shortChannelIdAndFlags3.map(_.shortChannelId)), Some(EncodedQueryFlags(block.shortChannelIds.encoding, shortChannelIdAndFlags3.map(_.flag)))))
 
     // send block #3
     shortChannelIdAndFlags3.foreach(id => {
@@ -110,11 +114,11 @@ class RoutingSyncWithChecksumsSpec extends TestKit(ActorSystem("test")) with Fun
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu1))
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu2))
     })
-    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyShortChannelIdsWithFlagsEnd(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyShortChannelIdsEnd(chainHash, 1.toByte)))
 
     // router should ask for our fourth block of ids
     val shortChannelIdAndFlags4 = shortChannelIdAndFlags.drop(3 * Router.SHORTID_WINDOW).take(Router.SHORTID_WINDOW)
-    assert(transport.expectMsgType[QueryShortChannelIdsWithFlags] === QueryShortChannelIdsWithFlags(chainHash, EncodedShortChannelIdsAndFlag(block.data.encoding, shortChannelIdAndFlags4)))
+    assert(transport.expectMsgType[QueryShortChannelIds] === QueryShortChannelIds(chainHash, EncodedShortChannelIds(block.shortChannelIds.encoding, shortChannelIdAndFlags4.map(_.shortChannelId)), Some(EncodedQueryFlags(block.shortChannelIds.encoding, shortChannelIdAndFlags4.map(_.flag)))))
 
     // send block #4
     shortChannelIdAndFlags4.foreach(id => {
@@ -123,12 +127,11 @@ class RoutingSyncWithChecksumsSpec extends TestKit(ActorSystem("test")) with Fun
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu1))
       sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, cu2))
     })
-    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyShortChannelIdsWithFlagsEnd(chainHash, 1.toByte)))
+    sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, ReplyShortChannelIdsEnd(chainHash, 1.toByte)))
 
     awaitCond({
       router.stateData.channels == initChannels
     }, max = 30 seconds, interval = 500 millis)
-
 
     val updatedIds = shortChannelIds.drop(100).take(50)
     val recentChannelUpdates = updatedIds.foldLeft(initChannelUpdates) {
@@ -141,17 +144,20 @@ class RoutingSyncWithChecksumsSpec extends TestKit(ActorSystem("test")) with Fun
         updates.updated(desc, newUpdate)
     }
     // ask router to send a channel range query
-    sender.send(router, SendChannelQueryWithChecksums(remoteNodeId, sender.ref))
-    sender.expectMsgType[QueryChannelRangeWithChecksums]
+    sender.send(router, SendChannelQuery(remoteNodeId, sender.ref, Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS)))
+    assert(sender.expectMsgType[QueryChannelRange].optionExtendedQueryFlags_opt.isDefined)
     sender.expectMsgType[GossipTimestampFilter]
 
     // send back all our ids and timestamps
-    val block1 = ReplyChannelRangeWithChecksums(chainHash, firstBlockNum, numberOfBlocks, 1, EncodedShortChannelIdsWithChecksums(EncodingTypes.UNCOMPRESSED, shortChannelIds.toList.map(Router.getChannelDigestInfo(initChannels, recentChannelUpdates))))
+    val block1 = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1,
+      EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, shortChannelIds.toList),
+      Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS),
+      Some(ExtendedInfo(shortChannelIds.toList.map(Router.getChannelDigestInfo(initChannels, recentChannelUpdates)))))
     sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, block1))
 
     // router should ask for our new channel updates
-    val shortChannelIdAndFlags5 = block1.data.array.map(info => ShortChannelIdAndFlag(info.shortChannelId, FlagTypes.INCLUDE_CHANNEL_UPDATE_1)).filter(info => updatedIds.contains(info.shortChannelId))
-    assert(transport.expectMsgType[QueryShortChannelIdsWithFlags] === QueryShortChannelIdsWithFlags(chainHash, EncodedShortChannelIdsAndFlag(block.data.encoding, shortChannelIdAndFlags5)))
+    val shortChannelIdAndFlags5 = block1.shortChannelIds.array.map(shortChannelId => ShortChannelIdAndFlag(shortChannelId, QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_1)).filter(info => updatedIds.contains(info.shortChannelId))
+    assert(transport.expectMsgType[QueryShortChannelIds] === QueryShortChannelIds(chainHash, EncodedShortChannelIds(block.shortChannelIds.encoding, shortChannelIdAndFlags5.map(_.shortChannelId)), Some(EncodedQueryFlags(block.shortChannelIds.encoding, shortChannelIdAndFlags5.map(_.flag)))))
 
   }
 }

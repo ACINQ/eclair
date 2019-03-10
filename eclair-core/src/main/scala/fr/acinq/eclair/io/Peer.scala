@@ -120,23 +120,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val remoteHasInitialRoutingSync = Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
-      val remoteHasChannelRangeQueriesDeprecatedOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_DEPRECATED_BIT_OPTIONAL)
-      val remoteHasChannelRangeQueriesDeprecatedMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_DEPRECATED_BIT_MANDATORY)
-      val remoteHasChannelRangeQueriesExtendedOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_EXTENDED_BIT_OPTIONAL)
-      val remoteHasChannelRangeQueriesExtendedMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_EXTENDED_BIT_MANDATORY)
 
       log.info(s"peer has globalFeatures=${remoteInit.globalFeatures} localFeatures=${remoteInit.localFeatures}: initialRoutingSync=$remoteHasInitialRoutingSync channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional channelRangeQueriesMandatory=$remoteHasChannelRangeQueriesMandatory")
       if (Features.areSupported(remoteInit.localFeatures)) {
         d.origin_opt.foreach(origin => origin ! "connected")
 
         if (remoteHasInitialRoutingSync) {
-          if (remoteHasChannelRangeQueriesExtendedOptional || remoteHasChannelRangeQueriesExtendedMandatory) {
-            // if they support extended channel queries we do nothing, they will send us their filters
-            log.info("peer has set initial routing sync and supports extended channel range queries, we do nothing (they will send us a query)")
-          } else if (remoteHasChannelRangeQueriesDeprecatedOptional || remoteHasChannelRangeQueriesDeprecatedMandatory) {
-            // if they support extended channel queries we do nothing, they will send us their filters
-            log.info("peer has set initial routing sync and supports deprecated channel range queries, we do nothing (they will send us a query)")
-          } else if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
+          if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
             // if they support channel queries we do nothing, they will send us their filters
             log.info("peer has set initial routing sync and supports channel range queries, we do nothing (they will send us a query)")
           } else {
@@ -145,15 +135,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           }
         }
 
-        if (remoteHasChannelRangeQueriesExtendedOptional || remoteHasChannelRangeQueriesExtendedMandatory) {
-          // if they support extended channel queries, always ask for their filter
-          router ! SendChannelQueryWithChecksums(remoteNodeId, d.transport)
-        } else if (remoteHasChannelRangeQueriesDeprecatedOptional || remoteHasChannelRangeQueriesDeprecatedMandatory) {
-          // if they support proto channel queries, always ask for their filter
-          router ! SendChannelQueryDeprecated(remoteNodeId, d.transport)
-        } else if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
+        if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
-          router ! SendChannelQuery(remoteNodeId, d.transport)
+          router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = None)
         }
 
         // let's bring existing/requested channels online

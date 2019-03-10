@@ -261,6 +261,6 @@ class RouterSpec extends BaseRouterSpec {
     val transport = TestProbe()
     probe.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, update1))
     val query = transport.expectMsgType[QueryShortChannelIds]
-    assert(query.data.array == List(channelId))
+    assert(query.shortChannelIds.array == List(channelId))
   }
 }

@@ -150,7 +150,7 @@ class PeerSpec extends TestkitBaseClass {
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
 
-    val query = wire.QueryShortChannelIds(Alice.nodeParams.chainHash, EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, List(ShortChannelId(42000))))
+    val query = wire.QueryShortChannelIds(Alice.nodeParams.chainHash, EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, List(ShortChannelId(42000))), queryFlags_opt = None)
 
     // make sure that routing messages go through
     for (ann <- channels ++ updates) {

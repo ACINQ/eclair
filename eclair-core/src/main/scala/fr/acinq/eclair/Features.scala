@@ -36,12 +36,6 @@ object Features {
   val CHANNEL_RANGE_QUERIES_BIT_MANDATORY = 6
   val CHANNEL_RANGE_QUERIES_BIT_OPTIONAL = 7
 
-  val CHANNEL_RANGE_QUERIES_DEPRECATED_BIT_MANDATORY = 14
-  val CHANNEL_RANGE_QUERIES_DEPRECATED_BIT_OPTIONAL = 15
-
-  val CHANNEL_RANGE_QUERIES_EXTENDED_BIT_MANDATORY = 22
-  val CHANNEL_RANGE_QUERIES_EXTENDED_BIT_OPTIONAL = 23
-
   def hasFeature(features: BitSet, bit: Int): Boolean = features.get(bit)
 
   def hasFeature(features: BinaryData, bit: Int): Boolean = hasFeature(BitSet.valueOf(features.reverse.toArray), bit)
