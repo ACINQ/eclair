@@ -69,7 +69,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
 
   // wallet sends a receive address notification as soon as it is created
   listener.expectMsgType[NewWalletReceiveAddress]
-  
+
   def makeHeader(previousHeader: BlockHeader, timestamp: Long): BlockHeader = {
     var template = previousHeader.copy(hashPreviousBlock = previousHeader.hash, time = timestamp, nonce = 0)
     while (!BlockHeader.checkProofOfWork(template)) {
@@ -95,7 +95,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     listener.expectMsgType[NewWalletReceiveAddress]
     listener.send(wallet, GetXpub)
     val GetXpubResponse(xpub, path) = listener.expectMsgType[GetXpubResponse]
-    assert(xpub == "tpubDCY62b4okoTERzMurvrtoCMgkswfLufejmhwfShqAKDBN2PPNUWpwx72cvyt4R8enGstorHvXNGS8StbkAsPb7XSbYFER8Wo6zPf1Z6m9w4")
+    assert(xpub == "upub5DffbMENbUsLcJbhufWvy1jourQfXfC6SoYyxhy2gPKeTSGzYHB3wKTnKH2LYCDemSzZwqzNcHNjnQZJCDn7Jy2LvvQeysQ6hrcK5ogp11B")
     assert(path == "m/49'/1'/0'")
   }
 
@@ -185,7 +185,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
 
     client.expectMsg(GetTransaction(tx.txid))
     wallet ! GetTransactionResponse(tx)
-    val TransactionReceived(_, _, Satoshi(100000), _, _) = listener.expectMsgType[TransactionReceived]
+    val TransactionReceived(_, _, Satoshi(100000), _, _, _) = listener.expectMsgType[TransactionReceived]
     // we think we have some unconfirmed funds
     val WalletReady(Satoshi(100000), _, _, _) = listener.expectMsgType[WalletReady]
 
@@ -228,5 +228,21 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
       template
     }
     wallet ! HeaderSubscriptionResponse(wallet.stateData.blockchain.tip.height + 1, bad)
+  }
+
+  test("clear status when we have pending history requests") {
+    while (client.msgAvailable) {
+      client.receiveOne(100 milliseconds)
+    }
+    // tell wallet that there is something for our first account key
+    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(wallet.stateData.accountKeys(0).publicKey)
+    wallet ! ScriptHashSubscriptionResponse(scriptHash, "010101")
+    client.expectMsg(GetScriptHashHistory(scriptHash))
+    assert(wallet.stateData.status(scriptHash) == "010101")
+
+    // disconnect wallet
+    wallet ! ElectrumDisconnected
+    awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
+    assert(wallet.stateData.status.get(scriptHash).isEmpty)
   }
 }

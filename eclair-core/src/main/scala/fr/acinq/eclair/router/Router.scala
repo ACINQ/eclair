@@ -21,26 +21,23 @@ import java.util.zip.Adler32
 import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
-import akka.pattern.pipe
-import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.eclair.{router, _}
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidSignature, InvalidAnnouncement, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidAnnouncement, InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.WeightedPath
+import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import shapeless.HNil
 
-
-import scala.collection.{SortedSet, mutable}
 import scala.collection.immutable.{SortedMap, TreeMap}
+import scala.collection.{SortedSet, mutable}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise}
@@ -48,9 +45,30 @@ import scala.util.{Random, Try}
 
 // @formatter:off
 
+case class RouterConf(randomizeRouteSelection: Boolean,
+                      channelExcludeDuration: FiniteDuration,
+                      routerBroadcastInterval: FiniteDuration,
+                      searchMaxFeeBaseSat: Long,
+                      searchMaxFeePct: Double,
+                      searchMaxRouteLength: Int,
+                      searchMaxCltv: Int,
+                      searchHeuristicsEnabled: Boolean,
+                      searchRatioCltv: Double,
+                      searchRatioChannelAge: Double,
+                      searchRatioChannelCapacity: Double)
+
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteRequest(source: PublicKey, target: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty, randomize: Option[Boolean] = None)
+case class RouteParams(maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int, ratios: Option[WeightRatios])
+case class RouteRequest(source: PublicKey,
+                        target: PublicKey,
+                        amountMsat: Long,
+                        assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                        ignoreNodes: Set[PublicKey] = Set.empty,
+                        ignoreChannels: Set[ChannelDesc] = Set.empty,
+                        randomize: Option[Boolean] = None,
+                        routeParams: Option[RouteParams] = None)
+
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
   require(hops.size > 0, "route cannot be empty")
 }
@@ -109,10 +127,25 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
 
-  setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerBroadcastInterval, repeat = true)
+  setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval, repeat = true)
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
 
   val SHORTID_WINDOW = 100
+
+  val defaultRouteParams = RouteParams(
+    maxFeeBaseMsat = nodeParams.routerConf.searchMaxFeeBaseSat * 1000, // converting sat -> msat
+    maxFeePct = nodeParams.routerConf.searchMaxFeePct,
+    routeMaxLength = nodeParams.routerConf.searchMaxRouteLength,
+    routeMaxCltv = nodeParams.routerConf.searchMaxCltv,
+    ratios = nodeParams.routerConf.searchHeuristicsEnabled match {
+      case false => None
+      case true => Some(WeightRatios(
+        cltvDeltaFactor = nodeParams.routerConf.searchRatioCltv,
+        ageFactor = nodeParams.routerConf.searchRatioChannelAge,
+        capacityFactor = nodeParams.routerConf.searchRatioChannelCapacity
+      ))
+    }
+  )
 
   val db = nodeParams.networkDb
 
@@ -131,9 +164,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     val graph = DirectedGraph.makeGraph(initChannelUpdates)
     val initNodes = nodes.map(n => (n.nodeId -> n)).toMap
     // send events for remaining channels/nodes
-    initChannels.values.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))
-    initChannelUpdates.values.foreach(u => context.system.eventStream.publish(ChannelUpdateReceived(u)))
-    initNodes.values.foreach(n => context.system.eventStream.publish(NodeDiscovered(n)))
+    context.system.eventStream.publish(ChannelsDiscovered(initChannels.values.map(c => SingleChannelDiscovered(c, channels(c)._2))))
+    context.system.eventStream.publish(ChannelUpdatesReceived(initChannelUpdates.values))
+    context.system.eventStream.publish(NodesDiscovered(initNodes.values))
 
     // watch the funding tx of all these channels
     // note: some of them may already have been spent, in that case we will receive the watch event immediately
@@ -235,7 +268,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
             // TODO: check feature bit set
             log.debug("added channel channelId={}", c.shortChannelId)
             val capacity = tx.txOut(outputIndex).amount
-            context.system.eventStream.publish(ChannelDiscovered(c, capacity))
+            context.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(c, capacity) :: Nil))
             db.addChannel(c, tx.txid, capacity)
 
             // in case we just validated our first local channel, we announce the local node
@@ -359,7 +392,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates, graph = graph1)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
-      val banDuration = nodeParams.channelExcludeDuration
+      val banDuration = nodeParams.routerConf.channelExcludeDuration
       log.info("excluding shortChannelId={} from nodeId={} for duration={}", shortChannelId, nodeId, banDuration)
       context.system.scheduler.scheduleOnce(banDuration, self, LiftChannelExclusion(desc))
       stay using d.copy(excludedChannels = d.excludedChannels + desc)
@@ -388,18 +421,20 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! d
       stay
 
-    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, randomize), d) =>
+    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, randomize_opt, params_opt), d) =>
       // we convert extra routing info provided in the payment request to fake channel_update
       // it takes precedence over all other channel_updates we know
       val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end)).toMap
       // we also filter out updates corresponding to channels/nodes that are blacklisted for this particular request
       // TODO: in case of duplicates, d.updates will be overridden by assistedUpdates even if they are more recent!
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
-      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
-      // if we want to randomize we ask the router to make a random selection among the three best routes
-      val routesToFind = if(randomize.getOrElse(nodeParams.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
-      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet)
+      val routesToFind = if (randomize_opt.getOrElse(nodeParams.routerConf.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
+      val params = params_opt.getOrElse(defaultRouteParams)
+
+      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
+      log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
+      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, routeParams = params)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -687,7 +722,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> Set(origin))))
     } else if (d.channels.values.exists(c => isRelatedTo(c, n.nodeId))) {
       log.debug("added node nodeId={}", n.nodeId)
-      context.system.eventStream.publish(NodeDiscovered(n))
+      context.system.eventStream.publish(NodesDiscovered(n :: Nil))
       db.addNode(n)
       d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> Set(origin))))
     } else if (d.awaiting.keys.exists(c => isRelatedTo(c, n.nodeId))) {
@@ -722,7 +757,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         d
       } else if (d.updates.contains(desc)) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.updateChannelUpdate(u)
         // update the graph
         val graph1 = Announcements.isEnabled(u.channelFlags) match {
@@ -732,7 +767,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.addChannelUpdate(u)
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u)
@@ -765,13 +800,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         d
       } else if (d.privateUpdates.contains(desc)) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val graph1 = d.graph.removeEdge(desc).addEdge(desc, u)
         d.copy(privateUpdates = d.privateUpdates + (desc -> u), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u)
         d.copy(privateUpdates = d.privateUpdates + (desc -> u), graph = graph1)
@@ -1053,18 +1088,15 @@ object Router {
     */
   val ROUTE_MAX_LENGTH = 20
 
+  // Max allowed CLTV for a route
+  val DEFAULT_ROUTE_MAX_CLTV = 1008
+
   // The default amount of routes we'll search for when findRoute is called
   val DEFAULT_ROUTES_COUNT = 3
 
-  // The default allowed 'spread' between the cheapest route found an the others
-  // routes exceeding this difference won't be considered as a valid result
-  val DEFAULT_ALLOWED_SPREAD = 0.1D
-
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.
-    * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result,
-    * the 'route-set' from where we select the result is made of the k-shortest path given that none of them
-    * exceeds a 10% spread with the cheapest route
+    * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result.
     *
     * @param g
     * @param localNodeId
@@ -1073,25 +1105,40 @@ object Router {
     * @param numRoutes    the number of shortest-paths to find
     * @param extraEdges   a set of extra edges we want to CONSIDER during the search
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
+    * @param routeParams  a set of parameters that can restrict the route search
+    * @param wr           an object containing the ratios used to 'weight' edges when searching for the shortest path
     * @return the computed route to the destination @targetNodeId
     */
-  def findRoute(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amountMsat: Long, numRoutes: Int, extraEdges: Set[GraphEdge] = Set.empty, ignoredEdges: Set[ChannelDesc] = Set.empty): Try[Seq[Hop]] = Try {
+  def findRoute(g: DirectedGraph,
+                localNodeId: PublicKey,
+                targetNodeId: PublicKey,
+                amountMsat: Long,
+                numRoutes: Int,
+                extraEdges: Set[GraphEdge] = Set.empty,
+                ignoredEdges: Set[ChannelDesc] = Set.empty,
+                routeParams: RouteParams): Try[Seq[Hop]] = Try {
+
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes).toList match {
+    val currentBlockHeight = Globals.blockCount.get()
+
+    val boundaries: RichWeight => Boolean = { weight =>
+      ((weight.cost - amountMsat) < routeParams.maxFeeBaseMsat || (weight.cost - amountMsat) < (routeParams.maxFeePct * amountMsat)) &&
+        weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
+        weight.cltv <= routeParams.routeMaxCltv
+    }
+
+    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList match {
+      case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
+        return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
       case Nil => throw RouteNotFound
-      case route :: Nil if route.path.isEmpty => throw RouteNotFound
       case routes => routes.find(_.path.size == 1) match {
         case Some(directRoute) => directRoute :: Nil
         case _ => routes
       }
     }
 
-    // minimum cost
-    val minimumCost = foundRoutes.head.weight
-
-    // routes paying at most minimumCost + 10%
-    val eligibleRoutes = foundRoutes.filter(_.weight <= (minimumCost + minimumCost * DEFAULT_ALLOWED_SPREAD).round)
-    Random.shuffle(eligibleRoutes).head.path.map(graphEdgeToHop)
+    // At this point 'foundRoutes' cannot be empty
+    Random.shuffle(foundRoutes).head.path.map(graphEdgeToHop)
   }
 }

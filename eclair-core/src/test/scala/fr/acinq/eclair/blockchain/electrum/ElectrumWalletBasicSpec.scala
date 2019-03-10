@@ -57,9 +57,9 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   def addFunds(data: Data, key: ExtendedPrivateKey, amount: Satoshi): Data = {
     val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(amount, ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
     val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(key.publicKey)
-    val scriptHashHistory = data.history.getOrElse(scriptHash, Seq.empty[ElectrumClient.TransactionHistoryItem])
+    val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
-      history = data.history.updated(scriptHash, scriptHashHistory :+ ElectrumClient.TransactionHistoryItem(100, tx.txid)),
+      history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
       transactions = data.transactions + (tx.txid -> tx)
     )
   }
@@ -67,9 +67,9 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   def addFunds(data: Data, keyamount: (ExtendedPrivateKey, Satoshi)): Data = {
     val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(keyamount._2, ElectrumWallet.computePublicKeyScript(keyamount._1.publicKey)) :: Nil, lockTime = 0)
     val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(keyamount._1.publicKey)
-    val scriptHashHistory = data.history.getOrElse(scriptHash, Seq.empty[ElectrumClient.TransactionHistoryItem])
+    val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
-      history = data.history.updated(scriptHash, scriptHashHistory :+ ElectrumClient.TransactionHistoryItem(100, tx.txid)),
+      history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
       transactions = data.transactions + (tx.txid -> tx)
     )
   }

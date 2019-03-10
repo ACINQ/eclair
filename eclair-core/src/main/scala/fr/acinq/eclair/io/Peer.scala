@@ -20,7 +20,7 @@ import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
 import java.nio.ByteOrder
 
-import akka.actor.{ActorRef, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
@@ -58,7 +58,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   when(DISCONNECTED) {
     case Event(Peer.Connect(NodeURI(_, hostAndPort)), d: DisconnectedData) =>
       val address = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
-      if (d.address_opt == Some(address)) {
+      if (d.address_opt.contains(address)) {
         // we already know this address, we'll reconnect automatically
         sender ! "reconnection in progress"
         stay
@@ -91,16 +91,25 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.info(s"using globalFeatures=${localInit.globalFeatures} and localFeatures=${localInit.localFeatures}")
       transport ! localInit
 
-      // we store the ip upon successful outgoing connection, keeping only the most recent one
-      if (outgoing) {
-        nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, address)
-      }
-      goto(INITIALIZING) using InitializingData(if (outgoing) Some(address) else None, transport, d.channels, origin_opt, localInit)
+      val address_opt = if (outgoing) {
+        // we store the node address upon successful outgoing connection, so we can reconnect later
+        // any previous address is overwritten
+        NodeAddress.fromParts(address.getHostString, address.getPort).map(nodeAddress => nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, nodeAddress))
+        Some(address)
+      } else None
+
+      goto(INITIALIZING) using InitializingData(address_opt, transport, d.channels, origin_opt, localInit)
 
     case Event(Terminated(actor), d: DisconnectedData) if d.channels.exists(_._2 == actor) =>
       val h = d.channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${h.mkString("/")}")
-      stay using d.copy(channels = d.channels -- h)
+      val channels1 = d.channels -- h
+      if (channels1.isEmpty) {
+        // we have no existing channels, we can forget about this peer
+        stopPeer()
+      } else {
+        stay using d.copy(channels = channels1)
+      }
 
     case Event(_: wire.LightningMessage, _) => stay // we probably just got disconnected and that's the last messages we received
   }
@@ -149,7 +158,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
         // let's bring existing/requested channels online
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport, d.localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }) forMax(30 seconds) // forMax will trigger a StateTimeout
+        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }) forMax (30 seconds) // forMax will trigger a StateTimeout
       } else {
         log.warning(s"incompatible features, disconnecting")
         d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
@@ -178,7 +187,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(Terminated(actor), d: InitializingData) if d.channels.exists(_._2 == actor) =>
       val h = d.channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${h.mkString("/")}")
-      stay using d.copy(channels = d.channels -- h)
+      val channels1 = d.channels -- h
+      if (channels1.isEmpty) {
+        // we have no existing channels, we can forget about this peer
+        stopPeer()
+      } else {
+        stay using d.copy(channels = channels1)
+      }
   }
 
   when(CONNECTED) {
@@ -414,8 +429,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(Terminated(actor), d: ConnectedData) if actor == d.transport =>
       log.info(s"lost connection to $remoteNodeId")
-      d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-      goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+      if (d.channels.isEmpty) {
+        // we have no existing channels, we can forget about this peer
+        stopPeer()
+      } else {
+        d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+        goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+      }
 
     case Event(Terminated(actor), d: ConnectedData) if d.channels.values.toSet.contains(actor) =>
       // we will have at most 2 ids: a TemporaryChannelId and a FinalChannelId
@@ -462,8 +482,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
 
     case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
-
-    case Event(_: Terminated, _) => stay // this channel got closed before having a commitment and we got disconnected (e.g. a funding error occured)
   }
 
   onTransition {
@@ -485,13 +503,18 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     channel
   }
 
+  def stopPeer() = {
+    log.info("removing peer from db")
+    nodeParams.peersDb.removePeer(remoteNodeId)
+    stop(FSM.Normal)
+  }
+
   // a failing channel won't be restarted, it should handle its states
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
 
   initialize()
 
   override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
-
 }
 
 object Peer {
@@ -508,7 +531,7 @@ object Peer {
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet: EclairWallet))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet))
 
   // @formatter:off
 

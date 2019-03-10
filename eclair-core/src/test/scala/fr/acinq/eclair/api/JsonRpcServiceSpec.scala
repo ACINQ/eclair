@@ -1,7 +1,24 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.api
 
 
 import java.io.{File, FileOutputStream}
+
 import akka.actor.{Actor, ActorSystem, Props, Scheduler}
 import org.scalatest.FunSuite
 import akka.http.scaladsl.model.StatusCodes._
@@ -17,6 +34,7 @@ import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.server.Route
 import akka.stream.scaladsl.Flow
 import fr.acinq.eclair.channel.Register.ForwardShortId
+import fr.acinq.eclair.router.{Graph, Router}
 import org.json4s.Formats
 import org.json4s.JsonAST.{JInt, JString}
 import org.json4s.jackson.Serialization
@@ -143,7 +161,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
         case GetPeerInfo => sender() ! PeerInfo(
           nodeId = Alice.nodeParams.nodeId,
           state = "CONNECTED",
-          address = Some(Alice.nodeParams.publicAddresses.head),
+          address = Some(Alice.nodeParams.publicAddresses.head.socketAddress),
           channels = 1)
       }
     }))
@@ -162,7 +180,7 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
     val mockService = new MockService(defaultMockKit.copy(
       switchboard = system.actorOf(Props(new {} with MockActor {
         override def receive = {
-          case 'peers => sender() ! Map(Alice.nodeParams.nodeId -> mockAlicePeer, Bob.nodeParams.nodeId -> mockBobPeer)
+          case 'peers => sender() ! List(mockAlicePeer, mockBobPeer)
         }
       }))
     ))
@@ -195,7 +213,8 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
         alias = Alice.nodeParams.alias,
         port = 9735,
         chainHash = Alice.nodeParams.chainHash,
-        blockHeight = 123456
+        blockHeight = 123456,
+        publicAddresses = Alice.nodeParams.publicAddresses
       ))
     }
     import mockService.formats

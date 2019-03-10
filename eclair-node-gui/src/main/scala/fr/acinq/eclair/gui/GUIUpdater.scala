@@ -70,9 +70,10 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     channelPaneController.funder.setText(if (isFunder) "Yes" else "No")
 
     // set the node alias if the node has already been announced
-    mainController.networkNodesList
-      .find(na => na.nodeId.toString.equals(remoteNodeId.toString))
-      .foreach(na => channelPaneController.updateRemoteNodeAlias(na.alias))
+    if (mainController.networkNodesMap.containsKey(remoteNodeId)) {
+      val na = mainController.networkNodesMap.get(remoteNodeId)
+      channelPaneController.updateRemoteNodeAlias(na.alias)
+    }
 
     (channelPaneController, root)
   }
@@ -139,72 +140,69 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       })
       context.become(main(m1))
 
-    case NodeDiscovered(nodeAnnouncement) =>
-      log.debug(s"peer node discovered with node id=${nodeAnnouncement.nodeId}")
+    case NodesDiscovered(nodeAnnouncements) =>
       runInGuiThread { () =>
-        if (!mainController.networkNodesList.exists(na => na.nodeId == nodeAnnouncement.nodeId)) {
-          mainController.networkNodesList.add(nodeAnnouncement)
-          m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.peerNodeId)) {
-            f._2.updateRemoteNodeAlias(nodeAnnouncement.alias)
-          })
+      nodeAnnouncements.foreach { nodeAnnouncement =>
+        log.debug(s"peer node discovered with node id={}", nodeAnnouncement.nodeId)
+          if (!mainController.networkNodesMap.containsKey(nodeAnnouncement.nodeId)) {
+            mainController.networkNodesMap.put(nodeAnnouncement.nodeId, nodeAnnouncement)
+            m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.peerNodeId)) {
+              f._2.updateRemoteNodeAlias(nodeAnnouncement.alias)
+            })
+          }
         }
       }
 
     case NodeLost(nodeId) =>
       log.debug(s"peer node lost with node id=${nodeId}")
       runInGuiThread { () =>
-        mainController.networkNodesList.removeIf(new Predicate[NodeAnnouncement] {
-          override def test(na: NodeAnnouncement) = na.nodeId.equals(nodeId)
-        })
+        mainController.networkNodesMap.remove(nodeId)
       }
 
     case NodeUpdated(nodeAnnouncement) =>
       log.debug(s"peer node with id=${nodeAnnouncement.nodeId} has been updated")
       runInGuiThread { () =>
-        val idx = mainController.networkNodesList.indexWhere(na => na.nodeId == nodeAnnouncement.nodeId)
-        if (idx >= 0) {
-          mainController.networkNodesList.update(idx, nodeAnnouncement)
-          m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.peerNodeId)) {
-            f._2.updateRemoteNodeAlias(nodeAnnouncement.alias)
-          })
-        }
+        mainController.networkNodesMap.put(nodeAnnouncement.nodeId, nodeAnnouncement)
+        m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.peerNodeId)) {
+          f._2.updateRemoteNodeAlias(nodeAnnouncement.alias)
+        })
       }
 
-    case ChannelDiscovered(channelAnnouncement, capacity) =>
-      log.debug(s"peer channel discovered with channel id=${channelAnnouncement.shortChannelId}")
+    case ChannelsDiscovered(channelsDiscovered) =>
       runInGuiThread { () =>
-        if (!mainController.networkChannelsList.exists(c => c.announcement.shortChannelId == channelAnnouncement.shortChannelId)) {
-          mainController.networkChannelsList.add(new ChannelInfo(channelAnnouncement, None, None, None, None, capacity, None, None))
-        }
-      }
+          channelsDiscovered.foreach { case SingleChannelDiscovered(channelAnnouncement, capacity) =>
+            log.debug(s"peer channel discovered with channel id={}", channelAnnouncement.shortChannelId)
+              if (!mainController.networkChannelsMap.containsKey(channelAnnouncement.shortChannelId)) {
+                mainController.networkChannelsMap.put(channelAnnouncement.shortChannelId, new ChannelInfo(channelAnnouncement, None, None, None, None, capacity, None, None))
+              }
+            }
+          }
 
     case ChannelLost(shortChannelId) =>
       log.debug(s"peer channel lost with channel id=${shortChannelId}")
       runInGuiThread { () =>
-        mainController.networkChannelsList.removeIf(new Predicate[ChannelInfo] {
-          override def test(c: ChannelInfo) = c.announcement.shortChannelId == shortChannelId
-        })
+        mainController.networkChannelsMap.remove(shortChannelId)
       }
 
-    case ChannelUpdateReceived(channelUpdate) =>
-      log.debug(s"peer channel with id=${channelUpdate.shortChannelId} has been updated - flags: ${channelUpdate.channelFlags} fees: ${channelUpdate.feeBaseMsat} ${channelUpdate.feeProportionalMillionths}")
+    case ChannelUpdatesReceived(channelUpdates) =>
       runInGuiThread { () =>
-        val idx = mainController.networkChannelsList.indexWhere(c => c.announcement.shortChannelId == channelUpdate.shortChannelId)
-        if (idx >= 0) {
-          val c = mainController.networkChannelsList.get(idx)
-          if (Announcements.isNode1(channelUpdate.channelFlags)) {
-            c.isNode1Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
-            c.feeBaseMsatNode1_opt = Some(channelUpdate.feeBaseMsat)
-            c.feeProportionalMillionthsNode1_opt = Some(channelUpdate.feeProportionalMillionths)
-          } else {
-            c.isNode2Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
-            c.feeBaseMsatNode2_opt = Some(channelUpdate.feeBaseMsat)
-            c.feeProportionalMillionthsNode2_opt = Some(channelUpdate.feeProportionalMillionths)
+          channelUpdates.foreach { case channelUpdate =>
+            log.debug(s"peer channel with id={} has been updated - flags: {} fees: {} {}", channelUpdate.shortChannelId, channelUpdate.channelFlags, channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths)
+              if (mainController.networkChannelsMap.containsKey(channelUpdate.shortChannelId)) {
+                val c = mainController.networkChannelsMap.get(channelUpdate.shortChannelId)
+                if (Announcements.isNode1(channelUpdate.channelFlags)) {
+                  c.isNode1Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
+                  c.feeBaseMsatNode1_opt = Some(channelUpdate.feeBaseMsat)
+                  c.feeProportionalMillionthsNode1_opt = Some(channelUpdate.feeProportionalMillionths)
+              } else {
+                  c.isNode2Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
+                  c.feeBaseMsatNode2_opt = Some(channelUpdate.feeBaseMsat)
+                  c.feeProportionalMillionthsNode2_opt = Some(channelUpdate.feeProportionalMillionths)
+                }
+                mainController.networkChannelsMap.put(channelUpdate.shortChannelId, c)
+              }
+            }
           }
-
-          mainController.networkChannelsList.update(idx, c)
-        }
-      }
 
     case p: PaymentSucceeded =>
       val message = CoinUtils.formatAmountInUnit(MilliSatoshi(p.amountMsat), FxApp.getUnit, withUnit = true)

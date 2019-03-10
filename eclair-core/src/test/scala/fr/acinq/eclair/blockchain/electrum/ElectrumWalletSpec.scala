@@ -38,7 +38,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
 
-class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService  with BeforeAndAfterAll with Logging {
+class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
 
   import ElectrumWallet._
 
@@ -196,7 +196,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       unconfirmed1 - unconfirmed == Satoshi(100000000L)
     }, max = 30 seconds, interval = 1 second)
 
-    val TransactionReceived(tx, 0, received, sent, _) = listener.receiveOne(5 seconds)
+    val TransactionReceived(tx, 0, received, sent, _, _) = listener.receiveOne(5 seconds)
     assert(tx.txid === BinaryData(txid))
     assert(received === Satoshi(100000000))
 
@@ -211,7 +211,10 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
     awaitCond({
       val msg = listener.receiveOne(5 seconds)
-      msg == TransactionConfidenceChanged(BinaryData(txid), 1)
+      msg match {
+        case TransactionConfidenceChanged(BinaryData(txid), 1, _) => true
+        case _ => false
+      }
     }, max = 30 seconds, interval = 1 second)
   }
 
@@ -272,5 +275,56 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       logger.info(s"current balance is $confirmed $unconfirmed")
       confirmed1 < confirmed - Btc(1) && confirmed1 > confirmed - Btc(1) - Satoshi(50000)
     }, max = 30 seconds, interval = 1 second)
+  }
+
+  test("detect is a tx has been double-spent") {
+    val probe = TestProbe()
+    val GetBalanceResponse(confirmed, unconfirmed) = getBalance(probe)
+    logger.info(s"current balance is $confirmed $unconfirmed")
+
+    // create 2 transactions that spend the same wallet UTXO
+    val tx1 = {
+      probe.send(bitcoincli, BitcoinReq("getnewaddress"))
+      val JString(address) = probe.expectMsgType[JValue]
+      val tmp = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
+      probe.send(wallet, CompleteTransaction(tmp, 20000))
+      val CompleteTransactionResponse(tx, fee1, None) = probe.expectMsgType[CompleteTransactionResponse]
+      probe.send(wallet, CancelTransaction(tx))
+      probe.expectMsg(CancelTransactionResponse(tx))
+      tx
+    }
+    val tx2 = {
+      probe.send(bitcoincli, BitcoinReq("getnewaddress"))
+      val JString(address) = probe.expectMsgType[JValue]
+      val tmp = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
+      probe.send(wallet, CompleteTransaction(tmp, 20000))
+      val CompleteTransactionResponse(tx, fee1, None) = probe.expectMsgType[CompleteTransactionResponse]
+      probe.send(wallet, CancelTransaction(tx))
+      probe.expectMsg(CancelTransactionResponse(tx))
+      tx
+    }
+
+    probe.send(wallet, IsDoubleSpent(tx1))
+    probe.expectMsg(IsDoubleSpentResponse(tx1, false))
+    probe.send(wallet, IsDoubleSpent(tx2))
+    probe.expectMsg(IsDoubleSpentResponse(tx2, false))
+
+    // publish and confirm tx1
+    probe.send(wallet, BroadcastTransaction(tx1))
+    probe.expectMsg(BroadcastTransactionResponse(tx1, None))
+    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    probe.expectMsgType[JValue]
+
+    awaitCond({
+      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      logger.info(s"current balance is $confirmed $unconfirmed")
+      confirmed1 < confirmed - Btc(1)
+    }, max = 30 seconds, interval = 1 second)
+
+    // tx2 is double spent
+    probe.send(wallet, IsDoubleSpent(tx1))
+    probe.expectMsg(IsDoubleSpentResponse(tx1, false))
+    probe.send(wallet, IsDoubleSpent(tx2))
+    probe.expectMsg(IsDoubleSpentResponse(tx2, true))
   }
 }

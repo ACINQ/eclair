@@ -1,3 +1,19 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
@@ -11,7 +27,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements, SendPing}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueriesSpec, Rebroadcast}
-import fr.acinq.eclair.wire.{EncodedShortChannelIds, EncodingTypes, Error, FlagTypes, Ping, Pong}
+import fr.acinq.eclair.wire.{EncodedShortChannelIds, EncodingTypes, Error, Ping, Pong}
 import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, randomBytes, wire}
 import org.scalatest.Outcome
 
@@ -44,7 +60,7 @@ class PeerSpec extends TestkitBaseClass {
     // let's simulate a connection
     val probe = TestProbe()
     probe.send(peer, Peer.Init(None, Set.empty))
-    authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, InetSocketAddress.createUnresolved("foo.bar", 42000), false, None))
+    authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, new InetSocketAddress("1.2.3.4", 42000), outgoing = true, None))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
     transport.send(peer, wire.Init(Bob.nodeParams.globalFeatures, Bob.nodeParams.localFeatures))

@@ -22,14 +22,15 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 import com.google.common.net.HostAndPort
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
 import fr.acinq.eclair.gui.stages._
-import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
+import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction, IndexedObservableList}
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
-import fr.acinq.eclair.{CoinUtils, Setup}
+import fr.acinq.eclair.{CoinUtils, Setup, ShortChannelId}
 import grizzled.slf4j.Logging
 import javafx.animation.{FadeTransition, ParallelTransition, SequentialTransition, TranslateTransition}
 import javafx.application.{HostServices, Platform}
@@ -95,7 +96,8 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   @FXML var channelsTab: Tab = _
 
   // all nodes tab
-  val networkNodesList = FXCollections.observableArrayList[NodeAnnouncement]()
+  val networkNodesMap = new IndexedObservableList[PublicKey, NodeAnnouncement]
+  private val networkNodesList = networkNodesMap.list
   @FXML var networkNodesTab: Tab = _
   @FXML var networkNodesTable: TableView[NodeAnnouncement] = _
   @FXML var networkNodesIdColumn: TableColumn[NodeAnnouncement, String] = _
@@ -104,7 +106,8 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   @FXML var networkNodesIPColumn: TableColumn[NodeAnnouncement, String] = _
 
   // all channels
-  val networkChannelsList = FXCollections.observableArrayList[ChannelInfo]()
+  val networkChannelsMap = new IndexedObservableList[ShortChannelId, ChannelInfo]
+  private val networkChannelsList = networkChannelsMap.list
   @FXML var networkChannelsTab: Tab = _
   @FXML var networkChannelsTable: TableView[ChannelInfo] = _
   @FXML var networkChannelsIdColumn: TableColumn[ChannelInfo, String] = _
@@ -195,7 +198,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     })
     networkNodesIPColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
       def call(pn: CellDataFeatures[NodeAnnouncement, String]) = {
-        val address = pn.getValue.socketAddresses.map(a => HostAndPort.fromParts(a.getHostString, a.getPort)).mkString(",")
+        val address = pn.getValue.addresses.map(a => HostAndPort.fromParts(a.socketAddress.getHostString, a.socketAddress.getPort)).mkString(",")
         new SimpleStringProperty(address)
       }
     })
@@ -365,7 +368,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     bitcoinChain.getStyleClass.add(setup.chain)
 
     val nodeURI_opt = setup.nodeParams.publicAddresses.headOption.map(address => {
-      s"${setup.nodeParams.nodeId}@${HostAndPort.fromParts(address.getHostString, address.getPort)}"
+      s"${setup.nodeParams.nodeId}@${HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort)}"
     })
 
     contextMenu = ContextMenuUtils.buildCopyContext(List(CopyAction("Copy Pubkey", setup.nodeParams.nodeId.toString())))
@@ -456,8 +459,8 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     copyURI.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent): Unit = Option(row.getItem) match {
         case Some(pn) => ContextMenuUtils.copyToClipboard(
-          pn.socketAddresses.headOption match {
-            case Some(firstAddress) => s"${pn.nodeId.toString}@${HostAndPort.fromParts(firstAddress.getHostString, firstAddress.getPort)}"
+          pn.addresses.headOption match {
+            case Some(firstAddress) => s"${pn.nodeId.toString}@${HostAndPort.fromParts(firstAddress.socketAddress.getHostString, firstAddress.socketAddress.getPort)}"
             case None => "no URI Known"
           })
         case None =>
