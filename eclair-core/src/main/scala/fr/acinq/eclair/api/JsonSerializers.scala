@@ -144,3 +144,7 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format =
     JField("minFinalCltvExpiry", if (p.minFinalCltvExpiry.isDefined) JLong(p.minFinalCltvExpiry.get) else JNull) ::
     Nil)
 }))
+
+object PublicKeySerializer extends CustomSerializer[PublicKey](format => ({ null },{
+  case pk: PublicKey => JString(pk.toString())
+}))
