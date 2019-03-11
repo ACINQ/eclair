@@ -74,10 +74,7 @@ case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChan
 }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
-
-// channel queries as specified in BOLT 1.0
 case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[ExtendedQueryFlags])
-
 case object GetRoutingState
 case class RoutingState(channels: Iterable[ChannelAnnouncement], updates: Iterable[ChannelUpdate], nodes: Iterable[NodeAnnouncement])
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
@@ -580,7 +577,24 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
     case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage: ReplyShortChannelIdsEnd), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
-      stay using handleSyncEnd(d, remoteNodeId, transport)
+      // have we more channels to ask this peer?
+      val sync1 = d.sync.get(remoteNodeId) match {
+        case Some(sync) =>
+          sync.pending match {
+            case nextRequest +: rest =>
+              log.info(s"asking for the next slice of short_channel_ids (remaining=${sync.pending.size}/${sync.total})")
+              transport ! nextRequest
+              d.sync + (remoteNodeId -> sync.copy(pending = rest))
+            case Nil =>
+              // we received reply_short_channel_ids_end for our last query and have not sent another one, we can now remove
+              // the remote peer from our map
+              log.info(s"sync complete (total=${sync.total})")
+              d.sync - remoteNodeId
+          }
+        case _ => d.sync
+      }
+      context.system.eventStream.publish(syncProgress(sync1))
+      stay using d.copy(sync = sync1)
 
   }
 
@@ -732,27 +746,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       log.debug("ignoring announcement {} (unknown channel)", u)
       d
     }
-
-  def handleSyncEnd(d: Data, remoteNodeId: PublicKey, transport: ActorRef): Data = {
-    // have we more channels to ask this peer?
-    val sync1 = d.sync.get(remoteNodeId) match {
-      case Some(sync) =>
-        sync.pending match {
-          case nextRequest +: rest =>
-            log.info(s"asking for the next slice of short_channel_ids (remaining=${sync.pending.size}/${sync.total})")
-            transport ! nextRequest
-            d.sync + (remoteNodeId -> sync.copy(pending = rest))
-          case Nil =>
-            // we received reply_short_channel_ids_end for our last query and have not sent another one, we can now remove
-            // the remote peer from our map
-            log.info(s"sync complete (total=${sync.total})")
-            d.sync - remoteNodeId
-        }
-      case _ => d.sync
-    }
-    context.system.eventStream.publish(syncProgress(sync1))
-    d.copy(sync = sync1)
-  }
 
   override def mdc(currentMessage: Any): MDC = currentMessage match {
     case SendChannelQuery(remoteNodeId, _, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
