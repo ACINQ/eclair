@@ -230,11 +230,11 @@ case object EncodingTypes {
 }
 
 case object QueryFlagTypes {
-  val INCLUDE_CHANNEL_UPDATE_1: Byte = 1
-  val INCLUDE_CHANNEL_UPDATE_2: Byte = 2
-  val INCLUDE_ANNOUNCEMENT: Byte = 4
+  val INCLUDE_CHANNEL_ANNOUNCEMENT: Byte = 1
+  val INCLUDE_CHANNEL_UPDATE_1: Byte = 2
+  val INCLUDE_CHANNEL_UPDATE_2: Byte = 4
 
-  def includeAnnouncement(flag: Byte) = (flag & QueryFlagTypes.INCLUDE_ANNOUNCEMENT) != 0
+  def includeAnnouncement(flag: Byte) = (flag & QueryFlagTypes.INCLUDE_CHANNEL_ANNOUNCEMENT) != 0
 
   def includeUpdate1(flag: Byte) = (flag & QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_1) != 0
 

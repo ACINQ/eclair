@@ -65,7 +65,7 @@ class RoutingSyncWithChecksumsSpec extends TestKit(ActorSystem("test")) with Fun
     sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, block))
 
     // router should ask for our first block of ids
-    val shortChannelIdAndFlags = block.shortChannelIds.array.map(shortChannelId => ShortChannelIdAndFlag(shortChannelId, (QueryFlagTypes.INCLUDE_ANNOUNCEMENT | QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_1 | QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_2).toByte))
+    val shortChannelIdAndFlags = block.shortChannelIds.array.map(shortChannelId => ShortChannelIdAndFlag(shortChannelId, (QueryFlagTypes.INCLUDE_CHANNEL_ANNOUNCEMENT | QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_1 | QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_2).toByte))
     val shortChannelIdAndFlags1 = shortChannelIdAndFlags.take(Router.SHORTID_WINDOW)
     assert(transport.expectMsgType[QueryShortChannelIds] === QueryShortChannelIds(chainHash, EncodedShortChannelIds(block.shortChannelIds.encoding, shortChannelIdAndFlags1.map(_.shortChannelId)), Some(EncodedQueryFlags(block.shortChannelIds.encoding, shortChannelIdAndFlags1.map(_.flag)))))
 
