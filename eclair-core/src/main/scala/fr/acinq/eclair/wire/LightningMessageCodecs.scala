@@ -332,11 +332,15 @@ object LightningMessageCodecs {
       ("complete" | byte)
     ).as[ReplyShortChannelIdsEnd]
 
+  val extendedQueryFlagsCodec: Codec[ExtendedQueryFlags] =
+    discriminated[ExtendedQueryFlags].by(byte)
+    .typecase(1, provide(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS))
+
   val queryChannelRangeCodec: Codec[QueryChannelRange] = (
     ("chainHash" | binarydata(32)) ::
       ("firstBlockNum" | uint32) ::
       ("numberOfBlocks" | uint32) ::
-      ("optionExtendedQueryFlags" | optional(bitsRemaining, byte))
+      ("optionExtendedQueryFlags" | optional(bitsRemaining, extendedQueryFlagsCodec))
     ).as[QueryChannelRange]
 
   val timestampsAndChecksumsCodec: Codec[TimestampsAndChecksums] = (
@@ -354,7 +358,7 @@ object LightningMessageCodecs {
       ("numberOfBlocks" | uint32) ::
       ("complete" | byte) ::
       ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
-      ("optionExtendedQueryFlags_opt" | optional(bitsRemaining, byte)) ::
+      ("optionExtendedQueryFlags_opt" | optional(bitsRemaining, extendedQueryFlagsCodec)) ::
       ("extendedInfo_opt" | optional(bitsRemaining, variableSizeBytes(uint16, extendedInfoCodec)))
     ).as[ReplyChannelRange]
 

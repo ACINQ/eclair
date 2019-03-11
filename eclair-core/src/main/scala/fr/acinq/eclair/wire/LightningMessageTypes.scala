@@ -254,21 +254,24 @@ case class QueryShortChannelIds(chainHash: BinaryData,
 case class ReplyShortChannelIdsEnd(chainHash: BinaryData,
                                    complete: Byte) extends RoutingMessage with HasChainHash
 
-case object ExtendedQueryFlags {
-  val TIMESTAMPS_AND_CHECKSUMS: Byte = 1
+// @formatter:off
+sealed trait ExtendedQueryFlags
+object ExtendedQueryFlags {
+  case object TIMESTAMPS_AND_CHECKSUMS extends ExtendedQueryFlags
 }
+// @formatter:on
 
 case class QueryChannelRange(chainHash: BinaryData,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
-                             optionExtendedQueryFlags_opt: Option[Byte]) extends RoutingMessage with HasChainHash
+                             optionExtendedQueryFlags_opt: Option[ExtendedQueryFlags]) extends RoutingMessage with HasChainHash
 
 case class ReplyChannelRange(chainHash: BinaryData,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
                              complete: Byte,
                              shortChannelIds: EncodedShortChannelIds,
-                             optionExtendedQueryFlags_opt: Option[Byte],
+                             optionExtendedQueryFlags_opt: Option[ExtendedQueryFlags],
                              extendedInfo_opt: Option[ExtendedInfo]) extends RoutingMessage with HasChainHash
 
 case class GossipTimestampFilter(chainHash: BinaryData,
