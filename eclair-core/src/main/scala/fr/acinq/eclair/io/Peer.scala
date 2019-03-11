@@ -135,12 +135,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           }
         }
 
-        if (remoteFeatures.hasChannelRangeQueriesOptional || remoteFeatures.hasChannelRangeQueriesMandatory) {
-          // if they support channel queries, always ask for their filter
-          router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = None)
-        } else if (remoteFeatures.hasChannelRangeQueriesExtendedOptional || remoteFeatures.hasChannelRangeQueriesExtendedMandatory) {
+        if (remoteFeatures.hasChannelRangeQueriesExtendedOptional || remoteFeatures.hasChannelRangeQueriesExtendedMandatory) {
           // if they support channel queries, always ask for their filter
           router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS))
+        } else if (remoteFeatures.hasChannelRangeQueriesOptional || remoteFeatures.hasChannelRangeQueriesMandatory) {
+          // if they support channel queries, always ask for their filter
+          router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = None)
         }
 
         // let's bring existing/requested channels online
