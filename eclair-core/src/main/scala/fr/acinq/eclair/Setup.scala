@@ -32,7 +32,7 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
-import fr.acinq.eclair.api.{GetInfoResponse, Service}
+import fr.acinq.eclair.api.{GetInfoResponse, NewService, Service}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
@@ -264,15 +264,15 @@ class Setup(datadir: File,
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
         implicit val materializer = ActorMaterializer()
-        val api = new Service {
+        val api = new NewService {
 
-          override def scheduler = system.scheduler
+//          override def scheduler = system.scheduler
 
-          override val password = {
-            val p = config.getString("api.password")
-            if (p.isEmpty) throw EmptyAPIPasswordException else p
-          }
-
+//          override val password = {
+//            val p = config.getString("api.password")
+//            if (p.isEmpty) throw EmptyAPIPasswordException else p
+//          }
+//
           override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
             GetInfoResponse(nodeId = nodeParams.nodeId,
               alias = nodeParams.alias,
@@ -283,9 +283,9 @@ class Setup(datadir: File,
 
           override def appKit: Kit = kit
 
-          override val socketHandler = makeSocketHandler(system)(materializer)
+//          override val socketHandler = makeSocketHandler(system)(materializer)
         }
-        val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+        val httpBound = Http().bindAndHandle(api.motherRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
           case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
         }
         val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("api.port"))))

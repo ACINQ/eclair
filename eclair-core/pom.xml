@@ -132,6 +132,11 @@
             <artifactId>akka-http-core_${scala.version.short}</artifactId>
             <version>${akka.http.version}</version>
         </dependency>
+        <!--<dependency>-->
+            <!--<groupId>net.jtownson</groupId>-->
+            <!--<artifactId>swakka_2.11</artifactId>-->
+            <!--<version>0.53</version>-->
+        <!--</dependency>-->
         <!-- HTTP CLIENT -->
         <dependency>
             <groupId>com.softwaremill.sttp</groupId>
