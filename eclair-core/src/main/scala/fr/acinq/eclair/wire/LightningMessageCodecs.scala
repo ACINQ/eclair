@@ -313,13 +313,13 @@ object LightningMessageCodecs {
 
   val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] =
     discriminated[EncodedShortChannelIds].by(byte)
-      .\(EncodingTypes.UNCOMPRESSED) { case a@EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, _) => a }((provide(EncodingTypes.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
-      .\(EncodingTypes.COMPRESSED_ZLIB) { case a@EncodedShortChannelIds(EncodingTypes.COMPRESSED_ZLIB, _) => a }((provide(EncodingTypes.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+      .\(0) { case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
+      .\(1) { case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
 
   val encodedQueryFlagsCodec: Codec[EncodedQueryFlags] =
     discriminated[EncodedQueryFlags].by(byte)
-      .\(EncodingTypes.UNCOMPRESSED) { case a@EncodedQueryFlags(EncodingTypes.UNCOMPRESSED, _) => a }((provide(EncodingTypes.UNCOMPRESSED) :: list(byte)).as[EncodedQueryFlags])
-      .\(EncodingTypes.COMPRESSED_ZLIB) { case a@EncodedQueryFlags(EncodingTypes.COMPRESSED_ZLIB, _) => a }((provide(EncodingTypes.COMPRESSED_ZLIB) :: zlib(list(byte))).as[EncodedQueryFlags])
+      .\(0) { case a@EncodedQueryFlags(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(byte)).as[EncodedQueryFlags])
+      .\(1) { case a@EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(byte))).as[EncodedQueryFlags])
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = (
     ("chainHash" | binarydata(32)) ::

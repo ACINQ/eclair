@@ -515,7 +515,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         .foreach(chunk =>
           transport ! ReplyChannelRange(chainHash, chunk.firstBlock, chunk.numBlocks,
             complete = 1,
-            shortChannelIds = EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, chunk.shortChannelIds),
+            shortChannelIds = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, chunk.shortChannelIds),
             optionExtendedQueryFlags_opt = optionExtendedQueryFlags_opt,
             extendedInfo_opt = optionExtendedQueryFlags_opt map {
               case ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS => ExtendedInfo(chunk.shortChannelIds.map(getChannelDigestInfo(d.channels, d.updates)))
@@ -725,7 +725,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       // when we're sending updates to ourselves
       (transport_opt, remoteNodeId_opt) match {
         case (Some(transport), Some(remoteNodeId)) =>
-          val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, List(u.shortChannelId)), queryFlags_opt = None)
+          val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(u.shortChannelId)), queryFlags_opt = None)
           d.sync.get(remoteNodeId) match {
             case Some(sync) =>
               // we already have a pending request to that node, let's add this channel to the list and we'll get it later

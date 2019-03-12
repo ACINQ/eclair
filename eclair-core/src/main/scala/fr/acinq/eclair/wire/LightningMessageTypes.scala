@@ -221,12 +221,13 @@ case class PerHopPayload(shortChannelId: ShortChannelId,
                          amtToForward: Long,
                          outgoingCltvValue: Long)
 
-// BOLT 1.0 channel queries
-
-case object EncodingTypes {
-  val UNCOMPRESSED: Byte = 0
-  val COMPRESSED_ZLIB: Byte = 1
+// @formatter:off
+sealed trait EncodingType
+object EncodingType {
+  case object UNCOMPRESSED extends EncodingType
+  case object COMPRESSED_ZLIB extends EncodingType
 }
+// @formatter:on
 
 case object QueryFlagTypes {
   val INCLUDE_CHANNEL_ANNOUNCEMENT: Byte = 1
@@ -240,10 +241,10 @@ case object QueryFlagTypes {
   def includeUpdate2(flag: Byte) = (flag & QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_2) != 0
 }
 
-case class EncodedShortChannelIds(encoding: Byte,
+case class EncodedShortChannelIds(encoding: EncodingType,
                                   array: List[ShortChannelId])
 
-case class EncodedQueryFlags(encoding: Byte,
+case class EncodedQueryFlags(encoding: EncodingType,
                              array: List[Byte])
 
 case class QueryShortChannelIds(chainHash: BinaryData,

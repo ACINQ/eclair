@@ -58,7 +58,7 @@ class RoutingSyncWithChecksumsSpec extends TestKit(ActorSystem("test")) with Fun
 
     // send back all our ids and timestamps
     val block = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1,
-      shortChannelIds = EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, shortChannelIds.toList),
+      shortChannelIds = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, shortChannelIds.toList),
       optionExtendedQueryFlags_opt = Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS),
       extendedInfo_opt = Some(ExtendedInfo(shortChannelIds.toList.map(Router.getChannelDigestInfo(initChannels, initChannelUpdates))))
     )
@@ -150,7 +150,7 @@ class RoutingSyncWithChecksumsSpec extends TestKit(ActorSystem("test")) with Fun
 
     // send back all our ids and timestamps
     val block1 = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1,
-      EncodedShortChannelIds(EncodingTypes.UNCOMPRESSED, shortChannelIds.toList),
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, shortChannelIds.toList),
       Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS),
       Some(ExtendedInfo(shortChannelIds.toList.map(Router.getChannelDigestInfo(initChannels, recentChannelUpdates)))))
     sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, block1))
