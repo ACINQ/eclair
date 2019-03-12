@@ -27,7 +27,7 @@ import grizzled.slf4j.Logging
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
-trait NewService extends Directives with WithJsonSerializers with Logging {
+trait NewService extends Directives with WithJsonSerializers with Logging with MetaService {
 
   def appKit: Kit
 

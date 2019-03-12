@@ -66,7 +66,7 @@ final case class RpcValidationRejection(requestId: String, message: String) exte
 final case class ExceptionRejection(requestId: String, message: String) extends RPCRejection
 // @formatter:on
 
-trait Service extends Logging {
+trait Service extends Logging with MetaService {
 
   implicit def ec: ExecutionContext = ExecutionContext.Implicits.global
 

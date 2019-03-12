@@ -264,7 +264,8 @@ class Setup(datadir: File,
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
         implicit val materializer = ActorMaterializer()
-        val api = new NewService {
+        val api = if(config.getBoolean("api.use-new-version")){
+          new NewService {
 
           override def appKit: Kit = kit
 
@@ -283,6 +284,29 @@ class Setup(datadir: File,
               blockHeight = Globals.blockCount.intValue(),
               publicAddresses = nodeParams.publicAddresses))
 
+        }
+        } else {
+          new Service {
+
+            override def scheduler = system.scheduler
+
+            override val password = {
+              val p = config.getString("api.password")
+              if (p.isEmpty) throw EmptyAPIPasswordException else p
+            }
+
+            override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
+              GetInfoResponse(nodeId = nodeParams.nodeId,
+                alias = nodeParams.alias,
+                port = config.getInt("server.port"),
+                chainHash = nodeParams.chainHash,
+                blockHeight = Globals.blockCount.intValue(),
+                publicAddresses = nodeParams.publicAddresses))
+
+            override def appKit: Kit = kit
+
+            override val socketHandler = makeSocketHandler(system)(materializer)
+          }
         }
         val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
           case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
