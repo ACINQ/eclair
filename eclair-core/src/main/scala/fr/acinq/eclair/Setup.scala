@@ -266,13 +266,15 @@ class Setup(datadir: File,
         implicit val materializer = ActorMaterializer()
         val api = new NewService {
 
-//          override def scheduler = system.scheduler
+          override def appKit: Kit = kit
 
-//          override val password = {
-//            val p = config.getString("api.password")
-//            if (p.isEmpty) throw EmptyAPIPasswordException else p
-//          }
-//
+          override val mat = materializer
+
+          override val password = {
+            val p = config.getString("api.password")
+            if (p.isEmpty) throw EmptyAPIPasswordException else p
+          }
+
           override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
             GetInfoResponse(nodeId = nodeParams.nodeId,
               alias = nodeParams.alias,
@@ -281,9 +283,6 @@ class Setup(datadir: File,
               blockHeight = Globals.blockCount.intValue(),
               publicAddresses = nodeParams.publicAddresses))
 
-          override def appKit: Kit = kit
-
-//          override val socketHandler = makeSocketHandler(system)(materializer)
         }
         val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
           case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))

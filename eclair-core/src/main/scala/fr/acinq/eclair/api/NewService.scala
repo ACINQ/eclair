@@ -13,7 +13,7 @@ import akka.NotUsed
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.model.ws.{Message, TextMessage}
-import akka.http.scaladsl.server.Directives.{complete, extractRequest}
+import akka.http.scaladsl.server.directives.Credentials
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
 import fr.acinq.eclair.channel._
@@ -34,6 +34,8 @@ trait NewService extends Directives with WithJsonSerializers with Logging {
 
   def getInfoResponse: Future[GetInfoResponse]
 
+  def password: String
+
   implicit val ec = appKit.system.dispatcher
   implicit val mat: ActorMaterializer
   implicit val timeout = Timeout(60 seconds)
@@ -44,97 +46,99 @@ trait NewService extends Directives with WithJsonSerializers with Logging {
 
   val route: Route = {
     handleExceptions(apiExceptionHandler){
-      get {
-        path("getinfo") { complete(getInfoResponse) } ~
-        path("help") { complete(help.mkString) } ~
-        path("connect") {
-          parameters("nodeId".as[PublicKey], "address".as[NodeAddress]) { (nodeId, addr) =>
-            complete(connect(s"$nodeId@$addr"))
-          } ~ parameters("uri") { uri =>
-            complete(connect(uri))
-          }
-        } ~
-        path("open") {
-          parameters("nodeId".as[PublicKey], "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?) {
-            (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags) =>
-              complete(open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags))
-          }
-        } ~
-        path("close") {
-          parameters(channelIdNamedParameter, "scriptPubKey".as[BinaryData](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
-            complete(close(channelId, scriptPubKey_opt))
-          }
-        } ~
-        path("forceclose") {
-          parameters(channelIdNamedParameter) { channelId =>
-            complete(forceClose(channelId.toString))
-          }
-        } ~
-        path("updaterelayfee") {
-          parameters(channelIdNamedParameter, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
-            complete(updateRelayFee(channelId.toString, feeBase, feeProportional))
-          }
-        } ~
-        path("peers") {
-          complete(peersInfo())
-        } ~
-        path("channels") {
-          parameters("toRemoteNodeId".as[PublicKey].?) { toRemoteNodeId_opt =>
-            complete(channelsInfo(toRemoteNodeId_opt))
-          }
-        } ~
-        path("channel") {
-          parameters(channelIdNamedParameter) { channelId =>
-            complete(channelInfo(channelId))
-          }
-        } ~
-        path("allnodes") { complete(allnodes()) } ~
-        path("allchannels") { complete(allchannels()) } ~
-        path("allupdates") {
-          parameters("nodeId".as[PublicKey].?) { nodeId_opt =>
-            complete(allupdates(nodeId_opt))
-          }
-        } ~
-        path("receive") {
-          parameters("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?) { (desc, amountMsat, expire) =>
-            complete(receive(desc, amountMsat, expire))
-          }
-        } ~
-        path("parseinvoice") {
-          parameters("invoice".as[PaymentRequest]) { invoice =>
-            complete(invoice)
-          }
-        } ~
-        path("findroute") {
-          parameters("nodeId".as[PublicKey].?, "amountMsat".as[Long].?, "invoice".as[PaymentRequest].?) { (nodeId, amount, invoice) =>
-            complete(findRoute(nodeId, amount, invoice))
-          }
-        } ~
-        path("send") {
-          parameters("amountMsat".as[Long].?, "paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "nodeId".as[PublicKey].?, "invoice".as[PaymentRequest].?) { (amountMsat, paymentHash, nodeId, invoice) =>
-            complete(send(nodeId, amountMsat, paymentHash, invoice))
-          }
-        } ~
-        path("checkpayment") {
-          parameters("paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "invoice".as[PaymentRequest].?) { (paymentHash, invoice) =>
-            complete(checkpayment(paymentHash, invoice))
-          }
-        } ~
-        path("audit") {
-          parameters("from".as[Long].?, "to".as[Long].?) { (from, to) =>
-            complete(audit(from, to))
-          }
-        } ~
-        path("networkfees") {
-          parameters("from".as[Long].?, "to".as[Long].?) { (from, to) =>
-            complete(networkFees(from, to))
-          }
-        } ~
-        path("channelstats") {
-          complete(channelStats())
-        } ~
-        path("ws") {
-          handleWebSocketMessages(makeSocketHandler)
+      authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator){ _ =>
+        get {
+          path("getinfo") { complete(getInfoResponse) } ~
+            path("help") { complete(help.mkString) } ~
+            path("connect") {
+              parameters("nodeId".as[PublicKey], "address".as[NodeAddress]) { (nodeId, addr) =>
+                complete(connect(s"$nodeId@$addr"))
+              } ~ parameters("uri") { uri =>
+                complete(connect(uri))
+              }
+            } ~
+            path("open") {
+              parameters("nodeId".as[PublicKey], "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?) {
+                (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags) =>
+                  complete(open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags))
+              }
+            } ~
+            path("close") {
+              parameters(channelIdNamedParameter, "scriptPubKey".as[BinaryData](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
+                complete(close(channelId, scriptPubKey_opt))
+              }
+            } ~
+            path("forceclose") {
+              parameters(channelIdNamedParameter) { channelId =>
+                complete(forceClose(channelId.toString))
+              }
+            } ~
+            path("updaterelayfee") {
+              parameters(channelIdNamedParameter, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
+                complete(updateRelayFee(channelId.toString, feeBase, feeProportional))
+              }
+            } ~
+            path("peers") {
+              complete(peersInfo())
+            } ~
+            path("channels") {
+              parameters("toRemoteNodeId".as[PublicKey].?) { toRemoteNodeId_opt =>
+                complete(channelsInfo(toRemoteNodeId_opt))
+              }
+            } ~
+            path("channel") {
+              parameters(channelIdNamedParameter) { channelId =>
+                complete(channelInfo(channelId))
+              }
+            } ~
+            path("allnodes") { complete(allnodes()) } ~
+            path("allchannels") { complete(allchannels()) } ~
+            path("allupdates") {
+              parameters("nodeId".as[PublicKey].?) { nodeId_opt =>
+                complete(allupdates(nodeId_opt))
+              }
+            } ~
+            path("receive") {
+              parameters("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?) { (desc, amountMsat, expire) =>
+                complete(receive(desc, amountMsat, expire))
+              }
+            } ~
+            path("parseinvoice") {
+              parameters("invoice".as[PaymentRequest]) { invoice =>
+                complete(invoice)
+              }
+            } ~
+            path("findroute") {
+              parameters("nodeId".as[PublicKey].?, "amountMsat".as[Long].?, "invoice".as[PaymentRequest].?) { (nodeId, amount, invoice) =>
+                complete(findRoute(nodeId, amount, invoice))
+              }
+            } ~
+            path("send") {
+              parameters("amountMsat".as[Long].?, "paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "nodeId".as[PublicKey].?, "invoice".as[PaymentRequest].?) { (amountMsat, paymentHash, nodeId, invoice) =>
+                complete(send(nodeId, amountMsat, paymentHash, invoice))
+              }
+            } ~
+            path("checkpayment") {
+              parameters("paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "invoice".as[PaymentRequest].?) { (paymentHash, invoice) =>
+                complete(checkpayment(paymentHash, invoice))
+              }
+            } ~
+            path("audit") {
+              parameters("from".as[Long].?, "to".as[Long].?) { (from, to) =>
+                complete(audit(from, to))
+              }
+            } ~
+            path("networkfees") {
+              parameters("from".as[Long].?, "to".as[Long].?) { (from, to) =>
+                complete(networkFees(from, to))
+              }
+            } ~
+            path("channelstats") {
+              complete(channelStats())
+            } ~
+            path("ws") {
+              handleWebSocketMessages(makeSocketHandler)
+            }
         }
       }
     }
@@ -327,6 +331,11 @@ trait NewService extends Directives with WithJsonSerializers with Logging {
     case t: Throwable =>
         logger.error(s"API call failed with cause=${t.getMessage}")
         complete(StatusCodes.InternalServerError, s"Error: $t")
+  }
+
+  def userPassAuthenticator(credentials: Credentials): Future[Option[String]] = credentials match {
+    case p@Credentials.Provided(id) if p.verify(password) => Future.successful(Some(id))
+    case _ => akka.pattern.after(1 second, using = appKit.system.scheduler)(Future.successful(None)) // force a 1 sec pause to deter brute force
   }
 
   case class ApiError(apiMethod: String, msg: String) extends RuntimeException(s"Error calling $apiMethod: $msg")
