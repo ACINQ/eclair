@@ -8,19 +8,19 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.{Kit, ShortChannelId}
 import fr.acinq.eclair.io.{NodeURI, Peer}
-import Marshallers._
+import UrlParamExtractors._
 import akka.actor.ActorRef
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db.{NetworkFee, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentRequest}
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
-trait NewService extends WithJsonSerializers {
+trait NewService extends Directives with WithJsonSerializers {
 
   def appKit: Kit
 
@@ -104,6 +104,24 @@ trait NewService extends WithJsonSerializers {
         parameters("amountMsat".as[Long].?, "paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "nodeId".as[PublicKey].?, "invoice".as[PaymentRequest].?) { (amountMsat, paymentHash, nodeId, invoice) =>
           complete(send(nodeId, amountMsat, paymentHash, invoice))
         }
+      } ~
+      path("checkpayment") {
+        parameters("paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "invoice".as[PaymentRequest].?) { (paymentHash, invoice) =>
+          complete(checkpayment(paymentHash, invoice))
+        }
+      } ~
+      path("audit") {
+        parameters("from".as[Long].?, "to".as[Long].?) { (from, to) =>
+          complete(audit(from, to))
+        }
+      } ~
+      path("networkfees") {
+        parameters("from".as[Long].?, "to".as[Long].?) { (from, to) =>
+          complete(networkFees(from, to))
+        }
+      } ~
+      path("channelstats") {
+        complete(channelStats())
       }
     }
   }
@@ -179,9 +197,9 @@ trait NewService extends WithJsonSerializers {
 
   def send(nodeId_opt: Option[PublicKey], amount_opt: Option[Long], paymentHash_opt: Option[BinaryData], invoice_opt: Option[PaymentRequest]): Future[PaymentResult] = {
     val (targetNodeId, paymentHash, amountMsat) = (nodeId_opt, amount_opt, paymentHash_opt, invoice_opt) match {
-      case (Some(nodeId), Some(amountMsat), Some(paymentHash), None) => (nodeId, paymentHash, amountMsat)
-      case (None, None, None, Some(invoice@PaymentRequest(_, Some(amountMsat), _, targetNodeId, _, _))) => (targetNodeId, invoice.paymentHash, amountMsat.toLong)
-      case (None, Some(amountMsat), None, Some(invoice@PaymentRequest(_, Some(_), _, targetNodeId, _, _))) => (targetNodeId, invoice.paymentHash, amountMsat) // invoice amount is overridden
+      case (Some(nodeId), Some(amount), Some(ph), None) => (nodeId, ph, amount)
+      case (None, None, None, Some(invoice@PaymentRequest(_, Some(amount), _, target, _, _))) => (target, invoice.paymentHash, amount.toLong)
+      case (None, Some(amount), None, Some(invoice@PaymentRequest(_, Some(_), _, target, _, _))) => (target, invoice.paymentHash, amount) // invoice amount is overridden
       case _ =>  ???
     }
 
@@ -192,6 +210,36 @@ trait NewService extends WithJsonSerializers {
       case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
     }
   }
+
+  def checkpayment(paymentHash_opt: Option[BinaryData], invoice_opt: Option[PaymentRequest]): Future[Boolean] = (paymentHash_opt, invoice_opt) match {
+    case (Some(ph), None) => (appKit.paymentHandler ? CheckPayment(ph)).mapTo[Boolean]
+    case (None, Some(invoice)) => (appKit.paymentHandler ? CheckPayment(invoice.paymentHash)).mapTo[Boolean]
+    case _ => ???
+  }
+
+  def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = {
+    val (from, to) = (from_opt, to_opt) match {
+      case (Some(f), Some(t)) => (f, t)
+      case _ => (0L, Long.MaxValue)
+    }
+
+    Future(AuditResponse(
+      sent = appKit.nodeParams.auditDb.listSent(from, to),
+      received = appKit.nodeParams.auditDb.listReceived(from, to),
+      relayed = appKit.nodeParams.auditDb.listRelayed(from, to)
+    ))
+  }
+
+  def networkFees(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[NetworkFee]] = {
+    val (from, to) = (from_opt, to_opt) match {
+      case (Some(f), Some(t)) => (f, t)
+      case _ => (0L, Long.MaxValue)
+    }
+
+    Future(appKit.nodeParams.auditDb.listNetworkFees(from, to))
+  }
+
+  def channelStats(): Future[Seq[Stats]] = Future(appKit.nodeParams.auditDb.stats)
 
   /**
     * Sends a request to a channel and expects a response
