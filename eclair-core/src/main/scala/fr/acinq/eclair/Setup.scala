@@ -285,7 +285,7 @@ class Setup(datadir: File,
 
 //          override val socketHandler = makeSocketHandler(system)(materializer)
         }
-        val httpBound = Http().bindAndHandle(api.motherRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+        val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
           case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
         }
         val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("api.port"))))

@@ -30,7 +30,7 @@ import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInpu
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.json4s.JsonAST._
-import org.json4s.{CustomKeySerializer, CustomSerializer}
+import org.json4s.{CustomKeySerializer, CustomSerializer, jackson}
 
 /**
   * JSON Serializers.
@@ -144,3 +144,34 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format =
     JField("minFinalCltvExpiry", if (p.minFinalCltvExpiry.isDefined) JLong(p.minFinalCltvExpiry.get) else JNull) ::
     Nil)
 }))
+
+trait WithJsonSerializers {
+
+  implicit val serialization = jackson.Serialization
+
+  implicit val formats = org.json4s.DefaultFormats +
+    new BinaryDataSerializer +
+    new UInt64Serializer +
+    new MilliSatoshiSerializer +
+    new ShortChannelIdSerializer +
+    new StateSerializer +
+    new ShaChainSerializer +
+    new PublicKeySerializer +
+    new PrivateKeySerializer +
+    new ScalarSerializer +
+    new PointSerializer +
+    new TransactionSerializer +
+    new TransactionWithInputInfoSerializer +
+    new InetSocketAddressSerializer +
+    new OutPointSerializer +
+    new OutPointKeySerializer +
+    new InputInfoSerializer +
+    new ColorSerializer +
+    new RouteResponseSerializer +
+    new ThrowableSerializer +
+    new FailureMessageSerializer +
+    new NodeAddressSerializer +
+    new DirectionSerializer +
+    new PaymentRequestSerializer
+
+}
