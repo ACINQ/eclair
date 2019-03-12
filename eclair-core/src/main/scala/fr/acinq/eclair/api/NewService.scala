@@ -12,7 +12,9 @@ import Marshallers._
 import akka.actor.ActorRef
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-import fr.acinq.eclair.wire.NodeAddress
+import fr.acinq.eclair.router.ChannelDesc
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
+
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
@@ -26,16 +28,13 @@ trait NewService extends WithJsonSerializers {
   implicit val timeout = Timeout(60 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
-  val channelIdNamedParameter = "channelId".as[PublicKey]
+  // a named and typed URL parameter used across several routes, 32-bytes hex-encoded
+  val channelIdNamedParameter = "channelId".as[BinaryData](sha256HashUnmarshaller)
 
   val route: Route = {
     get {
-      path("getinfo") {
-        complete(getInfoResponse)
-      } ~
-      path("help") {
-        complete(help.mkString)
-      }
+      path("getinfo") { complete(getInfoResponse) } ~
+      path("help") { complete(help.mkString) } ~
       path("connect") {
         parameters("nodeId".as[PublicKey], "address".as[NodeAddress]) { (nodeId, addr) =>
           complete(connect(s"$nodeId@$addr"))
@@ -51,7 +50,7 @@ trait NewService extends WithJsonSerializers {
       } ~
       path("close") {
         parameters(channelIdNamedParameter, "scriptPubKey".as[BinaryData](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
-          complete(close(channelId.toString(), scriptPubKey_opt))
+          complete(close(channelId, scriptPubKey_opt))
         }
       } ~
       path("forceclose") {
@@ -68,8 +67,20 @@ trait NewService extends WithJsonSerializers {
         complete(peersInfo())
       } ~
       path("channels") {
-        parameters(channelIdNamedParameter.?) { channelId_opt =>
-          complete(channels(channelId_opt))
+        parameters("toRemoteNodeId".as[PublicKey].?) { toRemoteNodeId_opt =>
+          complete(channelsInfo(toRemoteNodeId_opt))
+        }
+      } ~
+      path("channel") {
+        parameters(channelIdNamedParameter) { channelId =>
+          complete(channelInfo(channelId))
+        }
+      } ~
+      path("allnodes") { complete(allnodes()) } ~
+      path("allchannels") { complete(allchannels()) } ~
+      path("allupdates") {
+        parameters("nodeId".as[PublicKey].?) { nodeId_opt =>
+          complete(allupdates(nodeId_opt))
         }
       }
     }
@@ -88,8 +99,8 @@ trait NewService extends WithJsonSerializers {
       channelFlags = flags.map(_.toByte))).mapTo[String]
   }
 
-  def close(channelId: String, scriptPubKey: Option[BinaryData]): Future[String] = {
-    sendToChannel(channelId, CMD_CLOSE(scriptPubKey)).mapTo[String]
+  def close(channelId: BinaryData, scriptPubKey: Option[BinaryData]): Future[String] = {
+    sendToChannel(channelId.toString(), CMD_CLOSE(scriptPubKey)).mapTo[String]
   }
 
   def forceClose(channelId: String): Future[String] = {
@@ -105,7 +116,7 @@ trait NewService extends WithJsonSerializers {
     peerinfos <- Future.sequence(peers.map(peer => (peer ? GetPeerInfo).mapTo[PeerInfo]))
   } yield peerinfos
 
-  def channels(channelIdFilter: Option[PublicKey]): Future[Iterable[RES_GETINFO]] = channelIdFilter match {
+  def channelsInfo(toRemoteNode: Option[PublicKey]): Future[Iterable[RES_GETINFO]] = toRemoteNode match {
     case Some(pk) => for {
       channelsId <- (appKit.register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == pk).keys)
       channels <- Future.sequence(channelsId.map(channelId => sendToChannel(channelId.toString(), CMD_GETINFO).mapTo[RES_GETINFO]))
@@ -114,6 +125,21 @@ trait NewService extends WithJsonSerializers {
       channels_id <- (appKit.register ? 'channels).mapTo[Map[BinaryData, ActorRef]].map(_.keys)
       channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]))
     } yield channels
+  }
+
+  def channelInfo(channelId: BinaryData): Future[RES_GETINFO] = {
+    sendToChannel(channelId.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
+  }
+
+  def allnodes(): Future[Iterable[NodeAnnouncement]] = (appKit.router ? 'nodes).mapTo[Iterable[NodeAnnouncement]]
+
+  def allchannels(): Future[Iterable[ChannelDesc]] = {
+    (appKit.router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)))
+  }
+
+  def allupdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]] = nodeId match {
+    case None => (appKit.router ? 'updates).mapTo[Iterable[ChannelUpdate]]
+    case Some(pk) => (appKit.router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]].map(_.filter(e => e._1.a == pk || e._1.b == pk).values)
   }
 
   /**
