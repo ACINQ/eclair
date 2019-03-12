@@ -12,7 +12,9 @@ import Marshallers._
 import akka.actor.ActorRef
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-import fr.acinq.eclair.router.ChannelDesc
+import fr.acinq.eclair.payment.PaymentLifecycle._
+import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentRequest}
+import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -82,6 +84,26 @@ trait NewService extends WithJsonSerializers {
         parameters("nodeId".as[PublicKey].?) { nodeId_opt =>
           complete(allupdates(nodeId_opt))
         }
+      } ~
+      path("receive") {
+        parameters("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?) { (desc, amountMsat, expire) =>
+          complete(receive(desc, amountMsat, expire))
+        }
+      } ~
+      path("parseinvoice") {
+        parameters("invoice".as[PaymentRequest]) { invoice =>
+          complete(invoice)
+        }
+      } ~
+      path("findroute") {
+        parameters("nodeId".as[PublicKey].?, "amountMsat".as[Long].?, "invoice".as[PaymentRequest].?) { (nodeId, amount, invoice) =>
+          complete(findRoute(nodeId, amount, invoice))
+        }
+      } ~
+      path("send") {
+        parameters("amountMsat".as[Long].?, "paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "nodeId".as[PublicKey].?, "invoice".as[PaymentRequest].?) { (amountMsat, paymentHash, nodeId, invoice) =>
+          complete(send(nodeId, amountMsat, paymentHash, invoice))
+        }
       }
     }
   }
@@ -140,6 +162,35 @@ trait NewService extends WithJsonSerializers {
   def allupdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]] = nodeId match {
     case None => (appKit.router ? 'updates).mapTo[Iterable[ChannelUpdate]]
     case Some(pk) => (appKit.router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]].map(_.filter(e => e._1.a == pk || e._1.b == pk).values)
+  }
+
+  def receive(description: String, amountMsat: Option[Long], expire: Option[Long]): Future[String] = {
+    (appKit.paymentHandler ? ReceivePayment(description = description, amountMsat_opt = amountMsat.map(MilliSatoshi), expirySeconds_opt = expire)).mapTo[String]
+  }
+
+  def findRoute(nodeId_opt: Option[PublicKey], amount_opt: Option[Long], invoice_opt: Option[PaymentRequest]): Future[RouteResponse] = (nodeId_opt, amount_opt, invoice_opt) match {
+    case (None, None, Some(invoice@PaymentRequest(_, Some(amountMsat), _, targetNodeId, _, _))) =>
+      (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amountMsat.toLong, assistedRoutes = invoice.routingInfo)).mapTo[RouteResponse]
+    case (None, Some(amountMsat), Some(invoice)) =>
+      (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, invoice.nodeId, amountMsat, assistedRoutes = invoice.routingInfo)).mapTo[RouteResponse]
+    case (Some(nodeId), Some(amountMsat), None) => (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, nodeId, amountMsat)).mapTo[RouteResponse]
+    case _ => throw new IllegalArgumentException("Wrong params for findRoute, call 'help' to know more about it")
+  }
+
+  def send(nodeId_opt: Option[PublicKey], amount_opt: Option[Long], paymentHash_opt: Option[BinaryData], invoice_opt: Option[PaymentRequest]): Future[PaymentResult] = {
+    val (targetNodeId, paymentHash, amountMsat) = (nodeId_opt, amount_opt, paymentHash_opt, invoice_opt) match {
+      case (Some(nodeId), Some(amountMsat), Some(paymentHash), None) => (nodeId, paymentHash, amountMsat)
+      case (None, None, None, Some(invoice@PaymentRequest(_, Some(amountMsat), _, targetNodeId, _, _))) => (targetNodeId, invoice.paymentHash, amountMsat.toLong)
+      case (None, Some(amountMsat), None, Some(invoice@PaymentRequest(_, Some(_), _, targetNodeId, _, _))) => (targetNodeId, invoice.paymentHash, amountMsat) // invoice amount is overridden
+      case _ =>  ???
+    }
+
+    val sendPayment = SendPayment(amountMsat, paymentHash, targetNodeId, assistedRoutes = invoice_opt.map(_.routingInfo).getOrElse(Seq.empty)) // TODO add minFinalCltvExpiry
+
+    (appKit.paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
+      case s: PaymentSucceeded => s
+      case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
+    }
   }
 
   /**
