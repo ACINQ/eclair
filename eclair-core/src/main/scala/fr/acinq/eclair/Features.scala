@@ -34,9 +34,6 @@ object Features {
   val CHANNEL_RANGE_QUERIES_BIT_MANDATORY = 6
   val CHANNEL_RANGE_QUERIES_BIT_OPTIONAL = 7
 
-  val CHANNEL_RANGE_QUERIES_EXTENDED_BIT_MANDATORY = 26
-  val CHANNEL_RANGE_QUERIES_EXTENDED_BIT_OPTIONAL = 27
-
   def apply(hex: String): Features = Features(ByteVector.fromValidHex(hex).toBitVector)
 }
 
@@ -56,16 +53,12 @@ case class Features(localFeatures: BitVector) {
 
   def hasChannelRangeQueriesOptional = isSet(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
 
-  def hasChannelRangeQueriesExtendedMandatory = isSet(CHANNEL_RANGE_QUERIES_EXTENDED_BIT_MANDATORY)
-
-  def hasChannelRangeQueriesExtendedOptional = isSet(CHANNEL_RANGE_QUERIES_EXTENDED_BIT_OPTIONAL)
-
   /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that
     * we don't understand (even bits)
     */
   def areSupported: Boolean = {
-    val supportedMandatoryFeatures = Set(OPTION_DATA_LOSS_PROTECT_MANDATORY, CHANNEL_RANGE_QUERIES_BIT_MANDATORY, CHANNEL_RANGE_QUERIES_EXTENDED_BIT_MANDATORY)
+    val supportedMandatoryFeatures = Set(OPTION_DATA_LOSS_PROTECT_MANDATORY, CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
     for (i <- 0 until localFeatures.length.toInt by 2) {
       if (localFeatures.reverse.get(i) && !supportedMandatoryFeatures.contains(i)) return false
     }

@@ -39,16 +39,6 @@ class FeaturesSpec extends FunSuite {
     assert(features.areSupported && features.hasOptionDataLossProtectOptional && features.hasInitialRoutingSync)
   }
 
-  test("'initial_routing_sync' + 'data_loss_protect' + 'channel_range_queries' + 'channel_range_queries_extended'") {
-    val features = Features("0800008a")
-    assert(features.areSupported
-      && features.hasOptionDataLossProtectOptional
-      && features.hasInitialRoutingSync
-      && features.hasChannelRangeQueriesOptional
-      && features.hasChannelRangeQueriesExtendedOptional
-    )
-  }
-
   test("features compatibility") {
     assert(Features(bin"1000").areSupported)
     assert(Features(bin"1").areSupported)
