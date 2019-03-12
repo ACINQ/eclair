@@ -24,7 +24,6 @@ import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentReques
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import grizzled.slf4j.Logging
-
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
@@ -43,6 +42,30 @@ trait NewService extends Directives with WithJsonSerializers with Logging {
 
   // a named and typed URL parameter used across several routes, 32-bytes hex-encoded
   val channelIdNamedParameter = "channelId".as[BinaryData](sha256HashUnmarshaller)
+
+  val apiExceptionHandler = ExceptionHandler {
+    case e: ApiError => complete(StatusCodes.BadRequest, e.msg)
+    case t: Throwable =>
+      logger.error(s"API call failed with cause=${t.getMessage}")
+      complete(StatusCodes.InternalServerError, s"Error: $t")
+  }
+
+  lazy val makeSocketHandler: Flow[Message, TextMessage.Strict, NotUsed] = {
+
+    // create a flow transforming a queue of string -> string
+    val (flowInput, flowOutput) = Source.queue[String](10, OverflowStrategy.dropTail).toMat(BroadcastHub.sink[String])(Keep.both).run()
+
+    // register an actor that feeds the queue when a payment is received
+    appKit.system.actorOf(Props(new Actor {
+      override def preStart: Unit = context.system.eventStream.subscribe(self, classOf[PaymentReceived])
+      def receive: Receive = { case received: PaymentReceived => flowInput.offer(received.paymentHash.toString) }
+    }))
+
+    Flow[Message]
+      .mapConcat(_ => Nil) // Ignore heartbeats and other data from the client
+      .merge(flowOutput) // Stream the data we want to the client
+      .map(TextMessage.apply)
+  }
 
   val route: Route = {
     handleExceptions(apiExceptionHandler){
@@ -308,30 +331,6 @@ trait NewService extends Directives with WithJsonSerializers with Logging {
     "networkfees (from, to): list network fees paid to the miners, by transaction, in that interval (from <= timestamp < to)",
     "getinfo: returns info about the blockchain and this node",
     "help: display this message")
-
-  lazy val makeSocketHandler: Flow[Message, TextMessage.Strict, NotUsed] = {
-
-    // create a flow transforming a queue of string -> string
-    val (flowInput, flowOutput) = Source.queue[String](10, OverflowStrategy.dropTail).toMat(BroadcastHub.sink[String])(Keep.both).run()
-
-    // register an actor that feeds the queue when a payment is received
-    appKit.system.actorOf(Props(new Actor {
-      override def preStart: Unit = context.system.eventStream.subscribe(self, classOf[PaymentReceived])
-      def receive: Receive = { case received: PaymentReceived => flowInput.offer(received.paymentHash.toString) }
-    }))
-
-    Flow[Message]
-      .mapConcat(_ => Nil) // Ignore heartbeats and other data from the client
-      .merge(flowOutput) // Stream the data we want to the client
-      .map(TextMessage.apply)
-  }
-
-  val apiExceptionHandler = ExceptionHandler {
-    case e: ApiError => complete(StatusCodes.BadRequest, e.msg)
-    case t: Throwable =>
-        logger.error(s"API call failed with cause=${t.getMessage}")
-        complete(StatusCodes.InternalServerError, s"Error: $t")
-  }
 
   def userPassAuthenticator(credentials: Credentials): Future[Option[String]] = credentials match {
     case p@Credentials.Provided(id) if p.verify(password) => Future.successful(Some(id))
