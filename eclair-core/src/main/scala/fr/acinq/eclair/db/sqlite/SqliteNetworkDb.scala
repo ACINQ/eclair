@@ -84,13 +84,20 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
-  override def removeChannel(shortChannelId: ShortChannelId): Unit = {
-    using(sqlite.createStatement) { statement =>
-      statement.execute("BEGIN TRANSACTION")
-      statement.executeUpdate(s"DELETE FROM channel_updates WHERE short_channel_id=${shortChannelId.toLong}")
-      statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id=${shortChannelId.toLong}")
-      statement.execute("COMMIT TRANSACTION")
+  override def removeChannels(shortChannelIds: Iterable[ShortChannelId]): Unit = {
+
+    def removeChannelsInternal(shortChannelIds: Iterable[ShortChannelId]): Unit = {
+      val ids = shortChannelIds.map(_.toLong).mkString(",")
+      using(sqlite.createStatement) { statement =>
+        statement.execute("BEGIN TRANSACTION")
+        statement.executeUpdate(s"DELETE FROM channel_updates WHERE short_channel_id IN ($ids)")
+        statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id IN ($ids)")
+        statement.execute("COMMIT TRANSACTION")
+      }
     }
+
+    // remove channels by batch of 1000
+    shortChannelIds.grouped(1000).foreach(removeChannelsInternal)
   }
 
   override def listChannels(): Map[ChannelAnnouncement, (BinaryData, Satoshi)] = {
@@ -169,10 +176,13 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
-  override def addToPruned(shortChannelId: ShortChannelId): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)")) { statement =>
-      statement.setLong(1, shortChannelId.toLong)
-      statement.executeUpdate()
+  override def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit = {
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)"), disableAutoCommit = true) { statement =>
+      shortChannelIds.foreach(shortChannelId => {
+        statement.setLong(1, shortChannelId.toLong)
+        statement.addBatch()
+      })
+      statement.executeBatch()
     }
   }
 

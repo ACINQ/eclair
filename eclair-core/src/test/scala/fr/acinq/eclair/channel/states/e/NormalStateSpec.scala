@@ -2002,6 +2002,25 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(localCommitPublished.claimHtlcDelayedTxs.size == 3)
   }
 
+  test("recv Error (nothing at stake)", Tag("no_push_msat")) { f =>
+    import f._
+
+    // when receiving an error bob should publish its commitment even if it has nothing at stake, because alice could
+    // have lost its data and need assistance
+
+    // an error occurs and alice publishes her commit tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    bob ! Error("00" * 32, "oops".getBytes())
+    bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
+    assert(bobCommitTx.txOut.size == 1) // only one main output
+    alice2blockchain.expectNoMsg(1 second)
+
+    awaitCond(bob.stateName == CLOSING)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
+    val localCommitPublished = bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    assert(localCommitPublished.commitTx == bobCommitTx)
+  }
+
   test("recv BITCOIN_FUNDING_DEEPLYBURIED", Tag("channels_public")) { f =>
     import f._
     val sender = TestProbe()

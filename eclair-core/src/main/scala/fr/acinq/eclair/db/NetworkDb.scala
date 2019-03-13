@@ -33,13 +33,14 @@ trait NetworkDb {
 
   def addChannel(c: ChannelAnnouncement, txid: BinaryData, capacity: Satoshi)
 
+  def removeChannel(shortChannelId: ShortChannelId) = removeChannels(Seq(shortChannelId))
+
   /**
-    * This method removes 1 channel announcement and 2 channel updates (at both ends of the same channel)
+    * This method removes channel announcements and associated channel updates for a list of channel ids
     *
-    * @param shortChannelId
-    * @return
+    * @param shortChannelIds list of short channel ids
     */
-  def removeChannel(shortChannelId: ShortChannelId)
+  def removeChannels(shortChannelIds: Iterable[ShortChannelId])
 
   def listChannels(): Map[ChannelAnnouncement, (BinaryData, Satoshi)]
 
@@ -49,7 +50,7 @@ trait NetworkDb {
 
   def listChannelUpdates(): Seq[ChannelUpdate]
 
-  def addToPruned(shortChannelId: ShortChannelId)
+  def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit
 
   def removeFromPruned(shortChannelId: ShortChannelId)
 

@@ -19,14 +19,21 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.PublicKey
 import scala.collection.mutable
 import fr.acinq.eclair._
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire.ChannelUpdate
 import Router._
+import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 
 object Graph {
 
   // @formatter:off
-  case class RichWeight(cost: Long, length: Int, cltv: Int)
+  // A compound weight for an edge, weight is obtained with (cost X factor),'cost' contains the actual amount+fees in millisatoshi, 'cltvCumulative' the total CLTV necessary to reach this edge
+  case class RichWeight(cost: Long, length: Int, cltv: Int, weight: Double) extends Ordered[RichWeight] {
+    override def compare(that:  RichWeight): Int = this.weight.compareTo(that.weight)
+  }
+  case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) {
+    require(0 < cltvDeltaFactor + ageFactor + capacityFactor && cltvDeltaFactor + ageFactor + capacityFactor <= 1, "The sum of heuristics ratios must be between 0 and 1 (included)")
+  }
   case class WeightedNode(key: PublicKey, weight: RichWeight)
   case class WeightedPath(path: Seq[GraphEdge], weight: RichWeight)
   // @formatter:on
@@ -37,14 +44,14 @@ object Graph {
     */
   object QueueComparator extends Ordering[WeightedNode] {
     override def compare(x: WeightedNode, y: WeightedNode): Int = {
-      val weightCmp = x.weight.cost.compareTo(y.weight.cost)
+      val weightCmp = x.weight.compareTo(y.weight)
       if (weightCmp == 0) x.key.toString().compareTo(y.key.toString())
       else weightCmp
     }
   }
 
   implicit object PathComparator extends Ordering[WeightedPath] {
-    override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.cost.compareTo(x.weight.cost)
+    override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.compare(x.weight)
   }
 
   /**
@@ -56,9 +63,21 @@ object Graph {
     * @param targetNode
     * @param amountMsat
     * @param pathsToFind
+    * @param wr                 an object containing the ratios used to 'weight' edges when searching for the shortest path
+    * @param currentBlockHeight the height of the chain tip (latest block)
+    * @param boundaries         a predicate function that can be used to impose limits on the outcome of the search
     * @return
     */
-  def yenKshortestPaths(graph: DirectedGraph, sourceNode: PublicKey, targetNode: PublicKey, amountMsat: Long, ignoredEdges: Set[ChannelDesc], extraEdges: Set[GraphEdge], pathsToFind: Int, boundaries: RichWeight => Boolean): Seq[WeightedPath] = {
+  def yenKshortestPaths(graph: DirectedGraph,
+                        sourceNode: PublicKey,
+                        targetNode: PublicKey,
+                        amountMsat: Long,
+                        ignoredEdges: Set[ChannelDesc],
+                        extraEdges: Set[GraphEdge],
+                        pathsToFind: Int,
+                        wr: Option[WeightRatios],
+                        currentBlockHeight: Long,
+                        boundaries: RichWeight => Boolean): Seq[WeightedPath] = {
 
     var allSpurPathsFound = false
 
@@ -68,8 +87,8 @@ object Graph {
     val candidates = new mutable.PriorityQueue[WeightedPath]
 
     // find the shortest path, k = 0
-    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, RichWeight(amountMsat, 0, 0), boundaries)
-    shortestPaths += WeightedPath(shortestPath, pathWeight(shortestPath, amountMsat, isPartial = false))
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, RichWeight(amountMsat, 0, 0, 0), boundaries, currentBlockHeight, wr)
+    shortestPaths += WeightedPath(shortestPath, pathWeight(shortestPath, amountMsat, isPartial = false, currentBlockHeight, wr))
 
     // avoid returning a list with an empty path
     if (shortestPath.isEmpty) return Seq.empty
@@ -89,7 +108,7 @@ object Graph {
 
           // select the sub-path from the source to the spur node of the k-th previous shortest path
           val rootPathEdges = if (i == 0) prevShortestPath.head :: Nil else prevShortestPath.take(i)
-          val rootPathWeight = pathWeight(rootPathEdges, amountMsat, isPartial = true)
+          val rootPathWeight = pathWeight(rootPathEdges, amountMsat, isPartial = true, currentBlockHeight, wr)
 
           // links to be removed that are part of the previous shortest path and which share the same root path
           val edgesToIgnore = shortestPaths.flatMap { weightedPath =>
@@ -104,7 +123,7 @@ object Graph {
           val returningEdges = rootPathEdges.lastOption.map(last => graph.getEdgesBetween(last.desc.b, last.desc.a)).toSeq.flatten.map(_.desc)
 
           // find the "spur" path, a sub-path going from the spur edge to the target avoiding previously found sub-paths
-          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet ++ returningEdges, extraEdges, rootPathWeight, boundaries)
+          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet ++ returningEdges.toSet, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr)
 
           // if there wasn't a path the spur will be empty
           if (spurPath.nonEmpty) {
@@ -115,7 +134,7 @@ object Graph {
               case false => rootPathEdges ++ spurPath
             }
 
-            val candidatePath = WeightedPath(totalPath, pathWeight(totalPath, amountMsat, isPartial = false))
+            val candidatePath = WeightedPath(totalPath, pathWeight(totalPath, amountMsat, isPartial = false, currentBlockHeight, wr))
 
             if (boundaries(candidatePath.weight) && !shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
               candidates.enqueue(candidatePath)
@@ -142,12 +161,15 @@ object Graph {
     * the shortest path from the target to the source (this is because we want to calculate the weight of the
     * edges correctly). The graph @param g is optimized for querying the incoming edges given a vertex.
     *
-    * @param g            the graph on which will be performed the search
-    * @param sourceNode   the starting node of the path we're looking for
-    * @param targetNode   the destination node of the path
-    * @param amountMsat   the amount (in millisatoshis) we want to transmit
-    * @param ignoredEdges a list of edges we do not want to consider
-    * @param extraEdges   a list of extra edges we want to consider but are not currently in the graph
+    * @param g                  the graph on which will be performed the search
+    * @param sourceNode         the starting node of the path we're looking for
+    * @param targetNode         the destination node of the path
+    * @param amountMsat         the amount (in millisatoshis) we want to transmit
+    * @param ignoredEdges       a list of edges we do not want to consider
+    * @param extraEdges         a list of extra edges we want to consider but are not currently in the graph
+    * @param wr                 an object containing the ratios used to 'weight' edges when searching for the shortest path
+    * @param currentBlockHeight the height of the chain tip (latest block)
+    * @param boundaries         a predicate function that can be used to impose limits on the outcome of the search
     * @return
     */
 
@@ -158,7 +180,9 @@ object Graph {
                            ignoredEdges: Set[ChannelDesc],
                            extraEdges: Set[GraphEdge],
                            initialWeight: RichWeight,
-                           boundaries: RichWeight => Boolean): Seq[GraphEdge] = {
+                           boundaries: RichWeight => Boolean,
+                           currentBlockHeight: Long,
+                           wr: Option[WeightRatios]): Seq[GraphEdge] = {
 
     //  the graph does not contain source/destination nodes
     if (!g.containsVertex(sourceNode)) return Seq.empty
@@ -167,12 +191,12 @@ object Graph {
     val maxMapSize = 100 // conservative estimation to avoid over allocating memory
 
     // this is not the actual optimal size for the maps, because we only put in there all the vertices in the worst case scenario.
-    val cost = new java.util.HashMap[PublicKey, RichWeight](maxMapSize)
+    val weight = new java.util.HashMap[PublicKey, RichWeight](maxMapSize)
     val prev = new java.util.HashMap[PublicKey, GraphEdge](maxMapSize)
     val vertexQueue = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](QueueComparator)
 
     // initialize the queue and cost array with the initial weight
-    cost.put(targetNode, initialWeight)
+    weight.put(targetNode, initialWeight)
     vertexQueue.insert(WeightedNode(targetNode, initialWeight))
 
     var targetFound = false
@@ -187,39 +211,38 @@ object Graph {
         // build the neighbors with optional extra edges
         val currentNeighbors = extraEdges.isEmpty match {
           case true => g.getIncomingEdgesOf(current.key)
-          case false => g.getIncomingEdgesOf(current.key) ++ extraEdges.filter(_.desc.b == current.key)
+          case false =>
+            val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
+            // the resulting set must have only one element per shortChannelId
+            g.getIncomingEdgesOf(current.key).filterNot(e => extraNeighbors.exists(_.desc.shortChannelId == e.desc.shortChannelId)) ++ extraNeighbors
         }
 
-        val currentWeight = cost.get(current.key)
+        // note: there is always an entry for the current in the 'weight' map
+        val currentWeight = weight.get(current.key)
 
         // for each neighbor
         currentNeighbors.foreach { edge =>
 
           val neighbor = edge.desc.a
 
-          // note: 'cost' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
-          // note: there is always an entry for the current in the 'cost' map
-          val newMinimumKnownWeight = RichWeight(
-            cost = edgeWeight(edge, currentWeight.cost, initialWeight.length == 0 && neighbor == sourceNode),
-            length = currentWeight.length + 1,
-            cltv = currentWeight.cltv + edge.update.cltvExpiryDelta
-          )
+          // note: 'newMinimumKnownWeight' contains the smallest known cumulative cost (amount + fees) necessary to reach 'current' so far
+          val newMinimumKnownWeight = edgeWeight(edge, currentWeight, initialWeight.length == 0 && neighbor == sourceNode, currentBlockHeight, wr)
 
           // test for ignored edges
-          if (edge.update.htlcMaximumMsat.forall(newMinimumKnownWeight.cost <= _) &&
-            newMinimumKnownWeight.cost >= edge.update.htlcMinimumMsat &&
-            boundaries(newMinimumKnownWeight) && // ignore this edge if it violates the boundary checks
+          if (edge.update.htlcMaximumMsat.forall(newMinimumKnownWeight.cost + amountMsat <= _) &&
+            newMinimumKnownWeight.cost + amountMsat >= edge.update.htlcMinimumMsat &&
+            boundaries(newMinimumKnownWeight) && // check if this neighbor edge would break off the 'boundaries'
             !ignoredEdges.contains(edge.desc)
           ) {
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
-            val neighborCost = cost.containsKey(neighbor) match {
-              case false => RichWeight(Long.MaxValue, 0, 0)
-              case true => cost.get(neighbor)
+            val neighborCost = weight.containsKey(neighbor) match {
+              case false => RichWeight(Long.MaxValue, Int.MaxValue, Int.MaxValue, Double.MaxValue)
+              case true => weight.get(neighbor)
             }
 
             // if this neighbor has a shorter distance than previously known
-            if (newMinimumKnownWeight.cost < neighborCost.cost) {
+            if (newMinimumKnownWeight.weight < neighborCost.weight) {
 
               // update the visiting tree
               prev.put(neighbor, edge)
@@ -228,7 +251,7 @@ object Graph {
               vertexQueue.insert(WeightedNode(neighbor, newMinimumKnownWeight)) // O(1)
 
               // update the minimum known distance array
-              cost.put(neighbor, newMinimumKnownWeight)
+              weight.put(neighbor, newMinimumKnownWeight)
             }
           }
         }
@@ -254,26 +277,81 @@ object Graph {
     }
   }
 
+  // Computes the compound weight for the given @param edge, the weight is cumulative and must account for the previous edge's weight.
+  private def edgeWeight(edge: GraphEdge, prev: RichWeight, isNeighborTarget: Boolean, currentBlockHeight: Long, weightRatios: Option[WeightRatios]): RichWeight = weightRatios match {
+    case None =>
+      val edgeCost = if (isNeighborTarget) prev.cost else edgeFeeCost(edge, prev.cost)
+      RichWeight(cost = edgeCost, length = prev.length + 1, cltv = prev.cltv + edge.update.cltvExpiryDelta, weight = edgeCost)
+
+    case Some(wr) =>
+      import RoutingHeuristics._
+
+      // Every edge is weighted by funding block height where older blocks add less weight, the window considered is 2 months.
+      val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
+      val ageFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_TWO_MONTHS, max = currentBlockHeight)
+
+      // Every edge is weighted by channel capacity, larger channels add less weight
+      val edgeMaxCapacity = edge.update.htlcMaximumMsat.getOrElse(CAPACITY_CHANNEL_LOW_MSAT)
+      val capFactor = 1 - normalize(edgeMaxCapacity, CAPACITY_CHANNEL_LOW_MSAT, CAPACITY_CHANNEL_HIGH_MSAT)
+
+      // Every edge is weighted by its clvt-delta value, normalized
+      val channelCltvDelta = edge.update.cltvExpiryDelta
+      val cltvFactor = normalize(channelCltvDelta, CLTV_LOW, CLTV_HIGH)
+
+      // NB 'edgeCost' includes the amount to be sent plus the fees that must be paid to traverse this @param edge
+      val edgeCost = if (isNeighborTarget) prev.cost else edgeFeeCost(edge, prev.cost)
+
+      // NB we're guaranteed to have weightRatios and factors > 0
+      val factor = (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor)
+      val edgeWeight = if (isNeighborTarget) prev.weight else edgeCost * factor
+
+      RichWeight(cost = edgeCost, length = prev.length + 1, cltv = prev.cltv + channelCltvDelta, weight = edgeWeight)
+  }
+
   /**
     *
-    * @param edge             the edge for which we want to compute the weight
-    * @param amountWithFees   the value that this edge will have to carry along
-    * @param isNeighborSource true if the receiving vertex of this edge is the target node (source in a reversed graph), which has cost 0
+    * @param edge           the edge for which we want to compute the weight
+    * @param amountWithFees the value that this edge will have to carry along
     * @return the new amount updated with the necessary fees for this edge
     */
-  private def edgeWeight(edge: GraphEdge, amountWithFees: Long, isNeighborSource: Boolean): Long = isNeighborSource match {
-    case false => amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
-    case true => amountWithFees
+  private def edgeFeeCost(edge: GraphEdge, amountWithFees: Long): Long = {
+    amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
   }
 
   // Calculates the total cost of a path (amount + fees), direct channels with the source will have a cost of 0 (pay no fees)
-  def pathWeight(path: Seq[GraphEdge], amountMsat: Long, isPartial: Boolean): RichWeight = {
-    path.drop(if (isPartial) 0 else 1).foldRight(RichWeight(amountMsat, 0, 0)) { (edge, prev) =>
-      RichWeight(
-        cost = edgeWeight(edge, prev.cost, isNeighborSource = false),
-        cltv = prev.cltv + edge.update.cltvExpiryDelta,
-        length = prev.length + 1
-      )
+  def pathWeight(path: Seq[GraphEdge], amountMsat: Long, isPartial: Boolean, currentBlockHeight: Long, wr: Option[WeightRatios]): RichWeight = {
+    path.drop(if (isPartial) 0 else 1).foldRight(RichWeight(amountMsat, 0, 0, 0)) { (edge, prev) =>
+      edgeWeight(edge, prev, false, currentBlockHeight, wr)
+    }
+  }
+
+
+  object RoutingHeuristics {
+
+    // Number of blocks in two months
+    val BLOCK_TIME_TWO_MONTHS = 8640
+
+    // Low/High bound for channel capacity
+    val CAPACITY_CHANNEL_LOW_MSAT = 1000 * 1000L // 1000 sat
+    val CAPACITY_CHANNEL_HIGH_MSAT = Channel.MAX_FUNDING_SATOSHIS * 1000L
+
+    // Low/High bound for CLTV channel value
+    val CLTV_LOW = 9
+    val CLTV_HIGH = 2016
+
+    /**
+      * Normalize the given value between (0, 1). If the @param value is outside the min/max window we flatten it to something very close to the
+      * extremes but always bigger than zero so it's guaranteed to never return zero
+      *
+      * @param value
+      * @param min
+      * @param max
+      * @return
+      */
+    def normalize(value: Double, min: Double, max: Double) = {
+      if (value <= min) 0.00001D
+      else if (value > max) 0.99999D
+      else (value - min) / (max - min)
     }
   }
 
