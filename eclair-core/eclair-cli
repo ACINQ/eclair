@@ -7,7 +7,7 @@ command -v curl >/dev/null 2>&1 || { echo -e "This tool requires curl.\n\nAborti
 
 FULL_OUTPUT='false'
 URL='http://localhost:8080'
-PASSWORD='foobar'
+PASSWORD=''
 
 # -------------------- METHODS
 
@@ -22,6 +22,7 @@ With COMMAND is one of the command listed by \e[01;33meclair-cli help\e[0m.
   -v                    Outputs full json returned by the API
 
 Examples:
+  eclair-cli help                        display available commands
   eclair-cli -a localhost:1234 peers     list the peers
   eclair-cli close 006fb...              closes the channel with id 006fb...
 
@@ -70,7 +71,7 @@ case ${METHOD}_${#} in
     ""_*)           displayhelp ;;
     "help"*)        displayhelp
                     echo -e "\nAvailable commands:\n"
-                    call "help" [] ;;
+                    call "help" "" ;;
 
     "getinfo_0")        call ${METHOD} "" ;;
 
