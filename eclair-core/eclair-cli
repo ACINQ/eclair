@@ -34,6 +34,7 @@ call() {
     jqexp='.'   # 'if .error == null then .result else .error.message end'
     # override default jq parsing expression
     # if [ $# -ge 3 ] && [ ${FULL_OUTPUT} == "false" ]; then jqexp=${3}; fi
+
     # set password
     if [ -z ${PASSWORD} ]; then auth="eclair-cli";
     else auth="eclair-cli:"${PASSWORD}; fi
@@ -42,7 +43,7 @@ call() {
     for param in ${2}; do
       form_data="$form_data -F \"$param\""
     done;
-    echo "FORM_DATA: $form_data"
+    #echo "FORM_DATA: $form_data"
 
     eval curl "--user ${auth} --silent --show-error -X POST $form_data ${URL}/${1}" | jq -r "$jqexp"
 }

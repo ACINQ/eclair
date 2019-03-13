@@ -92,7 +92,7 @@ trait NewService extends Directives with Logging with MetaService {
               complete(getInfoResponse)
             } ~
               path("help") {
-                complete(help.mkString)
+                complete(help)
               } ~
               path("connect") {
                 formFields("nodeId".as[PublicKey].?, "host".as[String].?, "port".as[Int].?, "uri".as[String].?) { (nodeId, host, port, uri) =>
