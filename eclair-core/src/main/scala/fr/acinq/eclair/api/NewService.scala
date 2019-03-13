@@ -8,7 +8,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.{Kit, ShortChannelId}
 import fr.acinq.eclair.io.{NodeURI, Peer}
-import UrlParamExtractors._
+import FormParamExtractors._
 import akka.NotUsed
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.http.scaladsl.model.StatusCodes
@@ -70,34 +70,34 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
   val route: Route = {
     handleExceptions(apiExceptionHandler){
       authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator){ _ =>
-        get {
+        post {
           path("getinfo") { complete(getInfoResponse) } ~
             path("help") { complete(help.mkString) } ~
             path("connect") {
-              parameters("nodeId".as[PublicKey], "address".as[NodeAddress]) { (nodeId, addr) =>
+              formFields("nodeId".as[PublicKey], "address".as[NodeAddress]) { (nodeId, addr) =>
                 complete(connect(s"$nodeId@$addr"))
-              } ~ parameters("uri") { uri =>
+              } ~ formFields("uri") { uri =>
                 complete(connect(uri))
               }
             } ~
             path("open") {
-              parameters("nodeId".as[PublicKey], "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?) {
+              formFields("nodeId".as[PublicKey], "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?) {
                 (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags) =>
                   complete(open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags))
               }
             } ~
             path("close") {
-              parameters(channelIdNamedParameter, "scriptPubKey".as[BinaryData](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
+              formFields(channelIdNamedParameter, "scriptPubKey".as[BinaryData](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
                 complete(close(channelId, scriptPubKey_opt))
               }
             } ~
             path("forceclose") {
-              parameters(channelIdNamedParameter) { channelId =>
+              formFields(channelIdNamedParameter) { channelId =>
                 complete(forceClose(channelId.toString))
               }
             } ~
             path("updaterelayfee") {
-              parameters(channelIdNamedParameter, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
+              formFields(channelIdNamedParameter, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
                 complete(updateRelayFee(channelId.toString, feeBase, feeProportional))
               }
             } ~
@@ -105,54 +105,54 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
               complete(peersInfo())
             } ~
             path("channels") {
-              parameters("toRemoteNodeId".as[PublicKey].?) { toRemoteNodeId_opt =>
+              formFields("toRemoteNodeId".as[PublicKey].?) { toRemoteNodeId_opt =>
                 complete(channelsInfo(toRemoteNodeId_opt))
               }
             } ~
             path("channel") {
-              parameters(channelIdNamedParameter) { channelId =>
+              formFields(channelIdNamedParameter) { channelId =>
                 complete(channelInfo(channelId))
               }
             } ~
             path("allnodes") { complete(allnodes()) } ~
             path("allchannels") { complete(allchannels()) } ~
             path("allupdates") {
-              parameters("nodeId".as[PublicKey].?) { nodeId_opt =>
+              formFields("nodeId".as[PublicKey].?) { nodeId_opt =>
                 complete(allupdates(nodeId_opt))
               }
             } ~
             path("receive") {
-              parameters("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?) { (desc, amountMsat, expire) =>
+              formFields("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?) { (desc, amountMsat, expire) =>
                 complete(receive(desc, amountMsat, expire))
               }
             } ~
             path("parseinvoice") {
-              parameters("invoice".as[PaymentRequest]) { invoice =>
+              formFields("invoice".as[PaymentRequest]) { invoice =>
                 complete(invoice)
               }
             } ~
             path("findroute") {
-              parameters("nodeId".as[PublicKey].?, "amountMsat".as[Long].?, "invoice".as[PaymentRequest].?) { (nodeId, amount, invoice) =>
+              formFields("nodeId".as[PublicKey].?, "amountMsat".as[Long].?, "invoice".as[PaymentRequest].?) { (nodeId, amount, invoice) =>
                 complete(findRoute(nodeId, amount, invoice))
               }
             } ~
             path("send") {
-              parameters("amountMsat".as[Long].?, "paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "nodeId".as[PublicKey].?, "invoice".as[PaymentRequest].?) { (amountMsat, paymentHash, nodeId, invoice) =>
+              formFields("amountMsat".as[Long].?, "paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "nodeId".as[PublicKey].?, "invoice".as[PaymentRequest].?) { (amountMsat, paymentHash, nodeId, invoice) =>
                 complete(send(nodeId, amountMsat, paymentHash, invoice))
               }
             } ~
             path("checkpayment") {
-              parameters("paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "invoice".as[PaymentRequest].?) { (paymentHash, invoice) =>
+              formFields("paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "invoice".as[PaymentRequest].?) { (paymentHash, invoice) =>
                 complete(checkpayment(paymentHash, invoice))
               }
             } ~
             path("audit") {
-              parameters("from".as[Long].?, "to".as[Long].?) { (from, to) =>
+              formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
                 complete(audit(from, to))
               }
             } ~
             path("networkfees") {
-              parameters("from".as[Long].?, "to".as[Long].?) { (from, to) =>
+              formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
                 complete(networkFees(from, to))
               }
             } ~

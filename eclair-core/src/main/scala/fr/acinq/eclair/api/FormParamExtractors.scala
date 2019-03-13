@@ -7,7 +7,7 @@ import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.wire.NodeAddress
 import scala.util.{Failure, Success, Try}
 
-object UrlParamExtractors {
+object FormParamExtractors {
 
   implicit val publicKeyUnmarshaller: Unmarshaller[String, PublicKey] = Unmarshaller.strict { rawPubKey =>
     Try {
