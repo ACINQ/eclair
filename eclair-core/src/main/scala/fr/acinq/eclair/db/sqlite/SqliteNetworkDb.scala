@@ -77,7 +77,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO channels VALUES (?, ?, ?, ?)")) { statement =>
       statement.setLong(1, c.shortChannelId.toLong)
-      statement.setString(2, txid.toString())
+      statement.setString(2, txid.toHex)
       statement.setBytes(3, channelAnnouncementCodec.encode(c).require.toByteArray)
       statement.setLong(4, capacity.amount)
       statement.executeUpdate()

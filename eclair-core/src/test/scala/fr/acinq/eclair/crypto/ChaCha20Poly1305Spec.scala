@@ -338,23 +338,12 @@ class ChaCha20Poly1305Spec extends FunSuite {
         hex"129039b5572e8a7a8131f76a",
         hex"2c125232a59879aee36cacc4aca5085a4688c4f776667a8fbd86862b5cfb1d57c976688fdd652eafa2b88b1b8e358aa2110ff6ef13cdc1ceca9c9f087c35c38d89d6fbd8de89538070f17916ecb19ca3ef4a1c834f0bdaa1df62aaabef2e117106787056c909e61ecd208357dd5c363f11c5d6cf24992cc873cf69f59360a820fcf290bd90b2cab24c47286acb4e1033962b6d41e562a206a94796a8ab1c6b8bade804ff9bdf5ba6062d2c1f8fe0f4dfc05720bd9a612b92c26789f9f6a7ce43f5e8e3aee99a9cd7d6c11eaa611983c36935b0dda57d898a60a0ab7c4b54")
     )
-    var t = 0L
-    var tm1 = Platform.currentTime
-    var x = 0L
-    for (i <- 0 until 50000) {
-      vectors.foreach {
-        case Seq(plaintext, aad, key, nonce, out) => {
-          val t1 = System.nanoTime()
-          val (ciphertext, mac) = ChaCha20Poly1305.encrypt(key, nonce, plaintext, aad)
-          val t2 = System.nanoTime()
-          t = t + (t2 - t1)
-          x = x + ciphertext(0)
-          assert(ciphertext ++ mac == out)
-        }
+
+    vectors.foreach {
+      case Seq(plaintext, aad, key, nonce, out) => {
+        val (ciphertext, mac) = ChaCha20Poly1305.encrypt(key, nonce, plaintext, aad)
+        assert(ciphertext ++ mac == out)
       }
     }
-    val tm = Platform.currentTime - tm1
-    println(s"${t/1000000} ms")
-    println(s"$tm ms")
   }
 }

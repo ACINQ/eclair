@@ -30,10 +30,10 @@ class ClaimReceivedHtlcSpec extends FunSuite {
     val finalKey = PrivateKey.fromBase58("cRUfvpbRtMSqCFD1ADdvgPn5HfRLYuHCFYAr2noWnaRDNger2AoA", Base58.Prefix.SecretKeyTestnet)
     val commitPubKey = commitKey.publicKey
     val finalPubKey = finalKey.publicKey
-    val R = Crypto.sha256("this is Alice's R".getBytes("UTF-8"))
+    val R = Crypto.sha256(ByteVector.view("this is Alice's R".getBytes("UTF-8")))
     val Rhash = Crypto.sha256(R)
     val H = Crypto.hash160(R)
-    val revokeCommit = "Alice foo".getBytes("UTF-8")
+    val revokeCommit = ByteVector.view("Alice foo".getBytes("UTF-8"))
     val revokeCommitHash = Crypto.sha256(revokeCommit)
   }
 

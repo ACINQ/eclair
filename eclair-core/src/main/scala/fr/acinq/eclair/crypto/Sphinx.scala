@@ -72,7 +72,7 @@ object Sphinx extends Logging {
 
   def generateStream(key: ByteVector, length: Int): ByteVector = ChaCha20.encrypt(zeroes(length), key, zeroes(12))
 
-  def computeSharedSecret(pub: PublicKey, secret: PrivateKey): ByteVector32 = ByteVector32(ByteVector.view(Crypto.sha256(pub.multiply(secret).normalize().getEncoded(true))))
+  def computeSharedSecret(pub: PublicKey, secret: PrivateKey): ByteVector32 = Crypto.sha256(ByteVector.view(pub.multiply(secret).normalize().getEncoded(true)))
 
   def computeblindingFactor(pub: PublicKey, secret: ByteVector): ByteVector32 = Crypto.sha256(pub.toBin ++ secret)
 

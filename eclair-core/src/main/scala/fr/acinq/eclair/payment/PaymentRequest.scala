@@ -86,8 +86,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     val hrp = s"${prefix}${Amount.encode(amount)}".getBytes("UTF-8")
     val data = Bolt11Data(timestamp, tags, ByteVector.fill(65)(0)) // fake sig that we are going to strip next
     val bin = Codecs.bolt11DataCodec.encode(data).require
-    val message = hrp ++ bin.dropRight(520).toByteArray
-    ByteVector32(ByteVector.view(Crypto.sha256(message)))
+    val message = ByteVector.view(hrp) ++ bin.dropRight(520).toByteVector
+    Crypto.sha256(message)
   }
 
   /**

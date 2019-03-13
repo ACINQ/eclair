@@ -155,7 +155,6 @@ object Transactions {
     else
       Crypto.sha256(remotePaymentBasePoint.toBin(true) ++ localPaymentBasePoint.toBin(true))
 
-    //TODO: not great
     val blind = Protocol.uint64((h.takeRight(6).reverse ++ ByteVector.fromValidHex("0000")).toArray, ByteOrder.LITTLE_ENDIAN)
     commitTxNumber ^ blind
   }

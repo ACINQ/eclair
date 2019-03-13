@@ -88,7 +88,7 @@ class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
           context become authenticate
         case SafeCookie(nonce) =>
           val cookieFile = Paths.get(unquote(res.getOrElse("COOKIEFILE", throw TorException("cookie file not found"))))
-          sendCommand(s"AUTHCHALLENGE SAFECOOKIE $nonce")
+          sendCommand(s"AUTHCHALLENGE SAFECOOKIE ${nonce.toHex}")
           context become cookieChallenge(cookieFile, nonce)
       }
   }
@@ -97,12 +97,12 @@ class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
     case data: ByteString =>
       val res = parseResponse(readResponse(data))
       val clientHash = computeClientHash(
-        ByteVector.fromValidHex(res.getOrElse("SERVERHASH", throw TorException("server hash not found")), alphabet = Alphabets.HexUppercase),
-        ByteVector.fromValidHex(res.getOrElse("SERVERNONCE", throw TorException("server nonce not found")), alphabet = Alphabets.HexUppercase),
+        ByteVector.fromValidHex(res.getOrElse("SERVERHASH", throw TorException("server hash not found")).toLowerCase, alphabet = Alphabets.HexLowercase),
+        ByteVector.fromValidHex(res.getOrElse("SERVERNONCE", throw TorException("server nonce not found")).toLowerCase, alphabet = Alphabets.HexLowercase),
         clientNonce,
         cookieFile
       )
-      sendCommand(s"AUTHENTICATE $clientHash")
+      sendCommand(s"AUTHENTICATE ${clientHash.toHex}")
       context become authenticate
   }
 

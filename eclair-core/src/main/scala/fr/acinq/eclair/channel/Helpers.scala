@@ -632,8 +632,8 @@ object Helpers {
           val htlcInfos = db.listHtlcInfos(commitments.channelId, txnumber)
           log.info(s"got htlcs=${htlcInfos.size} for txnumber=$txnumber")
           val htlcsRedeemScripts = (
-            htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ByteVector.view(Crypto.ripemd160(paymentHash.toArray)), cltvExpiry) } ++
-              htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ByteVector.view(Crypto.ripemd160(paymentHash.toArray))) }
+            htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), cltvExpiry) } ++
+              htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash)) }
             )
             .map(redeemScript => (Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript)))
             .toMap
@@ -774,7 +774,7 @@ object Helpers {
           case ScriptWitness(Seq(ByteVector.empty, remoteSig, localSig, ByteVector.empty, htlcOfferedScript)) =>
             val paymentHash160 = htlcOfferedScript.slice(109, 109 + 20)
             log.info(s"extracted paymentHash160=$paymentHash160 from tx=$tx (htlc-timeout)")
-            localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add).filter(add => ByteVector.view(ripemd160(add.paymentHash.toArray)) == paymentHash160)
+            localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add).filter(add => ripemd160(add.paymentHash) == paymentHash160)
           case _ => Set.empty
         }).toSet.flatten
       }
@@ -798,7 +798,7 @@ object Helpers {
           case ScriptWitness(Seq(remoteSig, ByteVector.empty, htlcReceivedScript)) =>
             val paymentHash160 = htlcReceivedScript.slice(69, 69 + 20)
             log.info(s"extracted paymentHash160=$paymentHash160 from tx=$tx (claim-htlc-timeout)")
-            remoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add).filter(add => ByteVector.view(ripemd160(add.paymentHash.toArray)) == paymentHash160)
+            remoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add).filter(add => ripemd160(add.paymentHash) == paymentHash160)
           case _ => Set.empty
         }).toSet.flatten
       }

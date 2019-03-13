@@ -109,17 +109,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       )))
   }
 
-  test("recv CMD_ADD_HTLC (invalid payment hash)") { f =>
-    import f._
-    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val sender = TestProbe()
-    val add = CMD_ADD_HTLC(500000000, randomBytes32, cltvExpiry = 400144)
-    sender.send(alice, add)
-    val error = InvalidPaymentHash(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
-    alice2bob.expectNoMsg(200 millis)
-  }
-
   test("recv CMD_ADD_HTLC (expiry too small)") { f =>
     import f._
     val sender = TestProbe()
@@ -313,19 +302,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob ! htlc.copy(id = 42)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === UnexpectedHtlcId(channelId(bob), expected = 4, actual = 42).getMessage)
-    awaitCond(bob.stateName == CLOSING)
-    bob2blockchain.expectMsg(PublishAsap(tx))
-    bob2blockchain.expectMsgType[PublishAsap]
-    bob2blockchain.expectMsgType[WatchConfirmed]
-  }
-
-  test("recv UpdateAddHtlc (invalid payment hash)") { f =>
-    import f._
-    val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, 150000, randomBytes32, 400144, defaultOnion)
-    alice2bob.forward(bob, htlc)
-    val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) === InvalidPaymentHash(channelId(bob)).getMessage)
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]

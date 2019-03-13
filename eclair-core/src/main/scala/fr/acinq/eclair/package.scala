@@ -36,10 +36,10 @@ package object eclair {
   def randomBytes(length: Int): ByteVector = {
     val buffer = new Array[Byte](length)
     secureRandom.nextBytes(buffer)
-    ByteVector(buffer)
+    ByteVector.view(buffer)
   }
 
-  def randomBytes32: ByteVector32 = ByteVector32(randomBytes32)
+  def randomBytes32: ByteVector32 = ByteVector32(randomBytes(32))
 
   def randomKey: PrivateKey = PrivateKey(randomBytes32, compressed = true)
 

@@ -102,10 +102,6 @@ object Commitments {
     */
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
 
-    if (cmd.paymentHash.size != 32) {
-      return Left(InvalidPaymentHash(commitments.channelId))
-    }
-
     val blockCount = Globals.blockCount.get()
     // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
     val minExpiry = blockCount + Channel.MIN_CLTV_EXPIRY
@@ -156,10 +152,6 @@ object Commitments {
   def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Commitments = {
     if (add.id != commitments.remoteNextHtlcId) {
       throw UnexpectedHtlcId(commitments.channelId, expected = commitments.remoteNextHtlcId, actual = add.id)
-    }
-
-    if (add.paymentHash.size != 32) {
-      throw InvalidPaymentHash(commitments.channelId)
     }
 
     if (add.amountMsat < commitments.localParams.htlcMinimumMsat) {

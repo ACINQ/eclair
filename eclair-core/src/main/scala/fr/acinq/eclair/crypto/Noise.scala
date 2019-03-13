@@ -68,7 +68,7 @@ object Noise {
       val point = Crypto.curve.getCurve.decodePoint(publicKey.toArray)
       val scalar = new BigInteger(1, keyPair.priv.take(32).toArray)
       val point1 = point.multiply(scalar).normalize()
-      ByteVector.view(Crypto.sha256(point1.getEncoded(true)))
+      Crypto.sha256(ByteVector.view(point1.getEncoded(true)))
     }
 
     override def dhLen: Int = 32

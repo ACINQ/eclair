@@ -78,7 +78,7 @@ class ClaimSentHtlcSpec extends FunSuite {
       lockTime = abstimeout + 1)
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
-    val witness = ScriptWitness(sig :: ByteVector.empty :: redeemScript :: Nil)
+    val witness = ScriptWitness(sig :: ByteVector32.Zeroes.bytes :: redeemScript :: Nil)
     val tx3 = tx2.updateWitness(0, witness)
 
     Transaction.correctlySpends(tx3, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -92,7 +92,7 @@ class ClaimSentHtlcSpec extends FunSuite {
       lockTime = abstimeout - 1)
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
-    val witness = ScriptWitness(sig :: ByteVector.empty :: redeemScript :: Nil)
+    val witness = ScriptWitness(sig :: ByteVector32.Zeroes.bytes :: redeemScript :: Nil)
     val tx3 = tx2.updateWitness(0, witness)
 
     val e = intercept[RuntimeException] {
@@ -109,7 +109,7 @@ class ClaimSentHtlcSpec extends FunSuite {
       lockTime = abstimeout + 1)
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
-    val witness = ScriptWitness(sig :: ByteVector.empty :: redeemScript :: Nil)
+    val witness = ScriptWitness(sig :: ByteVector32.Zeroes.bytes :: redeemScript :: Nil)
     val tx3 = tx2.updateWitness(0, witness)
 
     val e = intercept[RuntimeException] {
