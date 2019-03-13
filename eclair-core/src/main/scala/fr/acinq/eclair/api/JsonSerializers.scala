@@ -20,7 +20,7 @@ import java.net.InetSocketAddress
 
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{MilliSatoshi, OutPoint, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.PaymentRequest
@@ -39,6 +39,10 @@ import scodec.bits.ByteVector
   */
 class ByteVectorSerializer extends CustomSerializer[ByteVector](format => ({ null }, {
   case x: ByteVector => JString(x.toHex)
+}))
+
+class ByteVector32Serializer extends CustomSerializer[ByteVector32](format => ({ null }, {
+  case x: ByteVector32 => JString(x.toHex)
 }))
 
 class UInt64Serializer extends CustomSerializer[UInt64](format => ({ null }, {

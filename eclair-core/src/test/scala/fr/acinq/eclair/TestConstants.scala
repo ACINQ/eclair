@@ -41,7 +41,7 @@ object TestConstants {
   val feeratePerKw = 10000L
 
   object Alice {
-    val seed = randomBytes32
+    val seed = ByteVector32(ByteVector.fill(32)(1))
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
@@ -113,7 +113,7 @@ object TestConstants {
   }
 
   object Bob {
-    val seed = randomBytes32
+    val seed = ByteVector32(ByteVector.fill(32)(2))
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
