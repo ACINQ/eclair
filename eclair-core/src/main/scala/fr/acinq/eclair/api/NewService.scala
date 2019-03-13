@@ -3,7 +3,6 @@ package fr.acinq.eclair.api
 import akka.util.Timeout
 import akka.pattern._
 import akka.http.scaladsl.server._
-import de.heikoseeberger.akkahttpjson4s.Json4sSupport.{ShouldWritePretty, marshaller, unmarshaller}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.{Kit, ShortChannelId}
@@ -27,11 +26,15 @@ import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentReques
 import fr.acinq.eclair.router.{ChannelDesc, RouteNotFound, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import grizzled.slf4j.Logging
-
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
-trait NewService extends Directives with WithJsonSerializers with Logging with MetaService {
+trait NewService extends Directives with Logging with MetaService {
+
+  import JsonSupport.formats
+  import JsonSupport.serialization
+  // important! Must NOT import the unmarshaller as it is too generic...see https://github.com/akka/akka-http/issues/541
+  import JsonSupport.marshaller
 
   def appKit: Kit
 
@@ -42,13 +45,12 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
   implicit val ec = appKit.system.dispatcher
   implicit val mat: ActorMaterializer
   implicit val timeout = Timeout(60 seconds)
-  implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
   // a named and typed URL parameter used across several routes, 32-bytes hex-encoded
   val channelIdNamedParameter = "channelId".as[BinaryData](sha256HashUnmarshaller)
 
   val apiExceptionHandler = ExceptionHandler {
-    case e: ApiError =>
+    case e: IllegalApiParams =>
       e.thr.foreach(thr => logger.warn(s"caught $thr"))
       complete(StatusCodes.BadRequest, e.msg)
     case t: Throwable =>
@@ -93,10 +95,8 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
                 complete(help.mkString)
               } ~
               path("connect") {
-                formFields("nodeId".as[PublicKey], "address".as[NodeAddress]) { (nodeId, addr) =>
-                  complete(connect(s"$nodeId@$addr"))
-                } ~ formFields("uri") { uri =>
-                  complete(connect(uri))
+                formFields("nodeId".as[PublicKey].?, "host".as[String].?, "port".as[Int].?, "uri".as[String].?) { (nodeId, host, port, uri) =>
+                  complete(connect(nodeId, host, port, uri))
                 }
               } ~
               path("open") {
@@ -189,11 +189,12 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
         }
       }
     }
-
   }
 
-  def connect(uri: String): Future[String] = {
-    (appKit.switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String]
+  def connect(nodeId_opt: Option[PublicKey], host_opt:Option[String], port_opt: Option[Int], uri_opt: Option[String]): Future[String] = (nodeId_opt, host_opt, port_opt, uri_opt) match {
+    case (None, None, None, Some(uri)) => (appKit.switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String]
+    case (Some(nodeId), Some(host), Some(port), None) => (appKit.switchboard ? Peer.Connect(NodeURI.parse(s"$nodeId@$host:$port"))).mapTo[String]
+    case _ => throw IllegalApiParams("connect")
   }
 
   def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int]): Future[String] = {
@@ -258,7 +259,7 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
     case (None, Some(amountMsat), Some(invoice)) =>
       (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, invoice.nodeId, amountMsat, assistedRoutes = invoice.routingInfo)).mapTo[RouteResponse]
     case (Some(nodeId), Some(amountMsat), None) => (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, nodeId, amountMsat)).mapTo[RouteResponse]
-    case _ => throw ApiError("findroute", "Wrong params list, call 'help' to know more about it")
+    case _ => throw IllegalApiParams("findroute")
   }
 
   def send(nodeId_opt: Option[PublicKey], amount_opt: Option[Long], paymentHash_opt: Option[BinaryData], invoice_opt: Option[PaymentRequest]): Future[PaymentResult] = {
@@ -266,7 +267,7 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
       case (Some(nodeId), Some(amount), Some(ph), None) => (nodeId, ph, amount)
       case (None, None, None, Some(invoice@PaymentRequest(_, Some(amount), _, target, _, _))) => (target, invoice.paymentHash, amount.toLong)
       case (None, Some(amount), None, Some(invoice@PaymentRequest(_, Some(_), _, target, _, _))) => (target, invoice.paymentHash, amount) // invoice amount is overridden
-      case _ => throw ApiError("send", "Wrong params list, call 'help' to know more about it")
+      case _ => throw IllegalApiParams("send")
     }
 
     val sendPayment = SendPayment(amountMsat, paymentHash, targetNodeId, assistedRoutes = invoice_opt.map(_.routingInfo).getOrElse(Seq.empty)) // TODO add minFinalCltvExpiry
@@ -280,7 +281,7 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
   def checkpayment(paymentHash_opt: Option[BinaryData], invoice_opt: Option[PaymentRequest]): Future[Boolean] = (paymentHash_opt, invoice_opt) match {
     case (Some(ph), None) => (appKit.paymentHandler ? CheckPayment(ph)).mapTo[Boolean]
     case (None, Some(invoice)) => (appKit.paymentHandler ? CheckPayment(invoice.paymentHash)).mapTo[Boolean]
-    case _ => throw ApiError("checkpayment", "Wrong params list, call 'help' to know more about it")
+    case _ => throw IllegalApiParams("checkpayment", "Wrong params list, call 'help' to know more about it")
   }
 
   def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = {
@@ -362,6 +363,6 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
     case _ => akka.pattern.after(1 second, using = appKit.system.scheduler)(Future.successful(None)) // force a 1 sec pause to deter brute force
   }
 
-  case class ApiError(apiMethod: String, msg: String, thr: Option[Throwable] = None) extends RuntimeException(s"Error calling $apiMethod: $msg")
+  case class IllegalApiParams(apiMethod: String, msg: String = "Wrong params list, call 'help' to know more about it", thr: Option[Throwable] = None) extends RuntimeException(s"Error calling $apiMethod: $msg")
 
 }

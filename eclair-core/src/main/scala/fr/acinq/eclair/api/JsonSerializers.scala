@@ -18,7 +18,11 @@ package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
 
+import akka.http.scaladsl.model.MediaType
+import akka.http.scaladsl.model.MediaTypes._
 import com.google.common.net.HostAndPort
+import de.heikoseeberger.akkahttpjson4s.Json4sSupport
+import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
@@ -31,6 +35,8 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.json4s.JsonAST._
 import org.json4s.{CustomKeySerializer, CustomSerializer, jackson}
+
+import scala.collection.immutable
 
 /**
   * JSON Serializers.
@@ -145,7 +151,7 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format =
     Nil)
 }))
 
-trait WithJsonSerializers {
+object JsonSupport extends Json4sSupport {
 
   implicit val serialization = jackson.Serialization
 
@@ -173,5 +179,7 @@ trait WithJsonSerializers {
     new NodeAddressSerializer +
     new DirectionSerializer +
     new PaymentRequestSerializer
+
+  implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
 }
