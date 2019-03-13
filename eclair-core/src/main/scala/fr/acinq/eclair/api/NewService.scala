@@ -250,7 +250,9 @@ trait NewService extends Directives with Logging with MetaService {
   }
 
   def receive(description: String, amountMsat: Option[Long], expire: Option[Long]): Future[String] = {
-    (appKit.paymentHandler ? ReceivePayment(description = description, amountMsat_opt = amountMsat.map(MilliSatoshi), expirySeconds_opt = expire)).mapTo[String]
+    (appKit.paymentHandler ? ReceivePayment(description = description, amountMsat_opt = amountMsat.map(MilliSatoshi), expirySeconds_opt = expire)).mapTo[PaymentRequest].map { pr =>
+      PaymentRequest.write(pr)
+    }
   }
 
   def findRoute(nodeId_opt: Option[PublicKey], amount_opt: Option[Long], invoice_opt: Option[PaymentRequest]): Future[RouteResponse] = (nodeId_opt, amount_opt, invoice_opt) match {
