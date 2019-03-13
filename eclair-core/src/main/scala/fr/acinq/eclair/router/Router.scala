@@ -55,14 +55,13 @@ case class RouterConf(randomizeRouteSelection: Boolean,
 
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteParams(maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int, ratios: Option[WeightRatios])
+case class RouteParams(randomize: Boolean, maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int, ratios: Option[WeightRatios])
 case class RouteRequest(source: PublicKey,
                         target: PublicKey,
                         amountMsat: Long,
                         assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                         ignoreNodes: Set[PublicKey] = Set.empty,
                         ignoreChannels: Set[ChannelDesc] = Set.empty,
-                        randomize: Option[Boolean] = None,
                         routeParams: Option[RouteParams] = None)
 
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
@@ -119,6 +118,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
   val SHORTID_WINDOW = 100
 
   val defaultRouteParams = RouteParams(
+    randomize = nodeParams.routerConf.randomizeRouteSelection,
     maxFeeBaseMsat = nodeParams.routerConf.searchMaxFeeBaseSat * 1000, // converting sat -> msat
     maxFeePct = nodeParams.routerConf.searchMaxFeePct,
     routeMaxLength = nodeParams.routerConf.searchMaxRouteLength,
@@ -407,7 +407,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! d
       stay
 
-    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, randomize_opt, params_opt), d) =>
+    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, params_opt), d) =>
       // we convert extra routing info provided in the payment request to fake channel_update
       // it takes precedence over all other channel_updates we know
       val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end)).toMap
@@ -415,8 +415,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       // TODO: in case of duplicates, d.updates will be overridden by assistedUpdates even if they are more recent!
       val ignoredUpdates = getIgnoredChannelDesc(d.updates ++ d.privateUpdates ++ assistedUpdates, ignoreNodes) ++ ignoreChannels ++ d.excludedChannels
       val extraEdges = assistedUpdates.map { case (c, u) => GraphEdge(c, u) }.toSet
-      val routesToFind = if (randomize_opt.getOrElse(nodeParams.routerConf.randomizeRouteSelection)) DEFAULT_ROUTES_COUNT else 1
       val params = params_opt.getOrElse(defaultRouteParams)
+      val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
