@@ -11,7 +11,7 @@ import FormParamExtractors._
 import akka.NotUsed
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.http.scaladsl.model.HttpMethods.POST
-import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.{ContentTypes, HttpRequest, HttpResponse, StatusCodes}
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
 import akka.http.scaladsl.model.headers.{`Access-Control-Allow-Headers`, `Access-Control-Allow-Methods`, `Cache-Control`}
 import akka.http.scaladsl.model.ws.{Message, TextMessage}
@@ -44,7 +44,7 @@ trait NewService extends Directives with Logging with MetaService {
 
   implicit val ec = appKit.system.dispatcher
   implicit val mat: ActorMaterializer
-  implicit val timeout = Timeout(60 seconds)
+  implicit val timeout = Timeout(60 seconds) // used by akka ask
 
   // a named and typed URL parameter used across several routes, 32-bytes hex-encoded
   val channelIdNamedParameter = "channelId".as[BinaryData](sha256HashUnmarshaller)
@@ -58,10 +58,16 @@ trait NewService extends Directives with Logging with MetaService {
       complete(StatusCodes.InternalServerError, s"Error: $t")
   }
 
+  val apiRejectionHandler = RejectionHandler.newBuilder()
+    .handle {
+      case UnknownMethodRejection => complete(StatusCodes.BadRequest, "Wrong method")
+      case UnknownParamsRejection(msg) => complete(StatusCodes.BadRequest, msg)
+    }
+    .result()
+
   val customHeaders = `Access-Control-Allow-Headers`("Content-Type, Authorization") ::
     `Access-Control-Allow-Methods`(POST) ::
     `Cache-Control`(public, `no-store`, `max-age`(0)) :: Nil
-
 
   lazy val makeSocketHandler: Flow[Message, TextMessage.Strict, NotUsed] = {
 
@@ -83,118 +89,127 @@ trait NewService extends Directives with Logging with MetaService {
       .map(TextMessage.apply)
   }
 
+  val timeoutResponse: HttpRequest => HttpResponse = { r =>
+    HttpResponse(StatusCodes.RequestTimeout).withEntity(ContentTypes.`application/json`, """{ "result": null, "error": { "code": 408, "message": "request timed out"} } """)
+  }
+
   val route: Route = {
     respondWithDefaultHeaders(customHeaders) {
       handleExceptions(apiExceptionHandler) {
-        authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator) { _ =>
-          post {
-            path("getinfo") {
-              complete(getInfoResponse)
-            } ~
-              path("help") {
-                complete(help)
-              } ~
-              path("connect") {
-                formFields("nodeId".as[PublicKey].?, "host".as[String].?, "port".as[Int].?, "uri".as[String].?) { (nodeId, host, port, uri) =>
-                  complete(connect(nodeId, host, port, uri))
-                }
-              } ~
-              path("open") {
-                formFields("nodeId".as[PublicKey], "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?) {
-                  (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags) =>
-                    complete(open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags))
-                }
-              } ~
-              path("close") {
-                formFields(channelIdNamedParameter, "scriptPubKey".as[BinaryData](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
-                  complete(close(channelId, scriptPubKey_opt))
-                }
-              } ~
-              path("forceclose") {
-                formFields(channelIdNamedParameter) { channelId =>
-                  complete(forceClose(channelId.toString))
-                }
-              } ~
-              path("updaterelayfee") {
-                formFields(channelIdNamedParameter, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
-                  complete(updateRelayFee(channelId.toString, feeBase, feeProportional))
-                }
-              } ~
-              path("peers") {
-                complete(peersInfo())
-              } ~
-              path("channels") {
-                formFields("toRemoteNodeId".as[PublicKey].?) { toRemoteNodeId_opt =>
-                  complete(channelsInfo(toRemoteNodeId_opt))
-                }
-              } ~
-              path("channel") {
-                formFields(channelIdNamedParameter) { channelId =>
-                  complete(channelInfo(channelId))
-                }
-              } ~
-              path("allnodes") {
-                complete(allnodes())
-              } ~
-              path("allchannels") {
-                complete(allchannels())
-              } ~
-              path("allupdates") {
-                formFields("nodeId".as[PublicKey].?) { nodeId_opt =>
-                  complete(allupdates(nodeId_opt))
-                }
-              } ~
-              path("receive") {
-                formFields("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?) { (desc, amountMsat, expire) =>
-                  complete(receive(desc, amountMsat, expire))
-                }
-              } ~
-              path("parseinvoice") {
-                formFields("invoice".as[PaymentRequest]) { invoice =>
-                  complete(invoice)
-                }
-              } ~
-              path("findroute") {
-                formFields("nodeId".as[PublicKey].?, "amountMsat".as[Long].?, "invoice".as[PaymentRequest].?) { (nodeId, amount, invoice) =>
-                  complete(findRoute(nodeId, amount, invoice))
-                }
-              } ~
-              path("send") {
-                formFields("amountMsat".as[Long].?, "paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "nodeId".as[PublicKey].?, "invoice".as[PaymentRequest].?) { (amountMsat, paymentHash, nodeId, invoice) =>
-                  complete(send(nodeId, amountMsat, paymentHash, invoice))
-                }
-              } ~
-              path("checkpayment") {
-                formFields("paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "invoice".as[PaymentRequest].?) { (paymentHash, invoice) =>
-                  complete(checkpayment(paymentHash, invoice))
-                }
-              } ~
-              path("audit") {
-                formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
-                  complete(audit(from, to))
-                }
-              } ~
-              path("networkfees") {
-                formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
-                  complete(networkFees(from, to))
-                }
-              } ~
-              path("channelstats") {
-                complete(channelStats())
-              } ~
-              path("ws") {
-                handleWebSocketMessages(makeSocketHandler)
+        handleRejections(apiRejectionHandler){
+          withRequestTimeoutResponse(timeoutResponse){
+            authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator) { _ =>
+              post {
+                path("getinfo") {
+                  complete(getInfoResponse)
+                } ~
+                  path("help") {
+                    complete(help)
+                  } ~
+                  path("connect") {
+                    formFields("nodeId".as[PublicKey].?, "host".as[String].?, "port".as[Int].?, "uri".as[String].?) { (nodeId, host, port, uri) =>
+                      connect(nodeId, host, port, uri)
+                    }
+                  } ~
+                  path("open") {
+                    formFields("nodeId".as[PublicKey], "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?) {
+                      (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags) =>
+                        complete(open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags))
+                    }
+                  } ~
+                  path("close") {
+                    formFields(channelIdNamedParameter, "scriptPubKey".as[BinaryData](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
+                      complete(close(channelId, scriptPubKey_opt))
+                    }
+                  } ~
+                  path("forceclose") {
+                    formFields(channelIdNamedParameter) { channelId =>
+                      complete(forceClose(channelId.toString))
+                    }
+                  } ~
+                  path("updaterelayfee") {
+                    formFields(channelIdNamedParameter, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
+                      complete(updateRelayFee(channelId.toString, feeBase, feeProportional))
+                    }
+                  } ~
+                  path("peers") {
+                    complete(peersInfo())
+                  } ~
+                  path("channels") {
+                    formFields("toRemoteNodeId".as[PublicKey].?) { toRemoteNodeId_opt =>
+                      complete(channelsInfo(toRemoteNodeId_opt))
+                    }
+                  } ~
+                  path("channel") {
+                    formFields(channelIdNamedParameter) { channelId =>
+                      complete(channelInfo(channelId))
+                    }
+                  } ~
+                  path("allnodes") {
+                    complete(allnodes())
+                  } ~
+                  path("allchannels") {
+                    complete(allchannels())
+                  } ~
+                  path("allupdates") {
+                    formFields("nodeId".as[PublicKey].?) { nodeId_opt =>
+                      complete(allupdates(nodeId_opt))
+                    }
+                  } ~
+                  path("receive") {
+                    formFields("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?) { (desc, amountMsat, expire) =>
+                      complete(receive(desc, amountMsat, expire))
+                    }
+                  } ~
+                  path("parseinvoice") {
+                    formFields("invoice".as[PaymentRequest]) { invoice =>
+                      complete(invoice)
+                    }
+                  } ~
+                  path("findroute") {
+                    formFields("nodeId".as[PublicKey].?, "amountMsat".as[Long].?, "invoice".as[PaymentRequest].?) { (nodeId, amount, invoice) =>
+                      findRoute(nodeId, amount, invoice)
+                    }
+                  } ~
+                  path("send") {
+                    formFields("amountMsat".as[Long].?, "paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "nodeId".as[PublicKey].?, "invoice".as[PaymentRequest].?) { (amountMsat, paymentHash, nodeId, invoice) =>
+                      complete(send(nodeId, amountMsat, paymentHash, invoice))
+                    }
+                  } ~
+                  path("checkpayment") {
+                    formFields("paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "invoice".as[PaymentRequest].?) { (paymentHash, invoice) =>
+                      checkpayment(paymentHash, invoice)
+                    }
+                  } ~
+                  path("audit") {
+                    formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
+                      complete(audit(from, to))
+                    }
+                  } ~
+                  path("networkfees") {
+                    formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
+                      complete(networkFees(from, to))
+                    }
+                  } ~
+                  path("channelstats") {
+                    complete(channelStats())
+                  } ~
+                  path("ws") {
+                    handleWebSocketMessages(makeSocketHandler)
+                  } ~
+                  path(Segment) { _ => reject() }
               }
+            }
           }
         }
       }
     }
   }
 
-  def connect(nodeId_opt: Option[PublicKey], host_opt:Option[String], port_opt: Option[Int], uri_opt: Option[String]): Future[String] = (nodeId_opt, host_opt, port_opt, uri_opt) match {
-    case (None, None, None, Some(uri)) => (appKit.switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String]
-    case (Some(nodeId), Some(host), Some(port), None) => (appKit.switchboard ? Peer.Connect(NodeURI.parse(s"$nodeId@$host:$port"))).mapTo[String]
-    case _ => throw IllegalApiParams("connect")
+  def connect(nodeId_opt: Option[PublicKey], host_opt:Option[String], port_opt: Option[Int], uri_opt: Option[String]): Route = (nodeId_opt, host_opt, port_opt, uri_opt) match {
+    case (None, None, None, Some(uri)) => complete((appKit.switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String])
+    case (Some(nodeId), Some(host), Some(port), None) => complete((appKit.switchboard ? Peer.Connect(NodeURI.parse(s"$nodeId@$host:$port"))).mapTo[String])
+    case _ => reject(UnknownParamsRejection("Wrong arguments for 'connect'"))
   }
 
   def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int]): Future[String] = {
@@ -255,35 +270,35 @@ trait NewService extends Directives with Logging with MetaService {
     }
   }
 
-  def findRoute(nodeId_opt: Option[PublicKey], amount_opt: Option[Long], invoice_opt: Option[PaymentRequest]): Future[RouteResponse] = (nodeId_opt, amount_opt, invoice_opt) match {
+  def findRoute(nodeId_opt: Option[PublicKey], amount_opt: Option[Long], invoice_opt: Option[PaymentRequest]): Route = (nodeId_opt, amount_opt, invoice_opt) match {
     case (None, None, Some(invoice@PaymentRequest(_, Some(amountMsat), _, targetNodeId, _, _))) =>
-      (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amountMsat.toLong, assistedRoutes = invoice.routingInfo)).mapTo[RouteResponse]
+      complete((appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amountMsat.toLong, assistedRoutes = invoice.routingInfo)).mapTo[RouteResponse])
     case (None, Some(amountMsat), Some(invoice)) =>
-      (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, invoice.nodeId, amountMsat, assistedRoutes = invoice.routingInfo)).mapTo[RouteResponse]
-    case (Some(nodeId), Some(amountMsat), None) => (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, nodeId, amountMsat)).mapTo[RouteResponse]
-    case _ => throw IllegalApiParams("findroute")
+      complete((appKit.router ? RouteRequest(appKit.nodeParams.nodeId, invoice.nodeId, amountMsat, assistedRoutes = invoice.routingInfo)).mapTo[RouteResponse])
+    case (Some(nodeId), Some(amountMsat), None) => complete((appKit.router ? RouteRequest(appKit.nodeParams.nodeId, nodeId, amountMsat)).mapTo[RouteResponse])
+    case _ => reject(UnknownParamsRejection("Wrong params for method 'findroute'"))
   }
 
-  def send(nodeId_opt: Option[PublicKey], amount_opt: Option[Long], paymentHash_opt: Option[BinaryData], invoice_opt: Option[PaymentRequest]): Future[PaymentResult] = {
+  def send(nodeId_opt: Option[PublicKey], amount_opt: Option[Long], paymentHash_opt: Option[BinaryData], invoice_opt: Option[PaymentRequest]): Route = {
     val (targetNodeId, paymentHash, amountMsat) = (nodeId_opt, amount_opt, paymentHash_opt, invoice_opt) match {
       case (Some(nodeId), Some(amount), Some(ph), None) => (nodeId, ph, amount)
       case (None, None, None, Some(invoice@PaymentRequest(_, Some(amount), _, target, _, _))) => (target, invoice.paymentHash, amount.toLong)
       case (None, Some(amount), None, Some(invoice@PaymentRequest(_, Some(_), _, target, _, _))) => (target, invoice.paymentHash, amount) // invoice amount is overridden
-      case _ => throw IllegalApiParams("send")
+      case _ => return reject(UnknownParamsRejection("Wrong params for method 'send'"))
     }
 
     val sendPayment = SendPayment(amountMsat, paymentHash, targetNodeId, assistedRoutes = invoice_opt.map(_.routingInfo).getOrElse(Seq.empty)) // TODO add minFinalCltvExpiry
 
-    (appKit.paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
+    complete((appKit.paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
       case s: PaymentSucceeded => s
       case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
-    }
+    })
   }
 
-  def checkpayment(paymentHash_opt: Option[BinaryData], invoice_opt: Option[PaymentRequest]): Future[Boolean] = (paymentHash_opt, invoice_opt) match {
-    case (Some(ph), None) => (appKit.paymentHandler ? CheckPayment(ph)).mapTo[Boolean]
-    case (None, Some(invoice)) => (appKit.paymentHandler ? CheckPayment(invoice.paymentHash)).mapTo[Boolean]
-    case _ => throw IllegalApiParams("checkpayment", "Wrong params list, call 'help' to know more about it")
+  def checkpayment(paymentHash_opt: Option[BinaryData], invoice_opt: Option[PaymentRequest]): Route = (paymentHash_opt, invoice_opt) match {
+    case (Some(ph), None) => complete((appKit.paymentHandler ? CheckPayment(ph)).mapTo[Boolean])
+    case (None, Some(invoice)) => complete((appKit.paymentHandler ? CheckPayment(invoice.paymentHash)).mapTo[Boolean])
+    case _ => reject(UnknownParamsRejection("Wrong params for method 'checkpayment'"))
   }
 
   def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = {
@@ -366,5 +381,9 @@ trait NewService extends Directives with Logging with MetaService {
   }
 
   case class IllegalApiParams(apiMethod: String, msg: String = "Wrong params list, call 'help' to know more about it", thr: Option[Throwable] = None) extends RuntimeException(s"Error calling $apiMethod: $msg")
+  case object UnknownMethodRejection extends Rejection
+  case class UnknownParamsRejection(message: String) extends Rejection
+  case class RpcValidationRejection(message: String) extends Rejection
+  case class ExceptionRejection(message: String) extends Rejection
 
 }

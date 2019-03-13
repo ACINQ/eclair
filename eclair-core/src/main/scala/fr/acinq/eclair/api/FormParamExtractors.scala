@@ -4,7 +4,6 @@ import akka.http.scaladsl.unmarshalling.Unmarshaller
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.payment.PaymentRequest
-import fr.acinq.eclair.wire.NodeAddress
 import scala.util.{Failure, Success, Try}
 
 object FormParamExtractors {
@@ -15,15 +14,6 @@ object FormParamExtractors {
     } match {
       case Success(key) => key
       case Failure(exception) => throw exception
-    }
-  }
-
-  // assumes IPv4 like XXX.YYY.ZZZ.EEE:1234
-  implicit val inetAddressUnmarshaller: Unmarshaller[String, NodeAddress] = Unmarshaller.strict { rawAddress =>
-    val Array(host: String, port: String) = rawAddress.split(":")
-    NodeAddress.fromParts(host, port.toInt) match {
-      case Success(address) => address
-      case Failure(thr) => throw thr
     }
   }
 
