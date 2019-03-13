@@ -33,7 +33,7 @@ Full documentation at: <https://github.com/ACINQ/eclair>"
 call() {
     jqexp='.'   # 'if .error == null then .result else .error.message end'
     # override default jq parsing expression
-    if [ $# -ge 3 ] && [ ${FULL_OUTPUT} == "false" ]; then jqexp=${3}; fi
+    # if [ $# -ge 3 ] && [ ${FULL_OUTPUT} == "false" ]; then jqexp=${3}; fi
     # set password
     if [ -z ${PASSWORD} ]; then auth="eclair-cli";
     else auth="eclair-cli:"${PASSWORD}; fi
@@ -42,8 +42,9 @@ call() {
     for param in ${2}; do
       form_data="$form_data -F \"$param\""
     done;
+    echo "FORM_DATA: $form_data"
 
-    eval curl "--user ${auth} --silent --show-error -X POST $form_data ${URL}/${1}" | jq -r "$jqexp"
+    eval curl "--user ${auth} --silent --show-error -X POST $form_data ${URL}/${1}" # | jq -r "$jqexp"
 }
 
 # get script options
@@ -62,16 +63,6 @@ shift $(($OPTIND - 1))
 METHOD=${1}
 shift 1
 
-# Create a JSON Array containing the remaining program args as QUOTED STRINGS, separated with a `,` character
-PARAMS=""
-i=1
-for arg in "${@}"; do
-	if [ $i -eq 1 ]; then PARAMS=$(printf '"%s"' "$arg");
-	else PARAMS=$(printf '%s,"%s"' "$PARAMS" "$arg");
-	fi
-	let "i++"
-done;
-PARAMS="[${PARAMS}]"
 
 # Whatever the arguments provided to eclair-cli, a call to the API will be sent. Let it fail!
 case ${METHOD}_${#} in
@@ -80,34 +71,31 @@ case ${METHOD}_${#} in
                     echo -e "\nAvailable commands:\n"
                     call "help" [] ;;
 
-    "connect_3")    call ${METHOD} "'$(printf '["%s","%s",%s]' "${1}" "${2}" "${3}")'" ;; # ${3} is numeric
+    "getinfo_0")    call ${METHOD} "" ;;
 
-    "open_4")       call ${METHOD} "'$(printf '["%s",%s,%s,%s]' "${1}" "${2}" "${3}" "${4}")'" ;; # ${2} ${3} ${4} are numeric (funding, push, flags)
-    "open_3")       call ${METHOD} "'$(printf '["%s",%s,%s]' "${1}" "${2}" "${3}")'" ;; # ${2} ${3} are numeric (funding, push)
-    "open_2")       call ${METHOD} "'$(printf '["%s",%s]' "${1}" "${2}")'" ;; # ${2} is numeric (funding)
+    "connect_1")    call ${METHOD} "$(printf uri=%s ${1})" ;;
+    "connect_3")    call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf host=%s ${2})" "$(printf port=%s ${3})" " ;;
 
-    "receive_2")    call ${METHOD}  " "$(printf amountMsat=%s ${1})" "$(printf description=%s ${2})" " ;; # ${1} is numeric (amount to receive)
+    "open_2")       call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf fundingSatoshis=%s ${2})" " ;;
+    "open_3")       call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf fundingSatoshis=%s ${2})" "$(printf pushMsat=%s ${3})" " ;;
+    "open_4")       call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf fundingSatoshis=%s ${2})" "$(printf pushMsat=%s ${3})" "$(printf channelFlags=%s ${4})" " ;;
+    "open_5")       call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf fundingSatoshis=%s ${2})" "$(printf pushMsat=%s ${3})" "$(printf channelFlags=%s ${4})" "$(printf fundingFeerateSatByte=%s ${5})" " ;;
+
+    "receive_2")    call ${METHOD}  " "$(printf amountMsat=%s ${1})" "$(printf description=%s ${2})" " ;;
+    "receive_3")    call ${METHOD}  " "$(printf amountMsat=%s ${1})" "$(printf description=%s ${2})" "$(printf expireIn=%s ${3})" " ;;
 
 
-
-    "receive_3")    call ${METHOD} "'$(printf '[%s,"%s",%s]' "${1}" "${2}" "${3}")'" ;; # ${1} is numeric (amount to receive) as is ${2} for expiry in seconds
-
-    "channel_"*)    call ${METHOD} "'${PARAMS}'" "map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } )" ;;
-
-    "channels_"*)   call ${METHOD} "'${PARAMS}'" "map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } )" ;;
-
-    "send_3")       call ${METHOD} "'$(printf '[%s,"%s","%s"]' "${1}" "${2}" "${3}")'" ;; # ${1} is numeric (amount of the payment)
-    "send_2")       call ${METHOD} "'$(printf '["%s",%s]' "${1}" "${2}")'" ;; # ${2} is numeric (amount overriding the payment request)
+    "send_1")       call ${METHOD} " "$(printf invoice=%s ${1})" " ;;
+    "send_2")       call ${METHOD} " "$(printf invoice=%s ${1})" "$(printf amountMsat=%s ${2})" " ;;
+    "send_3")       call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf amountMsat=%s ${2})" "$(printf invoice=%s ${3})" " ;;
 
     "audit_2")      call ${METHOD} "'$(printf '[%s,%s]' "${1}" "${2}")'" ;; # ${1} and ${2} are numeric (unix timestamps)
     
     "networkfees_2")      call ${METHOD} "'$(printf '[%s,%s]' "${1}" "${2}")'" ;; # ${1} and ${2} are numeric (unix timestamps)
 
+    "findroute_2")    call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf amountMsat=%s ${2})" " ;;
+
     *)              # Default case.
-                    # Sends the method and, for parameters, use the JSON table containing the remaining args.
-                    #
-                    # NOTE: Arguments will be sent as QUOTED STRING so if this particular API call requires an INT param,
-                    # this call will fail. In that case, a specific rule for that method MUST be set and the ${PARAMS} JSON array can not be used.
-                    call ${METHOD} "'${PARAMS}'" ;;
+                    displayhelp ; exit 1 ;;
 
 esac
