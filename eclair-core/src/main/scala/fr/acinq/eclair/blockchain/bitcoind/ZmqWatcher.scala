@@ -26,6 +26,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
+import scodec.bits.ByteVector
 
 import scala.collection.SortedMap
 import scala.concurrent.duration._
@@ -64,7 +65,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
     case NewBlock(block) =>
       // using a Try because in tests we generate fake blocks
-      log.debug(s"received blockid=${Try(block.blockId).getOrElse(BinaryData.empty)}")
+      log.debug(s"received blockid=${Try(block.blockId).getOrElse(ByteVector32(ByteVector.empty))}")
       nextTick.map(_.cancel()) // this may fail or succeed, worse case scenario we will have two ticks in a row (no big deal)
       log.debug(s"scheduling a new task to check on tx confirmations")
       // we do this to avoid herd effects in testing when generating a lots of blocks in a row

@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.nodeFee
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
@@ -37,7 +37,7 @@ import scala.util.{Failure, Success, Try}
 
 sealed trait Origin
 case class Local(sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
-case class Relayed(originChannelId: BinaryData, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
+case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
 
 sealed trait ForwardMessage
 case class ForwardAdd(add: UpdateAddHtlc, canRedirect: Boolean = true) extends ForwardMessage
@@ -217,7 +217,7 @@ object Relayer {
       .parsePacket(privateKey, add.paymentHash, add.onionRoutingPacket)
       .flatMap {
         case Sphinx.ParsedPacket(payload, nextPacket, _) =>
-          LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload.data)) match {
+          LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload)) match {
             case Attempt.Successful(DecodeResult(perHopPayload, _)) if nextPacket.isLastPacket =>
               Success(FinalPayload(add, perHopPayload))
             case Attempt.Successful(DecodeResult(perHopPayload, _)) =>

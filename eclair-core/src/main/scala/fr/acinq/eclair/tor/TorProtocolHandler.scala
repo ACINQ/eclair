@@ -24,11 +24,13 @@ import java.util
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash}
 import akka.io.Tcp.Connected
 import akka.util.ByteString
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.tor.TorProtocolHandler.{Authentication, OnionServiceVersion}
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+import scodec.bits.Bases.Alphabets
+import scodec.bits.ByteVector
 
 import scala.concurrent.Promise
 import scala.util.Try
@@ -91,12 +93,12 @@ class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
       }
   }
 
-  def cookieChallenge(cookieFile: Path, clientNonce: BinaryData): Receive = {
+  def cookieChallenge(cookieFile: Path, clientNonce: ByteVector): Receive = {
     case data: ByteString =>
       val res = parseResponse(readResponse(data))
       val clientHash = computeClientHash(
-        res.getOrElse("SERVERHASH", throw TorException("server hash not found")),
-        res.getOrElse("SERVERNONCE", throw TorException("server nonce not found")),
+        ByteVector.fromValidHex(res.getOrElse("SERVERHASH", throw TorException("server hash not found")), alphabet = Alphabets.HexUppercase),
+        ByteVector.fromValidHex(res.getOrElse("SERVERNONCE", throw TorException("server nonce not found")), alphabet = Alphabets.HexUppercase),
         clientNonce,
         cookieFile
       )
@@ -166,13 +168,13 @@ class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
     }
   }
 
-  private def computeClientHash(serverHash: BinaryData, serverNonce: BinaryData, clientNonce: BinaryData, cookieFile: Path): BinaryData = {
+  private def computeClientHash(serverHash: ByteVector, serverNonce: ByteVector, clientNonce: ByteVector, cookieFile: Path): ByteVector = {
     if (serverHash.length != 32)
       throw TorException("invalid server hash length")
     if (serverNonce.length != 32)
       throw TorException("invalid server nonce length")
 
-    val cookie = Files.readAllBytes(cookieFile)
+    val cookie = ByteVector.view(Files.readAllBytes(cookieFile))
 
     val message = cookie ++ clientNonce ++ serverNonce
 
@@ -200,8 +202,8 @@ object TorProtocolHandler {
     Props(new TorProtocolHandler(version, authentication, privateKeyPath, virtualPort, targetPorts, onionAdded))
 
   // those are defined in the spec
-  private val ServerKey: Array[Byte] = "Tor safe cookie authentication server-to-controller hash".getBytes()
-  private val ClientKey: Array[Byte] = "Tor safe cookie authentication controller-to-server hash".getBytes()
+  private val ServerKey = ByteVector.view("Tor safe cookie authentication server-to-controller hash".getBytes())
+  private val ClientKey = ByteVector.view("Tor safe cookie authentication controller-to-server hash".getBytes())
 
   // @formatter:off
   sealed trait OnionServiceVersion
@@ -236,7 +238,7 @@ object TorProtocolHandler {
   // @formatter:off
   sealed trait Authentication
   case class Password(password: String)                                              extends Authentication { override def toString = "password" }
-  case class SafeCookie(nonce: BinaryData = fr.acinq.eclair.randomBytes(32)) extends Authentication { override def toString = "safecookie" }
+  case class SafeCookie(nonce: ByteVector = fr.acinq.eclair.randomBytes32) extends Authentication { override def toString = "safecookie" }
   // @formatter:on
 
   object Authentication {
@@ -302,10 +304,10 @@ object TorProtocolHandler {
     }.toMap
   }
 
-  def hmacSHA256(key: Array[Byte], message: Array[Byte]): BinaryData = {
+  def hmacSHA256(key: ByteVector, message: ByteVector): ByteVector = {
     val mac = Mac.getInstance("HmacSHA256")
-    val secretKey = new SecretKeySpec(key, "HmacSHA256")
+    val secretKey = new SecretKeySpec(key.toArray, "HmacSHA256")
     mac.init(secretKey)
-    mac.doFinal(message)
+    ByteVector.view(mac.doFinal(message.toArray))
   }
 }

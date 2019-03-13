@@ -23,7 +23,7 @@ import java.sql.DriverManager
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import com.whisk.docker.DockerReadyChecker
-import fr.acinq.bitcoin.{BinaryData, Block, Btc, DeterministicWallet, MnemonicCode, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, Btc, ByteVector32, DeterministicWallet, MnemonicCode, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse, SSL}
@@ -42,7 +42,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   import ElectrumWallet._
 
-  val entropy = BinaryData("01" * 32)
+  val entropy = ByteVector32.One
   val mnemonics = MnemonicCode.toMnemonics(entropy)
   val seed = MnemonicCode.toSeed(mnemonics, "")
   logger.info(s"mnemonic codes for our wallet: $mnemonics")
@@ -197,7 +197,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     }, max = 30 seconds, interval = 1 second)
 
     val TransactionReceived(tx, 0, received, sent, _, _) = listener.receiveOne(5 seconds)
-    assert(tx.txid === BinaryData(txid))
+    assert(tx.txid === ByteVector32.fromValidHex(txid))
     assert(received === Satoshi(100000000))
 
     logger.info("generating a new block")
@@ -212,7 +212,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     awaitCond({
       val msg = listener.receiveOne(5 seconds)
       msg match {
-        case TransactionConfidenceChanged(BinaryData(txid), 1, _) => true
+        case TransactionConfidenceChanged(txid, 1, _) => true
         case _ => false
       }
     }, max = 30 seconds, interval = 1 second)

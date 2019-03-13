@@ -18,7 +18,8 @@ package fr.acinq.eclair
 
 import java.math.BigInteger
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.ByteVector32
+import scodec.bits.ByteVector
 
 case class UInt64(private val underlying: BigInt) extends Ordered[UInt64] {
 
@@ -27,7 +28,7 @@ case class UInt64(private val underlying: BigInt) extends Ordered[UInt64] {
 
   override def compare(o: UInt64): Int = underlying.compare(o.underlying)
 
-  def toByteArray: Array[Byte] = underlying.toByteArray.takeRight(8)
+  def toByteVector: ByteVector = ByteVector.view(underlying.toByteArray.takeRight(8))
 
   def toBigInt: BigInt = underlying
 
@@ -41,7 +42,7 @@ object UInt64 {
 
   val MaxValue = UInt64(MaxValueBigInt)
 
-  def apply(bin: BinaryData) = new UInt64(new BigInteger(1, bin))
+  def apply(bin: ByteVector) = new UInt64(new BigInteger(1, bin.toArray))
 
   def apply(value: Long) = new UInt64(BigInt(value))
 
