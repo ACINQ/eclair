@@ -11,7 +11,10 @@ import fr.acinq.eclair.io.{NodeURI, Peer}
 import FormParamExtractors._
 import akka.NotUsed
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.http.scaladsl.model.HttpMethods.POST
 import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
+import akka.http.scaladsl.model.headers.{`Access-Control-Allow-Headers`, `Access-Control-Allow-Methods`, `Cache-Control`}
 import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.server.directives.Credentials
 import akka.stream.{ActorMaterializer, OverflowStrategy}
@@ -21,9 +24,10 @@ import fr.acinq.eclair.db.{NetworkFee, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentRequest}
-import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
+import fr.acinq.eclair.router.{ChannelDesc, RouteNotFound, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import grizzled.slf4j.Logging
+
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
@@ -44,11 +48,18 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
   val channelIdNamedParameter = "channelId".as[BinaryData](sha256HashUnmarshaller)
 
   val apiExceptionHandler = ExceptionHandler {
-    case e: ApiError => complete(StatusCodes.BadRequest, e.msg)
+    case e: ApiError =>
+      e.thr.foreach(thr => logger.warn(s"caught $thr"))
+      complete(StatusCodes.BadRequest, e.msg)
     case t: Throwable =>
       logger.error(s"API call failed with cause=${t.getMessage}")
       complete(StatusCodes.InternalServerError, s"Error: $t")
   }
+
+  val customHeaders = `Access-Control-Allow-Headers`("Content-Type, Authorization") ::
+    `Access-Control-Allow-Methods`(POST) ::
+    `Cache-Control`(public, `no-store`, `max-age`(0)) :: Nil
+
 
   lazy val makeSocketHandler: Flow[Message, TextMessage.Strict, NotUsed] = {
 
@@ -68,100 +79,102 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
   }
 
   val route: Route = {
-    handleExceptions(apiExceptionHandler){
-      authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator){ _ =>
-        post {
-          path("getinfo") { complete(getInfoResponse) } ~
-            path("help") { complete(help.mkString) } ~
-            path("connect") {
-              formFields("nodeId".as[PublicKey], "address".as[NodeAddress]) { (nodeId, addr) =>
-                complete(connect(s"$nodeId@$addr"))
-              } ~ formFields("uri") { uri =>
-                complete(connect(uri))
+    respondWithDefaultHeaders(customHeaders){
+      handleExceptions(apiExceptionHandler){
+        authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator){ _ =>
+          post {
+            path("getinfo") { complete(getInfoResponse) } ~
+              path("help") { complete(help.mkString) } ~
+              path("connect") {
+                formFields("nodeId".as[PublicKey], "address".as[NodeAddress]) { (nodeId, addr) =>
+                  complete(connect(s"$nodeId@$addr"))
+                } ~ formFields("uri") { uri =>
+                  complete(connect(uri))
+                }
+              } ~
+              path("open") {
+                formFields("nodeId".as[PublicKey], "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?) {
+                  (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags) =>
+                    complete(open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags))
+                }
+              } ~
+              path("close") {
+                formFields(channelIdNamedParameter, "scriptPubKey".as[BinaryData](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
+                  complete(close(channelId, scriptPubKey_opt))
+                }
+              } ~
+              path("forceclose") {
+                formFields(channelIdNamedParameter) { channelId =>
+                  complete(forceClose(channelId.toString))
+                }
+              } ~
+              path("updaterelayfee") {
+                formFields(channelIdNamedParameter, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
+                  complete(updateRelayFee(channelId.toString, feeBase, feeProportional))
+                }
+              } ~
+              path("peers") {
+                complete(peersInfo())
+              } ~
+              path("channels") {
+                formFields("toRemoteNodeId".as[PublicKey].?) { toRemoteNodeId_opt =>
+                  complete(channelsInfo(toRemoteNodeId_opt))
+                }
+              } ~
+              path("channel") {
+                formFields(channelIdNamedParameter) { channelId =>
+                  complete(channelInfo(channelId))
+                }
+              } ~
+              path("allnodes") { complete(allnodes()) } ~
+              path("allchannels") { complete(allchannels()) } ~
+              path("allupdates") {
+                formFields("nodeId".as[PublicKey].?) { nodeId_opt =>
+                  complete(allupdates(nodeId_opt))
+                }
+              } ~
+              path("receive") {
+                formFields("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?) { (desc, amountMsat, expire) =>
+                  complete(receive(desc, amountMsat, expire))
+                }
+              } ~
+              path("parseinvoice") {
+                formFields("invoice".as[PaymentRequest]) { invoice =>
+                  complete(invoice)
+                }
+              } ~
+              path("findroute") {
+                formFields("nodeId".as[PublicKey].?, "amountMsat".as[Long].?, "invoice".as[PaymentRequest].?) { (nodeId, amount, invoice) =>
+                  complete(findRoute(nodeId, amount, invoice))
+                }
+              } ~
+              path("send") {
+                formFields("amountMsat".as[Long].?, "paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "nodeId".as[PublicKey].?, "invoice".as[PaymentRequest].?) { (amountMsat, paymentHash, nodeId, invoice) =>
+                  complete(send(nodeId, amountMsat, paymentHash, invoice))
+                }
+              } ~
+              path("checkpayment") {
+                formFields("paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "invoice".as[PaymentRequest].?) { (paymentHash, invoice) =>
+                  complete(checkpayment(paymentHash, invoice))
+                }
+              } ~
+              path("audit") {
+                formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
+                  complete(audit(from, to))
+                }
+              } ~
+              path("networkfees") {
+                formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
+                  complete(networkFees(from, to))
+                }
+              } ~
+              path("channelstats") {
+                complete(channelStats())
+              } ~
+              path("ws") {
+                handleWebSocketMessages(makeSocketHandler)
               }
-            } ~
-            path("open") {
-              formFields("nodeId".as[PublicKey], "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?) {
-                (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags) =>
-                  complete(open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags))
-              }
-            } ~
-            path("close") {
-              formFields(channelIdNamedParameter, "scriptPubKey".as[BinaryData](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
-                complete(close(channelId, scriptPubKey_opt))
-              }
-            } ~
-            path("forceclose") {
-              formFields(channelIdNamedParameter) { channelId =>
-                complete(forceClose(channelId.toString))
-              }
-            } ~
-            path("updaterelayfee") {
-              formFields(channelIdNamedParameter, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
-                complete(updateRelayFee(channelId.toString, feeBase, feeProportional))
-              }
-            } ~
-            path("peers") {
-              complete(peersInfo())
-            } ~
-            path("channels") {
-              formFields("toRemoteNodeId".as[PublicKey].?) { toRemoteNodeId_opt =>
-                complete(channelsInfo(toRemoteNodeId_opt))
-              }
-            } ~
-            path("channel") {
-              formFields(channelIdNamedParameter) { channelId =>
-                complete(channelInfo(channelId))
-              }
-            } ~
-            path("allnodes") { complete(allnodes()) } ~
-            path("allchannels") { complete(allchannels()) } ~
-            path("allupdates") {
-              formFields("nodeId".as[PublicKey].?) { nodeId_opt =>
-                complete(allupdates(nodeId_opt))
-              }
-            } ~
-            path("receive") {
-              formFields("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?) { (desc, amountMsat, expire) =>
-                complete(receive(desc, amountMsat, expire))
-              }
-            } ~
-            path("parseinvoice") {
-              formFields("invoice".as[PaymentRequest]) { invoice =>
-                complete(invoice)
-              }
-            } ~
-            path("findroute") {
-              formFields("nodeId".as[PublicKey].?, "amountMsat".as[Long].?, "invoice".as[PaymentRequest].?) { (nodeId, amount, invoice) =>
-                complete(findRoute(nodeId, amount, invoice))
-              }
-            } ~
-            path("send") {
-              formFields("amountMsat".as[Long].?, "paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "nodeId".as[PublicKey].?, "invoice".as[PaymentRequest].?) { (amountMsat, paymentHash, nodeId, invoice) =>
-                complete(send(nodeId, amountMsat, paymentHash, invoice))
-              }
-            } ~
-            path("checkpayment") {
-              formFields("paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "invoice".as[PaymentRequest].?) { (paymentHash, invoice) =>
-                complete(checkpayment(paymentHash, invoice))
-              }
-            } ~
-            path("audit") {
-              formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
-                complete(audit(from, to))
-              }
-            } ~
-            path("networkfees") {
-              formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
-                complete(networkFees(from, to))
-              }
-            } ~
-            path("channelstats") {
-              complete(channelStats())
-            } ~
-            path("ws") {
-              handleWebSocketMessages(makeSocketHandler)
-            }
+          }
         }
       }
     }
@@ -337,6 +350,6 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
     case _ => akka.pattern.after(1 second, using = appKit.system.scheduler)(Future.successful(None)) // force a 1 sec pause to deter brute force
   }
 
-  case class ApiError(apiMethod: String, msg: String) extends RuntimeException(s"Error calling $apiMethod: $msg")
+  case class ApiError(apiMethod: String, msg: String, thr: Option[Throwable] = None) extends RuntimeException(s"Error calling $apiMethod: $msg")
 
 }
