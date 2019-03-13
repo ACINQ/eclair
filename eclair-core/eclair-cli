@@ -7,7 +7,7 @@ command -v curl >/dev/null 2>&1 || { echo -e "This tool requires curl.\n\nAborti
 
 FULL_OUTPUT='false'
 URL='http://localhost:8080'
-PASSWORD=''
+PASSWORD='foobar'
 
 # -------------------- METHODS
 
@@ -31,13 +31,19 @@ Full documentation at: <https://github.com/ACINQ/eclair>"
 
 # Executes a JSON RPC call to a node listening on ${URL}
 call() {
-    jqexp='if .error == null then .result else .error.message end'
+    jqexp='.'   # 'if .error == null then .result else .error.message end'
     # override default jq parsing expression
     if [ $# -ge 3 ] && [ ${FULL_OUTPUT} == "false" ]; then jqexp=${3}; fi
     # set password
     if [ -z ${PASSWORD} ]; then auth="eclair-cli";
     else auth="eclair-cli:"${PASSWORD}; fi
-    eval curl "--user ${auth} --silent --show-error -X POST -H \"Content-Type: application/json\" -d '{ \"method\": \"'${1}'\", \"params\": '${2}' }' ${URL}" | jq -r "$jqexp"
+    # collect form data from 2nd parameter
+    form_data=""
+    for param in ${2}; do
+      form_data="$form_data -F \"$param\""
+    done;
+
+    eval curl "--user ${auth} --silent --show-error -X POST $form_data ${URL}/${1}" | jq -r "$jqexp"
 }
 
 # get script options
@@ -80,12 +86,15 @@ case ${METHOD}_${#} in
     "open_3")       call ${METHOD} "'$(printf '["%s",%s,%s]' "${1}" "${2}" "${3}")'" ;; # ${2} ${3} are numeric (funding, push)
     "open_2")       call ${METHOD} "'$(printf '["%s",%s]' "${1}" "${2}")'" ;; # ${2} is numeric (funding)
 
-    "receive_2")    call ${METHOD} "'$(printf '[%s,"%s"]' "${1}" "${2}")'" ;; # ${1} is numeric (amount to receive)
+    "receive_2")    call ${METHOD}  " "$(printf amountMsat=%s ${1})" "$(printf description=%s ${2})" " ;; # ${1} is numeric (amount to receive)
+
+
+
     "receive_3")    call ${METHOD} "'$(printf '[%s,"%s",%s]' "${1}" "${2}" "${3}")'" ;; # ${1} is numeric (amount to receive) as is ${2} for expiry in seconds
 
-    "channel_"*)    call ${METHOD} "'${PARAMS}'" "if .error != null then .error.message else .result | { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } end" ;;
+    "channel_"*)    call ${METHOD} "'${PARAMS}'" "map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } )" ;;
 
-    "channels_"*)   call ${METHOD} "'${PARAMS}'" "if .error != null then .error.message else .result | map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } ) end" ;;
+    "channels_"*)   call ${METHOD} "'${PARAMS}'" "map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } )" ;;
 
     "send_3")       call ${METHOD} "'$(printf '[%s,"%s","%s"]' "${1}" "${2}" "${3}")'" ;; # ${1} is numeric (amount of the payment)
     "send_2")       call ${METHOD} "'$(printf '["%s",%s]' "${1}" "${2}")'" ;; # ${2} is numeric (amount overriding the payment request)

@@ -16,7 +16,7 @@ import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
 import akka.http.scaladsl.model.headers.{`Access-Control-Allow-Headers`, `Access-Control-Allow-Methods`, `Cache-Control`}
 import akka.http.scaladsl.model.ws.{Message, TextMessage}
-import akka.http.scaladsl.server.directives.Credentials
+import akka.http.scaladsl.server.directives.{Credentials, LoggingMagnet}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
 import fr.acinq.eclair.channel._
@@ -69,7 +69,10 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
     // register an actor that feeds the queue when a payment is received
     appKit.system.actorOf(Props(new Actor {
       override def preStart: Unit = context.system.eventStream.subscribe(self, classOf[PaymentReceived])
-      def receive: Receive = { case received: PaymentReceived => flowInput.offer(received.paymentHash.toString) }
+
+      def receive: Receive = {
+        case received: PaymentReceived => flowInput.offer(received.paymentHash.toString)
+      }
     }))
 
     Flow[Message]
@@ -79,12 +82,16 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
   }
 
   val route: Route = {
-    respondWithDefaultHeaders(customHeaders){
-      handleExceptions(apiExceptionHandler){
-        authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator){ _ =>
+    respondWithDefaultHeaders(customHeaders) {
+      handleExceptions(apiExceptionHandler) {
+        authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator) { _ =>
           post {
-            path("getinfo") { complete(getInfoResponse) } ~
-              path("help") { complete(help.mkString) } ~
+            path("getinfo") {
+              complete(getInfoResponse)
+            } ~
+              path("help") {
+                complete(help.mkString)
+              } ~
               path("connect") {
                 formFields("nodeId".as[PublicKey], "address".as[NodeAddress]) { (nodeId, addr) =>
                   complete(connect(s"$nodeId@$addr"))
@@ -126,8 +133,12 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
                   complete(channelInfo(channelId))
                 }
               } ~
-              path("allnodes") { complete(allnodes()) } ~
-              path("allchannels") { complete(allchannels()) } ~
+              path("allnodes") {
+                complete(allnodes())
+              } ~
+              path("allchannels") {
+                complete(allchannels())
+              } ~
               path("allupdates") {
                 formFields("nodeId".as[PublicKey].?) { nodeId_opt =>
                   complete(allupdates(nodeId_opt))
@@ -178,6 +189,7 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
         }
       }
     }
+
   }
 
   def connect(uri: String): Future[String] = {
@@ -254,7 +266,7 @@ trait NewService extends Directives with WithJsonSerializers with Logging with M
       case (Some(nodeId), Some(amount), Some(ph), None) => (nodeId, ph, amount)
       case (None, None, None, Some(invoice@PaymentRequest(_, Some(amount), _, target, _, _))) => (target, invoice.paymentHash, amount.toLong)
       case (None, Some(amount), None, Some(invoice@PaymentRequest(_, Some(_), _, target, _, _))) => (target, invoice.paymentHash, amount) // invoice amount is overridden
-      case _ =>  throw ApiError("send", "Wrong params list, call 'help' to know more about it")
+      case _ => throw ApiError("send", "Wrong params list, call 'help' to know more about it")
     }
 
     val sendPayment = SendPayment(amountMsat, paymentHash, targetNodeId, assistedRoutes = invoice_opt.map(_.routingInfo).getOrElse(Seq.empty)) // TODO add minFinalCltvExpiry
