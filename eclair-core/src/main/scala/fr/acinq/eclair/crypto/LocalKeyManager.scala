@@ -19,14 +19,15 @@ package fr.acinq.eclair.crypto
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.DeterministicWallet.{derivePrivateKey, _}
-import fr.acinq.bitcoin.{BinaryData, Block, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
+import scodec.bits.ByteVector
 
 object LocalKeyManager {
-  def channelKeyBasePath(chainHash: BinaryData) = chainHash match {
+  def channelKeyBasePath(chainHash: ByteVector32) = chainHash match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(1) :: Nil
   }
@@ -35,7 +36,7 @@ object LocalKeyManager {
   // WARNING: if you change this path, you will change your node id even if the seed remains the same!!!
   // Note that the node path and the above channel path are on different branches so even if the
   // node key is compromised there is no way to retrieve the wallet keys
-  def nodeKeyBasePath(chainHash: BinaryData) = chainHash match {
+  def nodeKeyBasePath(chainHash: ByteVector32) = chainHash match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(0) :: Nil
   }
@@ -47,7 +48,7 @@ object LocalKeyManager {
   *
   * @param seed seed from which keys will be derived
   */
-class LocalKeyManager(seed: BinaryData, chainHash: BinaryData) extends KeyManager {
+class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyManager {
   private val master = DeterministicWallet.generate(seed)
 
   override val nodeKey = DeterministicWallet.derivePrivateKey(master, LocalKeyManager.nodeKeyBasePath(chainHash))
@@ -100,7 +101,7 @@ class LocalKeyManager(seed: BinaryData, chainHash: BinaryData) extends KeyManage
     * @return a signature generated with the private key that matches the input
     *         extended public key
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey): BinaryData = {
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey): ByteVector = {
     val privateKey = privateKeys.get(publicKey.path)
     Transactions.sign(tx, privateKey.privateKey)
   }
@@ -114,7 +115,7 @@ class LocalKeyManager(seed: BinaryData, chainHash: BinaryData) extends KeyManage
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote point.
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: Point): BinaryData = {
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: Point): ByteVector = {
     val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
     Transactions.sign(tx, currentKey)
@@ -129,14 +130,14 @@ class LocalKeyManager(seed: BinaryData, chainHash: BinaryData) extends KeyManage
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote secret.
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar): BinaryData = {
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar): ByteVector = {
     val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.revocationPrivKey(privateKey.privateKey, remoteSecret)
     Transactions.sign(tx, currentKey)
   }
 
-  override def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: BinaryData, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData) = {
-    val witness = if (Announcements.isNode1(nodeId.toBin, remoteNodeId.toBin)) {
+  override def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector, ByteVector) = {
+    val witness = if (Announcements.isNode1(nodeId, remoteNodeId)) {
       Announcements.channelAnnouncementWitnessEncode(chainHash, shortChannelId, nodeId, remoteNodeId, fundingPublicKey(channelKeyPath).publicKey, remoteFundingKey, features)
     } else {
       Announcements.channelAnnouncementWitnessEncode(chainHash, shortChannelId, remoteNodeId, nodeId, remoteFundingKey, fundingPublicKey(channelKeyPath).publicKey, features)

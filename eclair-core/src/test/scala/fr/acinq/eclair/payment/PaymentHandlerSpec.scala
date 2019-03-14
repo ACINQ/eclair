@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import akka.actor.Status.Failure
 import akka.actor.{ActorSystem, Status}
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.payment.LocalPaymentHandler.PendingPaymentRequest
@@ -28,6 +28,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UnknownPaymentHash, UpdateAddHtlc}
 import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
 import org.scalatest.FunSuiteLike
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -52,7 +53,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val pr = sender.expectMsgType[PaymentRequest]
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === false)
-      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
@@ -66,7 +67,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val pr = sender.expectMsgType[PaymentRequest]
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === false)
-      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
@@ -80,7 +81,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val pr = sender.expectMsgType[PaymentRequest]
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === false)
-      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, cltvExpiry = Globals.blockCount.get() + 3, "")
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, cltvExpiry = Globals.blockCount.get() + 3, ByteVector.empty)
       sender.send(handler, add)
       assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(FinalExpiryTooSoon))
       eventListener.expectNoMsg(300 milliseconds)
@@ -94,7 +95,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val pr = sender.expectMsgType[PaymentRequest]
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === false)
-      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
       sender.send(handler, add)
       assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(UnknownPaymentHash))
       // We chose UnknownPaymentHash on purpose. So if you have expired by 1 second or 1 hour you get the same error message.
@@ -103,11 +104,11 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       assert(sender.expectMsgType[Boolean] === false)
       // make sure that the request is indeed pruned
       sender.send(handler, 'requests)
-      sender.expectMsgType[Map[BinaryData, PendingPaymentRequest]].contains(pr.paymentHash)
+      sender.expectMsgType[Map[ByteVector, PendingPaymentRequest]].contains(pr.paymentHash)
       sender.send(handler, LocalPaymentHandler.PurgeExpiredRequests)
       awaitCond({
         sender.send(handler, 'requests)
-        sender.expectMsgType[Map[BinaryData, PendingPaymentRequest]].contains(pr.paymentHash) == false
+        sender.expectMsgType[Map[ByteVector32, PendingPaymentRequest]].contains(pr.paymentHash) == false
       })
     }
   }

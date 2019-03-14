@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.Status.Failure
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.channel.Register._
@@ -36,7 +36,7 @@ class Register extends Actor with ActorLogging {
 
   override def receive: Receive = main(Map.empty, Map.empty, Map.empty)
 
-  def main(channels: Map[BinaryData, ActorRef], shortIds: Map[ShortChannelId, BinaryData], channelsTo: Map[BinaryData, PublicKey]): Receive = {
+  def main(channels: Map[ByteVector32, ActorRef], shortIds: Map[ShortChannelId, ByteVector32], channelsTo: Map[ByteVector32, PublicKey]): Receive = {
     case ChannelCreated(channel, _, remoteNodeId, _, temporaryChannelId) =>
       context.watch(channel)
       context become main(channels + (temporaryChannelId -> channel), shortIds, channelsTo + (temporaryChannelId -> remoteNodeId))
@@ -79,7 +79,7 @@ class Register extends Actor with ActorLogging {
 object Register {
 
   // @formatter:off
-  case class Forward[T](channelId: BinaryData, message: T)
+  case class Forward[T](channelId: ByteVector32, message: T)
   case class ForwardShortId[T](shortChannelId: ShortChannelId, message: T)
 
   case class ForwardFailure[T](fwd: Forward[T]) extends RuntimeException(s"channel ${fwd.channelId} not found")

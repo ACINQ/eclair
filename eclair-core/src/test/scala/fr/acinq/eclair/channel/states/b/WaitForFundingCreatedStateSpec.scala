@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -47,8 +48,8 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER("00" * 32, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
-      bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, bob2alice.ref, aliceInit)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
@@ -76,13 +77,13 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     val fundingCreated = alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(fundingCreated.temporaryChannelId, s"can't pay the fee: missingSatoshis=${-1 * missing} reserveSatoshis=$reserve feesSatoshis=$fees".getBytes("UTF-8")))
+    assert(error === Error(fundingCreated.temporaryChannelId, s"can't pay the fee: missingSatoshis=${-1 * missing} reserveSatoshis=$reserve feesSatoshis=$fees"))
     awaitCond(bob.stateName == CLOSED)
   }
 
   test("recv Error") { f =>
     import f._
-    bob ! Error("00" * 32, "oops".getBytes)
+    bob ! Error(ByteVector32.Zeroes, "oops")
     awaitCond(bob.stateName == CLOSED)
   }
 

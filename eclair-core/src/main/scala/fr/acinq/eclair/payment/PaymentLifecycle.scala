@@ -16,12 +16,9 @@
 
 package fr.acinq.eclair.payment
 
-import java.text.NumberFormat
-import java.util.Locale
-
 import akka.actor.{ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Channel, Register}
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
@@ -31,6 +28,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import scodec.Attempt
+import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success}
 
@@ -187,7 +185,7 @@ object PaymentLifecycle {
     * @param maxFeePct set by default to 3% as a safety measure (even if a route is found, if fee is higher than that payment won't be attempted)
     */
   case class SendPayment(amountMsat: Long,
-                         paymentHash: BinaryData,
+                         paymentHash: ByteVector32,
                          targetNodeId: PublicKey,
                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                          finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
@@ -196,20 +194,20 @@ object PaymentLifecycle {
                          routeParams: Option[RouteParams] = None) {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
-  case class CheckPayment(paymentHash: BinaryData)
+  case class CheckPayment(paymentHash: ByteVector32)
 
   sealed trait PaymentResult
-  case class PaymentSucceeded(amountMsat: Long, paymentHash: BinaryData, paymentPreimage: BinaryData, route: Seq[Hop]) extends PaymentResult // note: the amount includes fees
+  case class PaymentSucceeded(amountMsat: Long, paymentHash: ByteVector32, paymentPreimage: ByteVector32, route: Seq[Hop]) extends PaymentResult // note: the amount includes fees
   sealed trait PaymentFailure
   case class LocalFailure(t: Throwable) extends PaymentFailure
   case class RemoteFailure(route: Seq[Hop], e: ErrorPacket) extends PaymentFailure
   case class UnreadableRemoteFailure(route: Seq[Hop]) extends PaymentFailure
-  case class PaymentFailed(paymentHash: BinaryData, failures: Seq[PaymentFailure]) extends PaymentResult
+  case class PaymentFailed(paymentHash: ByteVector32, failures: Seq[PaymentFailure]) extends PaymentResult
 
   sealed trait Data
   case object WaitingForRequest extends Data
   case class WaitingForRoute(sender: ActorRef, c: SendPayment, failures: Seq[PaymentFailure]) extends Data
-  case class WaitingForComplete(sender: ActorRef, c: SendPayment, cmd: CMD_ADD_HTLC, failures: Seq[PaymentFailure], sharedSecrets: Seq[(BinaryData, PublicKey)], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], hops: Seq[Hop]) extends Data
+  case class WaitingForComplete(sender: ActorRef, c: SendPayment, cmd: CMD_ADD_HTLC, failures: Seq[PaymentFailure], sharedSecrets: Seq[(ByteVector32, PublicKey)], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], hops: Seq[Hop]) extends Data
 
   sealed trait State
   case object WAITING_FOR_REQUEST extends State
@@ -219,13 +217,13 @@ object PaymentLifecycle {
   // @formatter:on
 
 
-  def buildOnion(nodes: Seq[PublicKey], payloads: Seq[PerHopPayload], associatedData: BinaryData): Sphinx.PacketAndSecrets = {
+  def buildOnion(nodes: Seq[PublicKey], payloads: Seq[PerHopPayload], associatedData: ByteVector32): Sphinx.PacketAndSecrets = {
     require(nodes.size == payloads.size)
     val sessionKey = randomKey
-    val payloadsbin: Seq[BinaryData] = payloads
-      .map(LightningMessageCodecs.perHopPayloadCodec.encode(_))
+    val payloadsbin: Seq[ByteVector] = payloads
+      .map(LightningMessageCodecs.perHopPayloadCodec.encode)
       .map {
-        case Attempt.Successful(bitVector) => BinaryData(bitVector.toByteArray)
+        case Attempt.Successful(bitVector) => bitVector.toByteVector
         case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
       }
     Sphinx.makePacket(sessionKey, nodes, payloadsbin, associatedData)
@@ -248,7 +246,7 @@ object PaymentLifecycle {
         (msat + nextFee, expiry + hop.lastUpdate.cltvExpiryDelta, PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
     }
 
-  def buildCommand(finalAmountMsat: Long, finalExpiry: Long, paymentHash: BinaryData, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(BinaryData, PublicKey)]) = {
+  def buildCommand(finalAmountMsat: Long, finalExpiry: Long, paymentHash: ByteVector32, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
     val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
@@ -296,7 +294,7 @@ object PaymentLifecycle {
     * @return true if channel updates are "equal"
     */
   def areSame(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
-    u1.copy(signature = BinaryData.empty, timestamp = 0) == u2.copy(signature = BinaryData.empty, timestamp = 0)
+    u1.copy(signature = ByteVector.empty, timestamp = 0) == u2.copy(signature = ByteVector.empty, timestamp = 0)
 
   /**
     * This allows us to detect if a bad node always answers with a new update (e.g. with a slightly different expiry or fee)

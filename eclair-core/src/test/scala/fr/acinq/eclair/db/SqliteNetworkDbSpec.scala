@@ -16,15 +16,13 @@
 
 package fr.acinq.eclair.db
 
-import java.net.{InetAddress, InetSocketAddress}
 import java.sql.DriverManager
 
-import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.{BinaryData, Block, Crypto, Satoshi}
+import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
-import fr.acinq.eclair.{ShortChannelId, randomKey}
+import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 import org.sqlite.SQLiteException
 
@@ -75,9 +73,9 @@ class SqliteNetworkDbSpec extends FunSuite {
     val channel_2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(43), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
     val channel_3 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(44), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
 
-    val txid_1 = randomKey.toBin
-    val txid_2 = randomKey.toBin
-    val txid_3 = randomKey.toBin
+    val txid_1 = randomBytes32
+    val txid_2 = randomBytes32
+    val txid_3 = randomBytes32
     val capacity = Satoshi(10000)
 
     assert(db.listChannels().toSet === Set.empty)
@@ -117,7 +115,7 @@ class SqliteNetworkDbSpec extends FunSuite {
     val channels = shortChannelIds.map(id => Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, id, pub, pub, pub, pub, sig, sig, sig, sig))
     val template = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv, pub, ShortChannelId(42), 5, 7000000, 50000, 100, 500000000L, true)
     val updates = shortChannelIds.map(id => template.copy(shortChannelId = id))
-    val txid = BinaryData("ab" * 32)
+    val txid = randomBytes32
     channels.foreach(ca => db.addChannel(ca, txid, capacity))
     updates.foreach(u => db.addChannelUpdate(u))
     assert(db.listChannels().keySet === channels.toSet)

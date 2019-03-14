@@ -25,8 +25,7 @@ import akka.io.{IO, Tcp}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.io.Client.ConnectionFailed
 import fr.acinq.eclair.tor.Socks5Connection.{Socks5Connect, Socks5Connected, Socks5Error}
-import fr.acinq.eclair.tor.{Socks5Connection, Socks5ProxyParams, TorException}
-import fr.acinq.eclair.wire.NodeAddress
+import fr.acinq.eclair.tor.{Socks5Connection, Socks5ProxyParams}
 import fr.acinq.eclair.{Logs, NodeParams}
 
 import scala.concurrent.duration._

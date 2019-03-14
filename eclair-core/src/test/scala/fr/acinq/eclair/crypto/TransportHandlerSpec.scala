@@ -16,18 +16,17 @@
 
 package fr.acinq.eclair.crypto
 
-import java.net.InetSocketAddress
 import java.nio.charset.Charset
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, OneForOneStrategy, Props, Stash, SupervisorStrategy, Terminated}
 import akka.io.Tcp
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.crypto.Noise.{Chacha20Poly1305CipherFunctions, CipherState}
 import fr.acinq.eclair.crypto.TransportHandler.{Encryptor, ExtendedCipherState, Listener}
 import fr.acinq.eclair.wire.LightningMessageCodecs
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.Codec
+import scodec.bits._
 import scodec.codecs._
 
 import scala.annotation.tailrec
@@ -39,11 +38,11 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
   import TransportHandlerSpec._
 
   object Initiator {
-    val s = Noise.Secp256k1DHFunctions.generateKeyPair("1111111111111111111111111111111111111111111111111111111111111111")
+    val s = Noise.Secp256k1DHFunctions.generateKeyPair(hex"1111111111111111111111111111111111111111111111111111111111111111")
   }
 
   object Responder {
-    val s = Noise.Secp256k1DHFunctions.generateKeyPair("2121212121212121212121212121212121212121212121212121212121212121")
+    val s = Noise.Secp256k1DHFunctions.generateKeyPair(hex"2121212121212121212121212121212121212121212121212121212121212121")
   }
 
   test("succesfull handshake") {
@@ -63,11 +62,11 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     awaitCond(initiator.stateName == TransportHandler.Normal)
     awaitCond(responder.stateName == TransportHandler.Normal)
 
-    initiator.tell(BinaryData("hello".getBytes), probe1.ref)
-    probe2.expectMsg(BinaryData("hello".getBytes))
+    initiator.tell(ByteVector("hello".getBytes), probe1.ref)
+    probe2.expectMsg(ByteVector("hello".getBytes))
 
-    responder.tell(BinaryData("bonjour".getBytes), probe2.ref)
-    probe1.expectMsg(BinaryData("bonjour".getBytes))
+    responder.tell(ByteVector("bonjour".getBytes), probe2.ref)
+    probe1.expectMsg(ByteVector("bonjour".getBytes))
 
     probe1.watch(pipe)
     initiator.stop()
@@ -125,11 +124,11 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     awaitCond(initiator.stateName == TransportHandler.Normal)
     awaitCond(responder.stateName == TransportHandler.Normal)
 
-    initiator.tell(BinaryData("hello".getBytes), probe1.ref)
-    probe2.expectMsg(BinaryData("hello".getBytes))
+    initiator.tell(ByteVector("hello".getBytes), probe1.ref)
+    probe2.expectMsg(ByteVector("hello".getBytes))
 
-    responder.tell(BinaryData("bonjour".getBytes), probe2.ref)
-    probe1.expectMsg(BinaryData("bonjour".getBytes))
+    responder.tell(ByteVector("bonjour".getBytes), probe2.ref)
+    probe1.expectMsg(ByteVector("bonjour".getBytes))
 
     probe1.watch(pipe)
     initiator.stop()
@@ -172,27 +171,27 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     output 1000: 0x4a2f3cc3b5e78ddb83dcb426d9863d9d9a723b0337c89dd0b005d89f8d3c05c52b76b29b740f09
     output 1001: 0x2ecd8c8a5629d0d02ab457a0fdd0f7b90a192cd46be5ecb6ca570bfc5e268338b1a16cf4ef2d36
     */
-    val ck = BinaryData("0x919219dbb2920afa8db80f9a51787a840bcf111ed8d588caf9ab4be716e42b01")
-    val sk = BinaryData("0x969ab31b4d288cedf6218839b27a3e2140827047f2c0f01bf5c04435d43511a9")
-    val rk = BinaryData("0xbb9020b8965f4df047e07f955f3c4b88418984aadc5cdb35096b9ea8fa5c3442")
+    val ck = hex"919219dbb2920afa8db80f9a51787a840bcf111ed8d588caf9ab4be716e42b01"
+    val sk = hex"969ab31b4d288cedf6218839b27a3e2140827047f2c0f01bf5c04435d43511a9"
+    val rk = hex"bb9020b8965f4df047e07f955f3c4b88418984aadc5cdb35096b9ea8fa5c3442"
     val enc = ExtendedCipherState(CipherState(sk, Chacha20Poly1305CipherFunctions), ck)
     val dec = ExtendedCipherState(CipherState(rk, Chacha20Poly1305CipherFunctions), ck)
 
     @tailrec
-    def loop(cs: Encryptor, count: Int, acc: Vector[BinaryData] = Vector.empty[BinaryData]): Vector[BinaryData] = {
+    def loop(cs: Encryptor, count: Int, acc: Vector[ByteVector] = Vector.empty[ByteVector]): Vector[ByteVector] = {
       if (count == 0) acc else {
-        val (cs1, ciphertext) = cs.encrypt("hello".getBytes())
+        val (cs1, ciphertext) = cs.encrypt(ByteVector.view("hello".getBytes()))
         loop(cs1, count - 1, acc :+ ciphertext)
       }
     }
 
     val ciphertexts = loop(Encryptor(enc), 1002)
-    assert(ciphertexts(0) === BinaryData("0xcf2b30ddf0cf3f80e7c35a6e6730b59fe802473180f396d88a8fb0db8cbcf25d2f214cf9ea1d95"))
-    assert(ciphertexts(1) === BinaryData("0x72887022101f0b6753e0c7de21657d35a4cb2a1f5cde2650528bbc8f837d0f0d7ad833b1a256a1"))
-    assert(ciphertexts(500) === BinaryData("0x178cb9d7387190fa34db9c2d50027d21793c9bc2d40b1e14dcf30ebeeeb220f48364f7a4c68bf8"))
-    assert(ciphertexts(501) === BinaryData("0x1b186c57d44eb6de4c057c49940d79bb838a145cb528d6e8fd26dbe50a60ca2c104b56b60e45bd"))
-    assert(ciphertexts(1000) === BinaryData("0x4a2f3cc3b5e78ddb83dcb426d9863d9d9a723b0337c89dd0b005d89f8d3c05c52b76b29b740f09"))
-    assert(ciphertexts(1001) === BinaryData("0x2ecd8c8a5629d0d02ab457a0fdd0f7b90a192cd46be5ecb6ca570bfc5e268338b1a16cf4ef2d36"))
+    assert(ciphertexts(0) === hex"cf2b30ddf0cf3f80e7c35a6e6730b59fe802473180f396d88a8fb0db8cbcf25d2f214cf9ea1d95")
+    assert(ciphertexts(1) === hex"72887022101f0b6753e0c7de21657d35a4cb2a1f5cde2650528bbc8f837d0f0d7ad833b1a256a1")
+    assert(ciphertexts(500) === hex"178cb9d7387190fa34db9c2d50027d21793c9bc2d40b1e14dcf30ebeeeb220f48364f7a4c68bf8")
+    assert(ciphertexts(501) === hex"1b186c57d44eb6de4c057c49940d79bb838a145cb528d6e8fd26dbe50a60ca2c104b56b60e45bd")
+    assert(ciphertexts(1000) === hex"4a2f3cc3b5e78ddb83dcb426d9863d9d9a723b0337c89dd0b005d89f8d3c05c52b76b29b740f09")
+    assert(ciphertexts(1001) === hex"2ecd8c8a5629d0d02ab457a0fdd0f7b90a192cd46be5ecb6ca570bfc5e268338b1a16cf4ef2d36")
   }
 }
 

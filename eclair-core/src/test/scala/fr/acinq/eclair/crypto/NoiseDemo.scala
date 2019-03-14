@@ -17,9 +17,9 @@
 package fr.acinq.eclair.crypto
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props, Stash}
-import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.Pipe
 import fr.acinq.eclair.crypto.Noise.{CipherState, KeyPair}
+import scodec.bits.{ByteVector, _}
 
 /**
   * Created by fabrice on 12/12/16.
@@ -27,7 +27,7 @@ import fr.acinq.eclair.crypto.Noise.{CipherState, KeyPair}
 object NoiseDemo extends App {
   implicit val system = ActorSystem("mySystem")
 
-  class NoiseHandler(keyPair: KeyPair, rs: Option[BinaryData], them: ActorRef, isWriter: Boolean, listenerFactory: => ActorRef) extends Actor with Stash {
+  class NoiseHandler(keyPair: KeyPair, rs: Option[ByteVector], them: ActorRef, isWriter: Boolean, listenerFactory: => ActorRef) extends Actor with Stash {
     // initiator must know pubkey (i.e long-term ID) of responder
     if (isWriter) require(!rs.isEmpty)
 
@@ -36,17 +36,17 @@ object NoiseDemo extends App {
     val handshakeState = if (isWriter) {
       val state = Noise.HandshakeState.initializeWriter(
         Noise.handshakePatternXK,
-        "lightning".getBytes(),
-        keyPair, KeyPair(BinaryData.empty, BinaryData.empty), rs.get, BinaryData.empty,
+        ByteVector.view("lightning".getBytes()),
+        keyPair, KeyPair(ByteVector.empty, ByteVector.empty), rs.get, ByteVector.empty,
         Noise.Secp256k1DHFunctions, Noise.Chacha20Poly1305CipherFunctions, Noise.SHA256HashFunctions)
-      val (state1, message, None) = state.write(BinaryData.empty)
+      val (state1, message, None) = state.write(ByteVector.empty)
       them ! message
       state1
     } else {
       val state = Noise.HandshakeState.initializeReader(
         Noise.handshakePatternXK,
-        "lightning".getBytes(),
-        keyPair, KeyPair(BinaryData.empty, BinaryData.empty), BinaryData.empty, BinaryData.empty,
+        ByteVector.view("lightning".getBytes()),
+        keyPair, KeyPair(ByteVector.empty, ByteVector.empty), ByteVector.empty, ByteVector.empty,
         Noise.Secp256k1DHFunctions, Noise.Chacha20Poly1305CipherFunctions, Noise.SHA256HashFunctions)
       state
     }
@@ -60,7 +60,7 @@ object NoiseDemo extends App {
     }
 
     def handshake(state: Noise.HandshakeStateReader): Receive = {
-      case message: BinaryData =>
+      case message: ByteVector =>
         state.read(message) match {
           case (_, _, Some((cs0, cs1, _))) if isWriter => {
             toNormal(cs0, cs1)
@@ -69,7 +69,7 @@ object NoiseDemo extends App {
             toNormal(cs1, cs0)
           }
           case (writer, _, None) =>
-            val (reader1, output, cipherstates) = writer.write(BinaryData.empty)
+            val (reader1, output, cipherstates) = writer.write(ByteVector.empty)
             them ! output
             cipherstates match {
               case None => context become handshake(reader1)
@@ -84,12 +84,12 @@ object NoiseDemo extends App {
     }
 
     def normal(enc: Noise.CipherState, dec: Noise.CipherState, listener: ActorRef): Receive = {
-      case plaintext: BinaryData if sender == listener =>
-        val (enc1, ciphertext) = enc.encryptWithAd(BinaryData.empty, plaintext)
+      case plaintext: ByteVector if sender == listener =>
+        val (enc1, ciphertext) = enc.encryptWithAd(ByteVector.empty, plaintext)
         them ! ciphertext
         context become normal(enc1, dec, listener)
-      case ciphertext: BinaryData if sender == them =>
-        val (dec1, plaintext) = dec.decryptWithAd(BinaryData.empty, ciphertext)
+      case ciphertext: ByteVector if sender == them =>
+        val (dec1, plaintext) = dec.decryptWithAd(ByteVector.empty, ciphertext)
         listener ! plaintext
         context become normal(enc, dec1, listener)
     }
@@ -99,19 +99,19 @@ object NoiseDemo extends App {
     var count = 0
 
     def receive = {
-      case message: BinaryData =>
-        sender ! BinaryData("response to ".getBytes() ++ message)
+      case message: ByteVector =>
+        sender ! ByteVector("response to ".getBytes()) ++ message
         count = count + 1
         if (count == 5) context stop self
     }
   }
 
   object Initiator {
-    val s = Noise.Secp256k1DHFunctions.generateKeyPair("1111111111111111111111111111111111111111111111111111111111111111")
+    val s = Noise.Secp256k1DHFunctions.generateKeyPair(hex"1111111111111111111111111111111111111111111111111111111111111111")
   }
 
   object Responder {
-    val s = Noise.Secp256k1DHFunctions.generateKeyPair("2121212121212121212121212121212121212121212121212121212121212121")
+    val s = Noise.Secp256k1DHFunctions.generateKeyPair(hex"2121212121212121212121212121212121212121212121212121212121212121")
   }
 
   val pipe = system.actorOf(Props[Pipe], "pipe")
@@ -121,5 +121,5 @@ object NoiseDemo extends App {
   val barHandler = system.actorOf(Props(new NoiseHandler(Responder.s, None, pipe, false, bar)), "barhandler")
   pipe ! (fooHandler, barHandler)
 
-  bar.tell(BinaryData("hello".getBytes()), foo)
+  bar.tell(ByteVector("hello".getBytes()), foo)
 }

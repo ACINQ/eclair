@@ -17,21 +17,22 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import scodec.bits.ByteVector
 
 /**
   * Created by PM on 07/12/2016.
   */
 object Generators {
 
-  def fixSize(data: BinaryData): BinaryData = data.length match {
-    case 32 => data
-    case length if length < 32 => Array.fill(32 - length)(0.toByte) ++ data
+  def fixSize(data: ByteVector): ByteVector32 = data.length match {
+    case 32 => ByteVector32(data)
+    case length if length < 32 => ByteVector32(data.padLeft(32))
   }
 
-  def perCommitSecret(seed: BinaryData, index: Long): Scalar = Scalar(ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFL - index))
+  def perCommitSecret(seed: ByteVector32, index: Long): Scalar = Scalar(ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFL - index))
 
-  def perCommitPoint(seed: BinaryData, index: Long): Point = perCommitSecret(seed, index).toPoint
+  def perCommitPoint(seed: ByteVector32, index: Long): Point = perCommitSecret(seed, index).toPoint
 
   def derivePrivKey(secret: Scalar, perCommitPoint: Point): PrivateKey = {
     // secretkey = basepoint-secret + SHA256(per-commitment-point || basepoint)

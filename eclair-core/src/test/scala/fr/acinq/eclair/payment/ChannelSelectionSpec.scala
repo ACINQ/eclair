@@ -23,8 +23,9 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Relayer.{OutgoingChannel, RelayPayload}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{ShortChannelId, randomBytes, randomKey}
+import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomKey}
 import org.scalatest.FunSuite
+import scodec.bits.ByteVector
 
 import scala.collection.mutable
 
@@ -38,7 +39,7 @@ class ChannelSelectionSpec extends FunSuite {
 
   test("handle relay") {
     val relayPayload = RelayPayload(
-      add = UpdateAddHtlc(randomBytes(32), 42, 1000000, randomBytes(32), 70, ""),
+      add = UpdateAddHtlc(randomBytes32, 42, 1000000, randomBytes32, 70, ByteVector.empty),
       payload = PerHopPayload(ShortChannelId(12345), amtToForward = 998900, outgoingCltvValue = 60),
       nextPacket = Sphinx.LAST_PACKET // just a placeholder
     )
@@ -73,7 +74,7 @@ class ChannelSelectionSpec extends FunSuite {
   test("relay channel selection") {
 
     val relayPayload = RelayPayload(
-      add = UpdateAddHtlc(randomBytes(32), 42, 1000000, randomBytes(32), 70, ""),
+      add = UpdateAddHtlc(randomBytes32, 42, 1000000, randomBytes32, 70, ByteVector.empty),
       payload = PerHopPayload(ShortChannelId(12345), amtToForward = 998900, outgoingCltvValue = 60),
       nextPacket = Sphinx.LAST_PACKET // just a placeholder
     )

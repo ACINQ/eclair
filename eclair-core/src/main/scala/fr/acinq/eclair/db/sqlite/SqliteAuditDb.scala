@@ -19,8 +19,8 @@ package fr.acinq.eclair.db.sqlite
 import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, ChannelClosed, ChannelCreated, NetworkFeePaid}
+import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.eclair.channel.{AvailableBalanceChanged, NetworkFeePaid}
 import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent, NetworkFee, Stats}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 
@@ -30,6 +30,7 @@ import scala.compat.Platform
 class SqliteAuditDb(sqlite: Connection) extends AuditDb {
 
   import SqliteUtils._
+  import ExtendedResultSet._
 
   val DB_NAME = "audit"
   val CURRENT_VERSION = 1
@@ -53,8 +54,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
 
   override def add(e: AvailableBalanceChanged): Unit =
     using(sqlite.prepareStatement("INSERT INTO balance_updated VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, e.channelId)
-      statement.setBytes(2, e.commitments.remoteParams.nodeId.toBin)
+      statement.setBytes(1, e.channelId.toArray)
+      statement.setBytes(2, e.commitments.remoteParams.nodeId.toBin.toArray)
       statement.setLong(3, e.localBalanceMsat)
       statement.setLong(4, e.commitments.commitInput.txOut.amount.toLong)
       statement.setLong(5, e.commitments.remoteParams.channelReserveSatoshis) // remote decides what our reserve should be
@@ -64,8 +65,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
 
   override def add(e: ChannelLifecycleEvent): Unit =
     using(sqlite.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, e.channelId)
-      statement.setBytes(2, e.remoteNodeId.toBin)
+      statement.setBytes(1, e.channelId.toArray)
+      statement.setBytes(2, e.remoteNodeId.toBin.toArray)
       statement.setLong(3, e.capacitySat)
       statement.setBoolean(4, e.isFunder)
       statement.setBoolean(5, e.isPrivate)
@@ -78,9 +79,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
     using(sqlite.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setLong(1, e.amount.toLong)
       statement.setLong(2, e.feesPaid.toLong)
-      statement.setBytes(3, e.paymentHash)
-      statement.setBytes(4, e.paymentPreimage)
-      statement.setBytes(5, e.toChannelId)
+      statement.setBytes(3, e.paymentHash.toArray)
+      statement.setBytes(4, e.paymentPreimage.toArray)
+      statement.setBytes(5, e.toChannelId.toArray)
       statement.setLong(6, e.timestamp)
       statement.executeUpdate()
     }
@@ -88,8 +89,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
   override def add(e: PaymentReceived): Unit =
     using(sqlite.prepareStatement("INSERT INTO received VALUES (?, ?, ?, ?)")) { statement =>
       statement.setLong(1, e.amount.toLong)
-      statement.setBytes(2, e.paymentHash)
-      statement.setBytes(3, e.fromChannelId)
+      statement.setBytes(2, e.paymentHash.toArray)
+      statement.setBytes(3, e.fromChannelId.toArray)
       statement.setLong(4, e.timestamp)
       statement.executeUpdate()
     }
@@ -98,18 +99,18 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
     using(sqlite.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setLong(1, e.amountIn.toLong)
       statement.setLong(2, e.amountOut.toLong)
-      statement.setBytes(3, e.paymentHash)
-      statement.setBytes(4, e.fromChannelId)
-      statement.setBytes(5, e.toChannelId)
+      statement.setBytes(3, e.paymentHash.toArray)
+      statement.setBytes(4, e.fromChannelId.toArray)
+      statement.setBytes(5, e.toChannelId.toArray)
       statement.setLong(6, e.timestamp)
       statement.executeUpdate()
     }
 
   override def add(e: NetworkFeePaid): Unit =
     using(sqlite.prepareStatement("INSERT INTO network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, e.channelId)
-      statement.setBytes(2, e.remoteNodeId.toBin)
-      statement.setBytes(3, e.tx.txid)
+      statement.setBytes(1, e.channelId.toArray)
+      statement.setBytes(2, e.remoteNodeId.toBin.toArray)
+      statement.setBytes(3, e.tx.txid.toArray)
       statement.setLong(4, e.fee.toLong)
       statement.setString(5, e.txType)
       statement.setLong(6, Platform.currentTime)
@@ -126,9 +127,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
         q = q :+ PaymentSent(
           amount = MilliSatoshi(rs.getLong("amount_msat")),
           feesPaid = MilliSatoshi(rs.getLong("fees_msat")),
-          paymentHash = BinaryData(rs.getBytes("payment_hash")),
-          paymentPreimage = BinaryData(rs.getBytes("payment_preimage")),
-          toChannelId = BinaryData(rs.getBytes("to_channel_id")),
+          paymentHash = rs.getByteVector32("payment_hash"),
+          paymentPreimage = rs.getByteVector32("payment_preimage"),
+          toChannelId = rs.getByteVector32("to_channel_id"),
           timestamp = rs.getLong("timestamp"))
       }
       q
@@ -143,8 +144,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
       while (rs.next()) {
         q = q :+ PaymentReceived(
           amount = MilliSatoshi(rs.getLong("amount_msat")),
-          paymentHash = BinaryData(rs.getBytes("payment_hash")),
-          fromChannelId = BinaryData(rs.getBytes("from_channel_id")),
+          paymentHash = rs.getByteVector32("payment_hash"),
+          fromChannelId = rs.getByteVector32("from_channel_id"),
           timestamp = rs.getLong("timestamp"))
       }
       q
@@ -160,9 +161,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
         q = q :+ PaymentRelayed(
           amountIn = MilliSatoshi(rs.getLong("amount_in_msat")),
           amountOut = MilliSatoshi(rs.getLong("amount_out_msat")),
-          paymentHash = BinaryData(rs.getBytes("payment_hash")),
-          fromChannelId = BinaryData(rs.getBytes("from_channel_id")),
-          toChannelId = BinaryData(rs.getBytes("to_channel_id")),
+          paymentHash = rs.getByteVector32("payment_hash"),
+          fromChannelId = rs.getByteVector32("from_channel_id"),
+          toChannelId = rs.getByteVector32("to_channel_id"),
           timestamp = rs.getLong("timestamp"))
       }
       q
@@ -176,9 +177,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
       var q: Queue[NetworkFee] = Queue()
       while (rs.next()) {
         q = q :+ NetworkFee(
-          remoteNodeId = PublicKey(rs.getBytes("node_id")),
-          channelId = BinaryData(rs.getBytes("channel_id")),
-          txId = BinaryData(rs.getBytes("tx_id")),
+          remoteNodeId = PublicKey(rs.getByteVector("node_id")),
+          channelId = rs.getByteVector32("channel_id"),
+          txId = rs.getByteVector32("tx_id"),
           feeSat = rs.getLong("fee_sat"),
           txType = rs.getString("tx_type"),
           timestamp = rs.getLong("timestamp"))
@@ -220,7 +221,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
       var q: Queue[Stats] = Queue()
       while (rs.next()) {
         q = q :+ Stats(
-          channelId = BinaryData(rs.getBytes("channel_id")),
+          channelId = rs.getByteVector32("channel_id"),
           avgPaymentAmountSatoshi = rs.getLong("avg_payment_amount_sat"),
           paymentCount = rs.getInt("payment_count"),
           relayFeeSatoshi = rs.getLong("relay_fee_sat"),

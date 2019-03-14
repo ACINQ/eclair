@@ -19,14 +19,15 @@ package fr.acinq.eclair.blockchain.electrum
 import java.net.InetSocketAddress
 import java.sql.DriverManager
 
-import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props, Terminated}
+import akka.actor.{ActorRef, ActorSystem, Terminated}
 import akka.testkit
 import akka.testkit.{TestActor, TestFSMRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, Block, BlockHeader, MnemonicCode, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32, MnemonicCode, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import org.scalatest.FunSuiteLike
+import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 import scala.concurrent.duration._
@@ -35,7 +36,7 @@ import scala.concurrent.duration._
 class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
   val sender = TestProbe()
 
-  val entropy = BinaryData("01" * 32)
+  val entropy = ByteVector32(ByteVector.fill(32)(1))
   val mnemonics = MnemonicCode.toMnemonics(entropy)
   val seed = MnemonicCode.toSeed(mnemonics, "")
 
@@ -170,7 +171,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     }
     val key = wallet.stateData.accountKeys(0)
     val scriptHash = computeScriptHashFromPublicKey(key.publicKey)
-    wallet ! ScriptHashSubscriptionResponse(scriptHash, "01" * 32)
+    wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(1)).toHex)
     client.expectMsg(GetScriptHashHistory(scriptHash))
 
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(100000), ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
@@ -201,7 +202,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
           TestActor.KeepRunning
       }
     })
-    probe.send(wallet, GetMerkleResponse(tx.txid, BinaryData("01" * 32) :: Nil, 2, 0))
+    probe.send(wallet, GetMerkleResponse(tx.txid, ByteVector32(ByteVector.fill(32)(1)) :: Nil, 2, 0))
     watcher.expectTerminated(probe.ref)
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
 

@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.{BinaryData, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 
@@ -31,7 +31,7 @@ trait NetworkDb {
 
   def listNodes(): Seq[NodeAnnouncement]
 
-  def addChannel(c: ChannelAnnouncement, txid: BinaryData, capacity: Satoshi)
+  def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi)
 
   def removeChannel(shortChannelId: ShortChannelId) = removeChannels(Seq(shortChannelId))
 
@@ -42,7 +42,7 @@ trait NetworkDb {
     */
   def removeChannels(shortChannelIds: Iterable[ShortChannelId])
 
-  def listChannels(): Map[ChannelAnnouncement, (BinaryData, Satoshi)]
+  def listChannels(): Map[ChannelAnnouncement, (ByteVector32, Satoshi)]
 
   def addChannelUpdate(u: ChannelUpdate)
 
