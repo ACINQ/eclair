@@ -18,10 +18,11 @@ package fr.acinq.eclair.db
 
 import java.sql.DriverManager
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqlitePendingRelayDb}
 import org.scalatest.FunSuite
 import org.sqlite.SQLiteException
+import scodec.bits.ByteVector
 
 
 class SqliteChannelsDbSpec extends FunSuite {
@@ -42,9 +43,9 @@ class SqliteChannelsDbSpec extends FunSuite {
     val channel = ChannelStateSpec.normal
 
     val commitNumber = 42
-    val paymentHash1 = BinaryData("42" * 300)
+    val paymentHash1 = ByteVector32.Zeroes
     val cltvExpiry1 = 123
-    val paymentHash2 = BinaryData("43" * 300)
+    val paymentHash2 = ByteVector32(ByteVector.fill(32)(1))
     val cltvExpiry2 = 656
 
     intercept[SQLiteException](db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel

@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.Command
 
 /**
@@ -33,11 +33,11 @@ import fr.acinq.eclair.channel.Command
   */
 trait PendingRelayDb {
 
-  def addPendingRelay(channelId: BinaryData, htlcId: Long, cmd: Command)
+  def addPendingRelay(channelId: ByteVector32, htlcId: Long, cmd: Command)
 
-  def removePendingRelay(channelId: BinaryData, htlcId: Long)
+  def removePendingRelay(channelId: ByteVector32, htlcId: Long)
 
-  def listPendingRelay(channelId: BinaryData): Seq[Command]
+  def listPendingRelay(channelId: ByteVector32): Seq[Command]
 
   def close(): Unit
 

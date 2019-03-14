@@ -19,7 +19,7 @@ package fr.acinq.eclair
 
 import java.util.BitSet
 
-import fr.acinq.bitcoin.BinaryData
+import scodec.bits.ByteVector
 
 
 /**
@@ -41,7 +41,7 @@ object Features {
 
   def hasFeature(features: BitSet, bit: Int): Boolean = features.get(bit)
 
-  def hasFeature(features: BinaryData, bit: Int): Boolean = hasFeature(BitSet.valueOf(features.reverse.toArray), bit)
+  def hasFeature(features: ByteVector, bit: Int): Boolean = hasFeature(BitSet.valueOf(features.reverse.toArray), bit)
 
   /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that
@@ -59,5 +59,5 @@ object Features {
     * A feature set is supported if all even bits are supported.
     * We just ignore unknown odd bits.
     */
-  def areSupported(features: BinaryData): Boolean = areSupported(BitSet.valueOf(features.reverse.toArray))
+  def areSupported(features: ByteVector): Boolean = areSupported(BitSet.valueOf(features.reverse.toArray))
 }

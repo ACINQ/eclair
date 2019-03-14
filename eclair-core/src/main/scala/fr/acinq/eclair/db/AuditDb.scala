@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
@@ -49,8 +49,8 @@ trait AuditDb {
 
 }
 
-case class ChannelLifecycleEvent(channelId: BinaryData, remoteNodeId: PublicKey, capacitySat: Long, isFunder: Boolean, isPrivate: Boolean, event: String)
+case class ChannelLifecycleEvent(channelId: ByteVector32, remoteNodeId: PublicKey, capacitySat: Long, isFunder: Boolean, isPrivate: Boolean, event: String)
 
-case class NetworkFee(remoteNodeId: PublicKey, channelId: BinaryData, txId: BinaryData, feeSat: Long, txType: String, timestamp: Long)
+case class NetworkFee(remoteNodeId: PublicKey, channelId: ByteVector32, txId: ByteVector32, feeSat: Long, txType: String, timestamp: Long)
 
-case class Stats(channelId: BinaryData, avgPaymentAmountSatoshi: Long, paymentCount: Int, relayFeeSatoshi: Long, networkFeeSatoshi: Long)
+case class Stats(channelId: ByteVector32, avgPaymentAmountSatoshi: Long, paymentCount: Int, relayFeeSatoshi: Long, networkFeeSatoshi: Long)

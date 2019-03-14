@@ -23,6 +23,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, JsonRPCErr
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
+import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -43,7 +44,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     })
   }
 
-  def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toString(), lockUnspents, feeRatePerKw)
+  def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toHex, lockUnspents, feeRatePerKw)
 
   def signTransaction(hex: String): Future[SignTransactionResponse] =
     rpcClient.invoke("signrawtransaction", hex).map(json => {
@@ -52,15 +53,17 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
       SignTransactionResponse(Transaction.read(hex), complete)
     })
 
-  def signTransaction(tx: Transaction): Future[SignTransactionResponse] = signTransaction(Transaction.write(tx).toString())
+  def signTransaction(tx: Transaction): Future[SignTransactionResponse] = signTransaction(Transaction.write(tx).toHex)
 
-  def getTransaction(txid: BinaryData): Future[Transaction] = rpcClient.invoke("getrawtransaction", txid.toString()) collect { case JString(hex) => Transaction.read(hex) }
+  def getTransaction(txid: ByteVector32): Future[Transaction] = rpcClient.invoke("getrawtransaction", txid.toString()) collect { case JString(hex) => Transaction.read(hex) }
 
-  def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = publishTransaction(Transaction.write(tx).toString())
+  def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = publishTransaction(Transaction.write(tx).toHex)
 
   def publishTransaction(hex: String)(implicit ec: ExecutionContext): Future[String] = rpcClient.invoke("sendrawtransaction", hex) collect { case JString(txid) => txid }
 
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("lockunspent", true, outPoints.toList.map(outPoint => Utxo(outPoint.txid.toString, outPoint.index))) collect { case JBool(result) => result }
+
+  def isTransactionOutputSpendable(txId: String, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("gettxout", txId, outputIndex, true) collect { case j => j != JNull }
 
 
   override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDecimal(balance) => Satoshi(balance.bigDecimal.scaleByPowerOfTen(8).longValue()) }
@@ -80,7 +83,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     }
   }
 
-  override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = {
+  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = {
     // partial funding tx
     val partialFundingTx = Transaction(
       version = 2,
@@ -107,6 +110,19 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     .recover { case _ => true } // in all other cases we consider that the tx has been published
 
   override def rollback(tx: Transaction): Future[Boolean] = unlockOutpoints(tx.txIn.map(_.outPoint)) // we unlock all utxos used by the tx
+
+  override def doubleSpent(tx: Transaction): Future[Boolean] =
+  for {
+    exists <- getTransaction(tx.txid).map(_ => true).recover { case _ => false }
+    doublespent <- if (exists) {
+      // if the tx is in the blockchain, it can't have been doublespent
+      Future.successful(false)
+    } else {
+      // if the tx wasn't in the blockchain and one of it's input has been spent, it is doublespent
+      Future.sequence(tx.txIn.map(txIn => isTransactionOutputSpendable(txIn.outPoint.txid.toHex, txIn.outPoint.index.toInt))).map(_.exists(_ == false))
+    }
+  } yield doublespent // TODO: should we check confirmations of the overriding tx?
+
 }
 
 object BitcoinCoreWallet {

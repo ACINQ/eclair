@@ -17,12 +17,13 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import scala.collection.mutable
 import fr.acinq.eclair._
-import fr.acinq.eclair.wire.ChannelUpdate
-import Router._
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.wire.ChannelUpdate
+
+import scala.collection.mutable
 
 object Graph {
 

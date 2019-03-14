@@ -17,12 +17,12 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props, Status}
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.Payment
 import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, NodeParams, randomBytes}
+import fr.acinq.eclair.{Globals, NodeParams, randomBytes32}
 
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
@@ -45,7 +45,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
 
   override def receive: Receive = run(Map.empty)
 
-  def run(hash2preimage: Map[BinaryData, PendingPaymentRequest]): Receive = {
+  def run(hash2preimage: Map[ByteVector32, PendingPaymentRequest]): Receive = {
 
     case PurgeExpiredRequests =>
       context.become(run(hash2preimage.filterNot { case (_, pr) => hasExpired(pr) }))
@@ -55,7 +55,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         if (hash2preimage.size > nodeParams.maxPendingPaymentRequests) {
           throw new RuntimeException(s"too many pending payment requests (max=${nodeParams.maxPendingPaymentRequests})")
         }
-        val paymentPreimage = randomBytes(32)
+        val paymentPreimage = randomBytes32
         val paymentHash = Crypto.sha256(paymentPreimage)
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress = None, expirySeconds = Some(expirySeconds), extraHops = extraHops)
@@ -114,7 +114,7 @@ object LocalPaymentHandler {
 
   case object PurgeExpiredRequests
 
-  case class PendingPaymentRequest(preimage: BinaryData, paymentRequest: PaymentRequest)
+  case class PendingPaymentRequest(preimage: ByteVector32, paymentRequest: PaymentRequest)
 
   def hasExpired(pr: PendingPaymentRequest): Boolean = pr.paymentRequest.expiry match {
     case Some(expiry) => pr.paymentRequest.timestamp + expiry <= Platform.currentTime / 1000
