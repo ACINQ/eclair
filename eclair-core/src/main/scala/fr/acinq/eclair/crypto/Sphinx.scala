@@ -19,14 +19,14 @@ package fr.acinq.eclair.crypto
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, InputStream, OutputStream}
 import java.nio.ByteOrder
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Crypto, Protocol}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, Scalar}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Protocol}
 import fr.acinq.eclair.wire.{FailureMessage, FailureMessageCodecs}
 import grizzled.slf4j.Logging
 import org.spongycastle.crypto.digests.SHA256Digest
 import org.spongycastle.crypto.macs.HMac
 import org.spongycastle.crypto.params.KeyParameter
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 
 import scala.annotation.tailrec
 import scala.util.{Failure, Success, Try}
@@ -51,39 +51,34 @@ object Sphinx extends Logging {
   val PacketLength = 1 + 33 + MacLength + MaxHops * (PayloadLength + MacLength)
 
   // last packet (all zeroes except for the version byte)
-  val LAST_PACKET = Packet(Version, zeroes(33), zeroes(MacLength), zeroes(MaxHops * (PayloadLength + MacLength)))
+  val LAST_PACKET = Packet(Version, ByteVector.fill(33)(0), ByteVector32.Zeroes, ByteVector.fill(MaxHops * (PayloadLength + MacLength))(0))
 
-  def hmac256(key: Seq[Byte], message: Seq[Byte]): Seq[Byte] = {
+  def hmac256(key: ByteVector, message: ByteVector): ByteVector32 = {
     val mac = new HMac(new SHA256Digest())
     mac.init(new KeyParameter(key.toArray))
-    mac.update(message.toArray, 0, message.length)
+    mac.update(message.toArray, 0, message.length.toInt)
     val output = new Array[Byte](32)
     mac.doFinal(output, 0)
-    output
+    ByteVector32(ByteVector.view(output))
   }
 
-  def mac(key: BinaryData, message: BinaryData): BinaryData = hmac256(key, message).take(MacLength)
+  def mac(key: ByteVector, message: ByteVector): ByteVector32 = hmac256(key, message)
 
-  def xor(a: Seq[Byte], b: Seq[Byte]): Seq[Byte] = a.zip(b).map { case (x, y) => ((x ^ y) & 0xff).toByte }
+  def generateKey(keyType: ByteVector, secret: ByteVector32): ByteVector32 = hmac256(keyType, secret)
 
-  def generateKey(keyType: BinaryData, secret: BinaryData): BinaryData = {
-    require(secret.length == 32, "secret must be 32 bytes")
-    hmac256(keyType, secret)
-  }
+  def generateKey(keyType: String, secret: ByteVector32): ByteVector32 = generateKey(ByteVector.view(keyType.getBytes("UTF-8")), secret)
 
-  def generateKey(keyType: String, secret: BinaryData): BinaryData = generateKey(keyType.getBytes("UTF-8"), secret)
+  def zeroes(length: Int): ByteVector = ByteVector.fill(length)(0)
 
-  def zeroes(length: Int): BinaryData = Seq.fill[Byte](length)(0)
+  def generateStream(key: ByteVector, length: Int): ByteVector = ChaCha20.encrypt(zeroes(length), key, zeroes(12))
 
-  def generateStream(key: BinaryData, length: Int): BinaryData = ChaCha20Legacy.encrypt(zeroes(length), key, zeroes(8))
+  def computeSharedSecret(pub: PublicKey, secret: PrivateKey): ByteVector32 = Crypto.sha256(ByteVector.view(pub.multiply(secret).normalize().getEncoded(true)))
 
-  def computeSharedSecret(pub: PublicKey, secret: PrivateKey): BinaryData = Crypto.sha256(pub.multiply(secret).normalize().getEncoded(true))
+  def computeblindingFactor(pub: PublicKey, secret: ByteVector): ByteVector32 = Crypto.sha256(pub.toBin ++ secret)
 
-  def computeblindingFactor(pub: PublicKey, secret: BinaryData): BinaryData = Crypto.sha256(pub.toBin ++ secret)
+  def blind(pub: PublicKey, blindingFactor: ByteVector32): PublicKey = PublicKey(pub.multiply(Scalar(blindingFactor)).normalize(), compressed = true)
 
-  def blind(pub: PublicKey, blindingFactor: BinaryData): PublicKey = PublicKey(pub.multiply(blindingFactor).normalize(), compressed = true)
-
-  def blind(pub: PublicKey, blindingFactors: Seq[BinaryData]): PublicKey = blindingFactors.foldLeft(pub)(blind)
+  def blind(pub: PublicKey, blindingFactors: Seq[ByteVector32]): PublicKey = blindingFactors.foldLeft(pub)(blind)
 
   /**
     * computes the ephemeral public keys and shared secrets for all nodes on the route.
@@ -92,15 +87,15 @@ object Sphinx extends Logging {
     * @param publicKeys public keys of each node on the route
     * @return a tuple (ephemeral public keys, shared secrets)
     */
-  def computeEphemeralPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: Seq[PublicKey]): (Seq[PublicKey], Seq[BinaryData]) = {
-    val ephemeralPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value)
-    val secret0 = computeSharedSecret(publicKeys(0), sessionKey)
+  def computeEphemeralPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: Seq[PublicKey]): (Seq[PublicKey], Seq[ByteVector32]) = {
+    val ephemeralPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value.toBin)
+    val secret0 = computeSharedSecret(publicKeys.head, sessionKey)
     val blindingFactor0 = computeblindingFactor(ephemeralPublicKey0, secret0)
     computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys.tail, Seq(ephemeralPublicKey0), Seq(blindingFactor0), Seq(secret0))
   }
 
   @tailrec
-  def computeEphemeralPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], ephemeralPublicKeys: Seq[PublicKey], blindingFactors: Seq[BinaryData], sharedSecrets: Seq[BinaryData]): (Seq[PublicKey], Seq[BinaryData]) = {
+  def computeEphemeralPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], ephemeralPublicKeys: Seq[PublicKey], blindingFactors: Seq[ByteVector32], sharedSecrets: Seq[ByteVector32]): (Seq[PublicKey], Seq[ByteVector32]) = {
     if (publicKeys.isEmpty)
       (ephemeralPublicKeys, sharedSecrets)
     else {
@@ -111,23 +106,23 @@ object Sphinx extends Logging {
     }
   }
 
-  def generateFiller(keyType: String, sharedSecrets: Seq[BinaryData], hopSize: Int, maxNumberOfHops: Int = MaxHops): BinaryData = {
-    sharedSecrets.foldLeft(Seq.empty[Byte])((padding, secret) => {
+  def generateFiller(keyType: String, sharedSecrets: Seq[ByteVector32], hopSize: Int, maxNumberOfHops: Int = MaxHops): ByteVector = {
+    sharedSecrets.foldLeft(ByteVector.empty)((padding, secret) => {
       val key = generateKey(keyType, secret)
-      val padding1 = padding ++ zeroes(hopSize)
+      val padding1 = padding ++ ByteVector.fill(hopSize)(0)
       val stream = generateStream(key, hopSize * (maxNumberOfHops + 1)).takeRight(padding1.length)
-      xor(padding1, stream)
+      padding1.xor(stream)
     })
   }
 
-  case class Packet(version: Int, publicKey: BinaryData, hmac: BinaryData, routingInfo: BinaryData) {
+  case class Packet(version: Int, publicKey: ByteVector, hmac: ByteVector32, routingInfo: ByteVector) {
     require(publicKey.length == 33, "onion packet public key length should be 33")
     require(hmac.length == MacLength, s"onion packet hmac length should be $MacLength")
     require(routingInfo.length == MaxHops * (PayloadLength + MacLength), s"onion packet routing info length should be ${MaxHops * (PayloadLength + MacLength)}")
 
-    def isLastPacket: Boolean = hmac == zeroes(MacLength)
+    def isLastPacket: Boolean = hmac == ByteVector32.Zeroes
 
-    def serialize: BinaryData = Packet.write(this)
+    def serialize: ByteVector = Packet.write(this)
   }
 
   object Packet {
@@ -139,26 +134,26 @@ object Sphinx extends Logging {
       in.read(routingInfo)
       val hmac = new Array[Byte](MacLength)
       in.read(hmac)
-      Packet(version, publicKey, hmac, routingInfo)
+      Packet(version, ByteVector.view(publicKey), ByteVector32(ByteVector.view(hmac)), ByteVector.view(routingInfo))
     }
 
-    def read(in: BinaryData): Packet = read(new ByteArrayInputStream(in))
+    def read(in: ByteVector): Packet = read(new ByteArrayInputStream(in.toArray))
 
     def write(packet: Packet, out: OutputStream): OutputStream = {
       out.write(packet.version)
-      out.write(packet.publicKey)
-      out.write(packet.routingInfo)
-      out.write(packet.hmac)
+      out.write(packet.publicKey.toArray)
+      out.write(packet.routingInfo.toArray)
+      out.write(packet.hmac.toArray)
       out
     }
 
-    def write(packet: Packet): BinaryData = {
+    def write(packet: Packet): ByteVector = {
       val out = new ByteArrayOutputStream(PacketLength)
       write(packet, out)
-      out.toByteArray
+      ByteVector.view(out.toByteArray)
     }
 
-    def isLastPacket(packet: BinaryData): Boolean = Packet.read(packet).hmac == zeroes(MacLength)
+    def isLastPacket(packet: ByteVector): Boolean = Packet.read(packet).hmac == ByteVector32.Zeroes
   }
 
   /**
@@ -167,7 +162,7 @@ object Sphinx extends Logging {
     * @param nextPacket   packet for the next node
     * @param sharedSecret shared secret for the sending node, which we will need to return error messages
     */
-  case class ParsedPacket(payload: BinaryData, nextPacket: Packet, sharedSecret: BinaryData)
+  case class ParsedPacket(payload: ByteVector, nextPacket: Packet, sharedSecret: ByteVector32)
 
   /**
     *
@@ -180,18 +175,18 @@ object Sphinx extends Logging {
     *         - shared secret is the secret we share with the node that sent the packet. We need it to propagate failure
     *         messages upstream.
     */
-  def parsePacket(privateKey: PrivateKey, associatedData: BinaryData, rawPacket: BinaryData): Try[ParsedPacket] = Try {
+  def parsePacket(privateKey: PrivateKey, associatedData: ByteVector, rawPacket: ByteVector): Try[ParsedPacket] = Try {
     require(rawPacket.length == PacketLength, s"onion packet length is ${rawPacket.length}, it should be ${PacketLength}")
     val packet = Packet.read(rawPacket)
     val sharedSecret = computeSharedSecret(PublicKey(packet.publicKey), privateKey)
     val mu = generateKey("mu", sharedSecret)
-    val check: BinaryData = mac(mu, packet.routingInfo ++ associatedData)
+    val check = mac(mu, packet.routingInfo ++ associatedData)
     require(check == packet.hmac, "invalid header mac")
 
     val rho = generateKey("rho", sharedSecret)
-    val bin = xor(packet.routingInfo ++ zeroes(PayloadLength + MacLength), generateStream(rho, PayloadLength + MacLength + MaxHops * (PayloadLength + MacLength)))
+    val bin = (packet.routingInfo ++ ByteVector.fill(PayloadLength + MacLength)(0)) xor generateStream(rho, PayloadLength + MacLength + MaxHops * (PayloadLength + MacLength))
     val payload = bin.take(PayloadLength)
-    val hmac = bin.slice(PayloadLength, PayloadLength + MacLength)
+    val hmac = ByteVector32(bin.slice(PayloadLength, PayloadLength + MacLength))
     val nextRouteInfo = bin.drop(PayloadLength + MacLength)
 
     val nextPubKey = blind(PublicKey(packet.publicKey), computeblindingFactor(PublicKey(packet.publicKey), sharedSecret))
@@ -200,7 +195,7 @@ object Sphinx extends Logging {
   }
 
   @tailrec
-  private def extractSharedSecrets(packet: BinaryData, privateKey: PrivateKey, associatedData: BinaryData, acc: Seq[BinaryData] = Nil): Try[Seq[BinaryData]] = {
+  private def extractSharedSecrets(packet: ByteVector, privateKey: PrivateKey, associatedData: ByteVector32, acc: Seq[ByteVector32] = Nil): Try[Seq[ByteVector32]] = {
     parsePacket(privateKey, associatedData, packet) match {
       case Success(ParsedPacket(_, nextPacket, sharedSecret)) if nextPacket.isLastPacket => Success(acc :+ sharedSecret)
       case Success(ParsedPacket(_, nextPacket, sharedSecret)) => extractSharedSecrets(nextPacket.serialize, privateKey, associatedData, acc :+ sharedSecret)
@@ -223,16 +218,16 @@ object Sphinx extends Logging {
     * @param routingInfoFiller   optional routing info filler, needed only when you're constructing the last packet
     * @return the next packet
     */
-  private def makeNextPacket(payload: BinaryData, associatedData: BinaryData, ephemeralPublicKey: BinaryData, sharedSecret: BinaryData, packet: Packet, routingInfoFiller: BinaryData = BinaryData.empty): Packet = {
+  private def makeNextPacket(payload: ByteVector, associatedData: ByteVector32, ephemeralPublicKey: ByteVector, sharedSecret: ByteVector32, packet: Packet, routingInfoFiller: ByteVector = ByteVector.empty): Packet = {
     require(payload.length == PayloadLength)
 
     val nextRoutingInfo = {
       val routingInfo1 = payload ++ packet.hmac ++ packet.routingInfo.dropRight(PayloadLength + MacLength)
-      val routingInfo2 = xor(routingInfo1, generateStream(generateKey("rho", sharedSecret), MaxHops * (PayloadLength + MacLength)))
+      val routingInfo2 = routingInfo1 xor generateStream(generateKey("rho", sharedSecret), MaxHops * (PayloadLength + MacLength))
       routingInfo2.dropRight(routingInfoFiller.length) ++ routingInfoFiller
     }
 
-    val nextHmac: BinaryData = mac(generateKey("mu", sharedSecret), nextRoutingInfo ++ associatedData)
+    val nextHmac = mac(generateKey("mu", sharedSecret), nextRoutingInfo ++ associatedData)
     val nextPacket = Packet(Version, ephemeralPublicKey, nextHmac, nextRoutingInfo)
     nextPacket
   }
@@ -244,7 +239,7 @@ object Sphinx extends Logging {
     * @param sharedSecrets shared secrets (one per node in the route). Known (and needed) only if you're creating the
     *                      packet. Empty if you're just forwarding the packet to the next node
     */
-  case class PacketAndSecrets(packet: Packet, sharedSecrets: Seq[(BinaryData, PublicKey)])
+  case class PacketAndSecrets(packet: Packet, sharedSecrets: Seq[(ByteVector32, PublicKey)])
 
   /**
     * A properly decoded error from a node in the route
@@ -264,14 +259,14 @@ object Sphinx extends Logging {
     * @return an OnionPacket(onion packet, shared secrets). the onion packet can be sent to the first node in the list, and the
     *         shared secrets (one per node) can be used to parse returned error messages if needed
     */
-  def makePacket(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[BinaryData], associatedData: BinaryData): PacketAndSecrets = {
+  def makePacket(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector], associatedData: ByteVector32): PacketAndSecrets = {
     val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     val filler = generateFiller("rho", sharedsecrets.dropRight(1), PayloadLength + MacLength, MaxHops)
 
     val lastPacket = makeNextPacket(payloads.last, associatedData, ephemeralPublicKeys.last, sharedsecrets.last, LAST_PACKET, filler)
 
     @tailrec
-    def loop(hoppayloads: Seq[BinaryData], ephkeys: Seq[PublicKey], sharedSecrets: Seq[BinaryData], packet: Packet): Packet = {
+    def loop(hoppayloads: Seq[ByteVector], ephkeys: Seq[PublicKey], sharedSecrets: Seq[ByteVector32], packet: Packet): Packet = {
       if (hoppayloads.isEmpty) packet else {
         val nextPacket = makeNextPacket(hoppayloads.last, associatedData, ephkeys.last, sharedSecrets.last, packet)
         loop(hoppayloads.dropRight(1), ephkeys.dropRight(1), sharedSecrets.dropRight(1), nextPacket)
@@ -299,15 +294,15 @@ object Sphinx extends Logging {
     * @param failure      failure message
     * @return an error packet that can be sent to the destination node
     */
-  def createErrorPacket(sharedSecret: BinaryData, failure: FailureMessage): BinaryData = {
-    val message: BinaryData = FailureMessageCodecs.failureMessageCodec.encode(failure).require.toByteArray
+  def createErrorPacket(sharedSecret: ByteVector32, failure: FailureMessage): ByteVector = {
+    val message: ByteVector = FailureMessageCodecs.failureMessageCodec.encode(failure).require.toByteVector
     require(message.length <= MaxErrorPayloadLength, s"error message length is ${message.length}, it must be less than $MaxErrorPayloadLength")
     val um = Sphinx.generateKey("um", sharedSecret)
     val padlen = MaxErrorPayloadLength - message.length
-    val payload = Protocol.writeUInt16(message.length, ByteOrder.BIG_ENDIAN) ++ message ++ Protocol.writeUInt16(padlen, ByteOrder.BIG_ENDIAN) ++ Sphinx.zeroes(padlen)
+    val payload = Protocol.writeUInt16(message.length.toInt, ByteOrder.BIG_ENDIAN) ++ message ++ Protocol.writeUInt16(padlen.toInt, ByteOrder.BIG_ENDIAN) ++ ByteVector.fill(padlen.toInt)(0)
     logger.debug(s"um key: $um")
-    logger.debug(s"error payload: ${BinaryData(payload)}")
-    logger.debug(s"raw error packet: ${BinaryData(Sphinx.mac(um, payload) ++ payload)}")
+    logger.debug(s"error payload: ${payload.toHex}")
+    logger.debug(s"raw error packet: ${(Sphinx.mac(um, payload) ++ payload).toHex}")
     forwardErrorPacket(Sphinx.mac(um, payload) ++ payload, sharedSecret)
   }
 
@@ -316,10 +311,10 @@ object Sphinx extends Logging {
     * @param packet error packet
     * @return the failure message that is embedded in the error packet
     */
-  private def extractFailureMessage(packet: BinaryData): FailureMessage = {
+  private def extractFailureMessage(packet: ByteVector): FailureMessage = {
     require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
     val (mac, payload) = packet.splitAt(Sphinx.MacLength)
-    val len = Protocol.uint16(payload, ByteOrder.BIG_ENDIAN)
+    val len = Protocol.uint16(payload.toArray, ByteOrder.BIG_ENDIAN)
     require((len >= 0) && (len <= MaxErrorPayloadLength), s"message length must be less than $MaxErrorPayloadLength")
     FailureMessageCodecs.failureMessageCodec.decode(BitVector(payload.drop(2).take(len))).require.value
   }
@@ -330,13 +325,13 @@ object Sphinx extends Logging {
     * @param sharedSecret destination node's shared secret
     * @return an obfuscated error packet that can be sent to the destination node
     */
-  def forwardErrorPacket(packet: BinaryData, sharedSecret: BinaryData): BinaryData = {
+  def forwardErrorPacket(packet: ByteVector, sharedSecret: ByteVector32): ByteVector = {
     require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
     val key = generateKey("ammag", sharedSecret)
     val stream = generateStream(key, ErrorPacketLength)
     logger.debug(s"ammag key: $key")
     logger.debug(s"error stream: $stream")
-    Sphinx.xor(packet, stream)
+    packet xor stream
   }
 
   /**
@@ -345,10 +340,10 @@ object Sphinx extends Logging {
     * @param packet       error packet
     * @return true if the packet's mac is valid, which means that it has been properly de-obfuscated
     */
-  private def checkMac(sharedSecret: BinaryData, packet: BinaryData): Boolean = {
+  private def checkMac(sharedSecret: ByteVector32, packet: ByteVector): Boolean = {
     val (mac, payload) = packet.splitAt(Sphinx.MacLength)
     val um = Sphinx.generateKey("um", sharedSecret)
-    BinaryData(mac) == Sphinx.mac(um, payload)
+    ByteVector32(mac) == Sphinx.mac(um, payload)
   }
 
   /**
@@ -359,11 +354,11 @@ object Sphinx extends Logging {
     * @param sharedSecrets nodes shared secrets
     * @return Success(secret, failure message) if the origin of the packet could be identified and the packet de-obfuscated, Failure otherwise
     */
-  def parseErrorPacket(packet: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)]): Try[ErrorPacket] = Try {
+  def parseErrorPacket(packet: ByteVector, sharedSecrets: Seq[(ByteVector32, PublicKey)]): Try[ErrorPacket] = Try {
     require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
 
     @tailrec
-    def loop(packet: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)]): ErrorPacket = sharedSecrets match {
+    def loop(packet: ByteVector, sharedSecrets: Seq[(ByteVector32, PublicKey)]): ErrorPacket = sharedSecrets match {
       case Nil => throw new RuntimeException(s"couldn't parse error packet=$packet with sharedSecrets=$sharedSecrets")
       case (secret, pubkey) :: tail =>
         val packet1 = forwardErrorPacket(packet, secret)

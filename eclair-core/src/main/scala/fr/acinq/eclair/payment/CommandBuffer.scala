@@ -17,10 +17,9 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef}
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.wire.{UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 
 class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor with ActorLogging {
 
@@ -62,8 +61,8 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
 
 object CommandBuffer {
 
-  case class CommandSend(channelId: BinaryData, htlcId: Long, cmd: Command)
+  case class CommandSend(channelId: ByteVector32, htlcId: Long, cmd: Command)
 
-  case class CommandAck(channelId: BinaryData, htlcId: Long)
+  case class CommandAck(channelId: ByteVector32, htlcId: Long)
 
 }

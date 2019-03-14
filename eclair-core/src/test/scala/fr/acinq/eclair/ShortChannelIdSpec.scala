@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import org.scalatest.FunSuite
 
-import scala.util.{Failure, Try}
+import scala.util.Try
 
 
 

@@ -3,13 +3,14 @@ package fr.acinq.eclair
 import akka.actor.ActorRef
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, IPv4, IPv6, Init, NodeAddress, OpenChannel, Shutdown, Tor2, Tor3, UpdateAddHtlc, UpdateFailHtlc, UpdateMessage}
+import scodec.bits.ByteVector
 
 object JsonSerializers {
 
@@ -17,10 +18,11 @@ object JsonSerializers {
 
   implicit val txReadWrite: ReadWriter[Transaction] = readwriter[String].bimap[Transaction](_.toString(), Transaction.read(_))
   implicit val outpointReadWrite: ReadWriter[OutPoint] = readwriter[String].bimap[OutPoint](op => s"${op.hash}:${op.index}", s => ???)
-  implicit val publicKeyReadWriter: ReadWriter[PublicKey] = readwriter[String].bimap[PublicKey](_.toString(), s => PublicKey(BinaryData(s)))
-  implicit val pointReadWriter: ReadWriter[Point] = readwriter[String].bimap[Point](_.toString(), s => Point(BinaryData(s)))
+  implicit val publicKeyReadWriter: ReadWriter[PublicKey] = readwriter[String].bimap[PublicKey](_.toString(), s => PublicKey(ByteVector.fromValidHex(s)))
+  implicit val pointReadWriter: ReadWriter[Point] = readwriter[String].bimap[Point](_.toString(), s => Point(ByteVector.fromValidHex(s)))
   implicit val keyPathReadWriter: ReadWriter[DeterministicWallet.KeyPath] = readwriter[String].bimap[DeterministicWallet.KeyPath](_.toString(), _ => DeterministicWallet.KeyPath(0L :: Nil))
-  implicit val binarydataReadWriter: ReadWriter[BinaryData] = readwriter[String].bimap[BinaryData](_.toString(), s => BinaryData(s))
+  implicit val bytevector32ReadWriter: ReadWriter[ByteVector32] = readwriter[String].bimap[ByteVector32](_.bytes.toHex, s => ByteVector32.fromValidHex(s))
+  implicit val bytevectorReadWriter: ReadWriter[ByteVector] = readwriter[String].bimap[ByteVector](_.toHex, s => ByteVector.fromValidHex(s))
   implicit val uint64ReadWriter: ReadWriter[UInt64] = readwriter[String].bimap[UInt64](_.toString, s => UInt64(s.toLong))
   implicit val localParamsReadWriter: ReadWriter[LocalParams] = macroRW
   implicit val remoteParamsReadWriter: ReadWriter[RemoteParams] = macroRW
@@ -50,7 +52,7 @@ object JsonSerializers {
   implicit val paymentOriginReadWriter: ReadWriter[Origin] = readwriter[String].bimap[Origin](_.toString, _ => fr.acinq.eclair.payment.Local(None))
   implicit val remoteChangesReadWriter: ReadWriter[RemoteChanges] = macroRW
 
-  case class ShaChain2(knownHashes: Map[Long, BinaryData], lastIndex: Option[Long] = None) {
+  case class ShaChain2(knownHashes: Map[Long, ByteVector32], lastIndex: Option[Long] = None) {
     def toShaChain = ShaChain(knownHashes.map { case (k, v) => ShaChain.moves(k) -> v }, lastIndex)
   }
   object ShaChain2 {

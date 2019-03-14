@@ -20,9 +20,9 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentResult, RemoteFailure, SendPayment}
-import fr.acinq.eclair.{NodeParams, randomBytes, secureRandom}
-import fr.acinq.eclair.router.{Announcements, ChannelDesc, Data}
-import fr.acinq.eclair.wire.{ChannelUpdate, UnknownPaymentHash}
+import fr.acinq.eclair.router.{Announcements, Data}
+import fr.acinq.eclair.wire.UnknownPaymentHash
+import fr.acinq.eclair.{NodeParams, randomBytes32, secureRandom}
 
 import scala.concurrent.duration._
 
@@ -52,7 +52,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
     case TickProbe =>
       pickPaymentDestination(nodeParams.nodeId, routingData) match {
         case Some(targetNodeId) =>
-          val paymentHash = randomBytes(32) // we don't even know the preimage (this needs to be a secure random!)
+          val paymentHash = randomBytes32 // we don't even know the preimage (this needs to be a secure random!)
           log.info(s"sending payment probe to node=$targetNodeId payment_hash=$paymentHash")
           paymentInitiator ! SendPayment(PAYMENT_AMOUNT_MSAT, paymentHash, targetNodeId, maxAttempts = 1, randomize = Some(true))
         case None =>

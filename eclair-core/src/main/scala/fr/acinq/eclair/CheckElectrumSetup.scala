@@ -22,7 +22,7 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, ReceiveTimeout, SupervisorStrategy}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, Block}
+import fr.acinq.bitcoin.{ByteVector32, Block}
 import fr.acinq.eclair.NodeParams.ELECTRUM
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{SSL, computeScriptHash}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
@@ -197,7 +197,7 @@ object WatchListener {
     * @param commitments
     * @return
     */
-  def okTransactions(commitments: Commitments): Seq[BinaryData] = {
+  def okTransactions(commitments: Commitments): Seq[ByteVector32] = {
     Seq(commitments.commitInput.outPoint.txid, commitments.localCommit.publishableTxs.commitTx.tx.txid, commitments.remoteCommit.txid) ++ commitments.remoteNextCommitInfo.left.toSeq.map(_.nextRemoteCommit.txid)
   }
 

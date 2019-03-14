@@ -25,12 +25,13 @@ import com.googlecode.lanterna.gui2.dialogs.TextInputDialogBuilder
 import com.googlecode.lanterna.input.KeyStroke
 import com.googlecode.lanterna.{TerminalPosition, TerminalSize}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
+import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration._
@@ -62,7 +63,7 @@ class Textui(kit: Kit) extends Logging {
 
   val channels = collection.mutable.Map[ActorRef, Panel]()
 
-  def addChannel(channel: ActorRef, channelId: BinaryData, remoteNodeId: PublicKey, state: State, balance: Satoshi, capacity: Satoshi): Unit = {
+  def addChannel(channel: ActorRef, channelId: ByteVector, remoteNodeId: PublicKey, state: State, balance: Satoshi, capacity: Satoshi): Unit = {
     val channelPanel = new Panel()
     channelPanel.setLayoutManager(new LinearLayout(Direction.HORIZONTAL))
     val channelDataPanel = new Panel()

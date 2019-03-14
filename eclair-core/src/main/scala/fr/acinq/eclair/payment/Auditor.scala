@@ -17,13 +17,13 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props}
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent}
 
-import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
 
 class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
@@ -75,11 +75,11 @@ class BalanceEventThrottler(db: AuditDb) extends Actor with ActorLogging {
 
   case class BalanceUpdate(first: AvailableBalanceChanged, last: AvailableBalanceChanged)
 
-  case class ProcessEvent(channelId: BinaryData)
+  case class ProcessEvent(channelId: ByteVector32)
 
   override def receive: Receive = run(Map.empty)
 
-  def run(pending: Map[BinaryData, BalanceUpdate]): Receive = {
+  def run(pending: Map[ByteVector32, BalanceUpdate]): Receive = {
 
     case e: AvailableBalanceChanged =>
       pending.get(e.channelId) match {

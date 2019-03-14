@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.electrum
 import com.spotify.docker.client.{DefaultDockerClient, DockerClient}
 import com.whisk.docker.impl.spotify.SpotifyDockerFactory
 import com.whisk.docker.scalatest.DockerTestKit
-import com.whisk.docker.{DockerContainer, DockerFactory, LogLineReceiver}
+import com.whisk.docker.{DockerContainer, DockerFactory}
 import org.scalatest.Suite
 
 trait ElectrumxService extends DockerTestKit {

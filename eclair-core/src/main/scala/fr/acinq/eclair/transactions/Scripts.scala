@@ -18,7 +18,8 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{PublicKey, ripemd160}
 import fr.acinq.bitcoin.Script._
-import fr.acinq.bitcoin.{BinaryData, LexicographicalOrdering, LockTimeThreshold, OP_0, OP_1, OP_1NEGATE, OP_2, OP_2DROP, OP_ADD, OP_CHECKLOCKTIMEVERIFY, OP_CHECKMULTISIG, OP_CHECKSEQUENCEVERIFY, OP_CHECKSIG, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHDATA, OP_SIZE, OP_SWAP, Satoshi, Script, ScriptElt, ScriptWitness, Transaction, TxIn}
+import fr.acinq.bitcoin.{ByteVector32, LexicographicalOrdering, LockTimeThreshold, OP_0, OP_1, OP_1NEGATE, OP_2, OP_2DROP, OP_ADD, OP_CHECKLOCKTIMEVERIFY, OP_CHECKMULTISIG, OP_CHECKSEQUENCEVERIFY, OP_CHECKSIG, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHDATA, OP_SIZE, OP_SWAP, Satoshi, Script, ScriptElt, ScriptWitness, Transaction, TxIn}
+import scodec.bits.ByteVector
 
 /**
   * Created by PM on 02/12/2016.
@@ -52,11 +53,11 @@ object Scripts {
     * @param pubkey2
     * @return a script witness that matches the msig 2-of-2 pubkey script for pubkey1 and pubkey2
     */
-  def witness2of2(sig1: BinaryData, sig2: BinaryData, pubkey1: PublicKey, pubkey2: PublicKey): ScriptWitness = {
+  def witness2of2(sig1: ByteVector, sig2: ByteVector, pubkey1: PublicKey, pubkey2: PublicKey): ScriptWitness = {
     if (LexicographicalOrdering.isLessThan(pubkey1.toBin, pubkey2.toBin))
-      ScriptWitness(Seq(BinaryData.empty, sig1, sig2, write(multiSig2of2(pubkey1, pubkey2))))
+      ScriptWitness(Seq(ByteVector.empty, sig1, sig2, write(multiSig2of2(pubkey1, pubkey2))))
     else
-      ScriptWitness(Seq(BinaryData.empty, sig2, sig1, write(multiSig2of2(pubkey1, pubkey2))))
+      ScriptWitness(Seq(ByteVector.empty, sig2, sig1, write(multiSig2of2(pubkey1, pubkey2))))
 
   }
 
@@ -75,7 +76,7 @@ object Scripts {
     case _ => OP_PUSHDATA(Script.encodeNumber(n))
   }
 
-  def redeemSecretOrDelay(delayedKey: BinaryData, reltimeout: Long, keyIfSecretKnown: BinaryData, hashOfSecret: BinaryData): Seq[ScriptElt] = {
+  def redeemSecretOrDelay(delayedKey: ByteVector, reltimeout: Long, keyIfSecretKnown: ByteVector, hashOfSecret: ByteVector32): Seq[ScriptElt] = {
     // @formatter:off
     OP_HASH160 :: OP_PUSHDATA(ripemd160(hashOfSecret)) :: OP_EQUAL ::
     OP_IF ::
@@ -87,7 +88,7 @@ object Scripts {
     // @formatter:on
   }
 
-  def scriptPubKeyHtlcSend(ourkey: BinaryData, theirkey: BinaryData, abstimeout: Long, reltimeout: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
+  def scriptPubKeyHtlcSend(ourkey: ByteVector, theirkey: ByteVector, abstimeout: Long, reltimeout: Long, rhash: ByteVector32, commit_revoke: ByteVector): Seq[ScriptElt] = {
     // values lesser than 16 should be encoded using OP_0..OP_16 instead of OP_PUSHDATA
     require(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
     // @formatter:off
@@ -104,7 +105,7 @@ object Scripts {
     // @formatter:on
   }
 
-  def scriptPubKeyHtlcReceive(ourkey: BinaryData, theirkey: BinaryData, abstimeout: Long, reltimeout: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
+  def scriptPubKeyHtlcReceive(ourkey: ByteVector, theirkey: ByteVector, abstimeout: Long, reltimeout: Long, rhash: ByteVector32, commit_revoke: ByteVector): Seq[ScriptElt] = {
     // values lesser than 16 should be encoded using OP_0..OP_16 instead of OP_PUSHDATA
     require(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
     // @formatter:off
@@ -187,17 +188,17 @@ object Scripts {
   /**
     * This witness script spends a [[toLocalDelayed]] output using a local sig after a delay
     */
-  def witnessToLocalDelayedAfterDelay(localSig: BinaryData, toLocalDelayedScript: BinaryData) =
-    ScriptWitness(localSig :: BinaryData.empty :: toLocalDelayedScript :: Nil)
+  def witnessToLocalDelayedAfterDelay(localSig: ByteVector, toLocalDelayedScript: ByteVector) =
+    ScriptWitness(localSig :: ByteVector.empty :: toLocalDelayedScript :: Nil)
 
   /**
     * This witness script spends (steals) a [[toLocalDelayed]] output using a revocation key as a punishment
     * for having published a revoked transaction
     */
-  def witnessToLocalDelayedWithRevocationSig(revocationSig: BinaryData, toLocalScript: BinaryData) =
-    ScriptWitness(revocationSig :: BinaryData("01") :: toLocalScript :: Nil)
+  def witnessToLocalDelayedWithRevocationSig(revocationSig: ByteVector, toLocalScript: ByteVector) =
+    ScriptWitness(revocationSig :: ByteVector(1) :: toLocalScript :: Nil)
 
-  def htlcOffered(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: BinaryData): Seq[ScriptElt] = {
+  def htlcOffered(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteVector): Seq[ScriptElt] = {
     // @formatter:off
     // To you with revocation key
     OP_DUP :: OP_HASH160 :: OP_PUSHDATA(revocationPubKey.hash160) :: OP_EQUAL ::
@@ -219,17 +220,17 @@ object Scripts {
   /**
     * This is the witness script of the 2nd-stage HTLC Success transaction (consumes htlcOffered script from commit tx)
     */
-  def witnessHtlcSuccess(localSig: BinaryData, remoteSig: BinaryData, paymentPreimage: BinaryData, htlcOfferedScript: BinaryData) =
-    ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: paymentPreimage :: htlcOfferedScript :: Nil)
+  def witnessHtlcSuccess(localSig: ByteVector, remoteSig: ByteVector, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector) =
+    ScriptWitness(ByteVector.empty :: remoteSig :: localSig :: paymentPreimage.bytes :: htlcOfferedScript :: Nil)
 
   /**
     * If local publishes its commit tx where there was a local->remote htlc, then remote uses this script to
     * claim its funds using a payment preimage (consumes htlcOffered script from commit tx)
     */
-  def witnessClaimHtlcSuccessFromCommitTx(localSig: BinaryData, paymentPreimage: BinaryData, htlcOfferedScript: BinaryData) =
-    ScriptWitness(localSig :: paymentPreimage :: htlcOfferedScript :: Nil)
+  def witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector) =
+    ScriptWitness(localSig :: paymentPreimage.bytes :: htlcOfferedScript :: Nil)
 
-  def htlcReceived(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: BinaryData, lockTime: Long) = {
+  def htlcReceived(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteVector, lockTime: Long) = {
     // @formatter:off
     // To you with revocation key
     OP_DUP :: OP_HASH160 :: OP_PUSHDATA(revocationPubKey.hash160) :: OP_EQUAL ::
@@ -253,21 +254,21 @@ object Scripts {
   /**
     * This is the witness script of the 2nd-stage HTLC Timeout transaction (consumes htlcReceived script from commit tx)
     */
-  def witnessHtlcTimeout(localSig: BinaryData, remoteSig: BinaryData, htlcReceivedScript: BinaryData) =
-    ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: BinaryData.empty :: htlcReceivedScript :: Nil)
+  def witnessHtlcTimeout(localSig: ByteVector, remoteSig: ByteVector, htlcReceivedScript: ByteVector) =
+    ScriptWitness(ByteVector.empty :: remoteSig :: localSig :: ByteVector.empty :: htlcReceivedScript :: Nil)
 
   /**
     * If local publishes its commit tx where there was a remote->local htlc, then remote uses this script to
     * claim its funds after timeout (consumes htlcReceived script from commit tx)
     */
-  def witnessClaimHtlcTimeoutFromCommitTx(localSig: BinaryData, htlcReceivedScript: BinaryData) =
-    ScriptWitness(localSig :: BinaryData.empty :: htlcReceivedScript :: Nil)
+  def witnessClaimHtlcTimeoutFromCommitTx(localSig: ByteVector, htlcReceivedScript: ByteVector) =
+    ScriptWitness(localSig :: ByteVector.empty :: htlcReceivedScript :: Nil)
 
   /**
     * This witness script spends (steals) a [[htlcOffered]] or [[htlcReceived]] output using a revocation key as a punishment
     * for having published a revoked transaction
     */
-  def witnessHtlcWithRevocationSig(revocationSig: BinaryData, revocationPubkey: PublicKey, htlcScript: BinaryData) =
+  def witnessHtlcWithRevocationSig(revocationSig: ByteVector, revocationPubkey: PublicKey, htlcScript: ByteVector) =
     ScriptWitness(revocationSig :: revocationPubkey.toBin :: htlcScript :: Nil)
 
 }

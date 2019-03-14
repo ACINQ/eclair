@@ -22,7 +22,7 @@ import akka.actor.{Actor, ActorLogging, OneForOneStrategy, Props, SupervisorStra
 import akka.io.{IO, Tcp}
 import akka.util.ByteString
 
-import scala.concurrent.{ExecutionContext, Promise}
+import scala.concurrent.ExecutionContext
 
 /**
   * Created by rorp

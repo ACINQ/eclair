@@ -16,8 +16,7 @@
 
 package fr.acinq.eclair.blockchain.electrum.db
 
-import fr.acinq.bitcoin.{BinaryData, BlockHeader, Transaction}
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
+import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 
 trait HeaderDb {
@@ -28,7 +27,7 @@ trait HeaderDb {
   def getHeader(height: Int): Option[BlockHeader]
 
   // used only in unit tests
-  def getHeader(blockHash: BinaryData): Option[(Int, BlockHeader)]
+  def getHeader(blockHash: ByteVector32): Option[(Int, BlockHeader)]
 
   def getHeaders(startHeight: Int, maxCount: Option[Int]): Seq[BlockHeader]
 

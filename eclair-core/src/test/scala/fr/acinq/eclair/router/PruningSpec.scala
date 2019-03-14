@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.{Actor, ActorRef, Props}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.crypto.TransportHandler
@@ -29,6 +29,7 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, TxCoordinates}
 import org.scalatest.{BeforeAndAfterAll, Outcome}
+import scodec.bits.ByteVector
 
 import scala.collection.{SortedSet, immutable}
 import scala.concurrent.duration._
@@ -36,8 +37,8 @@ import scala.concurrent.duration._
 class PruningSpec extends TestkitBaseClass with BeforeAndAfterAll {
   import PruningSpec._
 
-  val txid = BinaryData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-  val remoteNodeId = PrivateKey(BinaryData("01" * 32), true).publicKey
+  val txid = ByteVector32.fromValidHex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+  val remoteNodeId = PrivateKey(ByteVector.fromValidHex("01" * 32), true).publicKey
 
   val startHeight = 400000 - 25 * 2016
   val shortChannelIds: immutable.SortedSet[ShortChannelId] = (for {
@@ -85,7 +86,7 @@ class PruningSpec extends TestkitBaseClass with BeforeAndAfterAll {
     router => {
       val probe = TestProbe()
       probe.ignoreMsg { case TransportHandler.ReadAck(_) => true }
-      val remoteNodeId = PrivateKey("01" * 32, true).publicKey
+      val remoteNodeId = PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey
 
       // tell router to ask for our channel ids
       probe.send(router, SendChannelQuery(remoteNodeId, probe.ref))

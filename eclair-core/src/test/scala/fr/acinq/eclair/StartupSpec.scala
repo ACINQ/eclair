@@ -16,11 +16,11 @@
 
 package fr.acinq.eclair
 
-import java.io.{File, IOException}
-import java.nio.file.attribute.BasicFileAttributes
+import java.io.File
 import java.nio.file._
+import java.nio.file.attribute.BasicFileAttributes
 
-import com.typesafe.config.{Config, ConfigFactory}
+import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.crypto.LocalKeyManager
 import org.scalatest.FunSuite

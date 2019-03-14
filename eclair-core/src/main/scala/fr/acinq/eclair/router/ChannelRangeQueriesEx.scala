@@ -4,8 +4,9 @@ import java.io.{ByteArrayInputStream, ByteArrayOutputStream, InputStream}
 import java.nio.ByteOrder
 import java.util.zip.{DeflaterOutputStream, GZIPInputStream, GZIPOutputStream, InflaterInputStream}
 
-import fr.acinq.bitcoin.{BinaryData, Protocol}
+import fr.acinq.bitcoin.{ByteVector32, Protocol}
 import fr.acinq.eclair.ShortChannelId
+import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 import scala.collection.SortedSet
@@ -15,7 +16,7 @@ object ChannelRangeQueriesEx {
   val UNCOMPRESSED_FORMAT = 0.toByte
   val ZLIB_FORMAT = 1.toByte
 
-  case class ShortChannelIdAndTimestampsBlock(val firstBlock: Long, val numBlocks: Long, shortChannelIdAndTimestamps: BinaryData)
+  case class ShortChannelIdAndTimestampsBlock(val firstBlock: Long, val numBlocks: Long, shortChannelIdAndTimestamps: ByteVector)
 
   /**
     * Compressed a sequence of *sorted* short channel id.
@@ -28,7 +29,7 @@ object ChannelRangeQueriesEx {
                                         format: Byte): List[ShortChannelIdAndTimestampsBlock] = {
     if (shortChannelIds.isEmpty) {
       // special case: reply with an "empty" block
-      List(ShortChannelIdAndTimestampsBlock(firstBlockIn, numBlocksIn, BinaryData("00")))
+      List(ShortChannelIdAndTimestampsBlock(firstBlockIn, numBlocksIn, ByteVector.fromValidHex("00")))
     } else {
       // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
       val count = format match {
@@ -47,7 +48,7 @@ object ChannelRangeQueriesEx {
     }
   }
 
-  def encodeShortChannelIdAndTimestampsSingle(shortChannelIds: Iterable[ShortChannelId], timestamp: ShortChannelId => Long, format: Byte): BinaryData = {
+  def encodeShortChannelIdAndTimestampsSingle(shortChannelIds: Iterable[ShortChannelId], timestamp: ShortChannelId => Long, format: Byte): ByteVector = {
     val bos = new ByteArrayOutputStream()
     bos.write(format)
     val out = format match {
@@ -59,7 +60,7 @@ object ChannelRangeQueriesEx {
       Protocol.writeUInt32(timestamp(id), out, ByteOrder.BIG_ENDIAN)
     })
     out.close()
-    bos.toByteArray
+    ByteVector.view(bos.toByteArray)
   }
   
   /**
@@ -68,7 +69,7 @@ object ChannelRangeQueriesEx {
     * @param data
     * @return a sorted map of short channel id -> timestamp
     */
-  def decodeShortChannelIdAndTimestamps(data: BinaryData): (Byte, SortedMap[ShortChannelId, Long]) = {
+  def decodeShortChannelIdAndTimestamps(data: ByteVector): (Byte, SortedMap[ShortChannelId, Long]) = {
     val format = data.head
     if (data.tail.isEmpty) (format, SortedMap.empty[ShortChannelId, Long]) else {
       val buffer = new Array[Byte](12)

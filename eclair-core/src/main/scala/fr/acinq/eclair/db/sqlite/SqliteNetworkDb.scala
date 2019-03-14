@@ -18,13 +18,14 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
 
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs.nodeAnnouncementCodec
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import scodec.bits.ByteVector
 
 import scala.collection.immutable.Queue
 
@@ -47,7 +48,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
 
   override def addNode(n: NodeAnnouncement): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO nodes VALUES (?, ?)")) { statement =>
-      statement.setBytes(1, n.nodeId.toBin)
+      statement.setBytes(1, n.nodeId.toBin.toArray)
       statement.setBytes(2, nodeAnnouncementCodec.encode(n).require.toByteArray)
       statement.executeUpdate()
     }
@@ -56,14 +57,14 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def updateNode(n: NodeAnnouncement): Unit = {
     using(sqlite.prepareStatement("UPDATE nodes SET data=? WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeAnnouncementCodec.encode(n).require.toByteArray)
-      statement.setBytes(2, n.nodeId.toBin)
+      statement.setBytes(2, n.nodeId.toBin.toArray)
       statement.executeUpdate()
     }
   }
 
   override def removeNode(nodeId: Crypto.PublicKey): Unit = {
     using(sqlite.prepareStatement("DELETE FROM nodes WHERE node_id=?")) { statement =>
-      statement.setBytes(1, nodeId.toBin)
+      statement.setBytes(1, nodeId.toBin.toArray)
       statement.executeUpdate()
     }
   }
@@ -75,7 +76,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
-  override def addChannel(c: ChannelAnnouncement, txid: BinaryData, capacity: Satoshi): Unit = {
+  override def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO channels VALUES (?, ?, ?)")) { statement =>
       statement.setLong(1, c.shortChannelId.toLong)
       statement.setBytes(2, c.nodeId1.value.toBin(false).toArray) // we store uncompressed public keys
@@ -100,11 +101,11 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     shortChannelIds.grouped(1000).foreach(removeChannelsInternal)
   }
 
-  override def listChannels(): Map[ChannelAnnouncement, (BinaryData, Satoshi)] = {
+  override def listChannels(): Map[ChannelAnnouncement, (ByteVector32, Satoshi)] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT * FROM channels")
-      var m: Map[ChannelAnnouncement, (BinaryData, Satoshi)] = Map()
-      val emptyTxid = BinaryData("")
+      var m: Map[ChannelAnnouncement, (ByteVector32, Satoshi)] = Map()
+      val emptyTxid = ByteVector32.Zeroes
       val zeroCapacity = Satoshi(0)
       while (rs.next()) {
         m = m + (ChannelAnnouncement(
@@ -115,8 +116,8 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
           features = null,
           chainHash = null,
           shortChannelId = ShortChannelId(rs.getLong("short_channel_id")),
-          nodeId1 = PublicKey(PublicKey(rs.getBytes("node_id_1"), checkValid = false).value, compressed = true), // we read as uncompressed, and convert to compressed, and we don't check the validity it was already checked before
-          nodeId2 = PublicKey(PublicKey(rs.getBytes("node_id_2"), checkValid = false).value, compressed = true),
+          nodeId1 = PublicKey(PublicKey(ByteVector.view(rs.getBytes("node_id_1")), checkValid = false).value, compressed = true), // we read as uncompressed, and convert to compressed, and we don't check the validity it was already checked before
+          nodeId2 = PublicKey(PublicKey(ByteVector.view(rs.getBytes("node_id_2")), checkValid = false).value, compressed = true),
           bitcoinKey1 = null,
           bitcoinKey2 = null) -> (emptyTxid, zeroCapacity))
       }

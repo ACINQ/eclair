@@ -1,8 +1,6 @@
 package fr.acinq.eclair
 
-import java.net.{InetAddress, InetSocketAddress}
-
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Hash, OutPoint}
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint}
 import fr.acinq.eclair.channel.{LocalChanges, LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.ChannelStateSpec
@@ -10,7 +8,7 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{NodeAddress, UpdateAddHtlc, UpdateFailHtlc}
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
+import scodec.bits._
 import upickle.default.write
 
 import scala.util.Random
@@ -19,13 +17,13 @@ class JsonSerializersSpec extends FunSuite with Logging {
   import JsonSerializers._
 
   test("deserialize Map[OutPoint, BinaryData]") {
-    val output1 = OutPoint("11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1", 0)
-    val output2 = OutPoint("3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33", 1)
+    val output1 = OutPoint(ByteVector32.fromValidHex("11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1"), 0)
+    val output2 = OutPoint(ByteVector32.fromValidHex("3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33"), 1)
 
 
     val map = Map(
-      output1 -> BinaryData("dead"),
-      output2 -> BinaryData("beef")
+      output1 -> ByteVector.fromValidHex("dead"),
+      output2 -> ByteVector.fromValidHex("beef")
     )
     val json = write(map)
     assert(json === s"""[["${output1.hash}:0","dead"],["${output2.hash}:1","beef"]]""")
@@ -84,20 +82,20 @@ class JsonSerializersSpec extends FunSuite with Logging {
   }
 
   test("serialize CommitmentSpec") {
-    val spec = CommitmentSpec(Set(DirectedHtlc(IN, UpdateAddHtlc(randomKey.publicKey.value.toBin(true), 421, 1245, randomBytes(32), 1000, BinaryData("010101")))), feeratePerKw = 1233, toLocalMsat = 100, toRemoteMsat = 200)
+    val spec = CommitmentSpec(Set(DirectedHtlc(IN, UpdateAddHtlc(randomBytes32, 421, 1245, randomBytes32, 1000, hex"010101"))), feeratePerKw = 1233, toLocalMsat = 100, toRemoteMsat = 200)
     logger.info(write(spec))
   }
 
   test("serialize LocalChanges") {
-    val channelId = randomKey.publicKey.value.toBin(true)
-    val add = UpdateAddHtlc(channelId, 421, 1245, randomBytes(32), 1000, BinaryData("010101"))
-    val fail = UpdateFailHtlc(channelId, 42, BinaryData("0101"))
+    val channelId = randomBytes32
+    val add = UpdateAddHtlc(channelId, 421, 1245, randomBytes32, 1000, hex"010101")
+    val fail = UpdateFailHtlc(channelId, 42, hex"0101")
     val localChanges = LocalChanges(proposed = add :: add :: fail :: Nil, signed = add :: Nil, acked = fail :: fail :: Nil)
     logger.info(write(localChanges))
   }
 
   test("serialize shaChain") {
-    val seed = Hash.Zeroes
+    val seed = ByteVector32.Zeroes
     var receiver = ShaChain.empty
     for (i <- 0 until 7) {
       receiver = receiver.addHash(ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFL - i), 0xFFFFFFFFFFFFL - i)
