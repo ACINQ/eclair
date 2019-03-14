@@ -18,17 +18,17 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.math.BigInteger
 
-import fr.acinq.bitcoin.{BinaryData, Block, BlockHeader, decodeCompact}
+import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32, decodeCompact}
 import fr.acinq.eclair.blockchain.electrum.db.HeaderDb
 import grizzled.slf4j.Logging
 
 import scala.annotation.tailrec
 
-case class Blockchain(chainHash: BinaryData,
+case class Blockchain(chainHash: ByteVector32,
                       checkpoints: Vector[CheckPoint],
-                      headersMap: Map[BinaryData, Blockchain.BlockIndex],
+                      headersMap: Map[ByteVector32, Blockchain.BlockIndex],
                       bestchain: Vector[Blockchain.BlockIndex],
-                      orphans: Map[BinaryData, BlockHeader] = Map()) {
+                      orphans: Map[ByteVector32, BlockHeader] = Map()) {
 
   import Blockchain._
 
@@ -110,14 +110,14 @@ object Blockchain extends Logging {
     * @param checkpoints list of checkpoints
     * @return a blockchain instance
     */
-  def fromCheckpoints(chainhash: BinaryData, checkpoints: Vector[CheckPoint]): Blockchain = {
+  def fromCheckpoints(chainhash: ByteVector32, checkpoints: Vector[CheckPoint]): Blockchain = {
     Blockchain(chainhash, checkpoints, Map(), Vector())
   }
 
   /**
     * Used in tests
     */
-  def fromGenesisBlock(chainhash: BinaryData, genesis: BlockHeader): Blockchain = {
+  def fromGenesisBlock(chainhash: ByteVector32, genesis: BlockHeader): Blockchain = {
     require(chainhash == Block.RegtestGenesisBlock.hash)
     // the height of the genesis block is 0
     val blockIndex = BlockIndex(genesis, 0, None, decodeCompact(genesis.bits)._1)
@@ -131,7 +131,7 @@ object Blockchain extends Logging {
     * @param headerDb
     * @return
     */
-  def load(chainHash: BinaryData, headerDb: HeaderDb): Blockchain = {
+  def load(chainHash: ByteVector32, headerDb: HeaderDb): Blockchain = {
     val checkpoints = CheckPoint.load(chainHash)
     val checkpoints1 = headerDb.getTip match {
       case Some((height, header)) =>

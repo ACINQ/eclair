@@ -1,11 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import javafx.collections.FXCollections?>
-<?import javafx.scene.control.*?>
-<?import javafx.scene.image.ImageView?>
-<?import javafx.scene.layout.*?>
-<?import java.lang.String?>
-<?import java.net.URL?>
 <!--
   ~ Copyright 2018 ACINQ SAS
   ~
@@ -22,6 +16,10 @@
   ~ limitations under the License.
   -->
 
+<?import javafx.scene.control.*?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.*?>
+<?import java.net.URL?>
 <VBox xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" prefWidth="590.0">
     <children>
         <GridPane styleClass="grid">

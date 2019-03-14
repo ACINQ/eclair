@@ -19,14 +19,10 @@ package fr.acinq.eclair.io
 import java.net.InetSocketAddress
 
 import akka.Done
-import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, SupervisorStrategy}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.crypto.Noise.KeyPair
-import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
-import fr.acinq.eclair.wire.{LightningMessage, LightningMessageCodecs}
 
 import scala.concurrent.Promise
 

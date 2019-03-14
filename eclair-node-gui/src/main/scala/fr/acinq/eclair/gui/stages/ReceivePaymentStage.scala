@@ -16,13 +16,12 @@
 
 package fr.acinq.eclair.gui.stages
 
+import fr.acinq.eclair.gui.Handlers
+import fr.acinq.eclair.gui.controllers.ReceivePaymentController
 import javafx.fxml.FXMLLoader
 import javafx.scene.image.Image
 import javafx.scene.{Parent, Scene}
 import javafx.stage.{Modality, Stage, StageStyle}
-
-import fr.acinq.eclair.gui.Handlers
-import fr.acinq.eclair.gui.controllers.ReceivePaymentController
 
 /**
   * Created by PM on 16/08/2016.

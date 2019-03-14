@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.gui
 
-import java.io.{File, FileWriter}
-
 import akka.pattern.{AskTimeoutException, ask}
 import akka.util.Timeout
 import fr.acinq.bitcoin.MilliSatoshi

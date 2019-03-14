@@ -26,7 +26,7 @@ object CommandCodecs {
 
   val cmdFulfillCodec: Codec[CMD_FULFILL_HTLC] =
     (("id" | int64) ::
-      ("r" | binarydata(32)) ::
+      ("r" | bytes32) ::
       ("commit" | provide(false))).as[CMD_FULFILL_HTLC]
 
   val cmdFailCodec: Codec[CMD_FAIL_HTLC] =
@@ -36,7 +36,7 @@ object CommandCodecs {
 
   val cmdFailMalformedCodec: Codec[CMD_FAIL_MALFORMED_HTLC] =
     (("id" | int64) ::
-      ("onionHash" | binarydata(32)) ::
+      ("onionHash" | bytes32) ::
       ("failureCode" | uint16) ::
       ("commit" | provide(false))).as[CMD_FAIL_MALFORMED_HTLC]
 

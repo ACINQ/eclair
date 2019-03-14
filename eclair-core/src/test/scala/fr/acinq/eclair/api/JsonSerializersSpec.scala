@@ -16,27 +16,26 @@
 
 package fr.acinq.eclair.api
 
-import java.net.{InetAddress, InetSocketAddress}
+import java.net.InetAddress
 
-import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.{BinaryData, OutPoint}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint}
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
 import org.json4s.jackson.Serialization
 import org.scalatest.{FunSuite, Matchers}
-
+import scodec.bits._
 
 class JsonSerializersSpec extends FunSuite with Matchers {
 
-  test("deserialize Map[OutPoint, BinaryData]") {
-    val output1 = OutPoint("11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1", 0)
-    val output2 = OutPoint("3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33", 1)
+  test("deserialize Map[OutPoint, ByteVector]") {
+    val output1 = OutPoint(ByteVector32(hex"11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1"), 0)
+    val output2 = OutPoint(ByteVector32(hex"3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33"), 1)
 
 
     val map = Map(
-      output1 -> BinaryData("dead"),
-      output2 -> BinaryData("beef")
+      output1 -> hex"dead",
+      output2 -> hex"beef"
     )
 
     // it won't work with the default key serializer
@@ -46,7 +45,7 @@ class JsonSerializersSpec extends FunSuite with Matchers {
     assert(error.msg.contains("Do not know how to serialize key of type class fr.acinq.bitcoin.OutPoint."))
 
     // but it works with our custom key serializer
-    val json = Serialization.write(map)(org.json4s.DefaultFormats + new BinaryDataSerializer + new OutPointKeySerializer)
+    val json = Serialization.write(map)(org.json4s.DefaultFormats + new ByteVectorSerializer + new OutPointKeySerializer)
     assert(json === s"""{"${output1.txid}:0":"dead","${output2.txid}:1":"beef"}""")
   }
 

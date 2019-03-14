@@ -21,7 +21,7 @@ import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{BinaryData, Block, MilliBtc, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, Block, MilliBtc, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.FundTransactionResponse
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError}
@@ -115,9 +115,9 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     wallet.getFinalAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
     val unknownTxids = Seq(
-      BinaryData("01" * 32),
-      BinaryData("02" * 32),
-      BinaryData("03" * 32)
+      ByteVector32.fromValidHex("01" * 32),
+      ByteVector32.fromValidHex("02" * 32),
+      ByteVector32.fromValidHex("03" * 32)
     )
     val unsignedTx = Transaction(version = 2,
       txIn = Seq(

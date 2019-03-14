@@ -18,8 +18,9 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.{Connection, ResultSet, Statement}
 
+import fr.acinq.bitcoin.ByteVector32
 import scodec.Codec
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 
 import scala.collection.immutable.Queue
 
@@ -91,5 +92,16 @@ object SqliteUtils {
     // we have to make a write to actually obtain the lock
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS dummy_table_for_locking (a INTEGER NOT NULL)")
     statement.executeUpdate("INSERT INTO dummy_table_for_locking VALUES (42)")
+  }
+
+  case class ExtendedResultSet(rs: ResultSet) {
+
+    def getByteVector(columnLabel: String): ByteVector = ByteVector(rs.getBytes(columnLabel))
+
+    def getByteVector32(columnLabel: String): ByteVector32 = ByteVector32(ByteVector(rs.getBytes(columnLabel)))
+  }
+
+  object ExtendedResultSet {
+    implicit def conv(rs: ResultSet): ExtendedResultSet = ExtendedResultSet(rs)
   }
 }

@@ -18,11 +18,11 @@ package fr.acinq.eclair.blockchain.electrum.db.sqlite
 
 import java.sql.Connection
 
-import fr.acinq.bitcoin.{BinaryData, BlockHeader, Transaction}
-import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumWallet}
+import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{GetMerkleResponse, TransactionHistoryItem}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumWallet}
 import fr.acinq.eclair.db.sqlite.SqliteUtils
 
 import scala.collection.immutable.Queue
@@ -39,8 +39,8 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
   override def addHeader(height: Int, header: BlockHeader): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO headers VALUES (?, ?, ?)")) { statement =>
       statement.setInt(1, height)
-      statement.setBytes(2, header.hash)
-      statement.setBytes(3, BlockHeader.write(header))
+      statement.setBytes(2, header.hash.toArray)
+      statement.setBytes(3, BlockHeader.write(header).toArray)
       statement.executeUpdate()
     }
   }
@@ -50,8 +50,8 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
       var height = startHeight
       headers.foreach(header => {
         statement.setInt(1, height)
-        statement.setBytes(2, header.hash)
-        statement.setBytes(3, BlockHeader.write(header))
+        statement.setBytes(2, header.hash.toArray)
+        statement.setBytes(3, BlockHeader.write(header).toArray)
         statement.addBatch()
         height = height + 1
       })
@@ -71,9 +71,9 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
     }
   }
 
-  override def getHeader(blockHash: BinaryData): Option[(Int, BlockHeader)] = {
+  override def getHeader(blockHash: ByteVector32): Option[(Int, BlockHeader)] = {
     using(sqlite.prepareStatement("SELECT height, header FROM headers WHERE block_hash = ?")) { statement =>
-      statement.setBytes(1, blockHash)
+      statement.setBytes(1, blockHash.toArray)
       val rs = statement.executeQuery()
       if (rs.next()) {
         Some((rs.getInt("height"), BlockHeader.read(rs.getBytes("header"))))
@@ -125,7 +125,7 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
     using(sqlite.prepareStatement("SELECT data FROM wallet")) { statement =>
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Option(rs.getBytes(1)).map(bin => SqliteWalletDb.deserializePersistentData(BinaryData(bin)))
+        Option(rs.getBytes(1)).map(bin => SqliteWalletDb.deserializePersistentData(bin))
       } else {
         None
       }
@@ -135,62 +135,62 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
 
 object SqliteWalletDb {
 
-  import fr.acinq.eclair.wire.LightningMessageCodecs._
   import fr.acinq.eclair.wire.ChannelCodecs._
+  import fr.acinq.eclair.wire.LightningMessageCodecs._
   import scodec.Codec
   import scodec.bits.BitVector
   import scodec.codecs._
 
   val proofCodec: Codec[GetMerkleResponse] = (
-    ("txid" | binarydata(32)) ::
-      ("merkle" | listOfN(uint16, binarydata(32))) ::
+    ("txid" | bytes32) ::
+      ("merkle" | listOfN(uint16, bytes32)) ::
       ("block_height" | uint24) ::
       ("pos" | uint24)).as[GetMerkleResponse]
 
-  def serializeMerkleProof(proof: GetMerkleResponse): BinaryData = proofCodec.encode(proof).require.toByteArray
+  def serializeMerkleProof(proof: GetMerkleResponse): Array[Byte] = proofCodec.encode(proof).require.toByteArray
 
-  def deserializeMerkleProof(bin: BinaryData): GetMerkleResponse = proofCodec.decode(BitVector(bin.toArray)).require.value
+  def deserializeMerkleProof(bin: Array[Byte]): GetMerkleResponse = proofCodec.decode(BitVector(bin)).require.value
 
   import fr.acinq.eclair.wire.LightningMessageCodecs._
 
-  val statusListCodec: Codec[List[(BinaryData, String)]] = listOfN(uint16, binarydata(32) ~ cstring)
+  val statusListCodec: Codec[List[(ByteVector32, String)]] = listOfN(uint16, bytes32 ~ cstring)
 
-  val statusCodec: Codec[Map[BinaryData, String]] = Codec[Map[BinaryData, String]](
-    (map: Map[BinaryData, String]) => statusListCodec.encode(map.toList),
+  val statusCodec: Codec[Map[ByteVector32, String]] = Codec[Map[ByteVector32, String]](
+    (map: Map[ByteVector32, String]) => statusListCodec.encode(map.toList),
     (wire: BitVector) => statusListCodec.decode(wire).map(_.map(_.toMap))
   )
 
-  val heightsListCodec: Codec[List[(BinaryData, Int)]] = listOfN(uint16, binarydata(32) ~ int32)
+  val heightsListCodec: Codec[List[(ByteVector32, Int)]] = listOfN(uint16, bytes32 ~ int32)
 
-  val heightsCodec: Codec[Map[BinaryData, Int]] = Codec[Map[BinaryData, Int]](
-    (map: Map[BinaryData, Int]) => heightsListCodec.encode(map.toList),
+  val heightsCodec: Codec[Map[ByteVector32, Int]] = Codec[Map[ByteVector32, Int]](
+    (map: Map[ByteVector32, Int]) => heightsListCodec.encode(map.toList),
     (wire: BitVector) => heightsListCodec.decode(wire).map(_.map(_.toMap))
   )
 
-  val transactionListCodec: Codec[List[(BinaryData, Transaction)]] = listOfN(uint16, binarydata(32) ~ txCodec)
+  val transactionListCodec: Codec[List[(ByteVector32, Transaction)]] = listOfN(uint16, bytes32 ~ txCodec)
 
-  val transactionsCodec: Codec[Map[BinaryData, Transaction]] = Codec[Map[BinaryData, Transaction]](
-    (map: Map[BinaryData, Transaction]) => transactionListCodec.encode(map.toList),
+  val transactionsCodec: Codec[Map[ByteVector32, Transaction]] = Codec[Map[ByteVector32, Transaction]](
+    (map: Map[ByteVector32, Transaction]) => transactionListCodec.encode(map.toList),
     (wire: BitVector) => transactionListCodec.decode(wire).map(_.map(_.toMap))
   )
 
   val transactionHistoryItemCodec: Codec[ElectrumClient.TransactionHistoryItem] = (
-    ("height" | int32) :: ("tx_hash" | binarydata(size = 32))).as[ElectrumClient.TransactionHistoryItem]
+    ("height" | int32) :: ("tx_hash" | bytes32)).as[ElectrumClient.TransactionHistoryItem]
 
   val seqOfTransactionHistoryItemCodec: Codec[List[TransactionHistoryItem]] = listOfN[TransactionHistoryItem](uint16, transactionHistoryItemCodec)
 
-  val historyListCodec: Codec[List[(BinaryData, List[ElectrumClient.TransactionHistoryItem])]] =
-    listOfN[(BinaryData, List[ElectrumClient.TransactionHistoryItem])](uint16, binarydata(32) ~ seqOfTransactionHistoryItemCodec)
+  val historyListCodec: Codec[List[(ByteVector32, List[ElectrumClient.TransactionHistoryItem])]] =
+    listOfN[(ByteVector32, List[ElectrumClient.TransactionHistoryItem])](uint16, bytes32 ~ seqOfTransactionHistoryItemCodec)
 
-  val historyCodec: Codec[Map[BinaryData, List[ElectrumClient.TransactionHistoryItem]]] = Codec[Map[BinaryData, List[ElectrumClient.TransactionHistoryItem]]](
-    (map: Map[BinaryData, List[ElectrumClient.TransactionHistoryItem]]) => historyListCodec.encode(map.toList),
+  val historyCodec: Codec[Map[ByteVector32, List[ElectrumClient.TransactionHistoryItem]]] = Codec[Map[ByteVector32, List[ElectrumClient.TransactionHistoryItem]]](
+    (map: Map[ByteVector32, List[ElectrumClient.TransactionHistoryItem]]) => historyListCodec.encode(map.toList),
     (wire: BitVector) => historyListCodec.decode(wire).map(_.map(_.toMap))
   )
 
-  val proofsListCodec: Codec[List[(BinaryData, GetMerkleResponse)]] = listOfN(uint16, binarydata(32) ~ proofCodec)
+  val proofsListCodec: Codec[List[(ByteVector32, GetMerkleResponse)]] = listOfN(uint16, bytes32 ~ proofCodec)
 
-  val proofsCodec: Codec[Map[BinaryData, GetMerkleResponse]] = Codec[Map[BinaryData, GetMerkleResponse]](
-    (map: Map[BinaryData, GetMerkleResponse]) => proofsListCodec.encode(map.toList),
+  val proofsCodec: Codec[Map[ByteVector32, GetMerkleResponse]] = Codec[Map[ByteVector32, GetMerkleResponse]](
+    (map: Map[ByteVector32, GetMerkleResponse]) => proofsListCodec.encode(map.toList),
     (wire: BitVector) => proofsListCodec.decode(wire).map(_.map(_.toMap))
   )
 
@@ -213,7 +213,7 @@ object SqliteWalletDb {
       ("pendingTransactions" | listOfN(uint16, txCodec)) ::
       ("locks" | setCodec(txCodec))).as[PersistentData]
 
-  def serialize(data: PersistentData): BinaryData = persistentDataCodec.encode(data).require.toByteArray
+  def serialize(data: PersistentData): Array[Byte] = persistentDataCodec.encode(data).require.toByteArray
 
-  def deserializePersistentData(bin: BinaryData): PersistentData = persistentDataCodec.decode(BitVector(bin.toArray)).require.value
+  def deserializePersistentData(bin: Array[Byte]): PersistentData = persistentDataCodec.decode(BitVector(bin)).require.value
 }

@@ -18,13 +18,14 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, UInt64}
+import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success}
 
@@ -34,10 +35,10 @@ case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessag
 }
 case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage], signed: List[UpdateMessage])
 case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
-case class HtlcTxAndSigs(txinfo: TransactionWithInputInfo, localSig: BinaryData, remoteSig: BinaryData)
+case class HtlcTxAndSigs(txinfo: TransactionWithInputInfo, localSig: ByteVector, remoteSig: ByteVector)
 case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs])
 case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs)
-case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, remotePerCommitmentPoint: Point)
+case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, remotePerCommitmentPoint: Point)
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 // @formatter:on
 
@@ -57,7 +58,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, the id of the previous channel
                        remoteNextCommitInfo: Either[WaitingForRevocation, Point],
                        commitInput: InputInfo,
-                       remotePerCommitmentSecrets: ShaChain, channelId: BinaryData) {
+                       remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
@@ -100,10 +101,6 @@ object Commitments {
     * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
     */
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
-
-    if (cmd.paymentHash.size != 32) {
-      return Left(InvalidPaymentHash(commitments.channelId))
-    }
 
     val blockCount = Globals.blockCount.get()
     // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
@@ -155,10 +152,6 @@ object Commitments {
   def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Commitments = {
     if (add.id != commitments.remoteNextHtlcId) {
       throw UnexpectedHtlcId(commitments.channelId, expected = commitments.remoteNextHtlcId, actual = add.id)
-    }
-
-    if (add.paymentHash.size != 32) {
-      throw InvalidPaymentHash(commitments.channelId)
     }
 
     if (add.amountMsat < commitments.localParams.htlcMinimumMsat) {
@@ -353,9 +346,9 @@ object Commitments {
 
   def remoteHasChanges(commitments: Commitments): Boolean = commitments.localChanges.acked.size > 0 || commitments.remoteChanges.proposed.size > 0
 
-  def revocationPreimage(seed: BinaryData, index: Long): BinaryData = ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - index)
+  def revocationPreimage(seed: ByteVector32, index: Long): ByteVector32 = ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - index)
 
-  def revocationHash(seed: BinaryData, index: Long): BinaryData = Crypto.sha256(revocationPreimage(seed, index))
+  def revocationHash(seed: ByteVector32, index: Long): ByteVector32 = Crypto.sha256(revocationPreimage(seed, index))
 
   def sendCommit(commitments: Commitments, keyManager: KeyManager)(implicit log: LoggingAdapter): (Commitments, CommitSig) = {
     import commitments._
@@ -499,7 +492,7 @@ object Commitments {
           remoteChanges = remoteChanges.copy(signed = Nil),
           remoteCommit = theirNextCommit,
           remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
-          remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index),
+          remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.toBin, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index),
           originChannels = originChannels1)
         (commitments1, forwards)
       case Right(_) =>

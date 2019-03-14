@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.gui.stages
 
+import fr.acinq.eclair.gui.controllers.AboutController
 import javafx.application.HostServices
 import javafx.event.EventHandler
 import javafx.fxml.FXMLLoader
@@ -24,8 +25,6 @@ import javafx.scene.input.KeyCode._
 import javafx.scene.input.KeyEvent
 import javafx.scene.{Parent, Scene}
 import javafx.stage.{Modality, Stage, StageStyle}
-
-import fr.acinq.eclair.gui.controllers.AboutController
 
 /**
   * Created by DPA on 28/09/2016.

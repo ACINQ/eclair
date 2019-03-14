@@ -28,24 +28,25 @@ import akka.http.scaladsl.server._
 import akka.http.scaladsl.server.directives.Credentials
 import akka.http.scaladsl.server.directives.RouteDirectives.reject
 import akka.pattern.ask
-import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
+import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
+import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JBool, JInt, JString}
 import org.json4s.{JValue, jackson}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -56,7 +57,7 @@ case class JsonRPCBody(jsonrpc: String = "1.0", id: String = "eclair-node", meth
 case class Error(code: Int, message: String)
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 case class Status(node_id: String)
-case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: BinaryData, blockHeight: Int, publicAddresses: Seq[NodeAddress])
+case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 trait RPCRejection extends Rejection {
   def requestId: String
@@ -74,7 +75,7 @@ trait Service extends Logging {
   def scheduler: Scheduler
 
   implicit val serialization = jackson.Serialization
-  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer +new PaymentRequestSerializer
+  implicit val formats = org.json4s.DefaultFormats + new ByteVectorSerializer + new ByteVector32Serializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer +new PaymentRequestSerializer
   implicit val timeout = Timeout(60 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
@@ -157,18 +158,18 @@ trait Service extends Logging {
                         }
                         case "open" => req.params match {
                           case JString(nodeId) :: JInt(fundingSatoshis) :: Nil =>
-                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(0), fundingTxFeeratePerKw_opt = None, channelFlags = None)).mapTo[String])
+                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(ByteVector.fromValidHex(nodeId)), Satoshi(fundingSatoshis.toLong), MilliSatoshi(0), fundingTxFeeratePerKw_opt = None, channelFlags = None)).mapTo[String])
                           case JString(nodeId) :: JInt(fundingSatoshis) :: JInt(pushMsat) :: Nil =>
-                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = None, fundingTxFeeratePerKw_opt = None)).mapTo[String])
+                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(ByteVector.fromValidHex(nodeId)), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = None, fundingTxFeeratePerKw_opt = None)).mapTo[String])
                           case JString(nodeId) :: JInt(fundingSatoshis) :: JInt(pushMsat) :: JInt(fundingFeerateSatPerByte) :: Nil =>
-                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = None)).mapTo[String])
+                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(ByteVector.fromValidHex(nodeId)), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = None)).mapTo[String])
                           case JString(nodeId) :: JInt(fundingSatoshis) :: JInt(pushMsat) :: JInt(fundingFeerateSatPerByte) :: JInt(flags) :: Nil =>
-                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = Some(flags.toByte))).mapTo[String])
+                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(ByteVector.fromValidHex(nodeId)), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = Some(flags.toByte))).mapTo[String])
                           case _ => reject(UnknownParamsRejection(req.id, s"[nodeId, fundingSatoshis], [nodeId, fundingSatoshis, pushMsat], [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte] or [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte, flag]"))
                         }
                         case "close" => req.params match {
                           case JString(identifier) :: Nil => completeRpcFuture(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None)).mapTo[String])
-                          case JString(identifier) :: JString(scriptPubKey) :: Nil => completeRpcFuture(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String])
+                          case JString(identifier) :: JString(scriptPubKey) :: Nil => completeRpcFuture(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = Some(ByteVector.fromValidHex(scriptPubKey)))).mapTo[String])
                           case _ => reject(UnknownParamsRejection(req.id, "[channelId] or [channelId, scriptPubKey]"))
                         }
                         case "forceclose" => req.params match {
@@ -190,14 +191,14 @@ trait Service extends Logging {
                         case "channels" => req.params match {
                           case Nil =>
                             val f = for {
-                              channels_id <- (register ? 'channels).mapTo[Map[BinaryData, ActorRef]].map(_.keys)
+                              channels_id <- (register ? 'channels).mapTo[Map[ByteVector32, ActorRef]].map(_.keys)
                               channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]))
                             } yield channels
                             completeRpcFuture(req.id, f)
-                          case JString(remoteNodeId) :: Nil => Try(PublicKey(remoteNodeId)) match {
+                          case JString(remoteNodeId) :: Nil => Try(PublicKey(ByteVector.fromValidHex(remoteNodeId))) match {
                             case Success(pk) =>
                               val f = for {
-                                channels_id <- (register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == pk).keys)
+                                channels_id <- (register ? 'channelsTo).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(_._2 == pk).keys)
                                 channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]))
                               } yield channels
                               completeRpcFuture(req.id, f)
@@ -214,7 +215,7 @@ trait Service extends Logging {
                         case "allnodes" => completeRpcFuture(req.id, (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]])
                         case "allchannels" => completeRpcFuture(req.id, (router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))))
                         case "allupdates" => req.params match {
-                          case JString(nodeId) :: Nil => Try(PublicKey(nodeId)) match {
+                          case JString(nodeId) :: Nil => Try(PublicKey(ByteVector.fromValidHex(nodeId))) match {
                             case Success(pk) => completeRpcFuture(req.id, (router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]].map(_.filter(e => e._1.a == pk || e._1.b == pk).values))
                             case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid remote node id '$nodeId'"))
                           }
@@ -244,7 +245,7 @@ trait Service extends Logging {
                       }
 
                       case "findroute" => req.params match {
-                        case JString(nodeId) :: JInt(amountMsat) :: Nil if nodeId.length() == 66 => Try(PublicKey(nodeId)) match {
+                        case JString(nodeId) :: JInt(amountMsat) :: Nil if nodeId.length() == 66 => Try(PublicKey(ByteVector.fromValidHex(nodeId))) match {
                           case Success(pk) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, pk, amountMsat.toLong)).mapTo[RouteResponse])
                           case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid nodeId hash '$nodeId'"))
                         }
@@ -264,7 +265,7 @@ trait Service extends Logging {
                       case "send" => req.params match {
                         // user manually sets the payment information
                         case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
-                          (Try(BinaryData(paymentHash)), Try(PublicKey(nodeId))) match {
+                          (Try(ByteVector32.fromValidHex(paymentHash)), Try(PublicKey(ByteVector.fromValidHex(nodeId)))) match {
                             case (Success(ph), Success(pk)) => completeRpcFuture(req.id, (paymentInitiator ?
                               SendPayment(amountMsat.toLong, ph, pk)).mapTo[PaymentResult].map {
                               case s: PaymentSucceeded => s
@@ -303,12 +304,12 @@ trait Service extends Logging {
                           case JString(identifier) :: Nil => completeRpcFuture(req.id, for {
                             paymentHash <- Try(PaymentRequest.read(identifier)) match {
                               case Success(pr) => Future.successful(pr.paymentHash)
-                              case _ => Try(BinaryData(identifier)) match {
+                              case _ => Try(ByteVector.fromValidHex(identifier)) match {
                                 case Success(s) => Future.successful(s)
                                 case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
                               }
                             }
-                            found <- (paymentHandler ? CheckPayment(paymentHash)).map(found => new JBool(found.asInstanceOf[Boolean]))
+                            found <- (paymentHandler ? CheckPayment(ByteVector32.fromValidHex(identifier))).map(found => new JBool(found.asInstanceOf[Boolean]))
                           } yield found)
                           case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
                         }
@@ -414,7 +415,7 @@ trait Service extends Logging {
   def sendToChannel(channelIdentifier: String, request: Any): Future[Any] =
     for {
       fwdReq <- Future(Register.ForwardShortId(ShortChannelId(channelIdentifier), request))
-        .recoverWith { case _ => Future(Register.Forward(BinaryData(channelIdentifier), request)) }
+        .recoverWith { case _ => Future(Register.Forward(ByteVector32.fromValidHex(channelIdentifier), request)) }
         .recoverWith { case _ => Future.failed(new RuntimeException(s"invalid channel identifier '$channelIdentifier'")) }
       res <- appKit.register ? fwdReq
     } yield res

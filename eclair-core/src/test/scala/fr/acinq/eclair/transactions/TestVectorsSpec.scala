@@ -24,6 +24,7 @@ import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, 
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
+import scodec.bits._
 
 import scala.io.Source
 
@@ -65,19 +66,19 @@ class TestVectorsSpec extends FunSuite with Logging {
     val commitTxNumber = 42
     val toSelfDelay = 144
     val dustLimit = Satoshi(546)
-    val payment_basepoint_secret = Scalar(BinaryData("1111111111111111111111111111111111111111111111111111111111111111"))
+    val payment_basepoint_secret = Scalar(hex"1111111111111111111111111111111111111111111111111111111111111111")
     val payment_basepoint = payment_basepoint_secret.toPoint
-    val revocation_basepoint_secret = Scalar(BinaryData("2222222222222222222222222222222222222222222222222222222222222222"))
+    val revocation_basepoint_secret = Scalar(hex"2222222222222222222222222222222222222222222222222222222222222222")
     val revocation_basepoint = revocation_basepoint_secret.toPoint
-    val delayed_payment_basepoint_secret = Scalar(BinaryData("3333333333333333333333333333333333333333333333333333333333333333"))
+    val delayed_payment_basepoint_secret = Scalar(hex"3333333333333333333333333333333333333333333333333333333333333333")
     val delayed_payment_basepoint = delayed_payment_basepoint_secret.toPoint
-    val funding_privkey = PrivateKey(BinaryData("30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901"))
+    val funding_privkey = PrivateKey(hex"30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901")
     val funding_pubkey = funding_privkey.publicKey
 
-    val per_commitment_point = Point(BinaryData("025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"))
+    val per_commitment_point = Point(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
     val payment_privkey = Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
     val delayed_payment_privkey = Generators.derivePrivKey(delayed_payment_basepoint_secret, per_commitment_point)
-    val revocation_pubkey = PublicKey(BinaryData("0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19"))
+    val revocation_pubkey = PublicKey(hex"0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19")
     val feerate_per_kw = 15000
   }
 
@@ -107,14 +108,14 @@ class TestVectorsSpec extends FunSuite with Logging {
     val commitTxNumber = 42
     val toSelfDelay = 144
     val dustLimit = Satoshi(546)
-    val payment_basepoint_secret = Scalar(BinaryData("4444444444444444444444444444444444444444444444444444444444444444"))
+    val payment_basepoint_secret = Scalar(hex"4444444444444444444444444444444444444444444444444444444444444444")
     val payment_basepoint = payment_basepoint_secret.toPoint
-    val revocation_basepoint_secret = Scalar(BinaryData("2222222222222222222222222222222222222222222222222222222222222222"))
+    val revocation_basepoint_secret = Scalar(hex"2222222222222222222222222222222222222222222222222222222222222222")
     val revocation_basepoint = revocation_basepoint_secret.toPoint
-    val funding_privkey = PrivateKey(BinaryData("1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301"))
+    val funding_privkey = PrivateKey(hex"1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301")
     val funding_pubkey = funding_privkey.publicKey
     val payment_privkey = Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
-    val per_commitment_point = Point(BinaryData("022c76692fd70814a8d1ed9dedc833318afaaed8188db4d14727e2e99bc619d325"))
+    val per_commitment_point = Point(hex"022c76692fd70814a8d1ed9dedc833318afaaed8188db4d14727e2e99bc619d325")
   }
 
   val coinbaseTx = Transaction.read("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0100f2052a010000001976a9143ca33c2e4446f4a305f23c80df8ad1afdcf652f988ac00000000")
@@ -141,22 +142,22 @@ class TestVectorsSpec extends FunSuite with Logging {
   logger.info(s"local_delayedkey: ${Local.delayed_payment_privkey.publicKey}")
   logger.info(s"local_revocation_key: ${Local.revocation_pubkey}")
   logger.info(s"# funding wscript = ${commitmentInput.redeemScript}")
-  assert(commitmentInput.redeemScript == BinaryData("5221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae"))
+  assert(commitmentInput.redeemScript == hex"5221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae")
 
   val paymentPreimages = Seq(
-    BinaryData("0000000000000000000000000000000000000000000000000000000000000000"),
-    BinaryData("0101010101010101010101010101010101010101010101010101010101010101"),
-    BinaryData("0202020202020202020202020202020202020202020202020202020202020202"),
-    BinaryData("0303030303030303030303030303030303030303030303030303030303030303"),
-    BinaryData("0404040404040404040404040404040404040404040404040404040404040404")
+    ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"),
+    ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101"),
+    ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202"),
+    ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"),
+    ByteVector32(hex"0404040404040404040404040404040404040404040404040404040404040404")
   )
 
   val htlcs = Seq(
-    DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Crypto.sha256(paymentPreimages(0)), 500, BinaryData.empty)),
-    DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(1)), 501, BinaryData.empty)),
-    DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(2)), 502, BinaryData.empty)),
-    DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(3000000).amount, Crypto.sha256(paymentPreimages(3)), 503, BinaryData.empty)),
-    DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(4000000).amount, Crypto.sha256(paymentPreimages(4)), 504, BinaryData.empty))
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(1000000).amount, Crypto.sha256(paymentPreimages(0)), 500, ByteVector.empty)),
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(1)), 501, ByteVector.empty)),
+    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(2)), 502, ByteVector.empty)),
+    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(3000000).amount, Crypto.sha256(paymentPreimages(3)), 503, ByteVector.empty)),
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(4000000).amount, Crypto.sha256(paymentPreimages(4)), 504, ByteVector.empty))
   )
   val htlcScripts = htlcs.map(htlc => htlc.direction match {
     case OUT => Scripts.htlcOffered(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(htlc.add.paymentHash))
@@ -221,9 +222,9 @@ class TestVectorsSpec extends FunSuite with Logging {
         spec)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
-      logger.info(s"# local_signature = ${toHexString(local_sig.dropRight(1))}")
+      logger.info(s"# local_signature = ${local_sig.dropRight(1).toHex}")
       val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
-      logger.info(s"remote_signature: ${toHexString(remote_sig.dropRight(1))}")
+      logger.info(s"remote_signature: ${remote_sig.dropRight(1).toHex}")
     }
 
     assert(Transactions.getCommitTxNumber(commitTx.tx, true, Local.payment_basepoint, Remote.payment_basepoint) === Local.commitTxNumber)
@@ -247,12 +248,12 @@ class TestVectorsSpec extends FunSuite with Logging {
         val remoteSig = Transactions.sign(tx, Remote.payment_privkey)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         logger.info(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
-        logger.info(s"remote_htlc_signature: ${toHexString(remoteSig.dropRight(1))}")
+        logger.info(s"remote_htlc_signature: ${remoteSig.dropRight(1).toHex}")
       case tx: HtlcTimeoutTx =>
         val remoteSig = Transactions.sign(tx, Remote.payment_privkey)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         logger.info(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
-        logger.info(s"remote_htlc_signature: ${toHexString(remoteSig.dropRight(1))}")
+        logger.info(s"remote_htlc_signature: ${remoteSig.dropRight(1).toHex}")
     }
 
     val signedTxs = htlcTxs collect {
@@ -264,7 +265,7 @@ class TestVectorsSpec extends FunSuite with Logging {
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig, preimage)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
-        logger.info(s"# local_signature = ${toHexString(localSig.dropRight(1))}")
+        logger.info(s"# local_signature = ${localSig.dropRight(1).toHex}")
         logger.info(s"output htlc_success_tx ${htlcIndex}: ${tx1.tx}")
         tx1
       case tx: HtlcTimeoutTx =>
@@ -272,7 +273,7 @@ class TestVectorsSpec extends FunSuite with Logging {
         val remoteSig = Transactions.sign(tx, Remote.payment_privkey)
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        logger.info(s"# local_signature = ${toHexString(localSig.dropRight(1))}")
+        logger.info(s"# local_signature = ${localSig.dropRight(1).toHex}")
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         logger.info(s"output htlc_timeout_tx ${htlcIndex}: ${tx1.tx}")
         tx1
