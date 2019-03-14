@@ -21,13 +21,14 @@ import java.util.concurrent.{CountDownLatch, TimeUnit}
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
-import fr.acinq.eclair.{Globals, TestUtils}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.NoopPaymentHandler
 import fr.acinq.eclair.wire.Init
+import fr.acinq.eclair.{Globals, TestUtils}
 import org.scalatest.{BeforeAndAfterAll, Matchers, Outcome, fixture}
 
 import scala.concurrent.duration._
@@ -58,8 +59,8 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     // alice and bob will both have 1 000 000 sat
     Globals.feeratesPerKw.set(FeeratesPerKw.single(10000))
-    alice ! INPUT_INIT_FUNDER("00" * 32, 2000000, 1000000000, Globals.feeratesPerKw.get.blocks_2, Globals.feeratesPerKw.get.blocks_6, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)
-    bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, pipe, aliceInit)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, 2000000, 1000000000, Globals.feeratesPerKw.get.blocks_2, Globals.feeratesPerKw.get.blocks_6, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)
+    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit)
     pipe ! (alice, bob)
     within(30 seconds) {
       alice2blockchain.expectMsgType[WatchSpent]

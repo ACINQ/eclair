@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.ByteVector32
 
 /**
   * Store the Lightning payments received by the node. Sent and relayed payments are not persisted.
@@ -37,7 +37,7 @@ trait PaymentsDb {
 
   def addPayment(payment: Payment)
 
-  def findByPaymentHash(paymentHash: BinaryData): Option[Payment]
+  def findByPaymentHash(paymentHash: ByteVector32): Option[Payment]
 
   def listPayments(): Seq[Payment]
 
@@ -52,4 +52,4 @@ trait PaymentsDb {
   * @param amount_msat  amount of the payment, in milli-satoshis
   * @param timestamp    absolute time in seconds since UNIX epoch when the payment was created.
   */
-case class Payment(payment_hash: BinaryData, amount_msat: Long, timestamp: Long)
+case class Payment(payment_hash: ByteVector32, amount_msat: Long, timestamp: Long)

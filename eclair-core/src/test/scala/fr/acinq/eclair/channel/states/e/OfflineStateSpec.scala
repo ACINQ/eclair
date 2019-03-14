@@ -16,16 +16,15 @@
 
 package fr.acinq.eclair.channel.states.e
 
-import akka.testkit.{TestFSMRef, TestProbe}
+import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.Scalar
-import fr.acinq.bitcoin.{BinaryData, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.{PublishAsap, WatchEventSpent}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.Outcome
 
 import scala.concurrent.duration._
@@ -59,7 +58,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000, BinaryData("42" * 32), 400144))
+    sender.send(alice, CMD_ADD_HTLC(1000000, ByteVector32.Zeroes, 400144))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob)
@@ -83,9 +82,9 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
 
     // a didn't receive any update or sig
-    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(Scalar(Sphinx zeroes 32)), Some(aliceCurrentPerCommitmentPoint)))
+    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(Scalar(ByteVector32.Zeroes)), Some(aliceCurrentPerCommitmentPoint)))
     // b didn't receive the sig
-    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(Scalar(Sphinx zeroes 32)), Some(bobCurrentPerCommitmentPoint)))
+    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(Scalar(ByteVector32.Zeroes)), Some(bobCurrentPerCommitmentPoint)))
 
     // reestablish ->b
     alice2bob.forward(bob, ab_reestablish)
@@ -136,7 +135,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000, BinaryData("42" * 32), 400144))
+    sender.send(alice, CMD_ADD_HTLC(1000000, randomBytes32, 400144))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob, ab_add_0)
@@ -166,9 +165,9 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(aliceCommitments.localParams.channelKeyPath, aliceCommitments.localCommit.index)
 
     // a didn't receive the sig
-    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(Scalar(Sphinx zeroes 32)), Some(aliceCurrentPerCommitmentPoint)))
+    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(Scalar(ByteVector32.Zeroes)), Some(aliceCurrentPerCommitmentPoint)))
     // b did receive the sig
-    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 2, 0, Some(Scalar(Sphinx zeroes 32)), Some(bobCurrentPerCommitmentPoint)))
+    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 2, 0, Some(Scalar(ByteVector32.Zeroes)), Some(bobCurrentPerCommitmentPoint)))
 
     // reestablish ->b
     alice2bob.forward(bob, ab_reestablish)
@@ -232,7 +231,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     // ... and ask bob to publish its current commitment
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data) === PleasePublishYourCommitment(channelId(alice)).getMessage)
+    assert(new String(error.data.toArray) === PleasePublishYourCommitment(channelId(alice)).getMessage)
 
     // alice now waits for bob to publish its commitment
     awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
@@ -284,7 +283,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     // ... and ask bob to publish its current commitment
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data) === PleasePublishYourCommitment(channelId(alice)).getMessage)
+    assert(new String(error.data.toArray) === PleasePublishYourCommitment(channelId(alice)).getMessage)
 
     // alice now waits for bob to publish its commitment
     awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
@@ -323,7 +322,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // alice then finds out bob is lying
     bob2alice.send(alice, ba_reestablish_forged)
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data) === InvalidRevokedCommitProof(channelId(alice), 0, 42, ba_reestablish_forged.yourLastPerCommitmentSecret.get).getMessage)
+    assert(new String(error.data.toArray) === InvalidRevokedCommitProof(channelId(alice), 0, 42, ba_reestablish_forged.yourLastPerCommitmentSecret.get).getMessage)
   }
 
   test("change relay fee while offline") { f =>

@@ -18,16 +18,17 @@ package fr.acinq.eclair.blockchain.electrum
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.pattern.ask
-import fr.acinq.bitcoin.{BinaryData, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.addressToPublicKeyScript
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.BroadcastTransaction
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse}
 import grizzled.slf4j.Logging
+import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class ElectrumEclairWallet(val wallet: ActorRef, chainHash: BinaryData)(implicit system: ActorSystem, ec: ExecutionContext, timeout: akka.util.Timeout) extends EclairWallet with Logging {
+class ElectrumEclairWallet(val wallet: ActorRef, chainHash: ByteVector32)(implicit system: ActorSystem, ec: ExecutionContext, timeout: akka.util.Timeout) extends EclairWallet with Logging {
 
   override def getBalance = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(balance => balance.confirmed + balance.unconfirmed)
 
@@ -35,7 +36,7 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: BinaryData)(implicit
 
   def getXpub: Future[GetXpubResponse] = (wallet ? GetXpub).mapTo[GetXpubResponse]
 
-  override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = {
+  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = {
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, pubkeyScript) :: Nil, lockTime = 0)
     (wallet ? CompleteTransaction(tx, feeRatePerKw)).mapTo[CompleteTransactionResponse].map(response => response match {
       case CompleteTransactionResponse(tx1, fee1, None) => MakeFundingTxResponse(tx1, 0, fee1)
