@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.gui
 
+import fr.acinq.eclair.gui.controllers.SplashController
+import grizzled.slf4j.Logging
 import javafx.application.Preloader
 import javafx.application.Preloader.{ErrorNotification, PreloaderNotification}
 import javafx.fxml.FXMLLoader
@@ -23,9 +25,6 @@ import javafx.scene.image.Image
 import javafx.scene.paint.Color
 import javafx.scene.{Parent, Scene}
 import javafx.stage.{Stage, StageStyle}
-
-import fr.acinq.eclair.gui.controllers.SplashController
-import grizzled.slf4j.Logging
 
 sealed trait AppNotificationType
 

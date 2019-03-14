@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.io.InputStream
 
-import fr.acinq.bitcoin.{BinaryData, Block, encodeCompact}
+import fr.acinq.bitcoin.{Block, ByteVector32, encodeCompact}
 import fr.acinq.eclair.blockchain.electrum.db.HeaderDb
 import org.json4s.JsonAST.{JArray, JInt, JString}
 import org.json4s.jackson.JsonMethods
@@ -28,9 +28,7 @@ import org.json4s.jackson.JsonMethods
   * @param hash block hash
   * @param target difficulty target for the next block
   */
-case class CheckPoint(hash: BinaryData, nextBits: Long) {
-  require(hash.length == 32)
-}
+case class CheckPoint(hash: ByteVector32, nextBits: Long)
 
 object CheckPoint {
 
@@ -42,7 +40,7 @@ object CheckPoint {
     * we're on the right chain and to validate proof-of-work by checking the difficulty target
     * @return an ordered list of checkpoints, with one checkpoint every 2016 blocks
     */
-  def load(chainHash: BinaryData): Vector[CheckPoint] = chainHash match {
+  def load(chainHash: ByteVector32): Vector[CheckPoint] = chainHash match {
     case Block.LivenetGenesisBlock.hash => load(classOf[CheckPoint].getResourceAsStream("/electrum/checkpoints_mainnet.json"))
     case Block.TestnetGenesisBlock.hash => load(classOf[CheckPoint].getResourceAsStream("/electrum/checkpoints_testnet.json"))
     case Block.RegtestGenesisBlock.hash => Vector.empty[CheckPoint] // no checkpoints on regtest
@@ -51,7 +49,7 @@ object CheckPoint {
   def load(stream: InputStream): Vector[CheckPoint] = {
     val JArray(values) = JsonMethods.parse(stream)
     val checkpoints = values.collect {
-      case JArray(JString(a) :: JInt(b) :: Nil) => CheckPoint(BinaryData(a).reverse, encodeCompact(b.bigInteger))
+      case JArray(JString(a) :: JInt(b) :: Nil) => CheckPoint(ByteVector32.fromValidHex(a).reverse, encodeCompact(b.bigInteger))
     }
     checkpoints.toVector
   }
@@ -63,7 +61,7 @@ object CheckPoint {
     * @param headerDb  header db
     * @return a series of checkpoints
     */
-  def load(chainHash: BinaryData, headerDb: HeaderDb): Vector[CheckPoint] = {
+  def load(chainHash: ByteVector32, headerDb: HeaderDb): Vector[CheckPoint] = {
     val checkpoints = CheckPoint.load(chainHash)
     val checkpoints1 = headerDb.getTip match {
       case Some((height, header)) =>

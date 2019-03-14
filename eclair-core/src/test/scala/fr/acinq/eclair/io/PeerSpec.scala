@@ -188,7 +188,7 @@ class PeerSpec extends TestkitBaseClass {
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
     val error1 = transport.expectMsgType[Error]
     assert(error1.channelId === CHANNELID_ZERO)
-    assert(new String(error1.data).startsWith("couldn't verify channel! shortChannelId="))
+    assert(new String(error1.data.toArray).startsWith("couldn't verify channel! shortChannelId="))
 
 
     // let's assume that one of the sigs were invalid
@@ -196,7 +196,7 @@ class PeerSpec extends TestkitBaseClass {
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
     val error2 = transport.expectMsgType[Error]
     assert(error2.channelId === CHANNELID_ZERO)
-    assert(new String(error2.data).startsWith("bad announcement sig! bin=0100"))
+    assert(new String(error2.data.toArray).startsWith("bad announcement sig! bin=0100"))
   }
 
 }

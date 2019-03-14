@@ -20,7 +20,7 @@ import java.net.InetSocketAddress
 
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, OutPoint, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.PaymentRequest
@@ -31,13 +31,18 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.json4s.JsonAST._
 import org.json4s.{CustomKeySerializer, CustomSerializer}
+import scodec.bits.ByteVector
 
 /**
   * JSON Serializers.
   * Note: in general, deserialization does not need to be implemented.
   */
-class BinaryDataSerializer extends CustomSerializer[BinaryData](format => ({ null }, {
-  case x: BinaryData => JString(x.toString())
+class ByteVectorSerializer extends CustomSerializer[ByteVector](format => ({ null }, {
+  case x: ByteVector => JString(x.toHex)
+}))
+
+class ByteVector32Serializer extends CustomSerializer[ByteVector32](format => ({ null }, {
+  case x: ByteVector32 => JString(x.toHex)
 }))
 
 class UInt64Serializer extends CustomSerializer[UInt64](format => ({ null }, {

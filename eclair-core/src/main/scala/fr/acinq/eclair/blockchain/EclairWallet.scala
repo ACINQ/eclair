@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
+import fr.acinq.bitcoin.{Satoshi, Transaction}
+import scodec.bits.ByteVector
 
 import scala.concurrent.Future
 
@@ -29,7 +30,7 @@ trait EclairWallet {
 
   def getFinalAddress: Future[String]
 
-  def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse]
+  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse]
 
   /**
     * Committing *must* include publishing the transaction on the network.

@@ -16,12 +16,9 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.wire.ReplyChannelRange
 import org.scalatest.FunSuite
 
-import scala.collection.immutable.SortedMap
 import scala.collection.{SortedSet, immutable}
 import scala.util.Random
 

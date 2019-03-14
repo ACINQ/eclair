@@ -17,7 +17,6 @@
 package fr.acinq.eclair.gui
 
 import java.time.LocalDateTime
-import java.util.function.Predicate
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -25,17 +24,13 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor.{ZMQConnected, ZMQDisconnected}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ElectrumDisconnected, ElectrumReady}
-import fr.acinq.eclair.channel.{Data, _}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.payment.PaymentLifecycle.{LocalFailure, PaymentFailed, PaymentSucceeded, RemoteFailure}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{NORMAL => _, _}
-import fr.acinq.eclair.wire.NodeAnnouncement
 import javafx.application.Platform
-import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXMLLoader
-import javafx.scene.control.Alert.AlertType
-import javafx.scene.control.{Alert, ButtonType}
 import javafx.scene.layout.VBox
 
 import scala.collection.JavaConversions._
@@ -60,13 +55,13 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
   def receive: Receive = main(Map())
 
-  def createChannelPanel(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, channelId: BinaryData): (ChannelPaneController, VBox) = {
+  def createChannelPanel(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, channelId: ByteVector32): (ChannelPaneController, VBox) = {
     log.info(s"new channel: $channel")
     val loader = new FXMLLoader(getClass.getResource("/gui/main/channelPane.fxml"))
     val channelPaneController = new ChannelPaneController(channel, remoteNodeId.toString())
     loader.setController(channelPaneController)
     val root = loader.load[VBox]
-    channelPaneController.channelId.setText(channelId.toString())
+    channelPaneController.channelId.setText(channelId.toHex)
     channelPaneController.funder.setText(if (isFunder) "Yes" else "No")
 
     // set the node alias if the node has already been announced
@@ -95,7 +90,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       runInGuiThread(() => {
         channelPaneController.refreshBalance()
         mainController.refreshTotalBalance(totalBalance)
-        channelPaneController.txId.setText(currentData.commitments.commitInput.outPoint.txid.toString())
+        channelPaneController.txId.setText(currentData.commitments.commitInput.outPoint.txid.toHex)
         mainController.channelBox.getChildren.addAll(root)
       })
       context.become(main(m1))
@@ -106,13 +101,13 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
     case ChannelIdAssigned(channel, _, _, channelId) if m.contains(channel) =>
       val channelPaneController = m(channel)
-      runInGuiThread(() => channelPaneController.channelId.setText(channelId.toString()))
+      runInGuiThread(() => channelPaneController.channelId.setText(channelId.toHex))
 
     case ChannelStateChanged(channel, _, remoteNodeId, _, currentState, currentData) if m.contains(channel) =>
       val channelPaneController = m(channel)
       runInGuiThread { () =>
         (currentState, currentData) match {
-          case (WAIT_FOR_FUNDING_CONFIRMED, d: HasCommitments) => channelPaneController.txId.setText(d.commitments.commitInput.outPoint.txid.toString())
+          case (WAIT_FOR_FUNDING_CONFIRMED, d: HasCommitments) => channelPaneController.txId.setText(d.commitments.commitInput.outPoint.txid.toHex)
           case _ => {}
         }
         channelPaneController.close.setVisible(STATE_MUTUAL_CLOSE.contains(currentState))

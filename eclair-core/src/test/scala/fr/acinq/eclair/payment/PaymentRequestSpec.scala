@@ -19,12 +19,12 @@ package fr.acinq.eclair.payment
 import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Block, Btc, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi}
+import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.payment.PaymentRequest._
 import org.scalatest.FunSuite
 import scodec.DecodeResult
-import scodec.bits.BitVector
+import scodec.bits._
 
 /**
   * Created by fabrice on 15/05/17.
@@ -32,10 +32,10 @@ import scodec.bits.BitVector
 
 class PaymentRequestSpec extends FunSuite {
 
-  val priv = PrivateKey(BinaryData("e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734"), compressed = true)
+  val priv = PrivateKey(hex"e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734", compressed = true)
   val pub = priv.publicKey
   val nodeId = pub
-  assert(nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
+  assert(nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
 
   test("check minimal unit is used") {
     assert('p' === Amount.unit(MilliSatoshi(1)))
@@ -88,9 +88,9 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount.isEmpty)
-    assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
+    assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.timestamp == 1496314658L)
-    assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
+    assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Left("Please consider supporting this project"))
     assert(pr.fallbackAddress === None)
     assert(pr.tags.size === 2)
@@ -102,9 +102,9 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount == Some(MilliSatoshi(250000000L)))
-    assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
+    assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.timestamp == 1496314658L)
-    assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
+    assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Left("1 cup coffee"))
     assert(pr.fallbackAddress === None)
     assert(pr.tags.size === 3)
@@ -116,10 +116,10 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount == Some(MilliSatoshi(2000000000L)))
-    assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
+    assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.timestamp == 1496314658L)
-    assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
-    assert(pr.description == Right(Crypto.sha256("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes)))
+    assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+    assert(pr.description == Right(Crypto.sha256(ByteVector("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress === None)
     assert(pr.tags.size === 2)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
@@ -130,10 +130,10 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lntb")
     assert(pr.amount == Some(MilliSatoshi(2000000000L)))
-    assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
+    assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.timestamp == 1496314658L)
-    assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
-    assert(pr.description == Right(Crypto.sha256("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes)))
+    assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+    assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress === Some("mk2QpYatsKicvFVuTAQLBryyccRXMUaGHP"))
     assert(pr.tags.size == 3)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
@@ -144,17 +144,17 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount === Some(MilliSatoshi(2000000000L)))
-    assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
+    assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.timestamp == 1496314658L)
-    assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
-    assert(pr.description == Right(Crypto.sha256("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes)))
+    assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+    assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress === Some("1RustyRX2oai4EYYDpQGWvEL62BBGqN9T"))
     assert(pr.routingInfo === List(List(
-      ExtraHop(PublicKey("029e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255"), ShortChannelId(72623859790382856L), 1, 20, 3),
-      ExtraHop(PublicKey("039e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255"), ShortChannelId(217304205466536202L), 2, 30, 4)
+      ExtraHop(PublicKey(hex"029e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255"), ShortChannelId(72623859790382856L), 1, 20, 3),
+      ExtraHop(PublicKey(hex"039e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255"), ShortChannelId(217304205466536202L), 2, 30, 4)
     )))
-    assert(BinaryData(Protocol.writeUInt64(0x0102030405060708L, ByteOrder.BIG_ENDIAN)) == BinaryData("0102030405060708"))
-    assert(BinaryData(Protocol.writeUInt64(0x030405060708090aL, ByteOrder.BIG_ENDIAN)) == BinaryData("030405060708090a"))
+    assert(Protocol.writeUInt64(0x0102030405060708L, ByteOrder.BIG_ENDIAN) == hex"0102030405060708")
+    assert(Protocol.writeUInt64(0x030405060708090aL, ByteOrder.BIG_ENDIAN) == hex"030405060708090a")
     assert(pr.tags.size == 4)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
@@ -165,10 +165,10 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount == Some(MilliSatoshi(2000000000L)))
-    assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
+    assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.timestamp == 1496314658L)
-    assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
-    assert(pr.description == Right(Crypto.sha256("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes)))
+    assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+    assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress === Some("3EktnHQD7RiAE6uzMj2ZifT9YgRrkSgzQX"))
     assert(pr.tags.size == 3)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
@@ -179,10 +179,10 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount == Some(MilliSatoshi(2000000000L)))
-    assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
+    assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.timestamp == 1496314658L)
-    assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
-    assert(pr.description == Right(Crypto.sha256("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes)))
+    assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+    assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress === Some("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"))
     assert(pr.tags.size == 3)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
@@ -194,10 +194,10 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount == Some(MilliSatoshi(2000000000L)))
-    assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
+    assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.timestamp == 1496314658L)
-    assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
-    assert(pr.description == Right(Crypto.sha256("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes)))
+    assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+    assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress === Some("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"))
     assert(pr.tags.size == 3)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
@@ -208,10 +208,10 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount == Some(MilliSatoshi(2000000000L)))
-    assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
+    assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.timestamp == 1496314658L)
-    assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
-    assert(pr.description == Right(Crypto.sha256("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes)))
+    assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+    assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress === Some("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"))
     assert(pr.minFinalCltvExpiry === Some(12))
     assert(pr.tags.size == 4)
@@ -219,7 +219,7 @@ class PaymentRequestSpec extends FunSuite {
   }
 
   test("expiry is a variable-length unsigned value") {
-    val pr = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(MilliSatoshi(100000L)), BinaryData("0001020304050607080900010203040506070809000102030405060708090102"),
+    val pr = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(MilliSatoshi(100000L)), ByteVector32(hex"0001020304050607080900010203040506070809000102030405060708090102"),
       priv, "test", fallbackAddress = None, expirySeconds = Some(21600), timestamp = System.currentTimeMillis() / 1000L)
 
     val serialized = PaymentRequest write pr
@@ -234,11 +234,11 @@ class PaymentRequestSpec extends FunSuite {
       timestamp = System.currentTimeMillis() / 1000L,
       nodeId = nodeId,
       tags = List(
-        PaymentHash(BinaryData("01" * 32)),
+        PaymentHash(ByteVector32(ByteVector.fill(32)(1))),
         Description("description"),
         UnknownTag21(BitVector("some data we don't understand".getBytes))
       ),
-      signature = BinaryData.empty).sign(priv)
+      signature = ByteVector.empty).sign(priv)
 
     val serialized = PaymentRequest write pr
     val pr1 = PaymentRequest read serialized

@@ -16,10 +16,8 @@
 
 package fr.acinq.eclair.db
 
-import java.net.{InetAddress, InetSocketAddress}
 import java.sql.DriverManager
 
-import com.google.common.net.HostAndPort
 import fr.acinq.eclair.db.sqlite.SqlitePeersDb
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}

@@ -150,7 +150,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
 object RoutingSyncSpec {
   val (priv_a, priv_b, priv_funding_a, priv_funding_b) = (randomKey, randomKey, randomKey, randomKey)
-  val (priv1, priv2) = if (Announcements.isNode1(priv_a.publicKey.toBin, priv_b.publicKey.toBin))
+  val (priv1, priv2) = if (Announcements.isNode1(priv_a.publicKey, priv_b.publicKey))
     (priv_a, priv_b)
   else
     (priv_b, priv_a)

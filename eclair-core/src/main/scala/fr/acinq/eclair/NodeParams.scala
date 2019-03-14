@@ -22,19 +22,19 @@ import java.nio.file.Files
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
-import com.google.common.net.{HostAndPort, InetAddresses}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, Block}
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
+import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, NodeAddress}
-import fr.acinq.eclair.router.RouterConf
-import fr.acinq.eclair.wire.Color
+import scodec.bits.ByteVector
+
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
 
@@ -45,9 +45,9 @@ case class NodeParams(keyManager: KeyManager,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
-                      globalFeatures: BinaryData,
-                      localFeatures: BinaryData,
-                      overrideFeatures: Map[PublicKey, (BinaryData, BinaryData)],
+                      globalFeatures: ByteVector,
+                      localFeatures: ByteVector,
+                      overrideFeatures: Map[PublicKey, (ByteVector, ByteVector)],
                       dustLimitSatoshis: Long,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
@@ -74,7 +74,7 @@ case class NodeParams(keyManager: KeyManager,
                       maxFeerateMismatch: Double,
                       updateFeeMinDiffRatio: Double,
                       autoReconnect: Boolean,
-                      chainHash: BinaryData,
+                      chainHash: ByteVector32,
                       channelFlags: Byte,
                       watcherType: WatcherType,
                       paymentRequestExpiry: FiniteDuration,
@@ -108,19 +108,19 @@ object NodeParams {
       .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load()).getConfig("eclair")
 
-  def getSeed(datadir: File): BinaryData = {
+  def getSeed(datadir: File): ByteVector = {
     val seedPath = new File(datadir, "seed.dat")
     seedPath.exists() match {
-      case true => Files.readAllBytes(seedPath.toPath)
+      case true => ByteVector(Files.readAllBytes(seedPath.toPath))
       case false =>
         datadir.mkdirs()
         val seed = randomKey.toBin
-        Files.write(seedPath.toPath, seed)
+        Files.write(seedPath.toPath, seed.toArray)
         seed
     }
   }
 
-  def makeChainHash(chain: String): BinaryData = {
+  def makeChainHash(chain: String): ByteVector32 = {
     chain match {
       case "regtest" => Block.RegtestGenesisBlock.hash
       case "testnet" => Block.TestnetGenesisBlock.hash
@@ -152,7 +152,7 @@ object NodeParams {
     val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "audit.sqlite")}")
     val auditDb = new SqliteAuditDb(sqliteAudit)
 
-    val color = BinaryData(config.getString("node-color"))
+    val color = ByteVector.fromValidHex(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
 
     val watcherType = config.getString("watcher-type") match {
@@ -175,10 +175,10 @@ object NodeParams {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
-    val overrideFeatures: Map[PublicKey, (BinaryData, BinaryData)] = config.getConfigList("override-features").map { e =>
-      val p = PublicKey(e.getString("nodeid"))
-      val gf = BinaryData(e.getString("global-features"))
-      val lf = BinaryData(e.getString("local-features"))
+    val overrideFeatures: Map[PublicKey, (ByteVector, ByteVector)] = config.getConfigList("override-features").map { e =>
+      val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
+      val gf = ByteVector.fromValidHex(e.getString("global-features"))
+      val lf = ByteVector.fromValidHex(e.getString("local-features"))
       (p -> (gf, lf))
     }.toMap
 
@@ -202,10 +202,10 @@ object NodeParams {
     NodeParams(
       keyManager = keyManager,
       alias = nodeAlias,
-      color = Color(color.data(0), color.data(1), color.data(2)),
+      color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
-      globalFeatures = BinaryData(config.getString("global-features")),
-      localFeatures = BinaryData(config.getString("local-features")),
+      globalFeatures = ByteVector.fromValidHex(config.getString("global-features")),
+      localFeatures = ByteVector.fromValidHex(config.getString("local-features")),
       overrideFeatures = overrideFeatures,
       dustLimitSatoshis = dustLimitSatoshis,
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),

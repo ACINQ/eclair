@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.states.h
 import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{OutPoint, ScriptFlags, Transaction, TxIn}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, ScriptFlags, Transaction, TxIn}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -27,8 +27,9 @@ import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment.{CommandBuffer, ForwardAdd, ForwardFulfill, Local}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.Outcome
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -112,7 +113,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test starts here
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = 300000)
+    val add = CMD_ADD_HTLC(500000000, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = 300000)
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), None, Some(add))))
@@ -125,7 +126,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test starts here
     val sender = TestProbe()
-    sender.send(alice, CMD_FULFILL_HTLC(42, "42" * 32))
+    sender.send(alice, CMD_FULFILL_HTLC(42, randomBytes32))
     sender.expectMsg(Failure(UnknownHtlcId(channelId(alice), 42)))
 
     // NB: nominal case is tested in IntegrationSpec
@@ -150,7 +151,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(aliceCloseFee != bobCloseFee)
     val Some(mutualCloseTx) = alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt
     // let's make alice publish this closing tx
-    alice ! Error("00" * 32, "")
+    alice ! Error(ByteVector32.Zeroes, "")
     awaitCond(alice.stateName == CLOSING)
     assert(mutualCloseTx === alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.last)
 
@@ -174,7 +175,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     // an error occurs and alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    alice ! Error("00" * 32, "oops".getBytes)
+    alice ! Error(ByteVector32.Zeroes, "oops")
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
@@ -196,7 +197,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     relayerB.expectMsgType[ForwardAdd]
     // an error occurs and alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    alice ! Error("00" * 32, "oops".getBytes)
+    alice ! Error(ByteVector32.Zeroes, "oops")
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx)) // commit tx
     alice2blockchain.expectMsgType[PublishAsap] // main-delayed-output
     alice2blockchain.expectMsgType[PublishAsap] // htlc-timeout
@@ -213,12 +214,12 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     channelUpdateListener.expectMsgType[LocalChannelDown]
 
     // scenario 1: bob claims the htlc output from the commit tx using its preimage
-    val claimHtlcSuccessFromCommitTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint("22" * 32, 0), signatureScript = "", sequence = 0, witness = Scripts.witnessClaimHtlcSuccessFromCommitTx("11" * 70, ra1, "33" * 130)) :: Nil, txOut = Nil, lockTime = 0)
+    val claimHtlcSuccessFromCommitTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint(randomBytes32, 0), signatureScript = ByteVector.empty, sequence = 0, witness = Scripts.witnessClaimHtlcSuccessFromCommitTx(ByteVector.fill(70)(11), ra1, ByteVector.fill(130)(33))) :: Nil, txOut = Nil, lockTime = 0)
     alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, claimHtlcSuccessFromCommitTx)
     assert(relayerA.expectMsgType[ForwardFulfill].fulfill === UpdateFulfillHtlc(htlca1.channelId, htlca1.id, ra1))
 
     // scenario 2: bob claims the htlc output from his own commit tx using its preimage (let's assume both parties had published their commitment tx)
-    val claimHtlcSuccessTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint("22" * 32, 0), signatureScript = "", sequence = 0, witness = Scripts.witnessHtlcSuccess("11" * 70, "22" * 70, ra1, "33" * 130)) :: Nil, txOut = Nil, lockTime = 0)
+    val claimHtlcSuccessTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint(randomBytes32, 0), signatureScript = ByteVector.empty, sequence = 0, witness = Scripts.witnessHtlcSuccess(ByteVector.fill(70)(11), ByteVector.fill(70)(22), ra1, ByteVector.fill(130)(33))) :: Nil, txOut = Nil, lockTime = 0)
     alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, claimHtlcSuccessTx)
     assert(relayerA.expectMsgType[ForwardFulfill].fulfill === UpdateFulfillHtlc(htlca1.channelId, htlca1.id, ra1))
 
@@ -234,7 +235,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     crossSign(alice, bob, alice2bob, bob2alice)
     // an error occurs and alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    alice ! Error("00" * 32, "oops".getBytes)
+    alice ! Error(ByteVector32.Zeroes, "oops")
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx)) // commit tx
   val claimMainDelayedTx = alice2blockchain.expectMsgType[PublishAsap].tx // main-delayed-output
   val htlcTimeoutTx = alice2blockchain.expectMsgType[PublishAsap].tx // htlc-timeout
@@ -268,7 +269,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[CommitSig]
     // note that bob doesn't receive the new sig!
     // then we make alice unilaterally close the channel
-    alice ! Error("00" * 32, "oops".getBytes)
+    alice ! Error(ByteVector32.Zeroes, "oops")
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
     awaitCond(alice.stateName == CLOSING)
     val aliceData = alice.stateData.asInstanceOf[DATA_CLOSING]
@@ -370,7 +371,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     // ... and ask bob to publish its current commitment
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data) === PleasePublishYourCommitment(channelId(alice)).getMessage)
+    assert(new String(error.data.toArray) === PleasePublishYourCommitment(channelId(alice)).getMessage)
     // alice now waits for bob to publish its commitment
     awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
     // bob is nice and publishes its commitment
@@ -513,7 +514,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     sender.send(alice, ChannelReestablish(channelId(bob), 42, 42))
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data) === FundingTxSpent(channelId(alice), initialState.spendingTxes.head).getMessage)
+    assert(new String(error.data.toArray) === FundingTxSpent(channelId(alice), initialState.spendingTxes.head).getMessage)
   }
 
   test("recv CMD_CLOSE") { f =>
