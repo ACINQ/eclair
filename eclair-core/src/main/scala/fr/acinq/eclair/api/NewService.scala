@@ -50,11 +50,9 @@ trait NewService extends Directives with Logging with MetaService {
 
   // a named and typed URL parameter used across several routes, 32-bytes hex-encoded
   val channelIdNamedParameter = "channelId".as[ByteVector32](sha256HashUnmarshaller)
+  val shortChannelIdNamedParameter = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
 
   val apiExceptionHandler = ExceptionHandler {
-    case e: IllegalApiParams =>
-      e.thr.foreach(thr => logger.warn(s"caught $thr"))
-      complete(StatusCodes.BadRequest, e.msg)
     case t: Throwable =>
       logger.error(s"API call failed with cause=${t.getMessage}")
       complete(StatusCodes.InternalServerError, s"Error: $t")
@@ -120,8 +118,8 @@ trait NewService extends Directives with Logging with MetaService {
                     }
                   } ~
                   path("close") {
-                    formFields(channelIdNamedParameter, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
-                      complete(close(channelId, scriptPubKey_opt))
+                    formFields(channelIdNamedParameter.?, shortChannelIdNamedParameter.?, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (channelId_opt, shortChannelId_opt, scriptPubKey_opt) =>
+                      close(channelId_opt, shortChannelId_opt, scriptPubKey_opt)
                     }
                   } ~
                   path("forceclose") {
@@ -223,8 +221,10 @@ trait NewService extends Directives with Logging with MetaService {
       channelFlags = flags.map(_.toByte))).mapTo[String]
   }
 
-  def close(channelId: ByteVector32, scriptPubKey: Option[ByteVector]): Future[String] = {
-    sendToChannel(channelId.toString(), CMD_CLOSE(scriptPubKey)).mapTo[String]
+  def close(channelId_opt: Option[ByteVector32], shortChannelId_opt: Option[ShortChannelId], scriptPubKey: Option[ByteVector]): Route = (channelId_opt, shortChannelId_opt) match {
+    case (Some(channelId), None) => complete(sendToChannel(channelId.toString(), CMD_CLOSE(scriptPubKey)).mapTo[String])
+    case (None, Some(shortChannelId)) => complete(sendToChannel(shortChannelId.toString(), CMD_CLOSE(scriptPubKey)).mapTo[String])
+    case _ => reject(UnknownParamsRejection("Wrong params for method 'close'"))
   }
 
   def forceClose(channelId: String): Future[String] = {

@@ -1,21 +1,16 @@
 package fr.acinq.eclair.api
 
 import akka.http.scaladsl.unmarshalling.Unmarshaller
-import fr.acinq.bitcoin.{ByteVector32}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.payment.PaymentRequest
 import scodec.bits.ByteVector
-import scala.util.{Failure, Success, Try}
 
 object FormParamExtractors {
 
   implicit val publicKeyUnmarshaller: Unmarshaller[String, PublicKey] = Unmarshaller.strict { rawPubKey =>
-    Try {
-      PublicKey(ByteVector.fromValidHex(rawPubKey))
-    } match {
-      case Success(key) => key
-      case Failure(exception) => throw exception
-    }
+    PublicKey(ByteVector.fromValidHex(rawPubKey))
   }
 
   implicit val binaryDataUnmarshaller: Unmarshaller[String, ByteVector] = Unmarshaller.strict { str =>
@@ -27,12 +22,11 @@ object FormParamExtractors {
   }
 
   implicit val bolt11Unmarshaller: Unmarshaller[String, PaymentRequest] = Unmarshaller.strict { rawRequest =>
-    Try {
-      PaymentRequest.read(rawRequest)
-    } match {
-      case Success(req) => req
-      case Failure(exception) => throw exception
-    }
+    PaymentRequest.read(rawRequest)
+  }
+
+  implicit val shortChannelIdUnmarshaller: Unmarshaller[String, ShortChannelId] = Unmarshaller.strict { str =>
+    ShortChannelId(str)
   }
 
 }

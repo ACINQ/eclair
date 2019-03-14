@@ -17,33 +17,36 @@
 package fr.acinq.eclair.api
 
 
-import java.io.{File, FileOutputStream}
+import java.io.{File, FileOutputStream, PrintWriter}
+import java.nio.file.{Files, Path, Paths, StandardOpenOption}
 
-import akka.NotUsed
-import akka.actor.{Actor, Props, Scheduler}
-import akka.http.scaladsl.model.StatusCodes._
-import akka.http.scaladsl.model.headers.BasicHttpCredentials
-import akka.http.scaladsl.model.ws.{Message, TextMessage}
-import akka.http.scaladsl.server.Route
-import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
-import akka.stream.scaladsl.Flow
-import de.heikoseeberger.akkahttpjson4s.Json4sSupport.{marshaller, unmarshaller}
-import fr.acinq.eclair.Kit
-import fr.acinq.eclair.TestConstants._
-import fr.acinq.eclair.blockchain.TestWallet
-import fr.acinq.eclair.channel.Register.ForwardShortId
-import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-import org.json4s.Formats
-import org.json4s.JsonAST.{JInt, JString}
-import org.json4s.jackson.Serialization
+import akka.actor.{Actor, ActorSystem, Props, Scheduler}
 import org.scalatest.FunSuite
+import akka.http.scaladsl.model.StatusCodes._
+import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
+import fr.acinq.eclair.blockchain.TestWallet
+import fr.acinq.eclair.{Kit, TestConstants}
+import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
+import TestConstants._
+import akka.http.scaladsl.model.headers.BasicHttpCredentials
+import akka.http.scaladsl.server.Route
+import akka.stream.ActorMaterializer
+import fr.acinq.eclair.channel.Register.ForwardShortId
+import org.json4s.{Formats, JValue}
+import org.json4s.jackson.Serialization
+import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
 import scala.util.Try
 
-class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
+class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
+
+  implicit val formats = JsonSupport.formats
+  implicit val serialization = JsonSupport.serialization
+  implicit val marshaller = JsonSupport.marshaller
+  implicit val unmarshaller = JsonSupport.unmarshaller
 
   implicit val routeTestTimeout = RouteTestTimeout(3 seconds)
 
@@ -65,24 +68,22 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
     override def receive: Receive = { case _ => }
   }
 
-  class MockService(kit: Kit = defaultMockKit) extends Service {
+  class MockService(kit: Kit = defaultMockKit) extends NewService {
+
     override def getInfoResponse: Future[GetInfoResponse] = Future.successful(???)
 
     override def appKit: Kit = kit
 
-    override val scheduler: Scheduler = system.scheduler
-
     override def password: String = "mock"
 
-    override val socketHandler: Flow[Message, TextMessage.Strict, NotUsed] = makeSocketHandler(system)(materializer)
+    override implicit val mat: ActorMaterializer = ActorMaterializer()
   }
 
   test("API service should handle failures correctly"){
     val mockService = new MockService
-    import mockService.{formats, serialization}
 
     // no auth
-    Post("/", JsonRPCBody(method = "help", params = Seq.empty)) ~>
+    Post("/help") ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
@@ -90,9 +91,8 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
       }
 
     // wrong auth
-    Post("/", JsonRPCBody(method = "help", params = Seq.empty)) ~>
+    Post("/help") ~>
       addCredentials(BasicHttpCredentials("", mockService.password+"what!")) ~>
-      addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
@@ -100,29 +100,27 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
       }
 
     // correct auth but wrong URL
-    Post("/mistake", JsonRPCBody(method = "help", params = Seq.empty)) ~>
+    Post("/mistake") ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
-      addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
         assert(status == NotFound)
       }
 
-    // wrong rpc method
-    Post("/", JsonRPCBody(method = "open_not_really", params = Seq.empty)) ~>
+    // wrong param type
+    Post("/channel", FormData(Map("channelId" -> "hey")).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
-      addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
         assert(status == BadRequest)
+        assert(entityAs[String].contains("The form field 'channelId' was malformed"))
       }
 
     // wrong params
-    Post("/", JsonRPCBody(method = "open", params = Seq(JInt(123), JString("abc")))) ~>
+    Post("/connect", FormData("nodeId" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87", "uri" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
-      addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
@@ -133,21 +131,16 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
 
   test("'help' should respond with a help message") {
     val mockService = new MockService
-    import mockService.{formats, serialization}
 
-    val postBody = JsonRPCBody(method = "help", params = Seq.empty)
-
-    Post("/", postBody) ~>
+    Post("/help") ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
-      addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
         assert(status == OK)
-        val resp = entityAs[JsonRPCRes]
+        val resp = entityAs[String]
         matchTestJson("help", false ,resp)
       }
-
 
   }
 
@@ -182,22 +175,13 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
       }))
     ))
 
-    import mockService.{formats, serialization}
-
-    val postBody = JsonRPCBody(method = "peers", params = Seq.empty)
-
-    Post("/", postBody) ~>
+    Post("/peers") ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
-      addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
         assert(status == OK)
-        val response = entityAs[JsonRPCRes]
-        val peerInfos = response.result.asInstanceOf[Seq[Map[String,String]]]
-        assert(peerInfos.size == 2)
-        assert(peerInfos.head.get("nodeId") == Some(Alice.nodeParams.nodeId.toString))
-        assert(peerInfos.head.get("state") == Some("CONNECTED"))
+        val response = entityAs[String]
         matchTestJson("peers", false, response)
       }
   }
@@ -213,19 +197,17 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
         publicAddresses = Alice.nodeParams.publicAddresses
       ))
     }
-    import mockService.{formats, serialization}
 
-    val postBody = JsonRPCBody(method = "getinfo", params = Seq.empty)
 
-    Post("/", postBody) ~>
+    Post("/getinfo") ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
         assert(status == OK)
-        val resp = entityAs[JsonRPCRes]
-        assert(resp.result.toString.contains(Alice.nodeParams.nodeId.toString))
+        val resp = entityAs[String]
+        assert(resp.toString.contains(Alice.nodeParams.nodeId.toString))
         matchTestJson("getinfo", false ,resp)
       }
   }
@@ -243,36 +225,29 @@ class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
       }))
     ))
 
-    import mockService.{formats, serialization}
 
-
-    val postBody = JsonRPCBody(method = "close", params = Seq(JString(shortChannelIdSerialized)))
-
-    Post("/", postBody) ~>
+    Post("/close", FormData("shortChannelId" -> shortChannelIdSerialized).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
         assert(status == OK)
-        val resp = entityAs[JsonRPCRes]
-        assert(resp.result.toString.contains(Alice.nodeParams.nodeId.toString))
+        val resp = entityAs[String]
+        assert(resp.contains(Alice.nodeParams.nodeId.toString))
         matchTestJson("close", false ,resp)
       }
   }
 
-  private def readFileAsString(stream: File): Try[String] = Try(Source.fromFile(stream).mkString)
+  private def matchTestJson(apiName: String, overWrite: Boolean, response: String)(implicit formats: Formats) = {
+    val p = Paths.get(s"eclair-core/src/test/resources/api/$apiName")
 
-  private def matchTestJson(rpcMethod: String, overWrite: Boolean, response: JsonRPCRes)(implicit formats: Formats) = {
-    val responseContent = Serialization.writePretty(response)
-    val resourceName = s"/api/$rpcMethod"
-    val resourceFile = new File(getClass.getResource(resourceName).toURI.toURL.getFile)
     if(overWrite) {
-      new FileOutputStream(resourceFile).write(responseContent.getBytes)
+      Files.writeString(p, response)
       assert(false, "'overWrite' should be false before commit")
     } else {
-      val expectedResponse = readFileAsString(resourceFile).getOrElse(throw new IllegalArgumentException(s"Mock file for '$resourceName' does not exist, please use 'overWrite' first."))
-      assert(responseContent == expectedResponse, s"Test mock for $rpcMethod did not match the expected response")
+      val expectedResponse = Source.fromFile(p.toUri).mkString
+      assert(response == expectedResponse, s"Test mock for $apiName did not match the expected response")
     }
   }
 
