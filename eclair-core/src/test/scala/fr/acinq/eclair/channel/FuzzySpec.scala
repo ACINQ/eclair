@@ -21,7 +21,7 @@ import java.util.concurrent.CountDownLatch
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -66,8 +66,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       relayerA ! alice
       relayerB ! bob
       // no announcements
-      alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte)
-      bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, pipe, aliceInit)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit)
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
@@ -88,7 +88,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     // we don't want to be below htlcMinimumMsat
     val requiredAmount = 1000000
 
-    def buildCmdAdd(paymentHash: BinaryData, dest: PublicKey) = {
+    def buildCmdAdd(paymentHash: ByteVector32, dest: PublicKey) = {
       // allow overpaying (no more than 2 times the required amount)
       val amount = requiredAmount + Random.nextInt(requiredAmount)
       val expiry = Globals.blockCount.get().toInt + Channel.MIN_CLTV_EXPIRY + 1

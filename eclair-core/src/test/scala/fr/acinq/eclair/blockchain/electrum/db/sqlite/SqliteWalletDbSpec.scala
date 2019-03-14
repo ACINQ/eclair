@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.electrum.db.sqlite
 
 import java.sql.DriverManager
 
-import fr.acinq.bitcoin.{BinaryData, Block, BlockHeader, OutPoint, Satoshi, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{Block, BlockHeader, OutPoint, Satoshi, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
@@ -63,25 +63,21 @@ class SqliteWalletDbSpec extends FunSuite {
   test("serialize persistent data") {
     val db = new SqliteWalletDb(inmem)
 
-    def randomBytes(size: Int): BinaryData = {
-      val buffer = new Array[Byte](size)
-      random.nextBytes(buffer)
-      buffer
-    }
+    import fr.acinq.eclair.{randomBytes, randomBytes32}
 
     def randomTransaction = Transaction(version = 2,
-      txIn = TxIn(OutPoint(randomBytes(32), random.nextInt(100)), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+      txIn = TxIn(OutPoint(randomBytes32, random.nextInt(100)), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
       txOut = TxOut(Satoshi(random.nextInt(10000000)), randomBytes(20)) :: Nil,
       0L
     )
 
     def randomHeight = if (random.nextBoolean()) random.nextInt(500000) else -1
 
-    def randomHistoryItem = ElectrumClient.TransactionHistoryItem(randomHeight, randomBytes(32))
+    def randomHistoryItem = ElectrumClient.TransactionHistoryItem(randomHeight, randomBytes32)
 
     def randomHistoryItems = (0 to random.nextInt(100)).map(_ => randomHistoryItem).toList
 
-    def randomProof = GetMerkleResponse(randomBytes(32), ((0 until 10).map(_ => randomBytes(32))).toList, random.nextInt(100000), 0)
+    def randomProof = GetMerkleResponse(randomBytes32, ((0 until 10).map(_ => randomBytes32)).toList, random.nextInt(100000), 0)
 
     def randomPersistentData = {
       val transactions = for (i <- 0 until random.nextInt(100)) yield randomTransaction
@@ -89,11 +85,11 @@ class SqliteWalletDbSpec extends FunSuite {
       PersistentData(
         accountKeysCount = 10,
         changeKeysCount = 10,
-        status = (for (i <- 0 until random.nextInt(100)) yield randomBytes(32) -> random.nextInt(100000).toHexString).toMap,
+        status = (for (i <- 0 until random.nextInt(100)) yield randomBytes32 -> random.nextInt(100000).toHexString).toMap,
         transactions = transactions.map(tx => tx.hash -> tx).toMap,
         heights = transactions.map(tx => tx.hash -> randomHeight).toMap,
-        history = (for (i <- 0 until random.nextInt(100)) yield randomBytes(32) -> randomHistoryItems).toMap,
-        proofs = (for (i <- 0 until random.nextInt(100)) yield randomBytes(32) -> randomProof).toMap,
+        history = (for (i <- 0 until random.nextInt(100)) yield randomBytes32 -> randomHistoryItems).toMap,
+        proofs = (for (i <- 0 until random.nextInt(100)) yield randomBytes32 -> randomProof).toMap,
         pendingTransactions = transactions.toList,
         locks = (for (i <- 0 until random.nextInt(10)) yield randomTransaction).toSet
       )

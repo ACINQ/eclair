@@ -27,10 +27,12 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
+import fr.acinq.eclair.router.RouteCalculationSpec.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.QueryShortChannelIds
 import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
-import RouteCalculationSpec.DEFAULT_AMOUNT_MSAT
+import scodec.bits._
+
 import scala.collection.SortedSet
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -179,9 +181,9 @@ class RouterSpec extends BaseRouterSpec {
   test("route found (with extra routing info)") { fixture =>
     import fixture._
     val sender = TestProbe()
-    val x = PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73")
-    val y = PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a")
-    val z = PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484")
+    val x = PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73")
+    val y = PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a")
+    val z = PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484")
     val extraHop_cx = ExtraHop(c, ShortChannelId(1), 10, 11, 12)
     val extraHop_xy = ExtraHop(x, ShortChannelId(2), 10, 11, 12)
     val extraHop_yz = ExtraHop(y, ShortChannelId(3), 20, 21, 22)

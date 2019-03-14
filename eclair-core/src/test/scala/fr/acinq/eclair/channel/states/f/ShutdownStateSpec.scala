@@ -17,18 +17,19 @@
 package fr.acinq.eclair.channel.states.f
 
 import akka.actor.Status.Failure
-import akka.testkit.{TestFSMRef, TestProbe}
+import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.Scalar
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
-import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.Outcome
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -40,6 +41,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   type FixtureParam = SetupFixture
 
+  val r1 = randomBytes32
+  val r2 = randomBytes32
+
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
     import setup._
@@ -47,8 +51,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       reachNormal(setup)
       val sender = TestProbe()
       // alice sends an HTLC to bob
-      val r1: BinaryData = "11" * 32
-      val h1: BinaryData = Crypto.sha256(r1)
+      val h1 = Crypto.sha256(r1)
       val amount1 = 300000000
       val expiry1 = 400144
       val cmd1 = PaymentLifecycle.buildCommand(amount1, expiry1, h1, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil)._1.copy(commit = false)
@@ -58,8 +61,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.forward(bob)
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.proposed == htlc1 :: Nil)
       // alice sends another HTLC to bob
-      val r2: BinaryData = "22" * 32
-      val h2: BinaryData = Crypto.sha256(r2)
+      val h2 = Crypto.sha256(r2)
       val amount2 = 200000000
       val expiry2 = 400144
       val cmd2 = PaymentLifecycle.buildCommand(amount2, expiry2, h2, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil)._1.copy(commit = false)
@@ -99,7 +101,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_ADD_HTLC") { f =>
     import f._
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = 300000)
+    val add = CMD_ADD_HTLC(500000000, r1, cltvExpiry = 300000)
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), None, Some(add))))
@@ -110,7 +112,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FULFILL_HTLC(0, "11" * 32))
+    sender.send(bob, CMD_FULFILL_HTLC(0, r1))
     sender.expectMsg("ok")
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
     awaitCond(bob.stateData == initialState.copy(
@@ -122,7 +124,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FULFILL_HTLC(42, "12" * 32))
+    sender.send(bob, CMD_FULFILL_HTLC(42, randomBytes32))
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
   }
@@ -131,7 +133,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FULFILL_HTLC(1, "00" * 32))
+    sender.send(bob, CMD_FULFILL_HTLC(1, ByteVector32.Zeroes))
     sender.expectMsg(Failure(InvalidHtlcPreimage(channelId(bob), 1)))
     assert(initialState == bob.stateData)
   }
@@ -140,7 +142,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val fulfill = UpdateFulfillHtlc("00" * 32, 0, "11" * 32)
+    val fulfill = UpdateFulfillHtlc(ByteVector32.Zeroes, 0, r1)
     sender.send(alice, fulfill)
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill)))
   }
@@ -149,7 +151,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    val fulfill = UpdateFulfillHtlc("00" * 32, 42, "00" * 32)
+    val fulfill = UpdateFulfillHtlc(ByteVector32.Zeroes, 42, ByteVector32.Zeroes)
     sender.send(alice, fulfill)
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
@@ -166,7 +168,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(alice, UpdateFulfillHtlc("00" * 32, 42, "00" * 32))
+    sender.send(alice, UpdateFulfillHtlc(ByteVector32.Zeroes, 42, ByteVector32.Zeroes))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
@@ -203,7 +205,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256(BinaryData.empty), FailureMessageCodecs.BADONION))
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256(ByteVector.empty), FailureMessageCodecs.BADONION))
     sender.expectMsg("ok")
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     awaitCond(bob.stateData == initialState.copy(
@@ -215,7 +217,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, "00" * 32, FailureMessageCodecs.BADONION))
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessageCodecs.BADONION))
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
   }
@@ -224,7 +226,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, "00" * 32, 42))
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, 42))
     sender.expectMsg(Failure(InvalidFailureCode(channelId(bob))))
     assert(initialState == bob.stateData)
   }
@@ -233,7 +235,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val fail = UpdateFailHtlc("00" * 32, 1, "00" * 152)
+    val fail = UpdateFailHtlc(ByteVector32.Zeroes, 1, ByteVector.fill(152)(0))
     sender.send(alice, fail)
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail)))
   }
@@ -242,7 +244,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(alice, UpdateFailHtlc("00" * 32, 42, "00" * 152))
+    sender.send(alice, UpdateFailHtlc(ByteVector32.Zeroes, 42, ByteVector.fill(152)(0)))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
@@ -258,7 +260,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val fail = UpdateFailMalformedHtlc("00" * 32, 1, Crypto.sha256(BinaryData.empty), FailureMessageCodecs.BADONION)
+    val fail = UpdateFailMalformedHtlc(ByteVector32.Zeroes, 1, Crypto.sha256(ByteVector.empty), FailureMessageCodecs.BADONION)
     sender.send(alice, fail)
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail)))
   }
@@ -267,10 +269,10 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
-    val fail = UpdateFailMalformedHtlc("00" * 32, 1, Crypto.sha256(BinaryData.empty), 42)
+    val fail = UpdateFailMalformedHtlc(ByteVector32.Zeroes, 1, Crypto.sha256(ByteVector.empty), 42)
     sender.send(alice, fail)
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data) === InvalidFailureCode("00" * 32).getMessage)
+    assert(new String(error.data.toArray) === InvalidFailureCode(ByteVector32.Zeroes).getMessage)
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
@@ -285,7 +287,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     // we need to have something to sign so we first send a fulfill and acknowledge (=sign) it
-    sender.send(bob, CMD_FULFILL_HTLC(0, "11" * 32))
+    sender.send(bob, CMD_FULFILL_HTLC(0, r1))
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     sender.send(bob, CMD_SIGN)
@@ -310,7 +312,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_SIGN (while waiting for RevokeAndAck)") { f =>
     import f._
     val sender = TestProbe()
-    sender.send(bob, CMD_FULFILL_HTLC(0, "11" * 32))
+    sender.send(bob, CMD_FULFILL_HTLC(0, r1))
     sender.expectMsg("ok")
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     sender.send(bob, CMD_SIGN)
@@ -329,7 +331,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CommitSig") { f =>
     import f._
     val sender = TestProbe()
-    sender.send(bob, CMD_FULFILL_HTLC(0, "11" * 32))
+    sender.send(bob, CMD_FULFILL_HTLC(0, r1))
     sender.expectMsg("ok")
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
@@ -345,7 +347,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     // signature is invalid but it doesn't matter
-    sender.send(bob, CommitSig("00" * 32, "00" * 64, Nil))
+    sender.send(bob, CommitSig(ByteVector32.Zeroes, ByteVector.fill(64)(0), Nil))
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
@@ -357,7 +359,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(bob, CommitSig("00" * 32, "00" * 64, Nil))
+    sender.send(bob, CommitSig(ByteVector32.Zeroes, ByteVector.fill(64)(0), Nil))
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
@@ -367,7 +369,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv RevokeAndAck (with remaining htlcs on both sides)") { f =>
     import f._
-    fulfillHtlc(1, "22" * 32, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(1, r2, bob, alice, bob2alice, alice2bob)
     // this will cause alice and bob to receive RevokeAndAcks
     crossSign(bob, alice, bob2alice, alice2bob)
     // actual test starts here
@@ -378,8 +380,8 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv RevokeAndAck (with remaining htlcs on one side)") { f =>
     import f._
-    fulfillHtlc(0, "11" * 32, bob, alice, bob2alice, alice2bob)
-    fulfillHtlc(1, "22" * 32, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(1, r2, bob, alice, bob2alice, alice2bob)
     val sender = TestProbe()
     sender.send(bob, CMD_SIGN)
     sender.expectMsg("ok")
@@ -395,8 +397,8 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv RevokeAndAck (no more htlcs on either side)") { f =>
     import f._
-    fulfillHtlc(0, "11" * 32, bob, alice, bob2alice, alice2bob)
-    fulfillHtlc(1, "22" * 32, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(1, r2, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     // actual test starts here
     awaitCond(alice.stateName == NEGOTIATING)
@@ -406,7 +408,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(bob, CMD_FULFILL_HTLC(0, "11" * 32))
+    sender.send(bob, CMD_FULFILL_HTLC(0, r1))
     sender.expectMsg("ok")
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
@@ -416,7 +418,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
-    sender.send(bob, RevokeAndAck("00" * 32, Scalar("11" * 32), Scalar("22" * 32).toPoint))
+    sender.send(bob, RevokeAndAck(ByteVector32.Zeroes, Scalar(randomBytes32), Scalar(randomBytes32).toPoint))
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
@@ -431,7 +433,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isRight)
-    sender.send(alice, RevokeAndAck("00" * 32, Scalar("11" * 32), Scalar("22" * 32).toPoint))
+    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, Scalar(randomBytes32), Scalar(randomBytes32).toPoint))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
@@ -472,7 +474,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv RevokeAndAck (forward UpdateFailMalformedHtlc)") { f =>
     import f._
     val sender = TestProbe()
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256("should be htlc.onionRoutingPacket".getBytes()), FailureMessageCodecs.BADONION))
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256(ByteVector.view("should be htlc.onionRoutingPacket".getBytes())), FailureMessageCodecs.BADONION))
     sender.expectMsg("ok")
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     bob2alice.forward(alice)
@@ -519,7 +521,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateFee") { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val fee = UpdateFee("00" * 32, 12000)
+    val fee = UpdateFee(ByteVector32.Zeroes, 12000)
     bob ! fee
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee))))
   }
@@ -528,7 +530,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(alice, UpdateFee("00" * 32, 12000))
+    sender.send(alice, UpdateFee(ByteVector32.Zeroes, 12000))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
@@ -544,12 +546,12 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    val fee = UpdateFee("00" * 32, 100000000)
+    val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
     // we first update the global variable so that we don't trigger a 'fee too different' error
     Globals.feeratesPerKw.set(FeeratesPerKw.single(fee.feeratePerKw))
     sender.send(bob, fee)
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === CannotAffordFees(channelId(bob), missingSatoshis = 72120000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
+    assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missingSatoshis = 72120000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
     //bob2blockchain.expectMsgType[PublishAsap] // main delayed (removed because of the high fees)
@@ -560,9 +562,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(bob, UpdateFee("00" * 32, 65000))
+    sender.send(bob, UpdateFee(ByteVector32.Zeroes, 65000))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === "local/remote feerates are too different: remoteFeeratePerKw=65000 localFeeratePerKw=10000")
+    assert(new String(error.data.toArray) === "local/remote feerates are too different: remoteFeeratePerKw=65000 localFeeratePerKw=10000")
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
@@ -573,9 +575,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(bob, UpdateFee("00" * 32, 252))
+    sender.send(bob, UpdateFee(ByteVector32.Zeroes, 252))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === "remote fee rate is too small: remoteFeeratePerKw=252")
+    assert(new String(error.data.toArray) === "remote fee rate is too small: remoteFeeratePerKw=252")
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
@@ -677,7 +679,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BITCOIN_FUNDING_SPENT (their next commit)") { f =>
     import f._
     // bob fulfills the first htlc
-    fulfillHtlc(0, "11" * 32, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
     // then signs
     val sender = TestProbe()
     sender.send(bob, CMD_SIGN)
@@ -727,7 +729,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(revokedTx.txOut.size == 4)
 
     // bob fulfills one of the pending htlc (just so that he can have a new sig)
-    fulfillHtlc(0, "11" * 32, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
     // bob and alice sign
     crossSign(bob, alice, bob2alice, alice2bob)
     // bob now has a new commitment tx
@@ -772,7 +774,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv Error") { f =>
     import f._
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
-    alice ! Error("00" * 32, "oops".getBytes)
+    alice ! Error(ByteVector32.Zeroes, "oops")
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
     assert(aliceCommitTx.txOut.size == 4) // two main outputs and two htlcs
 

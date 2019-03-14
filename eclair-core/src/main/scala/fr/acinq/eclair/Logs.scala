@@ -18,12 +18,12 @@ package fr.acinq.eclair
 
 import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 
 object Logs {
 
-  def mdc(remoteNodeId_opt: Option[PublicKey] = None, channelId_opt: Option[BinaryData] = None): MDC =
+  def mdc(remoteNodeId_opt: Option[PublicKey] = None, channelId_opt: Option[ByteVector32] = None): MDC =
     Seq(
       remoteNodeId_opt.map(n => "nodeId" -> s" n:$n"), // nb: we preformat MDC values so that there is no white spaces in logs
       channelId_opt.map(c => "channelId" -> s" c:$c")

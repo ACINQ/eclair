@@ -24,7 +24,7 @@ import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, OutPoint, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.PaymentRequest
@@ -37,13 +37,19 @@ import org.json4s.JsonAST._
 import org.json4s.{CustomKeySerializer, CustomSerializer, jackson}
 
 import scala.collection.immutable
+import org.json4s.{CustomKeySerializer, CustomSerializer}
+import scodec.bits.ByteVector
 
 /**
   * JSON Serializers.
   * Note: in general, deserialization does not need to be implemented.
   */
-class BinaryDataSerializer extends CustomSerializer[BinaryData](format => ({ null }, {
-  case x: BinaryData => JString(x.toString())
+class ByteVectorSerializer extends CustomSerializer[ByteVector](format => ({ null }, {
+  case x: ByteVector => JString(x.toHex)
+}))
+
+class ByteVector32Serializer extends CustomSerializer[ByteVector32](format => ({ null }, {
+  case x: ByteVector32 => JString(x.toHex)
 }))
 
 class UInt64Serializer extends CustomSerializer[UInt64](format => ({ null }, {
@@ -156,7 +162,7 @@ object JsonSupport extends Json4sSupport {
   implicit val serialization = jackson.Serialization
 
   implicit val formats = org.json4s.DefaultFormats +
-    new BinaryDataSerializer +
+    new ByteVectorSerializer +
     new UInt64Serializer +
     new MilliSatoshiSerializer +
     new ShortChannelIdSerializer +

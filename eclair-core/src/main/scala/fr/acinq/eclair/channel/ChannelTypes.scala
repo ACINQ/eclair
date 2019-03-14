@@ -18,12 +18,13 @@ package fr.acinq.eclair.channel
 
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.{ShortChannelId, UInt64}
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
+import fr.acinq.eclair.{ShortChannelId, UInt64}
+import scodec.bits.ByteVector
 
 
 /**
@@ -74,8 +75,8 @@ case object ERR_INFORMATION_LEAK extends State
       8888888888     Y8P     8888888888 888    Y888     888     "Y8888P"
  */
 
-case class INPUT_INIT_FUNDER(temporaryChannelId: BinaryData, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxFeeratePerKw: Long, localParams: LocalParams, remote: ActorRef, remoteInit: Init, channelFlags: Byte)
-case class INPUT_INIT_FUNDEE(temporaryChannelId: BinaryData, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
+case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxFeeratePerKw: Long, localParams: LocalParams, remote: ActorRef, remoteInit: Init, channelFlags: Byte)
+case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
 case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)
@@ -105,19 +106,19 @@ case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEven
  */
 
 sealed trait Command
-final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, cltvExpiry: Long, onion: BinaryData = Sphinx.LAST_PACKET.serialize, upstream_opt: Option[UpdateAddHtlc] = None, commit: Boolean = false, redirected: Boolean = false) extends Command
-final case class CMD_FULFILL_HTLC(id: Long, r: BinaryData, commit: Boolean = false) extends Command
-final case class CMD_FAIL_HTLC(id: Long, reason: Either[BinaryData, FailureMessage], commit: Boolean = false) extends Command
-final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: BinaryData, failureCode: Int, commit: Boolean = false) extends Command
+final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: ByteVector32, cltvExpiry: Long, onion: ByteVector = Sphinx.LAST_PACKET.serialize, upstream_opt: Option[UpdateAddHtlc] = None, commit: Boolean = false, redirected: Boolean = false) extends Command
+final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false) extends Command
+final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false) extends Command
+final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false) extends Command
 final case class CMD_UPDATE_FEE(feeratePerKw: Long, commit: Boolean = false) extends Command
 final case object CMD_SIGN extends Command
-final case class CMD_CLOSE(scriptPubKey: Option[BinaryData]) extends Command
+final case class CMD_CLOSE(scriptPubKey: Option[ByteVector]) extends Command
 final case class CMD_UPDATE_RELAY_FEE(feeBaseMsat: Long, feeProportionalMillionths: Long) extends Command
 final case object CMD_FORCECLOSE extends Command
 final case object CMD_GETSTATE extends Command
 final case object CMD_GETSTATEDATA extends Command
 final case object CMD_GETINFO extends Command
-final case class RES_GETINFO(nodeId: BinaryData, channelId: BinaryData, state: State, data: Data)
+final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: State, data: Data)
 
 /*
       8888888b.        d8888 88888888888     d8888
@@ -141,15 +142,15 @@ sealed trait HasCommitments extends Data {
 
 case class ClosingTxProposed(unsignedTx: Transaction, localClosingSigned: ClosingSigned)
 
-case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, BinaryData])
-case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: List[Transaction], claimHtlcTimeoutTxs: List[Transaction], irrevocablySpent: Map[OutPoint, BinaryData])
-case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], htlcPenaltyTxs: List[Transaction], claimHtlcDelayedPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, BinaryData])
+case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32])
+case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: List[Transaction], claimHtlcTimeoutTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32])
+case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], htlcPenaltyTxs: List[Transaction], claimHtlcDelayedPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32])
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends Data
-final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, lastSent: OpenChannel) extends Data
-final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, channelFlags: Byte, lastSent: AcceptChannel) extends Data
-final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, fundingTxFee: Satoshi, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte, lastSent: FundingCreated) extends Data
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, lastSent: OpenChannel) extends Data
+final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, channelFlags: Byte, lastSent: AcceptChannel) extends Data
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, fundingTxFee: Satoshi, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte, lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  fundingTx: Option[Transaction],
                                                  waitingSince: Long,
@@ -195,9 +196,9 @@ final case class LocalParams(nodeId: PublicKey,
                              toSelfDelay: Int,
                              maxAcceptedHtlcs: Int,
                              isFunder: Boolean,
-                             defaultFinalScriptPubKey: BinaryData,
-                             globalFeatures: BinaryData,
-                             localFeatures: BinaryData)
+                             defaultFinalScriptPubKey: ByteVector,
+                             globalFeatures: ByteVector,
+                             localFeatures: ByteVector)
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimitSatoshis: Long,
@@ -211,8 +212,8 @@ final case class RemoteParams(nodeId: PublicKey,
                               paymentBasepoint: Point,
                               delayedPaymentBasepoint: Point,
                               htlcBasepoint: Point,
-                              globalFeatures: BinaryData,
-                              localFeatures: BinaryData)
+                              globalFeatures: ByteVector,
+                              localFeatures: ByteVector)
 
 object ChannelFlags {
   val AnnounceChannel = 0x01.toByte

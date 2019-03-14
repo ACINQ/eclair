@@ -24,12 +24,11 @@ import akka.event._
 import akka.io.Tcp
 import akka.util.ByteString
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, Protocol}
-import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs}
+import fr.acinq.bitcoin.Protocol
 import fr.acinq.eclair.crypto.Noise._
-import fr.acinq.eclair.wire._
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
-import scodec.bits.BitVector
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement, _}
+import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs}
+import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
 
 import scala.annotation.tailrec
@@ -50,7 +49,7 @@ import scala.util.{Failure, Success, Try}
   * @param rs         remote node static public key (which must be known before we initiate communication)
   * @param connection actor that represents the other node's
   */
-class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, codec: Codec[T]) extends Actor with FSMDiagnosticActorLogging[TransportHandler.State, TransportHandler.Data] {
+class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], connection: ActorRef, codec: Codec[T]) extends Actor with FSMDiagnosticActorLogging[TransportHandler.State, TransportHandler.Data] {
 
   // will hold the peer's public key once it is available (we don't know it right away in case of an incoming connection)
   var remoteNodeId_opt: Option[PublicKey] = rs.map(PublicKey(_))
@@ -81,7 +80,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
   connection ! Tcp.Register(self)
   connection ! Tcp.ResumeReading
 
-  def buf(message: BinaryData): ByteString = ByteString.fromArray(message)
+  def buf(message: ByteVector): ByteString = ByteString.fromArray(message.toArray)
 
   // it means we initiate the dialog
   val isWriter = rs.isDefined
@@ -90,7 +89,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
   val reader = if (isWriter) {
     val state = makeWriter(keyPair, rs.get)
-    val (state1, message, None) = state.write(BinaryData.empty)
+    val (state1, message, None) = state.write(ByteVector.empty)
     log.debug(s"sending prefix + $message")
     connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
     state1
@@ -98,9 +97,9 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
     makeReader(keyPair)
   }
 
-  def sendToListener(listener: ActorRef, plaintextMessages: Seq[BinaryData]): Map[T, Int] = {
+  def sendToListener(listener: ActorRef, plaintextMessages: Seq[ByteVector]): Map[T, Int] = {
     var m: Map[T, Int] = Map()
-    plaintextMessages.foreach(plaintext => Try(codec.decode(BitVector(plaintext.data))) match {
+    plaintextMessages.foreach(plaintext => Try(codec.decode(plaintext.toBitVector)) match {
       case Success(Attempt.Successful(DecodeResult(message, _))) =>
         diag(message, "IN")
         listener ! message
@@ -118,15 +117,15 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
   when(Handshake) {
     case Event(Tcp.Received(data), HandshakeData(reader, buffer)) =>
       connection ! Tcp.ResumeReading
-      log.debug("received {}", BinaryData(data))
+      log.debug("received {}", ByteVector(data))
       val buffer1 = buffer ++ data
       if (buffer1.length < expectedLength(reader))
         stay using HandshakeData(reader, buffer1)
       else {
-        require(buffer1.head == TransportHandler.prefix, s"invalid transport prefix first64=${BinaryData(buffer1.take(64))}")
+        require(buffer1.head == TransportHandler.prefix, s"invalid transport prefix first64=${ByteVector(buffer1.take(64))}")
         val (payload, remainder) = buffer1.tail.splitAt(expectedLength(reader) - 1)
 
-        reader.read(payload) match {
+        reader.read(ByteVector.view(payload.asByteBuffer)) match {
           case (writer, _, Some((dec, enc, ck))) =>
             val remoteNodeId = PublicKey(writer.rs)
             remoteNodeId_opt = Some(remoteNodeId)
@@ -135,7 +134,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
             goto(WaitingForListener) using nextStateData
 
           case (writer, _, None) => {
-            writer.write(BinaryData.empty) match {
+            writer.write(ByteVector.empty) match {
               case (reader1, message, None) => {
                 // we're still in the middle of the handshake process and the other end must first received our next
                 // message before they can reply
@@ -166,11 +165,11 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       val (dec1, plaintextMessages) = dec.decrypt()
       if (plaintextMessages.isEmpty) {
         connection ! Tcp.ResumeReading
-        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty, Queue.empty), unackedReceived = Map.empty[T, Int], unackedSent = None)
+        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[T], Queue.empty[T]), unackedReceived = Map.empty[T, Int], unackedSent = None)
       } else {
         log.debug(s"read ${plaintextMessages.size} messages, waiting for readacks")
         val unackedReceived = sendToListener(listener, plaintextMessages)
-        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty, Queue.empty), unackedReceived, unackedSent = None)
+        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[T], Queue.empty[T]), unackedReceived, unackedSent = None)
       }
   }
 
@@ -215,7 +214,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
         stay using d.copy(sendBuffer = sendBuffer1)
       } else {
         diag(t, "OUT")
-        val blob = codec.encode(t).require.toByteArray
+        val blob = codec.encode(t).require.toByteVector
         val (enc1, ciphertext) = d.encryptor.encrypt(blob)
         connection ! Tcp.Write(buf(ciphertext), WriteAck)
         stay using d.copy(encryptor = enc1, unackedSent = Some(t))
@@ -224,7 +223,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
     case Event(WriteAck, d: NormalData[T]) =>
       def send(t: T) = {
         diag(t, "OUT")
-        val blob = codec.encode(t).require.toByteArray
+        val blob = codec.encode(t).require.toByteVector
         val (enc1, ciphertext) = d.encryptor.encrypt(blob)
         connection ! Tcp.Write(buf(ciphertext), WriteAck)
         enc1
@@ -273,7 +272,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
 object TransportHandler {
 
-  def props[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, codec: Codec[T]): Props = Props(new TransportHandler(keyPair, rs, connection, codec))
+  def props[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], connection: ActorRef, codec: Codec[T]): Props = Props(new TransportHandler(keyPair, rs, connection, codec))
 
   val MAX_BUFFERED = 100000L
 
@@ -281,7 +280,7 @@ object TransportHandler {
   // this prefix is prepended to all Noise messages sent during the handshake phase
   val prefix: Byte = 0x00
 
-  val prologue = "lightning".getBytes("UTF-8")
+  val prologue = ByteVector.view("lightning".getBytes("UTF-8"))
 
   /**
     * See BOLT #8: during the handshake phase we are expecting 3 messages of 50, 50 and 66 bytes (including the prefix)
@@ -294,14 +293,14 @@ object TransportHandler {
     case 1 => 66
   }
 
-  def makeWriter(localStatic: KeyPair, remoteStatic: BinaryData) = Noise.HandshakeState.initializeWriter(
+  def makeWriter(localStatic: KeyPair, remoteStatic: ByteVector) = Noise.HandshakeState.initializeWriter(
     Noise.handshakePatternXK, prologue,
-    localStatic, KeyPair(BinaryData.empty, BinaryData.empty), remoteStatic, BinaryData.empty,
+    localStatic, KeyPair(ByteVector.empty, ByteVector.empty), remoteStatic, ByteVector.empty,
     Noise.Secp256k1DHFunctions, Noise.Chacha20Poly1305CipherFunctions, Noise.SHA256HashFunctions)
 
   def makeReader(localStatic: KeyPair) = Noise.HandshakeState.initializeReader(
     Noise.handshakePatternXK, prologue,
-    localStatic, KeyPair(BinaryData.empty, BinaryData.empty), BinaryData.empty, BinaryData.empty,
+    localStatic, KeyPair(ByteVector.empty, ByteVector.empty), ByteVector.empty, ByteVector.empty,
     Noise.Secp256k1DHFunctions, Noise.Chacha20Poly1305CipherFunctions, Noise.SHA256HashFunctions)
 
   /**
@@ -310,12 +309,12 @@ object TransportHandler {
     * @param cs cipher state
     * @param ck chaining key
     */
-  case class ExtendedCipherState(cs: CipherState, ck: BinaryData) extends CipherState {
+  case class ExtendedCipherState(cs: CipherState, ck: ByteVector) extends CipherState {
     override def cipher: CipherFunctions = cs.cipher
 
     override def hasKey: Boolean = cs.hasKey
 
-    override def encryptWithAd(ad: BinaryData, plaintext: BinaryData): (CipherState, BinaryData) = {
+    override def encryptWithAd(ad: ByteVector, plaintext: ByteVector): (CipherState, ByteVector) = {
       cs match {
         case UninitializedCipherState(_) => (this, plaintext)
         case InitializedCipherState(k, n, _) if n == 999 => {
@@ -330,7 +329,7 @@ object TransportHandler {
       }
     }
 
-    override def decryptWithAd(ad: BinaryData, ciphertext: BinaryData): (CipherState, BinaryData) = {
+    override def decryptWithAd(ad: ByteVector, ciphertext: ByteVector): (CipherState, ByteVector) = {
       cs match {
         case UninitializedCipherState(_) => (this, ciphertext)
         case InitializedCipherState(k, n, _) if n == 999 => {
@@ -348,18 +347,18 @@ object TransportHandler {
 
   case class Decryptor(state: CipherState, ciphertextLength: Option[Int], buffer: ByteString) {
     @tailrec
-    final def decrypt(acc: Seq[BinaryData] = Vector()): (Decryptor, Seq[BinaryData]) = {
+    final def decrypt(acc: Seq[ByteVector] = Vector()): (Decryptor, Seq[ByteVector]) = {
       (ciphertextLength, buffer.length) match {
         case (None, length) if length < 18 => (this, acc)
         case (None, _) =>
           val (ciphertext, remainder) = buffer.splitAt(18)
-          val (dec1, plaintext) = state.decryptWithAd(BinaryData.empty, ciphertext)
-          val length = Protocol.uint16(plaintext, ByteOrder.BIG_ENDIAN)
+          val (dec1, plaintext) = state.decryptWithAd(ByteVector.empty, ByteVector.view(ciphertext.asByteBuffer))
+          val length = Protocol.uint16(plaintext.toArray, ByteOrder.BIG_ENDIAN)
           Decryptor(dec1, ciphertextLength = Some(length), buffer = remainder).decrypt(acc)
         case (Some(expectedLength), length) if length < expectedLength + 16 => (Decryptor(state, ciphertextLength, buffer), acc)
         case (Some(expectedLength), _) =>
           val (ciphertext, remainder) = buffer.splitAt(expectedLength + 16)
-          val (dec1, plaintext) = state.decryptWithAd(BinaryData.empty, ciphertext)
+          val (dec1, plaintext) = state.decryptWithAd(ByteVector.empty, ByteVector.view(ciphertext.asByteBuffer))
           Decryptor(dec1, ciphertextLength = None, buffer = remainder).decrypt(acc :+ plaintext)
       }
     }
@@ -387,9 +386,9 @@ object TransportHandler {
       * @param plaintext plaintext
       * @return a (cipherstate, ciphertext) tuple where ciphertext is encrypted according to BOLT #8
       */
-    def encrypt(plaintext: BinaryData): (Encryptor, BinaryData) = {
-      val (state1, ciphertext1) = state.encryptWithAd(BinaryData.empty, Protocol.writeUInt16(plaintext.length, ByteOrder.BIG_ENDIAN))
-      val (state2, ciphertext2) = state1.encryptWithAd(BinaryData.empty, plaintext)
+    def encrypt(plaintext: ByteVector): (Encryptor, ByteVector) = {
+      val (state1, ciphertext1) = state.encryptWithAd(ByteVector.empty, Protocol.writeUInt16(plaintext.length.toInt, ByteOrder.BIG_ENDIAN))
+      val (state2, ciphertext2) = state1.encryptWithAd(ByteVector.empty, plaintext)
       (Encryptor(state2), ciphertext1 ++ ciphertext2)
     }
   }

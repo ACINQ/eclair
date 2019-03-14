@@ -20,7 +20,7 @@ import java.sql.DriverManager
 
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.sqlite.SqlitePendingRelayDb
-import fr.acinq.eclair.randomBytes
+import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.wire.FailureMessageCodecs
 import org.scalatest.FunSuite
 
@@ -39,13 +39,13 @@ class SqlitePendingRelayDbSpec extends FunSuite {
     val sqlite = inmem
     val db = new SqlitePendingRelayDb(sqlite)
 
-    val channelId1 = randomBytes(32)
-    val channelId2 = randomBytes(32)
-    val msg0 = CMD_FULFILL_HTLC(0, randomBytes(32))
-    val msg1 = CMD_FULFILL_HTLC(1, randomBytes(32))
-    val msg2 = CMD_FAIL_HTLC(2, Left(randomBytes(32)))
-    val msg3 = CMD_FAIL_HTLC(3, Left(randomBytes(32)))
-    val msg4 = CMD_FAIL_MALFORMED_HTLC(4, randomBytes(32), FailureMessageCodecs.BADONION)
+    val channelId1 = randomBytes32
+    val channelId2 = randomBytes32
+    val msg0 = CMD_FULFILL_HTLC(0, randomBytes32)
+    val msg1 = CMD_FULFILL_HTLC(1, randomBytes32)
+    val msg2 = CMD_FAIL_HTLC(2, Left(randomBytes32))
+    val msg3 = CMD_FAIL_HTLC(3, Left(randomBytes32))
+    val msg4 = CMD_FAIL_MALFORMED_HTLC(4, randomBytes32, FailureMessageCodecs.BADONION)
 
     assert(db.listPendingRelay(channelId1).toSet === Set.empty)
     db.addPendingRelay(channelId1, msg0.id, msg0)
