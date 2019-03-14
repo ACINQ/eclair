@@ -209,7 +209,7 @@ object ChannelCodecs extends Logging {
       ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, txCodec)) ::
       ("spent" | spentMapCodec)).as[RevokedCommitPublished]
 
-  def commitmentCodec(commitmentVersion: CommitmentVersion): Codec[Commitments] = {
+  private def commitmentCodec(commitmentVersion: CommitmentVersion): Codec[Commitments] = {
     (("localParams" | localParamsCodec) ::
       ("remoteParams" | remoteParamsCodec) ::
       ("channelFlags" | byte) ::
@@ -228,26 +228,26 @@ object ChannelCodecs extends Logging {
   }
 
   // this is a decode-only codec compatible with versions 997acee and below, with placeholders for new fields
-  def DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
+  private def DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentCodec(commitmentVersion)) ::
       ("fundingTx" | provide[Option[Transaction]](None)) ::
       ("waitingSince" | provide(compat.Platform.currentTime / 1000)) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
 
-  def DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
+  private def DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentCodec(commitmentVersion)) ::
       ("fundingTx" | optional(bool, txCodec)) ::
       ("waitingSince" | int64) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
-      ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
+      ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
 
-  def DATA_WAIT_FOR_FUNDING_LOCKED_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
+  private def DATA_WAIT_FOR_FUNDING_LOCKED_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
     ("commitments" | commitmentCodec(commitmentVersion)) ::
       ("shortChannelId" | shortchannelid) ::
       ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
-  def DATA_NORMAL_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_NORMAL] = (
+  private def DATA_NORMAL_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_NORMAL] = (
     ("commitments" | commitmentCodec(commitmentVersion)) ::
       ("shortChannelId" | shortchannelid) ::
       ("buried" | bool) ::
@@ -256,19 +256,19 @@ object ChannelCodecs extends Logging {
       ("localShutdown" | optional(bool, shutdownCodec)) ::
       ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL]
 
-  def DATA_SHUTDOWN_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_SHUTDOWN] = (
+  private def DATA_SHUTDOWN_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_SHUTDOWN] = (
     ("commitments" | commitmentCodec(commitmentVersion)) ::
       ("localShutdown" | shutdownCodec) ::
       ("remoteShutdown" | shutdownCodec)).as[DATA_SHUTDOWN]
 
-  def DATA_NEGOTIATING_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_NEGOTIATING] = (
+  private def DATA_NEGOTIATING_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_NEGOTIATING] = (
     ("commitments" | commitmentCodec(commitmentVersion)) ::
       ("localShutdown" | shutdownCodec) ::
       ("remoteShutdown" | shutdownCodec) ::
       ("closingTxProposed" | listOfN(uint16, listOfN(uint16, closingTxProposedCodec))) ::
       ("bestUnpublishedClosingTx_opt" | optional(bool, txCodec))).as[DATA_NEGOTIATING]
 
-  def DATA_CLOSING_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_CLOSING] = (
+  private def DATA_CLOSING_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_CLOSING] = (
     ("commitments" | commitmentCodec(commitmentVersion)) ::
       ("mutualCloseProposed" | listOfN(uint16, txCodec)) ::
       ("mutualClosePublished" | listOfN(uint16, txCodec)) ::
@@ -278,11 +278,11 @@ object ChannelCodecs extends Logging {
       ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
 
-  def DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
+  private def DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
     ("commitments" | commitmentCodec(commitmentVersion)) ::
       ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
 
-  def stateDataCodec(commitmentVersion: CommitmentVersion): Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
+  private def stateDataCodec(commitmentVersion: CommitmentVersion): Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
     .typecase(0x08, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitmentVersion))
     .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec(commitmentVersion))
     .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec(commitmentVersion))

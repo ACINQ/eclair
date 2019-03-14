@@ -47,7 +47,13 @@ case class Init(globalFeatures: ByteVector,
                 localFeatures: ByteVector) extends SetupMessage
 
 case class Error(channelId: ByteVector32,
-                 data: ByteVector) extends SetupMessage with HasChannelId
+                 data: ByteVector) extends SetupMessage with HasChannelId {
+
+  override def toString: String = data.decodeAscii match {
+    case Left(err) => s"Could not decode error msg, err=$err data=$data "
+    case Right(str) => s"Error(channelId=$channelId, data=$str)"
+  }
+}
 
 object Error {
   def apply(channelId: ByteVector32, msg: String): Error = Error(channelId, ByteVector.view(msg.getBytes(Charsets.US_ASCII)))
