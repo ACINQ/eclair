@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.{ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
+import fr.acinq.bitcoin.{ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 import scodec.bits.ByteVector

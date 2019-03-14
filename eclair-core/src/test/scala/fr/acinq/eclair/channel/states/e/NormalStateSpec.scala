@@ -25,18 +25,16 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
-import fr.acinq.eclair.channel.Channel.TickRefreshChannelUpdate
-import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.channel.Channel.{RevocationTimeout, TickRefreshChannelUpdate}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
-import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
 

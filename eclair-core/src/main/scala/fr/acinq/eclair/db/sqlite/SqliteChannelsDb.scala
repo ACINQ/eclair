@@ -27,8 +27,8 @@ import scala.collection.immutable.Queue
 
 class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
 
-  import SqliteUtils._
   import SqliteUtils.ExtendedResultSet._
+  import SqliteUtils._
 
   val DB_NAME = "channels"
   val CURRENT_VERSION = 1

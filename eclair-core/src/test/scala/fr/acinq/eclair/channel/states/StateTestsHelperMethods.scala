@@ -24,10 +24,9 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle
-import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, NodeParams, TestConstants}
+import fr.acinq.eclair.{Globals, NodeParams, TestConstants, randomBytes32}
 import scodec.bits.ByteVector
 
 /**

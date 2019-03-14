@@ -35,8 +35,8 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
 
-import scala.collection.{SortedSet, mutable}
 import scala.collection.immutable.{SortedMap, TreeMap}
+import scala.collection.{SortedSet, mutable}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise}

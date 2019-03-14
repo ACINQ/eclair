@@ -18,7 +18,6 @@ package fr.acinq.eclair
 
 import java.math.BigInteger
 
-import fr.acinq.bitcoin.ByteVector32
 import scodec.bits.ByteVector
 
 case class UInt64(private val underlying: BigInt) extends Ordered[UInt64] {

@@ -18,16 +18,14 @@ package fr.acinq.eclair
 
 import java.sql.DriverManager
 
-import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.wire.{Color, NodeAddress}
 import fr.acinq.eclair.router.RouterConf
-import fr.acinq.eclair.wire.Color
+import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._

@@ -19,14 +19,12 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 
 import com.google.common.base.Charsets
-import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
-import scala.compat.Platform
-import scala.util.{Success, Try}
+import scala.util.Try
 
 /**
   * Created by PM on 15/11/2016.

@@ -18,7 +18,6 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.Crypto.{Point, Scalar}
 import org.scalatest.FunSuite
-
 import scodec.bits._
 
 

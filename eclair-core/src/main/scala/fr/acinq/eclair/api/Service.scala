@@ -28,8 +28,8 @@ import akka.http.scaladsl.server._
 import akka.http.scaladsl.server.directives.Credentials
 import akka.http.scaladsl.server.directives.RouteDirectives.reject
 import akka.pattern.ask
-import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
+import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
@@ -40,7 +40,7 @@ import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
+import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging

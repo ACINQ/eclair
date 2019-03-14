@@ -21,7 +21,6 @@ import java.math.BigInteger
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32, decodeCompact}
 import fr.acinq.eclair.blockchain.electrum.db.HeaderDb
 import grizzled.slf4j.Logging
-import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 

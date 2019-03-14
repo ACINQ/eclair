@@ -20,16 +20,15 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Block, ByteVector32, MilliSatoshi}
-import fr.acinq.eclair.Globals
 import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelUnavailable}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.payment.PaymentLifecycle._
-import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{Globals, randomBytes32}
 
 /**
   * Created by PM on 29/08/2016.

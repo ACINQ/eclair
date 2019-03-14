@@ -19,7 +19,6 @@ package fr.acinq.eclair.crypto
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire.LightningMessageCodecs
 import scodec.Codec
-import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 

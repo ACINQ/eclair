@@ -18,7 +18,6 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.InetSocketAddress
-import java.nio.file.Paths
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 

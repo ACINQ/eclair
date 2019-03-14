@@ -22,8 +22,8 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent}
 
-import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
 
 class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 

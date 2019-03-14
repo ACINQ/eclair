@@ -23,15 +23,13 @@ import akka.actor.ActorSystem
 import akka.io.Tcp.Connected
 import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
 import akka.util.ByteString
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestUtils
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
 import org.scalatest._
+import scodec.bits._
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Promise}
-
-import scodec.bits._
 
 class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
   with FunSuiteLike

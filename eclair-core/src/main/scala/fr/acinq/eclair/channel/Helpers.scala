@@ -30,7 +30,6 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, ShortChannelId, addressToPublicKeyScript}
 import scodec.bits.ByteVector
 
-import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}

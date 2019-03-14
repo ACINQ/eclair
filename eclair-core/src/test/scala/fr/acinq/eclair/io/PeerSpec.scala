@@ -20,8 +20,6 @@ import java.net.InetSocketAddress
 
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
-import com.google.common.net.HostAndPort
-import fr.acinq.eclair.randomBytes
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.EclairWallet
@@ -29,8 +27,8 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements, SendPing}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
-import fr.acinq.eclair.wire.{Error, NodeAddress, Ping, Pong}
-import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, wire}
+import fr.acinq.eclair.wire.{Error, Ping, Pong}
+import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, randomBytes, wire}
 import org.scalatest.Outcome
 
 import scala.concurrent.duration._

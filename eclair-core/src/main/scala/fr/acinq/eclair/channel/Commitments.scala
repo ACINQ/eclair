@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
-import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi, Satoshi, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._

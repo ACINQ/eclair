@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.router
 
-import java.net.InetSocketAddress
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.wire._

@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair.payment
 
-import java.text.NumberFormat
-import java.util.Locale
-
 import akka.actor.{ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}

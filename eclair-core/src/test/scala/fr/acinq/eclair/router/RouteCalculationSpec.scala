@@ -22,7 +22,6 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
-import fr.acinq.eclair.router.Graph.RichWeight
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
 import org.scalatest.FunSuite

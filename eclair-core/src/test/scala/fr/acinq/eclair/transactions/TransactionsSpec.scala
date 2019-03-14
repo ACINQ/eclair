@@ -24,8 +24,8 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.Scripts.{htlcOffered, htlcReceived, toLocalDelayed}
 import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
-import fr.acinq.eclair.{randomBytes32, randomBytes}
 import fr.acinq.eclair.wire.UpdateAddHtlc
+import fr.acinq.eclair.{randomBytes, randomBytes32}
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector

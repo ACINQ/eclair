@@ -21,13 +21,10 @@ import fr.acinq.bitcoin.{DeterministicWallet, OutPoint}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.{Local, Relayed}
-import fr.acinq.eclair.{randomBytes, randomBytes32}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
-import fr.acinq.eclair.{UInt64, randomKey}
+import fr.acinq.eclair.{UInt64, randomBytes, randomBytes32, randomKey}
 import org.scalatest.FunSuite
-import scodec.bits.BitVector
-
 import scodec.bits._
 
 import scala.compat.Platform

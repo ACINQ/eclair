@@ -37,7 +37,6 @@ import io.netty.util.CharsetUtil
 import org.json4s.JsonAST._
 import org.json4s.jackson.JsonMethods
 import org.json4s.{DefaultFormats, JInt, JLong, JString}
-import org.spongycastle.util.encoders.Hex
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec

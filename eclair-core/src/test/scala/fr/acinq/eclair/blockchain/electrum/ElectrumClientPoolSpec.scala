@@ -22,9 +22,9 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import grizzled.slf4j.Logging
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import scodec.bits._
 
 import scala.concurrent.duration._
-import scodec.bits._
 
 
 class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with Logging with BeforeAndAfterAll {

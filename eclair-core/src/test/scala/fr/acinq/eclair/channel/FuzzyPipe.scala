@@ -17,8 +17,6 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.Commitments.msg2String
 import fr.acinq.eclair.wire.{Init, LightningMessage}
 import scodec.bits.ByteVector

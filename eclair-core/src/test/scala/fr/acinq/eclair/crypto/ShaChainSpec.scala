@@ -18,7 +18,6 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.ByteVector32
 import org.scalatest.FunSuite
-import scodec.bits.ByteVector
 import scodec.bits._
 
 

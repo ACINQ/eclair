@@ -17,12 +17,11 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import org.scalatest.FunSuite
-import RouteCalculationSpec._
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.wire.ChannelUpdate
-
+import org.scalatest.FunSuite
 import scodec.bits._
 
 class GraphSpec extends FunSuite {

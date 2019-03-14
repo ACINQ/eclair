@@ -25,10 +25,9 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment.{CommandBuffer, ForwardAdd, ForwardFulfill, Local}
-import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.Outcome
 import scodec.bits.ByteVector
 

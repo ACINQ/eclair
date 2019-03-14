@@ -26,8 +26,6 @@ import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
 
 class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
 
-  import SqliteUtils.ExtendedResultSet._
-
   val DB_NAME = "pending_relay"
   val CURRENT_VERSION = 1
 

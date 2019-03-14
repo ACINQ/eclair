@@ -19,8 +19,6 @@ package fr.acinq.eclair.crypto
 import org.scalatest.FunSuite
 import scodec.bits._
 
-import scala.compat.Platform
-
 class ChaCha20Poly1305Spec extends FunSuite {
   test("Poly1305") {
     // from https://tools.ietf.org/html/rfc7539 ch 2.5.2

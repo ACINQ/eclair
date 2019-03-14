@@ -20,7 +20,6 @@ import akka.actor.{Actor, ActorLogging, ActorRef}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.wire.{UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 
 class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor with ActorLogging {
 

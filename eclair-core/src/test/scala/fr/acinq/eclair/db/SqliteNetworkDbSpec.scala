@@ -16,15 +16,13 @@
 
 package fr.acinq.eclair.db
 
-import java.net.{InetAddress, InetSocketAddress}
 import java.sql.DriverManager
 
-import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
-import fr.acinq.eclair.{ShortChannelId, randomKey, randomBytes32}
+import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 import org.sqlite.SQLiteException
 

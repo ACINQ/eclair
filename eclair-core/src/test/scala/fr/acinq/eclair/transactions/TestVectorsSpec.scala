@@ -24,7 +24,6 @@ import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, 
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
-
 import scodec.bits._
 
 import scala.io.Source

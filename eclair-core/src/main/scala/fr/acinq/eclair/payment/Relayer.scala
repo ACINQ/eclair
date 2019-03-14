@@ -20,13 +20,12 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
-import fr.acinq.eclair.nodeFee
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{NodeParams, ShortChannelId}
+import fr.acinq.eclair.{NodeParams, ShortChannelId, nodeFee}
 import scodec.bits.BitVector
 import scodec.{Attempt, DecodeResult}
 

@@ -18,14 +18,14 @@ package fr.acinq.eclair.channel.states.g
 
 import akka.actor.Status.Failure
 import akka.event.LoggingAdapter
-import akka.testkit.{TestFSMRef, TestProbe}
+import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment.Local
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
 import fr.acinq.eclair.{Globals, TestkitBaseClass}

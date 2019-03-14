@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Noise._
 import org.scalatest.FunSuite
 import org.spongycastle.crypto.ec.CustomNamedCurves

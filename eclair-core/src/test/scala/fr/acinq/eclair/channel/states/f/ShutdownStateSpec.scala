@@ -17,18 +17,17 @@
 package fr.acinq.eclair.channel.states.f
 
 import akka.actor.Status.Failure
-import akka.testkit.{TestFSMRef, TestProbe}
+import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
-import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.Outcome
 import scodec.bits.ByteVector
 

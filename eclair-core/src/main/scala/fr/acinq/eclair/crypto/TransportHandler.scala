@@ -25,11 +25,10 @@ import akka.io.Tcp
 import akka.util.ByteString
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Protocol
-import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs}
 import fr.acinq.eclair.crypto.Noise._
-import fr.acinq.eclair.wire._
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
-import scodec.bits.{BitVector, ByteVector}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement, _}
+import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs}
+import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
 
 import scala.annotation.tailrec

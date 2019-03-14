@@ -29,7 +29,6 @@ import scodec.bits.BitVector
 class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
 
   import SqliteUtils._
-  import SqliteUtils.ExtendedResultSet._
 
   val DB_NAME = "network"
   val CURRENT_VERSION = 1

@@ -19,12 +19,11 @@ package fr.acinq.eclair.blockchain.electrum.db.sqlite
 import java.sql.Connection
 
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Transaction}
-import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumWallet}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{GetMerkleResponse, TransactionHistoryItem}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumWallet}
 import fr.acinq.eclair.db.sqlite.SqliteUtils
-import scodec.bits.ByteVector
 
 import scala.collection.immutable.Queue
 
@@ -136,8 +135,8 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
 
 object SqliteWalletDb {
 
-  import fr.acinq.eclair.wire.LightningMessageCodecs._
   import fr.acinq.eclair.wire.ChannelCodecs._
+  import fr.acinq.eclair.wire.LightningMessageCodecs._
   import scodec.Codec
   import scodec.bits.BitVector
   import scodec.codecs._

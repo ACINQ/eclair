@@ -26,7 +26,7 @@ import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{ChannelUpdate, LightningMessageCodecs, PerHopPayload}
 import fr.acinq.eclair.{ShortChannelId, TestConstants, nodeFee, randomBytes32}
 import org.scalatest.FunSuite
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.ByteVector
 
 import scala.util.Success
 

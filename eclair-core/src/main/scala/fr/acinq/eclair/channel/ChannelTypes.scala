@@ -19,11 +19,11 @@ package fr.acinq.eclair.channel
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.{ShortChannelId, UInt64}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
+import fr.acinq.eclair.{ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 

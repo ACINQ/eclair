@@ -22,13 +22,13 @@ import java.util.concurrent.{CountDownLatch, TimeUnit}
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.{Globals, TestUtils}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.NoopPaymentHandler
 import fr.acinq.eclair.wire.Init
+import fr.acinq.eclair.{Globals, TestUtils}
 import org.scalatest.{BeforeAndAfterAll, Matchers, Outcome, fixture}
 
 import scala.concurrent.duration._

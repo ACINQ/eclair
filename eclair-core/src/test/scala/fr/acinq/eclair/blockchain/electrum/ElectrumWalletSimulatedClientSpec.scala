@@ -19,10 +19,10 @@ package fr.acinq.eclair.blockchain.electrum
 import java.net.InetSocketAddress
 import java.sql.DriverManager
 
-import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props, Terminated}
+import akka.actor.{ActorRef, ActorSystem, Terminated}
 import akka.testkit
 import akka.testkit.{TestActor, TestFSMRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32, MnemonicCode, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32, MnemonicCode, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb

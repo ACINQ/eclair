@@ -17,7 +17,6 @@
 package fr.acinq.eclair
 
 import org.scalatest.FunSuite
-
 import scodec.bits._
 
 

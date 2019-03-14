@@ -20,9 +20,9 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentResult, RemoteFailure, SendPayment}
-import fr.acinq.eclair.{NodeParams, randomBytes32, secureRandom}
 import fr.acinq.eclair.router.{Announcements, Data}
 import fr.acinq.eclair.wire.UnknownPaymentHash
+import fr.acinq.eclair.{NodeParams, randomBytes32, secureRandom}
 
 import scala.concurrent.duration._
 

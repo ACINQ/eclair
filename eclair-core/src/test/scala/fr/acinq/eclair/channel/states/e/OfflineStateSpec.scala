@@ -16,17 +16,15 @@
 
 package fr.acinq.eclair.channel.states.e
 
-import akka.testkit.{TestFSMRef, TestProbe}
+import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.{PublishAsap, WatchEventSpent}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.randomBytes32
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.Outcome
 
 import scala.concurrent.duration._

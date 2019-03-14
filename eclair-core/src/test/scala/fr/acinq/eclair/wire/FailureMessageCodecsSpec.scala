@@ -16,11 +16,9 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.bitcoin.{Block}
-import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.randomBytes32
+import fr.acinq.bitcoin.Block
+import fr.acinq.eclair.{ShortChannelId, randomBytes32}
 import org.scalatest.FunSuite
-
 import scodec.bits._
 
 /**

@@ -29,7 +29,6 @@ import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
-import shapeless.nat._
 
 import scala.util.{Failure, Success, Try}
 

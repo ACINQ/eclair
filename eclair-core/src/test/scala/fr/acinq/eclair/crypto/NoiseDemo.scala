@@ -17,12 +17,9 @@
 package fr.acinq.eclair.crypto
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props, Stash}
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.Pipe
 import fr.acinq.eclair.crypto.Noise.{CipherState, KeyPair}
-import scodec.bits.ByteVector
-
-import scodec.bits._
+import scodec.bits.{ByteVector, _}
 
 /**
   * Created by fabrice on 12/12/16.

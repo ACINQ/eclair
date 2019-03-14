@@ -28,7 +28,6 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelCodecs, UpdateAddHtlc}
 import fr.acinq.eclair.{ShortChannelId, UInt64, randomKey}
 import org.scalatest.FunSuite
-
 import scodec.bits._
 
 /**

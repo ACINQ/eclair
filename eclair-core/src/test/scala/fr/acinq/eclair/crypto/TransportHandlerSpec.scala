@@ -16,20 +16,18 @@
 
 package fr.acinq.eclair.crypto
 
-import java.net.InetSocketAddress
 import java.nio.charset.Charset
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, OneForOneStrategy, Props, Stash, SupervisorStrategy, Terminated}
 import akka.io.Tcp
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Noise.{Chacha20Poly1305CipherFunctions, CipherState}
 import fr.acinq.eclair.crypto.TransportHandler.{Encryptor, ExtendedCipherState, Listener}
 import fr.acinq.eclair.wire.LightningMessageCodecs
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.Codec
-import scodec.codecs._
 import scodec.bits._
+import scodec.codecs._
 
 import scala.annotation.tailrec
 import scala.concurrent.duration._

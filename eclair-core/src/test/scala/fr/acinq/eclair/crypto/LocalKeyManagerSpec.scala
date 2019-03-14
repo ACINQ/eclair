@@ -16,11 +16,10 @@
 
 package fr.acinq.eclair.crypto
 
+import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{Block}
 import org.scalatest.FunSuite
-
 import scodec.bits._
 
 

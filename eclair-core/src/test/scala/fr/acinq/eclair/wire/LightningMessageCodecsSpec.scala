@@ -21,11 +21,10 @@ import java.net.{Inet4Address, Inet6Address, InetAddress}
 import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
+import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.wire.LightningMessageCodecs._
-import fr.acinq.eclair.{ShortChannelId, UInt64, randomBytes, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 

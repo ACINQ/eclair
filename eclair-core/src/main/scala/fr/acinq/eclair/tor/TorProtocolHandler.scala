@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.tor
 
-import java.net.InetSocketAddress
 import java.nio.file.attribute.PosixFilePermissions
 import java.nio.file.{Files, Path, Paths}
 import java.util
@@ -24,7 +23,6 @@ import java.util
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash}
 import akka.io.Tcp.Connected
 import akka.util.ByteString
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.tor.TorProtocolHandler.{Authentication, OnionServiceVersion}
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
 import javax.crypto.Mac

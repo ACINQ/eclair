@@ -32,7 +32,6 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelReestablish, _}
-import scodec.bits.ByteVector
 
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
