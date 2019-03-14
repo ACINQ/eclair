@@ -16,11 +16,10 @@
 
 package fr.acinq.eclair.gui.controllers
 
+import grizzled.slf4j.Logging
 import javafx.application.HostServices
 import javafx.fxml.FXML
 import javafx.scene.text.Text
-
-import grizzled.slf4j.Logging
 
 /**
   * Created by DPA on 28/09/2016.

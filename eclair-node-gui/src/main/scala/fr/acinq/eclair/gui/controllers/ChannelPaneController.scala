@@ -22,16 +22,16 @@ import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.channel.{CMD_CLOSE, CMD_FORCECLOSE, Commitments}
 import fr.acinq.eclair.gui.FxApp
+import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
+import grizzled.slf4j.Logging
 import javafx.application.Platform
 import javafx.beans.value.{ChangeListener, ObservableValue}
+import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXML
+import javafx.scene.control.Alert.AlertType
 import javafx.scene.control._
 import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 import javafx.scene.layout.VBox
-import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
-import grizzled.slf4j.Logging
-import javafx.event.{ActionEvent, EventHandler}
-import javafx.scene.control.Alert.AlertType
 
 /**
   * Created by DPA on 23/09/2016.

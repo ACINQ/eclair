@@ -23,6 +23,7 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.ChannelUpdate
 
+import scala.collection.immutable.SortedMap
 import scala.collection.mutable
 
 object Graph {
@@ -530,7 +531,7 @@ object Graph {
       }
 
       // optimized constructor
-      def makeGraph(descAndUpdates: Map[ChannelDesc, ChannelUpdate]): DirectedGraph = {
+      def makeGraph(channels: SortedMap[ShortChannelId, PublicChannel]): DirectedGraph = {
 
         // initialize the map with the appropriate size to avoid resizing during the graph initialization
         val mutableMap = new {} with mutable.HashMap[PublicKey, List[GraphEdge]] {

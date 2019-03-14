@@ -16,6 +16,12 @@
 
 package fr.acinq.eclair.gui.controllers
 
+import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.eclair.CoinUtils
+import fr.acinq.eclair.gui.utils._
+import fr.acinq.eclair.gui.{FxApp, Handlers}
+import fr.acinq.eclair.payment.PaymentRequest
+import grizzled.slf4j.Logging
 import javafx.application.Platform
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
@@ -23,13 +29,6 @@ import javafx.scene.control._
 import javafx.scene.image.{ImageView, WritableImage}
 import javafx.scene.layout.GridPane
 import javafx.stage.Stage
-
-import fr.acinq.bitcoin.MilliSatoshi
-import fr.acinq.eclair.CoinUtils
-import fr.acinq.eclair.gui.{FxApp, Handlers}
-import fr.acinq.eclair.gui.utils._
-import fr.acinq.eclair.payment.PaymentRequest
-import grizzled.slf4j.Logging
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
