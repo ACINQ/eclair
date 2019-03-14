@@ -175,13 +175,13 @@
         <dependency>
             <groupId>org.zeromq</groupId>
             <artifactId>jeromq</artifactId>
-            <version>0.4.0</version>
+            <version>0.5.0</version>
         </dependency>
         <!-- SERIALIZATION -->
         <dependency>
             <groupId>org.scodec</groupId>
             <artifactId>scodec-core_${scala.version.short}</artifactId>
-            <version>1.10.3</version>
+            <version>1.11.2</version>
         </dependency>
         <dependency>
             <groupId>commons-codec</groupId>
@@ -233,6 +233,13 @@
             <groupId>com.whisk</groupId>
             <artifactId>docker-testkit-impl-spotify_${scala.version.short}</artifactId>
             <version>0.9.8</version>
+            <scope>test</scope>
+        </dependency>
+	<!-- neeeded for our docker tests, see  https://github.com/spotify/dockerfile-maven/issues/90 -->
+        <dependency>
+            <groupId>javax.activation</groupId>
+            <artifactId>activation</artifactId>
+            <version>1.1.1</version>
             <scope>test</scope>
         </dependency>
         <dependency>

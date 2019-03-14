@@ -18,7 +18,7 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import fr.acinq.eclair.db.{Payment, PaymentsDb}
 import grizzled.slf4j.Logging
@@ -37,6 +37,8 @@ import scala.collection.immutable.Queue
   */
 class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
+  import SqliteUtils.ExtendedResultSet._
+
   val DB_NAME = "payments"
   val CURRENT_VERSION = 1
 
@@ -47,7 +49,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def addPayment(payment: Payment): Unit = {
     using(sqlite.prepareStatement("INSERT INTO payments VALUES (?, ?, ?)")) { statement =>
-      statement.setBytes(1, payment.payment_hash)
+      statement.setBytes(1, payment.payment_hash.toArray)
       statement.setLong(2, payment.amount_msat)
       statement.setLong(3, payment.timestamp)
       val res = statement.executeUpdate()
@@ -55,12 +57,12 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def findByPaymentHash(paymentHash: BinaryData): Option[Payment] = {
+  override def findByPaymentHash(paymentHash: ByteVector32): Option[Payment] = {
     using(sqlite.prepareStatement("SELECT payment_hash, amount_msat, timestamp FROM payments WHERE payment_hash = ?")) { statement =>
-      statement.setBytes(1, paymentHash)
+      statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Some(Payment(BinaryData(rs.getBytes("payment_hash")), rs.getLong("amount_msat"), rs.getLong("timestamp")))
+        Some(Payment(rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp")))
       } else {
         None
       }
@@ -72,7 +74,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       val rs = statement.executeQuery("SELECT payment_hash, amount_msat, timestamp FROM payments")
       var q: Queue[Payment] = Queue()
       while (rs.next()) {
-        q = q :+ Payment(BinaryData(rs.getBytes("payment_hash")), rs.getLong("amount_msat"), rs.getLong("timestamp"))
+        q = q :+ Payment(rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp"))
       }
       q
     }

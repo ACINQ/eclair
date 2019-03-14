@@ -21,12 +21,10 @@ import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import akka.io.Tcp
 import akka.util.ByteString
-import fr.acinq.bitcoin.toHexString
 import fr.acinq.eclair.randomBytes
 import fr.acinq.eclair.tor.Socks5Connection.{Credentials, Socks5Connect}
 import fr.acinq.eclair.wire._
 
-import scala.util.Success
 
 /**
   * Simple socks 5 client. It should be given a new connection, and will
@@ -234,7 +232,7 @@ object Socks5ProxyParams {
   def proxyCredentials(proxyParams: Socks5ProxyParams): Option[Socks5Connection.Credentials] =
     if (proxyParams.randomizeCredentials) {
       // randomize credentials for every proxy connection to enable Tor stream isolation
-      Some(Socks5Connection.Credentials(toHexString(randomBytes(16)), toHexString(randomBytes(16))))
+      Some(Socks5Connection.Credentials(randomBytes(16).toHex, randomBytes(16).toHex))
     } else {
       proxyParams.credentials_opt
     }

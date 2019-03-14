@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.transactions.Scripts._
 import org.scalatest.FunSuite
+import scodec.bits.ByteVector
 
 
 class ClaimSentHtlcSpec extends FunSuite {
@@ -29,12 +30,12 @@ class ClaimSentHtlcSpec extends FunSuite {
     val finalKey = PrivateKey.fromBase58("cRUfvpbRtMSqCFD1ADdvgPn5HfRLYuHCFYAr2noWnaRDNger2AoA", Base58.Prefix.SecretKeyTestnet)
     val commitPubKey = commitKey.publicKey
     val finalPubKey = finalKey.publicKey
-    val R: BinaryData = Crypto.sha256("this is Alice's R".getBytes("UTF-8"))
-    val Rhash: BinaryData = Crypto.sha256(R)
+    val R = Crypto.sha256(ByteVector.view("this is Alice's R".getBytes("UTF-8")))
+    val Rhash = Crypto.sha256(R)
     val H = Crypto.hash160(Rhash)
-    val revokeCommit: BinaryData = Crypto.sha256("Alice revocation R".getBytes("UTF-8"))
-    val revokeCommitRHash: BinaryData = Crypto.sha256(revokeCommit)
-    val revokeCommitH: BinaryData = Crypto.sha256(revokeCommit)
+    val revokeCommit = Crypto.sha256(ByteVector.view("Alice revocation R".getBytes("UTF-8")))
+    val revokeCommitRHash = Crypto.sha256(revokeCommit)
+    val revokeCommitH = Crypto.sha256(revokeCommit)
   }
 
   object Bob {
@@ -42,42 +43,42 @@ class ClaimSentHtlcSpec extends FunSuite {
     val finalKey = PrivateKey.fromBase58("cQLk5fMydgVwJjygt9ta8GcUU4GXLumNiXJCQviibs2LE5vyMXey", Base58.Prefix.SecretKeyTestnet)
     val commitPubKey = commitKey.publicKey
     val finalPubKey = finalKey.publicKey
-    val R: BinaryData = Crypto.sha256("this is Bob's R".getBytes("UTF-8"))
-    val Rhash: BinaryData = Crypto.sha256(R)
+    val R: ByteVector = Crypto.sha256(ByteVector.view("this is Bob's R".getBytes("UTF-8")))
+    val Rhash: ByteVector = Crypto.sha256(R)
     val H = Crypto.hash160(Rhash)
-    val revokeCommit: BinaryData = Crypto.sha256("Bob revocation R".getBytes("UTF-8"))
-    val revokeCommitRHash: BinaryData = Crypto.sha256(revokeCommit)
-    val revokeCommitH: BinaryData = Crypto.sha256(revokeCommit)
+    val revokeCommit: ByteVector = Crypto.sha256(ByteVector.view("Bob revocation R".getBytes("UTF-8")))
+    val revokeCommitRHash: ByteVector = Crypto.sha256(revokeCommit)
+    val revokeCommitH: ByteVector = Crypto.sha256(revokeCommit)
   }
 
   val abstimeout = 3000
   val reltimeout = 2000
   val htlcScript = scriptPubKeyHtlcSend(Alice.finalPubKey, Bob.finalPubKey, abstimeout, reltimeout, Alice.revokeCommitRHash, Alice.Rhash)
-  val redeemScript: BinaryData = Script.write(htlcScript)
+  val redeemScript: ByteVector = Script.write(htlcScript)
 
   // this tx sends money to our HTLC
   val tx = Transaction(
     version = 2,
-    txIn = TxIn(OutPoint(Hash.Zeroes, 0), Array.emptyByteArray, 0xffffffffL) :: Nil,
+    txIn = TxIn(OutPoint(ByteVector32.Zeroes, 0), ByteVector.empty, 0xffffffffL) :: Nil,
     txOut = TxOut(10 satoshi, Script.pay2wsh(htlcScript)) :: Nil,
     lockTime = 0)
 
   // this tx tries to spend the previous tx
   val tx1 = Transaction(
     version = 2,
-    txIn = TxIn(OutPoint(tx, 0), Array.emptyByteArray, 0xffffffff) :: Nil,
+    txIn = TxIn(OutPoint(tx, 0), ByteVector.empty, 0xffffffff) :: Nil,
     txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.toBin)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
     lockTime = 0)
 
   test("Alice can spend this HTLC after a delay") {
     val tx2 = Transaction(
       version = 2,
-      txIn = TxIn(OutPoint(tx, 0), Array.emptyByteArray, sequence = reltimeout + 1) :: Nil,
+      txIn = TxIn(OutPoint(tx, 0), ByteVector.empty, sequence = reltimeout + 1) :: Nil,
       txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.toBin)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = abstimeout + 1)
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
-    val witness = ScriptWitness(sig :: Hash.Zeroes :: redeemScript :: Nil)
+    val witness = ScriptWitness(sig :: ByteVector32.Zeroes.bytes :: redeemScript :: Nil)
     val tx3 = tx2.updateWitness(0, witness)
 
     Transaction.correctlySpends(tx3, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -86,12 +87,12 @@ class ClaimSentHtlcSpec extends FunSuite {
   test("Alice cannot spend this HTLC before its absolute timeout") {
     val tx2 = Transaction(
       version = 2,
-      txIn = TxIn(OutPoint(tx, 0), Array.emptyByteArray, sequence = reltimeout + 1) :: Nil,
+      txIn = TxIn(OutPoint(tx, 0), ByteVector.empty, sequence = reltimeout + 1) :: Nil,
       txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.toBin)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = abstimeout - 1)
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
-    val witness = ScriptWitness(sig :: Hash.Zeroes :: redeemScript :: Nil)
+    val witness = ScriptWitness(sig :: ByteVector32.Zeroes.bytes :: redeemScript :: Nil)
     val tx3 = tx2.updateWitness(0, witness)
 
     val e = intercept[RuntimeException] {
@@ -103,12 +104,12 @@ class ClaimSentHtlcSpec extends FunSuite {
   test("Alice cannot spend this HTLC before its relative timeout") {
     val tx2 = Transaction(
       version = 2,
-      txIn = TxIn(OutPoint(tx, 0), Array.emptyByteArray, sequence = reltimeout - 1) :: Nil,
+      txIn = TxIn(OutPoint(tx, 0), ByteVector.empty, sequence = reltimeout - 1) :: Nil,
       txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.toBin)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = abstimeout + 1)
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
-    val witness = ScriptWitness(sig :: Hash.Zeroes :: redeemScript :: Nil)
+    val witness = ScriptWitness(sig :: ByteVector32.Zeroes.bytes :: redeemScript :: Nil)
     val tx3 = tx2.updateWitness(0, witness)
 
     val e = intercept[RuntimeException] {
@@ -119,14 +120,14 @@ class ClaimSentHtlcSpec extends FunSuite {
 
   test("Bob can spend this HTLC if he knows the payment hash") {
     val sig = Transaction.signInput(tx1, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Bob.finalKey)
-    val witness = ScriptWitness(sig :: Alice.R :: redeemScript :: Nil)
+    val witness = ScriptWitness(sig :: Alice.R.bytes :: redeemScript :: Nil)
     val tx2 = tx1.updateWitness(0, witness)
     Transaction.correctlySpends(tx2, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
   test("Bob can spend this HTLC if he knows the revocation hash") {
     val sig = Transaction.signInput(tx1, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Bob.finalKey)
-    val witness = ScriptWitness(sig :: Alice.revokeCommit :: redeemScript :: Nil)
+    val witness = ScriptWitness(sig :: Alice.revokeCommit.bytes :: redeemScript :: Nil)
     val tx2 = tx1.updateWitness(0, witness)
     Transaction.correctlySpends(tx2, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }

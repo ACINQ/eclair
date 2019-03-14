@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.gui
 
-import java.io.{File, FileWriter}
-
 import akka.pattern.{AskTimeoutException, ask}
 import akka.util.Timeout
 import fr.acinq.bitcoin.MilliSatoshi
@@ -88,7 +86,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     (for {
       kit <- fKit
       sendPayment = req.minFinalCltvExpiry match {
-        case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, maxFeePct = kit.nodeParams.maxPaymentFee)
+        case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo)
         case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiry = minFinalCltvExpiry)
       }
       res <- (kit.paymentInitiator ? sendPayment).mapTo[PaymentResult]

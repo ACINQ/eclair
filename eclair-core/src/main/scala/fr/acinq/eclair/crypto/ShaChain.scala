@@ -27,11 +27,9 @@ import scala.annotation.tailrec
   */
 object ShaChain {
 
-  case class Node(value: BinaryData, height: Int, parent: Option[Node]) {
-    require(value.length == 32)
-  }
+  case class Node(value: ByteVector32, height: Int, parent: Option[Node])
 
-  def flip(in: BinaryData, index: Int): BinaryData = in.data.updated(index / 8, (in.data(index / 8) ^ (1 << index % 8)).toByte)
+  def flip(in: ByteVector32, index: Int): ByteVector32 = ByteVector32(in.update(index / 8, (in(index / 8) ^ (1 << index % 8)).toByte))
 
   /**
     *
@@ -55,16 +53,16 @@ object ShaChain {
 
   def derive(node: Node, directions: Long): Node = derive(node, moves(directions))
 
-  def shaChainFromSeed(hash: BinaryData, index: Long) = derive(Node(hash, 0, None), index).value
+  def shaChainFromSeed(hash: ByteVector32, index: Long) = derive(Node(hash, 0, None), index).value
 
   type Index = Vector[Boolean]
 
-  val empty = ShaChain(Map.empty[Index, BinaryData])
+  val empty = ShaChain(Map.empty[Index, ByteVector32])
 
   val init = empty
 
   @tailrec
-  def addHash(receiver: ShaChain, hash: BinaryData, index: Index): ShaChain = {
+  def addHash(receiver: ShaChain, hash: ByteVector32, index: Index): ShaChain = {
     index.last match {
       case true => ShaChain(receiver.knownHashes + (index -> hash))
       case false =>
@@ -77,19 +75,19 @@ object ShaChain {
     }
   }
 
-  def addHash(receiver: ShaChain, hash: BinaryData, index: Long): ShaChain = {
+  def addHash(receiver: ShaChain, hash: ByteVector32, index: Long): ShaChain = {
     receiver.lastIndex.map(value => require(index == value - 1L))
     addHash(receiver, hash, moves(index)).copy(lastIndex = Some(index))
   }
 
-  def getHash(receiver: ShaChain, index: Index): Option[BinaryData] = {
+  def getHash(receiver: ShaChain, index: Index): Option[ByteVector32] = {
     receiver.knownHashes.keys.find(key => index.startsWith(key)).map(key => {
       val root = Node(receiver.knownHashes(key), key.length, None)
       derive(root, index.drop(key.length)).value
     })
   }
 
-  def getHash(receiver: ShaChain, index: Long): Option[BinaryData] = {
+  def getHash(receiver: ShaChain, index: Long): Option[ByteVector32] = {
     receiver.lastIndex match {
       case None => None
       case Some(value) if value > index => None
@@ -97,14 +95,14 @@ object ShaChain {
     }
   }
 
-  def iterator(chain: ShaChain): Iterator[BinaryData] = chain.lastIndex match {
+  def iterator(chain: ShaChain): Iterator[ByteVector32] = chain.lastIndex match {
     case None => Iterator.empty
-    case Some(index) => new Iterator[BinaryData] {
+    case Some(index) => new Iterator[ByteVector32] {
       var pos = index
 
       override def hasNext: Boolean = pos >= index && pos <= 0xffffffffffffffffL
 
-      override def next(): BinaryData = {
+      override def next(): ByteVector32 = {
         val value = chain.getHash(pos).get
         pos = pos + 1
         value
@@ -118,12 +116,12 @@ object ShaChain {
     import scodec.bits.BitVector
     import scodec.codecs._
 
-    // codec for a single map entry (i.e. Vector[Boolean] -> BinaryData
-    val entryCodec = vectorOfN(uint16, bool) ~ LightningMessageCodecs.varsizebinarydata
+    // codec for a single map entry (i.e. Vector[Boolean] -> ByteVector
+    val entryCodec = vectorOfN(uint16, bool) ~ variableSizeBytes(uint16, LightningMessageCodecs.bytes32)
 
-    // codec for a Map[Vector[Boolean], BinaryData]: write all k ->v pairs using the codec defined above
-    val mapCodec: Codec[Map[Vector[Boolean], BinaryData]] = Codec[Map[Vector[Boolean], BinaryData]](
-      (m: Map[Vector[Boolean], BinaryData]) => vectorOfN(uint16, entryCodec).encode(m.toVector),
+    // codec for a Map[Vector[Boolean], ByteVector]: write all k -> v pairs using the codec defined above
+    val mapCodec: Codec[Map[Vector[Boolean], ByteVector32]] = Codec[Map[Vector[Boolean], ByteVector32]](
+      (m: Map[Vector[Boolean], ByteVector32]) => vectorOfN(uint16, entryCodec).encode(m.toVector),
       (b: BitVector) => vectorOfN(uint16, entryCodec).decode(b).map(_.map(_.toMap))
     )
 
@@ -140,8 +138,8 @@ object ShaChain {
   * @param lastIndex   index of the last known hash. Hashes are supposed to be added in reverse order i.e.
   *                    from 0xFFFFFFFFFFFFFFFF down to 0
   */
-case class ShaChain(knownHashes: Map[Vector[Boolean], BinaryData], lastIndex: Option[Long] = None) {
-  def addHash(hash: BinaryData, index: Long): ShaChain = ShaChain.addHash(this, hash, index)
+case class ShaChain(knownHashes: Map[Vector[Boolean], ByteVector32], lastIndex: Option[Long] = None) {
+  def addHash(hash: ByteVector32, index: Long): ShaChain = ShaChain.addHash(this, hash, index)
 
   def getHash(index: Long) = ShaChain.getHash(this, index)
 

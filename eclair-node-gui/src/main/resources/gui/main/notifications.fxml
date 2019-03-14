@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import javafx.scene.layout.VBox?>
-<?import java.net.URL?>
 <!--
   ~ Copyright 2018 ACINQ SAS
   ~
@@ -18,6 +16,8 @@
   ~ limitations under the License.
   -->
 
+<?import javafx.scene.layout.VBox?>
+<?import java.net.URL?>
 <VBox fx:id="notifsVBox" spacing="10.0"
       style="-fx-background-color: transparent" styleClass="notifications-box"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">

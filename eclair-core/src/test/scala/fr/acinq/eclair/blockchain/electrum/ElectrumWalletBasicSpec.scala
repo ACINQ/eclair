@@ -25,6 +25,7 @@ import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
+import scodec.bits.ByteVector
 
 import scala.util.{Failure, Random, Success, Try}
 
@@ -39,7 +40,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   val feeRatePerKw = 20000
   val minimumFee = Satoshi(2000)
 
-  val master = DeterministicWallet.generate(BinaryData("01" * 32))
+  val master = DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1)))
   val accountMaster = accountKey(master, Block.RegtestGenesisBlock.hash)
   val accountIndex = 0
 
@@ -97,7 +98,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     val state1 = addFunds(state, state.accountKeys.head, 1 btc)
     val (confirmed1, unconfirmed1) = state1.balance
 
-    val pub = PrivateKey(BinaryData("01" * 32), compressed = true).publicKey
+    val pub = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), compressed = true).publicKey
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(pub)) :: Nil, lockTime = 0)
     val (state2, tx1, fee1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
     val Some((_, _, Some(fee))) = state2.computeTransactionDelta(tx1)
@@ -177,7 +178,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     assert(state3.utxos.length == 3)
     assert(state3.balance == (Satoshi(350000000),Satoshi(0)))
 
-    val (tx, fee) = state3.spendAll(Script.pay2wpkh(BinaryData("01" * 20)), feeRatePerKw)
+    val (tx, fee) = state3.spendAll(Script.pay2wpkh(ByteVector.fill(20)(1)), feeRatePerKw)
     val Some((received, sent, Some(fee1))) = state3.computeTransactionDelta(tx)
     assert(received == Satoshi(0))
     assert(fee == fee1)

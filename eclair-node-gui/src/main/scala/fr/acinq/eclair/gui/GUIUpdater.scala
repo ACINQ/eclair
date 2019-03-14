@@ -17,7 +17,6 @@
 package fr.acinq.eclair.gui
 
 import java.time.LocalDateTime
-import java.util.function.Predicate
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -25,17 +24,13 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor.{ZMQConnected, ZMQDisconnected}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ElectrumDisconnected, ElectrumReady}
-import fr.acinq.eclair.channel.{Data, _}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.payment.PaymentLifecycle.{LocalFailure, PaymentFailed, PaymentSucceeded, RemoteFailure}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{NORMAL => _, _}
-import fr.acinq.eclair.wire.NodeAnnouncement
 import javafx.application.Platform
-import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXMLLoader
-import javafx.scene.control.Alert.AlertType
-import javafx.scene.control.{Alert, ButtonType}
 import javafx.scene.layout.VBox
 
 import scala.collection.JavaConversions._
@@ -60,19 +55,20 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
   def receive: Receive = main(Map())
 
-  def createChannelPanel(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, channelId: BinaryData): (ChannelPaneController, VBox) = {
+  def createChannelPanel(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, channelId: ByteVector32): (ChannelPaneController, VBox) = {
     log.info(s"new channel: $channel")
     val loader = new FXMLLoader(getClass.getResource("/gui/main/channelPane.fxml"))
     val channelPaneController = new ChannelPaneController(channel, remoteNodeId.toString())
     loader.setController(channelPaneController)
     val root = loader.load[VBox]
-    channelPaneController.channelId.setText(channelId.toString())
+    channelPaneController.channelId.setText(channelId.toHex)
     channelPaneController.funder.setText(if (isFunder) "Yes" else "No")
 
     // set the node alias if the node has already been announced
-    mainController.networkNodesList
-      .find(na => na.nodeId.toString.equals(remoteNodeId.toString))
-      .foreach(na => channelPaneController.updateRemoteNodeAlias(na.alias))
+    if (mainController.networkNodesMap.containsKey(remoteNodeId)) {
+      val na = mainController.networkNodesMap.get(remoteNodeId)
+      channelPaneController.updateRemoteNodeAlias(na.alias)
+    }
 
     (channelPaneController, root)
   }
@@ -94,7 +90,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       runInGuiThread(() => {
         channelPaneController.refreshBalance()
         mainController.refreshTotalBalance(totalBalance)
-        channelPaneController.txId.setText(currentData.commitments.commitInput.outPoint.txid.toString())
+        channelPaneController.txId.setText(currentData.commitments.commitInput.outPoint.txid.toHex)
         mainController.channelBox.getChildren.addAll(root)
       })
       context.become(main(m1))
@@ -105,13 +101,13 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
     case ChannelIdAssigned(channel, _, _, channelId) if m.contains(channel) =>
       val channelPaneController = m(channel)
-      runInGuiThread(() => channelPaneController.channelId.setText(channelId.toString()))
+      runInGuiThread(() => channelPaneController.channelId.setText(channelId.toHex))
 
     case ChannelStateChanged(channel, _, remoteNodeId, _, currentState, currentData) if m.contains(channel) =>
       val channelPaneController = m(channel)
       runInGuiThread { () =>
         (currentState, currentData) match {
-          case (WAIT_FOR_FUNDING_CONFIRMED, d: HasCommitments) => channelPaneController.txId.setText(d.commitments.commitInput.outPoint.txid.toString())
+          case (WAIT_FOR_FUNDING_CONFIRMED, d: HasCommitments) => channelPaneController.txId.setText(d.commitments.commitInput.outPoint.txid.toHex)
           case _ => {}
         }
         channelPaneController.close.setVisible(STATE_MUTUAL_CLOSE.contains(currentState))
@@ -139,72 +135,69 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       })
       context.become(main(m1))
 
-    case NodeDiscovered(nodeAnnouncement) =>
-      log.debug(s"peer node discovered with node id=${nodeAnnouncement.nodeId}")
+    case NodesDiscovered(nodeAnnouncements) =>
       runInGuiThread { () =>
-        if (!mainController.networkNodesList.exists(na => na.nodeId == nodeAnnouncement.nodeId)) {
-          mainController.networkNodesList.add(nodeAnnouncement)
-          m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.peerNodeId)) {
-            f._2.updateRemoteNodeAlias(nodeAnnouncement.alias)
-          })
+      nodeAnnouncements.foreach { nodeAnnouncement =>
+        log.debug(s"peer node discovered with node id={}", nodeAnnouncement.nodeId)
+          if (!mainController.networkNodesMap.containsKey(nodeAnnouncement.nodeId)) {
+            mainController.networkNodesMap.put(nodeAnnouncement.nodeId, nodeAnnouncement)
+            m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.peerNodeId)) {
+              f._2.updateRemoteNodeAlias(nodeAnnouncement.alias)
+            })
+          }
         }
       }
 
     case NodeLost(nodeId) =>
       log.debug(s"peer node lost with node id=${nodeId}")
       runInGuiThread { () =>
-        mainController.networkNodesList.removeIf(new Predicate[NodeAnnouncement] {
-          override def test(na: NodeAnnouncement) = na.nodeId.equals(nodeId)
-        })
+        mainController.networkNodesMap.remove(nodeId)
       }
 
     case NodeUpdated(nodeAnnouncement) =>
       log.debug(s"peer node with id=${nodeAnnouncement.nodeId} has been updated")
       runInGuiThread { () =>
-        val idx = mainController.networkNodesList.indexWhere(na => na.nodeId == nodeAnnouncement.nodeId)
-        if (idx >= 0) {
-          mainController.networkNodesList.update(idx, nodeAnnouncement)
-          m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.peerNodeId)) {
-            f._2.updateRemoteNodeAlias(nodeAnnouncement.alias)
-          })
-        }
+        mainController.networkNodesMap.put(nodeAnnouncement.nodeId, nodeAnnouncement)
+        m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.peerNodeId)) {
+          f._2.updateRemoteNodeAlias(nodeAnnouncement.alias)
+        })
       }
 
-    case ChannelDiscovered(channelAnnouncement, capacity) =>
-      log.debug(s"peer channel discovered with channel id=${channelAnnouncement.shortChannelId}")
+    case ChannelsDiscovered(channelsDiscovered) =>
       runInGuiThread { () =>
-        if (!mainController.networkChannelsList.exists(c => c.announcement.shortChannelId == channelAnnouncement.shortChannelId)) {
-          mainController.networkChannelsList.add(new ChannelInfo(channelAnnouncement, None, None, None, None, capacity, None, None))
-        }
-      }
+          channelsDiscovered.foreach { case SingleChannelDiscovered(channelAnnouncement, capacity) =>
+            log.debug(s"peer channel discovered with channel id={}", channelAnnouncement.shortChannelId)
+              if (!mainController.networkChannelsMap.containsKey(channelAnnouncement.shortChannelId)) {
+                mainController.networkChannelsMap.put(channelAnnouncement.shortChannelId, new ChannelInfo(channelAnnouncement, None, None, None, None, capacity, None, None))
+              }
+            }
+          }
 
     case ChannelLost(shortChannelId) =>
       log.debug(s"peer channel lost with channel id=${shortChannelId}")
       runInGuiThread { () =>
-        mainController.networkChannelsList.removeIf(new Predicate[ChannelInfo] {
-          override def test(c: ChannelInfo) = c.announcement.shortChannelId == shortChannelId
-        })
+        mainController.networkChannelsMap.remove(shortChannelId)
       }
 
-    case ChannelUpdateReceived(channelUpdate) =>
-      log.debug(s"peer channel with id=${channelUpdate.shortChannelId} has been updated - flags: ${channelUpdate.channelFlags} fees: ${channelUpdate.feeBaseMsat} ${channelUpdate.feeProportionalMillionths}")
+    case ChannelUpdatesReceived(channelUpdates) =>
       runInGuiThread { () =>
-        val idx = mainController.networkChannelsList.indexWhere(c => c.announcement.shortChannelId == channelUpdate.shortChannelId)
-        if (idx >= 0) {
-          val c = mainController.networkChannelsList.get(idx)
-          if (Announcements.isNode1(channelUpdate.channelFlags)) {
-            c.isNode1Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
-            c.feeBaseMsatNode1_opt = Some(channelUpdate.feeBaseMsat)
-            c.feeProportionalMillionthsNode1_opt = Some(channelUpdate.feeProportionalMillionths)
-          } else {
-            c.isNode2Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
-            c.feeBaseMsatNode2_opt = Some(channelUpdate.feeBaseMsat)
-            c.feeProportionalMillionthsNode2_opt = Some(channelUpdate.feeProportionalMillionths)
+          channelUpdates.foreach { case channelUpdate =>
+            log.debug(s"peer channel with id={} has been updated - flags: {} fees: {} {}", channelUpdate.shortChannelId, channelUpdate.channelFlags, channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths)
+              if (mainController.networkChannelsMap.containsKey(channelUpdate.shortChannelId)) {
+                val c = mainController.networkChannelsMap.get(channelUpdate.shortChannelId)
+                if (Announcements.isNode1(channelUpdate.channelFlags)) {
+                  c.isNode1Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
+                  c.feeBaseMsatNode1_opt = Some(channelUpdate.feeBaseMsat)
+                  c.feeProportionalMillionthsNode1_opt = Some(channelUpdate.feeProportionalMillionths)
+              } else {
+                  c.isNode2Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
+                  c.feeBaseMsatNode2_opt = Some(channelUpdate.feeBaseMsat)
+                  c.feeProportionalMillionthsNode2_opt = Some(channelUpdate.feeProportionalMillionths)
+                }
+                mainController.networkChannelsMap.put(channelUpdate.shortChannelId, c)
+              }
+            }
           }
-
-          mainController.networkChannelsList.update(idx, c)
-        }
-      }
 
     case p: PaymentSucceeded =>
       val message = CoinUtils.formatAmountInUnit(MilliSatoshi(p.amountMsat), FxApp.getUnit, withUnit = true)

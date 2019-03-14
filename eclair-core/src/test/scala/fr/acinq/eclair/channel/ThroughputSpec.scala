@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -42,20 +42,14 @@ class ThroughputSpec extends FunSuite {
     val paymentHandler = system.actorOf(Props(new Actor() {
       val random = new Random()
 
-      def generateR(): BinaryData = {
-        val r = Array.fill[Byte](32)(0)
-        random.nextBytes(r)
-        r
-      }
-
       context.become(run(Map()))
 
       override def receive: Receive = ???
 
-      def run(h2r: Map[BinaryData, BinaryData]): Receive = {
+      def run(h2r: Map[ByteVector32, ByteVector32]): Receive = {
         case ('add, tgt: ActorRef) =>
-          val r = generateR()
-          val h: BinaryData = Crypto.sha256(r)
+          val r = randomBytes32
+          val h = Crypto.sha256(r)
           tgt ! CMD_ADD_HTLC(1, h, 1)
           context.become(run(h2r + (h -> r)))
 
@@ -76,8 +70,8 @@ class ThroughputSpec extends FunSuite {
     val bob = system.actorOf(Channel.props(Bob.nodeParams, wallet, Alice.nodeParams.nodeId, blockchain, ???, relayerB, None), "b")
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
-    alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)
-    bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, pipe, aliceInit)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)
+    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit)
 
     val latch = new CountDownLatch(2)
     val listener = system.actorOf(Props(new Actor {

@@ -23,7 +23,7 @@ import java.nio.ByteOrder
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
@@ -31,6 +31,7 @@ import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import scodec.Attempt
+import scodec.bits.ByteVector
 
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -88,7 +89,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         case Some((gf, lf)) => wire.Init(globalFeatures = gf, localFeatures = lf)
         case None => wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
       }
-      log.info(s"using globalFeatures=${localInit.globalFeatures} and localFeatures=${localInit.localFeatures}")
+      log.info(s"using globalFeatures=${localInit.globalFeatures.toBin} and localFeatures=${localInit.localFeatures.toBin}")
       transport ! localInit
 
       val address_opt = if (outgoing) {
@@ -120,6 +121,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val remoteHasInitialRoutingSync = Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
       val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
+      log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin} and localFeatures=${remoteInit.localFeatures.toBin}")
       log.info(s"$remoteNodeId has features: initialRoutingSync=$remoteHasInitialRoutingSync channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional channelRangeQueriesMandatory=$remoteHasChannelRangeQueriesMandatory")
       if (Features.areSupported(remoteInit.localFeatures)) {
         d.origin_opt.foreach(origin => origin ! "connected")
@@ -193,7 +195,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         // no need to use secure random here
         val pingSize = Random.nextInt(1000)
         val pongSize = Random.nextInt(1000)
-        val ping = wire.Ping(pongSize, BinaryData("00" * pingSize))
+        val ping = wire.Ping(pongSize, ByteVector.fill(pingSize)(0))
         setTimer(PingTimeout.toString, PingTimeout(ping), nodeParams.pingTimeout, repeat = false)
         d.transport ! ping
         stay using d.copy(expectedPong_opt = Some(ExpectedPong(ping)))
@@ -215,7 +217,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       d.transport ! TransportHandler.ReadAck(ping)
       if (pongLength <= 65532) {
         // see BOLT 1: we reply only if requested pong length is acceptable
-        d.transport ! wire.Pong(BinaryData(Seq.fill[Byte](pongLength)(0.toByte)))
+        d.transport ! wire.Pong(ByteVector.fill(pongLength)(0.toByte))
       } else {
         log.warning(s"ignoring invalid ping with pongLength=${ping.pongLength}")
       }
@@ -239,7 +241,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(err@wire.Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>
       d.transport ! TransportHandler.ReadAck(err)
-      log.error(s"connection-level error, failing all channels! reason=${new String(reason)}")
+      log.error(s"connection-level error, failing all channels! reason=${new String(reason.toArray)}")
       d.channels.values.toSet[ActorRef].foreach(_ forward err) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
       d.transport ! PoisonPill
       stay
@@ -256,7 +258,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(c: Peer.OpenChannel, d: ConnectedData) =>
       log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt}")
       val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis.toLong, origin_opt = Some(sender))
-      val temporaryChannelId = randomBytes(32)
+      val temporaryChannelId = randomBytes32
       val channelFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
       val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(Globals.feeratesPerKw.get.blocks_6)
       channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.transport, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
@@ -378,14 +380,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           log.error(s"peer sent us a routing message with invalid sig: r=$r bin=$bin")
           // for now we just return an error, maybe ban the peer in the future?
           // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
-          d.transport ! Error(CHANNELID_ZERO, s"bad announcement sig! bin=$bin".getBytes())
+          d.transport ! Error(CHANNELID_ZERO, ByteVector.view(s"bad announcement sig! bin=$bin".getBytes()))
           d.behavior
         case InvalidAnnouncement(c) =>
           // they seem to be sending us fake announcements?
           log.error(s"couldn't find funding tx with valid scripts for shortChannelId=${c.shortChannelId}")
           // for now we just return an error, maybe ban the peer in the future?
           // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
-          d.transport ! Error(CHANNELID_ZERO, s"couldn't verify channel! shortChannelId=${c.shortChannelId}".getBytes())
+          d.transport ! Error(CHANNELID_ZERO, ByteVector.view(s"couldn't verify channel! shortChannelId=${c.shortChannelId}".getBytes()))
           d.behavior
         case ChannelClosed(_) =>
           if (d.behavior.ignoreNetworkAnnouncement) {
@@ -501,9 +503,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
 object Peer {
 
-  val CHANNELID_ZERO = BinaryData("00" * 32)
+  val CHANNELID_ZERO = ByteVector32.Zeroes
 
-  val UNKNOWN_CHANNEL_MESSAGE = "unknown channel".getBytes()
+  val UNKNOWN_CHANNEL_MESSAGE = ByteVector.view("unknown channel".getBytes())
 
   val RECONNECT_TIMER = "reconnect"
 
@@ -517,9 +519,9 @@ object Peer {
 
   // @formatter:off
 
-  sealed trait ChannelId { def id: BinaryData }
-  case class TemporaryChannelId(id: BinaryData) extends ChannelId
-  case class FinalChannelId(id: BinaryData) extends ChannelId
+  sealed trait ChannelId { def id: ByteVector32 }
+  case class TemporaryChannelId(id: ByteVector32) extends ChannelId
+  case class FinalChannelId(id: ByteVector32) extends ChannelId
 
   sealed trait Data {
     def address_opt: Option[InetSocketAddress]
@@ -565,7 +567,7 @@ object Peer {
 
   // @formatter:on
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
     val entropy = new Array[Byte](16)
     secureRandom.nextBytes(entropy)
     val bis = new ByteArrayInputStream(entropy)
@@ -573,7 +575,7 @@ object Peer {
     makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelKeyPath)
   }
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: DeterministicWallet.KeyPath): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: DeterministicWallet.KeyPath): LocalParams = {
     LocalParams(
       nodeParams.nodeId,
       channelKeyPath,
