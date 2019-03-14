@@ -19,10 +19,12 @@ package fr.acinq.eclair.blockchain.bitcoind
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, JsonRPCError}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, Error, JsonRPCError}
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
+import org.json4s.DefaultFormats
 import org.json4s.JsonAST._
+import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -47,9 +49,13 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
   def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toHex, lockUnspents, feeRatePerKw)
 
   def signTransaction(hex: String): Future[SignTransactionResponse] =
-    rpcClient.invoke("signrawtransaction", hex).map(json => {
+    rpcClient.invoke("signrawtransactionwithwallet", hex).map(json => {
       val JString(hex) = json \ "hex"
       val JBool(complete) = json \ "complete"
+      if (!complete) {
+        val message = (json \ "errors" \\ classOf[JString]).mkString(",")
+        throw new JsonRPCError(Error(-1, message))
+      }
       SignTransactionResponse(Transaction.read(hex), complete)
     })
 
@@ -74,7 +80,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   private def signTransactionOrUnlock(tx: Transaction): Future[SignTransactionResponse] = {
     val f = signTransaction(tx)
-    // if signature fails (e.g. because wallet is uncrypted) we need to unlock the utxos
+    // if signature fails (e.g. because wallet is encrypted) we need to unlock the utxos
     f.recoverWith { case _ =>
       unlockOutpoints(tx.txIn.map(_.outPoint))
         .recover { case t: Throwable => logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${tx.txid}", t); t } // no-op, just add a log in case of failure
@@ -94,7 +100,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
       FundTransactionResponse(unsignedFundingTx, _, fee) <- fundTransaction(partialFundingTx, lockUnspents = true, feeRatePerKw)
       // now let's sign the funding tx
-      SignTransactionResponse(fundingTx, _) <- signTransactionOrUnlock(unsignedFundingTx)
+      SignTransactionResponse(fundingTx, true) <- signTransactionOrUnlock(unsignedFundingTx)
       // there will probably be a change output, so we need to find which output is ours
       outputIndex = Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript, outputsAlreadyUsed = Set.empty, amount_opt = None)
       _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=$fee")
