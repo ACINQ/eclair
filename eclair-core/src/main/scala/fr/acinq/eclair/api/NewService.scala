@@ -4,7 +4,7 @@ import akka.util.Timeout
 import akka.pattern._
 import akka.http.scaladsl.server._
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.{Kit, ShortChannelId}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import FormParamExtractors._
@@ -26,6 +26,8 @@ import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentReques
 import fr.acinq.eclair.router.{ChannelDesc, RouteNotFound, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import grizzled.slf4j.Logging
+import scodec.bits.ByteVector
+
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
@@ -47,7 +49,7 @@ trait NewService extends Directives with Logging with MetaService {
   implicit val timeout = Timeout(60 seconds) // used by akka ask
 
   // a named and typed URL parameter used across several routes, 32-bytes hex-encoded
-  val channelIdNamedParameter = "channelId".as[BinaryData](sha256HashUnmarshaller)
+  val channelIdNamedParameter = "channelId".as[ByteVector32](sha256HashUnmarshaller)
 
   val apiExceptionHandler = ExceptionHandler {
     case e: IllegalApiParams =>
@@ -118,7 +120,7 @@ trait NewService extends Directives with Logging with MetaService {
                     }
                   } ~
                   path("close") {
-                    formFields(channelIdNamedParameter, "scriptPubKey".as[BinaryData](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
+                    formFields(channelIdNamedParameter, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
                       complete(close(channelId, scriptPubKey_opt))
                     }
                   } ~
@@ -172,12 +174,12 @@ trait NewService extends Directives with Logging with MetaService {
                     }
                   } ~
                   path("send") {
-                    formFields("amountMsat".as[Long].?, "paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "nodeId".as[PublicKey].?, "invoice".as[PaymentRequest].?) { (amountMsat, paymentHash, nodeId, invoice) =>
+                    formFields("amountMsat".as[Long].?, "paymentHash".as[ByteVector32](sha256HashUnmarshaller).?, "nodeId".as[PublicKey].?, "invoice".as[PaymentRequest].?) { (amountMsat, paymentHash, nodeId, invoice) =>
                       complete(send(nodeId, amountMsat, paymentHash, invoice))
                     }
                   } ~
                   path("checkpayment") {
-                    formFields("paymentHash".as[BinaryData](sha256HashUnmarshaller).?, "invoice".as[PaymentRequest].?) { (paymentHash, invoice) =>
+                    formFields("paymentHash".as[ByteVector32](sha256HashUnmarshaller).?, "invoice".as[PaymentRequest].?) { (paymentHash, invoice) =>
                       checkpayment(paymentHash, invoice)
                     }
                   } ~
@@ -221,7 +223,7 @@ trait NewService extends Directives with Logging with MetaService {
       channelFlags = flags.map(_.toByte))).mapTo[String]
   }
 
-  def close(channelId: BinaryData, scriptPubKey: Option[BinaryData]): Future[String] = {
+  def close(channelId: ByteVector32, scriptPubKey: Option[ByteVector]): Future[String] = {
     sendToChannel(channelId.toString(), CMD_CLOSE(scriptPubKey)).mapTo[String]
   }
 
@@ -240,16 +242,16 @@ trait NewService extends Directives with Logging with MetaService {
 
   def channelsInfo(toRemoteNode: Option[PublicKey]): Future[Iterable[RES_GETINFO]] = toRemoteNode match {
     case Some(pk) => for {
-      channelsId <- (appKit.register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == pk).keys)
+      channelsId <- (appKit.register ? 'channelsTo).mapTo[Map[ByteVector, PublicKey]].map(_.filter(_._2 == pk).keys)
       channels <- Future.sequence(channelsId.map(channelId => sendToChannel(channelId.toString(), CMD_GETINFO).mapTo[RES_GETINFO]))
     } yield channels
     case None => for {
-      channels_id <- (appKit.register ? 'channels).mapTo[Map[BinaryData, ActorRef]].map(_.keys)
+      channels_id <- (appKit.register ? 'channels).mapTo[Map[ByteVector, ActorRef]].map(_.keys)
       channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]))
     } yield channels
   }
 
-  def channelInfo(channelId: BinaryData): Future[RES_GETINFO] = {
+  def channelInfo(channelId: ByteVector32): Future[RES_GETINFO] = {
     sendToChannel(channelId.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
   }
 
@@ -279,7 +281,7 @@ trait NewService extends Directives with Logging with MetaService {
     case _ => reject(UnknownParamsRejection("Wrong params for method 'findroute'"))
   }
 
-  def send(nodeId_opt: Option[PublicKey], amount_opt: Option[Long], paymentHash_opt: Option[BinaryData], invoice_opt: Option[PaymentRequest]): Route = {
+  def send(nodeId_opt: Option[PublicKey], amount_opt: Option[Long], paymentHash_opt: Option[ByteVector32], invoice_opt: Option[PaymentRequest]): Route = {
     val (targetNodeId, paymentHash, amountMsat) = (nodeId_opt, amount_opt, paymentHash_opt, invoice_opt) match {
       case (Some(nodeId), Some(amount), Some(ph), None) => (nodeId, ph, amount)
       case (None, None, None, Some(invoice@PaymentRequest(_, Some(amount), _, target, _, _))) => (target, invoice.paymentHash, amount.toLong)
@@ -295,7 +297,7 @@ trait NewService extends Directives with Logging with MetaService {
     })
   }
 
-  def checkpayment(paymentHash_opt: Option[BinaryData], invoice_opt: Option[PaymentRequest]): Route = (paymentHash_opt, invoice_opt) match {
+  def checkpayment(paymentHash_opt: Option[ByteVector32], invoice_opt: Option[PaymentRequest]): Route = (paymentHash_opt, invoice_opt) match {
     case (Some(ph), None) => complete((appKit.paymentHandler ? CheckPayment(ph)).mapTo[Boolean])
     case (None, Some(invoice)) => complete((appKit.paymentHandler ? CheckPayment(invoice.paymentHash)).mapTo[Boolean])
     case _ => reject(UnknownParamsRejection("Wrong params for method 'checkpayment'"))
@@ -335,7 +337,7 @@ trait NewService extends Directives with Logging with MetaService {
   def sendToChannel(channelIdentifier: String, request: Any): Future[Any] =
     for {
       fwdReq <- Future(Register.ForwardShortId(ShortChannelId(channelIdentifier), request))
-        .recoverWith { case _ => Future(Register.Forward(BinaryData(channelIdentifier), request)) }
+        .recoverWith { case _ => Future(Register.Forward(ByteVector32.fromValidHex(channelIdentifier), request)) }
         .recoverWith { case _ => Future.failed(new RuntimeException(s"invalid channel identifier '$channelIdentifier'")) }
       res <- appKit.register ? fwdReq
     } yield res
