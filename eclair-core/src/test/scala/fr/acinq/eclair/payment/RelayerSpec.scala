@@ -362,7 +362,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     // we build a fake htlc for the downstream channel
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000L, paymentHash = ByteVector32.Zeroes, cltvExpiry = 4200, onionRoutingPacket = ByteVector.empty)
-    val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 42, reason = Sphinx.createErrorPacket(ByteVector32.One, TemporaryChannelFailure(channelUpdate_cd)))
+    val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 42, reason = Sphinx.createErrorPacket(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
     val origin = Relayed(channelId_ab, 150, 11000000L, 10000000L)
     sender.send(relayer, ForwardFail(fail_ba, origin, add_bc))
 

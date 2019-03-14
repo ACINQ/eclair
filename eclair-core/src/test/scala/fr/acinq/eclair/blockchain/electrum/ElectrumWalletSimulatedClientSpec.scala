@@ -27,6 +27,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import org.scalatest.FunSuiteLike
+import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 import scala.concurrent.duration._
@@ -35,7 +36,7 @@ import scala.concurrent.duration._
 class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
   val sender = TestProbe()
 
-  val entropy = ByteVector32.One
+  val entropy = ByteVector32(ByteVector.fill(32)(1))
   val mnemonics = MnemonicCode.toMnemonics(entropy)
   val seed = MnemonicCode.toSeed(mnemonics, "")
 
@@ -170,7 +171,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     }
     val key = wallet.stateData.accountKeys(0)
     val scriptHash = computeScriptHashFromPublicKey(key.publicKey)
-    wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32.One.toHex)
+    wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(1)).toHex)
     client.expectMsg(GetScriptHashHistory(scriptHash))
 
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(100000), ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
@@ -201,7 +202,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
           TestActor.KeepRunning
       }
     })
-    probe.send(wallet, GetMerkleResponse(tx.txid, ByteVector32.One :: Nil, 2, 0))
+    probe.send(wallet, GetMerkleResponse(tx.txid, ByteVector32(ByteVector.fill(32)(1)) :: Nil, 2, 0))
     watcher.expectTerminated(probe.ref)
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
 

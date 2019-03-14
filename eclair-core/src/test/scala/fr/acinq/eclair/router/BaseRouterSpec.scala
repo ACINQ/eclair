@@ -43,7 +43,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
 
   case class FixtureParam(router: ActorRef, watcher: TestProbe)
 
-  val remoteNodeId = PrivateKey(ByteVector32.One, compressed = true).publicKey
+  val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), compressed = true).publicKey
 
   val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
   val (a, b, c, d, e, f) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey)

@@ -53,7 +53,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val pr = sender.expectMsgType[PaymentRequest]
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === false)
-      val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
@@ -67,7 +67,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val pr = sender.expectMsgType[PaymentRequest]
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === false)
-      val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
@@ -81,7 +81,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val pr = sender.expectMsgType[PaymentRequest]
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === false)
-      val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat.amount, pr.paymentHash, cltvExpiry = Globals.blockCount.get() + 3, ByteVector.empty)
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, cltvExpiry = Globals.blockCount.get() + 3, ByteVector.empty)
       sender.send(handler, add)
       assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(FinalExpiryTooSoon))
       eventListener.expectNoMsg(300 milliseconds)
@@ -95,7 +95,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val pr = sender.expectMsgType[PaymentRequest]
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Boolean] === false)
-      val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
       sender.send(handler, add)
       assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(UnknownPaymentHash))
       // We chose UnknownPaymentHash on purpose. So if you have expired by 1 second or 1 hour you get the same error message.

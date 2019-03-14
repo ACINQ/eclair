@@ -45,7 +45,7 @@ object TestWallet {
 
   def makeDummyFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): MakeFundingTxResponse = {
     val fundingTx = Transaction(version = 2,
-      txIn = TxIn(OutPoint(ByteVector32.One, 42), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+      txIn = TxIn(OutPoint(ByteVector32(ByteVector.fill(32)(1)), 42), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
       txOut = TxOut(amount, pubkeyScript) :: Nil,
       lockTime = 0)
     MakeFundingTxResponse(fundingTx, 0, Satoshi(420))

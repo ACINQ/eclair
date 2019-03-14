@@ -40,7 +40,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   val feeRatePerKw = 20000
   val minimumFee = Satoshi(2000)
 
-  val master = DeterministicWallet.generate(ByteVector32.One)
+  val master = DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1)))
   val accountMaster = accountKey(master, Block.RegtestGenesisBlock.hash)
   val accountIndex = 0
 
@@ -98,7 +98,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     val state1 = addFunds(state, state.accountKeys.head, 1 btc)
     val (confirmed1, unconfirmed1) = state1.balance
 
-    val pub = PrivateKey(ByteVector32.One, compressed = true).publicKey
+    val pub = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), compressed = true).publicKey
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(pub)) :: Nil, lockTime = 0)
     val (state2, tx1, fee1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
     val Some((_, _, Some(fee))) = state2.computeTransactionDelta(tx1)

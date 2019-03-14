@@ -32,6 +32,7 @@ import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JDecimal, JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import scodec.bits.ByteVector
 
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -42,7 +43,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   import ElectrumWallet._
 
-  val entropy = ByteVector32.One
+  val entropy = ByteVector32(ByteVector.fill(32)(1))
   val mnemonics = MnemonicCode.toMnemonics(entropy)
   val seed = MnemonicCode.toSeed(mnemonics, "")
   logger.info(s"mnemonic codes for our wallet: $mnemonics")

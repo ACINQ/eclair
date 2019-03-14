@@ -234,7 +234,7 @@ class PaymentRequestSpec extends FunSuite {
       timestamp = System.currentTimeMillis() / 1000L,
       nodeId = nodeId,
       tags = List(
-        PaymentHash(ByteVector32.One),
+        PaymentHash(ByteVector32(ByteVector.fill(32)(1))),
         Description("description"),
         UnknownTag21(BitVector("some data we don't understand".getBytes))
       ),

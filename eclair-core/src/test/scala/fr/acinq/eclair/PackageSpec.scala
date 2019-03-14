@@ -40,7 +40,7 @@ class PackageSpec extends FunSuite {
   }
 
   test("decode base58 addresses") {
-    val priv = PrivateKey(ByteVector32.One, compressed = true)
+    val priv = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), compressed = true)
     val pub = priv.publicKey
 
     // p2pkh
@@ -71,7 +71,7 @@ class PackageSpec extends FunSuite {
   }
 
   test("decode bech32 addresses") {
-    val priv = PrivateKey(ByteVector32.One, compressed = true)
+    val priv = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), compressed = true)
     val pub = priv.publicKey
 
     // p2wpkh

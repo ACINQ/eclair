@@ -48,7 +48,7 @@ class ChannelStateSpec extends FunSuite {
 }
 
 object ChannelStateSpec {
-  val keyManager = new LocalKeyManager(ByteVector32.One, Block.RegtestGenesisBlock.hash)
+  val keyManager = new LocalKeyManager(ByteVector32(ByteVector.fill(32)(1)), Block.RegtestGenesisBlock.hash)
   val localParams = LocalParams(
     keyManager.nodeId,
     channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
@@ -71,7 +71,7 @@ object ChannelStateSpec {
     htlcMinimumMsat = 5000,
     toSelfDelay = 144,
     maxAcceptedHtlcs = 50,
-    fundingPubKey = PrivateKey(ByteVector32.One :+ 1.toByte).publicKey,
+    fundingPubKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)) :+ 1.toByte).publicKey,
     revocationBasepoint = Scalar(ByteVector.fill(32)(2)).toPoint,
     paymentBasepoint = Scalar(ByteVector.fill(32)(3)).toPoint,
     delayedPaymentBasepoint = Scalar(ByteVector.fill(32)(4)).toPoint,
@@ -108,7 +108,7 @@ object ChannelStateSpec {
     remoteNextCommitInfo = Right(randomKey.publicKey),
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = ByteVector32.Zeroes)
 
-  val channelUpdate = Announcements.makeChannelUpdate(ByteVector32.One, randomKey, randomKey.publicKey, ShortChannelId(142553), 42, 15, 575, 53, Channel.MAX_FUNDING_SATOSHIS * 1000L)
+  val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), 42, 15, 575, 53, Channel.MAX_FUNDING_SATOSHIS * 1000L)
 
   val normal = DATA_NORMAL(commitments, ShortChannelId(42), true, None, channelUpdate, None, None)
 }

@@ -335,7 +335,7 @@ class RouteCalculationSpec extends FunSuite {
 
   test("compute an example sig") {
     val data = ByteVector32.Zeroes
-    val key = PrivateKey(ByteVector32.One)
+    val key = PrivateKey(ByteVector32(ByteVector.fill(32)(1)))
     val sig = Crypto.encodeSignature(Crypto.sign(data, key))
     assert(Crypto.isDERSignature(sig :+ 1.toByte))
   }

@@ -864,7 +864,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.expectMsgType[JValue](10 seconds)
     logger.info(s"simulated ${channels.size} channels")
 
-    val remoteNodeId = PrivateKey(ByteVector32.One, true).publicKey
+    val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), true).publicKey
 
     // then we make the announcements
     val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))
