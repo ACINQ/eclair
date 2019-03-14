@@ -28,7 +28,7 @@ import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.scalatest.Outcome
 import scodec.bits.ByteVector
 import org.scalatest.{Outcome, Tag}
-
+import scodec.bits._
 import scala.concurrent.duration._
 
 /**
@@ -44,7 +44,7 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelp
     import setup._
 
     val (aliceParams, bobParams) = if(test.tags.contains("simplified_commitment"))
-      (Alice.channelParams.copy(localFeatures = BinaryData("0200")), Bob.channelParams.copy(localFeatures = BinaryData("0200")))
+      (Alice.channelParams.copy(localFeatures = hex"0200"), Bob.channelParams.copy(localFeatures = hex"0200"))
     else
       (Alice.channelParams, Bob.channelParams)
 

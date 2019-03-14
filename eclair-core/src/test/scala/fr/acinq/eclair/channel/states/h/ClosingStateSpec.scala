@@ -271,7 +271,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // an error occurs and alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val htlcTimeoutTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.head.txinfo.tx
-    alice ! Error("00" * 32, "oops".getBytes)
+    alice ! Error(ByteVector32.Zeroes, "oops")
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))        // commit tx
     val pushMeTx = alice2blockchain.expectMsgType[PublishAsap].tx // pushMe tx
     assert(alice2blockchain.expectMsgType[PublishAsap].tx.txIn.head.outPoint.txid == aliceCommitTx.txid) // claim-main-delayed

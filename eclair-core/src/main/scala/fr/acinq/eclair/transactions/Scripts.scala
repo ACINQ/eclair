@@ -289,7 +289,7 @@ object Scripts {
     * @param sig
     * @return
     */
-  def claimPushMeOutputWithKey(sig: BinaryData) = ScriptWitness(sig :: Nil)
+  def claimPushMeOutputWithKey(sig: ByteVector) = ScriptWitness(sig :: Nil)
 
   /**
     * The script spending 'pushMeSimplified' outputs, 10 block delay - no signature - version.

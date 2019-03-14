@@ -179,7 +179,7 @@ class TransactionsSpec extends FunSuite with Logging {
     val localPaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
     val localDelayedPaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
     val remotePaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-    val remoteDelayedPaymentPriv = PrivateKey(BinaryData("a9" * 32) :+ 1.toByte)
+    val remoteDelayedPaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
     val localHtlcPriv = PrivateKey(randomBytes32 :+ 1.toByte)
     val remoteHtlcPriv = PrivateKey(randomBytes32 :+ 1.toByte)
     val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32, true).publicKey))

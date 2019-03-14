@@ -172,15 +172,15 @@ class ChannelCodecsSpec extends FunSuite {
     // currently version=0 and discriminator type=1
     assert(bin_old.startsWith(hex"000001"))
     // let's decode the old data (this will use the old codec that provides default values for new fields)
-    val data_new = stateDataCodec.decode(bin_old.toBitVector).require.value
+    val data_new = stateDataCodec(VersionCommitmentV1).decode(bin_old.toBitVector).require.value
     assert(data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx === None)
     assert(Platform.currentTime / 1000 - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince < 3600) // we just set this timestamp to current time
     // and re-encode it with the new codec
-    val bin_new = ByteVector(stateDataCodec.encode(data_new).require.toByteVector.toArray)
+    val bin_new = ByteVector(stateDataCodec(VersionCommitmentV1).encode(data_new).require.toByteVector.toArray)
     // data should now be encoded under the new format, with version=0 and type=8
     assert(bin_new.startsWith(hex"000008"))
     // now let's decode it again
-    val data_new2 = stateDataCodec.decode(bin_new.toBitVector).require.value
+    val data_new2 = stateDataCodec(VersionCommitmentV1).decode(bin_new.toBitVector).require.value
     // data should match perfectly
     assert(data_new === data_new2)
   }

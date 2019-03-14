@@ -255,7 +255,7 @@ object Transactions {
 
       val tx = Transaction(
         version = 2,
-        txIn = TxIn(commitTxInput.outPoint, Array.emptyByteArray, sequence = sequence) :: Nil,
+        txIn = TxIn(commitTxInput.outPoint, ByteVector.empty, sequence = sequence) :: Nil,
         txOut = toLocalDelayedOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ htlcOfferedOutputs ++ htlcReceivedOutputs ++ toLocalPushMe_opt.toSeq ++ toRemotePushMe_opt.toSeq,
         lockTime = locktime)
       CommitTx(commitTxInput, LexicographicalOrdering.sort(tx))
@@ -387,12 +387,12 @@ object Transactions {
         // unsigned tx
         val tx = Transaction(
           version = 2,
-          txIn = TxIn(input.outPoint, Array.emptyByteArray, 0x00000000L) :: Nil,
+          txIn = TxIn(input.outPoint, ByteVector.empty, 0x00000000L) :: Nil,
           txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
           lockTime = 0)
 
         // compute weight with a dummy 73 bytes signature (the largest you can get) and a dummy 33 bytes pubkey
-        Transactions.addSigs(ClaimP2WPKHOutputTx(input, tx), BinaryData("00" * 33), BinaryData("00" * 73))
+        Transactions.addSigs(ClaimP2WPKHOutputTx(input, tx), ByteVector.fill(33)(0), ByteVector.fill(73)(0))
     }
 
 
@@ -550,12 +550,12 @@ object Transactions {
 
     val tx = Transaction(
       version = 2,
-      txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
+      txIn = TxIn(input.outPoint, ByteVector.empty, 0xffffffffL) :: Nil,
       txOut = TxOut(pushMeValue, List.empty) :: Nil,  // TODO to what do we spend the pushMe? FIXME
       lockTime = 0
     )
 
-    val weight = Transactions.addSigs(PushMeTx(input, tx), BinaryData("00" * 73)).tx.weight()
+    val weight = Transactions.addSigs(PushMeTx(input, tx), ByteVector.fill(73)(0)).tx.weight()
     val fee = weight2fee(feeratePerKw, weight)
 
     val amount = input.txOut.amount - fee
@@ -642,7 +642,7 @@ object Transactions {
     closingTx.copy(tx = closingTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(pushMeTx: PushMeTx, localSig: BinaryData): PushMeTx = {
+  def addSigs(pushMeTx: PushMeTx, localSig: ByteVector): PushMeTx = {
     val witness = Scripts.claimPushMeOutputWithKey(localSig)
     pushMeTx.copy(tx = pushMeTx.tx.updateWitness(0, witness))
   }

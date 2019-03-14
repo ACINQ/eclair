@@ -180,22 +180,6 @@ object ChannelCodecs extends Logging {
     (wire: BitVector) => spentListCodec.decode(wire).map(_.map(_.toMap))
   )
 
-  val commitmentsCodec: Codec[Commitments] = (
-    ("localParams" | localParamsCodec) ::
-      ("remoteParams" | remoteParamsCodec) ::
-      ("channelFlags" | byte) ::
-      ("localCommit" | localCommitCodec) ::
-      ("remoteCommit" | remoteCommitCodec) ::
-      ("localChanges" | localChangesCodec) ::
-      ("remoteChanges" | remoteChangesCodec) ::
-      ("localNextHtlcId" | uint64) ::
-      ("remoteNextHtlcId" | uint64) ::
-      ("originChannels" | originsMapCodec) ::
-      ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, point)) ::
-      ("commitInput" | inputInfoCodec) ::
-      ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
-      ("channelId" | bytes32)).as[Commitments]
-
   val closingTxProposedCodec: Codec[ClosingTxProposed] = (
     ("unsignedTx" | txCodec) ::
       ("localClosingSigned" | closingSignedCodec)).as[ClosingTxProposed]
@@ -239,23 +223,24 @@ object ChannelCodecs extends Logging {
       ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, point)) ::
       ("commitInput" | inputInfoCodec) ::
       ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
-      ("channelId" | binarydata(32)) ::
+      ("channelId" | bytes32) ::
       ("version" | provide(commitmentVersion))).as[Commitments]
   }
 
   // this is a decode-only codec compatible with versions 997acee and below, with placeholders for new fields
-  val DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
+    ("commitments" | commitmentCodec(commitmentVersion)) ::
       ("fundingTx" | provide[Option[Transaction]](None)) ::
       ("waitingSince" | provide(compat.Platform.currentTime / 1000)) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
 
-
   def DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentCodec(commitmentVersion)) ::
+      ("fundingTx" | optional(bool, txCodec)) ::
+      ("waitingSince" | int64) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
-      ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
+      ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
 
   def DATA_WAIT_FOR_FUNDING_LOCKED_Codec(commitmentVersion: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
     ("commitments" | commitmentCodec(commitmentVersion)) ::
@@ -299,7 +284,7 @@ object ChannelCodecs extends Logging {
 
   def stateDataCodec(commitmentVersion: CommitmentVersion): Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
     .typecase(0x08, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitmentVersion))
-    .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec)
+    .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec(commitmentVersion))
     .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec(commitmentVersion))
     .typecase(0x03, DATA_NORMAL_Codec(commitmentVersion))
     .typecase(0x04, DATA_SHUTDOWN_Codec(commitmentVersion))

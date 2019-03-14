@@ -188,8 +188,8 @@ final case class DATA_CLOSING(commitments: Commitments,
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
 trait ParamsWithFeatures {
-  val globalFeatures: BinaryData
-  val localFeatures: BinaryData
+  val globalFeatures: ByteVector
+  val localFeatures: ByteVector
 }
 
 final case class LocalParams(nodeId: PublicKey,

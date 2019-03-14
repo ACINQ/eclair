@@ -26,7 +26,7 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.scalatest.{Outcome, Tag}
-
+import scodec.bits._
 import scala.concurrent.duration._
 
 /**
@@ -46,8 +46,8 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
 
-    val aliceLocalFeatures = if (test.tags.contains("simplified_commitment")) BinaryData("0200") else Alice.channelParams.localFeatures
-    val bobLocalFeatures = if (test.tags.contains("simplified_commitment")) BinaryData("0200") else Bob.channelParams.localFeatures
+    val aliceLocalFeatures = if (test.tags.contains("simplified_commitment")) hex"0200" else Alice.channelParams.localFeatures
+    val bobLocalFeatures = if (test.tags.contains("simplified_commitment")) hex"0200" else Bob.channelParams.localFeatures
 
     val aliceInit = Init(Alice.channelParams.globalFeatures, aliceLocalFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, bobLocalFeatures)

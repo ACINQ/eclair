@@ -292,7 +292,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (option_simplified_commitment)", Tag("simplified_commitment")) { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val htlc = UpdateAddHtlc("00" * 32, 0, 150000, BinaryData("42" * 32), 400144, defaultOnion)
+    val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, 150000, ByteVector32(ByteVector.fill(32)(42)), 400144, defaultOnion)
     bob ! htlc
     awaitCond(initialData.commitments.version == VersionSimplifiedCommitment)
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ htlc), remoteNextHtlcId = 1)))
@@ -1431,7 +1431,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(initialData.commitments.version == VersionSimplifiedCommitment)
 
     // Alice sends update_fee to Bob but this shouldn't happen with option_simplified_commitment so Bob will reply Error
-    val fee1 = UpdateFee("00" * 32, 12000)
+    val fee1 = UpdateFee(ByteVector32.Zeroes, 12000)
     bob ! fee1
 
     bob2alice.expectMsgType[Error] // should bob close the channel? Yes
