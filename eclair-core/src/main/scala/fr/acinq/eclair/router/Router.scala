@@ -354,11 +354,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       val staleNodes = potentialStaleNodes.filterNot(nodeId => hasChannels(nodeId, channels1.values))
 
       // let's clean the db and send the events
+      db.removeChannels(staleChannels) // NB: this also removes channel updates
+      // we keep track of recently pruned channels so we don't revalidate them (zombie churn)
+      db.addToPruned(staleChannels)
       staleChannels.foreach { shortChannelId =>
         log.info("pruning shortChannelId={} (stale)", shortChannelId)
-        db.removeChannel(shortChannelId) // NB: this also removes channel updates
-        // we keep track of recently pruned channels so we don't revalidate them (zombie churn)
-        db.addToPruned(shortChannelId)
         context.system.eventStream.publish(ChannelLost(shortChannelId))
       }
 

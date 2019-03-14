@@ -24,8 +24,8 @@ import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.io.Client.ConnectionFailed
-import fr.acinq.eclair.tor.Socks5Connection.{Socks5Connect, Socks5Connected}
-import fr.acinq.eclair.tor.{Socks5Connection, Socks5ProxyParams}
+import fr.acinq.eclair.tor.Socks5Connection.{Socks5Connect, Socks5Connected, Socks5Error}
+import fr.acinq.eclair.tor.{Socks5Connection, Socks5ProxyParams, TorException}
 import fr.acinq.eclair.wire.NodeAddress
 import fr.acinq.eclair.{Logs, NodeParams}
 
@@ -45,7 +45,7 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Ine
   def receive: Receive = {
     case 'connect =>
       val (peerOrProxyAddress, proxyParams_opt) = nodeParams.socksProxy_opt.map(proxyParams => (proxyParams, Socks5ProxyParams.proxyAddress(remoteAddress, proxyParams))) match {
-          case Some((proxyParams, Some(proxyAddress))) =>
+        case Some((proxyParams, Some(proxyAddress))) =>
           log.info(s"connecting to SOCKS5 proxy ${str(proxyAddress)}")
           (proxyAddress, Some(proxyParams))
         case _ =>
@@ -100,7 +100,16 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Ine
   }
 
   // we should not restart a failing socks client
-  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
+  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = false) {
+    case t =>
+      Logs.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
+        t match {
+          case Socks5Error(msg) => log.info(s"SOCKS5 error: $msg")
+          case _ => log.error(t, "")
+        }
+      }(log)
+      SupervisorStrategy.Stop
+  }
 
   override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
 
@@ -114,4 +123,5 @@ object Client {
   def props(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin_opt))
 
   case class ConnectionFailed(address: InetSocketAddress) extends RuntimeException(s"connection failed to $address")
+
 }
