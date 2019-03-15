@@ -87,13 +87,14 @@ trait NewService extends Directives with Logging with MetaService {
   }
 
   case object UnknownMethodRejection extends Rejection
+
   case object UnknownParamsRejection extends Rejection
 
   val route: Route = {
     respondWithDefaultHeaders(customHeaders) {
       handleExceptions(apiExceptionHandler) {
-        handleRejections(apiRejectionHandler){
-          withRequestTimeoutResponse(timeoutResponse){
+        handleRejections(apiRejectionHandler) {
+          withRequestTimeoutResponse(timeoutResponse) {
             authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator) { _ =>
               post {
                 path("getinfo") {
@@ -126,7 +127,7 @@ trait NewService extends Directives with Logging with MetaService {
                     formFields(channelIdNamedParameter) { channelId =>
                       complete(eclairApi.forceClose(Left(channelId)))
                     } ~ formFields(shortChannelIdNamedParameter) { shortChannelId =>
-                        complete(eclairApi.forceClose(Right(shortChannelId)))
+                      complete(eclairApi.forceClose(Right(shortChannelId)))
                     }
                   } ~
                   path("updaterelayfee") {
@@ -175,10 +176,10 @@ trait NewService extends Directives with Logging with MetaService {
                       case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"))
                     }
                   } ~ path("findRouteByNode") {
-                    formFields("nodeId".as[PublicKey], "amountMsat".as[Long]) { (nodeId, amount) =>
-                      complete(eclairApi.findRoute(nodeId, amount))
-                    }
-                  } ~
+                  formFields("nodeId".as[PublicKey], "amountMsat".as[Long]) { (nodeId, amount) =>
+                    complete(eclairApi.findRoute(nodeId, amount))
+                  }
+                } ~
                   path("sendToInvoice") {
                     formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
                       case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) =>

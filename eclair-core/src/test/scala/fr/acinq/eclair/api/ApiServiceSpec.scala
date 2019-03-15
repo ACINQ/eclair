@@ -51,13 +51,13 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     nodeParams = Alice.nodeParams,
     system = system,
     watcher = system.actorOf(Props(new MockActor)),
-    paymentHandler =  system.actorOf(Props(new MockActor)),
-    register =  system.actorOf(Props(new MockActor)),
-    relayer =  system.actorOf(Props(new MockActor)),
+    paymentHandler = system.actorOf(Props(new MockActor)),
+    register = system.actorOf(Props(new MockActor)),
+    relayer = system.actorOf(Props(new MockActor)),
     router = system.actorOf(Props(new MockActor)),
-    switchboard =  system.actorOf(Props(new MockActor)),
-    paymentInitiator =  system.actorOf(Props(new MockActor)),
-    server =  system.actorOf(Props(new MockActor)),
+    switchboard = system.actorOf(Props(new MockActor)),
+    paymentInitiator = system.actorOf(Props(new MockActor)),
+    server = system.actorOf(Props(new MockActor)),
     wallet = new TestWallet
   )
 
@@ -71,7 +71,9 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   )
 
   class MockActor extends Actor {
-    override def receive: Receive = { case _ => }
+    override def receive: Receive = {
+      case _ =>
+    }
   }
 
   class MockService(kit: Kit = defaultMockKit, getInfoResp: GetInfoResponse = defaultGetInfo) extends NewService {
@@ -83,7 +85,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     override implicit val mat: ActorMaterializer = materializer
   }
 
-  test("API service should handle failures correctly"){
+  test("API service should handle failures correctly") {
     val mockService = new MockService
 
     // no auth
@@ -96,7 +98,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     // wrong auth
     Post("/help") ~>
-      addCredentials(BasicHttpCredentials("", mockService.password+"what!")) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password + "what!")) ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
@@ -143,7 +145,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        matchTestJson("help", false ,resp)
+        matchTestJson("help", false, resp)
       }
 
   }
@@ -202,7 +204,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(status == OK)
         val resp = entityAs[String]
         assert(resp.toString.contains(Alice.nodeParams.nodeId.toString))
-        matchTestJson("getinfo", false ,resp)
+        matchTestJson("getinfo", false, resp)
       }
   }
 
@@ -229,7 +231,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(status == OK)
         val resp = entityAs[String]
         assert(resp.contains(Alice.nodeParams.nodeId.toString))
-        matchTestJson("close", false ,resp)
+        matchTestJson("close", false, resp)
       }
   }
 
@@ -247,7 +249,6 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         }
       }))
     ))
-
 
     Post("/connect", FormData("nodeId" -> remoteNodeId, "host" -> remoteHost, "port" -> remotePort).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
@@ -272,7 +273,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   private def matchTestJson(apiName: String, overWrite: Boolean, response: String)(implicit formats: Formats) = {
     val p = Paths.get(s"src/test/resources/api/$apiName")
 
-    if(overWrite) {
+    if (overWrite) {
       Files.writeString(p, response)
       assert(false, "'overWrite' should be false before commit")
     } else {
