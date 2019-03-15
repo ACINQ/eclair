@@ -107,8 +107,10 @@ trait NewService extends Directives with Logging with MetaService {
                     complete(help)
                   } ~
                   path("connect") {
-                    formFields("nodeId".as[PublicKey].?, "host".as[String].?, "port".as[Int].?, "uri".as[String].?) { (nodeId, host, port, uri) =>
-                      connect(nodeId, host, port, uri)
+                    formFields("uri".as[String]) { uri =>
+                      complete(connect(uri))
+                    } ~ formFields("nodeId".as[PublicKey], "host".as[String], "port".as[Int]) { (nodeId, host, port) =>
+                      complete(connect(s"$nodeId@$host:$port"))
                     }
                   } ~
                   path("open") {
@@ -118,8 +120,10 @@ trait NewService extends Directives with Logging with MetaService {
                     }
                   } ~
                   path("close") {
-                    formFields(channelIdNamedParameter.?, shortChannelIdNamedParameter.?, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (channelId_opt, shortChannelId_opt, scriptPubKey_opt) =>
-                      close(channelId_opt, shortChannelId_opt, scriptPubKey_opt)
+                    formFields(channelIdNamedParameter, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
+                      complete(close(Left(channelId), scriptPubKey_opt))
+                    } ~ formFields(shortChannelIdNamedParameter, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (shortChannelId, scriptPubKey_opt) =>
+                      complete(close(Right(shortChannelId), scriptPubKey_opt))
                     }
                   } ~
                   path("forceclose") {
@@ -167,18 +171,26 @@ trait NewService extends Directives with Logging with MetaService {
                     }
                   } ~
                   path("findroute") {
-                    formFields("nodeId".as[PublicKey].?, "amountMsat".as[Long].?, "invoice".as[PaymentRequest].?) { (nodeId, amount, invoice) =>
-                      findRoute(nodeId, amount, invoice)
+                    formFields(, "invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
+                      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) => complete(findRoute(nodeId, amount.toLong, invoice.routingInfo))
+                      case (invoice, Some(overrideAmount)) => complete(findRoute(invoice.nodeId, overrideAmount, invoice.routingInfo))
+                    } ~ formFields("nodeId".as[PublicKey], "amountMsat".as[Long]) { (nodeId, amount) =>
+                      complete(findRoute(nodeId, amount))
                     }
                   } ~
                   path("send") {
-                    formFields("amountMsat".as[Long].?, "paymentHash".as[ByteVector32](sha256HashUnmarshaller).?, "nodeId".as[PublicKey].?, "invoice".as[PaymentRequest].?) { (amountMsat, paymentHash, nodeId, invoice) =>
-                      complete(send(nodeId, amountMsat, paymentHash, invoice))
+                    formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
+                      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) => complete(send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo))
+                      case (invoice, Some(overrideAmount)) => complete(send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo))
+                    } ~ formFields("amountMsat".as[Long], "paymentHash".as[ByteVector32](sha256HashUnmarshaller), "nodeId".as[PublicKey]) { (amountMsat, paymentHash, nodeId) =>
+                      complete(send(nodeId, amountMsat, paymentHash))
                     }
                   } ~
                   path("checkpayment") {
-                    formFields("paymentHash".as[ByteVector32](sha256HashUnmarshaller).?, "invoice".as[PaymentRequest].?) { (paymentHash, invoice) =>
-                      checkpayment(paymentHash, invoice)
+                    formFields("paymentHash".as[ByteVector32](sha256HashUnmarshaller)) { paymentHash =>
+                      complete(checkpayment(paymentHash))
+                    } ~ formFields("invoice".as[PaymentRequest]) { invoice =>
+                      complete(checkpayment(invoice.paymentHash))
                     }
                   } ~
                   path("audit") {
@@ -206,10 +218,8 @@ trait NewService extends Directives with Logging with MetaService {
     }
   }
 
-  def connect(nodeId_opt: Option[PublicKey], host_opt:Option[String], port_opt: Option[Int], uri_opt: Option[String]): Route = (nodeId_opt, host_opt, port_opt, uri_opt) match {
-    case (None, None, None, Some(uri)) => complete((appKit.switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String])
-    case (Some(nodeId), Some(host), Some(port), None) => complete((appKit.switchboard ? Peer.Connect(NodeURI.parse(s"$nodeId@$host:$port"))).mapTo[String])
-    case _ => reject(UnknownParamsRejection("Wrong arguments for 'connect'"))
+  def connect(uri: String): Future[String] = {
+    (appKit.switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String]
   }
 
   def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int]): Future[String] = {
@@ -221,10 +231,8 @@ trait NewService extends Directives with Logging with MetaService {
       channelFlags = flags.map(_.toByte))).mapTo[String]
   }
 
-  def close(channelId_opt: Option[ByteVector32], shortChannelId_opt: Option[ShortChannelId], scriptPubKey: Option[ByteVector]): Route = (channelId_opt, shortChannelId_opt) match {
-    case (Some(channelId), None) => complete(sendToChannel(channelId.toString(), CMD_CLOSE(scriptPubKey)).mapTo[String])
-    case (None, Some(shortChannelId)) => complete(sendToChannel(shortChannelId.toString(), CMD_CLOSE(scriptPubKey)).mapTo[String])
-    case _ => reject(UnknownParamsRejection("Wrong params for method 'close'"))
+  def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String] = {
+    sendToChannel(channelIdentifier.fold[String](_.toString(), _.toString()), CMD_CLOSE(scriptPubKey)).mapTo[String]
   }
 
   def forceClose(channelId: String): Future[String] = {
@@ -272,35 +280,20 @@ trait NewService extends Directives with Logging with MetaService {
     }
   }
 
-  def findRoute(nodeId_opt: Option[PublicKey], amount_opt: Option[Long], invoice_opt: Option[PaymentRequest]): Route = (nodeId_opt, amount_opt, invoice_opt) match {
-    case (None, None, Some(invoice@PaymentRequest(_, Some(amountMsat), _, targetNodeId, _, _))) =>
-      complete((appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amountMsat.toLong, assistedRoutes = invoice.routingInfo)).mapTo[RouteResponse])
-    case (None, Some(amountMsat), Some(invoice)) =>
-      complete((appKit.router ? RouteRequest(appKit.nodeParams.nodeId, invoice.nodeId, amountMsat, assistedRoutes = invoice.routingInfo)).mapTo[RouteResponse])
-    case (Some(nodeId), Some(amountMsat), None) => complete((appKit.router ? RouteRequest(appKit.nodeParams.nodeId, nodeId, amountMsat)).mapTo[RouteResponse])
-    case _ => reject(UnknownParamsRejection("Wrong params for method 'findroute'"))
+  def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse] = {
+    (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amountMsat, assistedRoutes)).mapTo[RouteResponse]
   }
 
-  def send(nodeId_opt: Option[PublicKey], amount_opt: Option[Long], paymentHash_opt: Option[ByteVector32], invoice_opt: Option[PaymentRequest]): Route = {
-    val (targetNodeId, paymentHash, amountMsat) = (nodeId_opt, amount_opt, paymentHash_opt, invoice_opt) match {
-      case (Some(nodeId), Some(amount), Some(ph), None) => (nodeId, ph, amount)
-      case (None, None, None, Some(invoice@PaymentRequest(_, Some(amount), _, target, _, _))) => (target, invoice.paymentHash, amount.toLong)
-      case (None, Some(amount), None, Some(invoice@PaymentRequest(_, Some(_), _, target, _, _))) => (target, invoice.paymentHash, amount) // invoice amount is overridden
-      case _ => return reject(UnknownParamsRejection("Wrong params for method 'send'"))
-    }
-
-    val sendPayment = SendPayment(amountMsat, paymentHash, targetNodeId, assistedRoutes = invoice_opt.map(_.routingInfo).getOrElse(Seq.empty)) // TODO add minFinalCltvExpiry
-
-    complete((appKit.paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
+  def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[PaymentResult] = {
+    val sendPayment = SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes) // TODO add minFinalCltvExpiry
+    (appKit.paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
       case s: PaymentSucceeded => s
       case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
-    })
+    }
   }
 
-  def checkpayment(paymentHash_opt: Option[ByteVector32], invoice_opt: Option[PaymentRequest]): Route = (paymentHash_opt, invoice_opt) match {
-    case (Some(ph), None) => complete((appKit.paymentHandler ? CheckPayment(ph)).mapTo[Boolean])
-    case (None, Some(invoice)) => complete((appKit.paymentHandler ? CheckPayment(invoice.paymentHash)).mapTo[Boolean])
-    case _ => reject(UnknownParamsRejection("Wrong params for method 'checkpayment'"))
+  def checkpayment(paymentHash: ByteVector32): Future[Boolean] = {
+    (appKit.paymentHandler ? CheckPayment(paymentHash)).mapTo[Boolean]
   }
 
   def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = {

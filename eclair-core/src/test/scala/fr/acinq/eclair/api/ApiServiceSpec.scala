@@ -35,11 +35,10 @@ import fr.acinq.eclair.channel.Register.ForwardShortId
 import org.json4s.{Formats, JValue}
 import org.json4s.jackson.Serialization
 import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
-
+import fr.acinq.eclair.io.Peer
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
-import scala.util.Try
 
 class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
@@ -119,7 +118,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       }
 
     // wrong params
-    Post("/connect", FormData("nodeId" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87", "uri" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735").toEntity) ~>
+    Post("/connect", FormData("urb" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       Route.seal(mockService.route) ~>
       check {
@@ -239,8 +238,44 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       }
   }
 
+  test("'connect' method should accept an URI and a triple with nodeId/host/port") {
+
+    val remoteNodeId = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"
+    val remoteHost = "93.137.102.239"
+    val remotePort = "9735"
+    val remoteUri = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735"
+
+    val mockService = new MockService(defaultMockKit.copy(
+      switchboard = system.actorOf(Props(new {} with MockActor {
+        override def receive = {
+          case Peer.Connect(_) => sender() ! "connected"
+        }
+      }))
+    ))
+
+
+    Post("/connect", FormData("nodeId" -> remoteNodeId, "host" -> remoteHost, "port" -> remotePort).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[String] == "\"connected\"")
+      }
+
+    Post("/connect", FormData("uri" -> remoteUri).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        println(entityAs[String])
+        assert(entityAs[String] == "\"connected\"")
+      }
+  }
+
   private def matchTestJson(apiName: String, overWrite: Boolean, response: String)(implicit formats: Formats) = {
-    val p = Paths.get(s"eclair-core/src/test/resources/api/$apiName")
+    val p = Paths.get(s"src/test/resources/api/$apiName")
 
     if(overWrite) {
       Files.writeString(p, response)
