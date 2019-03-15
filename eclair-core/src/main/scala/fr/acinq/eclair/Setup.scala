@@ -31,7 +31,7 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
-import fr.acinq.eclair.api.{EclairApi, GetInfoResponse, NewService, Service}
+import fr.acinq.eclair.api._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
@@ -262,7 +262,7 @@ class Setup(datadir: File,
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
         implicit val materializer = ActorMaterializer()
-        val api = if(config.getBoolean("api.use-old-api")){
+        val api = if(!config.getBoolean("api.use-old-api")) {
           new NewService {
 
           override val actorSystem = kit.system
@@ -274,7 +274,7 @@ class Setup(datadir: File,
             if (p.isEmpty) throw EmptyAPIPasswordException else p
           }
 
-          override def eclairApi: EclairApi = new fr.acinq.eclair.api.EclairApiImpl(kit, Future.successful(
+          override def eclairApi: EclairApi = new EclairApiImpl(kit, Future.successful(
             GetInfoResponse(nodeId = nodeParams.nodeId,
               alias = nodeParams.alias,
               port = config.getInt("server.port"),
