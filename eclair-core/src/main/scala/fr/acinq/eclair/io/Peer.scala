@@ -474,6 +474,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
 
     case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
+
+    case Event(_: BadMessage, _) => stay // we got disconnected while syncing
   }
 
   onTransition {
