@@ -262,7 +262,7 @@ class Setup(datadir: File,
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
         implicit val materializer = ActorMaterializer()
-        val api = if(config.getBoolean("api.use-new-version")){
+        val api = if(config.getBoolean("api.use-old-api")){
           new NewService {
 
           override val actorSystem = kit.system
