@@ -78,7 +78,7 @@ trait NewService extends Directives with Logging with MetaService {
   }
 
   val timeoutResponse: HttpRequest => HttpResponse = { r =>
-    HttpResponse(StatusCodes.RequestTimeout).withEntity(ContentTypes.`application/json`, """{ "result": null, "error": { "code": 408, "message": "request timed out"} } """)
+    HttpResponse(StatusCodes.RequestTimeout).withEntity(ContentTypes.`application/json`, "request timed out")
   }
 
   def userPassAuthenticator(credentials: Credentials): Future[Option[String]] = credentials match {
