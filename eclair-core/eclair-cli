@@ -32,9 +32,9 @@ Full documentation at: <https://github.com/ACINQ/eclair>"
 
 # Executes a JSON RPC call to a node listening on ${URL}
 call() {
-    jqexp='.'   # 'if .error == null then .result else .error.message end'
+    jqexp='.'
     # override default jq parsing expression
-    # if [ $# -ge 3 ] && [ ${FULL_OUTPUT} == "false" ]; then jqexp=${3}; fi
+    if [ $# -ge 3 ] && [ ${FULL_OUTPUT} == "false" ]; then jqexp=${3}; fi
 
     # set password
     if [ -z ${PASSWORD} ]; then auth="eclair-cli";
@@ -44,7 +44,6 @@ call() {
     for param in ${2}; do
       form_data="$form_data -F \"$param\""
     done;
-    #echo "FORM_DATA: $form_data"
 
     eval curl "--user ${auth} --silent --show-error -X POST $form_data ${URL}/${1}" | jq -r "$jqexp"
 }
@@ -92,9 +91,10 @@ case ${METHOD}_${#} in
 
     "peers_0")          call ${METHOD} "" ;;
 
-    "channel_1")        call ${METHOD} "$(printf channelId=%s ${1})" ;;
+    "channel_1")        call ${METHOD} "$(printf channelId=%s ${1})" ". | { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint }" ;;
 
-    "channels_1")       call ${METHOD} "$(printf toRemoteNodeId=%s ${1})" ;;
+    "channels_0")       call ${METHOD} "" ". | map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } )" ;;
+    "channels_1")       call ${METHOD} "$(printf toRemoteNodeId=%s ${1})" ". | map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } )" ;;
 
     "allnodes_0")       call ${METHOD} "" ;;
 
