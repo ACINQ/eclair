@@ -234,7 +234,7 @@ class RouterSpec extends BaseRouterSpec {
     val state = sender.expectMsgType[RoutingState]
     assert(state.channels.size == 4)
     assert(state.nodes.size == 6)
-    assert(state.updates.size == 8)
+    assert(state.channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size == 8)
   }
 
   test("ask for channels that we marked as stale for which we receive a new update") { fixture =>

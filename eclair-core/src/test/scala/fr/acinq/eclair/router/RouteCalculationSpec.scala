@@ -385,13 +385,15 @@ class RouteCalculationSpec extends FunSuite {
 
     val extraHops = extraHop1 :: extraHop2 :: extraHop3 :: extraHop4 :: Nil
 
-    val fakeUpdates = Router.toAssistedChannels(extraHops, e)
+    val fakeUpdates: Map[ShortChannelId, ExtraHop] = Router.toAssistedChannels(extraHops, e).map { case (shortChannelId, assistedChannel) =>
+      (shortChannelId, assistedChannel.extraHop)
+    }
 
     assert(fakeUpdates == Map(
-      ChannelDesc(extraHop1.shortChannelId, a, b) -> Router.toFakeUpdate(extraHop1),
-      ChannelDesc(extraHop2.shortChannelId, b, c) -> Router.toFakeUpdate(extraHop2),
-      ChannelDesc(extraHop3.shortChannelId, c, d) -> Router.toFakeUpdate(extraHop3),
-      ChannelDesc(extraHop4.shortChannelId, d, e) -> Router.toFakeUpdate(extraHop4)
+      extraHop1.shortChannelId -> extraHop1,
+      extraHop2.shortChannelId -> extraHop2,
+      extraHop3.shortChannelId -> extraHop3,
+      extraHop4.shortChannelId -> extraHop4
     ))
 
   }
@@ -496,19 +498,17 @@ class RouteCalculationSpec extends FunSuite {
 
     val publicChannels = channels.map { case (shortChannelId, announcement) =>
       val (_, update) = updates.find{ case (d, u) => d.shortChannelId == shortChannelId}.get
-      val pc = PublicChannel(announcement, ByteVector32.Zeroes, Satoshi(1000), update_1_opt = Some(update), update_2_opt = None)
+      val pc = PublicChannel(announcement, ByteVector32.Zeroes, Satoshi(1000), update_1_opt = Some(update), update_2_opt = Some(update))
       (shortChannelId, pc)
     }
 
 
     val ignored = Router.getIgnoredChannelDesc(publicChannels, ignoreNodes = Set(c, j, randomKey.publicKey))
 
-    assert(ignored.toSet === Set(
-      ChannelDesc(ShortChannelId(2L), b, c),
-      ChannelDesc(ShortChannelId(2L), c, b),
-      ChannelDesc(ShortChannelId(3L), c, d),
-      ChannelDesc(ShortChannelId(8L), i, j)
-    ))
+    assert(ignored.toSet.contains(ChannelDesc(ShortChannelId(2L), b, c)))
+    assert(ignored.toSet.contains(ChannelDesc(ShortChannelId(2L), c, b)))
+    assert(ignored.toSet.contains(ChannelDesc(ShortChannelId(3L), c, d)))
+    assert(ignored.toSet.contains(ChannelDesc(ShortChannelId(8L), i, j)))
   }
 
   test("limit routes to 20 hops") {

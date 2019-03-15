@@ -21,10 +21,12 @@ import java.sql.Connection
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.db.NetworkDb
-import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.router.{Announcements, PublicChannel}
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
+
+import scala.collection.immutable.SortedMap
 
 class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
 
@@ -99,13 +101,16 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     shortChannelIds.grouped(1000).foreach(removeChannelsInternal)
   }
 
-  override def listChannels(): Map[ChannelAnnouncement, (ByteVector32, Satoshi)] = {
+  override def listChannels(): SortedMap[ShortChannelId, PublicChannel] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT data, txid, capacity_sat FROM channels")
-      var m: Map[ChannelAnnouncement, (ByteVector32, Satoshi)] = Map()
+      var m = SortedMap.empty[ShortChannelId, PublicChannel]
       while (rs.next()) {
-        m += (channelAnnouncementCodec.decode(BitVector(rs.getBytes("data"))).require.value ->
-          (ByteVector32.fromValidHex(rs.getString("txid")), Satoshi(rs.getLong("capacity_sat"))))
+        val ann = channelAnnouncementCodec.decode(BitVector(rs.getBytes("data"))).require.value
+        val txId = ByteVector32.fromValidHex(rs.getString("txid"))
+        val capacity = rs.getLong("capacity_sat")
+
+        m = m + (ann.shortChannelId -> PublicChannel(ann, txId, Satoshi(capacity), None, None))
       }
       m
     }
@@ -129,7 +134,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
-  override def listChannelUpdates(): Seq[ChannelUpdate] = {
+  def listChannelUpdates(): Seq[ChannelUpdate] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT data FROM channel_updates")
       codecSequence(rs, channelUpdateCodec)
