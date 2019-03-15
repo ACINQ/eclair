@@ -262,28 +262,28 @@ class Setup(datadir: File,
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
         implicit val materializer = ActorMaterializer()
-        val api = if(!config.getBoolean("api.use-old-api")) {
+        val getInfo = GetInfoResponse(nodeId = nodeParams.nodeId,
+          alias = nodeParams.alias,
+          port = config.getInt("server.port"),
+          chainHash = nodeParams.chainHash,
+          blockHeight = Globals.blockCount.intValue(),
+          publicAddresses = nodeParams.publicAddresses)
+
+        val api = if (!config.getBoolean("api.use-old-api")) {
           new NewService {
 
-          override val actorSystem = kit.system
+            override val actorSystem = kit.system
 
-          override val mat = materializer
+            override val mat = materializer
 
-          override val password = {
-            val p = config.getString("api.password")
-            if (p.isEmpty) throw EmptyAPIPasswordException else p
+            override val password = {
+              val p = config.getString("api.password")
+              if (p.isEmpty) throw EmptyAPIPasswordException else p
+            }
+
+            override def eclairApi: EclairApi = new EclairApiImpl(kit, getInfo)
+
           }
-
-          override def eclairApi: EclairApi = new EclairApiImpl(kit, Future.successful(
-            GetInfoResponse(nodeId = nodeParams.nodeId,
-              alias = nodeParams.alias,
-              port = config.getInt("server.port"),
-              chainHash = nodeParams.chainHash,
-              blockHeight = Globals.blockCount.intValue(),
-              publicAddresses = nodeParams.publicAddresses))
-          )
-
-        }
         } else {
           new Service {
 
@@ -294,13 +294,7 @@ class Setup(datadir: File,
               if (p.isEmpty) throw EmptyAPIPasswordException else p
             }
 
-            override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
-              GetInfoResponse(nodeId = nodeParams.nodeId,
-                alias = nodeParams.alias,
-                port = config.getInt("server.port"),
-                chainHash = nodeParams.chainHash,
-                blockHeight = Globals.blockCount.intValue(),
-                publicAddresses = nodeParams.publicAddresses))
+            override def getInfoResponse: Future[GetInfoResponse] = Future.successful(getInfo)
 
             override def appKit: Kit = kit
 

@@ -35,8 +35,6 @@ import fr.acinq.eclair.channel.Register.ForwardShortId
 import org.json4s.{Formats, JValue}
 import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
 import fr.acinq.eclair.io.Peer
-
-import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
 
@@ -77,7 +75,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   }
 
   class MockService(kit: Kit = defaultMockKit, getInfoResp: GetInfoResponse = defaultGetInfo) extends NewService {
-    override def eclairApi: EclairApi = new EclairApiImpl(kit, Future.successful(getInfoResp))
+    override def eclairApi: EclairApi = new EclairApiImpl(kit, getInfoResp)
 
     override def password: String = "mock"
 
