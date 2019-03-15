@@ -21,6 +21,7 @@ import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -221,6 +222,8 @@ case class ChannelUpdate(signature: ByteVector,
                          feeProportionalMillionths: Long,
                          htlcMaximumMsat: Option[Long]) extends RoutingMessage with HasTimestamp with HasChainHash {
   require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
+
+  def isNode1 = Announcements.isNode1(channelFlags)
 }
 
 case class PerHopPayload(shortChannelId: ShortChannelId,

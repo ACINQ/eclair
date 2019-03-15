@@ -36,13 +36,11 @@ trait NetworkDb {
 
   def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi)
 
-  def removeChannel(shortChannelId: ShortChannelId) = removeChannels(Seq(shortChannelId))
+  def updateChannel(u: ChannelUpdate)
+
+  def removeChannel(shortChannelId: ShortChannelId) = removeChannels(Set(shortChannelId))
 
   def removeChannels(shortChannelIds: Iterable[ShortChannelId])
-
-  def addChannelUpdate(u: ChannelUpdate)
-
-  def updateChannelUpdate(u: ChannelUpdate)
 
   def listChannels(): SortedMap[ShortChannelId, PublicChannel]
 

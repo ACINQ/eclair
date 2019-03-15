@@ -60,6 +60,12 @@ object SqliteUtils {
     res.getInt("version")
   }
 
+  def setVersion(statement: Statement, db_name: String, currentVersion: Int) = {
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS versions (db_name TEXT NOT NULL PRIMARY KEY, version INTEGER NOT NULL)")
+    // if there was no version for the current db, then insert the current version
+    statement.executeUpdate(s"INSERT OR IGNORE INTO versions VALUES ('$db_name', $currentVersion)")
+  }
+
   /**
     * This helper assumes that there is a "data" column available, decodable with the provided codec
     *
@@ -95,6 +101,8 @@ object SqliteUtils {
   }
 
   case class ExtendedResultSet(rs: ResultSet) {
+
+    def getBitVectorOpt(columnLabel: String): Option[BitVector] = Option(rs.getBytes(columnLabel)).map(BitVector(_))
 
     def getByteVector(columnLabel: String): ByteVector = ByteVector(rs.getBytes(columnLabel))
 

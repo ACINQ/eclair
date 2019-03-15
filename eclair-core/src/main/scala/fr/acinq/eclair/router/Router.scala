@@ -650,7 +650,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       } else if (pc.getSameSideAs(u).isDefined) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
-        db.updateChannelUpdate(u)
+        db.updateChannel(u)
         // update the graph
         val graph1 = Announcements.isEnabled(u.channelFlags) match {
           case true => d.graph.removeEdge(desc).addEdge(desc, u)
@@ -660,7 +660,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
-        db.addChannelUpdate(u)
+        db.updateChannel(u)
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u)
         d.copy(channels = d.channels + (u.shortChannelId -> pc.updateSameSideAs(u)), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
