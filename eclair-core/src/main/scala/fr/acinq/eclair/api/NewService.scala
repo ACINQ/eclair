@@ -168,23 +168,28 @@ trait NewService extends Directives with Logging with MetaService {
                       complete(invoice)
                     }
                   } ~
-                  path("findroute") {
+                  path("findRouteByInvoice") {
                     formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
                       case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) => complete(eclairApi.findRoute(nodeId, amount.toLong, invoice.routingInfo))
                       case (invoice, Some(overrideAmount)) => complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, invoice.routingInfo))
-                      case _ => reject(UnknownParamsRejection)
-                    } ~ formFields("nodeId".as[PublicKey], "amountMsat".as[Long]) { (nodeId, amount) =>
+                      case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"))
+                    }
+                  } ~ path("findRouteByNode") {
+                    formFields("nodeId".as[PublicKey], "amountMsat".as[Long]) { (nodeId, amount) =>
                       complete(eclairApi.findRoute(nodeId, amount))
                     }
                   } ~
-                  path("send") {
+                  path("sendToInvoice") {
                     formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
                       case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) =>
                         complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo))
                       case (invoice, Some(overrideAmount)) =>
                         complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo))
-                      case _ => reject(UnknownParamsRejection)
-                    } ~ formFields("amountMsat".as[Long], "paymentHash".as[ByteVector32](sha256HashUnmarshaller), "nodeId".as[PublicKey]) { (amountMsat, paymentHash, nodeId) =>
+                      case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
+                    }
+                  } ~
+                  path("sendToNode") {
+                    formFields("amountMsat".as[Long], "paymentHash".as[ByteVector32](sha256HashUnmarshaller), "nodeId".as[PublicKey]) { (amountMsat, paymentHash, nodeId) =>
                       complete(eclairApi.send(nodeId, amountMsat, paymentHash))
                     }
                   } ~

@@ -109,7 +109,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
-        assert(status == BadRequest)
+        assert(status == NotFound)
       }
 
     // wrong param type
@@ -119,7 +119,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       check {
         assert(handled)
         assert(status == BadRequest)
-//        assert(entityAs[String].contains("The form field 'channelId' was malformed"))
+        assert(entityAs[String].contains("The form field 'channelId' was malformed"))
       }
 
     // wrong params
