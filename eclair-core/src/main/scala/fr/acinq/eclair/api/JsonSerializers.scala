@@ -35,9 +35,6 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.json4s.JsonAST._
 import org.json4s.{CustomKeySerializer, CustomSerializer, jackson}
-
-import scala.collection.immutable
-import org.json4s.{CustomKeySerializer, CustomSerializer}
 import scodec.bits.ByteVector
 
 /**
@@ -163,6 +160,7 @@ object JsonSupport extends Json4sSupport {
 
   implicit val formats = org.json4s.DefaultFormats +
     new ByteVectorSerializer +
+    new ByteVector32Serializer +
     new UInt64Serializer +
     new MilliSatoshiSerializer +
     new ShortChannelIdSerializer +
