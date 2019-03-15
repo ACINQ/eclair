@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -385,7 +385,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val extraHops = extraHop1 :: extraHop2 :: extraHop3 :: extraHop4 :: Nil
 
-    val fakeUpdates = Router.toFakeUpdates(extraHops, e)
+    val fakeUpdates = Router.toAssistedChannels(extraHops, e)
 
     assert(fakeUpdates == Map(
       ChannelDesc(extraHop1.shortChannelId, a, b) -> Router.toFakeUpdate(extraHop1),
@@ -480,8 +480,8 @@ class RouteCalculationSpec extends FunSuite {
       ShortChannelId(6L) -> makeChannel(6L, f, h),
       ShortChannelId(7L) -> makeChannel(7L, h, i),
       ShortChannelId(8L) -> makeChannel(8L, i, j)
-
     )
+
     val updates = List(
       makeUpdate(1L, a, b, 10, 10),
       makeUpdate(2L, b, c, 10, 10),
@@ -494,7 +494,14 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(8L, i, j, 10, 10)
     ).toMap
 
-    val ignored = Router.getIgnoredChannelDesc(updates, ignoreNodes = Set(c, j, randomKey.publicKey))
+    val publicChannels = channels.map { case (shortChannelId, announcement) =>
+      val (_, update) = updates.find{ case (d, u) => d.shortChannelId == shortChannelId}.get
+      val pc = PublicChannel(announcement, ByteVector32.Zeroes, Satoshi(1000), update_1_opt = Some(update), update_2_opt = None)
+      (shortChannelId, pc)
+    }
+
+
+    val ignored = Router.getIgnoredChannelDesc(publicChannels, ignoreNodes = Set(c, j, randomKey.publicKey))
 
     assert(ignored.toSet === Set(
       ChannelDesc(ShortChannelId(2L), b, c),
@@ -624,11 +631,11 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(5L, e, f, 1, 0),
       makeUpdate(6L, b, c, 1, 0),
       makeUpdate(7L, c, f, 1, 0)
-    ).toMap
+    )
 
-    val graph = DirectedGraph.makeGraph(edges)
+    val graph = DirectedGraph().addEdges(edges)
 
-    val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 4, None, 0, noopBoundaries)
+    val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, Set.empty, pathsToFind = 4, None, 0, noopBoundaries)
 
     assert(fourShortestPaths.size === 4)
     assert(hops2Ids(fourShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
@@ -662,7 +669,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val graph = DirectedGraph().addEdges(edges)
 
-    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 2, None, 0, noopBoundaries)
+    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, Set.empty, pathsToFind = 2, None, 0, noopBoundaries)
 
     assert(twoShortestPaths.size === 2)
     val shortest = twoShortestPaths(0)
@@ -696,7 +703,7 @@ class RouteCalculationSpec extends FunSuite {
     val graph = DirectedGraph().addEdges(edges)
 
     //we ask for 3 shortest paths but only 2 can be found
-    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, pathsToFind = 3, None, 0, noopBoundaries)
+    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, Set.empty, pathsToFind = 3, None, 0, noopBoundaries)
 
     assert(foundPaths.size === 2)
     assert(hops2Ids(foundPaths(0).path.map(graphEdgeToHop)) === 1 :: 2 :: 3 :: Nil) // A -> B -> C -> F
@@ -876,7 +883,7 @@ object RouteCalculationSpec {
       htlcMaximumMsat = maxHtlcMsat
     )
 
-  def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = DirectedGraph.makeGraph(updates)
+  def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = DirectedGraph().addEdges(updates.toSeq)
 
   def hops2Ids(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId.toLong)
 

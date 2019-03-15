@@ -54,7 +54,7 @@ class GraphSpec extends FunSuite {
       makeUpdate(6L, b, e, 0, 0)
     )
 
-    DirectedGraph.makeGraph(updates.toMap)
+    DirectedGraph().addEdges(updates)
   }
 
   test("instantiate a graph, with vertices and then add edges") {
