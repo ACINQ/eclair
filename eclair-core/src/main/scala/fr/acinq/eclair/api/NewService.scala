@@ -42,7 +42,7 @@ trait NewService extends Directives with Logging with MetaService {
 
   val apiExceptionHandler = ExceptionHandler {
     case t: Throwable =>
-      logger.error(s"API call failed with cause=${t.getMessage}")
+      logger.error(s"API call failed with cause=${t.getMessage}", t)
       complete(StatusCodes.InternalServerError, s"Error: $t")
   }
 

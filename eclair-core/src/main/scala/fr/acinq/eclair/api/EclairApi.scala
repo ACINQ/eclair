@@ -99,12 +99,12 @@ class EclairApiImpl(appKit: Kit, getInfo: Future[GetInfoResponse]) extends Eclai
 
   override def channelsInfo(toRemoteNode: Option[PublicKey]): Future[Iterable[RES_GETINFO]] = toRemoteNode match {
     case Some(pk) => for {
-      channelsId <- (appKit.register ? 'channelsTo).mapTo[Map[ByteVector, PublicKey]].map(_.filter(_._2 == pk).keys)
+      channelsId <- (appKit.register ? 'channelsTo).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(_._2 == pk).keys)
       channels <- Future.sequence(channelsId.map(channelId => sendToChannel(channelId.toString(), CMD_GETINFO).mapTo[RES_GETINFO]))
     } yield channels
     case None => for {
-      channels_id <- (appKit.register ? 'channels).mapTo[Map[ByteVector, ActorRef]].map(_.keys)
-      channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]))
+      channels_id <- (appKit.register ? 'channels).mapTo[Map[ByteVector32, ActorRef]].map(_.keys)
+      channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toHex, CMD_GETINFO).mapTo[RES_GETINFO]))
     } yield channels
   }
 
