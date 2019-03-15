@@ -23,10 +23,10 @@ import scala.concurrent.duration._
 
 trait NewService extends Directives with Logging with MetaService {
 
-  import JsonSupport.formats
-  import JsonSupport.serialization
   // important! Must NOT import the unmarshaller as it is too generic...see https://github.com/akka/akka-http/issues/541
   import JsonSupport.marshaller
+  import JsonSupport.formats
+  import JsonSupport.serialization
 
   def password: String
 
@@ -88,7 +88,6 @@ trait NewService extends Directives with Logging with MetaService {
 
   case object UnknownMethodRejection extends Rejection
   case object UnknownParamsRejection extends Rejection
-
 
   val route: Route = {
     respondWithDefaultHeaders(customHeaders) {
@@ -211,8 +210,7 @@ trait NewService extends Directives with Logging with MetaService {
                   } ~
                   path("ws") {
                     handleWebSocketMessages(makeSocketHandler)
-                  } ~
-                  path(Segment) { _ => reject(UnknownMethodRejection) }
+                  }
               }
             }
           }
