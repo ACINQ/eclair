@@ -31,7 +31,7 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
-import fr.acinq.eclair.api.{GetInfoResponse, NewService, Service}
+import fr.acinq.eclair.api.{EclairApi, GetInfoResponse, NewService, Service}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
@@ -265,7 +265,7 @@ class Setup(datadir: File,
         val api = if(config.getBoolean("api.use-new-version")){
           new NewService {
 
-          override def appKit: Kit = kit
+          override val actorSystem = kit.system
 
           override val mat = materializer
 
@@ -274,13 +274,14 @@ class Setup(datadir: File,
             if (p.isEmpty) throw EmptyAPIPasswordException else p
           }
 
-          override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
+          override def eclairApi: EclairApi = new fr.acinq.eclair.api.EclairApiImpl(kit, Future.successful(
             GetInfoResponse(nodeId = nodeParams.nodeId,
               alias = nodeParams.alias,
               port = config.getInt("server.port"),
               chainHash = nodeParams.chainHash,
               blockHeight = Globals.blockCount.intValue(),
               publicAddresses = nodeParams.publicAddresses))
+          )
 
         }
         } else {
