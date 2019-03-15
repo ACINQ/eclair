@@ -46,7 +46,7 @@ trait EclairApi {
 
   def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse]
 
-  def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[PaymentResult]
+  def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[PaymentResult]
 
   def checkpayment(paymentHash: ByteVector32): Future[Boolean]
 
@@ -131,8 +131,11 @@ class EclairApiImpl (appKit: Kit, getInfo: GetInfoResponse) extends EclairApi {
     (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amountMsat, assistedRoutes)).mapTo[RouteResponse]
   }
 
-  override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[PaymentResult] = {
-    val sendPayment = SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes) // TODO add minFinalCltvExpiry
+  override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[PaymentResult] = {
+    val sendPayment = minFinalCltvExpiry match {
+      case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv)
+      case None  => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes)
+    }
     (appKit.paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
       case s: PaymentSucceeded => s
       case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))

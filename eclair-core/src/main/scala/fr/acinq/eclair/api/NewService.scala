@@ -182,9 +182,9 @@ trait NewService extends Directives with Logging with MetaService {
                   path("sendToInvoice") {
                     formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
                       case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) =>
-                        complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo))
+                        complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry))
                       case (invoice, Some(overrideAmount)) =>
-                        complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo))
+                        complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry))
                       case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
                     }
                   } ~
