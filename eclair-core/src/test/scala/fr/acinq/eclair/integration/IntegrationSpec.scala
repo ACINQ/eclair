@@ -38,11 +38,11 @@ import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
 import fr.acinq.eclair.payment.{LocalPaymentHandler, PaymentRequest}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.ROUTE_MAX_LENGTH
-import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, ChannelDesc, RouteParams}
+import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, ChannelDesc, PublicChannel, RouteParams}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, Kit, Setup, randomBytes32}
+import fr.acinq.eclair.{Globals, Kit, Setup, ShortChannelId, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
@@ -287,10 +287,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     awaitCond({
       // in the meantime, the router will have updated its state
-      sender.send(nodes("A").router, 'updatesMap)
+      sender.send(nodes("A").router, 'channelsMap)
       // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
-      val update = sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]](10 seconds).apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
-      update == channelUpdateBC
+      val u_opt = sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId).updateFor(nodes("B").nodeParams.nodeId)
+      u_opt == Some(channelUpdateBC)
     }, max = 30 seconds, interval = 1 seconds)
 
     // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
@@ -303,8 +303,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(channelUpdateBC_new.timestamp > channelUpdateBC.timestamp)
     assert(channelUpdateBC_new.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks)
     awaitCond({
-      sender.send(nodes("A").router, 'updatesMap)
-      val u = sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
+      sender.send(nodes("A").router, 'channelsMap)
+      val u = sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId).updateFor(nodes("B").nodeParams.nodeId).get
       u.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks
     }, max = 30 seconds, interval = 1 second)
   }

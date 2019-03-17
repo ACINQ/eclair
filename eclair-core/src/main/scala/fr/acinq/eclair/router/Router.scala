@@ -62,6 +62,13 @@ case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, ca
   def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) ann.nodeId1 else ann.nodeId2
   def getSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
   def updateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
+  def updateFor(n: PublicKey): Option[ChannelUpdate] = {
+    if (n == ann.nodeId1) {
+      update_1_opt
+    } else if (n == ann.nodeId2) {
+      update_2_opt
+    } else throw new IllegalArgumentException("this node is unrelated to this channel")
+  }
 }
 case class PrivateChannel(nodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate])(implicit nodeParams: NodeParams) {
   val (nodeId1, nodeId2) = if (Announcements.isNode1(nodeParams.nodeId, nodeId)) (nodeParams.nodeId, nodeId) else (nodeId, nodeParams.nodeId)
@@ -409,15 +416,14 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! d.channels.values.map(_.ann)
       stay
 
+    case Event('channelsMap, d) =>
+      sender ! d.channels
+      stay
+
     case Event('updates, d) =>
       val updates: Iterable[ChannelUpdate] = d.channels.values.flatMap(d => d.update_1_opt ++ d.update_2_opt) ++ d.privateChannels.values.flatMap(d => d.update_1_opt ++ d.update_2_opt)
       sender ! updates
       stay
-
-//    case Event('updatesMap, d) =>
-//      val updatesMap
-//      sender ! (d.updates ++ d.privateUpdates)
-//      stay
 
     case Event('data, d) =>
       sender ! d
@@ -427,15 +433,14 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       // we convert extra routing info provided in the payment request to fake channel_update
       // it takes precedence over all other channel_updates we know
       val assistedChannels: Map[ShortChannelId, AssistedChannel] = assistedRoutes.flatMap(toAssistedChannels(_, end)).toMap
-      // we also filter out updates corresponding to channels/nodes that are blacklisted for this particular request
-      // TODO: in case of duplicates, d.updates will be overridden by assistedUpdates even if they are more recent!
       val extraEdges = assistedChannels.values.map(ac => GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop))).toSet
+      val ignoredEdges = ignoreChannels ++ d.excludedChannels
       val params = params_opt.getOrElse(defaultRouteParams)
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
-      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoreChannels, ignoredVertices = ignoreNodes, routeParams = params)
+      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredEdges, ignoredVertices = ignoreNodes, routeParams = params)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
