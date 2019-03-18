@@ -67,65 +67,65 @@ shift 1
 
 # Whatever the arguments provided to eclair-cli, a call to the API will be sent. Let it fail!
 case ${METHOD}_${#} in
-    ""_*)           displayhelp ;;
-    "help"*)        displayhelp
-                    echo -e "\nAvailable commands:\n"
-                    call "help" "" ;;
+    ""_*)                     displayhelp ;;
+    "help"*)                  displayhelp
+                              echo -e "\nAvailable commands:\n"
+                              call "help" "" ;;
 
-    "getinfo_0")        call ${METHOD} "" ;;
+    "getinfo_0")              call ${METHOD} "" ;;
 
-    "connect_1")        call ${METHOD} "$(printf uri=%s ${1})" ;;
-    "connect_3")        call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf host=%s ${2})" "$(printf port=%s ${3})" " ;;
+    "connect_1")              call ${METHOD} "$(printf uri=%s ${1})" ;;
+    "connect_3")              call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf host=%s ${2})" "$(printf port=%s ${3})" " ;;
 
-    "open_2")           call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf fundingSatoshis=%s ${2})" " ;;
-    "open_3")           call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf fundingSatoshis=%s ${2})" "$(printf pushMsat=%s ${3})" " ;;
-    "open_4")           call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf fundingSatoshis=%s ${2})" "$(printf pushMsat=%s ${3})" "$(printf channelFlags=%s ${4})" " ;;
-    "open_5")           call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf fundingSatoshis=%s ${2})" "$(printf pushMsat=%s ${3})" "$(printf channelFlags=%s ${4})" "$(printf fundingFeerateSatByte=%s ${5})" " ;;
+    "open_2")                 call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf fundingSatoshis=%s ${2})" " ;;
+    "open_3")                 call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf fundingSatoshis=%s ${2})" "$(printf pushMsat=%s ${3})" " ;;
+    "open_4")                 call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf fundingSatoshis=%s ${2})" "$(printf pushMsat=%s ${3})" "$(printf channelFlags=%s ${4})" " ;;
+    "open_5")                 call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf fundingSatoshis=%s ${2})" "$(printf pushMsat=%s ${3})" "$(printf channelFlags=%s ${4})" "$(printf fundingFeerateSatByte=%s ${5})" " ;;
 
-    "close_1")          call ${METHOD} "$(printf channelId=%s ${1})" ;;
-    "close_2")          call ${METHOD} " "$(printf channelId=%s ${1})" "$(printf scriptPubKey=%s ${2})" " ;;
+    "close_1")                call ${METHOD} "$(printf channelId=%s ${1})" ;;
+    "close_2")                call ${METHOD} " "$(printf channelId=%s ${1})" "$(printf scriptPubKey=%s ${2})" " ;;
 
-    "forceclose_1")     call ${METHOD} "$(printf channelId=%s ${1})" ;;
+    "forceclose_1")           call ${METHOD} "$(printf channelId=%s ${1})" ;;
 
-    "updaterelayfee_3") call ${METHOD} " "$(printf channelId=%s ${1})" "$(printf feeBaseMsat=%s ${2})" "$(printf feeProportionalMillionths=%s ${3})" " ;;
+    "updaterelayfee_3")       call ${METHOD} " "$(printf channelId=%s ${1})" "$(printf feeBaseMsat=%s ${2})" "$(printf feeProportionalMillionths=%s ${3})" " ;;
 
-    "peers_0")          call ${METHOD} "" ;;
+    "peers_0")                call ${METHOD} "" ;;
 
-    "channel_1")        call ${METHOD} "$(printf channelId=%s ${1})" ". | { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint }" ;;
+    "channel_1")              call ${METHOD} "$(printf channelId=%s ${1})" ". | { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint }" ;;
 
-    "channels_0")       call ${METHOD} "" ". | map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } )" ;;
-    "channels_1")       call ${METHOD} "$(printf toRemoteNodeId=%s ${1})" ". | map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } )" ;;
+    "channels_0")             call ${METHOD} "" ". | map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } )" ;;
+    "channels_1")             call ${METHOD} "$(printf toRemoteNodeId=%s ${1})" ". | map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } )" ;;
 
-    "allnodes_0")       call ${METHOD} "" ;;
+    "allnodes_0")             call ${METHOD} "" ;;
 
-    "allchannels_0")    call ${METHOD} "" ;;
+    "allchannels_0")          call ${METHOD} "" ;;
 
-    "allupdates_0")     call ${METHOD} "" ;;
-    "allupdates_1")     call ${METHOD} "$(printf nodeId=%s ${1})" ;;
+    "allupdates_0")           call ${METHOD} "" ;;
+    "allupdates_1")           call ${METHOD} "$(printf nodeId=%s ${1})" ;;
 
-    "receive_2")        call ${METHOD} " "$(printf amountMsat=%s ${1})" "$(printf description=%s ${2})" " ;;
-    "receive_3")        call ${METHOD} " "$(printf amountMsat=%s ${1})" "$(printf description=%s ${2})" "$(printf expireIn=%s ${3})" " ;;
+    "receive_2")              call ${METHOD} " "$(printf amountMsat=%s ${1})" "$(printf description=%s ${2})" " ;;
+    "receive_3")              call ${METHOD} " "$(printf amountMsat=%s ${1})" "$(printf description=%s ${2})" "$(printf expireIn=%s ${3})" " ;;
 
-    "sendToInvoice_1")  call ${METHOD} " "$(printf invoice=%s ${1})" " ;;
-    "sendToInvoice_2")  call ${METHOD} " "$(printf invoice=%s ${1})" "$(printf amountMsat=%s ${2})" " ;;
-    "sendToNode_3")     call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf amountMsat=%s ${2})" "$(printf paymentHash=%s ${3})" " ;;
+    "sendToInvoice_1")        call ${METHOD} " "$(printf invoice=%s ${1})" " ;;
+    "sendToInvoice_2")        call ${METHOD} " "$(printf invoice=%s ${1})" "$(printf amountMsat=%s ${2})" " ;;
+    "sendToNode_3")           call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf amountMsat=%s ${2})" "$(printf paymentHash=%s ${3})" " ;;
 
-    "parseinvoice_1")   call ${METHOD} "$(printf invoice=%s ${1})" ;;
+    "parseinvoice_1")         call ${METHOD} "$(printf invoice=%s ${1})" ;;
 
     "findRouteByInvoice_1")   call ${METHOD} " "$(printf invoice=%s ${1})" " ;;
     "findRouteByInvoice_2")   call ${METHOD} " "$(printf invoice=%s ${1})" "$(printf amountMsat=%s ${2})" " ;;
     "findRouteByNode_2")      call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf amountMsat=%s ${2})" " ;;
 
-    "checkpayment_1")   call "checkpayment" "$(printf invoice=%s ${1})" ;;
+    "checkpayment_1")         call "checkpayment" "$(printf invoice=%s ${1})" ;;
     "checkpaymentbyhash_1")   call "checkpayment" "$(printf paymentHash=%s ${1})" ;; # calls checkinvoice but using the paymentHash instead of the invoice
 
-    "audit_0")          call ${METHOD} "" ;;
-    "audit_2")          call ${METHOD} " "$(printf from=%s ${1})" "$(printf to=%s ${2})" " ;;
+    "audit_0")                call ${METHOD} "" ;;
+    "audit_2")                call ${METHOD} " "$(printf from=%s ${1})" "$(printf to=%s ${2})" " ;;
 
-    "networkfees_0")    call ${METHOD} "" ;;
-    "networkfees_2")    call ${METHOD} " "$(printf from=%s ${1})" "$(printf to=%s ${2})" " ;;
+    "networkfees_0")          call ${METHOD} "" ;;
+    "networkfees_2")          call ${METHOD} " "$(printf from=%s ${1})" "$(printf to=%s ${2})" " ;;
 
-    "channelstats_0")   call ${METHOD} "" ;;
+    "channelstats_0")         call ${METHOD} "" ;;
 
     *)                  displayhelp ; exit 1 ;; # Default case.
 
