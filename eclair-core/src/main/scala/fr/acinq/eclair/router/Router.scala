@@ -171,7 +171,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     val initNodes = nodes.map(n => (n.nodeId -> n)).toMap
     // send events for remaining channels/nodes
     context.system.eventStream.publish(ChannelsDiscovered(initChannels.values.map(pc => SingleChannelDiscovered(pc.ann, pc.capacity))))
-    //context.system.eventStream.publish(ChannelUpdatesReceived(initChannelUpdates.values))
+    context.system.eventStream.publish(ChannelUpdatesReceived(initChannels.values.flatMap(pc => pc.update_1_opt ++ pc.update_2_opt ++ Nil)))
     context.system.eventStream.publish(NodesDiscovered(initNodes.values))
 
     // watch the funding tx of all these channels
