@@ -436,8 +436,10 @@ object Graph {
         * @return all the edges going from keyA --> keyB (there might be more than one if it refers to different shortChannelId)
         */
       def getEdgesBetween(keyA: PublicKey, keyB: PublicKey): Seq[GraphEdge] = {
-        // NB: graph has an empty list as default value
-        vertices(keyB).filter(e => e.desc.a == keyA)
+        vertices.get(keyB) match {
+          case None => Seq.empty
+          case Some(adj) => adj.filter(e => e.desc.a == keyA)
+        }
       }
 
       /**
@@ -447,8 +449,7 @@ object Graph {
         * @return
         */
       def getIncomingEdgesOf(keyB: PublicKey): Seq[GraphEdge] = {
-        // NB: graph has an empty list as default value
-        vertices(keyB)
+        vertices.getOrElse(keyB, List.empty)
       }
 
       /**
@@ -535,25 +536,35 @@ object Graph {
       def makeGraph(channels: SortedMap[ShortChannelId, PublicChannel]): DirectedGraph = {
 
         // initialize the map with the appropriate size to avoid resizing during the graph initialization
-        val mutableMap = {
-          val m = new mutable.HashMap[PublicKey, List[GraphEdge]] {
-            override def initialSize: Int = channels.size + 1
-          }
-          m.withDefaultValue(List.empty[GraphEdge]) // with this we can always call m(x)
+        val mutableMap = new {} with mutable.HashMap[PublicKey, List[GraphEdge]] {
+          override def initialSize: Int = channels.size + 1
         }
 
         // add all the vertices and edges in one go
         channels.values.foreach { channel =>
 
-          def addToGraph(u: ChannelUpdate) = {
-            val desc = Router.getDesc(u, channel.ann)
-            mutableMap.put(desc.b, GraphEdge(desc, u) +: mutableMap(desc.b))
+          // make desc for both directions
+          val (desc1, desc2) = (
+            channel.update_1_opt.map(u1 => Router.getDesc(u1, channel.ann)),
+            channel.update_2_opt.map(u2 => Router.getDesc(u2, channel.ann))
+          )
+
+          desc1.map { descAB =>
+            mutableMap.put(descAB.b, GraphEdge(descAB, channel.update_1_opt.get) +: mutableMap.getOrElse(descAB.b, List.empty[GraphEdge]))
+            mutableMap.get(descAB.a) match {
+              case None => mutableMap += descAB.a -> List.empty[GraphEdge]
+              case _ =>
+            }
           }
 
-          // make desc for both directions
-          channel.update_1_opt.foreach(addToGraph)
-          channel.update_2_opt.foreach(addToGraph)
+          desc2.map { descBA =>
+            mutableMap.put(descBA.b, GraphEdge(descBA, channel.update_2_opt.get) +: mutableMap.getOrElse(descBA.b, List.empty[GraphEdge]))
+            mutableMap.get(descBA.a) match {
+              case None => mutableMap += descBA.a -> List.empty[GraphEdge]
+              case _ =>
+            }
 
+          }
         }
 
         new DirectedGraph(mutableMap.toMap)
