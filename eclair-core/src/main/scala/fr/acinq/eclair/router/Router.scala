@@ -62,13 +62,7 @@ case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, ca
   def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) ann.nodeId1 else ann.nodeId2
   def getSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
   def updateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
-  def updateFor(n: PublicKey): Option[ChannelUpdate] = {
-    if (n == ann.nodeId1) {
-      update_1_opt
-    } else if (n == ann.nodeId2) {
-      update_2_opt
-    } else throw new IllegalArgumentException("this node is unrelated to this channel")
-  }
+  def updateFor(n: PublicKey): Option[ChannelUpdate] = if (n == ann.nodeId1) update_1_opt else if (n == ann.nodeId2) update_2_opt else throw new IllegalArgumentException("this node is unrelated to this channel")
 }
 case class PrivateChannel(nodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate])(implicit nodeParams: NodeParams) {
   val (nodeId1, nodeId2) = if (Announcements.isNode1(nodeParams.nodeId, nodeId)) (nodeParams.nodeId, nodeId) else (nodeId, nodeParams.nodeId)
