@@ -39,7 +39,7 @@ object DBCompatChecker extends Logging {
     * @param nodeParams
     */
   def checkNetworkDBCompatibility(nodeParams: NodeParams): Unit =
-    Try(nodeParams.networkDb.listChannels(), nodeParams.networkDb.listNodes(), nodeParams.networkDb.listChannels()) match {
+    Try(nodeParams.networkDb.listChannels(), nodeParams.networkDb.listNodes()) match {
       case Success(_) => {}
       case Failure(_) => throw IncompatibleNetworkDBException
     }
