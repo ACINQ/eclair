@@ -44,7 +44,9 @@ class SqliteNetworkDbSpec extends FunSuite {
 
   test("migration test 1->2") {
     val sqlite = inmem
+
     using(sqlite.createStatement()) { statement =>
+      getVersion(statement, "network", 1) // this will set version to 1
       statement.execute("PRAGMA foreign_keys = ON")
       statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
       statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, data BLOB NOT NULL, capacity_sat INTEGER NOT NULL)")
@@ -52,7 +54,31 @@ class SqliteNetworkDbSpec extends FunSuite {
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
       statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
     }
+
+
+    using(sqlite.createStatement()) { statement =>
+      assert(getVersion(statement, "network", 2) == 1)
+    }
+
+    // first round: this will trigger a migration
     simpleTest(sqlite)
+
+    using(sqlite.createStatement()) { statement =>
+      assert(getVersion(statement, "network", 2) == 2)
+    }
+
+    using(sqlite.createStatement()) { statement =>
+      statement.executeUpdate("DELETE FROM nodes")
+      statement.executeUpdate("DELETE FROM channels")
+    }
+
+    // second round: no migration
+    simpleTest(sqlite)
+
+    using(sqlite.createStatement()) { statement =>
+      assert(getVersion(statement, "network", 2) == 2)
+    }
+
   }
 
   test("add/remove/list nodes") {
@@ -80,7 +106,6 @@ class SqliteNetworkDbSpec extends FunSuite {
   }
 
   def simpleTest(sqlite: Connection) = {
-    val sqlite = inmem
     val db = new SqliteNetworkDb(sqlite)
 
     def sig = Crypto.encodeSignature(Crypto.sign(randomKey.toBin, randomKey)) :+ 1.toByte

@@ -63,7 +63,7 @@ object SqliteUtils {
   def setVersion(statement: Statement, db_name: String, currentVersion: Int) = {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS versions (db_name TEXT NOT NULL PRIMARY KEY, version INTEGER NOT NULL)")
     // if there was no version for the current db, then insert the current version
-    statement.executeUpdate(s"INSERT OR IGNORE INTO versions VALUES ('$db_name', $currentVersion)")
+    statement.executeUpdate(s"UPDATE versions SET version=$currentVersion WHERE db_name='$db_name'")
   }
 
   /**
