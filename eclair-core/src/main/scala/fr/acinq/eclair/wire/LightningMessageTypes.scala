@@ -270,7 +270,7 @@ object ExtendedQueryFlags {
 case class QueryChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
-                             optionExtendedQueryFlags_opt: Option[ExtendedQueryFlags]) extends RoutingMessage with HasChainHash
+                             extendedQueryFlags_opt: Option[ExtendedQueryFlags]) extends RoutingMessage with HasChainHash
 
 case class ReplyChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,

@@ -145,7 +145,7 @@ class RoutingSyncWithChecksumsSpec extends TestKit(ActorSystem("test")) with Fun
     }
     // ask router to send a channel range query
     sender.send(router, SendChannelQuery(remoteNodeId, sender.ref, Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS)))
-    assert(sender.expectMsgType[QueryChannelRange].optionExtendedQueryFlags_opt.isDefined)
+    assert(sender.expectMsgType[QueryChannelRange].extendedQueryFlags_opt.isDefined)
     sender.expectMsgType[GossipTimestampFilter]
 
     // send back all our ids and timestamps
