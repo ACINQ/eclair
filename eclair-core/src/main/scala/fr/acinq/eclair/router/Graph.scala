@@ -308,9 +308,9 @@ object Graph {
 
       // NB we're guaranteed to have weightRatios and factors > 0
       val factor = (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor)
-      val edgeWeight = if (isNeighborTarget) prev.weight else edgeCost * factor
+      val edgeWeight = if (isNeighborTarget) prev.weight else prev.weight + edgeCost * factor
 
-      RichWeight(cost = edgeCost, length = prev.length + 1, cltv = prev.cltv + channelCltvDelta, weight = prev.weight + edgeWeight)
+      RichWeight(cost = edgeCost, length = prev.length + 1, cltv = prev.cltv + channelCltvDelta, weight = edgeWeight)
   }
 
   /**
