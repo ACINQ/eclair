@@ -542,28 +542,22 @@ object Graph {
 
         // add all the vertices and edges in one go
         channels.values.foreach { channel =>
-
-          // make desc for both directions
-          val (desc1, desc2) = (
-            channel.update_1_opt.map(u1 => Router.getDesc(u1, channel.ann)),
-            channel.update_2_opt.map(u2 => Router.getDesc(u2, channel.ann))
-          )
-
-          desc1.map { descAB =>
-            mutableMap.put(descAB.b, GraphEdge(descAB, channel.update_1_opt.get) +: mutableMap.getOrElse(descAB.b, List.empty[GraphEdge]))
-            mutableMap.get(descAB.a) match {
-              case None => mutableMap += descAB.a -> List.empty[GraphEdge]
-              case _ =>
-            }
+          channel.update_1_opt.foreach { u1 =>
+            val desc1 = Router.getDesc(u1, channel.ann)
+            addDescToMap(desc1, u1)
           }
 
-          desc2.map { descBA =>
-            mutableMap.put(descBA.b, GraphEdge(descBA, channel.update_2_opt.get) +: mutableMap.getOrElse(descBA.b, List.empty[GraphEdge]))
-            mutableMap.get(descBA.a) match {
-              case None => mutableMap += descBA.a -> List.empty[GraphEdge]
-              case _ =>
-            }
+          channel.update_2_opt.foreach { u2 =>
+            val desc2 = Router.getDesc(u2, channel.ann)
+            addDescToMap(desc2, u2)
+          }
+        }
 
+        def addDescToMap(desc: ChannelDesc, u: ChannelUpdate) = {
+          mutableMap.put(desc.b, GraphEdge(desc, u) +: mutableMap.getOrElse(desc.b, List.empty[GraphEdge]))
+          mutableMap.get(desc.a) match {
+            case None => mutableMap += desc.a -> List.empty[GraphEdge]
+            case _ =>
           }
         }
 
