@@ -216,6 +216,7 @@
                     <systemProperties>
                         <buildDirectory>${project.build.directory}</buildDirectory>
                     </systemProperties>
+                    <argLine>-Xmx1024m</argLine>
                 </configuration>
                 <executions>
                     <execution>
