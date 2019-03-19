@@ -239,6 +239,7 @@ case object QueryFlagTypes {
   val INCLUDE_CHANNEL_ANNOUNCEMENT: Byte = 1
   val INCLUDE_CHANNEL_UPDATE_1: Byte = 2
   val INCLUDE_CHANNEL_UPDATE_2: Byte = 4
+  val INCLUDE_ALL: Byte = (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte
 
   def includeAnnouncement(flag: Byte) = (flag & QueryFlagTypes.INCLUDE_CHANNEL_ANNOUNCEMENT) != 0
 

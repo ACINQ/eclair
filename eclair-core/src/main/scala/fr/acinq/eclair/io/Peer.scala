@@ -121,7 +121,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val remoteFeatures = Features(ByteVector(remoteInit.localFeatures.toArray).toBitVector)
 
       log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin} and localFeatures=${remoteInit.localFeatures.toBin}")
-      log.info(s"peer has globalFeatures=${remoteInit.globalFeatures} localFeatures=${remoteInit.localFeatures}: initialRoutingSync=${remoteFeatures.hasInitialRoutingSync} channelRangeQueriesOptional=${remoteFeatures.hasChannelRangeQueriesOptional} channelRangeQueriesMandatory=${remoteFeatures.hasChannelRangeQueriesMandatory}")
 
       if (remoteFeatures.areSupported) {
         d.origin_opt.foreach(origin => origin ! "connected")
