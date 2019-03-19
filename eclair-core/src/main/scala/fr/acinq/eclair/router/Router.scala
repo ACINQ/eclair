@@ -571,7 +571,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
           case ((c, u), (shortChannelId, idx)) =>
             var c1 = c
             var u1 = u
-            val flag = queryFlags_opt.map(_.array(idx)).getOrElse((QueryFlagTypes.INCLUDE_CHANNEL_ANNOUNCEMENT | QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_1 | QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_2).toByte)
+            val flag = queryFlags_opt.map(_.array(idx)).getOrElse(QueryFlagTypes.INCLUDE_ALL)
             d.channels.get(shortChannelId) match {
               case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
               case Some(pc) =>
@@ -849,6 +849,9 @@ object Router {
         // - it is not stale itself
         if (ourInfo.timestamp1 < theirInfo.timestamp1 && (ourInfo.checksum1 != theirInfo.checksum1 || isAlmostStale(ourInfo.timestamp1)) && !isStale(theirInfo.timestamp1)) flag = flag | QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_1
         if (ourInfo.timestamp2 < theirInfo.timestamp2 && (ourInfo.checksum2 != theirInfo.checksum2 || isAlmostStale(ourInfo.timestamp1)) && !isStale(theirInfo.timestamp2)) flag = flag | QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_2
+      case None if channels.contains(shortChannelId) =>
+        // we know this channel: we only request their channel updates
+        flag = QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_1 | QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_2
       case _ =>
         // we don't know this channel: we request everything
         flag = QueryFlagTypes.INCLUDE_CHANNEL_ANNOUNCEMENT | QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_1 | QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_2
