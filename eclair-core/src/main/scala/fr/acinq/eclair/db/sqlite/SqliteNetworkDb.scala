@@ -78,8 +78,8 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def addChannel(c: ChannelAnnouncement, txid: BinaryData, capacity: Satoshi): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO channels VALUES (?, ?, ?)")) { statement =>
       statement.setLong(1, c.shortChannelId.toLong)
-      statement.setBytes(2, c.nodeId1.value.toBin(false).toArray) // we store uncompressed public keys
-      statement.setBytes(3, c.nodeId2.value.toBin(false).toArray)
+      statement.setBytes(2, c.nodeId1.toBin.toArray) // those will be 33-bytes compressed key
+      statement.setBytes(3, c.nodeId2.toBin.toArray)
       statement.executeUpdate()
     }
   }
@@ -108,8 +108,8 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
           features = null,
           chainHash = null,
           shortChannelId = ShortChannelId(rs.getLong("short_channel_id")),
-          nodeId1 = PublicKey(PublicKey(rs.getBytes("node_id_1"), checkValid = false).value, compressed = true), // we read as uncompressed, and convert to compressed, and we don't check the validity it was already checked before
-          nodeId2 = PublicKey(PublicKey(rs.getBytes("node_id_2"), checkValid = false).value, compressed = true),
+          nodeId1 = PublicKey.toCompressedUnsafe(rs.getBytes("node_id_1")), // this will read a compressed or uncompressed serialized key (for backward compatibility reasons) to a compressed public key
+          nodeId2 = PublicKey.toCompressedUnsafe(rs.getBytes("node_id_2")),
           bitcoinKey1 = null,
           bitcoinKey2 = null) -> (emptyTxid, zeroCapacity))
       }
