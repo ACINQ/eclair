@@ -98,7 +98,7 @@ object LightningMessageCodecs {
 
   def publicKey: Codec[PublicKey] = Codec[PublicKey](
     (pub: PublicKey) => bytes(33).encode(ByteVector(pub.value.toBin(compressed = true).toArray)),
-    (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => PublicKey(b.toArray)))
+    (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => PublicKey(b.toArray, checkValid = false)))
   )
 
   def optionalSignature: Codec[Option[BinaryData]] = Codec[Option[BinaryData]](
