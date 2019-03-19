@@ -17,9 +17,7 @@
 package fr.acinq.eclair
 
 
-import java.util.BitSet
-
-import scodec.bits.ByteVector
+import scodec.bits.{BitVector, ByteVector}
 
 
 /**
@@ -36,27 +34,34 @@ object Features {
   val CHANNEL_RANGE_QUERIES_BIT_MANDATORY = 6
   val CHANNEL_RANGE_QUERIES_BIT_OPTIONAL = 7
 
+  def apply(hex: String): Features = Features(ByteVector.fromValidHex(hex).toBitVector)
+}
 
-  def hasFeature(features: BitSet, bit: Int): Boolean = features.get(bit)
+case class Features(localFeatures: BitVector) {
 
-  def hasFeature(features: ByteVector, bit: Int): Boolean = hasFeature(BitSet.valueOf(features.reverse.toArray), bit)
+  import Features._
 
+  def isSet(i: Int) = localFeatures.size > i && localFeatures.get(localFeatures.length - i - 1)
+
+  def hasOptionDataLossProtectMandatory = isSet(OPTION_DATA_LOSS_PROTECT_MANDATORY)
+
+  def hasOptionDataLossProtectOptional = isSet(OPTION_DATA_LOSS_PROTECT_OPTIONAL)
+
+  def hasInitialRoutingSync = isSet(INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
+
+  def hasChannelRangeQueriesMandatory = isSet(CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
+
+  def hasChannelRangeQueriesOptional = isSet(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
 
   /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that
     * we don't understand (even bits)
     */
-  def areSupported(bitset: BitSet): Boolean = {
-    val supportedMandatoryFeatures = Set(OPTION_DATA_LOSS_PROTECT_MANDATORY)
-    for (i <- 0 until bitset.length() by 2) {
-      if (bitset.get(i) && !supportedMandatoryFeatures.contains(i)) return false
+  def areSupported: Boolean = {
+    val supportedMandatoryFeatures = Set(OPTION_DATA_LOSS_PROTECT_MANDATORY, CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
+    for (i <- 0 until localFeatures.length.toInt by 2) {
+      if (localFeatures.reverse.get(i) && !supportedMandatoryFeatures.contains(i)) return false
     }
     return true
   }
-
-  /**
-    * A feature set is supported if all even bits are supported.
-    * We just ignore unknown odd bits.
-    */
-  def areSupported(features: ByteVector): Boolean = areSupported(BitSet.valueOf(features.reverse.toArray))
 }

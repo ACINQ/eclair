@@ -22,9 +22,14 @@ import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair._
+import fr.acinq.eclair.api._
+import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
+import org.json4s.JsonAST.{JNothing, JString}
+import org.json4s.{CustomSerializer, ShortTypeHints}
+import org.json4s.jackson.Serialization
 import org.scalatest.FunSuite
 import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 
@@ -239,9 +244,9 @@ class LightningMessageCodecsSpec extends FunSuite {
     val channel_update = ChannelUpdate(randomSignature, Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2, 42, 0, 3, 4, 5, 6, None)
     val announcement_signatures = AnnouncementSignatures(randomBytes32, ShortChannelId(42), randomSignature, randomSignature)
     val gossip_timestamp_filter = GossipTimestampFilter(Block.RegtestGenesisBlock.blockId, 100000, 1500)
-    val query_short_channel_id = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, randomBytes(7515))
-    val query_channel_range = QueryChannelRange(Block.RegtestGenesisBlock.blockId, 100000, 1500)
-    val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 100000, 1500, 1, randomBytes(3200))
+    val query_short_channel_id = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), None)
+    val query_channel_range = QueryChannelRange(Block.RegtestGenesisBlock.blockId, 100000, 1500, Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS))
+    val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 100000, 1500, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS), Some(ExtendedInfo(List(TimestampsAndChecksums(1, 1, 1, 1), TimestampsAndChecksums(2, 2, 2, 2), TimestampsAndChecksums(3, 3, 3, 3)))))
     val ping = Ping(100, bin(10, 1))
     val pong = Pong(bin(10, 1))
     val channel_reestablish = ChannelReestablish(randomBytes32, 242842L, 42L)
@@ -258,6 +263,70 @@ class LightningMessageCodecsSpec extends FunSuite {
         assert(msg === decoded.value)
       }
     }
+  }
+
+  test("non-reg encoding type") {
+    val refs = Map(
+      hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001900000000000000008e0000000000003c69000000000045a6c4" -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), None),
+      hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001601789c636000833e08659309a65c971d0100126e02e3" -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), None),
+      hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001900000000000000008e0000000000003c69000000000045a6c4000400010204" -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), Some(EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1, 2, 4)))),
+      hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001601789c636000833e08659309a65c971d0100126e02e3000c01789c6364620100000e0008" -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), Some(EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
+    )
+    refs.forall {
+      case (bin, obj) =>
+        lightningMessageCodec.decode(bin.toBitVector).require.value == obj && lightningMessageCodec.encode(obj).require == bin.toBitVector
+    }
+  }
+
+  case class TestItem(msg: Any, hex: String)
+
+  test("test vectors") {
+
+    val query_channel_range = QueryChannelRange(Block.RegtestGenesisBlock.blockId, 100000, 1500, None)
+    val query_channel_range_timestamps_checksums = QueryChannelRange(Block.RegtestGenesisBlock.blockId, 35000, 100, Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS))
+    val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 756230, 1500, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS), None)
+    val reply_channel_range_zlib = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 1600, 110, 1, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(265462))), Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS), None)
+    val reply_channel_range_timestamps_checksums = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 122334, 1500, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(12355), ShortChannelId(489686), ShortChannelId(4645313))), Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS), Some(ExtendedInfo(List(TimestampsAndChecksums(164545, 1111, 948165, 2222), TimestampsAndChecksums(489645, 3333, 4786864, 4444), TimestampsAndChecksums(46456, 5555, 9788415, 6666)))))
+    val reply_channel_range_timestamps_checksums_zlib = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 500, 100, 1, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(1234545), ShortChannelId(4897484), ShortChannelId(4564676))), Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS), Some(ExtendedInfo(List(TimestampsAndChecksums(164545, 1111, 948165, 2222), TimestampsAndChecksums(489645, 3333, 4786864, 4444), TimestampsAndChecksums(46456, 5555, 9788415, 6666)))))
+    val query_short_channel_id = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), None)
+    val query_short_channel_id_zlib = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(4564), ShortChannelId(178622), ShortChannelId(4564676))), None)
+    val query_short_channel_id_flags = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(12232), ShortChannelId(15556), ShortChannelId(4564676))), Some(EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
+    val query_short_channel_id_flags_zlib = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(14200), ShortChannelId(46645), ShortChannelId(4564676))), Some(EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
+
+    val refs = List(
+      query_channel_range,
+      query_channel_range_timestamps_checksums,
+      reply_channel_range,
+      reply_channel_range_zlib,
+      reply_channel_range_timestamps_checksums,
+      reply_channel_range_timestamps_checksums_zlib,
+      query_short_channel_id,
+      query_short_channel_id_zlib,
+      query_short_channel_id_flags,
+      query_short_channel_id_flags_zlib
+    )
+
+    class EncodingTypeSerializer extends CustomSerializer[EncodingType](format => ({ null }, {
+      case EncodingType.UNCOMPRESSED => JString("UNCOMPRESSED")
+      case EncodingType.COMPRESSED_ZLIB => JString("COMPRESSED_ZLIB")
+    }))
+
+    class ExtendedQueryFlagsSerializer extends CustomSerializer[ExtendedQueryFlags](format => ({ null }, {
+      case ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS => JString("TIMESTAMPS_AND_CHECKSUMS")
+    }))
+
+    implicit val formats = org.json4s.DefaultFormats.withTypeHintFieldName("type") + new EncodingTypeSerializer + new ExtendedQueryFlagsSerializer + new ByteVectorSerializer + new ByteVector32Serializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer +new PaymentRequestSerializer +
+      ShortTypeHints(List(
+      classOf[QueryChannelRange],
+      classOf[ReplyChannelRange],
+      classOf[QueryShortChannelIds]))
+
+    refs.foreach {
+      obj =>
+        val bin = lightningMessageCodec.encode(obj).require
+        println(Serialization.writePretty(TestItem(obj, bin.toHex)))
+    }
+
   }
 
   test("encode/decode per-hop payload") {
@@ -317,7 +386,6 @@ class LightningMessageCodecsSpec extends FunSuite {
     val bin2 = ByteVector(LightningMessageCodecs.lightningMessageCodec.encode(update).require.toByteArray)
     assert(bin === bin2)
   }
-
 }
 
 object LightningMessageCodecsSpec {

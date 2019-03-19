@@ -118,26 +118,29 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   when(INITIALIZING) {
     case Event(remoteInit: wire.Init, d: InitializingData) =>
       d.transport ! TransportHandler.ReadAck(remoteInit)
-      val remoteHasInitialRoutingSync = Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
-      val remoteHasChannelRangeQueriesOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
-      val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
+      val remoteFeatures = Features(ByteVector(remoteInit.localFeatures.toArray).toBitVector)
+
       log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin} and localFeatures=${remoteInit.localFeatures.toBin}")
-      log.info(s"$remoteNodeId has features: initialRoutingSync=$remoteHasInitialRoutingSync channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional channelRangeQueriesMandatory=$remoteHasChannelRangeQueriesMandatory")
-      if (Features.areSupported(remoteInit.localFeatures)) {
+      log.info(s"peer has globalFeatures=${remoteInit.globalFeatures} localFeatures=${remoteInit.localFeatures}: initialRoutingSync=${remoteFeatures.hasInitialRoutingSync} channelRangeQueriesOptional=${remoteFeatures.hasChannelRangeQueriesOptional} channelRangeQueriesMandatory=${remoteFeatures.hasChannelRangeQueriesMandatory}")
+
+      if (remoteFeatures.areSupported) {
         d.origin_opt.foreach(origin => origin ! "connected")
 
-        if (remoteHasInitialRoutingSync) {
-          if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
+        if (remoteFeatures.hasInitialRoutingSync) {
+          if (remoteFeatures.hasChannelRangeQueriesOptional || remoteFeatures.hasChannelRangeQueriesMandatory) {
             // if they support channel queries we do nothing, they will send us their filters
-            log.info("{} has set initial routing sync and support channel range queries, we do nothing (they will send us a query)", remoteNodeId)
+            log.info("peer has set initial routing sync and supports channel range queries, we do nothing (they will send us a query)")
           } else {
             // "old" nodes, do as before
+            log.info("peer requested a full routing table dump")
             router ! GetRoutingState
           }
         }
-        if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
+
+        if (remoteFeatures.hasChannelRangeQueriesOptional || remoteFeatures.hasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
-          router ! SendChannelQuery(remoteNodeId, d.transport)
+          // NB: we always add extended info; if peer doesn't understand them it will ignore them
+          router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS))
         }
 
         // let's bring existing/requested channels online
