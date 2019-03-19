@@ -221,8 +221,8 @@ object Graph {
         // note: there is always an entry for the current in the 'weight' map
         val currentWeight = weight.get(current.key)
 
-        // for each neighbor
-        currentNeighbors.foreach { edge =>
+        // for each neighbor with fees > 0
+        currentNeighbors.filterNot(edgeHasZeroFee).foreach { edge =>
 
           val neighbor = edge.desc.a
 
@@ -276,6 +276,10 @@ object Graph {
 
         edgePath
     }
+  }
+
+  private def edgeHasZeroFee(edge: GraphEdge): Boolean = {
+    edge.update.feeBaseMsat == 0 && edge.update.feeProportionalMillionths == 0
   }
 
   // Computes the compound weight for the given @param edge, the weight is cumulative and must account for the previous edge's weight.

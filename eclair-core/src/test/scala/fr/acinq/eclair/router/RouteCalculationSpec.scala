@@ -122,10 +122,10 @@ class RouteCalculationSpec extends FunSuite {
   test("calculate simple route (add and remove edges") {
 
     val updates = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, c, d, 0, 0),
-      makeUpdate(4L, d, e, 0, 0)
+      makeUpdate(1L, a, b, 1, 0),
+      makeUpdate(2L, b, c, 1, 0),
+      makeUpdate(3L, c, d, 1, 0),
+      makeUpdate(4L, d, e, 1, 0)
     ).toMap
 
     val g = makeGraph(updates)
@@ -148,9 +148,9 @@ class RouteCalculationSpec extends FunSuite {
     )
 
     val updates = List(
-      makeUpdate(1L, f, g, 0, 0),
-      makeUpdate(2L, g, h, 0, 0),
-      makeUpdate(3L, h, i, 0, 0),
+      makeUpdate(1L, f, g, 1, 0),
+      makeUpdate(2L, g, h, 1, 0),
+      makeUpdate(3L, h, i, 1, 0),
       makeUpdate(4L, f, h, 50, 0) // more expensive
     ).toMap
 
@@ -193,10 +193,10 @@ class RouteCalculationSpec extends FunSuite {
     )
 
     val updates = List(
-      makeUpdate(1L, f, g, 0, 0),
+      makeUpdate(1L, f, g, 1, 0),
       makeUpdate(2L, g, h, 5, 5), // expensive  g -> h channel
-      makeUpdate(6L, g, h, 0, 0), // cheap      g -> h channel
-      makeUpdate(3L, h, i, 0, 0)
+      makeUpdate(6L, g, h, 1, 0), // cheap      g -> h channel
+      makeUpdate(3L, h, i, 1, 0)
     ).toMap
 
     val graph = makeGraph(updates)
@@ -208,10 +208,10 @@ class RouteCalculationSpec extends FunSuite {
   test("calculate longer but cheaper route") {
 
     val updates = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, c, d, 0, 0),
-      makeUpdate(4L, d, e, 0, 0),
+      makeUpdate(1L, a, b, 1, 0),
+      makeUpdate(2L, b, c, 1, 0),
+      makeUpdate(3L, c, d, 1, 0),
+      makeUpdate(4L, d, e, 1, 0),
       makeUpdate(5L, b, e, 10, 10)
     ).toMap
 
@@ -302,10 +302,10 @@ class RouteCalculationSpec extends FunSuite {
   test("route to immediate neighbor") {
 
     val updates = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, c, d, 0, 0),
-      makeUpdate(4L, d, e, 0, 0)
+      makeUpdate(1L, a, b, 1, 0),
+      makeUpdate(2L, b, c, 1, 0),
+      makeUpdate(3L, c, d, 1, 0),
+      makeUpdate(4L, d, e, 1, 0)
     ).toMap
 
     val g = makeGraph(updates)
@@ -316,10 +316,10 @@ class RouteCalculationSpec extends FunSuite {
 
   test("directed graph") {
     val updates = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, c, d, 0, 0),
-      makeUpdate(4L, d, e, 0, 0)
+      makeUpdate(1L, a, b, 1, 0),
+      makeUpdate(2L, b, c, 1, 0),
+      makeUpdate(3L, c, d, 1, 0),
+      makeUpdate(4L, d, e, 1, 0)
     ).toMap
 
     // a->e works, e->a fails
@@ -398,10 +398,10 @@ class RouteCalculationSpec extends FunSuite {
 
   test("blacklist routes") {
     val updates = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, c, d, 0, 0),
-      makeUpdate(4L, d, e, 0, 0)
+      makeUpdate(1L, a, b, 1, 0),
+      makeUpdate(2L, b, c, 1, 0),
+      makeUpdate(3L, c, d, 1, 0),
+      makeUpdate(4L, d, e, 1, 0)
     ).toMap
 
     val g = makeGraph(updates)
@@ -438,7 +438,6 @@ class RouteCalculationSpec extends FunSuite {
     val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
-
 
   test("verify that extra hops takes precedence over known channels") {
     val updates = List(
@@ -590,6 +589,21 @@ class RouteCalculationSpec extends FunSuite {
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 4 :: 5 :: Nil))
   }
 
+  test("ignore channels with fees=0") {
+
+    val updates = List(
+      makeUpdate(1L, a, b, 10, 10),
+      makeUpdate(2L, b, c, 10, 10),
+      makeUpdate(3L, b, e, 0, 0), // goes straight to target with no fees!
+      makeUpdate(4L, c, d, 10, 10),
+      makeUpdate(5L, d, e, 10, 10)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
+    assert(route1.map(hops2Ids) === Success(1 :: 2 :: 4 :: 5 :: Nil))
+  }
 
   /**
     *
@@ -739,8 +753,8 @@ class RouteCalculationSpec extends FunSuite {
     // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 3, totCltv = 18)
     // A -> E -> C -> D is 'capacity optimized', more recent channel/larger capacity route
     val updates = List(
-      makeUpdate(1L, a, b, feeBaseMsat = 0, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 13),
-      makeUpdate(4L, a, e, feeBaseMsat = 0, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
+      makeUpdate(1L, a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 13),
+      makeUpdate(4L, a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
       makeUpdate(2L, b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 500),
       makeUpdate(3L, c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 500),
       makeUpdate(5L, e, f, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
@@ -814,7 +828,6 @@ class RouteCalculationSpec extends FunSuite {
 
     assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b, c) :: (c, d) :: Nil)
   }
-
 
   test("avoid a route that breaks off the max CLTV") {
 
