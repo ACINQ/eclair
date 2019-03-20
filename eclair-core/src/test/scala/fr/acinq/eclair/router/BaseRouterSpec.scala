@@ -45,11 +45,11 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
 
   val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), compressed = true).publicKey
 
-  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f, priv_g) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
-  val (a, b, c, d, e, f, g) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey, priv_g.publicKey)
+  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
+  val (a, b, c, d, e, f) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey)
 
-  val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f, priv_funding_g) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
-  val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f, funding_g) = (priv_funding_a.publicKey, priv_funding_b.publicKey, priv_funding_c.publicKey, priv_funding_d.publicKey, priv_funding_e.publicKey, priv_funding_f.publicKey, priv_funding_g.publicKey)
+  val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
+  val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f) = (priv_funding_a.publicKey, priv_funding_b.publicKey, priv_funding_c.publicKey, priv_funding_d.publicKey, priv_funding_e.publicKey, priv_funding_f.publicKey)
 
   //val DUMMY_SIG = hex"3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201"
 
@@ -59,14 +59,11 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val ann_d = makeNodeAnnouncement(priv_d, "node-D", Color(-120, -20, 60), Nil)
   val ann_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil)
   val ann_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil)
-  val ann_g = makeNodeAnnouncement(priv_g, "node-G", Color(-30, 10, -50), Nil)
 
   val channelId_ab = ShortChannelId(420000, 1, 0)
   val channelId_bc = ShortChannelId(420000, 2, 0)
   val channelId_cd = ShortChannelId(420000, 3, 0)
   val channelId_ef = ShortChannelId(420000, 4, 0)
-  val channelId_bg = ShortChannelId(420000, 5, 0)
-
 
   def channelAnnouncement(shortChannelId: ShortChannelId, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
     val (node1_sig, funding1_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, node1_priv, node2_priv.publicKey, funding1_priv, funding2_priv.publicKey, ByteVector.empty)
@@ -78,7 +75,6 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val chan_bc = channelAnnouncement(channelId_bc, priv_b, priv_c, priv_funding_b, priv_funding_c)
   val chan_cd = channelAnnouncement(channelId_cd, priv_c, priv_d, priv_funding_c, priv_funding_d)
   val chan_ef = channelAnnouncement(channelId_ef, priv_e, priv_f, priv_funding_e, priv_funding_f)
-  val chan_bg = channelAnnouncement(channelId_bg, priv_b, priv_g, priv_funding_b, priv_funding_g)
 
   val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, channelId_ab, cltvExpiryDelta = 7, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000L)
   val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, a, channelId_ab, cltvExpiryDelta = 7, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000L)
@@ -88,14 +84,9 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val channelUpdate_dc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_d, c, channelId_cd, cltvExpiryDelta = 3, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000L)
   val channelUpdate_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, channelId_ef, cltvExpiryDelta = 9, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000L)
   val channelUpdate_fe = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_f, e, channelId_ef, cltvExpiryDelta = 9, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000L)
-  val channelUpdate_bg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, g, channelId_bg, cltvExpiryDelta = 9, htlcMinimumMsat = 0, feeBaseMsat = 0, feeProportionalMillionths = 0, htlcMaximumMsat = 500000000L)
-  val channelUpdate_gb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, b, channelId_bg, cltvExpiryDelta = 9, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000L)
 
   override def withFixture(test: OneArgTest): Outcome = {
-
-    // the network will be a --(1)--> b ---(2)--> c --(3)--> d  and e --(4)--> f (we are a)
-    //                                 \
-    //                                  \--(5)--> g
+    // the network will be a --(1)--> b ---(2)--> c --(3)--> d and e --(4)--> f (we are a)
 
     within(30 seconds) {
 
@@ -104,7 +95,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       assert(Router.getDesc(channelUpdate_bc, chan_bc) === ChannelDesc(chan_bc.shortChannelId, priv_b.publicKey, priv_c.publicKey))
       assert(Router.getDesc(channelUpdate_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, priv_c.publicKey, priv_d.publicKey))
       assert(Router.getDesc(channelUpdate_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, priv_e.publicKey, priv_f.publicKey))
-      assert(Router.getDesc(channelUpdate_bg, chan_bg) === ChannelDesc(chan_bg.shortChannelId, priv_b.publicKey, priv_g.publicKey))
+
 
       // let's we set up the router
       val watcher = TestProbe()
@@ -114,7 +105,6 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       router ! PeerRoutingMessage(null, remoteNodeId, chan_bc)
       router ! PeerRoutingMessage(null, remoteNodeId, chan_cd)
       router ! PeerRoutingMessage(null, remoteNodeId, chan_ef)
-      router ! PeerRoutingMessage(null, remoteNodeId, chan_bg)
       // then nodes
       router ! PeerRoutingMessage(null, remoteNodeId, ann_a)
       router ! PeerRoutingMessage(null, remoteNodeId, ann_b)
@@ -122,7 +112,6 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       router ! PeerRoutingMessage(null, remoteNodeId, ann_d)
       router ! PeerRoutingMessage(null, remoteNodeId, ann_e)
       router ! PeerRoutingMessage(null, remoteNodeId, ann_f)
-      router ! PeerRoutingMessage(null, remoteNodeId, ann_g)
       // then channel updates
       router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_ab)
       router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_ba)
@@ -132,24 +121,17 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_dc)
       router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_ef)
       router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_fe)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_bg)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_gb)
       // watcher receives the get tx requests
       watcher.expectMsg(ValidateRequest(chan_ab))
       watcher.expectMsg(ValidateRequest(chan_bc))
       watcher.expectMsg(ValidateRequest(chan_cd))
       watcher.expectMsg(ValidateRequest(chan_ef))
-      watcher.expectMsg(ValidateRequest(chan_bg))
-
       // and answers with valid scripts
       watcher.send(router, ValidateResult(chan_ab, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
       watcher.send(router, ValidateResult(chan_bc, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
       watcher.send(router, ValidateResult(chan_cd, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_c, funding_d)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
       watcher.send(router, ValidateResult(chan_ef, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
-      watcher.send(router, ValidateResult(chan_bg, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_g)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
-
       // watcher receives watch-spent request
-      watcher.expectMsgType[WatchSpentBasic]
       watcher.expectMsgType[WatchSpentBasic]
       watcher.expectMsgType[WatchSpentBasic]
       watcher.expectMsgType[WatchSpentBasic]
@@ -164,7 +146,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
         val channels = sender.expectMsgType[Iterable[ChannelAnnouncement]]
         sender.send(router, 'updates)
         val updates = sender.expectMsgType[Iterable[ChannelUpdate]]
-        nodes.size === 7 && channels.size === 5 && updates.size === 10
+        nodes.size === 6 && channels.size === 4 && updates.size === 8
       }, max = 10 seconds, interval = 1 second)
 
       withFixture(test.toNoArgTest(FixtureParam(router, watcher)))

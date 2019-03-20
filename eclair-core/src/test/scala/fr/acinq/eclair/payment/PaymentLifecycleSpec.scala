@@ -19,16 +19,20 @@ package fr.acinq.eclair.payment
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, ByteVector32, MilliSatoshi}
+import fr.acinq.bitcoin.Script.{pay2wsh, write}
+import fr.acinq.bitcoin.{Block, ByteVector32, MilliSatoshi, Satoshi, Transaction, TxOut}
+import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelUnavailable}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
+import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentLifecycle._
-import fr.acinq.eclair.router.Announcements.makeChannelUpdate
+import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router._
+import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, randomBytes32}
+import fr.acinq.eclair.{Globals, ShortChannelId, randomBytes32}
 
 /**
   * Created by PM on 29/08/2016.
@@ -322,6 +326,29 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment succeeded to a channel with fees=0") { fixture =>
     import fixture._
+    import fr.acinq.eclair.randomKey
+
+    // the network will be a --(1)--> b ---(2)--> c --(3)--> d  and e --(4)--> f (we are a) and b -> g has fees=0
+    //                                 \
+    //                                  \--(5)--> g
+
+    val (priv_g, priv_funding_g) = (randomKey, randomKey)
+    val (g, funding_g) = (priv_g.publicKey, priv_funding_g.publicKey)
+    val ann_g = makeNodeAnnouncement(priv_g, "node-G", Color(-30, 10, -50), Nil)
+    val channelId_bg = ShortChannelId(420000, 5, 0)
+    val chan_bg = channelAnnouncement(channelId_bg, priv_b, priv_g, priv_funding_b, priv_funding_g)
+    val channelUpdate_bg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, g, channelId_bg, cltvExpiryDelta = 9, htlcMinimumMsat = 0, feeBaseMsat = 0, feeProportionalMillionths = 0, htlcMaximumMsat = 500000000L)
+    val channelUpdate_gb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, b, channelId_bg, cltvExpiryDelta = 9, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000L)
+    assert(Router.getDesc(channelUpdate_bg, chan_bg) === ChannelDesc(chan_bg.shortChannelId, priv_b.publicKey, priv_g.publicKey))
+    router ! PeerRoutingMessage(null, remoteNodeId, chan_bg)
+    router ! PeerRoutingMessage(null, remoteNodeId, ann_g)
+    router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_bg)
+    router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_gb)
+    watcher.expectMsg(ValidateRequest(chan_bg))
+    watcher.send(router, ValidateResult(chan_bg, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_g)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+    watcher.expectMsgType[WatchSpentBasic]
+
+    // actual test begins
     val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
