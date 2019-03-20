@@ -320,6 +320,37 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(fee === MilliSatoshi(paymentOK.amountMsat - request.amountMsat))
   }
 
+  test("payment succeeded to a channel with fees=0") { fixture =>
+    import fixture._
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref))
+    val monitor = TestProbe()
+    val sender = TestProbe()
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
+
+    paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
+    val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
+
+    // we send a payment to G which is just after the
+    val request = SendPayment(defaultAmountMsat, defaultPaymentHash, g)
+    sender.send(paymentFSM, request)
+
+    // the route will be A -> B -> G where B -> G has a channel_update with fees=0
+    val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
+
+    sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash))
+
+    val paymentOK = sender.expectMsgType[PaymentSucceeded]
+    val PaymentSent(MilliSatoshi(request.amountMsat), fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
+
+    // during the route computation the fees were treated as if they were 1msat but when sending the onion we actually put zero
+    // NB: A -> B doesn't pay fees because it's our direct neighbor
+    // NB: B -> G doesn't asks for fees at all
+    assert(fee === MilliSatoshi(0))
+    assert(fee === MilliSatoshi(paymentOK.amountMsat - request.amountMsat))
+  }
+
   test("filter errors properly") { fixture =>
     val failures = LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, ErrorPacket(a, TemporaryNodeFailure)) :: LocalFailure(AddHtlcFailed(ByteVector32.Zeroes, ByteVector32.Zeroes, ChannelUnavailable(ByteVector32.Zeroes), Local(None), None, None)) :: LocalFailure(RouteNotFound) :: Nil
     val filtered = PaymentLifecycle.transformForUser(failures)
