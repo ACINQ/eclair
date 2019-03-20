@@ -590,6 +590,21 @@ class RouteCalculationSpec extends FunSuite {
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 4 :: 5 :: Nil))
   }
 
+  test("treat channels with fees=0 as if they had feeBase=1msat") {
+
+    val updates = List(
+      makeUpdate(1L, a, b, 10, 10),
+      makeUpdate(2L, b, c, 10, 10),
+      makeUpdate(3L, b, e, 0, 0), // goes straight to target with no fees!
+      makeUpdate(4L, c, d, 10, 10),
+      makeUpdate(5L, d, e, 10, 10)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
+    assert(route1.map(hops2Ids) === Success(1 :: 3 :: Nil))
+  }
 
   /**
     *
