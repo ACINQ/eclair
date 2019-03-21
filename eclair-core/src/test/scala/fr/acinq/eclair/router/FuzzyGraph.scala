@@ -1,24 +1,28 @@
 package fr.acinq.eclair.router
 
-import java.nio.file.Paths
+import java.nio.file.{Files, Paths}
 import java.sql.DriverManager
-
+import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.api._
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.WeightRatios
-import fr.acinq.eclair.router.Router.getDesc
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, Color, NodeAddress}
+import org.json4s.{FileInput, jackson}
 import org.scalatest.FunSuite
-
-import scala.collection.immutable.TreeMap
+import scodec.bits.ByteVector
 import scala.util.{Failure, Random, Success}
-import scodec.bits._
-
+import scala.collection.immutable.TreeMap
+import scala.collection.mutable
 
 class FuzzyGraph extends FunSuite {
+
+  implicit val serialization = jackson.Serialization
+  implicit val formats = org.json4s.DefaultFormats + new ByteVectorSerializer + new ByteVector32Serializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer +new PaymentRequestSerializer
+  implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
   val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 2016, routeMaxLength = 8, ratios = Some(WeightRatios(
     cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5
@@ -26,25 +30,14 @@ class FuzzyGraph extends FunSuite {
 
   val AMOUNT_TO_ROUTE = MilliSatoshi(1000000).toLong // 1000sat
 
-  val networkDbFile = Paths.get("eclair-core/src/test/resources/network-db-mainnet-20032019.sqlite").toFile
-  val dbConnection = DriverManager.getConnection(s"jdbc:sqlite:$networkDbFile")
-  val db = new SqliteNetworkDb(dbConnection)
+  lazy val initChannelUpdates = loadFromMockFile("eclair-core/src/test/resources/mockNetwork.json")
 
-  val channels = db.listChannels()
-  val updates = db.listChannelUpdates()
-  val initChannels = channels.keys.foldLeft(TreeMap.empty[ShortChannelId, ChannelAnnouncement]) { case (m, c) => m + (c.shortChannelId -> c) }
-  val initChannelUpdates = updates.map { u =>
-    val desc = getDesc(u, initChannels(u.shortChannelId))
-    desc -> u
-  }.toMap
-  println("Test ready")
-
-  test("find 200 paths between random nodes in the graph") {
+  test("find 500 paths between random nodes in the graph") {
 
     val g = DirectedGraph.makeGraph(initChannelUpdates)
     val nodes = g.vertexSet().toList
 
-    for(i <- 0 until 200) {
+    for(i <- 0 until 500) {
       if(i % 10 == 0) println(s"Iteration: $i")
 
       val randomSource = nodes(Random.nextInt(nodes.size))
@@ -66,12 +59,12 @@ class FuzzyGraph extends FunSuite {
     true
   }
 
-  test("find 200 paths using random heuristics weight") {
+  test("find 500 paths using random heuristics weight") {
 
     val g = DirectedGraph.makeGraph(initChannelUpdates)
     val nodes = g.vertexSet().toList
 
-    for(i <- 0 until 200) {
+    for(i <- 0 until 500) {
       if(i % 10 == 0) println(s"Iteration: $i")
 
       val randomSource = nodes(Random.nextInt(nodes.size))
@@ -126,7 +119,7 @@ class FuzzyGraph extends FunSuite {
 
       val shortChannelId = ShortChannelId(
         blockHeight = 600000 + Random.nextInt(90000),  // height from 600k onward, those channels will be younger than the rest
-        txIndex = Random.nextInt(2000),
+        txIndex = 0,
         0
       )
 
@@ -150,4 +143,85 @@ class FuzzyGraph extends FunSuite {
 
   }
 
+  def loadFromMockFile(location: String): Map[ChannelDesc, ChannelUpdate] = {
+    println(s"loading network data from '$location'")
+    val mockFile = Paths.get(location).toFile
+    val listOfUpdates = serialization.read[List[StrippedPublicChannel]](FileInput(mockFile))
+    println(s"loaded ${listOfUpdates.size} updates")
+
+    listOfUpdates.map { pc =>
+      ChannelDesc(ShortChannelId(pc.desc.shortChannelId), PublicKey(ByteVector.fromHex(pc.desc.a).get), PublicKey(ByteVector.fromHex(pc.desc.b).get)) -> ChannelUpdate(
+        signature = ByteVector32.Zeroes.bytes,
+        chainHash = ByteVector32.Zeroes,
+        shortChannelId = ShortChannelId(pc.update.shortChannelId),
+        timestamp = 0,
+        messageFlags = pc.update.messageFlags.toByte,
+        channelFlags = pc.update.channelFlags.toByte,
+        cltvExpiryDelta = pc.update.cltvExpiryDelta,
+        htlcMinimumMsat = pc.update.htlcMinimumMsat,
+        htlcMaximumMsat = pc.update.htlcMaximumMsat,
+        feeBaseMsat = pc.update.feeBaseMsat,
+        feeProportionalMillionths = pc.update.feeProportionalMillionths
+      )
+    }.toMap
+  }
+
+  def loadFromDB(location: String, maxNodes: Int): Map[ChannelDesc, ChannelUpdate] = {
+    val networkDbFile = Paths.get(location).toFile
+    val dbConnection = DriverManager.getConnection(s"jdbc:sqlite:$networkDbFile")
+    val db = new SqliteNetworkDb(dbConnection)
+
+    val channels = db.listChannels()
+    val updates = db.listChannelUpdates()
+    val initChannels = channels.keys.foldLeft(TreeMap.empty[ShortChannelId, ChannelAnnouncement]) { case (m, c) => m + (c.shortChannelId -> c) }
+    val initChannelUpdatesDB = updates.map { u =>
+      val desc = Router.getDesc(u, initChannels(u.shortChannelId))
+      desc -> u
+    }.toMap
+
+    val networkNodes = initChannelUpdatesDB.map(_._1.a).toSeq
+    val nodesAmountSize = networkNodes.size
+    val nodes = mutable.Set.empty[PublicKey]
+
+    // pick #maxNodes random nodes
+    for(_ <- 0 to maxNodes){
+      val randomNode = Random.nextInt(nodesAmountSize)
+      nodes += networkNodes(randomNode)
+    }
+
+    val updatesFiltered = initChannelUpdatesDB.filter { case (d, u) =>
+      nodes.contains(d.a) || nodes.contains(d.b)
+    }
+
+    updatesFiltered
+  }
+
+  def writeToFile(location: String, updates: Map[ChannelDesc, ChannelUpdate]) = {
+
+    val mockFile = Paths.get(location).toFile
+    if(!mockFile.exists()) mockFile.createNewFile()
+
+    println(s"Writing to $location '${updates.size}' updates")
+    val strippedUpdates = updates.map { case (desc, update) =>
+        StrippedPublicChannel(StrippedDesc(desc), StrippedChannelUpdate(update))
+    }
+    val jsonUpdates = serialization.writePretty(strippedUpdates)
+    Files.write(mockFile.toPath, jsonUpdates.getBytes)
+  }
+
+
+
+}
+
+case class StrippedPublicChannel(desc: StrippedDesc, update: StrippedChannelUpdate)
+case class StrippedDesc(shortChannelId: String, a: String, b: String)
+case class StrippedChannelUpdate(shortChannelId: String, messageFlags: Int, channelFlags: Int, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Option[Long])
+
+object StrippedDesc {
+  def apply(d: ChannelDesc): StrippedDesc = new StrippedDesc(d.shortChannelId.toString, d.a.toString(), d.b.toString())
+}
+
+object StrippedChannelUpdate {
+  def apply(u: ChannelUpdate): StrippedChannelUpdate = new StrippedChannelUpdate(
+    u.shortChannelId.toString, u.messageFlags, u.channelFlags, u.cltvExpiryDelta, u.htlcMinimumMsat, u.feeBaseMsat, u.feeProportionalMillionths, u.htlcMaximumMsat)
 }
