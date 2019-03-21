@@ -27,6 +27,7 @@ import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits._
 
+import scala.collection.immutable.SortedMap
 import scala.util.{Failure, Success}
 
 /**
@@ -844,6 +845,51 @@ class RouteCalculationSpec extends FunSuite {
 
     assert(hops2Nodes(routeScoreOptimized) === (a, e) :: (e, f) :: (f, d) :: Nil)
   }
+
+  test("cost function is monotonic") {
+
+    // This test have a channel (542280x2156x0) that according to heuristics is very convenient but actually useless to reach the target,
+    // then if the cost function is not monotonic the path-finding breaks because the result path contains a loop.
+    val updates = SortedMap(
+      ShortChannelId("565643x1216x0") -> PublicChannel(
+        ann = makeChannel(ShortChannelId("565643x1216x0").toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")),
+        fundingTxid = ByteVector32.Zeroes,
+        capacity = Satoshi(0),
+        update_1_opt = Some(ChannelUpdate(ByteVector32.Zeroes.bytes, ByteVector32.Zeroes, ShortChannelId("565643x1216x0"), 0, 1.toByte, 0.toByte, 14, htlcMinimumMsat = 1, 1000, 10, Some(4294967295L))),
+        update_2_opt = Some(ChannelUpdate(ByteVector32.Zeroes.bytes, ByteVector32.Zeroes, ShortChannelId("565643x1216x0"), 0, 1.toByte, 1.toByte, 144, htlcMinimumMsat = 0, feeBaseMsat = 1000, 100, Some(15000000000L)))
+      ),
+      ShortChannelId("542280x2156x0") -> PublicChannel(
+        ann = makeChannel(ShortChannelId("542280x2156x0").toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")),
+        fundingTxid = ByteVector32.Zeroes,
+        capacity = Satoshi(0),
+        update_1_opt = Some(ChannelUpdate(ByteVector32.Zeroes.bytes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 1.toByte, 144, htlcMinimumMsat = 1000, feeBaseMsat =  1000, 100, Some(16777000000L))),
+        update_2_opt = Some(ChannelUpdate(ByteVector32.Zeroes.bytes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 0.toByte, 144, htlcMinimumMsat = 1, 667, 1, Some(16777000000L)))
+      ),
+      ShortChannelId("565779x2711x0") -> PublicChannel(
+        ann = makeChannel(ShortChannelId("565779x2711x0").toLong, PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")),
+        fundingTxid = ByteVector32.Zeroes,
+        capacity = Satoshi(0),
+        update_1_opt = Some(ChannelUpdate(ByteVector32.Zeroes.bytes, ByteVector32.Zeroes, ShortChannelId("565779x2711x0"), 0, 1.toByte, 0.toByte, 144, htlcMinimumMsat = 1, 1000, 100, Some(230000000L))),
+        update_2_opt = Some(ChannelUpdate(ByteVector32.Zeroes.bytes, ByteVector32.Zeroes, ShortChannelId("565779x2711x0"), 0, 1.toByte, 3.toByte, 144, htlcMinimumMsat = 1, 1000, 100, Some(230000000L)))
+      )
+    )
+
+    val g = DirectedGraph.makeGraph(updates)
+
+    val params = RouteParams(randomize = false, maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 1008, routeMaxLength = 6, ratios = Some(
+      WeightRatios(cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5)
+    ))
+    val thisNode = PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96")
+    val targetNode = PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")
+    val amount = 351000
+
+    Globals.blockCount.set(567634) // simulate mainnet block for heuristic
+    val Success(route) = Router.findRoute(g, thisNode, targetNode, amount, 1, Set.empty, Set.empty, Set.empty, params)
+
+    assert(route.size == 2)
+    assert(route.last.nextNodeId == targetNode)
+  }
+
 }
 
 object RouteCalculationSpec {
