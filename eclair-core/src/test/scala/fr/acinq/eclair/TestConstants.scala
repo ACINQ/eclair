@@ -39,7 +39,7 @@ object TestConstants {
   val pushMsat = 200000000L
   val feeratePerKw = 10000L
 
-  def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
+  def sqlite() = DriverManager.getConnection("jdbc:sqlite::memory:")
 
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))
@@ -170,7 +170,7 @@ object TestConstants {
     )
   }
 
-  def inMemoryDb(connection: Connection): AbstractDb = new {} with AbstractDb {
+  def inMemoryDb(connection: Connection = sqlite()): AbstractDb = new {} with AbstractDb {
     override def network(): NetworkDb = new SqliteNetworkDb(connection)
     override def audit(): AuditDb = new SqliteAuditDb(connection)
     override def channels(): ChannelsDb = new SqliteChannelsDb(connection)
