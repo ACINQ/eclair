@@ -24,24 +24,23 @@ class FuzzyGraph extends FunSuite {
   implicit val formats = org.json4s.DefaultFormats + new ByteVectorSerializer + new ByteVector32Serializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer +new PaymentRequestSerializer
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
-  val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 2016, routeMaxLength = 8, ratios = Some(WeightRatios(
+  val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, maxFeeBaseMsat = 21000, maxFeePct = 0.5, routeMaxCltv = 3016, routeMaxLength = 10, ratios = Some(WeightRatios(
     cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5
   )))
 
   val AMOUNT_TO_ROUTE = MilliSatoshi(1000000).toLong // 1000sat
 
-  lazy val initChannelUpdates = loadFromMockFile("eclair-core/src/test/resources/mockNetwork.json")
+  lazy val initChannelUpdates = loadFromMockFile("src/test/resources/mockNetwork.json")
 
   test("find 500 paths between random nodes in the graph") {
 
     val g = DirectedGraph.makeGraph(initChannelUpdates)
     val nodes = g.vertexSet().toList
 
-    for(i <- 0 until 500) {
+    for(i <- 0 until 5000) {
       if(i % 10 == 0) println(s"Iteration: $i")
 
-      val randomSource = nodes(Random.nextInt(nodes.size))
-      val randomTarget = nodes(Random.nextInt(nodes.size))
+      val List(randomSource, randomTarget) = pickRandomNodes(nodes, 2)
 
       val fallbackRoute = connectNodes(randomSource, randomTarget, g, nodes, length = 8)
       val g1 = fallbackRoute.foldLeft(g)((acc, edge) => acc.addEdge(edge))
@@ -53,9 +52,7 @@ class FuzzyGraph extends FunSuite {
             println(s"Using fallback route!")
           }
       }
-
     }
-
     true
   }
 
@@ -64,11 +61,10 @@ class FuzzyGraph extends FunSuite {
     val g = DirectedGraph.makeGraph(initChannelUpdates)
     val nodes = g.vertexSet().toList
 
-    for(i <- 0 until 500) {
+    for(i <- 0 until 5000) {
       if(i % 10 == 0) println(s"Iteration: $i")
 
-      val randomSource = nodes(Random.nextInt(nodes.size))
-      val randomTarget = nodes(Random.nextInt(nodes.size))
+      val List(randomSource, randomTarget) = pickRandomNodes(nodes, 2)
 
       val fallbackRoute = connectNodes(randomSource, randomTarget, g, nodes, length = 8)
       val g1 = fallbackRoute.foldLeft(g)((acc, edge) => acc.addEdge(edge))
@@ -86,7 +82,13 @@ class FuzzyGraph extends FunSuite {
       )
 
       Router.findRoute(g1, randomSource, randomTarget, 1000000, 0, Set.empty, Set.empty, DEFAULT_ROUTE_PARAMS.copy(ratios = Some(wr))) match {
-        case Failure(exception) => throw exception
+        case Failure(exception) =>
+          println(s"{$wr} $randomSource  -->  $randomTarget")
+          println(s"Fallback route:")
+          fallbackRoute.foreach { edge =>
+            println(s"${edge.desc.a.toString().take(8)} --> ${edge.desc.b.toString().take(8)}")
+          }
+          throw exception
         case Success(route) =>
           if(route.map(_.lastUpdate.shortChannelId) == fallbackRoute.map(_.desc.shortChannelId)){
             println(s"Using fallback route!")
@@ -94,6 +96,27 @@ class FuzzyGraph extends FunSuite {
       }
     }
     true
+  }
+
+  // picks an arbitrary number of random nodes over a given list, guarantees there are no repetitions
+  def pickRandomNodes(nodes: Seq[PublicKey], number: Int): List[PublicKey] = {
+    val resultList = new mutable.MutableList[PublicKey]()
+    val size = nodes.size
+
+    (0 until number).foreach { _ =>
+      var found = false
+
+      while(!found) {
+        val r = Random.nextInt(size)
+        val node = nodes(r)
+        if(!resultList.contains(node)){
+          resultList += node
+          found = true
+        }
+      }
+    }
+
+    resultList.toList
   }
 
   /**
@@ -109,11 +132,10 @@ class FuzzyGraph extends FunSuite {
     */
   private def connectNodes(source: PublicKey, target: PublicKey, g: DirectedGraph, nodes: List[PublicKey], length: Int = 6): Seq[GraphEdge] = {
 
-    val iterations = 0 until length
     // pick 'length' conjunctions and add source/target at the beginning/end
-    val randomNodes = source +: iterations.drop(2).map(_ => nodes(Random.nextInt(nodes.size))) :+ target
+    val randomNodes = source +: pickRandomNodes(nodes, length - 2) :+ target
 
-    iterations.dropRight(1).map { i =>
+    (0 until length).dropRight(1).map { i =>
       val from = randomNodes(i)
       val to = randomNodes(i + 1)
 
@@ -134,13 +156,12 @@ class FuzzyGraph extends FunSuite {
         cltvExpiryDelta = 244,
         htlcMinimumMsat = 0,
         htlcMaximumMsat = Some(AMOUNT_TO_ROUTE * 3),
-        feeBaseMsat = 100,
-        feeProportionalMillionths = 10
+        feeBaseMsat = 2000,
+        feeProportionalMillionths = 100
       )
 
       GraphEdge(desc, update)
     }
-
   }
 
   def loadFromMockFile(location: String): Map[ChannelDesc, ChannelUpdate] = {
@@ -150,7 +171,7 @@ class FuzzyGraph extends FunSuite {
     println(s"loaded ${listOfUpdates.size} updates")
 
     listOfUpdates.map { pc =>
-      ChannelDesc(ShortChannelId(pc.desc.shortChannelId), PublicKey(ByteVector.fromHex(pc.desc.a).get), PublicKey(ByteVector.fromHex(pc.desc.b).get)) -> ChannelUpdate(
+      ChannelDesc(ShortChannelId(pc.desc.shortChannelId), PublicKey(ByteVector.fromHex(pc.desc.a).get, checkValid = false), PublicKey(ByteVector.fromHex(pc.desc.b).get, checkValid = false)) -> ChannelUpdate(
         signature = ByteVector32.Zeroes.bytes,
         chainHash = ByteVector32.Zeroes,
         shortChannelId = ShortChannelId(pc.update.shortChannelId),
