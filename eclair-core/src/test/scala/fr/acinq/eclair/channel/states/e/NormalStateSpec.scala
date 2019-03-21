@@ -484,11 +484,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // depending on who starts signing first, there will be one or two commitments because both sides have changes
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index === 1)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index === 2)
-    assert(alice.underlyingActor.nodeParams.database.channels().listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
-    assert(alice.underlyingActor.nodeParams.database.channels().listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 2)
-    assert(alice.underlyingActor.nodeParams.database.channels().listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 2).size == 4)
-    assert(bob.underlyingActor.nodeParams.database.channels().listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
-    assert(bob.underlyingActor.nodeParams.database.channels().listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 3)
+    assert(alice.underlyingActor.nodeParams.db.channels().listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
+    assert(alice.underlyingActor.nodeParams.db.channels().listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 2)
+    assert(alice.underlyingActor.nodeParams.db.channels().listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 2).size == 4)
+    assert(bob.underlyingActor.nodeParams.db.channels().listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
+    assert(bob.underlyingActor.nodeParams.db.channels().listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 3)
   }
 
   test("recv CMD_SIGN (htlcs with same pubkeyScript but different amounts)") { f =>

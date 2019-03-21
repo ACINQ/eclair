@@ -44,8 +44,8 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
   // we load peers and channels from database
   {
-    val channels = nodeParams.database.channels().listChannels()
-    val peers = nodeParams.database.peers().listPeers()
+    val channels = nodeParams.db.channels().listLocalChannels()
+    val peers = nodeParams.db.peers().listPeers()
 
     checkBrokenHtlcsLink(channels, nodeParams.privateKey) match {
       case Nil => ()

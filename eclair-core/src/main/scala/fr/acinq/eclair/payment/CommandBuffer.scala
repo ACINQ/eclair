@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel._
 class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor with ActorLogging {
 
   import CommandBuffer._
-  import nodeParams.database._
+  import nodeParams.db._
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 

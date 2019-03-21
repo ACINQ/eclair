@@ -67,7 +67,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      database = inMemoryDb(sqlite),
+      db = inMemoryDb(sqlite),
       revocationTimeout = 20 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
@@ -131,7 +131,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      database = inMemoryDb(sqlite),
+      db = inMemoryDb(sqlite),
       revocationTimeout = 20 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
