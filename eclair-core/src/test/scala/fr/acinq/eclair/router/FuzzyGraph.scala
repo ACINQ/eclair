@@ -37,9 +37,7 @@ class FuzzyGraph extends FunSuite {
     val g = DirectedGraph.makeGraph(initChannelUpdates)
     val nodes = g.vertexSet().toList
 
-    for(i <- 0 until 500) {
-      if(i % 10 == 0) println(s"Iteration: $i")
-
+    for(_ <- 0 until 500) {
       val List(randomSource, randomTarget) = pickRandomNodes(nodes, 2)
 
       val fallbackRoute = connectNodes(randomSource, randomTarget, g, nodes, length = 8)
@@ -47,10 +45,7 @@ class FuzzyGraph extends FunSuite {
 
       Router.findRoute(g1, randomSource, randomTarget, AMOUNT_TO_ROUTE, 0, Set.empty, Set.empty, DEFAULT_ROUTE_PARAMS) match {
         case Failure(exception) => throw exception
-        case Success(route) =>
-          if(route.map(_.lastUpdate.shortChannelId) == fallbackRoute.map(_.desc.shortChannelId)){
-            println(s"Using fallback route!")
-          }
+        case Success(_) =>
       }
     }
     true
@@ -61,9 +56,7 @@ class FuzzyGraph extends FunSuite {
     val g = DirectedGraph.makeGraph(initChannelUpdates)
     val nodes = g.vertexSet().toList
 
-    for(i <- 0 until 500) {
-      if(i % 10 == 0) println(s"Iteration: $i")
-
+    for(_ <- 0 until 500) {
       val List(randomSource, randomTarget) = pickRandomNodes(nodes, 2)
 
       val fallbackRoute = connectNodes(randomSource, randomTarget, g, nodes, length = 8)
@@ -84,15 +77,8 @@ class FuzzyGraph extends FunSuite {
       Router.findRoute(g1, randomSource, randomTarget, 1000000, 0, Set.empty, Set.empty, DEFAULT_ROUTE_PARAMS.copy(ratios = Some(wr))) match {
         case Failure(exception) =>
           println(s"{$wr} $randomSource  -->  $randomTarget")
-          println(s"Fallback route:")
-          fallbackRoute.foreach { edge =>
-            println(s"${edge.desc.a.toString().take(8)} --> ${edge.desc.b.toString().take(8)}")
-          }
           throw exception
-        case Success(route) =>
-          if(route.map(_.lastUpdate.shortChannelId) == fallbackRoute.map(_.desc.shortChannelId)){
-            println(s"Using fallback route!")
-          }
+        case Success(_) =>
       }
     }
     true
