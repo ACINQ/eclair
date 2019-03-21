@@ -37,7 +37,7 @@ class FuzzyGraph extends FunSuite {
     val g = DirectedGraph.makeGraph(initChannelUpdates)
     val nodes = g.vertexSet().toList
 
-    for(i <- 0 until 5000) {
+    for(i <- 0 until 500) {
       if(i % 10 == 0) println(s"Iteration: $i")
 
       val List(randomSource, randomTarget) = pickRandomNodes(nodes, 2)
@@ -61,7 +61,7 @@ class FuzzyGraph extends FunSuite {
     val g = DirectedGraph.makeGraph(initChannelUpdates)
     val nodes = g.vertexSet().toList
 
-    for(i <- 0 until 5000) {
+    for(i <- 0 until 500) {
       if(i % 10 == 0) println(s"Iteration: $i")
 
       val List(randomSource, randomTarget) = pickRandomNodes(nodes, 2)
@@ -122,13 +122,6 @@ class FuzzyGraph extends FunSuite {
   /**
     * Creates an arbitraty long path that connects source -> ... -> target through random nodes. Conjunction channels will have
     * high fee, low capacity, recent-aged and higher than average cltv
-    *
-    * @param source
-    * @param target
-    * @param g
-    * @param nodes
-    * @param length
-    * @return
     */
   private def connectNodes(source: PublicKey, target: PublicKey, g: DirectedGraph, nodes: List[PublicKey], length: Int = 6): Seq[GraphEdge] = {
 
