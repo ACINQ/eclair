@@ -65,7 +65,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
       } recover { case t => sender ! Status.Failure(t) }
 
     case CheckPayment(paymentHash) =>
-      nodeParams.paymentsDb.findByPaymentHash(paymentHash) match {
+      nodeParams.database.payments().findByPaymentHash(paymentHash) match {
         case Some(_) => sender ! true
         case _ => sender ! false
       }
@@ -92,7 +92,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
             case _ =>
               log.info(s"received payment for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
               // amount is correct or was not specified in the payment request
-              nodeParams.paymentsDb.addPayment(Payment(htlc.paymentHash, htlc.amountMsat, Platform.currentTime / 1000))
+              nodeParams.database.payments().addPayment(Payment(htlc.paymentHash, htlc.amountMsat, Platform.currentTime / 1000))
               sender ! CMD_FULFILL_HTLC(htlc.id, paymentPreimage, commit = true)
               context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash, htlc.channelId))
               context.become(run(hash2preimage - htlc.paymentHash))

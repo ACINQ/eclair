@@ -95,7 +95,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val address_opt = if (outgoing) {
         // we store the node address upon successful outgoing connection, so we can reconnect later
         // any previous address is overwritten
-        NodeAddress.fromParts(address.getHostString, address.getPort).map(nodeAddress => nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, nodeAddress))
+        NodeAddress.fromParts(address.getHostString, address.getPort).map(nodeAddress => nodeParams.database.peers().addOrUpdatePeer(remoteNodeId, nodeAddress))
         Some(address)
       } else None
 
@@ -489,7 +489,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
   def stopPeer() = {
     log.info("removing peer from db")
-    nodeParams.peersDb.removePeer(remoteNodeId)
+    nodeParams.database.peers().removePeer(remoteNodeId)
     stop(FSM.Normal)
   }
 

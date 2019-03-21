@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel._
 class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor with ActorLogging {
 
   import CommandBuffer._
-  import nodeParams.pendingRelayDb
+  import nodeParams.database._
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
@@ -34,17 +34,17 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
       // save command in db
       register forward Register.Forward(channelId, cmd)
       // we also store the preimage in a db (note that this happens *after* forwarding the fulfill to the channel, so we don't add latency)
-      pendingRelayDb.addPendingRelay(channelId, htlcId, cmd)
+      pendingRelay().addPendingRelay(channelId, htlcId, cmd)
 
     case CommandAck(channelId, htlcId) =>
       //delete from db
       log.debug(s"fulfill/fail acked for channelId=$channelId htlcId=$htlcId")
-      pendingRelayDb.removePendingRelay(channelId, htlcId)
+      pendingRelay().removePendingRelay(channelId, htlcId)
 
     case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, d: HasCommitments) =>
       import d.channelId
       // if channel is in a state where it can have pending htlcs, we send them the fulfills we know of
-      pendingRelayDb.listPendingRelay(channelId) match {
+      pendingRelay().listPendingRelay(channelId) match {
         case Nil => ()
         case msgs =>
           log.info(s"re-sending ${msgs.size} unacked fulfills/fails to channel $channelId")

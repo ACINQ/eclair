@@ -136,7 +136,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     }
   )
 
-  val db = nodeParams.networkDb
+  val db = nodeParams.database.network()
 
   {
     log.info("loading network announcements from db...")

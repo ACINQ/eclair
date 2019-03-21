@@ -16,12 +16,13 @@
 
 package fr.acinq.eclair
 
-import java.sql.DriverManager
+import java.sql.{Connection, DriverManager}
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
@@ -38,11 +39,11 @@ object TestConstants {
   val pushMsat = 200000000L
   val feeratePerKw = 10000L
 
+  def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
+
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-
-    def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
 
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams = NodeParams(
@@ -66,12 +67,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      channelsDb = new SqliteChannelsDb(sqlite),
-      peersDb = new SqlitePeersDb(sqlite),
-      networkDb = new SqliteNetworkDb(sqlite),
-      pendingRelayDb = new SqlitePendingRelayDb(sqlite),
-      paymentsDb = new SqlitePaymentsDb(sqlite),
-      auditDb = new SqliteAuditDb(sqlite),
+      database = inMemoryDb(sqlite),
       revocationTimeout = 20 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
@@ -114,8 +110,6 @@ object TestConstants {
     val seed = ByteVector32(ByteVector.fill(32)(2))
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
-    def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
-
     def nodeParams = NodeParams(
       keyManager = keyManager,
       alias = "bob",
@@ -137,12 +131,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      channelsDb = new SqliteChannelsDb(sqlite),
-      peersDb = new SqlitePeersDb(sqlite),
-      networkDb = new SqliteNetworkDb(sqlite),
-      pendingRelayDb = new SqlitePendingRelayDb(sqlite),
-      paymentsDb = new SqlitePaymentsDb(sqlite),
-      auditDb = new SqliteAuditDb(sqlite),
+      database = inMemoryDb(sqlite),
       revocationTimeout = 20 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
@@ -179,6 +168,15 @@ object TestConstants {
       fundingSatoshis).copy(
       channelReserveSatoshis = 20000 // Alice will need to keep that much satoshis as direct payment
     )
+  }
+
+  def inMemoryDb(connection: Connection): AbstractDb = new {} with AbstractDb {
+    override def network(): NetworkDb = new SqliteNetworkDb(connection)
+    override def audit(): AuditDb = new SqliteAuditDb(connection)
+    override def channels(): ChannelsDb = new SqliteChannelsDb(connection)
+    override def peers(): PeersDb = new SqlitePeersDb(connection)
+    override def payments(): PaymentsDb = new SqlitePaymentsDb(connection)
+    override def pendingRelay(): PendingRelayDb = new SqlitePendingRelayDb(connection)
   }
 
 }

@@ -86,6 +86,8 @@ class Setup(datadir: File,
   implicit val ec = ExecutionContext.Implicits.global
   implicit val sttpBackend = OkHttpFutureBackend()
 
+
+  datadir.mkdirs()
   val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, initTor())
 
   val serverBindingAddress = new InetSocketAddress(

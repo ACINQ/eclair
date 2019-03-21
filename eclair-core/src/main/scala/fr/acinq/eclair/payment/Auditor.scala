@@ -27,7 +27,7 @@ import scala.concurrent.duration._
 
 class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
-  val db = nodeParams.auditDb
+  val db = nodeParams.database.audit()
 
   context.system.eventStream.subscribe(self, classOf[PaymentEvent])
   context.system.eventStream.subscribe(self, classOf[NetworkFeePaid])
