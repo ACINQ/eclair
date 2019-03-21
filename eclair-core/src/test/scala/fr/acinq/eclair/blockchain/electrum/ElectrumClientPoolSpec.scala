@@ -21,12 +21,12 @@ import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import grizzled.slf4j.Logging
-import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import org.scalatest.{BeforeAndAfterAll, FunSuiteLike, Ignore}
 import scodec.bits._
 
 import scala.concurrent.duration._
 
-
+@Ignore
 class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with Logging with BeforeAndAfterAll {
   var pool: ActorRef = _
   val probe = TestProbe()
