@@ -23,7 +23,7 @@ where OPTIONS can be:
   -c                    Outputs colored JSON
 
 and COMMAND is one of:
-  getinfo, connect, open, close, forceclose, updaterelayfee,
+  help, getinfo, connect, open, close, forceclose, updaterelayfee,
   peers, channels, channel, allnodes, allchannels, allupdates,
   receive, parseinvoice, findroute, findroutetonode,
   send, sendtonode, checkpayment,
@@ -31,12 +31,50 @@ and COMMAND is one of:
 
 Examples
 --------
-  eclair-cli getinfo                        get node info from $api_url
+  eclair-cli help                           display available commands
   eclair-cli -a localhost:1234 peers        list the peers of a node hosted on localhost:1234
   eclair-cli close --channelId 006fb...     closes the channel with id 006fb...
 
 
 Full documentation at: <https://github.com/ACINQ/eclair/wiki/Usage>" 1>&2; exit 1;
+}
+
+help() {
+  echo -e "
+  connect (uri): open a secure connection to a lightning node
+  connect (nodeId, host, port): open a secure connection to a lightning node
+  open (nodeId, fundingSatoshis, pushMsat = 0, feerateSatPerByte = ?, channelFlags = 0x01): open a channel with another lightning node, by default push = 0, feerate for the funding tx targets 6 blocks, and channel is announced
+  updaterelayfee (channelId, feeBaseMsat, feeProportionalMillionths): update relay fee for payments going through this channel
+  peers: list existing local peers
+  channels: list existing local channels
+  channels (nodeId): list existing local channels to a particular nodeId
+  channel (channelId): retrieve detailed information about a given channel
+  channelstats: retrieves statistics about channel usage (fees, number and average amount of payments)
+  allnodes: list all known nodes
+  allchannels: list all known channels
+  allupdates: list all channels updates
+  allupdates (nodeId): list all channels updates for this nodeId
+  receive (amountMsat, description): generate a payment request for a given amount
+  receive (amountMsat, description, expirySeconds): generate a payment request for a given amount with a description and a number of seconds till it expires
+  parseinvoice (paymentRequest): returns node, amount and payment hash in a payment request
+  findroute (paymentRequest): returns nodes and channels of the route if there is any
+  findroute (paymentRequest, amountMsat): returns nodes and channels of the route if there is any
+  findroute (nodeId, amountMsat): returns nodes and channels of the route if there is any
+  send (amountMsat, paymentHash, nodeId): send a payment to a lightning node
+  send (paymentRequest): send a payment to a lightning node using a BOLT11 payment request
+  send (paymentRequest, amountMsat): send a payment to a lightning node using a BOLT11 payment request and a custom amount
+  close (channelId): close a channel
+  close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey
+  forceclose (channelId): force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)
+  checkpayment (paymentHash): returns true if the payment has been received, false otherwise
+  checkpayment (paymentRequest): returns true if the payment has been received, false otherwise
+  audit: list all send/received/relayed payments
+  audit (from, to): list send/received/relayed payments in that interval (from <= timestamp < to)
+  networkfees: list all network fees paid to the miners, by transaction
+  networkfees (from, to): list network fees paid to the miners, by transaction, in that interval (from <= timestamp < to)
+  getinfo: returns info about the blockchain and this node
+  help: display this message
+  ";
 }
 
 # -- script's logic begins here
@@ -62,9 +100,16 @@ shift $(($OPTIND - 1))
 api_endpoint=${1}
 shift 1
 
-# display a usage method if no method given, or help is requested
-if [ -z $api_endpoint ] || [ $api_endpoint == "help" ] || [ $api_endpoint == "--help" ];
-  then usage;
+# display a usage method if no method given
+if [ -z $api_endpoint ]; then
+  usage;
+  exit 0;
+fi
+
+# display a help and exit
+if [ "$api_endpoint" == "help" ]; then
+  help;
+  exit 0;
 fi
 
 # transform long options into a HTTP encoded url body.
