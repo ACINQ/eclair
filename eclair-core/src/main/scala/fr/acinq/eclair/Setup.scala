@@ -276,7 +276,7 @@ class Setup(datadir: File,
             override val actorSystem = kit.system
             override val mat = materializer
             override val password = apiPassword
-            override val eclairApi: Eclair = new EclairApiImpl(kit)
+            override val eclairApi: Eclair = new EclairImpl(kit)
           }.route
         } else {
           new OldService {

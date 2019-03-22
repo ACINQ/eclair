@@ -69,7 +69,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   }
 
   class MockService(kit: Kit = defaultMockKit) extends Service {
-    override val eclairApi: Eclair = new EclairApiImpl(kit)
+    override val eclairApi: Eclair = new EclairImpl(kit)
     override def password: String = "mock"
     override implicit val actorSystem: ActorSystem = system
     override implicit val mat: ActorMaterializer = materializer

@@ -61,7 +61,7 @@ trait Eclair {
 
 }
 
-class EclairApiImpl (appKit: Kit) extends Eclair {
+class EclairImpl(appKit: Kit) extends Eclair {
 
   implicit val ec = appKit.system.dispatcher
   implicit val timeout = Timeout(60 seconds) // used by akka ask
