@@ -21,6 +21,7 @@ where OPTIONS can be:
   -p <password>         API's password
   -a <address>          Override the API URL with <address>
   -c                    Outputs colored JSON
+  -h                    Show available commands
 
 and COMMAND is one of:
   help, getinfo, connect, open, close, forceclose, updaterelayfee,
@@ -75,6 +76,7 @@ help() {
   getinfo: returns info about the blockchain and this node
   help: display this message
   ";
+  exit 0;
 }
 
 # -- script's logic begins here
@@ -86,11 +88,12 @@ command -v jq >/dev/null 2>&1 || { echo -e "This tool requires jq.\nFor installa
 command -v curl >/dev/null 2>&1 || { echo -e "This tool requires curl.\n\nAborting..."; exit 1; }
 
 # extract script options
-while getopts ':cu:p:a:' flag; do
+while getopts ':cu:p:a:hu:' flag; do
   case "${flag}" in
     p) api_password="${OPTARG}" ;;
     a) api_url="${OPTARG}" ;;
     c) colors=true ;;
+    h) help ;;
     *) ;;
   esac
 done
@@ -103,13 +106,11 @@ shift 1
 # display a usage method if no method given
 if [ -z $api_endpoint ]; then
   usage;
-  exit 0;
 fi
 
 # display a help and exit
 if [ "$api_endpoint" == "help" ]; then
   help;
-  exit 0;
 fi
 
 # transform long options into a HTTP encoded url body.
