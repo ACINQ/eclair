@@ -2,16 +2,16 @@ package fr.acinq.eclair.db
 
 trait Databases {
 
-  def network(): NetworkDb
+  val network: NetworkDb
 
-  def audit(): AuditDb
+  val audit: AuditDb
 
-  def channels(): ChannelsDb
+  val channels: ChannelsDb
 
-  def peers(): PeersDb
+  val peers: PeersDb
 
-  def payments(): PaymentsDb
+  val payments: PaymentsDb
 
-  def pendingRelay(): PendingRelayDb
+  val pendingRelay: PendingRelayDb
 
 }

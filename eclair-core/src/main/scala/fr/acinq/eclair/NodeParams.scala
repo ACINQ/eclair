@@ -131,15 +131,14 @@ object NodeParams {
     val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "audit.sqlite")}")
     SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
 
-    val db = new Databases {
-      override def network(): NetworkDb = new SqliteNetworkDb(sqliteNetwork)
-      override def audit(): AuditDb = new SqliteAuditDb(sqliteAudit)
-      override def channels(): ChannelsDb = new SqliteChannelsDb(sqliteEclair)
-      override def peers(): PeersDb = new SqlitePeersDb(sqliteEclair)
-      override def payments(): PaymentsDb = new SqlitePaymentsDb(sqliteEclair)
-      override def pendingRelay(): PendingRelayDb = new SqlitePendingRelayDb(sqliteEclair)
+    new Databases {
+      override val network = new SqliteNetworkDb(sqliteNetwork)
+      override val audit = new SqliteAuditDb(sqliteAudit)
+      override val channels = new SqliteChannelsDb(sqliteEclair)
+      override val peers = new SqlitePeersDb(sqliteEclair)
+      override val payments = new SqlitePaymentsDb(sqliteEclair)
+      override val pendingRelay = new SqlitePendingRelayDb(sqliteEclair)
     }
-    db
   }
 
   def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], dbMaker: File => Databases = loadDb): NodeParams = {

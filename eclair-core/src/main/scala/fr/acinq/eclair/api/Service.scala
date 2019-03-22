@@ -321,9 +321,9 @@ trait Service extends Logging {
                             case _ => (0L, Long.MaxValue)
                           }
                           completeRpcFuture(req.id, Future(AuditResponse(
-                            sent = nodeParams.db.audit().listSent(from, to),
-                            received = nodeParams.db.audit().listReceived(from, to),
-                            relayed = nodeParams.db.audit().listRelayed(from, to))
+                            sent = nodeParams.db.audit.listSent(from, to),
+                            received = nodeParams.db.audit.listReceived(from, to),
+                            relayed = nodeParams.db.audit.listRelayed(from, to))
                           ))
 
                         case "networkfees" =>
@@ -331,10 +331,10 @@ trait Service extends Logging {
                             case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
                             case _ => (0L, Long.MaxValue)
                           }
-                          completeRpcFuture(req.id, Future(nodeParams.db.audit().listNetworkFees(from, to)))
+                          completeRpcFuture(req.id, Future(nodeParams.db.audit.listNetworkFees(from, to)))
 
                         // retrieve fee stats
-                        case "channelstats" => completeRpcFuture(req.id, Future(nodeParams.db.audit().stats))
+                        case "channelstats" => completeRpcFuture(req.id, Future(nodeParams.db.audit.stats))
 
 
                         // method name was not found

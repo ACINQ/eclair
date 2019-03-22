@@ -171,12 +171,12 @@ object TestConstants {
   }
 
   def inMemoryDb(connection: Connection = sqlite()): Databases = new {} with Databases {
-    override def network(): NetworkDb = new SqliteNetworkDb(connection)
-    override def audit(): AuditDb = new SqliteAuditDb(connection)
-    override def channels(): ChannelsDb = new SqliteChannelsDb(connection)
-    override def peers(): PeersDb = new SqlitePeersDb(connection)
-    override def payments(): PaymentsDb = new SqlitePaymentsDb(connection)
-    override def pendingRelay(): PendingRelayDb = new SqlitePendingRelayDb(connection)
+    override val network = new SqliteNetworkDb(connection)
+    override val audit = new SqliteAuditDb(connection)
+    override val channels = new SqliteChannelsDb(connection)
+    override val peers = new SqlitePeersDb(connection)
+    override val payments = new SqlitePaymentsDb(connection)
+    override val pendingRelay = new SqlitePendingRelayDb(connection)
   }
 
 }
