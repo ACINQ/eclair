@@ -74,7 +74,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.expectMsgType[GetBalanceResponse]
   }
 
-  test("generate 500 blocks") {
+  test("generate 150 blocks") {
     val sender = TestProbe()
     logger.info(s"waiting for bitcoind to initialize...")
     awaitCond({
@@ -82,9 +82,9 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       sender.receiveOne(5 second).isInstanceOf[JValue]
     }, max = 30 seconds, interval = 500 millis)
     logger.info(s"generating initial blocks...")
-    sender.send(bitcoincli, BitcoinReq("generate", 500))
+    sender.send(bitcoincli, BitcoinReq("generate", 150))
     sender.expectMsgType[JValue](30 seconds)
-    DockerReadyChecker.LogLineContains("INFO:BlockProcessor:height: 501").looped(attempts = 15, delay = 1 second)
+    DockerReadyChecker.LogLineContains("INFO:BlockProcessor:height: 151").looped(attempts = 15, delay = 1 second)
   }
 
   test("wait until wallet is ready") {
