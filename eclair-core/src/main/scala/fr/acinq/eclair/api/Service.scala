@@ -38,8 +38,8 @@ trait Service extends Directives with Logging {
   implicit val mat: ActorMaterializer
 
   // a named and typed URL parameter used across several routes, 32-bytes hex-encoded
-  val channelIdNamedParameter = "channelId".as[ByteVector32](sha256HashUnmarshaller)
-  val shortChannelIdNamedParameter = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
+  val channelId = "channelId".as[ByteVector32](sha256HashUnmarshaller)
+  val shortChannelId = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
 
   val apiExceptionHandler = ExceptionHandler {
     case t: Throwable =>
@@ -110,21 +110,21 @@ trait Service extends Directives with Logging {
                     }
                   } ~
                   path("close") {
-                    formFields(channelIdNamedParameter, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
+                    formFields(channelId, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
                       complete(eclairApi.close(Left(channelId), scriptPubKey_opt))
-                    } ~ formFields(shortChannelIdNamedParameter, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (shortChannelId, scriptPubKey_opt) =>
+                    } ~ formFields(shortChannelId, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (shortChannelId, scriptPubKey_opt) =>
                       complete(eclairApi.close(Right(shortChannelId), scriptPubKey_opt))
                     }
                   } ~
                   path("forceclose") {
-                    formFields(channelIdNamedParameter) { channelId =>
+                    formFields(channelId) { channelId =>
                       complete(eclairApi.forceClose(Left(channelId)))
-                    } ~ formFields(shortChannelIdNamedParameter) { shortChannelId =>
+                    } ~ formFields(shortChannelId) { shortChannelId =>
                       complete(eclairApi.forceClose(Right(shortChannelId)))
                     }
                   } ~
                   path("updaterelayfee") {
-                    formFields(channelIdNamedParameter, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
+                    formFields(channelId, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
                       complete(eclairApi.updateRelayFee(channelId.toString, feeBase, feeProportional))
                     }
                   } ~
@@ -137,7 +137,7 @@ trait Service extends Directives with Logging {
                     }
                   } ~
                   path("channel") {
-                    formFields(channelIdNamedParameter) { channelId =>
+                    formFields(channelId) { channelId =>
                       complete(eclairApi.channelInfo(channelId))
                     }
                   } ~
