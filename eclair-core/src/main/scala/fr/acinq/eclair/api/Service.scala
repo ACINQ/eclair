@@ -21,7 +21,7 @@ import scodec.bits.ByteVector
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
-trait Service extends Directives with Logging with MetaService {
+trait Service extends Directives with Logging {
 
   // important! Must NOT import the unmarshaller as it is too generic...see https://github.com/akka/akka-http/issues/541
   import JsonSupport.marshaller

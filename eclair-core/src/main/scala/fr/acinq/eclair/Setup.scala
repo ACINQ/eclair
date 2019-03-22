@@ -270,40 +270,27 @@ class Setup(datadir: File,
           chainHash = nodeParams.chainHash,
           blockHeight = Globals.blockCount.intValue(),
           publicAddresses = nodeParams.publicAddresses)
-
-        val api = if (!config.getBoolean("api.use-old-api")) {
+        val apiPassword = config.getString("api.password") match {
+          case "" => throw EmptyAPIPasswordException
+          case valid => valid
+        }
+        val apiRoute = if (!config.getBoolean("api.use-old-api")) {
           new Service {
-
-            override val actorSystem = kit.system
-
-            override val mat = materializer
-
-            override val password = {
-              val p = config.getString("api.password")
-              if (p.isEmpty) throw EmptyAPIPasswordException else p
-            }
-
-            override def eclairApi: EclairApi = new EclairApiImpl(kit, getInfo)
-
-          }
+            val actorSystem = kit.system
+            val mat = materializer
+            val password = apiPassword
+            def eclairApi: EclairApi = new EclairApiImpl(kit, getInfo)
+          }.route
         } else {
           new OldService {
-
             override def scheduler = system.scheduler
-
-            override val password = {
-              val p = config.getString("api.password")
-              if (p.isEmpty) throw EmptyAPIPasswordException else p
-            }
-
+            override val password = apiPassword
             override def getInfoResponse: Future[GetInfoResponse] = Future.successful(getInfo)
-
             override def appKit: Kit = kit
-
             override val socketHandler = makeSocketHandler(system)(materializer)
-          }
+          }.route
         }
-        val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+        val httpBound = Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
           case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
         }
         val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("api.port"))))

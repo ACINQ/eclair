@@ -4,7 +4,7 @@ import akka.util.Timeout
 import akka.pattern._
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.{Kit, ShortChannelId}
+import fr.acinq.eclair.{Globals, Kit, ShortChannelId}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import fr.acinq.eclair.channel._
@@ -185,6 +185,13 @@ class EclairApiImpl (appKit: Kit, getInfo: GetInfoResponse) extends EclairApi {
       res <- appKit.register ? fwdReq
     } yield res
 
-  override def getInfoResponse: Future[GetInfoResponse] = Future.successful(getInfo)
+  override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
+    GetInfoResponse(nodeId = appKit.nodeParams.nodeId,
+    alias = appKit.nodeParams.alias,
+    port = 8080,
+    chainHash = appKit.nodeParams.chainHash,
+    blockHeight = Globals.blockCount.intValue(),
+    publicAddresses = appKit.nodeParams.publicAddresses)
+  )
 
 }
