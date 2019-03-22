@@ -37,6 +37,7 @@ import fr.acinq.eclair.io.Peer
 
 import scala.concurrent.duration._
 import scala.io.Source
+import scala.reflect.ClassTag
 
 class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
@@ -110,7 +111,9 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       check {
         assert(handled)
         assert(status == BadRequest)
-        assert(entityAs[String].contains("The form field 'channelId' was malformed"))
+        val resp = entityAs[ErrorResponse](JsonSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
+        println(resp.error)
+        assert(resp.error == "The form field 'channelId' was malformed:\nInvalid hexadecimal character 'h' at index 0")
       }
 
     // wrong params
