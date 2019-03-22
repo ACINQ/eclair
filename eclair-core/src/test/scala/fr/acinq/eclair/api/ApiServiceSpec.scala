@@ -17,9 +17,7 @@
 package fr.acinq.eclair.api
 
 
-import java.io.{File, FileOutputStream, PrintWriter}
 import java.nio.file.{Files, Path, Paths, StandardOpenOption}
-
 import akka.actor.{Actor, ActorSystem, Props, Scheduler}
 import org.scalatest.FunSuite
 import akka.http.scaladsl.model.StatusCodes._
@@ -76,7 +74,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     }
   }
 
-  class MockService(kit: Kit = defaultMockKit, getInfoResp: GetInfoResponse = defaultGetInfo) extends NewService {
+  class MockService(kit: Kit = defaultMockKit, getInfoResp: GetInfoResponse = defaultGetInfo) extends Service {
     override def eclairApi: EclairApi = new EclairApiImpl(kit, getInfoResp)
 
     override def password: String = "mock"

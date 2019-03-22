@@ -272,7 +272,7 @@ class Setup(datadir: File,
           publicAddresses = nodeParams.publicAddresses)
 
         val api = if (!config.getBoolean("api.use-old-api")) {
-          new NewService {
+          new Service {
 
             override val actorSystem = kit.system
 
@@ -287,7 +287,7 @@ class Setup(datadir: File,
 
           }
         } else {
-          new Service {
+          new OldService {
 
             override def scheduler = system.scheduler
 
