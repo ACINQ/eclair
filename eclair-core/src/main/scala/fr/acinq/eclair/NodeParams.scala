@@ -124,7 +124,7 @@ object NodeParams {
     }
   }
 
-  def loadDb(chaindir: File): Databases = {
+  def createOrLoadSQLiteWithJDBC(chaindir: File): Databases = {
     chaindir.mkdir()
     val sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
     val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "network.sqlite")}")
@@ -141,7 +141,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], dbMaker: File => Databases = loadDb): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], dbMaker: File => Databases = createOrLoadSQLiteWithJDBC): NodeParams = {
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
