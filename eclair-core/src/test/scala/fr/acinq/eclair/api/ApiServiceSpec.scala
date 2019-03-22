@@ -24,7 +24,7 @@ import org.scalatest.FunSuite
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import fr.acinq.eclair.blockchain.TestWallet
-import fr.acinq.eclair.{Eclair, EclairApiImpl, Kit, TestConstants}
+import fr.acinq.eclair._
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import TestConstants._
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
@@ -61,21 +61,13 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     wallet = new TestWallet
   )
 
-  def defaultGetInfo = GetInfoResponse(
-    nodeId = Alice.nodeParams.nodeId,
-    alias = Alice.nodeParams.alias,
-    chainHash = Alice.nodeParams.chainHash,
-    blockHeight = 123456,
-    publicAddresses = Alice.nodeParams.publicAddresses
-  )
-
   class MockActor extends Actor {
     override def receive: Receive = {
       case _ =>
     }
   }
 
-  class MockService(kit: Kit = defaultMockKit, getInfoResp: GetInfoResponse = defaultGetInfo) extends Service {
+  class MockService(kit: Kit = defaultMockKit) extends Service {
     override val eclairApi: Eclair = new EclairApiImpl(kit)
     override def password: String = "mock"
     override implicit val actorSystem: ActorSystem = system
@@ -133,6 +125,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   }
 
   test("'help' should respond with a help message") {
+    Globals.blockCount.set(9999)
     val mockService = new MockService()
 
     Post("/help") ~>
@@ -267,7 +260,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       }
   }
 
-  private def matchTestJson(apiName: String, overWrite: Boolean, response: String)(implicit formats: Formats) = {
+  private def matchTestJson(apiName: String, overWrite: Boolean, response: String) = {
     val p = Paths.get(s"src/test/resources/api/$apiName")
 
     if (overWrite) {
