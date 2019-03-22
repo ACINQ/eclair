@@ -62,7 +62,6 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   def defaultGetInfo = GetInfoResponse(
     nodeId = Alice.nodeParams.nodeId,
     alias = Alice.nodeParams.alias,
-    port = 9735,
     chainHash = Alice.nodeParams.chainHash,
     blockHeight = 123456,
     publicAddresses = Alice.nodeParams.publicAddresses
@@ -75,7 +74,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   }
 
   class MockService(kit: Kit = defaultMockKit, getInfoResp: GetInfoResponse = defaultGetInfo) extends Service {
-    override def eclairApi: EclairApi = new EclairApiImpl(kit, getInfoResp)
+    override def eclairApi: EclairApi = new EclairApiImpl(kit)
 
     override def password: String = "mock"
 

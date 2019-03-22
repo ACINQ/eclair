@@ -60,7 +60,7 @@ trait EclairApi {
 
 }
 
-class EclairApiImpl (appKit: Kit, getInfo: GetInfoResponse) extends EclairApi {
+class EclairApiImpl (appKit: Kit) extends EclairApi {
 
   implicit val ec = appKit.system.dispatcher
   implicit val timeout = Timeout(60 seconds) // used by akka ask
@@ -188,7 +188,6 @@ class EclairApiImpl (appKit: Kit, getInfo: GetInfoResponse) extends EclairApi {
   override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
     GetInfoResponse(nodeId = appKit.nodeParams.nodeId,
     alias = appKit.nodeParams.alias,
-    port = 8080,
     chainHash = appKit.nodeParams.chainHash,
     blockHeight = Globals.blockCount.intValue(),
     publicAddresses = appKit.nodeParams.publicAddresses)

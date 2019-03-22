@@ -266,7 +266,6 @@ class Setup(datadir: File,
         implicit val materializer = ActorMaterializer()
         val getInfo = GetInfoResponse(nodeId = nodeParams.nodeId,
           alias = nodeParams.alias,
-          port = config.getInt("server.port"),
           chainHash = nodeParams.chainHash,
           blockHeight = Globals.blockCount.intValue(),
           publicAddresses = nodeParams.publicAddresses)
@@ -279,7 +278,7 @@ class Setup(datadir: File,
             val actorSystem = kit.system
             val mat = materializer
             val password = apiPassword
-            def eclairApi: EclairApi = new EclairApiImpl(kit, getInfo)
+            def eclairApi: EclairApi = new EclairApiImpl(kit)
           }.route
         } else {
           new OldService {
