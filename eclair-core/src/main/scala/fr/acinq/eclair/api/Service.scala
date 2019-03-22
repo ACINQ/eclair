@@ -157,18 +157,18 @@ trait Service extends Directives with Logging {
                     complete(invoice)
                   }
                 } ~
-                path("findRouteByInvoice") {
+                path("findroute") {
                   formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
                     case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) => complete(eclairApi.findRoute(nodeId, amount.toLong, invoice.routingInfo))
                     case (invoice, Some(overrideAmount)) => complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, invoice.routingInfo))
                     case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"))
                   }
-                } ~ path("findRouteByNode") {
+                } ~ path("findroutetonode") {
                 formFields("nodeId".as[PublicKey], "amountMsat".as[Long]) { (nodeId, amount) =>
                   complete(eclairApi.findRoute(nodeId, amount))
                 }
               } ~
-                path("sendToInvoice") {
+                path("send") {
                   formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
                     case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) =>
                       complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry))
@@ -177,7 +177,7 @@ trait Service extends Directives with Logging {
                     case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
                   }
                 } ~
-                path("sendToNode") {
+                path("sendtonode") {
                   formFields("amountMsat".as[Long], "paymentHash".as[ByteVector32](sha256HashUnmarshaller), "nodeId".as[PublicKey]) { (amountMsat, paymentHash, nodeId) =>
                     complete(eclairApi.send(nodeId, amountMsat, paymentHash))
                   }

@@ -106,15 +106,15 @@ case ${METHOD}_${#} in
     "receive_2")              call ${METHOD} " "$(printf amountMsat=%s ${1})" "$(printf description=%s ${2})" " ;;
     "receive_3")              call ${METHOD} " "$(printf amountMsat=%s ${1})" "$(printf description=%s ${2})" "$(printf expireIn=%s ${3})" " ;;
 
-    "sendToInvoice_1")        call ${METHOD} " "$(printf invoice=%s ${1})" " ;;
-    "sendToInvoice_2")        call ${METHOD} " "$(printf invoice=%s ${1})" "$(printf amountMsat=%s ${2})" " ;;
-    "sendToNode_3")           call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf amountMsat=%s ${2})" "$(printf paymentHash=%s ${3})" " ;;
+    "send_1")                 call ${METHOD} " "$(printf invoice=%s ${1})" " ;;
+    "send_2")                 call ${METHOD} " "$(printf invoice=%s ${1})" "$(printf amountMsat=%s ${2})" " ;;
+    "sendtonode_3")           call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf amountMsat=%s ${2})" "$(printf paymentHash=%s ${3})" " ;;
 
     "parseinvoice_1")         call ${METHOD} "$(printf invoice=%s ${1})" ;;
 
-    "findRouteByInvoice_1")   call ${METHOD} " "$(printf invoice=%s ${1})" " ;;
-    "findRouteByInvoice_2")   call ${METHOD} " "$(printf invoice=%s ${1})" "$(printf amountMsat=%s ${2})" " ;;
-    "findRouteByNode_2")      call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf amountMsat=%s ${2})" " ;;
+    "findroute_1")            call ${METHOD} " "$(printf invoice=%s ${1})" " ;;
+    "findroute_2")            call ${METHOD} " "$(printf invoice=%s ${1})" "$(printf amountMsat=%s ${2})" " ;;
+    "findroutetonode_2")      call ${METHOD} " "$(printf nodeId=%s ${1})" "$(printf amountMsat=%s ${2})" " ;;
 
     "checkpayment_1")         call "checkpayment" "$(printf invoice=%s ${1})" ;;
     "checkpaymentbyhash_1")   call "checkpayment" "$(printf paymentHash=%s ${1})" ;; # calls checkinvoice but using the paymentHash instead of the invoice
