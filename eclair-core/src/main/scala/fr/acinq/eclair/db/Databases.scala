@@ -1,6 +1,6 @@
 package fr.acinq.eclair.db
 
-trait AbstractDb {
+trait Databases {
 
   def network(): NetworkDb
 

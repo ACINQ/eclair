@@ -61,7 +61,7 @@ case class NodeParams(keyManager: KeyManager,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double,
-                      db: AbstractDb,
+                      db: Databases,
                       revocationTimeout: FiniteDuration,
                       pingInterval: FiniteDuration,
                       pingTimeout: FiniteDuration,
@@ -124,14 +124,14 @@ object NodeParams {
     }
   }
 
-  def loadDb(chaindir: File): AbstractDb = {
+  def loadDb(chaindir: File): Databases = {
     chaindir.mkdir()
     val sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
     val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "network.sqlite")}")
     val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "audit.sqlite")}")
     SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
 
-    val db = new {} with AbstractDb {
+    val db = new Databases {
       override def network(): NetworkDb = new SqliteNetworkDb(sqliteNetwork)
       override def audit(): AuditDb = new SqliteAuditDb(sqliteAudit)
       override def channels(): ChannelsDb = new SqliteChannelsDb(sqliteEclair)
@@ -142,7 +142,7 @@ object NodeParams {
     db
   }
 
-  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], dbMaker: File => AbstractDb = loadDb): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], dbMaker: File => Databases = loadDb): NodeParams = {
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
