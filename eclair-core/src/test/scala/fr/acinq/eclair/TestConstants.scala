@@ -41,6 +41,9 @@ object TestConstants {
 
   def sqlite() = DriverManager.getConnection("jdbc:sqlite::memory:")
 
+  def inMemoryDb(connection: Connection = sqlite()): Databases = Databases.databaseByConnections(connection, connection, connection)
+
+
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
@@ -168,15 +171,6 @@ object TestConstants {
       fundingSatoshis).copy(
       channelReserveSatoshis = 20000 // Alice will need to keep that much satoshis as direct payment
     )
-  }
-
-  def inMemoryDb(connection: Connection = sqlite()): Databases = new Databases {
-    override val network = new SqliteNetworkDb(connection)
-    override val audit = new SqliteAuditDb(connection)
-    override val channels = new SqliteChannelsDb(connection)
-    override val peers = new SqlitePeersDb(connection)
-    override val payments = new SqlitePaymentsDb(connection)
-    override val pendingRelay = new SqlitePendingRelayDb(connection)
   }
 
 }

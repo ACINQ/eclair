@@ -124,30 +124,10 @@ object NodeParams {
     }
   }
 
-  def createOrLoadSQLiteWithJDBC(chaindir: File): Databases = {
-    chaindir.mkdir()
-    val sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
-    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "network.sqlite")}")
-    val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "audit.sqlite")}")
-    SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
-
-    new Databases {
-      override val network = new SqliteNetworkDb(sqliteNetwork)
-      override val audit = new SqliteAuditDb(sqliteAudit)
-      override val channels = new SqliteChannelsDb(sqliteEclair)
-      override val peers = new SqlitePeersDb(sqliteEclair)
-      override val payments = new SqlitePaymentsDb(sqliteEclair)
-      override val pendingRelay = new SqlitePendingRelayDb(sqliteEclair)
-    }
-  }
-
-  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], dbMaker: File => Databases = createOrLoadSQLiteWithJDBC): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases): NodeParams = {
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
-
-    val dbDir = new File(datadir, chain)
-    val db = dbMaker(dbDir)
 
     val color = ByteVector.fromValidHex(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
@@ -217,7 +197,7 @@ object NodeParams {
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
-      db = db,
+      db = database,
       revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
