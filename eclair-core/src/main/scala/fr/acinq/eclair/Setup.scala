@@ -275,17 +275,17 @@ class Setup(datadir: File,
         }
         val apiRoute = if (!config.getBoolean("api.use-old-api")) {
           new Service {
-            val actorSystem = kit.system
-            val mat = materializer
-            val password = apiPassword
-            def eclairApi: EclairApi = new EclairApiImpl(kit)
+            override val actorSystem = kit.system
+            override val mat = materializer
+            override val password = apiPassword
+            override val eclairApi: Eclair = new EclairApiImpl(kit)
           }.route
         } else {
           new OldService {
-            override def scheduler = system.scheduler
+            override val scheduler = system.scheduler
             override val password = apiPassword
-            override def getInfoResponse: Future[GetInfoResponse] = Future.successful(getInfo)
-            override def appKit: Kit = kit
+            override val getInfoResponse: Future[GetInfoResponse] = Future.successful(getInfo)
+            override val appKit: Kit = kit
             override val socketHandler = makeSocketHandler(system)(materializer)
           }.route
         }

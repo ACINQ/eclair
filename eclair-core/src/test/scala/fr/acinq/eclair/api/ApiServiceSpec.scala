@@ -18,12 +18,13 @@ package fr.acinq.eclair.api
 
 
 import java.nio.file.{Files, Path, Paths, StandardOpenOption}
+
 import akka.actor.{Actor, ActorSystem, Props, Scheduler}
 import org.scalatest.FunSuite
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import fr.acinq.eclair.blockchain.TestWallet
-import fr.acinq.eclair.{Kit, TestConstants}
+import fr.acinq.eclair.{Eclair, EclairApiImpl, Kit, TestConstants}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import TestConstants._
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
@@ -33,6 +34,7 @@ import fr.acinq.eclair.channel.Register.ForwardShortId
 import org.json4s.{Formats, JValue}
 import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
 import fr.acinq.eclair.io.Peer
+
 import scala.concurrent.duration._
 import scala.io.Source
 
@@ -74,7 +76,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   }
 
   class MockService(kit: Kit = defaultMockKit, getInfoResp: GetInfoResponse = defaultGetInfo) extends Service {
-    override def eclairApi: EclairApi = new EclairApiImpl(kit)
+    override def eclairApi: Eclair = new EclairApiImpl(kit)
 
     override def password: String = "mock"
 

@@ -1,24 +1,25 @@
-package fr.acinq.eclair.api
+package fr.acinq.eclair
 
-import akka.util.Timeout
+import akka.actor.ActorRef
 import akka.pattern._
+import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.{Globals, Kit, ShortChannelId}
-import fr.acinq.eclair.io.{NodeURI, Peer}
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import fr.acinq.eclair.api.{AuditResponse, GetInfoResponse}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{NetworkFee, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
+import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
-import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentRequest}
-import fr.acinq.eclair.router.{ChannelDesc, RouteNotFound, RouteRequest, RouteResponse}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentRequest}
+import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import scodec.bits.ByteVector
-import scala.concurrent.duration._
-import scala.concurrent.Future
 
-trait EclairApi {
+import scala.concurrent.Future
+import scala.concurrent.duration._
+
+trait Eclair {
 
   def connect(uri: String): Future[String]
 
@@ -60,7 +61,7 @@ trait EclairApi {
 
 }
 
-class EclairApiImpl (appKit: Kit) extends EclairApi {
+class EclairApiImpl (appKit: Kit) extends Eclair {
 
   implicit val ec = appKit.system.dispatcher
   implicit val timeout = Timeout(60 seconds) // used by akka ask

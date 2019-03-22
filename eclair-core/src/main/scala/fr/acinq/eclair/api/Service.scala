@@ -3,7 +3,7 @@ package fr.acinq.eclair.api
 import akka.http.scaladsl.server._
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.{Kit, ShortChannelId}
+import fr.acinq.eclair.{Eclair, Kit, ShortChannelId}
 import FormParamExtractors._
 import akka.NotUsed
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
@@ -18,6 +18,7 @@ import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
 import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentRequest}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
+
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
@@ -30,7 +31,7 @@ trait Service extends Directives with Logging {
 
   def password: String
 
-  def eclairApi: EclairApi
+  val eclairApi: Eclair
 
   implicit val actorSystem: ActorSystem
   implicit val mat: ActorMaterializer
