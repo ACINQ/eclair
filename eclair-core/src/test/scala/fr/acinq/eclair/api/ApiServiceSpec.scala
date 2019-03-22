@@ -78,7 +78,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     val mockService = new MockService
 
     // no auth
-    Post("/help") ~>
+    Post("/getinfo") ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
@@ -86,7 +86,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       }
 
     // wrong auth
-    Post("/help") ~>
+    Post("/getinfo") ~>
       addCredentials(BasicHttpCredentials("", mockService.password + "what!")) ~>
       Route.seal(mockService.route) ~>
       check {
@@ -120,22 +120,6 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       check {
         assert(handled)
         assert(status == BadRequest)
-      }
-
-  }
-
-  test("'help' should respond with a help message") {
-    Globals.blockCount.set(9999)
-    val mockService = new MockService()
-
-    Post("/help") ~>
-      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
-      Route.seal(mockService.route) ~>
-      check {
-        assert(handled)
-        assert(status == OK)
-        val resp = entityAs[String]
-        matchTestJson("help", false, resp)
       }
 
   }
@@ -183,11 +167,11 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   }
 
   test("'getinfo' response should include this node ID") {
+    Globals.blockCount.set(9999)
     val mockService = new MockService()
 
     Post("/getinfo") ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
-      addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
