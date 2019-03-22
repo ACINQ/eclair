@@ -170,7 +170,7 @@ object TestConstants {
     )
   }
 
-  def inMemoryDb(connection: Connection = sqlite()): Databases = new {} with Databases {
+  def inMemoryDb(connection: Connection = sqlite()): Databases = new Databases {
     override val network = new SqliteNetworkDb(connection)
     override val audit = new SqliteAuditDb(connection)
     override val channels = new SqliteChannelsDb(connection)
