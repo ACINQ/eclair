@@ -233,8 +233,8 @@ object ZmqWatcher {
   def computeWatchedUtxos(watches: Set[Watch]): Map[OutPoint, Set[Watch]] = {
     watches
       .collect {
-      case w: WatchSpent => OutPoint(w.txId, w.outputIndex) -> w
-      case w: WatchSpentBasic => OutPoint(w.txId, w.outputIndex) -> w
+      case w: WatchSpent => OutPoint(w.txId.reverse, w.outputIndex) -> w
+      case w: WatchSpentBasic => OutPoint(w.txId.reverse, w.outputIndex) -> w
     }
       .groupBy(_._1)
       .mapValues(_.map(_._2))
