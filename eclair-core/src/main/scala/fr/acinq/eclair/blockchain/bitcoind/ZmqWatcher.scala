@@ -41,7 +41,7 @@ import scala.util.Try
   */
 class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
-  import ZmqWatcher.TickNewBlock
+  import ZmqWatcher._
 
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
 
@@ -50,17 +50,21 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
   case class TriggerEvent(w: Watch, e: WatchEvent)
 
-  def receive: Receive = watching(Set(), SortedMap(), None)
+  def receive: Receive = watching(Set(), Map(), SortedMap(), None)
 
-  def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
+  def watching(watches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
     case NewTransaction(tx) =>
-      //log.debug(s"analyzing txid=${tx.txid} tx=$tx")
-      watches.collect {
-        case w@WatchSpentBasic(_, txid, outputIndex, _, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
-          self ! TriggerEvent(w, WatchEventSpentBasic(event))
-        case w@WatchSpent(_, txid, outputIndex, _, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
-          self ! TriggerEvent(w, WatchEventSpent(event, tx))
+      log.debug(s"analyzing txid={} tx={}", tx.txid, tx)
+      tx.txIn
+        .map(_.outPoint)
+        .flatMap(watchedUtxos.get)
+        .flatten // List[Watch] -> Watch
+        .collect {
+        case w: WatchSpentBasic =>
+          self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
+        case w: WatchSpent =>
+          self ! TriggerEvent(w, WatchEventSpent(w.event, tx))
       }
 
     case NewBlock(block) =>
@@ -70,7 +74,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
       log.debug(s"scheduling a new task to check on tx confirmations")
       // we do this to avoid herd effects in testing when generating a lots of blocks in a row
       val task = context.system.scheduler.scheduleOnce(2 seconds, self, TickNewBlock)
-      context become watching(watches, block2tx, Some(task))
+      context become watching(watches, watchedUtxos, block2tx, Some(task))
 
     case TickNewBlock =>
       client.getBlockCount.map {
@@ -81,19 +85,25 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
       }
       // TODO: beware of the herd effect
       watches.collect { case w: WatchConfirmed => checkConfirmed(w) }
-      context become (watching(watches, block2tx, None))
+      context become watching(watches, watchedUtxos, block2tx, None)
 
     case TriggerEvent(w, e) if watches.contains(w) =>
       log.info(s"triggering $w")
       w.channel ! e
-      // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
-      // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
-      if (!w.isInstanceOf[WatchSpent]) context.become(watching(watches - w, block2tx, None))
+      w match {
+        case _: WatchSpent =>
+          // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
+          // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
+          ()
+        case _ =>
+          val watches1 = watches - w
+          context become watching(watches1, computeWatchedUtxos(watches1), block2tx, None)
+      }
 
     case CurrentBlockCount(count) => {
       val toPublish = block2tx.filterKeys(_ <= count)
       toPublish.values.flatten.map(tx => publish(tx))
-      context.become(watching(watches, block2tx -- toPublish.keys, None))
+      context become watching(watches, watchedUtxos, block2tx -- toPublish.keys, None)
     }
 
     case w: Watch if !watches.contains(w) =>
@@ -139,7 +149,8 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
       log.debug(s"adding watch $w for $sender")
       context.watch(w.channel)
-      context.become(watching(watches + w, block2tx, nextTick))
+      val watches1 = watches + w
+      context become watching(watches1, computeWatchedUtxos(watches1), block2tx, nextTick)
 
     case PublishAsap(tx) =>
       val blockCount = Globals.blockCount.get()
@@ -154,7 +165,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
-        context.become(watching(watches, block2tx1, None))
+        context become watching(watches, watchedUtxos, block2tx1, None)
       } else publish(tx)
 
     case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _) =>
@@ -165,15 +176,15 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
       if (absTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(absTimeout, block2tx.getOrElse(absTimeout, Seq.empty[Transaction]) :+ tx)
-        context.become(watching(watches, block2tx1, None))
+        context become watching(watches, watchedUtxos, block2tx1, None)
       } else publish(tx)
 
     case ValidateRequest(ann) => client.validate(ann).pipeTo(sender)
 
     case Terminated(channel) =>
       // we remove watches associated to dead actor
-      val deprecatedWatches = watches.filter(_.channel == channel)
-      context.become(watching(watches -- deprecatedWatches, block2tx, None))
+      val watches1 = watches.filterNot(_.channel == channel)
+      context become watching(watches1, computeWatchedUtxos(watches1), block2tx, None)
 
     case 'watches => sender ! watches
 
@@ -212,5 +223,21 @@ object ZmqWatcher {
   def props(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(client)(ec))
 
   case object TickNewBlock
+
+  /**
+    * The resulting map allows checking spent txes in constant time wrt number of watchers
+    *
+    * @param watches
+    * @return
+    */
+  def computeWatchedUtxos(watches: Set[Watch]): Map[OutPoint, Set[Watch]] = {
+    watches
+      .collect {
+      case w: WatchSpent => OutPoint(w.txId, w.outputIndex) -> w
+      case w: WatchSpentBasic => OutPoint(w.txId, w.outputIndex) -> w
+    }
+      .groupBy(_._1)
+      .mapValues(_.map(_._2))
+  }
 
 }
