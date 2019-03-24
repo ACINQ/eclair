@@ -81,18 +81,13 @@ object LightningMessageCodecs {
   )
 
   def scalar: Codec[Scalar] = Codec[Scalar](
-    (value: Scalar) => bytes(32).encode(ByteVector(value.toBin.toArray)),
+    (value: Scalar) => bytes(32).encode(value.toBin),
     (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => Scalar(b)))
   )
 
   def point: Codec[Point] = Codec[Point](
     (point: Point) => bytes(33).encode(point.toBin(compressed = true)),
     (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => Point(b)))
-  )
-
-  def privateKey: Codec[PrivateKey] = Codec[PrivateKey](
-    (priv: PrivateKey) => bytes(32).encode(priv.value.toBin),
-    (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => PrivateKey(b, compressed = true)))
   )
 
   def publicKey: Codec[PublicKey] = Codec[PublicKey](
