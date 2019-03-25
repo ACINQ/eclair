@@ -17,14 +17,17 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.scalatest.Outcome
+import scodec.bits.ByteVector
 
+import scala.concurrent.{Future, Promise}
 import scala.concurrent.duration._
 
 /**
@@ -36,24 +39,21 @@ class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with State
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+    val noopWallet = new TestWallet {
+      override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse].future  // will never be completed
+    }
+    val setup = init(wallet = noopWallet)
     import setup._
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
-      println("sending init funder/fundee")
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
-      println("received OpenChannel")
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
-      println("received AcceptChannel")
       bob2alice.forward(alice)
-      awaitCond {
-        println(s"alice.stateName = ${alice.stateName}")
-        alice.stateName == WAIT_FOR_FUNDING_INTERNAL
-      }
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
       withFixture(test.toNoArgTest(FixtureParam(alice, alice2bob, bob2alice, alice2blockchain)))
     }
   }
