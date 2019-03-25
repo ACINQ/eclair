@@ -25,14 +25,14 @@ object Databases {
 
   /**
     * Given a parent folder it creates or loads all the databases from a JDBC connection
-    * @param chaindir
+    * @param dbdir
     * @return
     */
-  def createOrLoadSQLiteWithJDBC(chaindir: File): Databases = {
-    chaindir.mkdir()
-    val sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
-    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "network.sqlite")}")
-    val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "audit.sqlite")}")
+  def sqliteJDBC(dbdir: File): Databases = {
+    dbdir.mkdir()
+    val sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "eclair.sqlite")}")
+    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "network.sqlite")}")
+    val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
     SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
 
     databaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)

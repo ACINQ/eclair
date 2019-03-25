@@ -124,7 +124,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases): NodeParams = {
+  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases): NodeParams = {
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)

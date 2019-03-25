@@ -92,10 +92,10 @@ class Setup(datadir: File,
 
   val database = db match {
     case Some(d) => d
-    case None => Databases.createOrLoadSQLiteWithJDBC(new File(datadir, chain))
+    case None => Databases.sqliteJDBC(new File(datadir, chain))
   }
 
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, initTor(), database)
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database)
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),

@@ -28,7 +28,6 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
-
 import scala.concurrent.duration._
 
 /**
@@ -39,9 +38,9 @@ object TestConstants {
   val pushMsat = 200000000L
   val feeratePerKw = 10000L
 
-  def sqlite() = DriverManager.getConnection("jdbc:sqlite::memory:")
+  def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
 
-  def inMemoryDb(connection: Connection = sqlite()): Databases = Databases.databaseByConnections(connection, connection, connection)
+  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.databaseByConnections(connection, connection, connection)
 
 
   object Alice {
@@ -70,7 +69,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      db = inMemoryDb(sqlite),
+      db = inMemoryDb(sqliteInMemory),
       revocationTimeout = 20 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
@@ -134,7 +133,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      db = inMemoryDb(sqlite),
+      db = inMemoryDb(sqliteInMemory),
       revocationTimeout = 20 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
