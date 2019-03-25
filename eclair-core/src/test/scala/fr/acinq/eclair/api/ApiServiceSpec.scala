@@ -51,23 +51,41 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
   trait EclairMock extends Eclair {
     override def connect(uri: String): Future[String] = ???
+
     override def open(nodeId: Crypto.PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int]): Future[String] = ???
+
     override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String] = ???
+
     override def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId]): Future[String] = ???
+
     override def updateRelayFee(channelId: String, feeBaseMsat: Long, feeProportionalMillionths: Long): Future[String] = ???
+
     override def peersInfo(): Future[Iterable[PeerInfo]] = ???
+
     override def channelsInfo(toRemoteNode: Option[Crypto.PublicKey]): Future[Iterable[RES_GETINFO]] = ???
+
     override def channelInfo(channelId: ByteVector32): Future[RES_GETINFO] = ???
+
     override def allnodes(): Future[Iterable[NodeAnnouncement]] = ???
+
     override def allchannels(): Future[Iterable[ChannelDesc]] = ???
+
     override def allupdates(nodeId: Option[Crypto.PublicKey]): Future[Iterable[ChannelUpdate]] = ???
+
     override def receive(description: String, amountMsat: Option[Long], expire: Option[Long]): Future[String] = ???
+
     override def findRoute(targetNodeId: Crypto.PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]]): Future[RouteResponse] = ???
+
     override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long]): Future[PaymentLifecycle.PaymentResult] = ???
+
     override def checkpayment(paymentHash: ByteVector32): Future[Boolean] = ???
+
     override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = ???
+
     override def networkFees(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[NetworkFee]] = ???
+
     override def channelStats(): Future[Seq[Stats]] = ???
+
     override def getInfoResponse(): Future[GetInfoResponse] = ???
   }
 
@@ -80,7 +98,9 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
   class MockService(eclair: Eclair) extends Service {
     override val eclairApi: Eclair = eclair
+
     override def password: String = "mock"
+
     override implicit val actorSystem: ActorSystem = system
     override implicit val mat: ActorMaterializer = materializer
   }
@@ -218,7 +238,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     val remotePort = "9735"
     val remoteUri = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735"
 
-    val mockService = new MockService(    new EclairMock {
+    val mockService = new MockService(new EclairMock {
       override def connect(uri: String): Future[String] = Future.successful("connected")
     })
 
