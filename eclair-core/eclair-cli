@@ -94,7 +94,7 @@ for arg in "${@}"; do
 done;
 
 # jq parses response body for error message
-jq_filter='if .error == null then . else .error end'
+jq_filter='if type=="object" and .error != null then .error else . end'
 
 # jq options
 if [ "$colors" = true ]; then
