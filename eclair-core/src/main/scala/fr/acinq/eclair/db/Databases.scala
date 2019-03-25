@@ -28,7 +28,7 @@ object Databases {
     * @param chaindir
     * @return
     */
-  def createOrLoadSQLiteWithJDBC(chaindir: File): Databases = {
+  def createOrLoadSQLiteWithJDBC(dbdir: File): Databases = {
     chaindir.mkdir()
     val sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
     val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "network.sqlite")}")
