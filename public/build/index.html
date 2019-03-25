@@ -1,0 +1,633 @@
+
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta content="IE=edge,chrome=1" http-equiv="X-UA-Compatible">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>Eclair API</title>
+
+    <style>
+      .highlight table td { padding: 5px; }
+.highlight table pre { margin: 0; }
+.highlight .gh {
+  color: #999999;
+}
+.highlight .sr {
+  color: #f6aa11;
+}
+.highlight .go {
+  color: #888888;
+}
+.highlight .gp {
+  color: #555555;
+}
+.highlight .gs {
+}
+.highlight .gu {
+  color: #aaaaaa;
+}
+.highlight .nb {
+  color: #f6aa11;
+}
+.highlight .cm {
+  color: #75715e;
+}
+.highlight .cp {
+  color: #75715e;
+}
+.highlight .c1 {
+  color: #75715e;
+}
+.highlight .cs {
+  color: #75715e;
+}
+.highlight .c, .highlight .cd {
+  color: #75715e;
+}
+.highlight .err {
+  color: #960050;
+}
+.highlight .gr {
+  color: #960050;
+}
+.highlight .gt {
+  color: #960050;
+}
+.highlight .gd {
+  color: #49483e;
+}
+.highlight .gi {
+  color: #49483e;
+}
+.highlight .ge {
+  color: #49483e;
+}
+.highlight .kc {
+  color: #66d9ef;
+}
+.highlight .kd {
+  color: #66d9ef;
+}
+.highlight .kr {
+  color: #66d9ef;
+}
+.highlight .no {
+  color: #66d9ef;
+}
+.highlight .kt {
+  color: #66d9ef;
+}
+.highlight .mf {
+  color: #ae81ff;
+}
+.highlight .mh {
+  color: #ae81ff;
+}
+.highlight .il {
+  color: #ae81ff;
+}
+.highlight .mi {
+  color: #ae81ff;
+}
+.highlight .mo {
+  color: #ae81ff;
+}
+.highlight .m, .highlight .mb, .highlight .mx {
+  color: #ae81ff;
+}
+.highlight .sc {
+  color: #ae81ff;
+}
+.highlight .se {
+  color: #ae81ff;
+}
+.highlight .ss {
+  color: #ae81ff;
+}
+.highlight .sd {
+  color: #e6db74;
+}
+.highlight .s2 {
+  color: #e6db74;
+}
+.highlight .sb {
+  color: #e6db74;
+}
+.highlight .sh {
+  color: #e6db74;
+}
+.highlight .si {
+  color: #e6db74;
+}
+.highlight .sx {
+  color: #e6db74;
+}
+.highlight .s1 {
+  color: #e6db74;
+}
+.highlight .s {
+  color: #e6db74;
+}
+.highlight .na {
+  color: #a6e22e;
+}
+.highlight .nc {
+  color: #a6e22e;
+}
+.highlight .nd {
+  color: #a6e22e;
+}
+.highlight .ne {
+  color: #a6e22e;
+}
+.highlight .nf {
+  color: #a6e22e;
+}
+.highlight .vc {
+  color: #ffffff;
+}
+.highlight .nn {
+  color: #ffffff;
+}
+.highlight .nl {
+  color: #ffffff;
+}
+.highlight .ni {
+  color: #ffffff;
+}
+.highlight .bp {
+  color: #ffffff;
+}
+.highlight .vg {
+  color: #ffffff;
+}
+.highlight .vi {
+  color: #ffffff;
+}
+.highlight .nv {
+  color: #ffffff;
+}
+.highlight .w {
+  color: #ffffff;
+}
+.highlight {
+  color: #ffffff;
+}
+.highlight .n, .highlight .py, .highlight .nx {
+  color: #ffffff;
+}
+.highlight .ow {
+  color: #f92672;
+}
+.highlight .nt {
+  color: #f92672;
+}
+.highlight .k, .highlight .kv {
+  color: #f92672;
+}
+.highlight .kn {
+  color: #f92672;
+}
+.highlight .kp {
+  color: #f92672;
+}
+.highlight .o {
+  color: #f92672;
+}
+    </style>
+    <link href="stylesheets/screen.css" rel="stylesheet" media="screen" />
+    <link href="stylesheets/print.css" rel="stylesheet" media="print" />
+      <script src="javascripts/all.js"></script>
+  </head>
+
+  <body class="index" data-languages="[&quot;shell&quot;]">
+    <a href="#" id="nav-button">
+      <span>
+        NAV
+        <img src="images/navbar.png" alt="Navbar" />
+      </span>
+    </a>
+    <div class="toc-wrapper">
+      <img src="images/logo.png" class="logo" alt="Logo" />
+        <div class="lang-selector">
+              <a href="#" data-language-name="shell">shell</a>
+        </div>
+        <div class="search">
+          <input type="text" class="search" id="input-search" placeholder="Search">
+        </div>
+        <ul class="search-results"></ul>
+      <ul id="toc" class="toc-list-h1">
+          <li>
+            <a href="#introduction" class="toc-h1 toc-link" data-title="Introduction">Introduction</a>
+          </li>
+          <li>
+            <a href="#authentication" class="toc-h1 toc-link" data-title="Authentication">Authentication</a>
+          </li>
+          <li>
+            <a href="#getinfo" class="toc-h1 toc-link" data-title="GetInfo">GetInfo</a>
+              <ul class="toc-list-h2">
+                  <li>
+                    <a href="#getinfo-2" class="toc-h2 toc-link" data-title="GetInfo">GetInfo</a>
+                  </li>
+              </ul>
+          </li>
+          <li>
+            <a href="#connect" class="toc-h1 toc-link" data-title="Connect">Connect</a>
+              <ul class="toc-list-h2">
+                  <li>
+                    <a href="#connect-via-uri" class="toc-h2 toc-link" data-title="Connect via URI">Connect via URI</a>
+                  </li>
+                  <li>
+                    <a href="#connect-manually" class="toc-h2 toc-link" data-title="Connect manually">Connect manually</a>
+                  </li>
+              </ul>
+          </li>
+          <li>
+            <a href="#open" class="toc-h1 toc-link" data-title="Open">Open</a>
+              <ul class="toc-list-h2">
+                  <li>
+                    <a href="#open-2" class="toc-h2 toc-link" data-title="Open">Open</a>
+                  </li>
+              </ul>
+          </li>
+          <li>
+            <a href="#close" class="toc-h1 toc-link" data-title="Close">Close</a>
+              <ul class="toc-list-h2">
+                  <li>
+                    <a href="#close-2" class="toc-h2 toc-link" data-title="Close">Close</a>
+                  </li>
+                  <li>
+                    <a href="#force-close" class="toc-h2 toc-link" data-title="Force Close">Force Close</a>
+                  </li>
+              </ul>
+          </li>
+          <li>
+            <a href="#updaterelayfee" class="toc-h1 toc-link" data-title="UpdateRelayFee">UpdateRelayFee</a>
+              <ul class="toc-list-h2">
+                  <li>
+                    <a href="#updaterelayfee-2" class="toc-h2 toc-link" data-title="updaterelayfee">updaterelayfee</a>
+                  </li>
+              </ul>
+          </li>
+          <li>
+            <a href="#peers" class="toc-h1 toc-link" data-title="Peers">Peers</a>
+              <ul class="toc-list-h2">
+                  <li>
+                    <a href="#peers-2" class="toc-h2 toc-link" data-title="peers">peers</a>
+                  </li>
+              </ul>
+          </li>
+          <li>
+            <a href="#channels" class="toc-h1 toc-link" data-title="Channels">Channels</a>
+              <ul class="toc-list-h2">
+                  <li>
+                    <a href="#channels-2" class="toc-h2 toc-link" data-title="channels">channels</a>
+                  </li>
+              </ul>
+          </li>
+          <li>
+            <a href="#errors" class="toc-h1 toc-link" data-title="Errors">Errors</a>
+          </li>
+      </ul>
+        <ul class="toc-footer">
+            <li><a href='https://github.com/lord/slate'>Documentation Powered by Slate</a></li>
+        </ul>
+    </div>
+    <div class="page-wrapper">
+      <div class="dark-box"></div>
+      <div class="content">
+        <h1 id='introduction'>Introduction</h1>
+<p>Welcome to the Eclair API, this website contains documentation and code examples about how to interact with the Eclair lightning node via its API. 
+Feel free to suggest improvements and fixes to this documentation by submitting a pull request to the <a href="https://github.com/ACINQ/eclair">repo</a>. The API
+uses http form data to receive parameteres from the clients, please refer to  RFC LINK HERE </p>
+<h1 id='authentication'>Authentication</h1>
+<p>Eclair uses HTTP Basic authentication and expects to receive the correct header with every request. Please note that eclair only expects a password and an 
+empty user name. </p>
+
+<p><code>Authorization: &lt;Base64EncodedCredentials&gt;</code></p>
+<h1 id='getinfo'>GetInfo</h1><h2 id='getinfo-2'>GetInfo</h2><pre class="highlight shell tab-shell"><code>curl <span class="s2">"http://example.com/getinfo"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+</code></pre>
+<blockquote>
+<p>The above command returns JSON structured like this:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+   </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="s2">"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"alias"</span><span class="p">:</span><span class="s2">"ACINQ"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"chainHash"</span><span class="p">:</span><span class="s2">"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"blockHeight"</span><span class="p">:</span><span class="mi">123456</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"publicAddresses"</span><span class="p">:[</span><span class="w">
+      </span><span class="s2">"34.239.230.56:9735"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad.onion:9735"</span><span class="w"> 
+   </span><span class="p">]</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
+<p>Returns information about this instance such as <strong>nodeId</strong> and current block height as seen by eclair.</p>
+<h3 id='http-request'>HTTP Request</h3>
+<p><code>POST http://example.com/getinfo</code></p>
+<h1 id='connect'>Connect</h1><h2 id='connect-via-uri'>Connect via URI</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">uri</span><span class="o">=</span>&lt;target_uri&gt;  <span class="s2">"http://example.com/connect"</span>  -H <span class="s2">"Authorization: meowmeowmeow"</span>
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight plaintext"><code>connected
+</code></pre>
+<p>Connect to another lightning node, this will perform a connection but no channel will be opened.</p>
+<h3 id='http-request-2'>HTTP Request</h3>
+<p><code>POST http://example.com/connect</code></p>
+<h3 id='parameters'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>uri</td>
+<td>The URI in format &#39;nodeId@host:port&#39;</td>
+</tr>
+</tbody></table>
+<h2 id='connect-manually'>Connect manually</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; -F <span class="nv">host</span><span class="o">=</span>1.2.3.4 -F <span class="nv">port</span><span class="o">=</span>1234 <span class="s2">"http://example.com/connect"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight plaintext"><code>connected
+</code></pre>
+<p>Connect to another lightning node, this will perform a connection but no channel will be opened.</p>
+<h3 id='http-request-3'>HTTP Request</h3>
+<p><code>POST http://example.com/connect</code></p>
+<h3 id='parameters-2'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>nodeId</td>
+<td>The nodeId of the node you want to connect to</td>
+</tr>
+<tr>
+<td>host</td>
+<td>The IPv4 host address of the node</td>
+</tr>
+<tr>
+<td>port</td>
+<td>The port of the node</td>
+</tr>
+</tbody></table>
+<h1 id='open'>Open</h1><h2 id='open-2'>Open</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">nodeId</span><span class="o">=</span>03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f 
+-F <span class="nv">fundingSatoshis</span><span class="o">=</span>1234 <span class="s2">"http://example.com/open"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+</code></pre>
+<blockquote>
+<p>The above command returns the channelId of the newly created channel:</p>
+</blockquote>
+<pre class="highlight plaintext"><code>e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
+</code></pre>
+<p>Open a channel to another lightning node, you must specify the target nodeId and the funding satoshis for the new channel. Optionally
+you can send to the remote a &#39;pushMsat&#39; value and you can specify wether this should be a public or private channel (default is set in the config).</p>
+<h3 id='http-request-4'>HTTP Request</h3>
+<p><code>POST http://example.com/open</code></p>
+<h3 id='parameters-3'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>nodeId</td>
+<td>The nodeId of the node you want to connect to</td>
+</tr>
+<tr>
+<td>fundingSatoshis</td>
+<td>Amount of satoshis to spend in the funding of the channel</td>
+</tr>
+<tr>
+<td>pushMsat</td>
+<td>Amount of millisatoshi to unilaterally push to the counterparty (optional)</td>
+</tr>
+<tr>
+<td>fundingFeerateSatByte</td>
+<td>Feerate in sat/byte to apply to the funding transaction (optional)</td>
+</tr>
+<tr>
+<td>channelFlags</td>
+<td>Flags for the new channel: 0 = private, 1 = public (optional)</td>
+</tr>
+</tbody></table>
+<h1 id='close'>Close</h1><h2 id='close-2'>Close</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">channelId</span><span class="o">=</span>03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f  <span class="s2">"http://example.com/close"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight plaintext"><code>ok
+</code></pre>
+<p>Initiates a cooperative close for a give channel that belongs to this eclair node, the API returns once the funding_signed message has been negotiated.
+If you specified a scriptPubKey then the closing transaction will spend to that address. Note that you must specify at least a &#39;channelId&#39; or &#39;shortChannelId&#39;.</p>
+<h3 id='http-request-5'>HTTP Request</h3>
+<p><code>POST http://example.com/close</code></p>
+<h3 id='parameters-4'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>channelId</td>
+<td>The channelId of the channel you want to close</td>
+</tr>
+<tr>
+<td>shortChannelId</td>
+<td>The shortChannelId of the channel you want to close (optional)</td>
+</tr>
+<tr>
+<td>scriptPubKey</td>
+<td>A serialized scriptPubKey that you want to use to close the channel (optional)</td>
+</tr>
+</tbody></table>
+<h2 id='force-close'>Force Close</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">channelId</span><span class="o">=</span>03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f  <span class="s2">"http://example.com/forceclose"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight plaintext"><code>e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
+</code></pre>
+<p>Initiates an unilateral close for a give channel that belongs to this eclair node, once the commitment has been broadcasted the API returns its 
+transaction id. Note that you must specify at least a &#39;channelId&#39; or &#39;shortChannelId&#39;.</p>
+<h3 id='http-request-6'>HTTP Request</h3>
+<p><code>POST http://example.com/forceclose</code></p>
+<h3 id='parameters-5'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>channelId</td>
+<td>The channelId of the channel you want to close</td>
+</tr>
+<tr>
+<td>shortChannelId</td>
+<td>The shortChannelId of the channel you want to close (optional)</td>
+</tr>
+</tbody></table>
+<h1 id='updaterelayfee'>UpdateRelayFee</h1><h2 id='updaterelayfee-2'>updaterelayfee</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">channelId</span><span class="o">=</span>03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f 
+     -F <span class="nv">feeBaseMsat</span><span class="o">=</span>10 -F <span class="nv">feeProportionalMillionths</span><span class="o">=</span>5       
+ <span class="s2">"http://example.com/updaterelayfee"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight plaintext"><code>ok
+</code></pre>
+<p>Updates the fee policy for the specified channelId, a new update for this channel will be broadcasted to the network.</p>
+<h3 id='http-request-7'>HTTP Request</h3>
+<p><code>POST http://example.com/updaterelayfee</code></p>
+<h3 id='parameters-6'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>channelId</td>
+<td>The channelId of the channel you want to update</td>
+</tr>
+<tr>
+<td>feeBaseMsat</td>
+<td>The new base fee to use</td>
+</tr>
+<tr>
+<td>feeProportionalMillionths</td>
+<td>The new proportional fee to use</td>
+</tr>
+</tbody></table>
+<h1 id='peers'>Peers</h1><h2 id='peers-2'>peers</h2><pre class="highlight shell tab-shell"><code>curl <span class="s2">"http://example.com/peers"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">[</span><span class="w">
+   </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="s2">"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"state"</span><span class="p">:</span><span class="s2">"CONNECTED"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"address"</span><span class="p">:</span><span class="s2">"34.239.230.56:9735"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"channels"</span><span class="p">:</span><span class="mi">1</span><span class="w">
+   </span><span class="p">},</span><span class="w">
+   </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="s2">"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"state"</span><span class="p">:</span><span class="s2">"DISCONNECTED"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"channels"</span><span class="p">:</span><span class="mi">1</span><span class="w">
+   </span><span class="p">}</span><span class="w">
+</span><span class="p">]</span><span class="w">
+</span></code></pre>
+<p>Returns the list of currently known peers, both connected and disconnected.</p>
+<h3 id='http-request-8'>HTTP Request</h3>
+<p><code>POST http://example.com/peers</code></p>
+<h1 id='channels'>Channels</h1><h2 id='channels-2'>channels</h2><pre class="highlight shell tab-shell"><code>curl <span class="s2">"http://example.com/channels"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">[</span><span class="w">
+   </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="s2">"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"state"</span><span class="p">:</span><span class="s2">"CONNECTED"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"address"</span><span class="p">:</span><span class="s2">"34.239.230.56:9735"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"channels"</span><span class="p">:</span><span class="mi">1</span><span class="w">
+   </span><span class="p">},</span><span class="w">
+   </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="s2">"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"state"</span><span class="p">:</span><span class="s2">"DISCONNECTED"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"channels"</span><span class="p">:</span><span class="mi">1</span><span class="w">
+   </span><span class="p">}</span><span class="w">
+</span><span class="p">]</span><span class="w">
+</span></code></pre>
+<p>Returns the list of local channels, optionally filtered by remote node. </p>
+<h3 id='http-request-9'>HTTP Request</h3>
+<p><code>POST http://example.com/channels</code></p>
+<h3 id='parameters-7'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>toRemoteNodeId</td>
+<td>The remote node id to be used as filter for the channels</td>
+</tr>
+</tbody></table>
+<h1 id='errors'>Errors</h1>
+<aside class="notice">
+This error section is stored in a separate file in <code>includes/_errors.md</code>. Slate allows you to optionally separate out your docs into many files...just save them to the <code>includes</code> folder and add them to the top of your <code>index.md</code>'s frontmatter. Files are included in the order listed.
+</aside>
+
+<p>The Kittn API uses the following error codes:</p>
+
+<table><thead>
+<tr>
+<th>Error Code</th>
+<th>Meaning</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>400</td>
+<td>Bad Request -- Your request is invalid.</td>
+</tr>
+<tr>
+<td>401</td>
+<td>Unauthorized -- Your API key is wrong.</td>
+</tr>
+<tr>
+<td>403</td>
+<td>Forbidden -- The kitten requested is hidden for administrators only.</td>
+</tr>
+<tr>
+<td>404</td>
+<td>Not Found -- The specified kitten could not be found.</td>
+</tr>
+<tr>
+<td>405</td>
+<td>Method Not Allowed -- You tried to access a kitten with an invalid method.</td>
+</tr>
+<tr>
+<td>406</td>
+<td>Not Acceptable -- You requested a format that isn&#39;t json.</td>
+</tr>
+<tr>
+<td>410</td>
+<td>Gone -- The kitten requested has been removed from our servers.</td>
+</tr>
+<tr>
+<td>418</td>
+<td>I&#39;m a teapot.</td>
+</tr>
+<tr>
+<td>429</td>
+<td>Too Many Requests -- You&#39;re requesting too many kittens! Slow down!</td>
+</tr>
+<tr>
+<td>500</td>
+<td>Internal Server Error -- We had a problem with our server. Try again later.</td>
+</tr>
+<tr>
+<td>503</td>
+<td>Service Unavailable -- We&#39;re temporarily offline for maintenance. Please try again later.</td>
+</tr>
+</tbody></table>
+
+      </div>
+      <div class="dark-box">
+          <div class="lang-selector">
+                <a href="#" data-language-name="shell">shell</a>
+          </div>
+      </div>
+    </div>
+  </body>
+</html>
