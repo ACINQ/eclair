@@ -217,6 +217,7 @@
                         <buildDirectory>${project.build.directory}</buildDirectory>
                     </systemProperties>
                     <argLine>-Xmx1024m</argLine>
+                    <argLine>-Dfile.encoding=UTF-8</argLine>
                 </configuration>
                 <executions>
                     <execution>

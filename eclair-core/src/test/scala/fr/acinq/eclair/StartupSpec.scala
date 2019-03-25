@@ -16,15 +16,10 @@
 
 package fr.acinq.eclair
 
-import java.io.File
-import java.nio.file._
-import java.nio.file.attribute.BasicFileAttributes
-
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.crypto.LocalKeyManager
 import org.scalatest.FunSuite
-
 import scala.util.Try
 
 class StartupSpec extends FunSuite {
@@ -38,7 +33,7 @@ class StartupSpec extends FunSuite {
     assert(baseUkraineAlias.getBytes.length === 27)
 
     // we add 2 UTF-8 chars, each is 3-bytes long -> total new length 33 bytes!
-    val goUkraineGo = threeBytesUTFChar+"BitcoinLightningNodeUkraine"+threeBytesUTFChar
+    val goUkraineGo = threeBytesUTFChar + "BitcoinLightningNodeUkraine" + threeBytesUTFChar
 
     assert(goUkraineGo.length === 29)
     assert(goUkraineGo.getBytes.length === 33) // too long for the alias, should be truncated
