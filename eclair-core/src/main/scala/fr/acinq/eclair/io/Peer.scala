@@ -597,7 +597,7 @@ object Peer {
     * @param gossipTimestampFilter_opt optional gossip timestamp range
     * @return
     *           - true if there is a filter and msg has no timestamp, or has one that matches the filter 
-    *           - false otherwise, or if there is no filtering
+    *           - false otherwise
     */
   def timestampInRange(msg: RoutingMessage, gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
     // check if this message has a timestamp that matches our timestamp filter
