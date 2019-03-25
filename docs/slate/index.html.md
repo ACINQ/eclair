@@ -37,7 +37,7 @@ The rest of this document will use '21satoshi' as password which encoded as bas6
 ## GetInfo
 
 ```shell
-curl "http://localhost:8080/getinfo" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST "http://localhost:8080/getinfo" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 # with eclair-cli
 eclair-cli getinfo
@@ -69,7 +69,7 @@ Returns information about this instance such as **nodeId** and current block hei
 ## Connect via URI
 
 ```shell
-curl -F uri=<target_uri>  "http://localhost:8080/connect"  -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST -F uri=<target_uri>  "http://localhost:8080/connect"  -H "Authorization: OjIxc2F0b3NoaQ=="
 
 # with eclair-cli
 eclair-cli connect --uri=<target_uri>
@@ -97,7 +97,7 @@ uri | The URI in format 'nodeId@host:port' | No | String
 ## Connect manually
 
 ```shell
-curl -F nodeId=<node_id> -F host=<host> -F port=<port> "http://localhost:8080/connect" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST -F nodeId=<node_id> -F host=<host> -F port=<port> "http://localhost:8080/connect" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 # with eclair-cli
 eclair-cli connect --nodeId=<node_id> --host=<host> --port=<port>
@@ -128,7 +128,7 @@ port | The port of the node | No | Integer
 ## Open
 
 ```shell
-curl -F nodeId=<node_id> -F fundingSatoshis=<funding_satoshis> \
+curl -X POST -F nodeId=<node_id> -F fundingSatoshis=<funding_satoshis> \
 	"http://localhost:8080/open" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
@@ -163,7 +163,7 @@ channelFlags | Flags for the new channel: 0 = private, 1 = public | Yes | Intege
 ## Close
 
 ```shell
-curl -F channelId=<channel> "http://localhost:8080/close" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST -F channelId=<channel> "http://localhost:8080/close" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli close --channelId=<channel>
@@ -193,7 +193,7 @@ scriptPubKey | A serialized scriptPubKey that you want to use to close the chann
 ## Force Close
 
 ```shell
-curl -F channelId=<channel> "http://localhost:8080/forceclose" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST -F channelId=<channel> "http://localhost:8080/forceclose" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli forceclose --channelId=<channel>
@@ -224,7 +224,7 @@ shortChannelId | The shortChannelId of the channel you want to close | Yes | Sho
 ## updaterelayfee
 
 ```shell
-curl -F channelId=<channel> -F feeBaseMsat=<feebase> -F feeProportionalMillionths=<feeproportional> \
+curl -X POST -F channelId=<channel> -F feeBaseMsat=<feebase> -F feeProportionalMillionths=<feeproportional> \
      "http://localhost:8080/updaterelayfee" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #eclair-cli
@@ -259,7 +259,7 @@ feeProportionalMillionths | The new proportional fee to use | No | Integer
 ## peers
 
 ```shell
-curl "http://localhost:8080/peers" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST "http://localhost:8080/peers" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli peers
@@ -294,7 +294,7 @@ Returns the list of currently known peers, both connected and disconnected.
 ## channels
 
 ```shell
-curl "http://localhost:8080/channels" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST "http://localhost:8080/channels" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli channels
@@ -441,7 +441,7 @@ toRemoteNodeId | The remote node id to be used as filter for the channels | Yes 
 ## channel
 
 ```shell
-curl -F channelId=<channel>  "http://localhost:8080/channel" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST -F channelId=<channel>  "http://localhost:8080/channel" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli channel --channelId=<channel>
@@ -591,7 +591,7 @@ A set of API to query the network view of eclair.
 ## allnodes
 
 ```shell
-curl "http://localhost:8080/allnodes" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST "http://localhost:8080/allnodes" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli allnodes
@@ -632,7 +632,7 @@ Returns information about all public nodes on the lightning network, this inform
 ## allchannels
 
 ```shell
-curl "http://localhost:8080/allchannels" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST "http://localhost:8080/allchannels" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli allchannels
@@ -660,7 +660,7 @@ Returns non detailed information about all public channels in the network.
 ## allupdates
 
 ```shell
-curl "http://localhost:8080/allupdates" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST "http://localhost:8080/allupdates" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli allupdates
@@ -723,7 +723,7 @@ Interfaces for sending and receiving payments through eclair.
 ## receive
 
 ```shell
-curl -F description=<some_description> -F amountMsat=<some_amount> \
+curl -X POST -F description=<some_description> -F amountMsat=<some_amount> \
 	 "http://localhost:8080/receive" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
@@ -753,7 +753,7 @@ expireIn | Number of seconds that the invoice will be valid | Yes | Seconds (int
 ## send
 
 ```shell
-curl -F invoice=<some_invoice> "http://localhost:8080/send" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST -F invoice=<some_invoice> "http://localhost:8080/send" -H "Authorization: OjIxc2F0b3NoaQ=="
 ```
 > The above command returns:
 
@@ -817,7 +817,7 @@ amountMsat | Amount in to pay if the invoice does not have one | Yes | Millisato
 ## sendToNode
 
 ```shell
-curl -F nodeId=<some_invoice> -F amountMsat=<amount> -F paymentHash=<some_hash> "http://localhost:8080/sendtonode" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST -F nodeId=<some_invoice> -F amountMsat=<amount> -F paymentHash=<some_hash> "http://localhost:8080/sendtonode" -H "Authorization: OjIxc2F0b3NoaQ=="
 ```
 > The above command returns:
 
@@ -882,7 +882,7 @@ paymentHash | The payment hash for this payment | No | 32bytes-HexString (String
 ## checkpayment
 
 ```shell
-curl -F paymentHash=<some_hash> "http://localhost:8080/checkpayment" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST -F paymentHash=<some_hash> "http://localhost:8080/checkpayment" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli checkpayment --paymentHash=<some_hash>
@@ -908,7 +908,7 @@ paymentHash | The payment hash you want to check | No | 32bytes-HexString (Strin
 ## parseinvoice
 
 ```shell
-curl -F invoice=<some_bolt11invoice> "http://localhost:8080/parseinvoice" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST -F invoice=<some_bolt11invoice> "http://localhost:8080/parseinvoice" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli parseinvoice --invoice=<some_bolt11invoice>
@@ -945,7 +945,7 @@ invoice | The invoice you want to decode | No | String
 ## findroute
 
 ```shell
-curl -F invoice=<some_bolt11invoice> "http://localhost:8080/findroute" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST -F invoice=<some_bolt11invoice> "http://localhost:8080/findroute" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli findroute --invoice=<some_bolt11invoice>
@@ -976,7 +976,7 @@ amountMsat | The amount that should go through the route | Yes | Millisatoshi (I
 ## findrouteToNode
 
 ```shell
-curl -F nodeId=<some_node> -F amountMsat=<some_amount> \
+curl -X POST -F nodeId=<some_node> -F amountMsat=<some_amount> \
 	"http://localhost:8080/findroutetonode" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
@@ -1010,7 +1010,7 @@ amountMsat | The amount that should go through the route | No | Millisatoshi (In
 ## audit
 
 ```shell
-curl "http://localhost:8080/audit" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST "http://localhost:8080/audit" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli audit
@@ -1066,7 +1066,7 @@ to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestam
 ## networkfees
 
 ```shell
-curl "http://localhost:8080/networkfees" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST "http://localhost:8080/networkfees" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli networkfees
@@ -1102,7 +1102,7 @@ to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestam
 ## channelstats
 
 ```shell
-curl "http://localhost:8080/channelstats" -H "Authorization: OjIxc2F0b3NoaQ=="
+curl -X POST "http://localhost:8080/channelstats" -H "Authorization: OjIxc2F0b3NoaQ=="
 
 #with eclair-cli
 eclair-cli channelstats
