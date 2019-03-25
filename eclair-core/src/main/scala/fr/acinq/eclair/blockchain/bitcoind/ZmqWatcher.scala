@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
 import scodec.bits.ByteVector
 
-import scala.collection.SortedMap
+import scala.collection.{Set, SortedMap}
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
@@ -96,8 +96,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
           // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
           ()
         case _ =>
-          val watches1 = watches - w
-          context become watching(watches1, computeWatchedUtxos(watches1), block2tx, None)
+          context become watching(watches - w, removeWatchedUtxos(watchedUtxos, w), block2tx, None)
       }
 
     case CurrentBlockCount(count) => {
@@ -149,8 +148,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
       log.debug(s"adding watch $w for $sender")
       context.watch(w.channel)
-      val watches1 = watches + w
-      context become watching(watches1, computeWatchedUtxos(watches1), block2tx, nextTick)
+      context become watching(watches + w, addWatchedUtxos(watchedUtxos, w), block2tx, nextTick)
 
     case PublishAsap(tx) =>
       val blockCount = Globals.blockCount.get()
@@ -183,8 +181,9 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
     case Terminated(channel) =>
       // we remove watches associated to dead actor
-      val watches1 = watches.filterNot(_.channel == channel)
-      context become watching(watches1, computeWatchedUtxos(watches1), block2tx, None)
+      val deprecatedWatches = watches.filter(_.channel == channel)
+      val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
+      context.become(watching(watches -- deprecatedWatches, watchedUtxos1, block2tx, None))
 
     case 'watches => sender ! watches
 
@@ -224,20 +223,38 @@ object ZmqWatcher {
 
   case object TickNewBlock
 
+  def utxo(w: Watch): Option[OutPoint] =
+    w match {
+      case w: WatchSpent => Some(OutPoint(w.txId.reverse, w.outputIndex))
+      case w: WatchSpentBasic => Some(OutPoint(w.txId.reverse, w.outputIndex))
+      case _ => None
+    }
+
   /**
     * The resulting map allows checking spent txes in constant time wrt number of watchers
     *
     * @param watches
     * @return
     */
-  def computeWatchedUtxos(watches: Set[Watch]): Map[OutPoint, Set[Watch]] = {
-    watches
-      .collect {
-      case w: WatchSpent => OutPoint(w.txId.reverse, w.outputIndex) -> w
-      case w: WatchSpentBasic => OutPoint(w.txId.reverse, w.outputIndex) -> w
+  def addWatchedUtxos(m: Map[OutPoint, Set[Watch]], w: Watch): Map[OutPoint, Set[Watch]] = {
+    utxo(w) match {
+      case Some(utxo) =>  m.get(utxo) match {
+        case Some(watches) => m + (utxo -> (watches + w))
+        case None => m + (utxo -> Set(w))
+      }
+      case None => m
     }
-      .groupBy(_._1)
-      .mapValues(_.map(_._2))
+  }
+
+  def removeWatchedUtxos(m: Map[OutPoint, Set[Watch]], w: Watch): Map[OutPoint, Set[Watch]] = {
+    utxo(w) match {
+      case Some(utxo) => m.get(utxo) match {
+        case Some(watches) if watches - w == Set.empty => m - utxo
+        case Some(watches) => m + (utxo -> (watches - w))
+        case None => m
+      }
+      case None => m
+    }
   }
 
 }
