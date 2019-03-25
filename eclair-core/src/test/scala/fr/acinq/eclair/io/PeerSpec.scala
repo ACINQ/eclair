@@ -109,9 +109,7 @@ class PeerSpec extends TestkitBaseClass {
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
     val rebroadcast = Rebroadcast(channels.map(_ -> Set.empty[ActorRef]).toMap, updates.map(_ -> Set.empty[ActorRef]).toMap, nodes.map(_ -> Set.empty[ActorRef]).toMap)
     probe.send(peer, rebroadcast)
-    channels.foreach(transport.expectMsg(_))
-    updates.foreach(transport.expectMsg(_))
-    nodes.foreach(transport.expectMsg(_))
+    transport.expectNoMsg(2 seconds)
   }
 
   test("filter gossip message (filtered by origin)") { f =>
@@ -122,6 +120,8 @@ class PeerSpec extends TestkitBaseClass {
       channels.map(_ -> Set.empty[ActorRef]).toMap + (channels(5) -> Set(peer)),
       updates.map(_ -> Set.empty[ActorRef]).toMap + (updates(6) -> Set(peer)) + (updates(10) -> Set(peer)),
       nodes.map(_ -> Set.empty[ActorRef]).toMap + (nodes(4) -> Set(peer)))
+    val filter = wire.GossipTimestampFilter(Alice.nodeParams.chainHash, 0, Long.MaxValue) // no filtering on timestamps
+    probe.send(peer, filter)
     probe.send(peer, rebroadcast)
     // peer won't send out announcements that came from itself
     (channels.toSet - channels(5)).foreach(transport.expectMsg(_))

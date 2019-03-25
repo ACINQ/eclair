@@ -68,7 +68,7 @@
         <akka.version>2.4.20</akka.version>
         <akka.http.version>10.0.11</akka.http.version>
         <sttp.version>1.3.9</sttp.version>
-        <bitcoinlib.version>0.10</bitcoinlib.version>
+        <bitcoinlib.version>0.11</bitcoinlib.version>
         <guava.version>24.0-android</guava.version>
     </properties>
 
@@ -217,6 +217,7 @@
                         <buildDirectory>${project.build.directory}</buildDirectory>
                     </systemProperties>
                     <argLine>-Xmx1024m</argLine>
+                    <argLine>-Dfile.encoding=UTF-8</argLine>
                 </configuration>
                 <executions>
                     <execution>

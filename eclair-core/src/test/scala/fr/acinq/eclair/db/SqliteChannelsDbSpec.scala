@@ -50,10 +50,10 @@ class SqliteChannelsDbSpec extends FunSuite {
 
     intercept[SQLiteException](db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
 
-    assert(db.listChannels().toSet === Set.empty)
+    assert(db.listLocalChannels().toSet === Set.empty)
     db.addOrUpdateChannel(channel)
     db.addOrUpdateChannel(channel)
-    assert(db.listChannels() === List(channel))
+    assert(db.listLocalChannels() === List(channel))
 
     assert(db.listHtlcInfos(channel.channelId, commitNumber).toList == Nil)
     db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)
@@ -62,7 +62,7 @@ class SqliteChannelsDbSpec extends FunSuite {
     assert(db.listHtlcInfos(channel.channelId, 43).toList == Nil)
 
     db.removeChannel(channel.channelId)
-    assert(db.listChannels() === Nil)
+    assert(db.listLocalChannels() === Nil)
     assert(db.listHtlcInfos(channel.channelId, commitNumber).toList == Nil)
   }
 
