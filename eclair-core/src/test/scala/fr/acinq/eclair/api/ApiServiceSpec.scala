@@ -33,13 +33,43 @@ import akka.stream.ActorMaterializer
 import fr.acinq.eclair.channel.Register.ForwardShortId
 import org.json4s.{Formats, JValue}
 import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
+import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.eclair.channel.RES_GETINFO
+import fr.acinq.eclair.db.{NetworkFee, Stats}
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentRequest}
+import fr.acinq.eclair.router.{ChannelDesc, RouteResponse}
+import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress, NodeAnnouncement}
+import scodec.bits.ByteVector
 
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
 import scala.reflect.ClassTag
 
 class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
+
+  trait EclairMock extends Eclair {
+    override def connect(uri: String): Future[String] = ???
+    override def open(nodeId: Crypto.PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int]): Future[String] = ???
+    override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String] = ???
+    override def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId]): Future[String] = ???
+    override def updateRelayFee(channelId: String, feeBaseMsat: Long, feeProportionalMillionths: Long): Future[String] = ???
+    override def peersInfo(): Future[Iterable[PeerInfo]] = ???
+    override def channelsInfo(toRemoteNode: Option[Crypto.PublicKey]): Future[Iterable[RES_GETINFO]] = ???
+    override def channelInfo(channelId: ByteVector32): Future[RES_GETINFO] = ???
+    override def allnodes(): Future[Iterable[NodeAnnouncement]] = ???
+    override def allchannels(): Future[Iterable[ChannelDesc]] = ???
+    override def allupdates(nodeId: Option[Crypto.PublicKey]): Future[Iterable[ChannelUpdate]] = ???
+    override def receive(description: String, amountMsat: Option[Long], expire: Option[Long]): Future[String] = ???
+    override def findRoute(targetNodeId: Crypto.PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]]): Future[RouteResponse] = ???
+    override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long]): Future[PaymentLifecycle.PaymentResult] = ???
+    override def checkpayment(paymentHash: ByteVector32): Future[Boolean] = ???
+    override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = ???
+    override def networkFees(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[NetworkFee]] = ???
+    override def channelStats(): Future[Seq[Stats]] = ???
+    override def getInfoResponse(): Future[GetInfoResponse] = ???
+  }
 
   implicit val formats = JsonSupport.formats
   implicit val serialization = JsonSupport.serialization
@@ -48,35 +78,15 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
   implicit val routeTestTimeout = RouteTestTimeout(3 seconds)
 
-  val defaultMockKit = Kit(
-    nodeParams = Alice.nodeParams,
-    system = system,
-    watcher = system.actorOf(Props(new MockActor)),
-    paymentHandler = system.actorOf(Props(new MockActor)),
-    register = system.actorOf(Props(new MockActor)),
-    relayer = system.actorOf(Props(new MockActor)),
-    router = system.actorOf(Props(new MockActor)),
-    switchboard = system.actorOf(Props(new MockActor)),
-    paymentInitiator = system.actorOf(Props(new MockActor)),
-    server = system.actorOf(Props(new MockActor)),
-    wallet = new TestWallet
-  )
-
-  class MockActor extends Actor {
-    override def receive: Receive = {
-      case _ =>
-    }
-  }
-
-  class MockService(kit: Kit = defaultMockKit) extends Service {
-    override val eclairApi: Eclair = new EclairImpl(kit)
+  class MockService(eclair: Eclair) extends Service {
+    override val eclairApi: Eclair = eclair
     override def password: String = "mock"
     override implicit val actorSystem: ActorSystem = system
     override implicit val mat: ActorMaterializer = materializer
   }
 
   test("API service should handle failures correctly") {
-    val mockService = new MockService
+    val mockService = new MockService(new EclairMock {})
 
     // no auth
     Post("/getinfo") ~>
@@ -129,34 +139,19 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
   test("'peers' should ask the switchboard for current known peers") {
 
-    val mockAlicePeer = system.actorOf(Props(new {} with MockActor {
-      override def receive = {
-        case GetPeerInfo => sender() ! PeerInfo(
+    val mockService = new MockService(new EclairMock {
+      override def peersInfo(): Future[Iterable[PeerInfo]] = Future.successful(List(
+        PeerInfo(
           nodeId = Alice.nodeParams.nodeId,
           state = "CONNECTED",
           address = Some(Alice.nodeParams.publicAddresses.head.socketAddress),
-          channels = 1)
-      }
-    }))
-
-    val mockBobPeer = system.actorOf(Props(new {} with MockActor {
-      override def receive = {
-        case GetPeerInfo => sender() ! PeerInfo(
+          channels = 1),
+        PeerInfo(
           nodeId = Bob.nodeParams.nodeId,
           state = "DISCONNECTED",
           address = None,
-          channels = 1)
-      }
-    }))
-
-
-    val mockService = new MockService(defaultMockKit.copy(
-      switchboard = system.actorOf(Props(new {} with MockActor {
-        override def receive = {
-          case 'peers => sender() ! List(mockAlicePeer, mockBobPeer)
-        }
-      }))
-    ))
+          channels = 1)))
+    })
 
     Post("/peers") ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
@@ -170,8 +165,16 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   }
 
   test("'getinfo' response should include this node ID") {
-    Globals.blockCount.set(9999)
-    val mockService = new MockService()
+
+    val mockService = new MockService(new EclairMock {
+      override def getInfoResponse(): Future[GetInfoResponse] = Future.successful(GetInfoResponse(
+        nodeId = Alice.nodeParams.nodeId,
+        alias = Alice.nodeParams.alias,
+        chainHash = Alice.nodeParams.chainHash,
+        blockHeight = 9999,
+        publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil
+      ))
+    })
 
     Post("/getinfo") ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
@@ -189,15 +192,11 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     val shortChannelIdSerialized = "42000x27x3"
 
-    val mockService = new MockService(defaultMockKit.copy(
-      register = system.actorOf(Props(new {} with MockActor {
-        override def receive = {
-          case ForwardShortId(shortChannelId, _) if shortChannelId.toString == shortChannelIdSerialized =>
-            sender() ! Alice.nodeParams.nodeId.toString
-        }
-      }))
-    ))
-
+    val mockService = new MockService(new EclairMock {
+      override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String] = {
+        Future.successful(Alice.nodeParams.nodeId.toString())
+      }
+    })
 
     Post("/close", FormData("shortChannelId" -> shortChannelIdSerialized).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
@@ -219,13 +218,9 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     val remotePort = "9735"
     val remoteUri = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735"
 
-    val mockService = new MockService(defaultMockKit.copy(
-      switchboard = system.actorOf(Props(new {} with MockActor {
-        override def receive = {
-          case Peer.Connect(_) => sender() ! "connected"
-        }
-      }))
-    ))
+    val mockService = new MockService(    new EclairMock {
+      override def connect(uri: String): Future[String] = Future.successful("connected")
+    })
 
     Post("/connect", FormData("nodeId" -> remoteNodeId, "host" -> remoteHost, "port" -> remotePort).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
