@@ -43,6 +43,7 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.Databases
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
@@ -67,7 +68,14 @@ import scala.concurrent.duration._
   */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
-            seed_opt: Option[ByteVector] = None)(implicit system: ActorSystem) extends Logging {
+            seed_opt: Option[ByteVector] = None,
+            db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
+
+  implicit val materializer = ActorMaterializer()
+  implicit val timeout = Timeout(30 seconds)
+  implicit val formats = org.json4s.DefaultFormats
+  implicit val ec = ExecutionContext.Implicits.global
+  implicit val sttpBackend = OkHttpFutureBackend()
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
@@ -76,17 +84,18 @@ class Setup(datadir: File,
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
   secureRandom.nextInt()
 
+  datadir.mkdirs()
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
-  implicit val materializer = ActorMaterializer()
-  implicit val timeout = Timeout(30 seconds)
-  implicit val formats = org.json4s.DefaultFormats
-  implicit val ec = ExecutionContext.Implicits.global
-  implicit val sttpBackend = OkHttpFutureBackend()
 
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, initTor())
+  val database = db match {
+    case Some(d) => d
+    case None => Databases.sqliteJDBC(new File(datadir, chain))
+  }
+
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database)
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),

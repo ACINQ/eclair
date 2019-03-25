@@ -28,7 +28,7 @@ object DBCompatChecker extends Logging {
     * @param nodeParams
     */
   def checkDBCompatibility(nodeParams: NodeParams): Unit =
-    Try(nodeParams.channelsDb.listChannels()) match {
+    Try(nodeParams.db.channels.listLocalChannels()) match {
       case Success(_) => {}
       case Failure(_) => throw IncompatibleDBException
     }
@@ -39,7 +39,7 @@ object DBCompatChecker extends Logging {
     * @param nodeParams
     */
   def checkNetworkDBCompatibility(nodeParams: NodeParams): Unit =
-    Try(nodeParams.networkDb.listChannels(), nodeParams.networkDb.listNodes()) match {
+    Try(nodeParams.db.network.listChannels(), nodeParams.db.network.listNodes()) match {
       case Success(_) => {}
       case Failure(_) => throw IncompatibleNetworkDBException
     }

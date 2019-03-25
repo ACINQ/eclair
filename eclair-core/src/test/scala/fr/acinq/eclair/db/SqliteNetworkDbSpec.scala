@@ -108,7 +108,7 @@ class SqliteNetworkDbSpec extends FunSuite {
   def simpleTest(sqlite: Connection) = {
     val db = new SqliteNetworkDb(sqlite)
 
-    def sig = Crypto.encodeSignature(Crypto.sign(randomKey.toBin, randomKey)) :+ 1.toByte
+    def sig = Crypto.encodeSignature(Crypto.sign(randomBytes32, randomKey)) :+ 1.toByte
 
     def generatePubkeyHigherThan(priv: PrivateKey) = {
       var res = priv
@@ -169,7 +169,7 @@ class SqliteNetworkDbSpec extends FunSuite {
   test("remove many channels") {
     val sqlite = inmem
     val db = new SqliteNetworkDb(sqlite)
-    val sig = Crypto.encodeSignature(Crypto.sign(randomKey.toBin, randomKey)) :+ 1.toByte
+    val sig = Crypto.encodeSignature(Crypto.sign(randomBytes32, randomKey)) :+ 1.toByte
     val priv = randomKey
     val pub = priv.publicKey
     val capacity = Satoshi(10000)
