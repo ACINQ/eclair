@@ -47,9 +47,13 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     within(30 seconds) {
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
+      println("waiting for OpenChanne")
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
-      awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)
+      awaitCond {
+        println(s"alice.stateName = ${alice.stateName}")
+        alice.stateName == WAIT_FOR_ACCEPT_CHANNEL
+      }
       withFixture(test.toNoArgTest(FixtureParam(alice, alice2bob, bob2alice, alice2blockchain)))
     }
   }

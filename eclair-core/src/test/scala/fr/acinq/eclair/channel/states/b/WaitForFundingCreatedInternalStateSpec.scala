@@ -41,13 +41,19 @@ class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with State
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
+      println("sending init funder/fundee")
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
+      println("received OpenChannel")
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
+      println("received AcceptChannel")
       bob2alice.forward(alice)
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+      awaitCond {
+        println(s"alice.stateName = ${alice.stateName}")
+        alice.stateName == WAIT_FOR_FUNDING_INTERNAL
+      }
       withFixture(test.toNoArgTest(FixtureParam(alice, alice2bob, bob2alice, alice2blockchain)))
     }
   }
