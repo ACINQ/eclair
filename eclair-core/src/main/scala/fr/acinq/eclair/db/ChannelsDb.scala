@@ -25,7 +25,7 @@ trait ChannelsDb {
 
   def removeChannel(channelId: ByteVector32)
 
-  def listChannels(): Seq[HasCommitments]
+  def listLocalChannels(): Seq[HasCommitments]
 
   def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: Long)
 
