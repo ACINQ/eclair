@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # default script values, can be overriden for convenience.
-api_url='http://localhost:8081'
-# api_password='your_api_password' # uncomment this if you don't want to provide a password each time you call eclair-cli
+api_url='http://localhost:8080'
+# uncomment the line below if you don't want to provide a password each time you call eclair-cli
+# api_password='your_api_password'
 colors=false
 
 # prints help message
@@ -10,6 +11,7 @@ usage() {
   echo -e "==============================
 Command line client for eclair
 ==============================
+
 This tool requires the eclair node's API to be enabled and listening
 on <$api_url>.
 
@@ -24,7 +26,7 @@ where OPTIONS can be:
   -h                    Show available commands
 
 and COMMAND is one of:
-  help, getinfo, connect, open, close, forceclose, updaterelayfee,
+  getinfo, connect, open, close, forceclose, updaterelayfee,
   peers, channels, channel, allnodes, allchannels, allupdates,
   receive, parseinvoice, findroute, findroutetonode,
   send, sendtonode, checkpayment,
@@ -37,89 +39,8 @@ Examples
   eclair-cli close --channelId 006fb...     closes the channel with id 006fb...
 
 
-Full documentation at: <https://github.com/ACINQ/eclair/wiki/Usage>" 1>&2; exit 1;
-}
-
-# prints a pretty command doc. 1st arg is command, 2nd arg is params, 3rd arg is the description
-prettyPrintCommand() {
-  method=${1}
-  params=""
-  desc=""
-  shift 1
-  for arg in "${@}"; do
-    case $arg in
-      ";"*)     desc="${arg:1}";;
-      *)        params="$params--$arg ";;
-    esac
-  done;
-  if [[ ${#params} -gt 40 ]]; then
-    printf "    %-50s \n%-54s %s\n" "$method $params" "" "$desc"
-  else
-    printf "    %-50s %s\n" "$method $params" "$desc"
-  fi
-}
-
-# prints the list of available commands with parameters
-help() {
-  echo -e "\nAvailable commands:\n"
-  prettyPrintCommand "getinfo" ";Get node information"
-  echo ""
-  prettyPrintCommand "connect" "uri" ";Open a secure connection to a lightning node."
-  prettyPrintCommand "connect" "nodeId" "host" "port"
-  prettyPrintCommand "open" "nodeId" "fundingSatoshis" "pushMsat" "feerateSatPerByte" "channelFlags" ";Open a channel with another lightning node. Push, feerateSatPerByte and channelFlags are optional."
-
-  echo ""
-  prettyPrintCommand "close" "channelId" ";Close channel."
-  prettyPrintCommand "close" "scriptPubKey"
-  prettyPrintCommand "forceclose" "channelId" ";Force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)."
-
-  echo ""
-  prettyPrintCommand "peers" ";List nodes you have a channel with"
-  prettyPrintCommand "channels" ";List your local channels"
-  prettyPrintCommand "channels" "nodeId" ";List your local channels with a specific node"
-  prettyPrintCommand "channel" "channelId" ";Retrieve local channel detailed information."
-
-  echo ""
-  prettyPrintCommand "updaterelayfee" "channelId" "feeBaseMsat" "feeProportionalMillionths" ";Update relay fee for payments going through this channel."
-
-  echo ""
-  prettyPrintCommand "channelstats" ";Retrieve statistics about channel usage (fees, number and average amount of payments)."
-
-  echo ""
-  prettyPrintCommand "allnodes" ";List all known nodes, channels, or updates in the network."
-  prettyPrintCommand "allchannels"
-  prettyPrintCommand "allupdates"
-  prettyPrintCommand "allupdates" "nodeId"
-
-  echo ""
-  prettyPrintCommand "receive" "amountMsat" "description" ";Generate a Lightning payment request to receive funds."
-  prettyPrintCommand "receive" "amountMsat" "description" "expirySeconds"
-
-  echo ""
-  prettyPrintCommand "send" "amountMsat" "paymentHash" "nodeId" ";Send a payment to a node, or with a Lightning payment request."
-  prettyPrintCommand "send" "paymentRequest"
-  prettyPrintCommand "send" "paymentRequest" "amountMsat"
-
-  echo ""
-  prettyPrintCommand "parseinvoice" "paymentRequest" ";Parse a lightning payment request into human readable data."
-
-  echo ""
-  prettyPrintCommand "findroute" "paymentRequest" ";Evaluate a route for a payment."
-  prettyPrintCommand "findroute" "paymentRequest" "amountMsat"
-  prettyPrintCommand "findroute" "nodeId" "amountMsat"
-
-  prettyPrintCommand "checkpayment" "paymentHash" ";Check if a payment has been received."
-  prettyPrintCommand "checkpayment" "paymentRequest"
-
-  echo ""
-  prettyPrintCommand "audit" ";List all send/received/relayed payments. Can filter with timestamps (in milliseconds)"
-  prettyPrintCommand "audit" "from" "to"
-
-  echo ""
-  prettyPrintCommand "networkfees" ";List all network fees paid to the miners, by transaction. Can filter with timestamps (in milliseconds)"
-  prettyPrintCommand "networkfees" "from" "to"
-
-  exit 0;
+Full documentation here: <https://acinq.github.io/apidoc>" 1>&2;
+exit 1;
 }
 
 # -- script's logic begins here
@@ -136,7 +57,7 @@ while getopts ':cu:p:a:hu:' flag; do
     p) api_password="${OPTARG}" ;;
     a) api_url="${OPTARG}" ;;
     c) colors=true ;;
-    h) help ;;
+    h) usage ;;
     *) ;;
   esac
 done
@@ -146,14 +67,9 @@ shift $(($OPTIND - 1))
 api_endpoint=${1}
 shift 1
 
-# display a usage method if no method given
-if [ -z $api_endpoint ]; then
+# display a usage method if no method given or help requested
+if [ -z $api_endpoint ] || [ "$api_endpoint" == "help" ]; then
   usage;
-fi
-
-# display a help and exit
-if [ "$api_endpoint" == "help" ]; then
-  help;
 fi
 
 # transform long options into a HTTP encoded url body.
@@ -162,16 +78,15 @@ index=1
 for arg in "${@}"; do
   transformed_arg=""
   case ${arg} in
-    "--"*)
-            # if arg begins with two dashes, it is the name of a parameter. Dashes must be removed, and arg must be followed by an equal sign
+    "--"*)  # if arg begins with two dashes, it is the name of a parameter. Dashes must be removed, and arg must be followed by an equal sign
             # also, it must be prefixed by an '&' sign, if it is not the first argument
-            if [ $index -eq 1 ];
-              then transformed_arg="$transformed_arg${arg:2}="
-              else transformed_arg="&$transformed_arg${arg:2}="
+            if [ $index -eq 1 ]; then
+              transformed_arg="$transformed_arg${arg:2}="
+            else
+              transformed_arg="&$transformed_arg${arg:2}="
             fi
             ;;
-    *)
-            transformed_arg=$arg
+    *)      transformed_arg=$arg
             ;;
   esac
   api_payload="$api_payload$transformed_arg";
