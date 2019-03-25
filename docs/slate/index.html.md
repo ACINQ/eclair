@@ -17,22 +17,30 @@ search: true
 
 Welcome to the Eclair API, this website contains documentation and code examples about how to interact with the Eclair lightning node via its API. 
 Feel free to suggest improvements and fixes to this documentation by submitting a pull request to the [repo](https://github.com/ACINQ/eclair). The API
-uses http form data to receive parameteres from the clients, please refer to  RFC LINK HERE 
+uses [HTTP form data](https://en.wikipedia.org/wiki/POST_(HTTP)#Use_for_submitting_web_forms) and returns JSON encoded object or simple strings if no object
+is being returned, all errors are handled with a JSON response more info [here](#errors)
 
 # Authentication
 
-Eclair uses HTTP Basic authentication and expects to receive the correct header with every request. Please note that eclair only expects a password and an 
-empty user name. 
+Eclair uses HTTP Basic authentication and expects to receive the correct header with every request.
+To set an API password use the [configuration](https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf).
+The rest of this document will use '21satoshi' as password which encoded as bas64 results in `OjIxc2F0b3NoaQ==`
 
-`Authorization: <Base64EncodedCredentials>`
+<aside class="notice">
+ Please note that eclair only expects a password and an empty user name.
+</aside>
 
+`Authorization: Base64Encoded("":<eclair_api_password>)`
 
 # GetInfo
 
 ## GetInfo
 
 ```shell
-curl "http://example.com/getinfo" -H "Authorization: meowmeowmeow"
+curl "http://example.com/getinfo" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+# with eclair-cli
+eclair-cli getinfo
 ```
 
 > The above command returns JSON structured like this:
@@ -45,7 +53,7 @@ curl "http://example.com/getinfo" -H "Authorization: meowmeowmeow"
    "blockHeight":123456,
    "publicAddresses":[
       "34.239.230.56:9735",
-      "of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad.onion:9735"	
+      "of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad.onion:9735"
    ]
 }
 ```
@@ -61,7 +69,10 @@ Returns information about this instance such as **nodeId** and current block hei
 ## Connect via URI
 
 ```shell
-curl -F uri=<target_uri>  "http://example.com/connect"  -H "Authorization: meowmeowmeow"
+curl -F uri=<target_uri>  "http://example.com/connect"  -H "Authorization: OjIxc2F0b3NoaQ=="
+
+# with eclair-cli
+eclair-cli connect --uri=<target_uri>
 ```
 
 > The above command returns:
@@ -86,7 +97,10 @@ uri | The URI in format 'nodeId@host:port' | No | String
 ## Connect manually
 
 ```shell
-curl -F nodeId=<node_id> -F host=1.2.3.4 -F port=1234 "http://example.com/connect" -H "Authorization: meowmeowmeow"
+curl -F nodeId=<node_id> -F host=<host> -F port=<port> "http://example.com/connect" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+# with eclair-cli
+eclair-cli connect --nodeId=<node_id> --host=<host> --port=<port>
 ```
 
 > The above command returns:
@@ -114,8 +128,11 @@ port | The port of the node | No | Integer
 ## Open
 
 ```shell
-curl -F nodeId=03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f 
--F fundingSatoshis=1234 "http://example.com/open" -H "Authorization: meowmeowmeow"
+curl -F nodeId=<node_id> -F fundingSatoshis=<funding_satoshis> \
+	"http://example.com/open" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_satoshis>
 ```
 
 > The above command returns the channelId of the newly created channel:
@@ -146,7 +163,10 @@ channelFlags | Flags for the new channel: 0 = private, 1 = public | Yes | Intege
 ## Close
 
 ```shell
-curl -F channelId=03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f  "http://example.com/close" -H "Authorization: meowmeowmeow"
+curl -F channelId=<channel> "http://example.com/close" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli close --channelId=<channel>
 ```
 
 > The above command returns:
@@ -173,7 +193,10 @@ scriptPubKey | A serialized scriptPubKey that you want to use to close the chann
 ## Force Close
 
 ```shell
-curl -F channelId=03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f  "http://example.com/forceclose" -H "Authorization: meowmeowmeow"
+curl -F channelId=<channel> "http://example.com/forceclose" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli forceclose --channelId=<channel>
 ```
 
 > The above command returns:
@@ -182,7 +205,7 @@ curl -F channelId=03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a
 e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
 ```
 
-Initiates an unilateral close for a give channel that belongs to this eclair node, once the commitment has been broadcasted the API returns its 
+Initiates an unilateral close for a give channel that belongs to this eclair node, once the commitment has been broadcasted the API returns its
 transaction id. Note that you must specify at least a 'channelId' or 'shortChannelId'.
 
 ### HTTP Request
@@ -201,9 +224,14 @@ shortChannelId | The shortChannelId of the channel you want to close | Yes | Sho
 ## updaterelayfee
 
 ```shell
-curl -F channelId=03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f 
-     -F feeBaseMsat=10 -F feeProportionalMillionths=5 		
- "http://example.com/updaterelayfee" -H "Authorization: meowmeowmeow"
+curl -F channelId=<channel> -F feeBaseMsat=<feebase> -F feeProportionalMillionths=<feeproportional> \
+     "http://example.com/updaterelayfee" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#eclair-cli
+eclair-cli updaterelayfee \
+	--channelId=<channel> \
+	--feeBaseMsat=<feebase> \
+	--feeProportionalMillionths=<feeproportional>
 ```
 
 > The above command returns:
@@ -231,7 +259,10 @@ feeProportionalMillionths | The new proportional fee to use | No | Integer
 ## peers
 
 ```shell
-curl "http://example.com/peers" -H "Authorization: meowmeowmeow"
+curl "http://example.com/peers" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli peers
 ```
 
 > The above command returns:
@@ -263,7 +294,10 @@ Returns the list of currently known peers, both connected and disconnected.
 ## channels
 
 ```shell
-curl "http://example.com/channels" -H "Authorization: meowmeowmeow"
+curl "http://example.com/channels" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli channels
 ```
 
 > The above command returns:
@@ -392,7 +426,7 @@ curl "http://example.com/channels" -H "Authorization: meowmeowmeow"
 ]
 ```
 
-Returns the list of local channels, optionally filtered by remote node. 
+Returns the list of local channels, optionally filtered by remote node.
 
 ### HTTP Request
 
@@ -407,7 +441,10 @@ toRemoteNodeId | The remote node id to be used as filter for the channels | Yes 
 ## channel
 
 ```shell
-curl -F channelId=56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e  "http://example.com/channel" -H "Authorization: meowmeowmeow"
+curl -F channelId=<channel>  "http://example.com/channel" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli channel --channelId=<channel>
 ```
 
 > The above command returns:
@@ -554,7 +591,10 @@ A set of API to query the network view of eclair.
 ## allnodes
 
 ```shell
-curl "http://example.com/allnodes" -H "Authorization: meowmeowmeow"
+curl "http://example.com/allnodes" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli allnodes
 ```
 
 > The above command returns:
@@ -592,7 +632,10 @@ Returns information about all public nodes on the lightning network, this inform
 ## allchannels
 
 ```shell
-curl "http://example.com/allchannels" -H "Authorization: meowmeowmeow"
+curl "http://example.com/allchannels" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli allchannels
 ```
 
 > The above command returns:
@@ -617,7 +660,10 @@ Returns non detailed information about all public channels in the network.
 ## allupdates
 
 ```shell
-curl "http://example.com/allupdates" -H "Authorization: meowmeowmeow"
+curl "http://example.com/allupdates" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli allupdates
 ```
 
 > The above command returns:
@@ -674,10 +720,14 @@ nodeId | The node id of the node to be used as filter for the updates | Yes | 32
 
 Interfaces for sending and receiving payments through eclair.
 
-## receive 
+## receive
 
 ```shell
-curl "http://example.com/receive" -H "Authorization: meowmeowmeow"
+curl -F description=<some_description> -F amountMsat=<some_amount> \
+	 "http://example.com/receive" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli receive --description=<some_description> --amountMsat=<some_amount>
 ```
 
 > The above command returns:
@@ -703,7 +753,7 @@ expireIn | Number of seconds that the invoice will be valid | Yes | Seconds (int
 ## send
 
 ```shell
-curl -F invoice=<some_invoice> "http://example.com/send" -H "Authorization: meowmeowmeow"
+curl -F invoice=<some_invoice> "http://example.com/send" -H "Authorization: OjIxc2F0b3NoaQ=="
 ```
 > The above command returns:
 
@@ -767,7 +817,7 @@ amountMsat | Amount in to pay if the invoice does not have one | Yes | Millisato
 ## sendToNode
 
 ```shell
-curl -F nodeId=<some_invoice> -F amountMsat=<amount> -F paymentHash=<some_hash> "http://example.com/sendtonode" -H "Authorization: meowmeowmeow"
+curl -F nodeId=<some_invoice> -F amountMsat=<amount> -F paymentHash=<some_hash> "http://example.com/sendtonode" -H "Authorization: OjIxc2F0b3NoaQ=="
 ```
 > The above command returns:
 
@@ -832,7 +882,10 @@ paymentHash | The payment hash for this payment | No | 32bytes-HexString (String
 ## checkpayment
 
 ```shell
-curl -F paymentHash=<some_hash> "http://example.com/checkpayment" -H "Authorization: meowmeowmeow"
+curl -F paymentHash=<some_hash> "http://example.com/checkpayment" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli checkpayment --paymentHash=<some_hash>
 ```
 > The above command returns:
 
@@ -855,7 +908,10 @@ paymentHash | The payment hash you want to check | No | 32bytes-HexString (Strin
 ## parseinvoice
 
 ```shell
-curl -F invoice=<some_bolt11invoice> "http://example.com/parseinvoice" -H "Authorization: meowmeowmeow"
+curl -F invoice=<some_bolt11invoice> "http://example.com/parseinvoice" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli parseinvoice --invoice=<some_bolt11invoice>
 ```
 > The above command returns:
 
@@ -889,7 +945,10 @@ invoice | The invoice you want to decode | No | String
 ## findroute
 
 ```shell
-curl -F invoice=<some_bolt11invoice> "http://example.com/findroute" -H "Authorization: meowmeowmeow"
+curl -F invoice=<some_bolt11invoice> "http://example.com/findroute" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli findroute --invoice=<some_bolt11invoice>
 ```
 > The above command returns:
 
@@ -917,7 +976,11 @@ amountMsat | The amount that should go through the route | Yes | Millisatoshi (I
 ## findrouteToNode
 
 ```shell
-curl -F nodeId=<some_node> -F amountMsat=<some_amount> "http://example.com/findroutetonode" -H "Authorization: meowmeowmeow"
+curl -F nodeId=<some_node> -F amountMsat=<some_amount> \
+	"http://example.com/findroutetonode" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli --nodeId=<some_node> --amountMsat=<some_amount>
 ```
 > The above command returns:
 
@@ -947,7 +1010,10 @@ amountMsat | The amount that should go through the route | No | Millisatoshi (In
 ## audit
 
 ```shell
-curl "http://example.com/audit" -H "Authorization: meowmeowmeow"
+curl "http://example.com/audit" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli audit
 ```
 > The above command returns:
 
@@ -1000,7 +1066,10 @@ to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestam
 ## networkfees
 
 ```shell
-curl "http://example.com/networkfees" -H "Authorization: meowmeowmeow"
+curl "http://example.com/networkfees" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli networkfees
 ```
 > The above command returns:
 
@@ -1033,7 +1102,10 @@ to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestam
 ## channelstats
 
 ```shell
-curl "http://example.com/channelstats" -H "Authorization: meowmeowmeow"
+curl "http://example.com/channelstats" -H "Authorization: OjIxc2F0b3NoaQ=="
+
+#with eclair-cli
+eclair-cli channelstats
 ```
 > The above command returns:
 
