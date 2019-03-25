@@ -37,7 +37,7 @@ The rest of this document will use '21satoshi' as password which encoded as bas6
 ## GetInfo
 
 ```shell
-curl -X POST "http://localhost:8080/getinfo" -u :<eclair_api_password>
+curl -u :<eclair_api_password> -X POST "http://localhost:8080/getinfo"
 
 # with eclair-cli
 eclair-cli getinfo
@@ -69,7 +69,7 @@ Returns information about this instance such as **nodeId** and current block hei
 ## Connect via URI
 
 ```shell
-curl -X POST -F uri=<target_uri>  "http://localhost:8080/connect"  -u :<eclair_api_password>
+curl -u :<eclair_api_password> -X POST -F uri=<target_uri>  "http://localhost:8080/connect"
 
 # with eclair-cli
 eclair-cli connect --uri=<target_uri>
@@ -97,7 +97,7 @@ uri | The URI in format 'nodeId@host:port' | No | String
 ## Connect manually
 
 ```shell
-curl -X POST -F nodeId=<node_id> -F host=<host> -F port=<port> "http://localhost:8080/connect" -u :<eclair_api_password>
+curl -u :<eclair_api_password> -X POST -F nodeId=<node_id> -F host=<host> -F port=<port> "http://localhost:8080/connect"
 
 # with eclair-cli
 eclair-cli connect --nodeId=<node_id> --host=<host> --port=<port>
