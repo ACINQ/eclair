@@ -414,7 +414,8 @@ eclair-cli connect --uri<span class="o">=</span>&lt;target_uri&gt;
 </blockquote>
 <pre class="highlight plaintext"><code>connected
 </code></pre>
-<p>Connect to another lightning node, this will perform a connection but no channel will be opened.</p>
+<p>Connect to another lightning node, this will perform a connection but no channel will be opened. 
+Note in the <em>URI</em> the port is optional and if missing the default (9735) will be used. </p>
 <h3 id='http-request-2'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/connect</code></p>
 <h3 id='parameters'>Parameters</h3>
@@ -434,10 +435,10 @@ eclair-cli connect --uri<span class="o">=</span>&lt;target_uri&gt;
 </tr>
 </tbody></table>
 <h2 id='connect-manually'>Connect manually</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; <span class="se">\ </span>
-    -F <span class="nv">host</span><span class="o">=</span>&lt;host&gt; -F <span class="nv">port</span><span class="o">=</span>&lt;port&gt; <span class="s2">"http://localhost:8080/connect"</span>
+    -F <span class="nv">host</span><span class="o">=</span>&lt;host&gt; <span class="s2">"http://localhost:8080/connect"</span>
 
 <span class="c"># with eclair-cli</span>
-eclair-cli connect --nodeId<span class="o">=</span>&lt;node_id&gt; --host<span class="o">=</span>&lt;host&gt; --port<span class="o">=</span>&lt;port&gt;
+eclair-cli connect --nodeId<span class="o">=</span>&lt;node_id&gt; --host<span class="o">=</span>&lt;host&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -470,8 +471,8 @@ eclair-cli connect --nodeId<span class="o">=</span>&lt;node_id&gt; --host<span c
 </tr>
 <tr>
 <td>port</td>
-<td>The port of the node</td>
-<td>No</td>
+<td>The port of the node (default: 9735)</td>
+<td>Yes</td>
 <td>Integer</td>
 </tr>
 </tbody></table>
