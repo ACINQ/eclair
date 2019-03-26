@@ -13,7 +13,7 @@ includes:
 search: true
 ---
 
-# Introduction
+# Introduction 
 
 Welcome to the Eclair API, this website contains documentation and code examples about how to interact with the Eclair lightning node via its API. 
 Feel free to suggest improvements and fixes to this documentation by submitting a pull request to the [repo](https://github.com/ACINQ/eclair). The API
