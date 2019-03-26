@@ -16,36 +16,29 @@
 
 package fr.acinq.eclair.api
 
-
-import java.nio.file.{Files, Path, Paths, StandardOpenOption}
-
 import akka.actor.{Actor, ActorSystem, Props, Scheduler}
 import org.scalatest.FunSuite
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
-import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair._
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import TestConstants._
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import akka.http.scaladsl.server.Route
 import akka.stream.ActorMaterializer
-import fr.acinq.eclair.channel.Register.ForwardShortId
-import org.json4s.{Formats, JValue}
 import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.RES_GETINFO
 import fr.acinq.eclair.db.{NetworkFee, Stats}
-import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentRequest}
 import fr.acinq.eclair.router.{ChannelDesc, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress, NodeAnnouncement}
 import scodec.bits.ByteVector
-
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
 import scala.reflect.ClassTag
+import scala.util.Try
 
 class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
@@ -180,7 +173,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(handled)
         assert(status == OK)
         val response = entityAs[String]
-        matchTestJson("peers", false, response)
+        matchTestJson("peers", response)
       }
   }
 
@@ -204,7 +197,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(status == OK)
         val resp = entityAs[String]
         assert(resp.toString.contains(Alice.nodeParams.nodeId.toString))
-        matchTestJson("getinfo", false, resp)
+        matchTestJson("getinfo", resp)
       }
   }
 
@@ -227,7 +220,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(status == OK)
         val resp = entityAs[String]
         assert(resp.contains(Alice.nodeParams.nodeId.toString))
-        matchTestJson("close", false, resp)
+        matchTestJson("close", resp)
       }
   }
 
@@ -262,16 +255,12 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       }
   }
 
-  private def matchTestJson(apiName: String, overWrite: Boolean, response: String) = {
-    val p = Paths.get(s"src/test/resources/api/$apiName")
-
-    if (overWrite) {
-      Files.writeString(p, response)
-      assert(false, "'overWrite' should be false before commit")
-    } else {
-      val expectedResponse = Source.fromFile(p.toUri).mkString
-      assert(response == expectedResponse, s"Test mock for $apiName did not match the expected response")
+  private def matchTestJson(apiName: String, response: String) = {
+    val resource = getClass.getResourceAsStream(s"/api/$apiName")
+    val expectedResponse = Try(Source.fromInputStream(resource).mkString).getOrElse {
+      throw new IllegalArgumentException(s"Mock file for $apiName not found")
     }
+    assert(response == expectedResponse, s"Test mock for $apiName did not match the expected response")
   }
 
 }
