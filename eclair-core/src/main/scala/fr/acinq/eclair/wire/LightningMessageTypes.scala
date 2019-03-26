@@ -278,7 +278,7 @@ case class ReplyChannelRange(chainHash: ByteVector32,
                              numberOfBlocks: Long,
                              complete: Byte,
                              shortChannelIds: EncodedShortChannelIds,
-                             optionExtendedQueryFlags_opt: Option[ExtendedQueryFlags],
+                             extendedQueryFlags_opt: Option[ExtendedQueryFlags],
                              extendedInfo_opt: Option[ExtendedInfo]) extends RoutingMessage with HasChainHash {
   extendedInfo_opt.foreach(extendedInfo => require(shortChannelIds.array.size == extendedInfo.array.size, s"shortChannelIds.size=${shortChannelIds.array.size} != extendedInfo.size=${extendedInfo.array.size}"))
 }

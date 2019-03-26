@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements, SendPing}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
-import fr.acinq.eclair.router.{ChannelRangeQueriesSpec, Rebroadcast}
+import fr.acinq.eclair.router.{ChannelRangeQueriesSpec, Rebroadcast, RoutingSyncSpec}
 import fr.acinq.eclair.wire.{EncodedShortChannelIds, EncodingType, Error, Ping, Pong}
 import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, randomBytes, wire}
 import org.scalatest.Outcome
@@ -35,11 +35,11 @@ import scala.concurrent.duration._
 
 
 class PeerSpec extends TestkitBaseClass {
-  val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(100)
+  val shortChannelIds = RoutingSyncSpec.shortChannelIds.take(100)
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
   val channels = fakeRoutingInfo.map(_._1).toList
   val updates = (fakeRoutingInfo.map(_._2) ++ fakeRoutingInfo.map(_._3)).toList
-  val nodes = (fakeRoutingInfo.map(_._4) ++ fakeRoutingInfo.map(_._5)).toList
+  val nodes = fakeRoutingInfo.toList.map(_._4) ++ fakeRoutingInfo.toList.map(_._5)
 
   case class FixtureParam(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: ActorRef)
 
