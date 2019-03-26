@@ -15,9 +15,11 @@ import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.server.directives.{Credentials, LoggingMagnet}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
+import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentRequest}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
+
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
@@ -99,8 +101,8 @@ trait Service extends Directives with Logging {
                   path("connect") {
                     formFields("uri".as[String]) { uri =>
                       complete(eclairApi.connect(uri))
-                    } ~ formFields("nodeId".as[PublicKey], "host".as[String], "port".as[Int]) { (nodeId, host, port) =>
-                      complete(eclairApi.connect(s"$nodeId@$host:$port"))
+                    } ~ formFields("nodeId".as[PublicKey], "host".as[String], "port".as[Int].?) { (nodeId, host, port_opt) =>
+                      complete(eclairApi.connect(s"$nodeId@$host:${port_opt.getOrElse(NodeURI.DEFAULT_PORT)}"))
                     }
                   } ~
                   path("open") {

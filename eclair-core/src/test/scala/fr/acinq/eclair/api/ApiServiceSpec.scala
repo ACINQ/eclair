@@ -228,14 +228,13 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     val remoteNodeId = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"
     val remoteHost = "93.137.102.239"
-    val remotePort = "9735"
     val remoteUri = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735"
 
     val mockService = new MockService(new EclairMock {
       override def connect(uri: String): Future[String] = Future.successful("connected")
     })
 
-    Post("/connect", FormData("nodeId" -> remoteNodeId, "host" -> remoteHost, "port" -> remotePort).toEntity) ~>
+    Post("/connect", FormData("nodeId" -> remoteNodeId, "host" -> remoteHost).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       Route.seal(mockService.route) ~>
       check {
