@@ -26,6 +26,14 @@ Please see the latest [release note](https://github.com/ACINQ/eclair/releases) f
 
 ![Eclair Demo](.readme/screen-1.png)
 
+## JSON API
+
+Eclair offers a feature rich HTTP API that enables application developers to easily integrate.
+
+For more information please visit the [API documentation website](https://acinq.github.io/eclair).
+
+:warning: You can still use the old API by setting the `eclair.api.use-old-api=true` parameter, but it is now deprecated and will soon be removed. The old documentation is still available [here](OLD-API-DOCS.md).
+
 ## Installation
 
 ### Configuring Bitcoin Core
@@ -127,15 +135,6 @@ Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a different 
 ```shell
 java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gui-<version>-<commit_id>.jar
 ```
-
-## JSON API
-
-Eclair offers a feature rich HTTP API that enables application developers to easily integrate.
-
-For more information please visit the [API documentation website](https://acinq.github.io/eclair).
-
-:warning: You can still use the old API by setting the `eclair.api.use-old-api=true` parameter, but it is now deprecated and will soon be removed. The old documentation is still available [here](https://github.com/ACINQ/eclair/OLD-API-DOCS.md).
-
 
 ## Docker
 
