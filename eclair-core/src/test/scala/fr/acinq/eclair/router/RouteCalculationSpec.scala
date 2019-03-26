@@ -499,7 +499,8 @@ class RouteCalculationSpec extends FunSuite {
 
     val publicChannels = channels.map { case (shortChannelId, announcement) =>
       val (_, update) = updates.find{ case (d, u) => d.shortChannelId == shortChannelId}.get
-      val pc = PublicChannel(announcement, ByteVector32.Zeroes, Satoshi(1000), update_1_opt = Some(update), update_2_opt = Some(update))
+      val (update_1_opt, update_2_opt) = if (Announcements.isNode1(update.channelFlags)) (Some(update), None) else (None, Some(update))
+      val pc = PublicChannel(announcement, ByteVector32.Zeroes, Satoshi(1000), update_1_opt, update_2_opt)
       (shortChannelId, pc)
     }
 
@@ -862,8 +863,8 @@ class RouteCalculationSpec extends FunSuite {
         ann = makeChannel(ShortChannelId("542280x2156x0").toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")),
         fundingTxid = ByteVector32.Zeroes,
         capacity = Satoshi(0),
-        update_1_opt = Some(ChannelUpdate(ByteVector32.Zeroes.bytes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 1.toByte, 144, htlcMinimumMsat = 1000, feeBaseMsat =  1000, 100, Some(16777000000L))),
-        update_2_opt = Some(ChannelUpdate(ByteVector32.Zeroes.bytes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 0.toByte, 144, htlcMinimumMsat = 1, 667, 1, Some(16777000000L)))
+        update_1_opt = Some(ChannelUpdate(ByteVector32.Zeroes.bytes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 0.toByte, 144, htlcMinimumMsat = 1000, feeBaseMsat =  1000, 100, Some(16777000000L))),
+        update_2_opt = Some(ChannelUpdate(ByteVector32.Zeroes.bytes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 1.toByte, 144, htlcMinimumMsat = 1, 667, 1, Some(16777000000L)))
       ),
       ShortChannelId("565779x2711x0") -> PublicChannel(
         ann = makeChannel(ShortChannelId("565779x2711x0").toLong, PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")),
@@ -921,7 +922,7 @@ object RouteCalculationSpec {
         case Some(_) => 1
         case None => 0
       },
-      channelFlags = 0,
+      channelFlags = if (Announcements.isNode1(nodeId1, nodeId2)) 0 else 1,
       cltvExpiryDelta = cltvDelta,
       htlcMinimumMsat = minHtlcMsat,
       feeBaseMsat = feeBaseMsat,

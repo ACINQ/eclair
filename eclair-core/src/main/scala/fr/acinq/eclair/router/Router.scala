@@ -62,6 +62,8 @@ case class RouterConf(randomizeRouteSelection: Boolean,
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 
 case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
+  update_1_opt.foreach(u => assert(Announcements.isNode1(u.channelFlags)))
+  update_2_opt.foreach(u => assert(!Announcements.isNode1(u.channelFlags)))
   def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) ann.nodeId1 else ann.nodeId2
   def getSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
   def updateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
@@ -125,7 +127,7 @@ case object TickPruneStaleChannels
   * Created by PM on 24/05/2016.
   */
 
-class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[State, Data] {
+class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[State, Data] {
 
   import Router._
 
@@ -518,9 +520,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       log.debug("received node announcement for nodeId={}", n.nodeId)
       stay using handle(n, sender, d)
 
-    case Event(PeerRoutingMessage(transport, _, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, optionExtendedQueryFlags_opt)), d) =>
+    case Event(PeerRoutingMessage(transport, _, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, extendedQueryFlags_opt)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
-      log.info("received {}", routingMessage)
+      log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", firstBlockNum, numberOfBlocks, extendedQueryFlags_opt)
       // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
       val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _))
       log.info("replying with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
@@ -529,13 +531,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
           transport ! ReplyChannelRange(chainHash, chunk.firstBlock, chunk.numBlocks,
             complete = 1,
             shortChannelIds = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, chunk.shortChannelIds),
-            optionExtendedQueryFlags_opt = optionExtendedQueryFlags_opt,
-            extendedInfo_opt = optionExtendedQueryFlags_opt map {
+            extendedQueryFlags_opt = extendedQueryFlags_opt,
+            extendedInfo_opt = extendedQueryFlags_opt map {
               case ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS => ExtendedInfo(chunk.shortChannelIds.map(getChannelDigestInfo(d.channels)))
             }))
       stay
 
-    case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyChannelRange(chainHash, _, _, _, shortChannelIds, optionExtendedQueryFlags_opt, extendedInfo_opt)), d) =>
+    case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyChannelRange(chainHash, _, _, _, shortChannelIds, extendedQueryFlags_opt, extendedInfo_opt)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       val shortChannelIdAndFlags = shortChannelIds.array
         .zipWithIndex
@@ -547,13 +549,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
           val u1 = u + (if (QueryFlagTypes.includeUpdate1(flag)) 1 else 0) + (if (QueryFlagTypes.includeUpdate2(flag)) 1 else 0)
           (c1, u1)
       }
-      log.info(s"received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={} queryFlags=${optionExtendedQueryFlags_opt.getOrElse("n/a")}", shortChannelIds.array.size, channelCount, updatesCount, shortChannelIds.encoding)
+      log.info(s"received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={} queryFlags=${extendedQueryFlags_opt.getOrElse("n/a")}", shortChannelIds.array.size, channelCount, updatesCount, shortChannelIds.encoding)
       // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
       val replies = shortChannelIdAndFlags
         .grouped(SHORTID_WINDOW)
         .map(chunk => QueryShortChannelIds(chainHash,
           shortChannelIds = EncodedShortChannelIds(shortChannelIds.encoding, chunk.map(_.shortChannelId)),
-          queryFlags_opt = optionExtendedQueryFlags_opt map {
+          queryFlags_opt = extendedQueryFlags_opt map {
             case _ => EncodedQueryFlags(shortChannelIds.encoding, chunk.map(_.flag))
           }))
         .toList
@@ -944,15 +946,19 @@ object Router {
     */
   def split(shortChannelIds: SortedSet[ShortChannelId]): List[ShortChannelIdsChunk] = {
     // TODO: this is wrong because it can split blocks
-    shortChannelIds
-      .grouped(2000) // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
-      .toList
-      .map { group =>
-        // NB: group is never empty
-        val firstBlock: Long = ShortChannelId.coordinates(group.head).blockHeight.toLong
-        val numBlocks: Long = ShortChannelId.coordinates(group.last).blockHeight.toLong - firstBlock + 1
-        ShortChannelIdsChunk(firstBlock, numBlocks, group.toList)
-      }
+    if (shortChannelIds.isEmpty) {
+      List(ShortChannelIdsChunk(0, 0, List.empty))
+    } else {
+      shortChannelIds
+        .grouped(2000) // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
+        .toList
+        .map { group =>
+          // NB: group is never empty
+          val firstBlock: Long = ShortChannelId.coordinates(group.head).blockHeight.toLong
+          val numBlocks: Long = ShortChannelId.coordinates(group.last).blockHeight.toLong - firstBlock + 1
+          ShortChannelIdsChunk(firstBlock, numBlocks, group.toList)
+        }
+    }
   }
 
   def updateSync(syncMap: Map[PublicKey, Sync], remoteNodeId: PublicKey, pending: List[RoutingMessage]): (Map[PublicKey, Sync], Option[RoutingMessage]) = {
