@@ -599,6 +599,24 @@ class RouteCalculationSpec extends FunSuite {
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 4 :: 5 :: Nil))
   }
 
+  test("ensure the route calculation terminates correctly when selecting 0-fees edges") {
+
+    // the graph contains a possible 0-cost path that goes back on its steps ( e -> f, f -> e )
+    val updates = List(
+      makeUpdate(1L, a, b, 10, 10), // a -> b
+      makeUpdate(2L, b, c, 10, 10),
+      makeUpdate(4L, c, d, 10, 10),
+      makeUpdate(3L, b, e, 0, 0),   // b -> e
+      makeUpdate(6L, e, f, 0, 0),   // e -> f
+      makeUpdate(6L, f, e, 0, 0),   // e <- f
+      makeUpdate(5L, e, d, 0, 0)    // e -> d
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route1 = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
+    assert(route1.map(hops2Ids) === Success(1 :: 3 :: 5 :: Nil))
+  }
 
   /**
     *

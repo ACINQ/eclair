@@ -31,7 +31,7 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
-import fr.acinq.eclair.api.{GetInfoResponse, Service}
+import fr.acinq.eclair.api._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
@@ -271,28 +271,32 @@ class Setup(datadir: File,
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
         implicit val materializer = ActorMaterializer()
-        val api = new Service {
-
-          override def scheduler = system.scheduler
-
-          override val password = {
-            val p = config.getString("api.password")
-            if (p.isEmpty) throw EmptyAPIPasswordException else p
-          }
-
-          override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
-            GetInfoResponse(nodeId = nodeParams.nodeId,
-              alias = nodeParams.alias,
-              port = config.getInt("server.port"),
-              chainHash = nodeParams.chainHash,
-              blockHeight = Globals.blockCount.intValue(),
-              publicAddresses = nodeParams.publicAddresses))
-
-          override def appKit: Kit = kit
-
-          override val socketHandler = makeSocketHandler(system)(materializer)
+        val getInfo = GetInfoResponse(nodeId = nodeParams.nodeId,
+          alias = nodeParams.alias,
+          chainHash = nodeParams.chainHash,
+          blockHeight = Globals.blockCount.intValue(),
+          publicAddresses = nodeParams.publicAddresses)
+        val apiPassword = config.getString("api.password") match {
+          case "" => throw EmptyAPIPasswordException
+          case valid => valid
         }
-        val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+        val apiRoute = if (!config.getBoolean("api.use-old-api")) {
+          new Service {
+            override val actorSystem = kit.system
+            override val mat = materializer
+            override val password = apiPassword
+            override val eclairApi: Eclair = new EclairImpl(kit)
+          }.route
+        } else {
+          new OldService {
+            override val scheduler = system.scheduler
+            override val password = apiPassword
+            override val getInfoResponse: Future[GetInfoResponse] = Future.successful(getInfo)
+            override val appKit: Kit = kit
+            override val socketHandler = makeSocketHandler(system)(materializer)
+          }.route
+        }
+        val httpBound = Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
           case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
         }
         val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("api.port"))))
