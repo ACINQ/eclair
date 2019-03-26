@@ -18,7 +18,11 @@ package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
 
+import akka.http.scaladsl.model.MediaType
+import akka.http.scaladsl.model.MediaTypes._
 import com.google.common.net.HostAndPort
+import de.heikoseeberger.akkahttpjson4s.Json4sSupport
+import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
@@ -30,7 +34,7 @@ import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInpu
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.json4s.JsonAST._
-import org.json4s.{CustomKeySerializer, CustomSerializer}
+import org.json4s.{CustomKeySerializer, CustomSerializer, jackson}
 import scodec.bits.ByteVector
 
 /**
@@ -149,3 +153,37 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format =
     JField("minFinalCltvExpiry", if (p.minFinalCltvExpiry.isDefined) JLong(p.minFinalCltvExpiry.get) else JNull) ::
     Nil)
 }))
+
+object JsonSupport extends Json4sSupport {
+
+  implicit val serialization = jackson.Serialization
+
+  implicit val formats = org.json4s.DefaultFormats +
+    new ByteVectorSerializer +
+    new ByteVector32Serializer +
+    new UInt64Serializer +
+    new MilliSatoshiSerializer +
+    new ShortChannelIdSerializer +
+    new StateSerializer +
+    new ShaChainSerializer +
+    new PublicKeySerializer +
+    new PrivateKeySerializer +
+    new ScalarSerializer +
+    new PointSerializer +
+    new TransactionSerializer +
+    new TransactionWithInputInfoSerializer +
+    new InetSocketAddressSerializer +
+    new OutPointSerializer +
+    new OutPointKeySerializer +
+    new InputInfoSerializer +
+    new ColorSerializer +
+    new RouteResponseSerializer +
+    new ThrowableSerializer +
+    new FailureMessageSerializer +
+    new NodeAddressSerializer +
+    new DirectionSerializer +
+    new PaymentRequestSerializer
+
+  implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
+
+}
