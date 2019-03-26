@@ -433,7 +433,8 @@ eclair-cli connect --uri<span class="o">=</span>&lt;target_uri&gt;
 <td>String</td>
 </tr>
 </tbody></table>
-<h2 id='connect-manually'>Connect manually</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; -F <span class="nv">host</span><span class="o">=</span>&lt;host&gt; -F <span class="nv">port</span><span class="o">=</span>&lt;port&gt; <span class="s2">"http://localhost:8080/connect"</span>
+<h2 id='connect-manually'>Connect manually</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; <span class="se">\ </span>
+    -F <span class="nv">host</span><span class="o">=</span>&lt;host&gt; -F <span class="nv">port</span><span class="o">=</span>&lt;port&gt; <span class="s2">"http://localhost:8080/connect"</span>
 
 <span class="c"># with eclair-cli</span>
 eclair-cli connect --nodeId<span class="o">=</span>&lt;node_id&gt; --host<span class="o">=</span>&lt;host&gt; --port<span class="o">=</span>&lt;port&gt;
@@ -1139,6 +1140,9 @@ eclair-cli receive --description<span class="o">=</span>&lt;some_description&gt;
 </tr>
 </tbody></table>
 <h2 id='send'>send</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_invoice&gt; <span class="s2">"http://localhost:8080/send"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli send --invoice<span class="o">=</span>&lt;some_invoice&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -1210,7 +1214,11 @@ eclair-cli receive --description<span class="o">=</span>&lt;some_description&gt;
 <td>Millisatoshi (integer)</td>
 </tr>
 </tbody></table>
-<h2 id='sendtonode'>sendToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_invoice&gt; -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount&gt; -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/sendtonode"</span>
+<h2 id='sendtonode'>sendToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
+    -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount&gt; -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/sendtonode"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli sendtonode --nodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span class="o">=</span>&lt;amount&gt; --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>

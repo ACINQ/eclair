@@ -97,7 +97,8 @@ uri | The URI in format 'nodeId@host:port' | No | String
 ## Connect manually
 
 ```shell
-curl -u :<eclair_api_password> -X POST -F nodeId=<node_id> -F host=<host> -F port=<port> "http://localhost:8080/connect"
+curl -u :<eclair_api_password> -X POST -F nodeId=<node_id> \
+	-F host=<host> -F port=<port> "http://localhost:8080/connect"
 
 # with eclair-cli
 eclair-cli connect --nodeId=<node_id> --host=<host> --port=<port>
@@ -755,6 +756,9 @@ expireIn | Number of seconds that the invoice will be valid | Yes | Seconds (int
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F invoice=<some_invoice> "http://localhost:8080/send"
+
+#with eclair-cli
+eclair-cli send --invoice=<some_invoice>
 ```
 > The above command returns:
 
@@ -818,7 +822,11 @@ amountMsat | Amount in to pay if the invoice does not have one | Yes | Millisato
 ## sendToNode
 
 ```shell
-curl -u :<eclair_api_password> -X POST -F nodeId=<some_invoice> -F amountMsat=<amount> -F paymentHash=<some_hash> "http://localhost:8080/sendtonode"
+curl -u :<eclair_api_password> -X POST -F nodeId=<some_node> \
+	-F amountMsat=<amount> -F paymentHash=<some_hash> "http://localhost:8080/sendtonode"
+
+#with eclair-cli
+eclair-cli sendtonode --nodeId=<some_node> --amountMsat=<amount> --paymentHash=<some_hash>
 ```
 > The above command returns:
 
