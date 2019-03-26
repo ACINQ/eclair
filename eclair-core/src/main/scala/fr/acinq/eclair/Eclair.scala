@@ -154,9 +154,9 @@ class EclairImpl(appKit: Kit) extends Eclair {
     }
 
     Future(AuditResponse(
-      sent = appKit.nodeParams.auditDb.listSent(from, to),
-      received = appKit.nodeParams.auditDb.listReceived(from, to),
-      relayed = appKit.nodeParams.auditDb.listRelayed(from, to)
+      sent = appKit.nodeParams.db.audit.listSent(from, to),
+      received = appKit.nodeParams.db.audit.listReceived(from, to),
+      relayed = appKit.nodeParams.db.audit.listRelayed(from, to)
     ))
   }
 
@@ -166,10 +166,10 @@ class EclairImpl(appKit: Kit) extends Eclair {
       case _ => (0L, Long.MaxValue)
     }
 
-    Future(appKit.nodeParams.auditDb.listNetworkFees(from, to))
+    Future(appKit.nodeParams.db.audit.listNetworkFees(from, to))
   }
 
-  override def channelStats(): Future[Seq[Stats]] = Future(appKit.nodeParams.auditDb.stats)
+  override def channelStats(): Future[Seq[Stats]] = Future(appKit.nodeParams.db.audit.stats)
 
   /**
     * Sends a request to a channel and expects a response
