@@ -81,7 +81,8 @@ eclair-cli connect --uri=<target_uri>
 connected
 ```
 
-Connect to another lightning node, this will perform a connection but no channel will be opened.
+Connect to another lightning node, this will perform a connection but no channel will be opened. 
+Note in the _URI_ the port is optional and if missing the default (9735) will be used. 
 
 
 ### HTTP Request
@@ -98,10 +99,10 @@ uri | The URI in format 'nodeId@host:port' | No | String
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F nodeId=<node_id> \ 
-	-F host=<host> -F port=<port> "http://localhost:8080/connect"
+	-F host=<host> "http://localhost:8080/connect"
 
 # with eclair-cli
-eclair-cli connect --nodeId=<node_id> --host=<host> --port=<port>
+eclair-cli connect --nodeId=<node_id> --host=<host>
 ```
 
 > The above command returns:
@@ -122,7 +123,7 @@ Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
 nodeId | The **nodeId** of the node you want to connect to | No | 32bytes-HexString (String)
 host | The IPv4 host address of the node | No | String
-port | The port of the node | No | Integer
+port | The port of the node (default: 9735) | Yes | Integer
 
 # Open
 
