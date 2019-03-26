@@ -37,7 +37,7 @@ The rest of this document will use '21satoshi' as password which encoded as _bas
 ## GetInfo
 
 ```shell
-curl -u :<eclair_api_password> -X POST "http://localhost:8080/getinfo" 
+curl -u :<eclair_api_password> -X POST "http://localhost:8080/getinfo"
 
 # with eclair-cli
 eclair-cli getinfo
