@@ -17,14 +17,17 @@
 package fr.acinq.eclair.channel.states.a
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL, _}
 import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.scalatest.{Outcome, Tag}
+import scodec.bits.ByteVector
 
+import scala.concurrent.{Future, Promise}
 import scala.concurrent.duration._
 
 /**
@@ -36,10 +39,13 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
+    val noopWallet = new TestWallet {
+      override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse].future  // will never be completed
+    }
     val setup = if (test.tags.contains("mainnet")) {
-      init(TestConstants.Alice.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), TestConstants.Bob.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash))
+      init(TestConstants.Alice.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), TestConstants.Bob.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), wallet = noopWallet)
     } else {
-      init()
+      init(wallet = noopWallet)
     }
     import setup._
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)

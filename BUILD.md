@@ -2,7 +2,7 @@
 
 ## Requirements
 - [OpenJDK 11](https://jdk.java.net/11/).
-- [Maven](https://maven.apache.org/download.cgi) 3.5.4 or newer
+- [Maven](https://maven.apache.org/download.cgi) 3.6.0 or newer
 - [Docker](https://www.docker.com/) 18.03 or newer (optional) if you want to run all tests
 
 :warning: You can also use [Oracle JDK 1.8](http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html) to build and run eclair, but we recommend you use Open JDK11. 
