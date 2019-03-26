@@ -4,7 +4,8 @@
 api_url='http://localhost:8080'
 # uncomment the line below if you don't want to provide a password each time you call eclair-cli
 # api_password='your_api_password'
-colors=false
+# for some commands the json output can be shortened for better readability
+short=false
 
 # prints help message
 usage() {
@@ -22,7 +23,6 @@ Usage
 where OPTIONS can be:
   -p <password>         API's password
   -a <address>          Override the API URL with <address>
-  -c                    Outputs colored JSON
   -h                    Show available commands
 
 and COMMAND is one of:
@@ -52,12 +52,12 @@ command -v jq >/dev/null 2>&1 || { echo -e "This tool requires jq.\nFor installa
 command -v curl >/dev/null 2>&1 || { echo -e "This tool requires curl.\n\nAborting..."; exit 1; }
 
 # extract script options
-while getopts ':cu:p:a:hu:' flag; do
+while getopts ':cu:su:p:a:hu:' flag; do
   case "${flag}" in
     p) api_password="${OPTARG}" ;;
     a) api_url="${OPTARG}" ;;
-    c) colors=true ;;
     h) usage ;;
+    s) short=true ;;
     *) ;;
   esac
 done
@@ -76,14 +76,14 @@ fi
 api_payload=""
 index=1
 for arg in "${@}"; do
-  transformed_arg=""
+  transformed_arg="";
   case ${arg} in
     "--"*)  # if arg begins with two dashes, it is the name of a parameter. Dashes must be removed, and arg must be followed by an equal sign
             # also, it must be prefixed by an '&' sign, if it is not the first argument
             if [ $index -eq 1 ]; then
-              transformed_arg="$transformed_arg${arg:2}="
+              transformed_arg="$transformed_arg${arg:2}=";
             else
-              transformed_arg="&$transformed_arg${arg:2}="
+              transformed_arg="&$transformed_arg${arg:2}=";
             fi
             ;;
     *)      transformed_arg=$arg
@@ -93,15 +93,20 @@ for arg in "${@}"; do
   let "index++"
 done;
 
-# jq parses response body for error message
-jq_filter='if type=="object" and .error != null then .error else . end'
+# jq filter parses response body for error message
+jq_filter='if type=="object" and .error != null then .error else .';
 
-# jq options
-if [ "$colors" = true ]; then
-  jq_opts="--color-output";
-else
-  jq_opts="--monochrome-output"
+# apply special jq filter if we are in "short" ouput mode -- only for specific commands such as 'channels'
+if [ "$short" = true ]; then
+  jq_channel_filter="{ nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint }";
+  case $api_endpoint in
+    "channels")   jq_filter="$jq_filter | map( $jq_channel_filter )" ;;
+    "channel")    jq_filter="$jq_filter | $jq_channel_filter" ;;
+    *) ;;
+  esac
 fi
+
+jq_filter="$jq_filter end";
 
 # if no password is provided, auth should only contain user login so that curl prompts for the api password
 if [ -z $api_password ]; then
@@ -111,4 +116,4 @@ else
 fi
 
 # we're now ready to execute the API call
-eval curl "--user $auth --silent --show-error -X POST -H \"Content-Type: application/x-www-form-urlencoded\" -d '$api_payload' $api_url/$api_endpoint" | jq -r "$jq_opts" "$jq_filter"
+eval curl "--user $auth --silent --show-error -X POST -H \"Content-Type: application/x-www-form-urlencoded\" -d '$api_payload' $api_url/$api_endpoint" | jq -r "$jq_filter"
