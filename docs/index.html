@@ -349,6 +349,14 @@
               </ul>
           </li>
           <li>
+            <a href="#websocket" class="toc-h1 toc-link" data-title="Websocket">Websocket</a>
+              <ul class="toc-list-h2">
+                  <li>
+                    <a href="#ws" class="toc-h2 toc-link" data-title="ws">ws</a>
+                  </li>
+              </ul>
+          </li>
+          <li>
             <a href="#errors" class="toc-h1 toc-link" data-title="Errors">Errors</a>
           </li>
       </ul>
@@ -362,13 +370,22 @@
         <h1 id='introduction'>Introduction</h1>
 <p>Welcome to the Eclair API, this website contains documentation and code examples about how to interact with the Eclair lightning node via its API. 
 Feel free to suggest improvements and fixes to this documentation by submitting a pull request to the <a href="https://github.com/ACINQ/eclair">repo</a>. The API
-uses http form data to receive parameteres from the clients, please refer to  RFC LINK HERE </p>
+uses <a href="https://en.wikipedia.org/wiki/POST_(HTTP)#Use_for_submitting_web_forms">HTTP form data</a> and returns JSON encoded object or simple strings if no object
+is being returned, all errors are handled with a JSON response more info <a href="#errors">here</a></p>
 <h1 id='authentication'>Authentication</h1>
-<p>Eclair uses HTTP Basic authentication and expects to receive the correct header with every request. Please note that eclair only expects a password and an 
-empty user name. </p>
+<p>Eclair uses HTTP Basic authentication and expects to receive the correct header with every request.
+To set an API password use the <a href="https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf">configuration</a>.
+The rest of this document will use &#39;21satoshi&#39; as password which encoded as <em>base64</em> results in <code>OjIxc2F0b3NoaQ==</code></p>
 
-<p><code>Authorization: &lt;Base64EncodedCredentials&gt;</code></p>
-<h1 id='getinfo'>GetInfo</h1><h2 id='getinfo-2'>GetInfo</h2><pre class="highlight shell tab-shell"><code>curl <span class="s2">"http://example.com/getinfo"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<aside class="notice">
+ Please note that eclair only expects a password and an empty user name.
+</aside>
+
+<p><code>Authorization: Base64Encoded(&quot;&quot;:&lt;eclair_api_password&gt;)</code></p>
+<h1 id='getinfo'>GetInfo</h1><h2 id='getinfo-2'>GetInfo</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/getinfo"</span>
+
+<span class="c"># with eclair-cli</span>
+eclair-cli getinfo
 </code></pre>
 <blockquote>
 <p>The above command returns JSON structured like this:</p>
@@ -380,14 +397,17 @@ empty user name. </p>
    </span><span class="s2">"blockHeight"</span><span class="p">:</span><span class="mi">123456</span><span class="p">,</span><span class="w">
    </span><span class="s2">"publicAddresses"</span><span class="p">:[</span><span class="w">
       </span><span class="s2">"34.239.230.56:9735"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad.onion:9735"</span><span class="w"> 
+      </span><span class="s2">"of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad.onion:9735"</span><span class="w">
    </span><span class="p">]</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Returns information about this instance such as <strong>nodeId</strong> and current block height as seen by eclair.</p>
 <h3 id='http-request'>HTTP Request</h3>
-<p><code>POST http://example.com/getinfo</code></p>
-<h1 id='connect'>Connect</h1><h2 id='connect-via-uri'>Connect via URI</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">uri</span><span class="o">=</span>&lt;target_uri&gt;  <span class="s2">"http://example.com/connect"</span>  -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<p><code>POST http://localhost:8080/getinfo</code></p>
+<h1 id='connect'>Connect</h1><h2 id='connect-via-uri'>Connect via URI</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">uri</span><span class="o">=</span>&lt;target_uri&gt;  <span class="s2">"http://localhost:8080/connect"</span>
+
+<span class="c"># with eclair-cli</span>
+eclair-cli connect --uri<span class="o">=</span>&lt;target_uri&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -396,7 +416,7 @@ empty user name. </p>
 </code></pre>
 <p>Connect to another lightning node, this will perform a connection but no channel will be opened.</p>
 <h3 id='http-request-2'>HTTP Request</h3>
-<p><code>POST http://example.com/connect</code></p>
+<p><code>POST http://localhost:8080/connect</code></p>
 <h3 id='parameters'>Parameters</h3>
 <table><thead>
 <tr>
@@ -413,7 +433,10 @@ empty user name. </p>
 <td>String</td>
 </tr>
 </tbody></table>
-<h2 id='connect-manually'>Connect manually</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; -F <span class="nv">host</span><span class="o">=</span>1.2.3.4 -F <span class="nv">port</span><span class="o">=</span>1234 <span class="s2">"http://example.com/connect"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='connect-manually'>Connect manually</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; -F <span class="nv">host</span><span class="o">=</span>&lt;host&gt; -F <span class="nv">port</span><span class="o">=</span>&lt;port&gt; <span class="s2">"http://localhost:8080/connect"</span>
+
+<span class="c"># with eclair-cli</span>
+eclair-cli connect --nodeId<span class="o">=</span>&lt;node_id&gt; --host<span class="o">=</span>&lt;host&gt; --port<span class="o">=</span>&lt;port&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -422,7 +445,7 @@ empty user name. </p>
 </code></pre>
 <p>Connect to another lightning node, this will perform a connection but no channel will be opened.</p>
 <h3 id='http-request-3'>HTTP Request</h3>
-<p><code>POST http://example.com/connect</code></p>
+<p><code>POST http://localhost:8080/connect</code></p>
 <h3 id='parameters-2'>Parameters</h3>
 <table><thead>
 <tr>
@@ -451,8 +474,11 @@ empty user name. </p>
 <td>Integer</td>
 </tr>
 </tbody></table>
-<h1 id='open'>Open</h1><h2 id='open-2'>Open</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">nodeId</span><span class="o">=</span>03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f 
--F <span class="nv">fundingSatoshis</span><span class="o">=</span>1234 <span class="s2">"http://example.com/open"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h1 id='open'>Open</h1><h2 id='open-2'>Open</h2><pre class="highlight shell tab-shell"><code>curl -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; -F <span class="nv">fundingSatoshis</span><span class="o">=</span>&lt;funding_satoshis&gt; <span class="se">\</span>
+    <span class="s2">"http://localhost:8080/open"</span> -u :&lt;eclair_api_password&gt;
+
+<span class="c">#with eclair-cli</span>
+eclair-cli open --nodeId<span class="o">=</span>&lt;node_id&gt; --fundingSatoshis<span class="o">=</span>&lt;funding_satoshis&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns the channelId of the newly created channel:</p>
@@ -460,9 +486,9 @@ empty user name. </p>
 <pre class="highlight plaintext"><code>e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
 </code></pre>
 <p>Open a channel to another lightning node, you must specify the target nodeId and the funding satoshis for the new channel. Optionally
-you can send to the remote a &#39;pushMsat&#39; value and you can specify wether this should be a public or private channel (default is set in the config).</p>
+you can send to the remote a <em>pushMsat</em> value and you can specify wether this should be a public or private channel (default is set in the config).</p>
 <h3 id='http-request-4'>HTTP Request</h3>
-<p><code>POST http://example.com/open</code></p>
+<p><code>POST http://localhost:8080/open</code></p>
 <h3 id='parameters-3'>Parameters</h3>
 <table><thead>
 <tr>
@@ -503,17 +529,20 @@ you can send to the remote a &#39;pushMsat&#39; value and you can specify wether
 <td>Integer</td>
 </tr>
 </tbody></table>
-<h1 id='close'>Close</h1><h2 id='close-2'>Close</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">channelId</span><span class="o">=</span>03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f  <span class="s2">"http://example.com/close"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h1 id='close'>Close</h1><h2 id='close-2'>Close</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt; <span class="s2">"http://localhost:8080/close"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli close --channelId<span class="o">=</span>&lt;channel&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
 <pre class="highlight plaintext"><code>ok
 </code></pre>
-<p>Initiates a cooperative close for a give channel that belongs to this eclair node, the API returns once the funding_signed message has been negotiated.
-If you specified a scriptPubKey then the closing transaction will spend to that address. Note that you must specify at least a &#39;channelId&#39; or &#39;shortChannelId&#39;.</p>
+<p>Initiates a cooperative close for a give channel that belongs to this eclair node, the API returns once the <em>funding_signed</em> message has been negotiated.
+If you specified a scriptPubKey then the closing transaction will spend to that address. Note that you must specify at least a <em>channelId</em> <strong>or</strong> <em>shortChannelId</em>.</p>
 <h3 id='http-request-5'>HTTP Request</h3>
-<p><code>POST http://example.com/close</code></p>
+<p><code>POST http://localhost:8080/close</code></p>
 <h3 id='parameters-4'>Parameters</h3>
 <table><thead>
 <tr>
@@ -542,17 +571,20 @@ If you specified a scriptPubKey then the closing transaction will spend to that 
 <td>HexString (String)</td>
 </tr>
 </tbody></table>
-<h2 id='force-close'>Force Close</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">channelId</span><span class="o">=</span>03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f  <span class="s2">"http://example.com/forceclose"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='force-close'>Force Close</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt; <span class="s2">"http://localhost:8080/forceclose"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli forceclose --channelId<span class="o">=</span>&lt;channel&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
 <pre class="highlight plaintext"><code>e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
 </code></pre>
-<p>Initiates an unilateral close for a give channel that belongs to this eclair node, once the commitment has been broadcasted the API returns its 
-transaction id. Note that you must specify at least a &#39;channelId&#39; or &#39;shortChannelId&#39;.</p>
+<p>Initiates an unilateral close for a give channel that belongs to this eclair node, once the commitment has been broadcasted the API returns its
+transaction id. Note that you must specify at least a <em>channelId</em> <strong>or</strong> <em>shortChannelId</em>.</p>
 <h3 id='http-request-6'>HTTP Request</h3>
-<p><code>POST http://example.com/forceclose</code></p>
+<p><code>POST http://localhost:8080/forceclose</code></p>
 <h3 id='parameters-5'>Parameters</h3>
 <table><thead>
 <tr>
@@ -575,18 +607,24 @@ transaction id. Note that you must specify at least a &#39;channelId&#39; or &#3
 <td>ShortChannelId (String)</td>
 </tr>
 </tbody></table>
-<h1 id='updaterelayfee'>UpdateRelayFee</h1><h2 id='updaterelayfee-2'>updaterelayfee</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">channelId</span><span class="o">=</span>03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f 
-     -F <span class="nv">feeBaseMsat</span><span class="o">=</span>10 -F <span class="nv">feeProportionalMillionths</span><span class="o">=</span>5       
- <span class="s2">"http://example.com/updaterelayfee"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h1 id='updaterelayfee'>UpdateRelayFee</h1><h2 id='updaterelayfee-2'>updaterelayfee</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt; <span class="se">\</span>
+     -F <span class="nv">feeBaseMsat</span><span class="o">=</span>&lt;feebase&gt; -F <span class="nv">feeProportionalMillionths</span><span class="o">=</span>&lt;feeproportional&gt; <span class="se">\</span>
+     <span class="s2">"http://localhost:8080/updaterelayfee"</span>
+
+<span class="c">#eclair-cli</span>
+eclair-cli updaterelayfee <span class="se">\</span>
+    --channelId<span class="o">=</span>&lt;channel&gt; <span class="se">\</span>
+    --feeBaseMsat<span class="o">=</span>&lt;feebase&gt; <span class="se">\</span>
+    --feeProportionalMillionths<span class="o">=</span>&lt;feeproportional&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
 <pre class="highlight plaintext"><code>ok
 </code></pre>
-<p>Updates the fee policy for the specified channelId, a new update for this channel will be broadcasted to the network.</p>
+<p>Updates the fee policy for the specified <em>channelId</em>, a new update for this channel will be broadcasted to the network.</p>
 <h3 id='http-request-7'>HTTP Request</h3>
-<p><code>POST http://example.com/updaterelayfee</code></p>
+<p><code>POST http://localhost:8080/updaterelayfee</code></p>
 <h3 id='parameters-6'>Parameters</h3>
 <table><thead>
 <tr>
@@ -615,7 +653,10 @@ transaction id. Note that you must specify at least a &#39;channelId&#39; or &#3
 <td>Integer</td>
 </tr>
 </tbody></table>
-<h1 id='peers'>Peers</h1><h2 id='peers-2'>peers</h2><pre class="highlight shell tab-shell"><code>curl <span class="s2">"http://example.com/peers"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h1 id='peers'>Peers</h1><h2 id='peers-2'>peers</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/peers"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli peers
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -636,8 +677,11 @@ transaction id. Note that you must specify at least a &#39;channelId&#39; or &#3
 </span></code></pre>
 <p>Returns the list of currently known peers, both connected and disconnected.</p>
 <h3 id='http-request-8'>HTTP Request</h3>
-<p><code>POST http://example.com/peers</code></p>
-<h1 id='channels'>Channels</h1><h2 id='channels-2'>channels</h2><pre class="highlight shell tab-shell"><code>curl <span class="s2">"http://example.com/channels"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<p><code>POST http://localhost:8080/peers</code></p>
+<h1 id='channels'>Channels</h1><h2 id='channels-2'>channels</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/channels"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli channels
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -764,9 +808,9 @@ transaction id. Note that you must specify at least a &#39;channelId&#39; or &#3
   </span><span class="p">}</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
-<p>Returns the list of local channels, optionally filtered by remote node. </p>
+<p>Returns the list of local channels, optionally filtered by remote node.</p>
 <h3 id='http-request-9'>HTTP Request</h3>
-<p><code>POST http://example.com/channels</code></p>
+<p><code>POST http://localhost:8080/channels</code></p>
 <h3 id='parameters-7'>Parameters</h3>
 <table><thead>
 <tr>
@@ -783,7 +827,10 @@ transaction id. Note that you must specify at least a &#39;channelId&#39; or &#3
 <td>32bytes-HexString (String)</td>
 </tr>
 </tbody></table>
-<h2 id='channel'>channel</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">channelId</span><span class="o">=</span>56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e  <span class="s2">"http://example.com/channel"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='channel'>channel</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt;  <span class="s2">"http://localhost:8080/channel"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -911,7 +958,7 @@ transaction id. Note that you must specify at least a &#39;channelId&#39; or &#3
 </span></code></pre>
 <p>Returns detailed information about a local channel.</p>
 <h3 id='http-request-10'>HTTP Request</h3>
-<p><code>POST http://example.com/channel</code></p>
+<p><code>POST http://localhost:8080/channel</code></p>
 <h3 id='parameters-8'>Parameters</h3>
 <table><thead>
 <tr>
@@ -930,7 +977,10 @@ transaction id. Note that you must specify at least a &#39;channelId&#39; or &#3
 </tbody></table>
 <h1 id='network'>Network</h1>
 <p>A set of API to query the network view of eclair.</p>
-<h2 id='allnodes'>allnodes</h2><pre class="highlight shell tab-shell"><code>curl <span class="s2">"http://example.com/allnodes"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='allnodes'>allnodes</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/allnodes"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli allnodes
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -962,7 +1012,10 @@ transaction id. Note that you must specify at least a &#39;channelId&#39; or &#3
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Returns information about all public nodes on the lightning network, this information is taken from the <em>node_announcement</em> network message.</p>
-<h2 id='allchannels'>allchannels</h2><pre class="highlight shell tab-shell"><code>curl <span class="s2">"http://example.com/allchannels"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='allchannels'>allchannels</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/allchannels"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli allchannels
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -981,7 +1034,10 @@ transaction id. Note that you must specify at least a &#39;channelId&#39; or &#3
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Returns non detailed information about all public channels in the network.</p>
-<h2 id='allupdates'>allupdates</h2><pre class="highlight shell tab-shell"><code>curl <span class="s2">"http://example.com/allupdates"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='allupdates'>allupdates</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/allupdates"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli allupdates
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -1021,7 +1077,7 @@ transaction id. Note that you must specify at least a &#39;channelId&#39; or &#3
 The allupdates API is CPU intensive for eclair and might slow down the application.
 </aside>
 <h3 id='http-request-11'>HTTP Request</h3>
-<p><code>POST http://example.com/allupdates</code></p>
+<p><code>POST http://localhost:8080/allupdates</code></p>
 <h3 id='parameters-9'>Parameters</h3>
 <table><thead>
 <tr>
@@ -1040,16 +1096,20 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 </tbody></table>
 <h1 id='payments'>Payments</h1>
 <p>Interfaces for sending and receiving payments through eclair.</p>
-<h2 id='receive'>receive</h2><pre class="highlight shell tab-shell"><code>curl <span class="s2">"http://example.com/receive"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='receive'>receive</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">description</span><span class="o">=</span>&lt;some_description&gt; <span class="se">\</span>
+     -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;some_amount&gt; <span class="s2">"http://localhost:8080/receive"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli receive --description<span class="o">=</span>&lt;some_description&gt; --amountMsat<span class="o">=</span>&lt;some_amount&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
 <pre class="highlight plaintext"><code>lnbc4200n1pwf36wlpp5dhysplnjqrqzsvlhct07csechwrz7usr5u69e68v5759m4qz46eqdzz2pshjmt9de6zqen0wgsrgv3sypcxj7r9d3ejqct5ypekzar0wd5xjuewwpkxzcm99cxqzjccqp2rzjqwe3ukal9nd7z9d5sk3tfq88pg0089g6phrd7jcjxtsw2meaecvdvzyu2sqq94gqqyqqqqlgqqqqqzsqpcptp3ys9qgxcfnazf7cqluus56anmur8jy2yzj4wcscpw08u8hl5hjwv0uhm7dv3vvqh623289chcen0a35ynjkk8kd6tz38syntfg2gp6nz0wa
 </code></pre>
-<p>Create a BOLT11 payment invoice.</p>
+<p>Create a <strong>BOLT11</strong> payment invoice.</p>
 <h3 id='http-request-12'>HTTP Request</h3>
-<p><code>POST http://example.com/receive</code></p>
+<p><code>POST http://localhost:8080/receive</code></p>
 <h3 id='parameters-10'>Parameters</h3>
 <table><thead>
 <tr>
@@ -1078,7 +1138,7 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 <td>Seconds (integer)</td>
 </tr>
 </tbody></table>
-<h2 id='send'>send</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_invoice&gt; <span class="s2">"http://example.com/send"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='send'>send</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_invoice&gt; <span class="s2">"http://localhost:8080/send"</span>
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -1125,9 +1185,9 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
   </span><span class="p">]</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Pays a BOLT11 invoice sending the money to the recipient.</p>
+<p>Pays a <strong>BOLT11</strong> invoice sending the money to the recipient.</p>
 <h3 id='http-request-13'>HTTP Request</h3>
-<p><code>POST http://example.com/send</code></p>
+<p><code>POST http://localhost:8080/send</code></p>
 <h3 id='parameters-11'>Parameters</h3>
 <table><thead>
 <tr>
@@ -1150,7 +1210,7 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 <td>Millisatoshi (integer)</td>
 </tr>
 </tbody></table>
-<h2 id='sendtonode'>sendToNode</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_invoice&gt; -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount&gt; -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://example.com/sendtonode"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='sendtonode'>sendToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_invoice&gt; -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount&gt; -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/sendtonode"</span>
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -1197,9 +1257,9 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
   </span><span class="p">]</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Pays a BOLT11 invoice sending the money to the recipient.</p>
+<p>Pays a <strong>BOLT11</strong> invoice sending the money to the recipient.</p>
 <h3 id='http-request-14'>HTTP Request</h3>
-<p><code>POST http://example.com/sendtonode</code></p>
+<p><code>POST http://localhost:8080/sendtonode</code></p>
 <h3 id='parameters-12'>Parameters</h3>
 <table><thead>
 <tr>
@@ -1228,16 +1288,19 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 <td>32bytes-HexString (String)</td>
 </tr>
 </tbody></table>
-<h2 id='checkpayment'>checkpayment</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://example.com/checkpayment"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='checkpayment'>checkpayment</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/checkpayment"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli checkpayment --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
 <pre class="highlight plaintext"><code>true
 </code></pre>
-<p>Check whether the given payment hash has been paid.</p>
+<p>Check whether the given <em>payment_hash</em> has been paid.</p>
 <h3 id='http-request-15'>HTTP Request</h3>
-<p><code>POST http://example.com/checkpayment</code></p>
+<p><code>POST http://localhost:8080/checkpayment</code></p>
 <h3 id='parameters-13'>Parameters</h3>
 <table><thead>
 <tr>
@@ -1254,7 +1317,10 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 <td>32bytes-HexString (String)</td>
 </tr>
 </tbody></table>
-<h2 id='parseinvoice'>parseinvoice</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://example.com/parseinvoice"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='parseinvoice'>parseinvoice</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/parseinvoice"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli parseinvoice --invoice<span class="o">=</span>&lt;some_bolt11invoice&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -1272,7 +1338,7 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 </span></code></pre>
 <p>Returns detailed information about the given invoice.</p>
 <h3 id='http-request-16'>HTTP Request</h3>
-<p><code>POST http://example.com/parseinvoice</code></p>
+<p><code>POST http://localhost:8080/parseinvoice</code></p>
 <h3 id='parameters-14'>Parameters</h3>
 <table><thead>
 <tr>
@@ -1289,7 +1355,10 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 <td>String</td>
 </tr>
 </tbody></table>
-<h1 id='route'>Route</h1><h2 id='findroute'>findroute</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://example.com/findroute"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h1 id='route'>Route</h1><h2 id='findroute'>findroute</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/findroute"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli findroute --invoice<span class="o">=</span>&lt;some_bolt11invoice&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -1302,7 +1371,7 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 </span></code></pre>
 <p>Finds a route to the node specified by the invoice.</p>
 <h3 id='http-request-17'>HTTP Request</h3>
-<p><code>POST http://example.com/findroute</code></p>
+<p><code>POST http://localhost:8080/findroute</code></p>
 <h3 id='parameters-15'>Parameters</h3>
 <table><thead>
 <tr>
@@ -1325,7 +1394,11 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 <td>Millisatoshi (Integer)</td>
 </tr>
 </tbody></table>
-<h2 id='findroutetonode'>findrouteToNode</h2><pre class="highlight shell tab-shell"><code>curl -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;some_amount&gt; <span class="s2">"http://example.com/findroutetonode"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='findroutetonode'>findrouteToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
+     -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;some_amount&gt; <span class="s2">"http://localhost:8080/findroutetonode"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli --nodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span class="o">=</span>&lt;some_amount&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -1338,7 +1411,7 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 </span></code></pre>
 <p>Finds a route to the node.</p>
 <h3 id='http-request-18'>HTTP Request</h3>
-<p><code>POST http://example.com/findroutetonode</code></p>
+<p><code>POST http://localhost:8080/findroutetonode</code></p>
 <h3 id='parameters-16'>Parameters</h3>
 <table><thead>
 <tr>
@@ -1361,7 +1434,10 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 <td>Millisatoshi (Integer)</td>
 </tr>
 </tbody></table>
-<h1 id='miscellaneous'>Miscellaneous</h1><h2 id='audit'>audit</h2><pre class="highlight shell tab-shell"><code>curl <span class="s2">"http://example.com/audit"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h1 id='miscellaneous'>Miscellaneous</h1><h2 id='audit'>audit</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/audit"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli audit
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -1399,7 +1475,7 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 </span></code></pre>
 <p>Retrieves information about payments handled by this node such as: sent, received and relayed payments.</p>
 <h3 id='http-request-19'>HTTP Request</h3>
-<p><code>POST http://example.com/audit</code></p>
+<p><code>POST http://localhost:8080/audit</code></p>
 <h3 id='parameters-17'>Parameters</h3>
 <table><thead>
 <tr>
@@ -1422,7 +1498,10 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 <td>Unix timestamp (Integer)</td>
 </tr>
 </tbody></table>
-<h2 id='networkfees'>networkfees</h2><pre class="highlight shell tab-shell"><code>curl <span class="s2">"http://example.com/networkfees"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='networkfees'>networkfees</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/networkfees"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli networkfees
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -1440,7 +1519,7 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 </span></code></pre>
 <p>Retrieves information about on-chain fees paid during channel operations.</p>
 <h3 id='http-request-20'>HTTP Request</h3>
-<p><code>POST http://example.com/networkfees</code></p>
+<p><code>POST http://localhost:8080/networkfees</code></p>
 <h3 id='parameters-18'>Parameters</h3>
 <table><thead>
 <tr>
@@ -1463,7 +1542,10 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 <td>Unix timestamp (Integer)</td>
 </tr>
 </tbody></table>
-<h2 id='channelstats'>channelstats</h2><pre class="highlight shell tab-shell"><code>curl <span class="s2">"http://example.com/channelstats"</span> -H <span class="s2">"Authorization: meowmeowmeow"</span>
+<h2 id='channelstats'>channelstats</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/channelstats"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli channelstats
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -1481,7 +1563,11 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 <p>Retrieves information about local channels, the information is then aggregated in order to display
 statistics about the routing activity of the channels.</p>
 <h3 id='http-request-21'>HTTP Request</h3>
-<p><code>POST http://example.com/channelstats</code></p>
+<p><code>POST http://localhost:8080/channelstats</code></p>
+<h1 id='websocket'>Websocket</h1><h2 id='ws'>ws</h2>
+<p>This is a simple <a href="https://tools.ietf.org/html/rfc6455">websocket</a> that will output the <em>payment_hash</em> of incoming payments as soon as they are received.</p>
+<h3 id='http-request-22'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/ws</code></p>
 <h1 id='errors'>Errors</h1>
 <blockquote>
 <p>Example error response: </p>

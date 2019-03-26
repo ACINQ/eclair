@@ -142,7 +142,7 @@ e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
 ```
 
 Open a channel to another lightning node, you must specify the target nodeId and the funding satoshis for the new channel. Optionally
-you can send to the remote a _pushMsat_ value and you can specify whether this should be a public or private channel (default is set in the config).
+you can send to the remote a _pushMsat_ value and you can specify wether this should be a public or private channel (default is set in the config).
 
 ### HTTP Request
 
@@ -241,7 +241,7 @@ eclair-cli updaterelayfee \
 ok
 ```
 
-Updates the fee policy for the specified _channelId_, a new update for this channel will be broadcast to the network.
+Updates the fee policy for the specified _channelId_, a new update for this channel will be broadcasted to the network.
 
 ### HTTP Request
 
@@ -1128,5 +1128,15 @@ statistics about the routing activity of the channels.
 ### HTTP Request
 
 `POST http://localhost:8080/channelstats`
+
+# Websocket
+
+## ws
+
+This is a simple [websocket](https://tools.ietf.org/html/rfc6455) that will output the _payment_hash_ of incoming payments as soon as they are received.
+
+### HTTP Request
+
+`POST http://localhost:8080/ws`
 
 
