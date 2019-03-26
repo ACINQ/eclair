@@ -1145,7 +1145,7 @@ This is a simple [websocket](https://tools.ietf.org/html/rfc6455) that will outp
 
 ### HTTP Request
 
-`POST http://localhost:8080/ws`
+`POST ws://localhost:8080/ws`
 
 
 
