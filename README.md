@@ -130,7 +130,7 @@ java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gu
 
 ## JSON API
 
-Eclair offers a feature rich HTTP API that enables application developers to easily integrate, for the full documentation please visit
+Eclair offers a feature rich HTTP API that enables application developers to easily integrate. For the full documentation please visit
 the [website](https://acinq.github.io/eclair). If you are still using the old APIs and looking for documentation you can find it [here](https://github.com/ACINQ/eclair/OLD-API-DOCS.md)
 but is not maintained anymore.
 
