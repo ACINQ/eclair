@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Gitter chat](https://img.shields.io/badge/chat-on%20gitter-red.svg)](https://gitter.im/ACINQ/eclair)
 
-**Eclair** (French for Lightning) is a Scala implementation of the Lightning Network. It can run with or without a GUI, and a JSON-RPC API is also available.
+**Eclair** (French for Lightning) is a Scala implementation of the Lightning Network. It can run with or without a GUI, and a JSON API is also available.
 
 This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [c-lightning](https://github.com/ElementsProject/lightning) and [lnd](https://github.com/LightningNetwork/lnd).
  
@@ -14,7 +14,7 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
  
  :rotating_light: If you intend to run Eclair on mainnet:
  - Keep in mind that it is beta-quality software and **don't put too much money** in it
- - Eclair's JSON-RPC API should **NOT** be accessible from the outside world (similarly to Bitcoin Core API)
+ - Eclair's JSON API should **NOT** be accessible from the outside world (similarly to Bitcoin Core API)
  - Specific [configuration instructions for mainnet](#mainnet-usage) are provided below (by default Eclair runs on testnet)
  
 ---
