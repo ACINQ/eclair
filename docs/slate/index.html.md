@@ -24,7 +24,7 @@ is being returned, all errors are handled with a JSON response more info [here](
 
 Eclair uses HTTP Basic authentication and expects to receive the correct header with every request.
 To set an API password use the [configuration](https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf).
-The rest of this document will use '21satoshi' as password which encoded as bas64 results in `OjIxc2F0b3NoaQ==`
+The rest of this document will use '21satoshi' as password which encoded as _base64_ results in `OjIxc2F0b3NoaQ==`
 
 <aside class="notice">
  Please note that eclair only expects a password and an empty user name.
@@ -142,7 +142,7 @@ e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
 ```
 
 Open a channel to another lightning node, you must specify the target nodeId and the funding satoshis for the new channel. Optionally
-you can send to the remote a 'pushMsat' value and you can specify wether this should be a public or private channel (default is set in the config).
+you can send to the remote a _pushMsat_ value and you can specify whether this should be a public or private channel (default is set in the config).
 
 ### HTTP Request
 
@@ -175,8 +175,8 @@ eclair-cli close --channelId=<channel>
 ok
 ```
 
-Initiates a cooperative close for a give channel that belongs to this eclair node, the API returns once the funding_signed message has been negotiated.
-If you specified a scriptPubKey then the closing transaction will spend to that address. Note that you must specify at least a 'channelId' or 'shortChannelId'.
+Initiates a cooperative close for a give channel that belongs to this eclair node, the API returns once the _funding_signed_ message has been negotiated.
+If you specified a scriptPubKey then the closing transaction will spend to that address. Note that you must specify at least a _channelId_ **or** _shortChannelId_.
 
 ### HTTP Request
 
@@ -206,7 +206,7 @@ e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
 ```
 
 Initiates an unilateral close for a give channel that belongs to this eclair node, once the commitment has been broadcasted the API returns its
-transaction id. Note that you must specify at least a 'channelId' or 'shortChannelId'.
+transaction id. Note that you must specify at least a _channelId_ **or** _shortChannelId_.
 
 ### HTTP Request
 
@@ -241,7 +241,7 @@ eclair-cli updaterelayfee \
 ok
 ```
 
-Updates the fee policy for the specified channelId, a new update for this channel will be broadcasted to the network.
+Updates the fee policy for the specified _channelId_, a new update for this channel will be broadcast to the network.
 
 ### HTTP Request
 
@@ -628,7 +628,7 @@ eclair-cli allnodes
 ]
 ```
 
-Returns information about all public nodes on the lightning network, this information is taken from the *node_announcement* network message.
+Returns information about all public nodes on the lightning network, this information is taken from the _node_announcement_ network message.
 
 ## allchannels
 
@@ -700,7 +700,7 @@ eclair-cli allupdates
 ]
 ```
 
-Returns detailed information about all public channels in the network, the information is mostly taken from the *channel_update* network messages.
+Returns detailed information about all public channels in the network, the information is mostly taken from the _channel_update_ network messages.
 
 <aside class="warning">
 The allupdates API is CPU intensive for eclair and might slow down the application.
@@ -737,7 +737,7 @@ eclair-cli receive --description=<some_description> --amountMsat=<some_amount>
 lnbc4200n1pwf36wlpp5dhysplnjqrqzsvlhct07csechwrz7usr5u69e68v5759m4qz46eqdzz2pshjmt9de6zqen0wgsrgv3sypcxj7r9d3ejqct5ypekzar0wd5xjuewwpkxzcm99cxqzjccqp2rzjqwe3ukal9nd7z9d5sk3tfq88pg0089g6phrd7jcjxtsw2meaecvdvzyu2sqq94gqqyqqqqlgqqqqqzsqpcptp3ys9qgxcfnazf7cqluus56anmur8jy2yzj4wcscpw08u8hl5hjwv0uhm7dv3vvqh623289chcen0a35ynjkk8kd6tz38syntfg2gp6nz0wa
 ```
 
-Create a BOLT11 payment invoice.
+Create a **BOLT11** payment invoice.
 
 ### HTTP Request
 
@@ -802,7 +802,7 @@ curl -u :<eclair_api_password> -X POST -F invoice=<some_invoice> "http://localho
 }
 ```
 
-Pays a BOLT11 invoice sending the money to the recipient.
+Pays a **BOLT11** invoice sending the money to the recipient.
 
 ### HTTP Request
 
@@ -866,7 +866,7 @@ curl -u :<eclair_api_password> -X POST -F nodeId=<some_invoice> -F amountMsat=<a
 }
 ```
 
-Pays a BOLT11 invoice sending the money to the recipient.
+Pays a **BOLT11** invoice sending the money to the recipient.
 
 ### HTTP Request
 
@@ -894,7 +894,7 @@ eclair-cli checkpayment --paymentHash=<some_hash>
 true
 ```
 
-Check whether the given payment hash has been paid.
+Check whether the given _payment_hash_ has been paid.
 
 ### HTTP Request
 
