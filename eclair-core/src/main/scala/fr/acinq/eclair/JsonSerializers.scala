@@ -9,7 +9,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, IPv4, IPv6, Init, NodeAddress, OpenChannel, Shutdown, Tor2, Tor3, UpdateAddHtlc, UpdateFailHtlc, UpdateMessage}
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, IPv4, IPv6, Init, NodeAddress, OpenChannel, Shutdown, Tor2, Tor3, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateMessage}
 import scodec.bits.ByteVector
 
 object JsonSerializers {
@@ -32,8 +32,11 @@ object JsonSerializers {
   }, s => null)
   implicit val updateAddHtlcReadWriter: ReadWriter[UpdateAddHtlc] = macroRW
   implicit val updateFailHtlcReadWriter: ReadWriter[UpdateFailHtlc] = macroRW
-  implicit val updateMessageReadWriter: ReadWriter[UpdateMessage] = ReadWriter.merge(macroRW[UpdateAddHtlc], macroRW[UpdateFailHtlc])
-  implicit val directeddHtlcReadWriter: ReadWriter[DirectedHtlc] = macroRW
+  implicit val updateFailMalformedHtlcReadWriter: ReadWriter[UpdateFailMalformedHtlc] = macroRW
+  implicit val updateFeeReadWriter: ReadWriter[UpdateFee] = macroRW
+  implicit val updateFulfillHtlcReadWriter: ReadWriter[UpdateFulfillHtlc] = macroRW
+  implicit val updateMessageReadWriter: ReadWriter[UpdateMessage] = ReadWriter.merge(macroRW[UpdateAddHtlc], macroRW[UpdateFailHtlc], macroRW[UpdateFailMalformedHtlc], macroRW[UpdateFee], macroRW[UpdateFulfillHtlc])
+  implicit val directedHtlcReadWriter: ReadWriter[DirectedHtlc] = macroRW
   implicit val commitmentSpecReadWriter: ReadWriter[CommitmentSpec] = macroRW
   implicit val localChangesReadWriter: ReadWriter[LocalChanges] = macroRW
   implicit val satoshiReadWriter: ReadWriter[Satoshi] = macroRW

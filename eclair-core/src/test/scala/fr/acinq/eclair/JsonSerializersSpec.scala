@@ -5,11 +5,11 @@ import fr.acinq.eclair.channel.{LocalChanges, LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.ChannelStateSpec
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{NodeAddress, UpdateAddHtlc, UpdateFailHtlc}
+import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
 import scodec.bits._
-import upickle.default.write
+import upickle.default.{read, write}
 
 import scala.util.Random
 
@@ -90,8 +90,13 @@ class JsonSerializersSpec extends FunSuite with Logging {
     val channelId = randomBytes32
     val add = UpdateAddHtlc(channelId, 421, 1245, randomBytes32, 1000, hex"010101")
     val fail = UpdateFailHtlc(channelId, 42, hex"0101")
-    val localChanges = LocalChanges(proposed = add :: add :: fail :: Nil, signed = add :: Nil, acked = fail :: fail :: Nil)
-    logger.info(write(localChanges))
+    val failMalformed = UpdateFailMalformedHtlc(channelId, 42, randomBytes32, 1)
+    val updateFee = UpdateFee(channelId, 1500)
+    val fulfill = UpdateFulfillHtlc(channelId, 42, randomBytes32)
+    val localChanges = LocalChanges(proposed = add :: add :: fail :: updateFee :: Nil, signed = add :: failMalformed :: Nil, acked = fail :: fail :: fulfill :: Nil)
+    val json = write(localChanges)
+    val check = read[LocalChanges](json)
+    assert(check === localChanges)
   }
 
   test("serialize shaChain") {
