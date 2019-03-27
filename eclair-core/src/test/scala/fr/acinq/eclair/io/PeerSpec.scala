@@ -84,8 +84,6 @@ class PeerSpec extends TestkitBaseClass {
     transport.expectMsgType[wire.Init]
     // Bob advertizes option_wumborama in the global features but nothing in the local features
     transport.send(peer, wire.Init(globalWumboramaOptional, Bob.nodeParams.localFeatures))
-    transport.expectMsgType[TransportHandler.ReadAck]
-    router.expectNoMsg(1 second)
     probe.send(peer, Peer.GetPeerInfo)
     assert(probe.expectMsgType[Peer.PeerInfo].state == "DISCONNECTED")
   }
