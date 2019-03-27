@@ -180,7 +180,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     awaitCond(bob.stateName == CLOSED)
   }
 
-  test("recv OpenChannel with wumbo size", Tag("wumbo")) { f =>
+  test("recv OpenChannel (wumbo size)", Tag("wumbo")) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val highFundingMsat = 100000000
