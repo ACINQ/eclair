@@ -27,9 +27,9 @@ import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, NodeParams, ShortChannelId, addressToPublicKeyScript}
+import fr.acinq.eclair._
+import fr.acinq.eclair.Features._
 import scodec.bits.ByteVector
-
 import scala.concurrent.Await
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}
@@ -81,10 +81,14 @@ object Helpers {
     * Called by the fundee
     */
   def validateParamsFundee(nodeParams: NodeParams, open: OpenChannel): Unit = {
+    val supportWumbo = hasFeature(nodeParams.localFeatures, I_WUMBO_YOU_WUMBO_OPTIONAL) || hasFeature(nodeParams.localFeatures, I_WUMBO_YOU_WUMBO_MANDATORY)
+
     // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
     // MUST reject the channel.
     if (nodeParams.chainHash != open.chainHash) throw InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash)
-    if (open.fundingSatoshis < nodeParams.minFundingSatoshis || open.fundingSatoshis >= Channel.MAX_FUNDING_SATOSHIS) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS)
+
+    // BOLT #2: Channel funding limits and wumbo bit support
+    if (open.fundingSatoshis < nodeParams.minFundingSatoshis || (open.fundingSatoshis >= Channel.MAX_FUNDING_SATOSHIS && !supportWumbo)) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS)
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (open.pushMsat > 1000 * open.fundingSatoshis) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat, 1000 * open.fundingSatoshis)
