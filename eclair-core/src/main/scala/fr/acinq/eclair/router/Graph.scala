@@ -342,7 +342,7 @@ object Graph {
 
     // Low/High bound for channel capacity
     val CAPACITY_CHANNEL_LOW_MSAT = 1000 * 1000L // 1000 sat
-    val CAPACITY_CHANNEL_HIGH_MSAT = Channel.MAX_FUNDING_SATOSHIS * 1000L
+    val CAPACITY_CHANNEL_HIGH_MSAT = 50000000000L // 0.5 BTC
 
     // Low/High bound for CLTV channel value
     val CLTV_LOW = 9
