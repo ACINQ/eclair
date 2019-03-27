@@ -21,10 +21,10 @@ import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.wire.{Error, Init, OpenChannel}
+import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
-import org.scalatest.Outcome
-
+import org.scalatest.{Outcome, Tag}
+import scodec.bits.ByteVector
 import scala.concurrent.duration._
 
 /**
@@ -36,7 +36,12 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   case class FixtureParam(bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+
+    val localFeaturesWithWumbo = ByteVector.fromValidHex("8000") // I_WUMBO_YOU_WUMBO_OPTIONAL
+    val setup = test.tags.toList match {
+      case "wumbo" :: Nil => init(nodeParamsB = Bob.nodeParams.copy(localFeatures = localFeaturesWithWumbo))
+      case _ => init()
+    }
     import setup._
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
@@ -173,6 +178,15 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     // we check that the error uses the temporary channel id
     assert(error === Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, 500 * 1000, (open.channelReserveSatoshis - 1) * 1000, open.channelReserveSatoshis).getMessage))
     awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv OpenChannel with wumbo size", Tag("wumbo")) { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    val highFundingMsat = 100000000
+    bob ! open.copy(fundingSatoshis = highFundingMsat)
+    bob2alice.expectMsgType[AcceptChannel]
+    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
   }
 
   test("recv Error") { f =>
