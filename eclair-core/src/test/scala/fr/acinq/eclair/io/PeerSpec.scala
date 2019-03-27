@@ -30,6 +30,7 @@ import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Reb
 import fr.acinq.eclair.wire.{Error, Ping, Pong}
 import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, randomBytes, wire}
 import org.scalatest.Outcome
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -68,6 +69,25 @@ class PeerSpec extends TestkitBaseClass {
     router.expectNoMsg(1 second) // bob's features require no sync
     probe.send(peer, Peer.GetPeerInfo)
     assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
+  }
+
+  test("refuse a connection if there is a wumbo conflict") { f =>
+    import f._
+
+    val globalWumboramaOptional = ByteVector.fromValidHex("20000")
+
+    // let's simulate a connection
+    val probe = TestProbe()
+    probe.send(peer, Peer.Init(None, Set.empty))
+    authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, new InetSocketAddress("1.2.3.4", 42000), outgoing = true, None))
+    transport.expectMsgType[TransportHandler.Listener]
+    transport.expectMsgType[wire.Init]
+    // Bob advertizes option_wumborama in the global features but nothing in the local features
+    transport.send(peer, wire.Init(globalWumboramaOptional, Bob.nodeParams.localFeatures))
+    transport.expectMsgType[TransportHandler.ReadAck]
+    router.expectNoMsg(1 second)
+    probe.send(peer, Peer.GetPeerInfo)
+    assert(probe.expectMsgType[Peer.PeerInfo].state == "DISCONNECTED")
   }
 
   test("reply to ping") { f =>

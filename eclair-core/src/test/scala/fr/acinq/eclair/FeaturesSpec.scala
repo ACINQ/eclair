@@ -51,4 +51,10 @@ class FeaturesSpec extends FunSuite {
     assert(areSupported(hex"0141") == false)
   }
 
+  test("'option_wumborama' feature") {
+    val globalFeatures = hex"20000"
+    assert(areSupported(globalFeatures))
+    assert(hasFeature(globalFeatures, WUMBORAMA_OPTIONAL))
+  }
+
 }

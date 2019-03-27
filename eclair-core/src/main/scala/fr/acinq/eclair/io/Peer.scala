@@ -123,6 +123,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
       val remoteHasWumboOptional = Features.hasFeature(remoteInit.localFeatures, Features.I_WUMBO_YOU_WUMBO_OPTIONAL)
       val remoteHasWumboMandatory = Features.hasFeature(remoteInit.localFeatures, Features.I_WUMBO_YOU_WUMBO_MANDATORY)
+      val remoteHasWumoramaOptional = Features.hasFeature(remoteInit.globalFeatures, Features.WUMBORAMA_OPTIONAL)
+      val remoteHasWumoramaMandatory = Features.hasFeature(remoteInit.globalFeatures, Features.WUMBORAMA_MANDATORY)
+
+      // If the remote peer advertised `option_wumborama` in its global features but doesn't `option_i_wumbo_you_wumbo` on local features
+      val hasWumboramaButNoLocalWumbo = (remoteHasWumoramaOptional || remoteHasWumoramaMandatory) && !(remoteHasWumboOptional || remoteHasWumboMandatory)
+
       log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin} and localFeatures=${remoteInit.localFeatures.toBin}")
       log.info(s"$remoteNodeId has features: initialRoutingSync=$remoteHasInitialRoutingSync " +
         s"channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional " +
@@ -130,7 +136,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         s"wumboOptional=$remoteHasWumboOptional " +
         s"wumboMandatory=$remoteHasWumboMandatory")
 
-      if (Features.areSupported(remoteInit.localFeatures)) {
+      if (Features.areSupported(remoteInit.localFeatures) && !hasWumboramaButNoLocalWumbo) {
         d.origin_opt.foreach(origin => origin ! "connected")
 
         if (remoteHasInitialRoutingSync) {
