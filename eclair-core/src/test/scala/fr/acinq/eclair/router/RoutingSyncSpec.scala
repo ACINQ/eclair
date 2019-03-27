@@ -19,7 +19,6 @@ package fr.acinq.eclair.router
 import akka.actor.ActorSystem
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.Block
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -27,9 +26,8 @@ import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnounce
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.wire._
 import org.scalatest.FunSuiteLike
-
+import scodec.bits.ByteVector
 import scala.concurrent.duration._
-
 
 class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
@@ -134,8 +132,8 @@ object RoutingSyncSpec {
     val TxCoordinates(blockHeight, _, _) = ShortChannelId.coordinates(shortChannelId)
     val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, 500000000L, timestamp = blockHeight)
     val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, priv_a.publicKey, shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, 500000000L, timestamp = blockHeight)
-    val nodeAnnouncement_a = makeNodeAnnouncement(priv_a, "a", Color(0, 0, 0), List())
-    val nodeAnnouncement_b = makeNodeAnnouncement(priv_b, "b", Color(0, 0, 0), List())
+    val nodeAnnouncement_a = makeNodeAnnouncement(priv_a, "a", Color(0, 0, 0), ByteVector.empty, List())
+    val nodeAnnouncement_b = makeNodeAnnouncement(priv_b, "b", Color(0, 0, 0), ByteVector.empty, List())
     (channelAnn_ab, channelUpdate_ab, channelUpdate_ba, nodeAnnouncement_a, nodeAnnouncement_b)
   }
 }
