@@ -339,7 +339,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         case (count, (_, origins)) if origins.contains(self) =>
           // the announcement came from this peer, we don't send it back
           count
-        case (count, (msg: HasTimestamp, _)) if !timestampInRange(msg, d.gossipTimestampFilter) =>
+        case (count, (msg, _)) if !timestampInRange(msg, d.gossipTimestampFilter) =>
           // the peer has set up a filter on timestamp and this message is out of range
           count
         case (count, (msg, _)) =>
@@ -606,14 +606,15 @@ object Peer {
     *
     * @param gossipTimestampFilter_opt optional gossip timestamp range
     * @return
-    *           - true if the msg's timestamp is in the requested range, or if there is no filtering
+    *           - true if there is a filter and msg has no timestamp, or has one that matches the filter 
     *           - false otherwise
     */
-  def timestampInRange(msg: HasTimestamp, gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
+  def timestampInRange(msg: RoutingMessage, gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
     // check if this message has a timestamp that matches our timestamp filter
-    gossipTimestampFilter_opt match {
-      case None => true // no filtering
-      case Some(GossipTimestampFilter(_, firstTimestamp, timestampRange)) => msg.timestamp >= firstTimestamp && msg.timestamp <= firstTimestamp + timestampRange
+    (msg, gossipTimestampFilter_opt) match {
+      case (_, None) => false // BOLT 7: A node which wants any gossip messages would have to send this, otherwise [...] no gossip messages would be received.
+      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= firstTimestamp + timestampRange
+      case _ => true // if there is a filter and message doesn't have a timestamp (e.g. channel_announcement), then we send it
     }
   }
 }
