@@ -439,7 +439,7 @@ Returns the list of local channels, optionally filtered by remote node.
 
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
-toRemoteNodeId | The remote node id to be used as filter for the channels | Yes | 32bytes-HexString (String)
+nodeId | The remote node id to be used as filter for the channels | Yes | 32bytes-HexString (String)
 
 ## channel
 
