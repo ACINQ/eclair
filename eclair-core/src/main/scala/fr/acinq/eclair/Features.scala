@@ -26,6 +26,8 @@ import scodec.bits.ByteVector
   * Created by PM on 13/02/2017.
   */
 object Features {
+
+  /** LOCAL FEATURES **/
   val OPTION_DATA_LOSS_PROTECT_MANDATORY = 0
   val OPTION_DATA_LOSS_PROTECT_OPTIONAL = 1
 
@@ -36,6 +38,12 @@ object Features {
   val CHANNEL_RANGE_QUERIES_BIT_MANDATORY = 6
   val CHANNEL_RANGE_QUERIES_BIT_OPTIONAL = 7
 
+  val I_WUMBO_YOU_WUMBO_MANDATORY = 14
+  val I_WUMBO_YOU_WUMBO_OPTIONAL = 15
+
+  /** GLOBAL FEATURES **/
+  val WUMBORAMA_MANDATORY = 16
+  val WUMBORAMA_OPTIONAL = 17
 
   def hasFeature(features: BitSet, bit: Int): Boolean = features.get(bit)
 
