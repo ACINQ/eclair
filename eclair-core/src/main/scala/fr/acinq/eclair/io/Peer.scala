@@ -553,7 +553,6 @@ object Peer {
   case object Disconnect
   case object ResumeAnnouncements
   case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte]) {
-    require(fundingSatoshis.amount < Channel.MAX_FUNDING_SATOSHIS, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING_SATOSHIS}")
     require(pushMsat.amount <= 1000 * fundingSatoshis.amount, s"pushMsat must be less or equal to fundingSatoshis")
     require(fundingSatoshis.amount >= 0, s"fundingSatoshis must be positive")
     require(pushMsat.amount >= 0, s"pushMsat must be positive")
