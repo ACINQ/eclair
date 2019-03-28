@@ -1,7 +1,9 @@
 package fr.acinq.eclair.router
 
+import java.io.PrintWriter
 import java.nio.file.{Files, Paths}
 import java.sql.DriverManager
+
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -14,14 +16,16 @@ import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, Color, NodeAddr
 import org.json4s.{FileInput, jackson}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
+
 import scala.util.{Failure, Random, Success}
 import scala.collection.immutable.TreeMap
 import scala.collection.mutable
+import scala.io.Source
 
 class FuzzyGraphSpec extends FunSuite {
 
   implicit val serialization = jackson.Serialization
-  implicit val formats = org.json4s.DefaultFormats + new ByteVectorSerializer + new ByteVector32Serializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer +new PaymentRequestSerializer
+  implicit val formats = org.json4s.DefaultFormats + new ByteVectorSerializer + new ByteVector32Serializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer + new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer + new PaymentRequestSerializer
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
   val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, maxFeeBaseMsat = 21000, maxFeePct = 0.5, routeMaxCltv = 3016, routeMaxLength = 10, ratios = Some(WeightRatios(
@@ -30,14 +34,16 @@ class FuzzyGraphSpec extends FunSuite {
 
   val AMOUNT_TO_ROUTE = MilliSatoshi(1000000).toLong // 1000sat
 
-  lazy val initChannelUpdates = loadFromMockFile("src/test/resources/mockNetwork.json")
+  lazy val initChannelUpdates = loadFromMockCsvFile("src/test/resources/mockNetwork.csv")
+
+//  writeToCsvFile("src/test/resources/mockNetwork.csv", initChannelUpdates)
 
   test("find 500 paths between random nodes in the graph") {
 
     val g = DirectedGraph.makeGraph(initChannelUpdates)
     val nodes = g.vertexSet().toList
 
-    for(_ <- 0 until 500) {
+    for (_ <- 0 until 500) {
       val List(randomSource, randomTarget) = pickRandomNodes(nodes, 2)
 
       val fallbackRoute = connectNodes(randomSource, randomTarget, g, nodes, length = 8)
@@ -56,7 +62,7 @@ class FuzzyGraphSpec extends FunSuite {
     val g = DirectedGraph.makeGraph(initChannelUpdates)
     val nodes = g.vertexSet().toList
 
-    for(_ <- 0 until 500) {
+    for (_ <- 0 until 500) {
       val List(randomSource, randomTarget) = pickRandomNodes(nodes, 2)
 
       val fallbackRoute = connectNodes(randomSource, randomTarget, g, nodes, length = 8)
@@ -66,7 +72,7 @@ class FuzzyGraphSpec extends FunSuite {
       val x2 = (Random.nextInt(97) + 1) / 100D
 
       val high = math.max(x1, x2)
-      val low = if(high == x1) x2 else x1
+      val low = if (high == x1) x2 else x1
 
       val wr = WeightRatios(
         cltvDeltaFactor = low,
@@ -92,10 +98,10 @@ class FuzzyGraphSpec extends FunSuite {
     (0 until number).foreach { _ =>
       var found = false
 
-      while(!found) {
+      while (!found) {
         val r = Random.nextInt(size)
         val node = nodes(r)
-        if(!resultList.contains(node)){
+        if (!resultList.contains(node)) {
           resultList += node
           found = true
         }
@@ -119,7 +125,7 @@ class FuzzyGraphSpec extends FunSuite {
       val to = randomNodes(i + 1)
 
       val shortChannelId = ShortChannelId(
-        blockHeight = 600000 + Random.nextInt(90000),  // height from 600k onward, those channels will be younger than the rest
+        blockHeight = 600000 + Random.nextInt(90000), // height from 600k onward, those channels will be younger than the rest
         txIndex = 0,
         0
       )
@@ -184,7 +190,7 @@ class FuzzyGraphSpec extends FunSuite {
     val nodes = mutable.Set.empty[PublicKey]
 
     // pick #maxNodes random nodes
-    for(_ <- 0 to maxNodes){
+    for (_ <- 0 to maxNodes) {
       val randomNode = Random.nextInt(nodesAmountSize)
       nodes += networkNodes(randomNode)
     }
@@ -196,25 +202,83 @@ class FuzzyGraphSpec extends FunSuite {
     updatesFiltered
   }
 
-  def writeToFile(location: String, updates: Map[ChannelDesc, ChannelUpdate]) = {
+  def writeToJsonFile(location: String, updates: Map[ChannelDesc, ChannelUpdate]) = {
 
     val mockFile = Paths.get(location).toFile
-    if(!mockFile.exists()) mockFile.createNewFile()
+    if (!mockFile.exists()) mockFile.createNewFile()
 
     println(s"Writing to $location '${updates.size}' updates")
     val strippedUpdates = updates.map { case (desc, update) =>
-        StrippedPublicChannel(StrippedDesc(desc), StrippedChannelUpdate(update))
+      StrippedPublicChannel(StrippedDesc(desc), StrippedChannelUpdate(update))
     }
     val jsonUpdates = serialization.writePretty(strippedUpdates)
     Files.write(mockFile.toPath, jsonUpdates.getBytes)
   }
 
+  def writeToCsvFile(location: String, updates: Map[ChannelDesc, ChannelUpdate]) = {
 
+    val mockFile = Paths.get(location).toFile
+    if (!mockFile.exists()) mockFile.createNewFile()
+
+    val writer = new PrintWriter(mockFile)
+
+    println(s"Writing to $location '${updates.size}' updates")
+
+    val header = "shortChannelId, a, b, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat"
+    writer.println(header)
+
+    updates.foreach { case (desc, update) =>
+      val row = desc.shortChannelId + "," +
+        desc.a + "," +
+        desc.b + "," +
+        update.messageFlags + "," +
+        update.channelFlags + "," +
+        update.cltvExpiryDelta  + "," +
+        update.htlcMinimumMsat + "," +
+        update.feeBaseMsat + "," +
+        update.feeProportionalMillionths + "," +
+        update.htlcMaximumMsat.getOrElse(-1)
+
+      writer.println(row)
+    }
+
+    writer.flush()
+    writer.close()
+  }
+
+  def loadFromMockCsvFile(location: String): Map[ChannelDesc, ChannelUpdate] = {
+    println(s"loading network data from '$location'")
+    val mockFile = Paths.get(location).toFile
+    Source.fromFile(mockFile).getLines().drop(1).map { row =>
+      val Array(shortChannelId, a, b, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat) = row.split(",")
+      val desc = ChannelDesc(ShortChannelId(shortChannelId), PublicKey(ByteVector.fromValidHex(a)), PublicKey(ByteVector.fromValidHex(b)))
+      val update = ChannelUpdate(
+        ByteVector32.Zeroes.bytes,
+        ByteVector32.Zeroes,
+        ShortChannelId(shortChannelId),
+        0,
+        Integer.valueOf(messageFlags).toByte,
+        Integer.valueOf(channelFlags).toByte,
+        Integer.valueOf(cltvExpiryDelta).intValue(),
+        Integer.valueOf(htlcMinimumMsat).longValue(),
+        Integer.valueOf(feeBaseMsat).longValue(),
+        Integer.valueOf(feeProportionalMillionths).longValue(),
+        Integer.valueOf(htlcMaximumMsat).longValue() match {
+          case -1 => None
+          case other => Some(other)
+        }
+      )
+
+      desc -> update
+    }.toMap
+  }
 
 }
 
 case class StrippedPublicChannel(desc: StrippedDesc, update: StrippedChannelUpdate)
+
 case class StrippedDesc(shortChannelId: String, a: String, b: String)
+
 case class StrippedChannelUpdate(shortChannelId: String, messageFlags: Int, channelFlags: Int, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Option[Long])
 
 object StrippedDesc {
