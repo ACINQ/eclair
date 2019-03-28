@@ -51,6 +51,15 @@ trait Service extends Directives with Logging {
   import JsonSupport.marshaller
   import JsonSupport.formats
   import JsonSupport.serialization
+  // used to send typed messages over the websocket
+  val formatsWithTypeHint = formats.withTypeHintFieldName("type") +
+    ShortTypeHints(List(
+      classOf[PaymentSent],
+      classOf[PaymentRelayed],
+      classOf[PaymentReceived],
+      classOf[PaymentSettlingOnChain],
+      classOf[PaymentFailed]))
+
 
   def password: String
 
@@ -85,18 +94,8 @@ trait Service extends Directives with Logging {
     // create a flow transforming a queue of string -> string
     val (flowInput, flowOutput) = Source.queue[String](10, OverflowStrategy.dropTail).toMat(BroadcastHub.sink[String])(Keep.both).run()
 
-    val _formats = formats
-
     // register an actor that feeds the queue on payment related events
     actorSystem.actorOf(Props(new Actor {
-
-      implicit val formats = _formats.withTypeHintFieldName("type") +
-        ShortTypeHints(List(
-          classOf[PaymentSent],
-          classOf[PaymentRelayed],
-          classOf[PaymentReceived],
-          classOf[PaymentSettlingOnChain],
-          classOf[PaymentFailed]))
 
       override def preStart: Unit = {
         context.system.eventStream.subscribe(self, classOf[PaymentFailed])
@@ -104,8 +103,8 @@ trait Service extends Directives with Logging {
       }
 
       def receive: Receive = {
-        case message: PaymentFailed => flowInput.offer(Serialization write message)
-        case message: PaymentEvent => flowInput.offer(Serialization write message)
+        case message: PaymentFailed => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
+        case message: PaymentEvent => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
         case other => logger.info(s"Unexpected ws message: $other")
       }
 
