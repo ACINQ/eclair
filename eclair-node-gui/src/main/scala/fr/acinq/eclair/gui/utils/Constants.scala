@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.gui.utils
 
-import javafx.collections.FXCollections
 import fr.acinq.eclair._
+import javafx.collections.FXCollections
 
 object Constants {
   val FX_UNITS_ARRAY_NO_MSAT = FXCollections.observableArrayList(SatUnit.label, BitUnit.label, MBtcUnit.label, BtcUnit.label)
