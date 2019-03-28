@@ -18,7 +18,7 @@ import scala.util.{Failure, Random, Success}
 import scala.collection.immutable.TreeMap
 import scala.collection.mutable
 
-class FuzzyGraph extends FunSuite {
+class FuzzyGraphSpec extends FunSuite {
 
   implicit val serialization = jackson.Serialization
   implicit val formats = org.json4s.DefaultFormats + new ByteVectorSerializer + new ByteVector32Serializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer +new PaymentRequestSerializer
