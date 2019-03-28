@@ -38,10 +38,8 @@ import grizzled.slf4j.Logging
 import org.json4s.ShortTypeHints
 import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
-
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
-import scala.util.Try
 
 case class ErrorResponse(error: String)
 
