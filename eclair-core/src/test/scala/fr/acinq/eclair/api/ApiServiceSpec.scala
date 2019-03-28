@@ -65,7 +65,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def allupdates(nodeId: Option[Crypto.PublicKey]): Future[Iterable[ChannelUpdate]] = ???
 
-    override def receive(description: String, amountMsat: Option[Long], expire: Option[Long]): Future[String] = ???
+    override def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String]): Future[String] = ???
 
     override def findRoute(targetNodeId: Crypto.PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]]): Future[RouteResponse] = ???
 

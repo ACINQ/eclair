@@ -1,3 +1,19 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.api
 
 import akka.http.scaladsl.server._
@@ -16,12 +32,16 @@ import akka.http.scaladsl.server.directives.{Credentials, LoggingMagnet}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
 import fr.acinq.eclair.io.NodeURI
-import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentRequest}
+import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
+import fr.acinq.eclair.payment._
 import grizzled.slf4j.Logging
+import org.json4s.ShortTypeHints
+import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
+import scala.util.Try
 
 case class ErrorResponse(error: String)
 
@@ -64,13 +84,30 @@ trait Service extends Directives with Logging {
     // create a flow transforming a queue of string -> string
     val (flowInput, flowOutput) = Source.queue[String](10, OverflowStrategy.dropTail).toMat(BroadcastHub.sink[String])(Keep.both).run()
 
-    // register an actor that feeds the queue when a payment is received
+    val _formats = formats
+
+    // register an actor that feeds the queue on payment related events
     actorSystem.actorOf(Props(new Actor {
-      override def preStart: Unit = context.system.eventStream.subscribe(self, classOf[PaymentReceived])
+
+      implicit val formats = _formats.withTypeHintFieldName("type") +
+        ShortTypeHints(List(
+          classOf[PaymentSent],
+          classOf[PaymentRelayed],
+          classOf[PaymentReceived],
+          classOf[PaymentSettlingOnChain],
+          classOf[PaymentFailed]))
+
+      override def preStart: Unit = {
+        context.system.eventStream.subscribe(self, classOf[PaymentFailed])
+        context.system.eventStream.subscribe(self, classOf[PaymentEvent])
+      }
 
       def receive: Receive = {
-        case received: PaymentReceived => flowInput.offer(received.paymentHash.toString)
+        case message: PaymentFailed => flowInput.offer(Serialization write message)
+        case message: PaymentEvent => flowInput.offer(Serialization write message)
+        case other => logger.info(s"Unexpected ws message: $other")
       }
+
     }))
 
     Flow[Message]
@@ -155,8 +192,8 @@ trait Service extends Directives with Logging {
                     }
                   } ~
                   path("receive") {
-                    formFields("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?) { (desc, amountMsat, expire) =>
-                      complete(eclairApi.receive(desc, amountMsat, expire))
+                    formFields("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?, "fallbackAddress".as[String].?) { (desc, amountMsat, expire, fallBackAddress) =>
+                      complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress))
                     }
                   } ~
                   path("parseinvoice") {

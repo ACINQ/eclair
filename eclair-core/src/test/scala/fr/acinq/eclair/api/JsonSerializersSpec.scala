@@ -77,8 +77,9 @@ class JsonSerializersSpec extends FunSuite with Matchers {
   }
 
   test("type hints") {
-    implicit val formats = DefaultFormats.withTypeHintFieldName("type") + ShortTypeHints(List(classOf[PaymentSettlingOnChain])) + new BinaryDataSerializer + new MilliSatoshiSerializer
-    val e1 = PaymentSettlingOnChain(MilliSatoshi(42), randomBytes(32))
-    println(Serialization.writePretty(e1))
+    implicit val formats = DefaultFormats.withTypeHintFieldName("type") + ShortTypeHints(List(classOf[PaymentSettlingOnChain])) + new MilliSatoshiSerializer
+    val e1 = PaymentSettlingOnChain(MilliSatoshi(42), randomBytes32)
+//    println(Serialization.writePretty(e1))
+    assert(Serialization.writePretty(e1).contains("\"type\" : \"PaymentSettlingOnChain\""))
   }
 }
