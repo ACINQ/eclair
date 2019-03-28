@@ -61,6 +61,7 @@ trait Service extends Directives with Logging {
 
   // a named and typed URL parameter used across several routes, 32-bytes hex-encoded
   val channelId = "channelId".as[ByteVector32](sha256HashUnmarshaller)
+  val nodeId = "nodeId".as[PublicKey]
   val shortChannelId = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
 
   val apiExceptionHandler = ExceptionHandler {
@@ -138,12 +139,12 @@ trait Service extends Directives with Logging {
                   path("connect") {
                     formFields("uri".as[String]) { uri =>
                       complete(eclairApi.connect(uri))
-                    } ~ formFields("nodeId".as[PublicKey], "host".as[String], "port".as[Int].?) { (nodeId, host, port_opt) =>
+                    } ~ formFields(nodeId, "host".as[String], "port".as[Int].?) { (nodeId, host, port_opt) =>
                       complete(eclairApi.connect(s"$nodeId@$host:${port_opt.getOrElse(NodeURI.DEFAULT_PORT)}"))
                     }
                   } ~
                   path("open") {
-                    formFields("nodeId".as[PublicKey], "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?) {
+                    formFields(nodeId, "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?) {
                       (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags) =>
                         complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags))
                     }
@@ -171,7 +172,7 @@ trait Service extends Directives with Logging {
                     complete(eclairApi.peersInfo())
                   } ~
                   path("channels") {
-                    formFields("toRemoteNodeId".as[PublicKey].?) { toRemoteNodeId_opt =>
+                    formFields(nodeId.?) { toRemoteNodeId_opt =>
                       complete(eclairApi.channelsInfo(toRemoteNodeId_opt))
                     }
                   } ~
@@ -187,7 +188,7 @@ trait Service extends Directives with Logging {
                     complete(eclairApi.allchannels())
                   } ~
                   path("allupdates") {
-                    formFields("nodeId".as[PublicKey].?) { nodeId_opt =>
+                    formFields(nodeId.?) { nodeId_opt =>
                       complete(eclairApi.allupdates(nodeId_opt))
                     }
                   } ~
@@ -208,7 +209,7 @@ trait Service extends Directives with Logging {
                       case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"))
                     }
                   } ~ path("findroutetonode") {
-                  formFields("nodeId".as[PublicKey], "amountMsat".as[Long]) { (nodeId, amount) =>
+                  formFields(nodeId, "amountMsat".as[Long]) { (nodeId, amount) =>
                     complete(eclairApi.findRoute(nodeId, amount))
                   }
                 } ~
