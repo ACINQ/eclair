@@ -17,13 +17,13 @@
 package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
-
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.crypto.TransportHandler.ReadAck
 import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements, SendPing}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
@@ -31,7 +31,6 @@ import fr.acinq.eclair.wire.{Error, Ping, Pong}
 import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, randomBytes, wire}
 import org.scalatest.Outcome
 import scodec.bits.ByteVector
-
 import scala.concurrent.duration._
 
 
@@ -75,6 +74,7 @@ class PeerSpec extends TestkitBaseClass {
     import f._
 
     val globalWumboramaOptional = ByteVector.fromValidHex("20000")
+    val deathWatcher = TestProbe()
 
     // let's simulate a connection
     val probe = TestProbe()
@@ -84,8 +84,10 @@ class PeerSpec extends TestkitBaseClass {
     transport.expectMsgType[wire.Init]
     // Bob advertizes option_wumborama in the global features but nothing in the local features
     transport.send(peer, wire.Init(globalWumboramaOptional, Bob.nodeParams.localFeatures))
-    probe.send(peer, Peer.GetPeerInfo)
-    assert(probe.expectMsgType[Peer.PeerInfo].state == "DISCONNECTED")
+    transport.expectMsgType[ReadAck]
+
+    deathWatcher.watch(transport.ref) // connection refused, transport should be killed
+    deathWatcher.expectTerminated(transport.ref, max = 11 seconds)
   }
 
   test("reply to ping") { f =>
