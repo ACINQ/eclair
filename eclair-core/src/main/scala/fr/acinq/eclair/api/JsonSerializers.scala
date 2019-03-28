@@ -34,7 +34,7 @@ import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInpu
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.json4s.JsonAST._
-import org.json4s.{CustomKeySerializer, CustomSerializer, jackson}
+import org.json4s.{CustomKeySerializer, CustomSerializer, TypeHints, jackson}
 import scodec.bits.ByteVector
 
 /**
@@ -185,5 +185,16 @@ object JsonSupport extends Json4sSupport {
     new PaymentRequestSerializer
 
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
+
+  case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
+    val reverse: Map[String, Class[_]] = custom.map(_.swap)
+
+    override val hints: List[Class[_]] = custom.keys.toList
+    override def hintFor(clazz: Class[_]): String = custom.getOrElse(clazz, {
+      throw new IllegalArgumentException(s"No type hint mapping found for $clazz")
+    })
+    override def classFor(hint: String): Option[Class[_]] = reverse.get(hint)
+  }
+
 
 }

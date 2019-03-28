@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.{MilliSatoshi, OutPoint}
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentSettlingOnChain}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint}
+import fr.acinq.eclair.api.JsonSupport.CustomTypeHints
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
@@ -77,8 +78,8 @@ class JsonSerializersSpec extends FunSuite with Matchers {
   }
 
   test("type hints") {
-    implicit val formats = DefaultFormats.withTypeHintFieldName("type") + ShortTypeHints(List(classOf[PaymentSettlingOnChain])) + new MilliSatoshiSerializer
+    implicit val formats = DefaultFormats.withTypeHintFieldName("type") + CustomTypeHints(Map(classOf[PaymentSettlingOnChain] -> "payment-settling-onchain")) + new MilliSatoshiSerializer
     val e1 = PaymentSettlingOnChain(MilliSatoshi(42), randomBytes32)
-    assert(Serialization.writePretty(e1).contains("\"type\" : \"PaymentSettlingOnChain\""))
+    assert(Serialization.writePretty(e1).contains("\"type\" : \"payment-settling-onchain\""))
   }
 }

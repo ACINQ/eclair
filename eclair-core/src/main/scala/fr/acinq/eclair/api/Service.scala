@@ -31,13 +31,15 @@ import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.server.directives.{Credentials, LoggingMagnet}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
+import fr.acinq.eclair.api.JsonSupport.CustomTypeHints
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment._
 import grizzled.slf4j.Logging
-import org.json4s.ShortTypeHints
+import org.json4s.{ShortTypeHints, TypeHints}
 import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
+
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
@@ -51,13 +53,13 @@ trait Service extends Directives with Logging {
   import JsonSupport.serialization
   // used to send typed messages over the websocket
   val formatsWithTypeHint = formats.withTypeHintFieldName("type") +
-    ShortTypeHints(List(
-      classOf[PaymentSent],
-      classOf[PaymentRelayed],
-      classOf[PaymentReceived],
-      classOf[PaymentSettlingOnChain],
-      classOf[PaymentFailed]))
-
+    CustomTypeHints(Map(
+      classOf[PaymentSent] -> "payment-sent",
+      classOf[PaymentRelayed] -> "payment-relayed",
+      classOf[PaymentReceived] -> "payment-received",
+      classOf[PaymentSettlingOnChain] -> "payment-settling-onchain",
+      classOf[PaymentFailed] -> "payment-failed"
+    ))
 
   def password: String
 
