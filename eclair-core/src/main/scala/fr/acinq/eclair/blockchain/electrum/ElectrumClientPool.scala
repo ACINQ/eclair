@@ -106,7 +106,8 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
 
   whenUnhandled {
     case Event(Connect, _) =>
-      Random.shuffle(serverAddresses.toSeq diff addresses.values.toSeq).headOption match {
+      val usedAddresses = addresses.values.toSet
+      Random.shuffle(serverAddresses.filterNot(a => usedAddresses.contains(a.adress))).headOption match {
         case Some(ElectrumServerAddress(address, ssl)) =>
           val resolved = new InetSocketAddress(address.getHostName, address.getPort)
           val client = context.actorOf(Props(new ElectrumClient(resolved, ssl)))
