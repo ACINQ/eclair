@@ -27,6 +27,7 @@ import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits._
 
 import scala.concurrent.duration._
+import scala.util.Random
 
 
 class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with Logging with BeforeAndAfterAll {
@@ -42,8 +43,9 @@ class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteL
   }
 
   test("init an electrumx connection pool") {
+    val random = new Random()
     val stream = classOf[ElectrumClientSpec].getResourceAsStream("/electrum/servers_mainnet.json")
-    val addresses = ElectrumClientPool.readServerAddresses(stream, sslEnabled = false).take(2) + ElectrumClientPool.ElectrumServerAddress(new InetSocketAddress("electrum.acinq.co", 50002), SSL.STRICT)
+    val addresses = random.shuffle(ElectrumClientPool.readServerAddresses(stream, sslEnabled = false)).take(2) + ElectrumClientPool.ElectrumServerAddress(new InetSocketAddress("electrum.acinq.co", 50002), SSL.STRICT)
     assert(addresses.nonEmpty)
     stream.close()
     pool = system.actorOf(Props(new ElectrumClientPool(addresses)), "electrum-client")
@@ -54,9 +56,9 @@ class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteL
     // make sure our master is stable, if the first master that we select is behind the other servers we will switch
     // during the first few seconds
     awaitCond({
-      probe.expectMsgType[ElectrumReady]
+      probe.expectMsgType[ElectrumReady](30 seconds)
       probe.receiveOne(5 seconds) == null
-    }, max = 15 seconds, interval = 1000 millis)  }
+    }, max = 60 seconds, interval = 1000 millis)  }
 
   test("get transaction") {
     probe.send(pool, GetTransaction(referenceTx.txid))
