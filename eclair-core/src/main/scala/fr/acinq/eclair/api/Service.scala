@@ -105,7 +105,6 @@ trait Service extends Directives with Logging {
       def receive: Receive = {
         case message: PaymentFailed => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
         case message: PaymentEvent => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
-        case other => logger.info(s"Unexpected ws message: $other")
       }
 
     }))
