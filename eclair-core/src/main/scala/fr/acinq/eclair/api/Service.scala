@@ -92,7 +92,7 @@ trait Service extends Directives with Logging {
   lazy val makeSocketHandler: Flow[Message, TextMessage.Strict, NotUsed] = {
 
     // create a flow transforming a queue of string -> string
-    val (flowInput, flowOutput) = Source.queue[String](10, OverflowStrategy.backpressure).toMat(BroadcastHub.sink[String])(Keep.both).run()
+    val (flowInput, flowOutput) = Source.queue[String](10, OverflowStrategy.dropTail).toMat(BroadcastHub.sink[String])(Keep.both).run()
 
     // register an actor that feeds the queue on payment related events
     actorSystem.actorOf(Props(new Actor {
@@ -105,7 +105,6 @@ trait Service extends Directives with Logging {
       def receive: Receive = {
         case message: PaymentFailed => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
         case message: PaymentEvent => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
-        case other => logger.warn(s"Unexpected message sent to websocket actor: $other")
       }
 
     }))
