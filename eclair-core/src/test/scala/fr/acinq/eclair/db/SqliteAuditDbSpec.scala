@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.{MilliSatoshi, Satoshi, Transaction}
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, NetworkFeePaid}
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
+import fr.acinq.eclair.wire.ChannelCodecs
 import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 
@@ -43,12 +44,12 @@ class SqliteAuditDbSpec extends FunSuite {
     val sqlite = inmem
     val db = new SqliteAuditDb(sqlite)
 
-    val e1 = PaymentSent(UUID.randomUUID(), MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32)
+    val e1 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32)
     val e2 = PaymentReceived(MilliSatoshi(42000), randomBytes32, randomBytes32)
     val e3 = PaymentRelayed(MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32)
     val e4 = NetworkFeePaid(null, randomKey.publicKey, randomBytes32, Transaction(0, Seq.empty, Seq.empty, 0), Satoshi(42), "mutual")
-    val e5 = PaymentSent(UUID.randomUUID(), MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32, timestamp = 0)
-    val e6 = PaymentSent(UUID.randomUUID(), MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32, timestamp = Platform.currentTime * 2)
+    val e5 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32, timestamp = 0)
+    val e6 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32, timestamp = Platform.currentTime * 2)
     val e7 = AvailableBalanceChanged(null, randomBytes32, ShortChannelId(500000, 42, 1), 456123000, ChannelStateSpec.commitments)
     val e8 = ChannelLifecycleEvent(randomBytes32, randomKey.publicKey, 456123000, true, false, "mutual")
 
