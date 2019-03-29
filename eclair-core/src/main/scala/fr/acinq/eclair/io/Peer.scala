@@ -463,6 +463,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(_: Rebroadcast, _) => stay // ignored
 
+    case Event(_: DelayedRebroadcast, _) => stay // ignored
+
     case Event(_: RoutingState, _) => stay // ignored
 
     case Event(_: TransportHandler.ReadAck, _) => stay // ignored
