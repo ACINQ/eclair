@@ -37,7 +37,6 @@ import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigne
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
-
 import scala.concurrent.duration._
 
 /**
@@ -106,17 +105,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
         originChannels = Map(0L -> Relayed(originHtlc.channelId, originHtlc.id, originHtlc.amountMsat, htlc.amountMsat))
       )))
-  }
-
-  test("recv CMD_ADD_HTLC (invalid payment hash)") { f =>
-    import f._
-    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val sender = TestProbe()
-    val add = CMD_ADD_HTLC(500000000, randomBytes32, cltvExpiry = 400144)
-    sender.send(alice, add)
-    val error = InvalidPaymentHash(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream_opt.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
-    alice2bob.expectNoMsg(200 millis)
   }
 
   test("recv CMD_ADD_HTLC (expiry too small)") { f =>

@@ -59,7 +59,6 @@ case class InvalidCloseFee                     (override val channelId: ByteVect
 case class HtlcSigCountMismatch                (override val channelId: ByteVector32, expected: Int, actual: Int) extends ChannelException(channelId, s"htlc sig count mismatch: expected=$expected actual: $actual")
 case class ForcedLocalCommit                   (override val channelId: ByteVector32) extends ChannelException(channelId, s"forced local commit")
 case class UnexpectedHtlcId                    (override val channelId: ByteVector32, expected: Long, actual: Long) extends ChannelException(channelId, s"unexpected htlc id: expected=$expected actual=$actual")
-case class InvalidPaymentHash                  (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid payment hash")
 case class ExpiryTooSmall                      (override val channelId: ByteVector32, minimum: Long, actual: Long, blockCount: Long) extends ChannelException(channelId, s"expiry too small: minimum=$minimum actual=$actual blockCount=$blockCount")
 case class ExpiryTooBig                        (override val channelId: ByteVector32, maximum: Long, actual: Long, blockCount: Long) extends ChannelException(channelId, s"expiry too big: maximum=$maximum actual=$actual blockCount=$blockCount")
 case class HtlcValueTooSmall                   (override val channelId: ByteVector32, minimum: Long, actual: Long) extends ChannelException(channelId, s"htlc value too small: minimum=$minimum actual=$actual")
