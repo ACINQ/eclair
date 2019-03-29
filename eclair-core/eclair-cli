@@ -81,9 +81,9 @@ for arg in "${@}"; do
     "--"*)  # if arg begins with two dashes, it is the name of a parameter. Dashes must be removed, and arg must be followed by an equal sign
             # also, it must be prefixed by an '&' sign, if it is not the first argument
             if [ $index -eq 1 ]; then
-              transformed_arg="$transformed_arg${arg:2}=";
+              transformed_arg="$transformed_arg${arg:2}";
             else
-              transformed_arg="&$transformed_arg${arg:2}=";
+              transformed_arg="&$transformed_arg${arg:2}";
             fi
             ;;
     *)      transformed_arg=$arg
