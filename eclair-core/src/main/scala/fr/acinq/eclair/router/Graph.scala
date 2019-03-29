@@ -17,12 +17,13 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import scala.collection.mutable
 import fr.acinq.eclair._
-import fr.acinq.eclair.wire.ChannelUpdate
-import Router._
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.wire.ChannelUpdate
+
+import scala.collection.mutable
 
 object Graph {
 
@@ -303,19 +304,27 @@ object Graph {
 
       // NB we're guaranteed to have weightRatios and factors > 0
       val factor = (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor)
-      val edgeWeight = if (isNeighborTarget) prev.weight else edgeCost * factor
+      val edgeWeight = if (isNeighborTarget) prev.weight else prev.weight + edgeCost * factor
 
       RichWeight(cost = edgeCost, length = prev.length + 1, cltv = prev.cltv + channelCltvDelta, weight = edgeWeight)
   }
 
   /**
+    * This forces channel_update(s) with fees=0 to have a minimum of 1msat for the baseFee. Note that
+    * the update is not being modified and the result of the route computation will still have the update
+    * with fees=0 which is what will be used to build the onion.
     *
     * @param edge           the edge for which we want to compute the weight
     * @param amountWithFees the value that this edge will have to carry along
     * @return the new amount updated with the necessary fees for this edge
     */
   private def edgeFeeCost(edge: GraphEdge, amountWithFees: Long): Long = {
-    amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
+    if(edgeHasZeroFee(edge)) amountWithFees + nodeFee(baseMsat = 1, proportional = 0, amountWithFees)
+    else amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
+  }
+
+  private def edgeHasZeroFee(edge: GraphEdge): Boolean = {
+    edge.update.feeBaseMsat == 0 && edge.update.feeProportionalMillionths == 0
   }
 
   // Calculates the total cost of a path (amount + fees), direct channels with the source will have a cost of 0 (pay no fees)

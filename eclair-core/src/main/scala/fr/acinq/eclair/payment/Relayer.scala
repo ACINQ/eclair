@@ -21,14 +21,13 @@ import java.util.UUID
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
-import fr.acinq.eclair.nodeFee
+import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{NodeParams, ShortChannelId}
+import fr.acinq.eclair.{NodeParams, ShortChannelId, nodeFee}
 import scodec.bits.BitVector
 import scodec.{Attempt, DecodeResult}
 
@@ -39,7 +38,7 @@ import scala.util.{Failure, Success, Try}
 
 sealed trait Origin
 case class Local(id: UUID, sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
-case class Relayed(originChannelId: BinaryData, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
+case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
 
 sealed trait ForwardMessage
 case class ForwardAdd(add: UpdateAddHtlc, canRedirect: Boolean = true) extends ForwardMessage
@@ -128,10 +127,10 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
     case Status.Failure(AddHtlcFailed(_, paymentHash, error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt, originalCommand_opt)) =>
       originalCommand_opt match {
-        case Some(cmd) if cmd.redirected && cmd.upstream.isRight => // cmd.upstream_opt.isDefined always true since origin = relayed
+        case Some(cmd) if cmd.redirected && cmd.upstream_opt.isRight => // cmd.upstream_opt.isDefined always true since origin = relayed
           // if it was redirected, we give it one more try with the original requested channel (meaning that the error returned will always be for the requested channel)
           log.info(s"retrying htlc #$originHtlcId paymentHash=$paymentHash from channelId=$originChannelId")
-          self ! ForwardAdd(cmd.upstream.right.get, canRedirect = false)
+          self ! ForwardAdd(cmd.upstream_opt.right.get, canRedirect = false)
         case _ =>
           // otherwise we just return a failure
           val failure = (error, channelUpdate_opt) match {
@@ -219,7 +218,7 @@ object Relayer {
       .parsePacket(privateKey, add.paymentHash, add.onionRoutingPacket)
       .flatMap {
         case Sphinx.ParsedPacket(payload, nextPacket, _) =>
-          LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload.data)) match {
+          LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload)) match {
             case Attempt.Successful(DecodeResult(perHopPayload, _)) if nextPacket.isLastPacket =>
               Success(FinalPayload(add, perHopPayload))
             case Attempt.Successful(DecodeResult(perHopPayload, _)) =>
@@ -272,7 +271,7 @@ object Relayer {
         Left(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
         val isRedirected = (channelUpdate.shortChannelId != payload.shortChannelId) // we may decide to use another channel (to the same node) from the one requested
-        Right(CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket.serialize, upstream = Right(add), commit = true, redirected = isRedirected))
+        Right(CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Right(add), commit = true, redirected = isRedirected))
     }
   }
 

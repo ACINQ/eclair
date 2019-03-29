@@ -18,13 +18,13 @@ package fr.acinq.eclair.integration
 
 import java.io.{File, PrintWriter}
 import java.util.Properties
-import collection.JavaConversions._
-import akka.actor.{ActorRef, ActorSystem, Terminated}
+
+import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestKit, TestProbe}
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, BinaryData, Block, Crypto, MilliSatoshi, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, MilliSatoshi, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
@@ -42,12 +42,14 @@ import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, 
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, Kit, Setup}
+import fr.acinq.eclair.{Globals, Kit, Setup, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import scodec.bits.ByteVector
 
+import scala.collection.JavaConversions._
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -62,6 +64,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
   // we override the default because these test were designed to use cost-optimized routes
   val integrationTestRouteParams = Some(RouteParams(
+    randomize = false,
     maxFeeBaseMsat = Long.MaxValue,
     maxFeePct = Double.MaxValue,
     routeMaxCltv = Int.MaxValue,
@@ -111,7 +114,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       sender.receiveOne(5 second).isInstanceOf[JValue]
     }, max = 30 seconds, interval = 500 millis)
     logger.info(s"generating initial blocks...")
-    sender.send(bitcoincli, BitcoinReq("generate", 500))
+    sender.send(bitcoincli, BitcoinReq("generate", 150))
     sender.expectMsgType[JValue](30 seconds)
   }
 
@@ -146,6 +149,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
     instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.expiry-delta-blocks" -> 138, "eclair.server.port" -> 29738, "eclair.api.port" -> 28088, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
     instantiateEclairNode("F5", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F5", "eclair.expiry-delta-blocks" -> 139, "eclair.server.port" -> 29739, "eclair.api.port" -> 28089, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
+    instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
 
     // by default C has a normal payment handler, but this can be overriden in tests
     val paymentHandlerC = nodes("C").system.actorOf(LocalPaymentHandler.props(nodes("C").nodeParams))
@@ -169,7 +173,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   }
 
   test("connect nodes") {
-    //       ,--G--,     // G is being added later in a test
+    //       ,--G--,
     //      /       \
     // A---B ------- C ==== D
     //      \       / \
@@ -179,7 +183,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val eventListener = TestProbe()
     nodes.values.foreach(_.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged]))
 
-    connect(nodes("A"), nodes("B"), 10000000, 0)
+    connect(nodes("A"), nodes("B"), 11000000, 0)
     connect(nodes("B"), nodes("C"), 2000000, 0)
     connect(nodes("C"), nodes("D"), 5000000, 0)
     connect(nodes("C"), nodes("D"), 5000000, 0)
@@ -190,8 +194,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     connect(nodes("C"), nodes("F3"), 5000000, 0)
     connect(nodes("C"), nodes("F4"), 5000000, 0)
     connect(nodes("C"), nodes("F5"), 5000000, 0)
+    connect(nodes("B"), nodes("G"), 16000000, 0)
+    connect(nodes("G"), nodes("C"), 16000000, 0)
 
-    val numberOfChannels = 11
+    val numberOfChannels = 13
     val channelEndpointsCount = 2 * numberOfChannels
 
     // we make sure all channels have set up their WatchConfirmed for the funding tx
@@ -243,8 +249,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // A requires private channels, as a consequence:
     // - only A and B know about channel A-B
     // - A is not announced
-    awaitAnnouncements(nodes.filterKeys(key => List("A", "B").contains(key)), 9, 10, 22)
-    awaitAnnouncements(nodes.filterKeys(key => !List("A", "B").contains(key)), 9, 10, 20)
+    awaitAnnouncements(nodes.filterKeys(key => List("A", "B").contains(key)), 10, 12, 26)
+    awaitAnnouncements(nodes.filterKeys(key => !List("A", "B").contains(key)), 10, 12, 24)
   }
 
   test("send an HTLC A->D") {
@@ -277,7 +283,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
     // then we make the actual payment, do not randomize the route to make sure we route through node B
-    val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId, randomize = Some(false), routeParams = integrationTestRouteParams)
+    val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
     sender.send(nodes("A").paymentInitiator, sendReq)
     // A will receive an error from B that include the updated channel update, then will retry the payment
     sender.expectMsgType[PaymentSucceeded](5 seconds)
@@ -321,7 +327,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
   test("send an HTLC A->D with an unknown payment hash") {
     val sender = TestProbe()
-    val pr = SendPayment(100000000L, "42" * 32, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
+    val pr = SendPayment(100000000L, randomBytes32, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
     sender.send(nodes("A").paymentInitiator, pr)
 
     // A will receive an error from D and won't retry
@@ -396,33 +402,21 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
   test("send an HTLC A->B->G->C using heuristics to select the route") {
     val sender = TestProbe()
-
-    // G has very large channels but slightly more expensive than the others
-    instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
-    connect(nodes("B"), nodes("G"), 16000000, 0)
-    connect(nodes("G"), nodes("C"), 16000000, 0)
-
-    sender.send(bitcoincli, BitcoinReq("generate", 10))
-    sender.expectMsgType[JValue](10 seconds)
-
-    awaitCond({
-      sender.send(nodes("A").router, 'channels)
-      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).exists(chanAnn => chanAnn.nodeId1 == nodes("G").nodeParams.nodeId || chanAnn.nodeId2 == nodes("G").nodeParams.nodeId)
-    }, max = 60 seconds, interval = 3 seconds)
-
-    val amountMsat = MilliSatoshi(2000)
     // first we retrieve a payment hash from C
+    val amountMsat = MilliSatoshi(2000)
     sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amountMsat), "Change from coffee"))
     val pr = sender.expectMsgType[PaymentRequest](30 seconds)
 
     // the payment is requesting to use a capacity-optimized route which will select node G even though it's a bit more expensive
     sender.send(nodes("A").paymentInitiator,
-      SendPayment(amountMsat.amount, pr.paymentHash, nodes("C").nodeParams.nodeId, randomize = Some(false), routeParams = integrationTestRouteParams.map(_.copy(ratios = Some(WeightRatios(0, 0, 1))))))
+      SendPayment(amountMsat.amount, pr.paymentHash, nodes("C").nodeParams.nodeId, maxAttempts = 1, routeParams = integrationTestRouteParams.map(_.copy(ratios = Some(WeightRatios(0, 0, 1))))))
 
     awaitCond({
-      val route = sender.expectMsgType[PaymentSucceeded].route
-      route.exists(_.nodeId == nodes("G").nodeParams.nodeId) // assert the used route is actually going through G
-    }, max = 30 seconds, interval = 3 seconds)
+      sender.expectMsgType[PaymentResult](10 seconds) match {
+        case PaymentFailed(_, _, failures) => failures == Seq.empty // if something went wrong fail with a hint
+        case PaymentSucceeded(_, _, _, _, route) => route.exists(_.nodeId == nodes("G").nodeParams.nodeId)
+      }
+    }, max = 30 seconds, interval = 10 seconds)
   }
 
 
@@ -432,7 +426,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     * @param scriptPubKey
     * @return
     */
-  def scriptPubKeyToAddress(scriptPubKey: BinaryData) = Script.parse(scriptPubKey) match {
+  def scriptPubKeyToAddress(scriptPubKey: ByteVector) = Script.parse(scriptPubKey) match {
     case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil =>
       Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)
     case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil =>
@@ -455,7 +449,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
     nodes("F1").paymentHandler ! htlcReceiver.ref
-    val preimage: BinaryData = "42" * 32
+    val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
     val paymentReq = SendPayment(100000000L, paymentHash, nodes("F1").nodeParams.nodeId, maxAttempts = 1, routeParams = integrationTestRouteParams)
@@ -534,7 +528,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
     nodes("F2").paymentHandler ! htlcReceiver.ref
-    val preimage: BinaryData = "42" * 32
+    val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
     val paymentReq = SendPayment(100000000L, paymentHash, nodes("F2").nodeParams.nodeId, maxAttempts = 1, routeParams = integrationTestRouteParams)
@@ -609,7 +603,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
     nodes("F3").paymentHandler ! htlcReceiver.ref
-    val preimage: BinaryData = "42" * 32
+    val preimage: ByteVector = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
     val paymentReq = SendPayment(100000000L, paymentHash, nodes("F3").nodeParams.nodeId, maxAttempts = 1, routeParams = integrationTestRouteParams)
@@ -669,7 +663,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
     nodes("F4").paymentHandler ! htlcReceiver.ref
-    val preimage: BinaryData = "42" * 32
+    val preimage: ByteVector = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
     val paymentReq = SendPayment(100000000L, paymentHash, nodes("F4").nodeParams.nodeId, maxAttempts = 1, routeParams = integrationTestRouteParams)
@@ -861,7 +855,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.expectMsgType[JValue](10 seconds)
     logger.info(s"simulated ${channels.size} channels")
 
-    val remoteNodeId = PrivateKey(BinaryData("01" * 32), true).publicKey
+    val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), true).publicKey
 
     // then we make the announcements
     val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))

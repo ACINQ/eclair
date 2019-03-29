@@ -20,8 +20,6 @@ import java.net.InetSocketAddress
 
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
-import com.google.common.net.HostAndPort
-import fr.acinq.eclair.randomBytes
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.EclairWallet
@@ -29,8 +27,8 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements, SendPing}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
-import fr.acinq.eclair.wire.{Error, NodeAddress, Ping, Pong}
-import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, wire}
+import fr.acinq.eclair.wire.{Error, Ping, Pong}
+import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, randomBytes, wire}
 import org.scalatest.Outcome
 
 import scala.concurrent.duration._
@@ -111,9 +109,7 @@ class PeerSpec extends TestkitBaseClass {
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
     val rebroadcast = Rebroadcast(channels.map(_ -> Set.empty[ActorRef]).toMap, updates.map(_ -> Set.empty[ActorRef]).toMap, nodes.map(_ -> Set.empty[ActorRef]).toMap)
     probe.send(peer, rebroadcast)
-    channels.foreach(transport.expectMsg(_))
-    updates.foreach(transport.expectMsg(_))
-    nodes.foreach(transport.expectMsg(_))
+    transport.expectNoMsg(2 seconds)
   }
 
   test("filter gossip message (filtered by origin)") { f =>
@@ -124,6 +120,8 @@ class PeerSpec extends TestkitBaseClass {
       channels.map(_ -> Set.empty[ActorRef]).toMap + (channels(5) -> Set(peer)),
       updates.map(_ -> Set.empty[ActorRef]).toMap + (updates(6) -> Set(peer)) + (updates(10) -> Set(peer)),
       nodes.map(_ -> Set.empty[ActorRef]).toMap + (nodes(4) -> Set(peer)))
+    val filter = wire.GossipTimestampFilter(Alice.nodeParams.chainHash, 0, Long.MaxValue) // no filtering on timestamps
+    probe.send(peer, filter)
     probe.send(peer, rebroadcast)
     // peer won't send out announcements that came from itself
     (channels.toSet - channels(5)).foreach(transport.expectMsg(_))
@@ -190,7 +188,7 @@ class PeerSpec extends TestkitBaseClass {
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
     val error1 = transport.expectMsgType[Error]
     assert(error1.channelId === CHANNELID_ZERO)
-    assert(new String(error1.data).startsWith("couldn't verify channel! shortChannelId="))
+    assert(new String(error1.data.toArray).startsWith("couldn't verify channel! shortChannelId="))
 
 
     // let's assume that one of the sigs were invalid
@@ -198,7 +196,7 @@ class PeerSpec extends TestkitBaseClass {
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
     val error2 = transport.expectMsgType[Error]
     assert(error2.channelId === CHANNELID_ZERO)
-    assert(new String(error2.data).startsWith("bad announcement sig! bin=0100"))
+    assert(new String(error2.data.toArray).startsWith("bad announcement sig! bin=0100"))
   }
 
 }

@@ -17,10 +17,15 @@
 package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
+import java.util.UUID
 
+import akka.http.scaladsl.model.MediaType
+import akka.http.scaladsl.model.MediaTypes._
 import com.google.common.net.HostAndPort
+import de.heikoseeberger.akkahttpjson4s.Json4sSupport
+import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, OutPoint, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.PaymentRequest
@@ -30,14 +35,19 @@ import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInpu
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.json4s.JsonAST._
-import org.json4s.{CustomKeySerializer, CustomSerializer}
+import org.json4s.{CustomKeySerializer, CustomSerializer, TypeHints, jackson}
+import scodec.bits.ByteVector
 
 /**
   * JSON Serializers.
   * Note: in general, deserialization does not need to be implemented.
   */
-class BinaryDataSerializer extends CustomSerializer[BinaryData](format => ({ null }, {
-  case x: BinaryData => JString(x.toString())
+class ByteVectorSerializer extends CustomSerializer[ByteVector](format => ({ null }, {
+  case x: ByteVector => JString(x.toHex)
+}))
+
+class ByteVector32Serializer extends CustomSerializer[ByteVector32](format => ({ null }, {
+  case x: ByteVector32 => JString(x.toHex)
 }))
 
 class UInt64Serializer extends CustomSerializer[UInt64](format => ({ null }, {
@@ -144,3 +154,53 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format =
     JField("minFinalCltvExpiry", if (p.minFinalCltvExpiry.isDefined) JLong(p.minFinalCltvExpiry.get) else JNull) ::
     Nil)
 }))
+
+class JavaUUIDSerializer extends CustomSerializer[UUID](format => ({ null }, {
+  case id: UUID => JString(id.toString)
+}))
+
+object JsonSupport extends Json4sSupport {
+
+  implicit val serialization = jackson.Serialization
+
+  implicit val formats = org.json4s.DefaultFormats +
+    new ByteVectorSerializer +
+    new ByteVector32Serializer +
+    new UInt64Serializer +
+    new MilliSatoshiSerializer +
+    new ShortChannelIdSerializer +
+    new StateSerializer +
+    new ShaChainSerializer +
+    new PublicKeySerializer +
+    new PrivateKeySerializer +
+    new ScalarSerializer +
+    new PointSerializer +
+    new TransactionSerializer +
+    new TransactionWithInputInfoSerializer +
+    new InetSocketAddressSerializer +
+    new OutPointSerializer +
+    new OutPointKeySerializer +
+    new InputInfoSerializer +
+    new ColorSerializer +
+    new RouteResponseSerializer +
+    new ThrowableSerializer +
+    new FailureMessageSerializer +
+    new NodeAddressSerializer +
+    new DirectionSerializer +
+    new PaymentRequestSerializer +
+    new JavaUUIDSerializer
+
+  implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
+
+  case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
+    val reverse: Map[String, Class[_]] = custom.map(_.swap)
+
+    override val hints: List[Class[_]] = custom.keys.toList
+    override def hintFor(clazz: Class[_]): String = custom.getOrElse(clazz, {
+      throw new IllegalArgumentException(s"No type hint mapping found for $clazz")
+    })
+    override def classFor(hint: String): Option[Class[_]] = reverse.get(hint)
+  }
+
+
+}

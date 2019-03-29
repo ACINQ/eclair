@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import java.math.BigInteger
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, _}
+import fr.acinq.bitcoin.{MilliSatoshi, _}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.payment.PaymentRequest._
 import scodec.Codec
@@ -39,7 +39,7 @@ import scala.util.Try
   * @param tags      payment tags; must include a single PaymentHash tag
   * @param signature request signature that will be checked against node id
   */
-case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.TaggedField], signature: BinaryData) {
+case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.TaggedField], signature: ByteVector) {
 
   amount.map(a => require(a.amount > 0 && a.amount <= PaymentRequest.MAX_AMOUNT.amount, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHash => {} }.size == 1, "there must be exactly one payment hash tag")
@@ -55,7 +55,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     *
     * @return the description of the payment, or its hash
     */
-  lazy val description: Either[String, BinaryData] = tags.collectFirst {
+  lazy val description: Either[String, ByteVector32] = tags.collectFirst {
     case PaymentRequest.Description(d) => Left(d)
     case PaymentRequest.DescriptionHash(h) => Right(h)
   }.get
@@ -82,11 +82,11 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     *
     * @return the hash of this payment request
     */
-  def hash: BinaryData = {
+  def hash: ByteVector32 = {
     val hrp = s"${prefix}${Amount.encode(amount)}".getBytes("UTF-8")
-    val data = Bolt11Data(timestamp, tags, "00" * 65) // fake sig that we are going to strip next
+    val data = Bolt11Data(timestamp, tags, ByteVector.fill(65)(0)) // fake sig that we are going to strip next
     val bin = Codecs.bolt11DataCodec.encode(data).require
-    val message: BinaryData = hrp ++ bin.dropRight(520).toByteArray
+    val message = ByteVector.view(hrp) ++ bin.dropRight(520).toByteVector
     Crypto.sha256(message)
   }
 
@@ -99,7 +99,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     val (r, s) = Crypto.sign(hash, priv)
     val (pub1, pub2) = Crypto.recoverPublicKey((r, s), hash)
     val recid = if (nodeId == pub1) 0.toByte else 1.toByte
-    val signature = Crypto.fixSize(r.toByteArray.dropWhile(_ == 0.toByte)) ++ Crypto.fixSize(s.toByteArray.dropWhile(_ == 0.toByte)) :+ recid
+    val signature = Crypto.fixSize(ByteVector.view(r.toByteArray.dropWhile(_ == 0.toByte))) ++ Crypto.fixSize(ByteVector.view(s.toByteArray.dropWhile(_ == 0.toByte))) :+ recid
     this.copy(signature = signature)
   }
 }
@@ -114,7 +114,7 @@ object PaymentRequest {
     Block.TestnetGenesisBlock.hash -> "lntb",
     Block.LivenetGenesisBlock.hash -> "lnbc")
 
-  def apply(chainHash: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey,
+  def apply(chainHash: ByteVector32, amount: Option[MilliSatoshi], paymentHash: ByteVector32, privateKey: PrivateKey,
             description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
             extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L): PaymentRequest = {
 
@@ -131,11 +131,11 @@ object PaymentRequest {
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_))
       ).flatten ++ extraHops.map(RoutingInfo(_)),
-      signature = BinaryData.empty)
+      signature = ByteVector.empty)
       .sign(privateKey)
   }
 
-  case class Bolt11Data(timestamp: Long, taggedFields: List[TaggedField], signature: BinaryData)
+  case class Bolt11Data(timestamp: Long, taggedFields: List[TaggedField], signature: ByteVector)
 
   sealed trait TaggedField
 
@@ -175,7 +175,7 @@ object PaymentRequest {
     *
     * @param hash payment hash
     */
-  case class PaymentHash(hash: BinaryData) extends TaggedField
+  case class PaymentHash(hash: ByteVector32) extends TaggedField
 
   /**
     * Description
@@ -190,7 +190,7 @@ object PaymentRequest {
     * @param hash hash that will be included in the payment request, and can be checked against the hash of a
     *             long description, an invoice, ...
     */
-  case class DescriptionHash(hash: BinaryData) extends TaggedField
+  case class DescriptionHash(hash: ByteVector32) extends TaggedField
 
   /**
     * Fallback Payment that specifies a fallback payment address to be used if LN payment cannot be processed
@@ -208,8 +208,6 @@ object PaymentRequest {
       Try(fromBase58Address(address)).orElse(Try(fromBech32Address(address))).get
     }
 
-    def apply(version: Byte, data: BinaryData): FallbackAddress = FallbackAddress(version, ByteVector(data.toArray))
-
     def fromBase58Address(address: String): FallbackAddress = {
       val (prefix, hash) = Base58Check.decode(address)
       prefix match {
@@ -226,7 +224,7 @@ object PaymentRequest {
     }
 
     def toAddress(f: FallbackAddress, prefix: String): String = {
-      val data = BinaryData(f.data.toArray)
+      import f.data
       f.version match {
         case 17 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.PubkeyAddress, data)
         case 18 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.ScriptAddress, data)
@@ -331,7 +329,7 @@ object PaymentRequest {
 
     val taggedFieldCodec: Codec[TaggedField] = discriminated[TaggedField].by(ubyte(5))
       .typecase(0, dataCodec(bits).as[UnknownTag0])
-      .typecase(1, dataCodec(binarydata(32)).as[PaymentHash])
+      .typecase(1, dataCodec(bytes32).as[PaymentHash])
       .typecase(2, dataCodec(bits).as[UnknownTag2])
       .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo])
       .typecase(4, dataCodec(bits).as[UnknownTag4])
@@ -353,7 +351,7 @@ object PaymentRequest {
       .typecase(20, dataCodec(bits).as[UnknownTag20])
       .typecase(21, dataCodec(bits).as[UnknownTag21])
       .typecase(22, dataCodec(bits).as[UnknownTag22])
-      .typecase(23, dataCodec(binarydata(32)).as[DescriptionHash])
+      .typecase(23, dataCodec(bytes32).as[DescriptionHash])
       .typecase(24, dataCodec(bits).as[MinFinalCltvExpiry])
       .typecase(25, dataCodec(bits).as[UnknownTag25])
       .typecase(26, dataCodec(bits).as[UnknownTag26])
@@ -374,7 +372,7 @@ object PaymentRequest {
     val bolt11DataCodec: Codec[Bolt11Data] = (
       ("timestamp" | ulong(35)) ::
         ("taggedFields" | fixedSizeTrailingCodec(list(taggedFieldCodec), 520)) ::
-        ("signature" | binarydata(65))
+        ("signature" | bytes(65))
       ).as[Bolt11Data]
   }
 
@@ -436,7 +434,7 @@ object PaymentRequest {
     val signature = bolt11Data.signature
     val r = new BigInteger(1, signature.take(32).toArray)
     val s = new BigInteger(1, signature.drop(32).take(32).toArray)
-    val message: BinaryData = hrp.getBytes ++ data.dropRight(520).toByteArray // we drop the sig bytes
+    val message: ByteVector = ByteVector.view(hrp.getBytes) ++ data.dropRight(520).toByteVector // we drop the sig bytes
     val (pub1, pub2) = Crypto.recoverPublicKey((r, s), Crypto.sha256(message))
     val recid = signature.last
     val pub = if (recid % 2 != 0) pub2 else pub1
@@ -464,8 +462,7 @@ object PaymentRequest {
     val hrp = s"${pr.prefix}$hramount"
     val data = Codecs.bolt11DataCodec.encode(Bolt11Data(pr.timestamp, pr.tags, pr.signature)).require
     val int5s = eight2fiveCodec.decode(data).require.value
-    val checksum = Bech32.checksum(hrp, int5s)
-    hrp + "1" + (int5s ++ checksum).map(Bech32.pam).mkString
+    Bech32.encode(hrp, int5s.toArray)
   }
 }
 

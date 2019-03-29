@@ -16,11 +16,12 @@
 
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
+import fr.acinq.bitcoin.{ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
+import scodec.bits.ByteVector
 
 trait KeyManager {
   def nodeKey: DeterministicWallet.ExtendedPrivateKey
@@ -48,7 +49,7 @@ trait KeyManager {
     * @return a signature generated with the private key that matches the input
     *         extended public key
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey): BinaryData
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey): ByteVector
 
   /**
     * This method is used to spend funds send to htlc keys/delayed keys
@@ -59,7 +60,7 @@ trait KeyManager {
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote point.
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: Point): BinaryData
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: Point): ByteVector
 
   /**
     * Ths method is used to spend revoked transactions, with the corresponding revocation key
@@ -70,7 +71,7 @@ trait KeyManager {
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote secret.
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar): BinaryData
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar): ByteVector
 
-  def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: BinaryData, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData)
+  def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector, ByteVector)
 }

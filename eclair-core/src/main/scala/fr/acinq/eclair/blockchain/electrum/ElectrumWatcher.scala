@@ -20,7 +20,7 @@ import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props, Stash, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, BlockHeader, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT, BITCOIN_PARENT_TX_CONFIRMED}
@@ -62,7 +62,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
     case publish: PublishAsap => context become disconnected(watches, publishQueue :+ publish, block2tx)
   }
 
-  def running(height: Int, tip: BlockHeader, watches: Set[Watch], scriptHashStatus: Map[BinaryData, String], block2tx: SortedMap[Long, Seq[Transaction]], sent: Seq[Transaction]): Receive = {
+  def running(height: Int, tip: BlockHeader, watches: Set[Watch], scriptHashStatus: Map[ByteVector32, String], block2tx: SortedMap[Long, Seq[Transaction]], sent: Seq[Transaction]): Receive = {
     case ElectrumClient.HeaderSubscriptionResponse(newheight, newtip) if tip == newtip => ()
 
     case ElectrumClient.HeaderSubscriptionResponse(newheight, newtip) =>

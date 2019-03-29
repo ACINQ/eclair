@@ -1,104 +1,119 @@
 #!/bin/bash
+
+# default script values, can be overriden for convenience.
+api_url='http://localhost:8080'
+# uncomment the line below if you don't want to provide a password each time you call eclair-cli
+# api_password='your_api_password'
+# for some commands the json output can be shortened for better readability
+short=false
+
+# prints help message
+usage() {
+  echo -e "==============================
+Command line client for eclair
+==============================
+
+This tool requires the eclair node's API to be enabled and listening
+on <$api_url>.
+
+Usage
+-----
+\e[93meclair-cli\e[39m [\e[93mOPTIONS\e[39m]... [\e[93mCOMMAND\e[39m] [--command-param command-value]...
+
+where OPTIONS can be:
+  -p <password>         API's password
+  -a <address>          Override the API URL with <address>
+  -h                    Show available commands
+
+and COMMAND is one of:
+  getinfo, connect, open, close, forceclose, updaterelayfee,
+  peers, channels, channel, allnodes, allchannels, allupdates,
+  receive, parseinvoice, findroute, findroutetonode,
+  send, sendtonode, checkpayment,
+  audit, networkfees, channelstats
+
+Examples
+--------
+  eclair-cli help                           display available commands
+  eclair-cli -a localhost:1234 peers        list the peers of a node hosted on localhost:1234
+  eclair-cli close --channelId 006fb...     closes the channel with id 006fb...
+
+
+Full documentation here: <https://acinq.github.io/apidoc>" 1>&2;
+exit 1;
+}
+
+# -- script's logic begins here
+
 # Check if jq is installed. If not, display instructions and abort program
 command -v jq >/dev/null 2>&1 || { echo -e "This tool requires jq.\nFor installation instructions, visit https://stedolan.github.io/jq/download/.\n\nAborting..."; exit 1; }
 
 # curl installed? If not, give a hint
 command -v curl >/dev/null 2>&1 || { echo -e "This tool requires curl.\n\nAborting..."; exit 1; }
 
-FULL_OUTPUT='false'
-URL='http://localhost:8080'
-PASSWORD=''
-
-# -------------------- METHODS
-
-displayhelp() {
-    echo -e "Usage: eclair-cli [OPTION]... [COMMAND]
-Client for an eclair node.
-
-With COMMAND is one of the command listed by \e[01;33meclair-cli help\e[0m.
-
-  -p <password>         api's password
-  -a <address>          Override the api URL with <address>
-  -v                    Outputs full json returned by the API
-
-Examples:
-  eclair-cli -a localhost:1234 peers     list the peers
-  eclair-cli close 006fb...              closes the channel with id 006fb...
-
-Note: Uses the json-rpc api exposed by the node on localhost:8080. Make sure the api is enabled.
-Full documentation at: <https://github.com/ACINQ/eclair>"
-}
-
-# Executes a JSON RPC call to a node listening on ${URL}
-call() {
-    jqexp='if .error == null then .result else .error.message end'
-    # override default jq parsing expression
-    if [ $# -ge 3 ] && [ ${FULL_OUTPUT} == "false" ]; then jqexp=${3}; fi
-    # set password
-    if [ -z ${PASSWORD} ]; then auth="eclair-cli";
-    else auth="eclair-cli:"${PASSWORD}; fi
-    eval curl "--user ${auth} --silent --show-error -X POST -H \"Content-Type: application/json\" -d '{ \"method\": \"'${1}'\", \"params\": '${2}' }' ${URL}" | jq -r "$jqexp"
-}
-
-# get script options
-while getopts 'vu:p:a:' flag; do
-    case "${flag}" in
-        p)  PASSWORD="${OPTARG}" ;;
-        a)  URL="${OPTARG}" ;;
-        v)  FULL_OUTPUT="true" ;;
-        *)  echo -e "\nAborting..."; exit 1; ;;
-    esac
+# extract script options
+while getopts ':cu:su:p:a:hu:' flag; do
+  case "${flag}" in
+    p) api_password="${OPTARG}" ;;
+    a) api_url="${OPTARG}" ;;
+    h) usage ;;
+    s) short=true ;;
+    *) ;;
+  esac
 done
-
 shift $(($OPTIND - 1))
 
-# assigning JSON RPC method and params values from arguments
-METHOD=${1}
+# extract api's endpoint (e.g. sendpayment, connect, ...) from params
+api_endpoint=${1}
 shift 1
 
-# Create a JSON Array containing the remaining program args as QUOTED STRINGS, separated with a `,` character
-PARAMS=""
-i=1
+# display a usage method if no method given or help requested
+if [ -z $api_endpoint ] || [ "$api_endpoint" == "help" ]; then
+  usage;
+fi
+
+# transform long options into a HTTP encoded url body.
+api_payload=""
+index=1
 for arg in "${@}"; do
-	if [ $i -eq 1 ]; then PARAMS=$(printf '"%s"' "$arg");
-	else PARAMS=$(printf '%s,"%s"' "$PARAMS" "$arg");
-	fi
-	let "i++"
+  transformed_arg="";
+  case ${arg} in
+    "--"*)  # if arg begins with two dashes, it is the name of a parameter. Dashes must be removed, and arg must be followed by an equal sign
+            # also, it must be prefixed by an '&' sign, if it is not the first argument
+            if [ $index -eq 1 ]; then
+              transformed_arg="$transformed_arg${arg:2}=";
+            else
+              transformed_arg="&$transformed_arg${arg:2}=";
+            fi
+            ;;
+    *)      transformed_arg=$arg
+            ;;
+  esac
+  api_payload="$api_payload$transformed_arg";
+  let "index++"
 done;
-PARAMS="[${PARAMS}]"
 
-# Whatever the arguments provided to eclair-cli, a call to the API will be sent. Let it fail!
-case ${METHOD}_${#} in
-    ""_*)           displayhelp ;;
-    "help"*)        displayhelp
-                    echo -e "\nAvailable commands:\n"
-                    call "help" [] ;;
+# jq filter parses response body for error message
+jq_filter='if type=="object" and .error != null then .error else .';
 
-    "connect_3")    call ${METHOD} "'$(printf '["%s","%s",%s]' "${1}" "${2}" "${3}")'" ;; # ${3} is numeric
+# apply special jq filter if we are in "short" ouput mode -- only for specific commands such as 'channels'
+if [ "$short" = true ]; then
+  jq_channel_filter="{ nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint }";
+  case $api_endpoint in
+    "channels")   jq_filter="$jq_filter | map( $jq_channel_filter )" ;;
+    "channel")    jq_filter="$jq_filter | $jq_channel_filter" ;;
+    *) ;;
+  esac
+fi
 
-    "open_4")       call ${METHOD} "'$(printf '["%s",%s,%s,%s]' "${1}" "${2}" "${3}" "${4}")'" ;; # ${2} ${3} ${4} are numeric (funding, push, flags)
-    "open_3")       call ${METHOD} "'$(printf '["%s",%s,%s]' "${1}" "${2}" "${3}")'" ;; # ${2} ${3} are numeric (funding, push)
-    "open_2")       call ${METHOD} "'$(printf '["%s",%s]' "${1}" "${2}")'" ;; # ${2} is numeric (funding)
+jq_filter="$jq_filter end";
 
-    "receive_2")    call ${METHOD} "'$(printf '[%s,"%s"]' "${1}" "${2}")'" ;; # ${1} is numeric (amount to receive)
-    "receive_3")    call ${METHOD} "'$(printf '[%s,"%s",%s]' "${1}" "${2}" "${3}")'" ;; # ${1} is numeric (amount to receive) as is ${2} for expiry in seconds
+# if no password is provided, auth should only contain user login so that curl prompts for the api password
+if [ -z $api_password ]; then
+  auth="eclair-cli";
+else
+  auth="eclair-cli:$api_password";
+fi
 
-    "channel_"*)    call ${METHOD} "'${PARAMS}'" "if .error != null then .error.message else .result | { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } end" ;;
-
-    "channels_"*)   call ${METHOD} "'${PARAMS}'" "if .error != null then .error.message else .result | map( { nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint } ) end" ;;
-
-    "send_3")       call ${METHOD} "'$(printf '[%s,"%s","%s"]' "${1}" "${2}" "${3}")'" ;; # ${1} is numeric (amount of the payment)
-    "send_2")       call ${METHOD} "'$(printf '["%s",%s]' "${1}" "${2}")'" ;; # ${2} is numeric (amount overriding the payment request)
-
-    "audit_2")      call ${METHOD} "'$(printf '[%s,%s]' "${1}" "${2}")'" ;; # ${1} and ${2} are numeric (unix timestamps)
-    
-    "networkfees_2")      call ${METHOD} "'$(printf '[%s,%s]' "${1}" "${2}")'" ;; # ${1} and ${2} are numeric (unix timestamps)
-
-    *)              # Default case.
-                    # Sends the method and, for parameters, use the JSON table containing the remaining args.
-                    #
-                    # NOTE: Arguments will be sent as QUOTED STRING so if this particular API call requires an INT param,
-                    # this call will fail. In that case, a specific rule for that method MUST be set and the ${PARAMS} JSON array can not be used.
-                    call ${METHOD} "'${PARAMS}'" ;;
-
-esac
+# we're now ready to execute the API call
+eval curl "--user $auth --silent --show-error -X POST -H \"Content-Type: application/x-www-form-urlencoded\" -d '$api_payload' $api_url/$api_endpoint" | jq -r "$jq_filter"

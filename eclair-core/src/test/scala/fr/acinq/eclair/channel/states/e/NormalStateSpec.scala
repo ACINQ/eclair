@@ -20,24 +20,23 @@ import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.Scalar
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
-import fr.acinq.eclair.channel.Channel.TickRefreshChannelUpdate
-import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.Channel.{RevocationTimeout, TickRefreshChannelUpdate}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
-import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.{Outcome, Tag}
+import scodec.bits._
 
 import scala.concurrent.duration._
 
@@ -64,7 +63,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val sender = TestProbe()
-    val h = BinaryData("42" * 32)
+    val h = randomBytes32
     val add = CMD_ADD_HTLC(50000000, h, 400144)
     sender.send(alice, add)
     sender.expectMsg("ok")
@@ -74,14 +73,14 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       commitments = initialState.commitments.copy(
         localNextHtlcId = 1,
         localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
-        originChannels = Map(0L -> Local(add.upstream.left.get, Some(sender.ref)))
+        originChannels = Map(0L -> Local(add.upstream_opt.left.get, Some(sender.ref)))
       )))
   }
 
   test("recv CMD_ADD_HTLC (incrementing ids)") { f =>
     import f._
     val sender = TestProbe()
-    val h = BinaryData("42" * 32)
+    val h = randomBytes32
     for (i <- 0 until 10) {
       sender.send(alice, CMD_ADD_HTLC(50000000, h, 400144))
       sender.expectMsg("ok")
@@ -94,9 +93,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val sender = TestProbe()
-    val h = BinaryData("42" * 32)
-    val originHtlc = UpdateAddHtlc(channelId = "42" * 32, id = 5656, amountMsat = 50000000, cltvExpiry = 400144, paymentHash = h, onionRoutingPacket = "00" * 1254)
-    val cmd = CMD_ADD_HTLC(originHtlc.amountMsat - 10000, h, originHtlc.cltvExpiry - 7, upstream = Right(originHtlc))
+    val h = randomBytes32
+    val originHtlc = UpdateAddHtlc(channelId = randomBytes32, id = 5656, amountMsat = 50000000, cltvExpiry = 400144, paymentHash = h, onionRoutingPacket = ByteVector.fill(1254)(0))
+    val cmd = CMD_ADD_HTLC(originHtlc.amountMsat - 10000, h, originHtlc.cltvExpiry - 7, upstream_opt = Right(originHtlc))
     sender.send(alice, cmd)
     sender.expectMsg("ok")
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -113,10 +112,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(500000000, "11" * 42, cltvExpiry = 400144)
+    val add = CMD_ADD_HTLC(500000000, randomBytes32, cltvExpiry = 400144)
     sender.send(alice, add)
     val error = InvalidPaymentHash(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream_opt.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -126,10 +125,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val currentBlockCount = Globals.blockCount.get
     val expiryTooSmall = currentBlockCount + 3
-    val add = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = expiryTooSmall)
+    val add = CMD_ADD_HTLC(500000000, randomBytes32, cltvExpiry = expiryTooSmall)
     sender.send(alice, add)
     val error = ExpiryTooSmall(channelId(alice), currentBlockCount + Channel.MIN_CLTV_EXPIRY, expiryTooSmall, currentBlockCount)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream_opt.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -139,10 +138,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val currentBlockCount = Globals.blockCount.get
     val expiryTooBig = currentBlockCount + Channel.MAX_CLTV_EXPIRY + 1
-    val add = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = expiryTooBig)
+    val add = CMD_ADD_HTLC(500000000, randomBytes32, cltvExpiry = expiryTooBig)
     sender.send(alice, add)
     val error = ExpiryTooBig(channelId(alice), maximum = currentBlockCount + Channel.MAX_CLTV_EXPIRY, actual = expiryTooBig, blockCount = currentBlockCount)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream_opt.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -150,10 +149,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val add = CMD_ADD_HTLC(50, "11" * 32, 400144)
+    val add = CMD_ADD_HTLC(50, randomBytes32, 400144)
     sender.send(alice, add)
     val error = HtlcValueTooSmall(channelId(alice), 1000, 50)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream_opt.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -161,10 +160,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val add = CMD_ADD_HTLC(Int.MaxValue, "11" * 32, 400144)
+    val add = CMD_ADD_HTLC(Int.MaxValue, randomBytes32, 400144)
     sender.send(alice, add)
     val error = InsufficientFunds(channelId(alice), amountMsat = Int.MaxValue, missingSatoshis = 1376443, reserveSatoshis = 20000, feesSatoshis = 8960)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream_opt.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -172,19 +171,19 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    sender.send(alice, CMD_ADD_HTLC(500000000, "11" * 32, 400144))
+    sender.send(alice, CMD_ADD_HTLC(500000000, randomBytes32, 400144))
     sender.expectMsg("ok")
     alice2bob.expectMsgType[UpdateAddHtlc]
-    sender.send(alice, CMD_ADD_HTLC(200000000, "22" * 32, 400144))
+    sender.send(alice, CMD_ADD_HTLC(200000000, randomBytes32, 400144))
     sender.expectMsg("ok")
     alice2bob.expectMsgType[UpdateAddHtlc]
-    sender.send(alice, CMD_ADD_HTLC(67600000, "33" * 32, 400144))
+    sender.send(alice, CMD_ADD_HTLC(67600000, randomBytes32, 400144))
     sender.expectMsg("ok")
     alice2bob.expectMsgType[UpdateAddHtlc]
-    val add = CMD_ADD_HTLC(1000000, "44" * 32, 400144)
+    val add = CMD_ADD_HTLC(1000000, randomBytes32, 400144)
     sender.send(alice, add)
     val error = InsufficientFunds(channelId(alice), amountMsat = 1000000, missingSatoshis = 1000, reserveSatoshis = 20000, feesSatoshis = 12400)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream_opt.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -192,16 +191,16 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    sender.send(alice, CMD_ADD_HTLC(300000000, "11" * 32, 400144))
+    sender.send(alice, CMD_ADD_HTLC(300000000, randomBytes32, 400144))
     sender.expectMsg("ok")
     alice2bob.expectMsgType[UpdateAddHtlc]
-    sender.send(alice, CMD_ADD_HTLC(300000000, "22" * 32, 400144))
+    sender.send(alice, CMD_ADD_HTLC(300000000, randomBytes32, 400144))
     sender.expectMsg("ok")
     alice2bob.expectMsgType[UpdateAddHtlc]
-    val add = CMD_ADD_HTLC(500000000, "33" * 32, 400144)
+    val add = CMD_ADD_HTLC(500000000, randomBytes32, 400144)
     sender.send(alice, add)
     val error = InsufficientFunds(channelId(alice), amountMsat = 500000000, missingSatoshis = 332400, reserveSatoshis = 20000, feesSatoshis = 12400)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream_opt.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -209,10 +208,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val add = CMD_ADD_HTLC(151000000, "11" * 32, 400144)
+    val add = CMD_ADD_HTLC(151000000, randomBytes32, 400144)
     sender.send(bob, add)
     val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000, actual = 151000000)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Local(add.upstream_opt.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     bob2alice.expectNoMsg(200 millis)
   }
 
@@ -222,14 +221,14 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     // Bob accepts a maximum of 30 htlcs
     for (i <- 0 until 30) {
-      sender.send(alice, CMD_ADD_HTLC(10000000, "11" * 32, 400144))
+      sender.send(alice, CMD_ADD_HTLC(10000000, randomBytes32, 400144))
       sender.expectMsg("ok")
       alice2bob.expectMsgType[UpdateAddHtlc]
     }
-    val add = CMD_ADD_HTLC(10000000, "33" * 32, 400144)
+    val add = CMD_ADD_HTLC(10000000, randomBytes32, 400144)
     sender.send(alice, add)
     val error = TooManyAcceptedHtlcs(channelId(alice), maximum = 30)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream_opt.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -237,7 +236,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val add1 = CMD_ADD_HTLC(TestConstants.fundingSatoshis * 2 / 3 * 1000, "11" * 32, 400144)
+    val add1 = CMD_ADD_HTLC(TestConstants.fundingSatoshis * 2 / 3 * 1000, randomBytes32, 400144)
     sender.send(alice, add1)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[UpdateAddHtlc]
@@ -245,10 +244,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.expectMsg("ok")
     alice2bob.expectMsgType[CommitSig]
     // this is over channel-capacity
-    val add2 = CMD_ADD_HTLC(TestConstants.fundingSatoshis * 2 / 3 * 1000, "22" * 32, 400144)
+    val add2 = CMD_ADD_HTLC(TestConstants.fundingSatoshis * 2 / 3 * 1000, randomBytes32, 400144)
     sender.send(alice, add2)
     val error = InsufficientFunds(channelId(alice), add2.amountMsat, 564012, 20000, 10680)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Local(add2.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Local(add2.upstream_opt.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -262,10 +261,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined && !alice.stateData.asInstanceOf[DATA_NORMAL].remoteShutdown.isDefined)
 
     // actual test starts here
-    val add = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = 400144)
+    val add = CMD_ADD_HTLC(500000000, randomBytes32, cltvExpiry = 400144)
     sender.send(alice, add)
     val error = NoMoreHtlcsClosingInProgress(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream_opt.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -274,14 +273,14 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     // let's make alice send an htlc
-    val add1 = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = 400144)
+    val add1 = CMD_ADD_HTLC(500000000, randomBytes32, cltvExpiry = 400144)
     sender.send(alice, add1)
     sender.expectMsg("ok")
     // at the same time bob initiates a closing
     sender.send(bob, CMD_CLOSE(None))
     sender.expectMsg("ok")
     // this command will be received by alice right after having received the shutdown
-    val add2 = CMD_ADD_HTLC(100000000, "22" * 32, cltvExpiry = 300000)
+    val add2 = CMD_ADD_HTLC(100000000, randomBytes32, cltvExpiry = 300000)
     // messages cross
     alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
@@ -289,13 +288,13 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     sender.send(alice, add2)
     val error = NoMoreHtlcsClosingInProgress(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Local(add2.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Local(add2.upstream_opt.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
   }
 
   test("recv UpdateAddHtlc") { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val htlc = UpdateAddHtlc("00" * 32, 0, 150000, BinaryData("42" * 32), 400144, defaultOnion)
+    val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, 150000, randomBytes32, 400144, defaultOnion)
     bob ! htlc
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ htlc), remoteNextHtlcId = 1)))
     // bob won't forward the add before it is cross-signed
@@ -305,27 +304,14 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (unexpected id)") { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val htlc = UpdateAddHtlc("00" * 32, 42, 150000, BinaryData("42" * 32), 400144, defaultOnion)
+    val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 42, 150000, randomBytes32, 400144, defaultOnion)
     bob ! htlc.copy(id = 0)
     bob ! htlc.copy(id = 1)
     bob ! htlc.copy(id = 2)
     bob ! htlc.copy(id = 3)
     bob ! htlc.copy(id = 42)
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === UnexpectedHtlcId(channelId(bob), expected = 4, actual = 42).getMessage)
-    awaitCond(bob.stateName == CLOSING)
-    bob2blockchain.expectMsg(PublishAsap(tx))
-    bob2blockchain.expectMsgType[PublishAsap]
-    bob2blockchain.expectMsgType[WatchConfirmed]
-  }
-
-  test("recv UpdateAddHtlc (invalid payment hash)") { f =>
-    import f._
-    val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val htlc = UpdateAddHtlc("00" * 32, 0, 150000, "11" * 42, 400144, defaultOnion)
-    alice2bob.forward(bob, htlc)
-    val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === InvalidPaymentHash(channelId(bob)).getMessage)
+    assert(new String(error.data.toArray) === UnexpectedHtlcId(channelId(bob), expected = 4, actual = 42).getMessage)
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
@@ -335,10 +321,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (value too small)") { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val htlc = UpdateAddHtlc("00" * 32, 0, 150, BinaryData("42" * 32), cltvExpiry = 400144, defaultOnion)
+    val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, 150, randomBytes32, cltvExpiry = 400144, defaultOnion)
     alice2bob.forward(bob, htlc)
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === HtlcValueTooSmall(channelId(bob), minimum = 1000, actual = 150).getMessage)
+    assert(new String(error.data.toArray) === HtlcValueTooSmall(channelId(bob), minimum = 1000, actual = 150).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -350,10 +336,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (insufficient funds)") { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val htlc = UpdateAddHtlc("00" * 32, 0, Long.MaxValue, BinaryData("42" * 32), 400144, defaultOnion)
+    val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, Long.MaxValue, randomBytes32, 400144, defaultOnion)
     alice2bob.forward(bob, htlc)
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === InsufficientFunds(channelId(bob), amountMsat = Long.MaxValue, missingSatoshis = 9223372036083735L, reserveSatoshis = 20000, feesSatoshis = 8960).getMessage)
+    assert(new String(error.data.toArray) === InsufficientFunds(channelId(bob), amountMsat = Long.MaxValue, missingSatoshis = 9223372036083735L, reserveSatoshis = 20000, feesSatoshis = 8960).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -365,12 +351,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (insufficient funds w/ pending htlcs 1/2)") { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 0, 400000000, "11" * 32, 400144, defaultOnion))
-    alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 1, 200000000, "22" * 32, 400144, defaultOnion))
-    alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 2, 167600000, "33" * 32, 400144, defaultOnion))
-    alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 3, 10000000, "44" * 32, 400144, defaultOnion))
+    alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 0, 400000000, randomBytes32, 400144, defaultOnion))
+    alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 1, 200000000, randomBytes32, 400144, defaultOnion))
+    alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 2, 167600000, randomBytes32, 400144, defaultOnion))
+    alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 3, 10000000, randomBytes32, 400144, defaultOnion))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === InsufficientFunds(channelId(bob), amountMsat = 10000000, missingSatoshis = 11720, reserveSatoshis = 20000, feesSatoshis = 14120).getMessage)
+    assert(new String(error.data.toArray) === InsufficientFunds(channelId(bob), amountMsat = 10000000, missingSatoshis = 11720, reserveSatoshis = 20000, feesSatoshis = 14120).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -382,11 +368,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (insufficient funds w/ pending htlcs 2/2)") { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 0, 300000000, "11" * 32, 400144, defaultOnion))
-    alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 1, 300000000, "22" * 32, 400144, defaultOnion))
-    alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 2, 500000000, "33" * 32, 400144, defaultOnion))
+    alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 0, 300000000, randomBytes32, 400144, defaultOnion))
+    alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 1, 300000000, randomBytes32, 400144, defaultOnion))
+    alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 2, 500000000, randomBytes32, 400144, defaultOnion))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === InsufficientFunds(channelId(bob), amountMsat = 500000000, missingSatoshis = 332400, reserveSatoshis = 20000, feesSatoshis = 12400).getMessage)
+    assert(new String(error.data.toArray) === InsufficientFunds(channelId(bob), amountMsat = 500000000, missingSatoshis = 332400, reserveSatoshis = 20000, feesSatoshis = 12400).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -398,9 +384,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (over max inflight htlc value)") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    alice2bob.forward(alice, UpdateAddHtlc("00" * 32, 0, 151000000, "11" * 32, 400144, defaultOnion))
+    alice2bob.forward(alice, UpdateAddHtlc(ByteVector32.Zeroes, 0, 151000000, randomBytes32, 400144, defaultOnion))
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data) === HtlcValueTooHighInFlight(channelId(alice), maximum = 150000000, actual = 151000000).getMessage)
+    assert(new String(error.data.toArray) === HtlcValueTooHighInFlight(channelId(alice), maximum = 150000000, actual = 151000000).getMessage)
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -414,11 +400,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     // Bob accepts a maximum of 30 htlcs
     for (i <- 0 until 30) {
-      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, i, 1000000, "11" * 32, 400144, defaultOnion))
+      alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, i, 1000000, randomBytes32, 400144, defaultOnion))
     }
-    alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 30, 1000000, "11" * 32, 400144, defaultOnion))
+    alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 30, 1000000, randomBytes32, 400144, defaultOnion))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === TooManyAcceptedHtlcs(channelId(bob), maximum = 30).getMessage)
+    assert(new String(error.data.toArray) === TooManyAcceptedHtlcs(channelId(bob), maximum = 30).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -441,7 +427,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_SIGN (two identical htlcs in each direction)") { f =>
     import f._
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(10000000, "11" * 32, 400144)
+    val add = CMD_ADD_HTLC(10000000, randomBytes32, 400144)
     sender.send(alice, add)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[UpdateAddHtlc]
@@ -488,19 +474,19 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(a2b_2 > aliceMinOffer && a2b_2 > bobMinReceive)
     assert(b2a_1 > aliceMinReceive && b2a_1 > bobMinOffer)
     assert(b2a_2 < aliceMinReceive && b2a_2 > bobMinOffer)
-    sender.send(alice, CMD_ADD_HTLC(a2b_1 * 1000, "11" * 32, 400144))
+    sender.send(alice, CMD_ADD_HTLC(a2b_1 * 1000, randomBytes32, 400144))
     sender.expectMsg("ok")
     alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
-    sender.send(alice, CMD_ADD_HTLC(a2b_2 * 1000, "22" * 32, 400144))
+    sender.send(alice, CMD_ADD_HTLC(a2b_2 * 1000, randomBytes32, 400144))
     sender.expectMsg("ok")
     alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
-    sender.send(bob, CMD_ADD_HTLC(b2a_1 * 1000, "33" * 32, 400144))
+    sender.send(bob, CMD_ADD_HTLC(b2a_1 * 1000, randomBytes32, 400144))
     sender.expectMsg("ok")
     bob2alice.expectMsgType[UpdateAddHtlc]
     bob2alice.forward(alice)
-    sender.send(bob, CMD_ADD_HTLC(b2a_2 * 1000, "44" * 32, 400144))
+    sender.send(bob, CMD_ADD_HTLC(b2a_2 * 1000, randomBytes32, 400144))
     sender.expectMsg("ok")
     bob2alice.expectMsgType[UpdateAddHtlc]
     bob2alice.forward(alice)
@@ -510,17 +496,17 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // depending on who starts signing first, there will be one or two commitments because both sides have changes
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index === 1)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index === 2)
-    assert(alice.underlyingActor.nodeParams.channelsDb.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
-    assert(alice.underlyingActor.nodeParams.channelsDb.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 2)
-    assert(alice.underlyingActor.nodeParams.channelsDb.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 2).size == 4)
-    assert(bob.underlyingActor.nodeParams.channelsDb.listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
-    assert(bob.underlyingActor.nodeParams.channelsDb.listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 3)
+    assert(alice.underlyingActor.nodeParams.db.channels.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
+    assert(alice.underlyingActor.nodeParams.db.channels.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 2)
+    assert(alice.underlyingActor.nodeParams.db.channels.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 2).size == 4)
+    assert(bob.underlyingActor.nodeParams.db.channels.listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
+    assert(bob.underlyingActor.nodeParams.db.channels.listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 3)
   }
 
   test("recv CMD_SIGN (htlcs with same pubkeyScript but different amounts)") { f =>
     import f._
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(10000000, "11" * 32, 400144)
+    val add = CMD_ADD_HTLC(10000000, randomBytes32, 400144)
     val epsilons = List(3, 1, 5, 7, 6) // unordered on purpose
   val htlcCount = epsilons.size
     for (i <- epsilons) {
@@ -714,8 +700,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CommitSig (two htlcs received with same r)") { f =>
     import f._
     val sender = TestProbe()
-    val r = BinaryData("42" * 32)
-    val h: BinaryData = Crypto.sha256(r)
+    val r = randomBytes32
+    val h = Crypto.sha256(r)
 
     sender.send(alice, CMD_ADD_HTLC(50000000, h, 400144))
     sender.expectMsg("ok")
@@ -742,7 +728,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     // signature is invalid but it doesn't matter
-    sender.send(bob, CommitSig("00" * 32, "00" * 64, Nil))
+    sender.send(bob, CommitSig(ByteVector32.Zeroes, ByteVector.fill(64)(0), Nil))
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
@@ -759,9 +745,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
 
     // actual test begins
-    sender.send(bob, CommitSig("00" * 32, "00" * 64, Nil))
+    sender.send(bob, CommitSig(ByteVector32.Zeroes, ByteVector.fill(64)(0), Nil))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data).startsWith("invalid commitment signature"))
+    assert(new String(error.data.toArray).startsWith("invalid commitment signature"))
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -782,7 +768,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val badCommitSig = commitSig.copy(htlcSignatures = commitSig.htlcSignatures ::: commitSig.htlcSignatures)
     sender.send(bob, badCommitSig)
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === HtlcSigCountMismatch(channelId(bob), expected = 1, actual = 2).getMessage)
+    assert(new String(error.data.toArray) === HtlcSigCountMismatch(channelId(bob), expected = 1, actual = 2).getMessage)
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -803,7 +789,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val badCommitSig = commitSig.copy(htlcSignatures = commitSig.signature :: Nil)
     sender.send(bob, badCommitSig)
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data).startsWith("invalid htlc signature"))
+    assert(new String(error.data.toArray).startsWith("invalid htlc signature"))
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -927,7 +913,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test begins
     bob2alice.expectMsgType[RevokeAndAck]
-    sender.send(alice, RevokeAndAck("00" * 32, Scalar("11" * 32), Scalar("22" * 32).toPoint))
+    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, Scalar(randomBytes32), Scalar(randomBytes32).toPoint))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
@@ -942,7 +928,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
-    sender.send(alice, RevokeAndAck("00" * 32, Scalar("11" * 32), Scalar("22" * 32).toPoint))
+    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, Scalar(randomBytes32), Scalar(randomBytes32).toPoint))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
@@ -1046,7 +1032,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_FULFILL_HTLC (unknown htlc id)") { f =>
     import f._
     val sender = TestProbe()
-    val r: BinaryData = "11" * 32
+    val r = randomBytes32
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
     sender.send(bob, CMD_FULFILL_HTLC(42, r))
@@ -1062,7 +1048,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    sender.send(bob, CMD_FULFILL_HTLC(htlc.id, "00" * 32))
+    sender.send(bob, CMD_FULFILL_HTLC(htlc.id, ByteVector32.Zeroes))
     sender.expectMsg(Failure(InvalidHtlcPreimage(channelId(bob), 0)))
     assert(initialState == bob.stateData)
   }
@@ -1097,7 +1083,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test begins
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    sender.send(alice, UpdateFulfillHtlc("00" * 32, htlc.id, r))
+    sender.send(alice, UpdateFulfillHtlc(ByteVector32.Zeroes, htlc.id, r))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
@@ -1111,7 +1097,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(alice, UpdateFulfillHtlc("00" * 32, 42, "00" * 32))
+    sender.send(alice, UpdateFulfillHtlc(ByteVector32.Zeroes, 42, ByteVector32.Zeroes))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
@@ -1130,7 +1116,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
 
     // actual test begins
-    sender.send(alice, UpdateFulfillHtlc("00" * 32, htlc.id, "00" * 32))
+    sender.send(alice, UpdateFulfillHtlc(ByteVector32.Zeroes, htlc.id, ByteVector32.Zeroes))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
@@ -1161,7 +1147,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_FAIL_HTLC (unknown htlc id)") { f =>
     import f._
     val sender = TestProbe()
-    val r: BinaryData = "11" * 32
+    val r: ByteVector = randomBytes32
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
     sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure)))
@@ -1189,7 +1175,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, "00" * 32, FailureMessageCodecs.BADONION))
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessageCodecs.BADONION))
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
   }
@@ -1198,7 +1184,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, "00" * 32, 42))
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, 42))
     sender.expectMsg(Failure(InvalidFailureCode(channelId(bob))))
     assert(initialState == bob.stateData)
   }
@@ -1258,10 +1244,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test begins
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val fail = UpdateFailMalformedHtlc("00" * 32, htlc.id, Crypto.sha256(htlc.onionRoutingPacket), 42)
+    val fail = UpdateFailMalformedHtlc(ByteVector32.Zeroes, htlc.id, Crypto.sha256(htlc.onionRoutingPacket), 42)
     sender.send(alice, fail)
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data) === InvalidFailureCode("00" * 32).getMessage)
+    assert(new String(error.data.toArray) === InvalidFailureCode(ByteVector32.Zeroes).getMessage)
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
@@ -1280,7 +1266,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test begins
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    sender.send(alice, UpdateFailHtlc("00" * 32, htlc.id, "00" * 152))
+    sender.send(alice, UpdateFailHtlc(ByteVector32.Zeroes, htlc.id, ByteVector.fill(152)(0)))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
@@ -1294,7 +1280,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(alice, UpdateFailHtlc("00" * 32, 42, "00" * 152))
+    sender.send(alice, UpdateFailHtlc(ByteVector32.Zeroes, 42, ByteVector.fill(152)(0)))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
@@ -1343,9 +1329,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateFee") { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val fee1 = UpdateFee("00" * 32, 12000)
+    val fee1 = UpdateFee(ByteVector32.Zeroes, 12000)
     bob ! fee1
-    val fee2 = UpdateFee("00" * 32, 14000)
+    val fee2 = UpdateFee(ByteVector32.Zeroes, 14000)
     bob ! fee2
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee2), remoteNextHtlcId = 0)))
   }
@@ -1353,7 +1339,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateFee (two in a row)") { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val fee = UpdateFee("00" * 32, 12000)
+    val fee = UpdateFee(ByteVector32.Zeroes, 12000)
     bob ! fee
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee), remoteNextHtlcId = 0)))
   }
@@ -1362,7 +1348,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(alice, UpdateFee("00" * 32, 12000))
+    sender.send(alice, UpdateFee(ByteVector32.Zeroes, 12000))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
@@ -1376,12 +1362,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    val fee = UpdateFee("00" * 32, 100000000)
+    val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
     // we first update the global variable so that we don't trigger a 'fee too different' error
     Globals.feeratesPerKw.set(FeeratesPerKw.single(fee.feeratePerKw))
     sender.send(bob, fee)
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === CannotAffordFees(channelId(bob), missingSatoshis = 71620000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
+    assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missingSatoshis = 71620000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -1394,9 +1380,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(bob, UpdateFee("00" * 32, 85000))
+    sender.send(bob, UpdateFee(ByteVector32.Zeroes, 85000))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === "local/remote feerates are too different: remoteFeeratePerKw=85000 localFeeratePerKw=10000")
+    assert(new String(error.data.toArray) === "local/remote feerates are too different: remoteFeeratePerKw=85000 localFeeratePerKw=10000")
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -1409,9 +1395,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(bob, UpdateFee("00" * 32, 252))
+    sender.send(bob, UpdateFee(ByteVector32.Zeroes, 252))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data) === "remote fee rate is too small: remoteFeeratePerKw=252")
+    assert(new String(error.data.toArray) === "remote fee rate is too small: remoteFeeratePerKw=252")
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -1456,7 +1442,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_CLOSE (with invalid final script)") { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, CMD_CLOSE(Some(BinaryData("00112233445566778899"))))
+    sender.send(alice, CMD_CLOSE(Some(hex"00112233445566778899")))
     sender.expectMsg(Failure(InvalidFinalScript(channelId(alice))))
   }
 
@@ -1502,7 +1488,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv Shutdown (no pending htlcs)") { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, Shutdown("00" * 32, Bob.channelParams.defaultFinalScriptPubKey))
+    sender.send(alice, Shutdown(ByteVector32.Zeroes, Bob.channelParams.defaultFinalScriptPubKey))
     alice2bob.expectMsgType[Shutdown]
     alice2bob.expectMsgType[ClosingSigned]
     awaitCond(alice.stateName == NEGOTIATING)
@@ -1536,7 +1522,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
     // actual test begins
-    sender.send(bob, Shutdown("00" * 32, TestConstants.Alice.channelParams.defaultFinalScriptPubKey))
+    sender.send(bob, Shutdown(ByteVector32.Zeroes, TestConstants.Alice.channelParams.defaultFinalScriptPubKey))
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[PublishAsap]
@@ -1547,7 +1533,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv Shutdown (with invalid final script)") { f =>
     import f._
     val sender = TestProbe()
-    sender.send(bob, Shutdown("00" * 32, BinaryData("00112233445566778899")))
+    sender.send(bob, Shutdown(ByteVector32.Zeroes, hex"00112233445566778899"))
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[PublishAsap]
@@ -1563,7 +1549,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(bob, CMD_CLOSE(None))
     bob2alice.expectMsgType[Shutdown]
     // actual test begins
-    sender.send(bob, Shutdown("00" * 32, BinaryData("00112233445566778899")))
+    sender.send(bob, Shutdown(ByteVector32.Zeroes, hex"00112233445566778899"))
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[PublishAsap]
@@ -1578,7 +1564,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
-    sender.send(bob, Shutdown("00" * 32, TestConstants.Alice.channelParams.defaultFinalScriptPubKey))
+    sender.send(bob, Shutdown(ByteVector32.Zeroes, TestConstants.Alice.channelParams.defaultFinalScriptPubKey))
     bob2alice.expectMsgType[Shutdown]
     awaitCond(bob.stateName == SHUTDOWN)
   }
@@ -1890,7 +1876,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // alice = 800 000
     //   bob = 200 000
 
-    val add = CMD_ADD_HTLC(10000000, "11" * 32, 400144)
+    val add = CMD_ADD_HTLC(10000000, randomBytes32, 400144)
     sender.send(alice, add)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[UpdateAddHtlc]
@@ -1960,7 +1946,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // an error occurs and alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    alice ! Error("00" * 32, "oops".getBytes())
+    alice ! Error(ByteVector32.Zeroes, "oops")
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
     assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
 
@@ -2011,7 +1997,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // an error occurs and alice publishes her commit tx
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    bob ! Error("00" * 32, "oops".getBytes())
+    bob ! Error(ByteVector32.Zeroes, "oops")
     bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
     assert(bobCommitTx.txOut.size == 1) // only one main output
     alice2blockchain.expectNoMsg(1 second)
