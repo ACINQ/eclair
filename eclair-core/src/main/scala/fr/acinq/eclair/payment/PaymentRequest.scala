@@ -231,7 +231,8 @@ object PaymentRequest {
         case 17 if prefix == "lntb" || prefix == "lnbcrt" => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, data)
         case 18 if prefix == "lntb" || prefix == "lnbcrt" => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, data)
         case version if prefix == "lnbc" => Bech32.encodeWitnessAddress("bc", version, data)
-        case version if prefix == "lntb" || prefix == "lnbcrt" => Bech32.encodeWitnessAddress("bcrt", version, data)
+        case version if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, data)
+        case version if prefix == "lnbcrt" => Bech32.encodeWitnessAddress("bcrt", version, data)
       }
     }
   }
