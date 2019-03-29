@@ -819,7 +819,7 @@ object Helpers {
       * @param localCommit
       * @param remoteCommit
       * @param nextRemoteCommit_opt
-      * @param tx
+      * @param tx  a transaction that is sufficiently buried in the blockchain
       * @param eventStream
       * @param log
       */
