@@ -810,7 +810,10 @@ object Helpers {
       * @param originChannels
       * @return
       */
-    def isSentByLocal(htlcId: Long, originChannels: Map[Long, Origin]) = (originChannels.get(htlcId) collect { case l: Local => l }).isDefined
+    def isSentByLocal(htlcId: Long, originChannels: Map[Long, Origin]) = originChannels.get(htlcId) match {
+      case Some(Local(_)) => true
+      case _ => false
+    }
 
     /**
       * As soon as a local or remote commitment reaches min_depth, we know which htlcs will be settled on-chain (whether
