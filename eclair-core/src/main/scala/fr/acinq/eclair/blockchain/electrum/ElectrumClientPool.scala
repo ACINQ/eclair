@@ -106,8 +106,7 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
 
   whenUnhandled {
     case Event(Connect, _) =>
-      val usedAddresses = addresses.values.toSet
-      Random.shuffle(serverAddresses.filterNot(a => usedAddresses.contains(a.adress))).headOption match {
+      pickAddress(serverAddresses, addresses.values.toSet) match {
         case Some(ElectrumServerAddress(address, ssl)) =>
           val resolved = new InetSocketAddress(address.getHostName, address.getPort)
           val client = context.actorOf(Props(new ElectrumClient(resolved, ssl)))
@@ -210,6 +209,16 @@ object ElectrumClientPool {
     addresses.toSet
   } finally {
     stream.close()
+  }
+
+  /**
+    *
+    * @param serverAddresses all addresses to choose from
+    * @param usedAddresses current connections
+    * @return a random address that we're not connected to yet
+    */
+  def pickAddress(serverAddresses: Set[ElectrumServerAddress], usedAddresses: Set[InetSocketAddress]): Option[ElectrumServerAddress] = {
+    Random.shuffle(serverAddresses.filterNot(a => usedAddresses.contains(a.adress)).toSeq).headOption
   }
 
   // @formatter:off
