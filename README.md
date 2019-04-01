@@ -152,6 +152,17 @@ If you want to persist the data directory, you can make the volume to your host 
 docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConsole" acinq/eclair
 ```
 
+## Plugins
+
+For advanced usage, Eclair supports plugins written in Scala, Java, or any JVM-compatible language.
+
+A valid plugin is a jar that contains an implementation of the [Plugin](eclair-node/src/main/scala/fr/acinq/eclair/Plugin.scala) interface.
+
+Here is how to run Eclair with plugins:
+```shell
+java -jar eclair-node-<version>-<commit_id>.jar <plugin1.jar> <plugin2.jar> <...>
+```
+
 ## Mainnet usage
 
 Following are the minimum configuration files you need to use for Bitcoin Core and Eclair.
