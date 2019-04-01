@@ -32,9 +32,8 @@ class PaymentInitiator(sourceNodeId: PublicKey, router: ActorRef, register: Acto
     case c: SendPayment =>
       val paymentId = UUID.randomUUID()
       val payFsm = context.actorOf(PaymentLifecycle.props(paymentId, sourceNodeId, router, register, paymentDb))
-      // TODO: here we should probably send  the payment id back to the sender so that it knows how to query the api later
-      //sender ! paymentId
       payFsm forward c
+      sender ! paymentId
   }
 
 }

@@ -1,5 +1,7 @@
 package fr.acinq.eclair
 
+import java.util.UUID
+
 import akka.actor.ActorRef
 import akka.pattern._
 import akka.util.Timeout
@@ -15,7 +17,6 @@ import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentRequest}
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import scodec.bits.ByteVector
-
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
@@ -47,7 +48,7 @@ trait Eclair {
 
   def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse]
 
-  def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[PaymentResult]
+  def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[UUID]
 
   def checkpayment(paymentHash: ByteVector32): Future[Boolean]
 
@@ -132,15 +133,12 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amountMsat, assistedRoutes)).mapTo[RouteResponse]
   }
 
-  override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[PaymentResult] = {
+  override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[UUID] = {
     val sendPayment = minFinalCltvExpiry match {
       case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv)
       case None  => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes)
     }
-    (appKit.paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
-      case s: PaymentSucceeded => s
-      case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
-    }
+    (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 
   override def checkpayment(paymentHash: ByteVector32): Future[Boolean] = {
