@@ -43,6 +43,10 @@ trait PaymentsDb {
 
   def receivedByPaymentHash(paymentHash: ByteVector32): Option[ReceivedPayment]
 
+  def sentPaymentById(id: UUID): Option[SentPayment]
+
+  def sentPaymentByHash(paymentHash: ByteVector32): Option[SentPayment]
+
   def listReceived(): Seq[ReceivedPayment]
 
   def listSent(): Seq[SentPayment]

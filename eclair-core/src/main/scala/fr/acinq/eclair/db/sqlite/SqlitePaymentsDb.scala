@@ -91,6 +91,30 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
+  override def sentPaymentById(id: UUID): Option[SentPayment] = {
+    using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, timestamp FROM sent_payments WHERE id = ?")) { statement =>
+      statement.setBytes(1, id.toString.getBytes)
+      val rs = statement.executeQuery()
+      if (rs.next()) {
+        Some(SentPayment(UUID.fromString(new String(rs.getBytes("id"))), rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp")))
+      } else {
+        None
+      }
+    }
+  }
+
+  override def sentPaymentByHash(paymentHash: ByteVector32): Option[SentPayment] = {
+    using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, timestamp FROM sent_payments WHERE payment_hash = ?")) { statement =>
+      statement.setBytes(1, paymentHash.toArray)
+      val rs = statement.executeQuery()
+      if (rs.next()) {
+        Some(SentPayment(UUID.fromString(new String(rs.getBytes("id"))), rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp")))
+      } else {
+        None
+      }
+    }
+  }
+
   override def listReceived(): Seq[ReceivedPayment] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT payment_hash, amount_msat, timestamp FROM received_payments")

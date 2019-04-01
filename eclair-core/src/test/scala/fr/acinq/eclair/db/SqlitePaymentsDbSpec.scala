@@ -60,6 +60,10 @@ class SqlitePaymentsDbSpec extends FunSuite {
     db.addSentPayments(s2)
 
     assert(db.listSent().toList == Seq(s1, s2))
+    assert(db.sentPaymentById(s1.id) === Some(s1))
+    assert(db.sentPaymentById(UUID.randomUUID()) === None)
+    assert(db.sentPaymentByHash(s2.paymentHash) === Some(s2))
+    assert(db.sentPaymentByHash(ByteVector32.Zeroes) === None)
   }
 
 }
