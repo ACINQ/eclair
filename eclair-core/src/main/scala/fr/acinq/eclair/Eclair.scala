@@ -155,6 +155,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = {
     val (from, to) = (from_opt, to_opt) match {
       case (Some(f), Some(t)) => (f, t)
+      case (None, Some(t)) => (0L, t)
+      case (Some(f), None) => (f, Long.MaxValue)
       case _ => (0L, Long.MaxValue)
     }
 
@@ -168,6 +170,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def networkFees(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[NetworkFee]] = {
     val (from, to) = (from_opt, to_opt) match {
       case (Some(f), Some(t)) => (f, t)
+      case (None, Some(t)) => (0L, t)
+      case (Some(f), None) => (f, Long.MaxValue)
       case _ => (0L, Long.MaxValue)
     }
 
