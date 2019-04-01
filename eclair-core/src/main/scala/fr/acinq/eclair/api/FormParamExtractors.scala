@@ -1,5 +1,7 @@
 package fr.acinq.eclair.api
 
+import java.util.UUID
+
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -27,6 +29,10 @@ object FormParamExtractors {
 
   implicit val shortChannelIdUnmarshaller: Unmarshaller[String, ShortChannelId] = Unmarshaller.strict { str =>
     ShortChannelId(str)
+  }
+
+  implicit val javaUUIDUnmarshaller: Unmarshaller[String, UUID] = Unmarshaller.strict { str =>
+    UUID.fromString(str)
   }
 
 }

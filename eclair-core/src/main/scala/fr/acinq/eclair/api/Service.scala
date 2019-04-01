@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.api
 
+import java.util.UUID
+
 import akka.http.scaladsl.server._
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
@@ -23,6 +25,7 @@ import fr.acinq.eclair.{Eclair, Kit, ShortChannelId}
 import FormParamExtractors._
 import akka.NotUsed
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.http.scaladsl.marshalling.{Marshaller, ToResponseMarshaller}
 import akka.http.scaladsl.model.HttpMethods.POST
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
@@ -42,6 +45,7 @@ import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
+import scala.util.{Failure, Success}
 
 case class ErrorResponse(error: String)
 
@@ -51,6 +55,7 @@ trait Service extends Directives with Logging {
   import JsonSupport.marshaller
   import JsonSupport.formats
   import JsonSupport.serialization
+
   // used to send typed messages over the websocket
   val formatsWithTypeHint = formats.withTypeHintFieldName("type") +
     CustomTypeHints(Map(
@@ -68,6 +73,13 @@ trait Service extends Directives with Logging {
   implicit val actorSystem: ActorSystem
   implicit val mat: ActorMaterializer
 
+  // custom directive to fail with HTTP 404 if the element was not found
+  def complete[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {
+    case Success(Some(t)) => complete(t)
+    case Success(None) => complete(StatusCodes.NotFound)
+    case Failure(thr) => throw thr
+  }
+
   // a named and typed URL parameter used across several routes, 32-bytes hex-encoded
   val channelId = "channelId".as[ByteVector32](sha256HashUnmarshaller)
   val nodeId = "nodeId".as[PublicKey]
@@ -81,7 +93,7 @@ trait Service extends Directives with Logging {
 
   // map all the rejections to a JSON error object ErrorResponse
   val apiRejectionHandler = RejectionHandler.default.mapRejectionResponse {
-    case res @ HttpResponse(_, _, ent: HttpEntity.Strict, _) =>
+    case res@HttpResponse(_, _, ent: HttpEntity.Strict, _) =>
       res.copy(entity = HttpEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse(ent.data.utf8String))))
   }
 
@@ -127,7 +139,7 @@ trait Service extends Directives with Logging {
   val route: Route = {
     respondWithDefaultHeaders(customHeaders) {
       handleExceptions(apiExceptionHandler) {
-        handleRejections(apiRejectionHandler){
+        handleRejections(apiRejectionHandler) {
           withRequestTimeoutResponse(timeoutResponse) {
             authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator) { _ =>
               post {
@@ -223,6 +235,11 @@ trait Service extends Directives with Logging {
                   path("sendtonode") {
                     formFields("amountMsat".as[Long], "paymentHash".as[ByteVector32](sha256HashUnmarshaller), "nodeId".as[PublicKey]) { (amountMsat, paymentHash, nodeId) =>
                       complete(eclairApi.send(nodeId, amountMsat, paymentHash))
+                    }
+                  } ~
+                  path("paymentinfo") {
+                    formFields("id".as[UUID]) { id =>
+                      complete(eclairApi.paymentInfo(id))
                     }
                   } ~
                   path("checkpayment") {

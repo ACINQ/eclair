@@ -17,6 +17,7 @@
 package fr.acinq.eclair.api
 
 import java.util.UUID
+
 import akka.actor.{Actor, ActorSystem, Props, Scheduler}
 import org.scalatest.FunSuite
 import akka.http.scaladsl.model.StatusCodes._
@@ -30,13 +31,14 @@ import akka.stream.ActorMaterializer
 import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel.RES_GETINFO
-import fr.acinq.eclair.db.{NetworkFee, Stats}
+import fr.acinq.eclair.db.{NetworkFee, OutgoingPayment, Stats}
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress, NodeAnnouncement}
 import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
+
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
@@ -72,7 +74,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def findRoute(targetNodeId: Crypto.PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]]): Future[RouteResponse] = ???
 
-    override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long]): Future[PaymentLifecycle.PaymentResult] = ???
+    override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long]): Future[UUID] = ???
 
     override def checkpayment(paymentHash: ByteVector32): Future[Boolean] = ???
 
@@ -83,6 +85,8 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     override def channelStats(): Future[Seq[Stats]] = ???
 
     override def getInfoResponse(): Future[GetInfoResponse] = ???
+
+    override def paymentInfo(id: UUID): Future[Option[OutgoingPayment]] = ???
   }
 
   implicit val formats = JsonSupport.formats
@@ -256,6 +260,28 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(entityAs[String] == "\"connected\"")
       }
   }
+
+  test("'send' method should return the UUID of the outgoing payment") {
+
+    val id = UUID.randomUUID()
+    val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
+
+    val mockService = new MockService(new EclairMock {
+      override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long]): Future[UUID] = Future.successful(
+        id
+      )
+    })
+
+    Post("/send", FormData("invoice" -> invoice).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[String] == "\""+id.toString+"\"")
+      }
+  }
+
 
   test("the websocket should return typed objects") {
 

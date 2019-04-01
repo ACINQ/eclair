@@ -9,7 +9,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.api.{AuditResponse, GetInfoResponse}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.{NetworkFee, Stats}
+import fr.acinq.eclair.db.{NetworkFee, OutgoingPayment, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
@@ -17,6 +17,7 @@ import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentRequest}
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import scodec.bits.ByteVector
+
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
@@ -49,6 +50,8 @@ trait Eclair {
   def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse]
 
   def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[UUID]
+
+  def paymentInfo(id: UUID): Future[Option[OutgoingPayment]]
 
   def checkpayment(paymentHash: ByteVector32): Future[Boolean]
 
@@ -139,6 +142,10 @@ class EclairImpl(appKit: Kit) extends Eclair {
       case None  => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes)
     }
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
+  }
+
+  override def paymentInfo(id: UUID): Future[Option[OutgoingPayment ]] = Future {
+    appKit.nodeParams.db.payments.sentPaymentById(id)
   }
 
   override def checkpayment(paymentHash: ByteVector32): Future[Boolean] = {
