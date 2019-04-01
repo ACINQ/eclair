@@ -71,15 +71,15 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], timeout_opt: Option[Timeout]): Future[String] = {
-    // we want this to expire *before* the ask times out, otherwise the user won't get a usable response
-    val timeoutCappedAt50s_opt = timeout_opt.map(value => Timeout(value.duration.max(50 seconds)))
+    // we want the default timeout to expire *before* the default ask times out, otherwise user won't get a usable response
+    val openTimeout = timeout_opt.getOrElse(Timeout(30 seconds))
     (appKit.switchboard ? Peer.OpenChannel(
       remoteNodeId = nodeId,
       fundingSatoshis = Satoshi(fundingSatoshis),
       pushMsat = pushMsat.map(MilliSatoshi).getOrElse(MilliSatoshi(0)),
       fundingTxFeeratePerKw_opt = fundingFeerateSatByte,
       channelFlags = flags.map(_.toByte),
-      timeout_opt = timeoutCappedAt50s_opt)).mapTo[String]
+      timeout_opt = Some(openTimeout))).mapTo[String]
   }
 
   override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String] = {
