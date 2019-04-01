@@ -54,7 +54,7 @@ object SqliteUtils {
   def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS versions (db_name TEXT NOT NULL PRIMARY KEY, version INTEGER NOT NULL)")
     // if there was no version for the current db, then insert the current version
-    statement.executeUpdate(s"INSERT OR IGNORE INTO versions VALUES ('$db_name', $currentVersion)")
+    statement.executeUpdate(s"INSERT OR REPLACE INTO versions VALUES ('$db_name', $currentVersion)")
     // if there was a previous version installed, this will return a different value from current version
     val res = statement.executeQuery(s"SELECT version FROM versions WHERE db_name='$db_name'")
     res.getInt("version")
