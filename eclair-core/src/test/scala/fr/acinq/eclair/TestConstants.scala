@@ -70,6 +70,7 @@ object TestConstants {
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
       db = inMemoryDb(sqliteInMemory),
+      apiTimeout = 60 seconds,
       revocationTimeout = 20 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
@@ -134,6 +135,7 @@ object TestConstants {
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
       db = inMemoryDb(sqliteInMemory),
+      apiTimeout = 60 seconds,
       revocationTimeout = 20 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,

@@ -27,6 +27,7 @@ import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import akka.http.scaladsl.server.Route
 import akka.stream.ActorMaterializer
 import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
+import akka.util.Timeout
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.RES_GETINFO
 import fr.acinq.eclair.db.{NetworkFee, Stats}
@@ -34,6 +35,7 @@ import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentRequest}
 import fr.acinq.eclair.router.{ChannelDesc, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress, NodeAnnouncement}
 import scodec.bits.ByteVector
+
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
@@ -45,7 +47,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   trait EclairMock extends Eclair {
     override def connect(uri: String): Future[String] = ???
 
-    override def open(nodeId: Crypto.PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int]): Future[String] = ???
+    override def open(nodeId: Crypto.PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], timeout_opt: Option[Timeout]): Future[String] = ???
 
     override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String] = ???
 

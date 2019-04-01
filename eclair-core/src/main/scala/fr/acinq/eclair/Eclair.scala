@@ -23,7 +23,7 @@ trait Eclair {
 
   def connect(uri: String): Future[String]
 
-  def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int]): Future[String]
+  def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], timeout_opt: Option[Timeout]): Future[String]
 
   def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String]
 
@@ -70,13 +70,16 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String]
   }
 
-  override def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int]): Future[String] = {
+  override def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], timeout_opt: Option[Timeout]): Future[String] = {
+    // we want this to expire *before* the ask times out, otherwise the user won't get a usable response
+    val timeoutCappedAt50s_opt = timeout_opt.map(value => Timeout(value.duration.max(50 seconds)))
     (appKit.switchboard ? Peer.OpenChannel(
       remoteNodeId = nodeId,
       fundingSatoshis = Satoshi(fundingSatoshis),
       pushMsat = pushMsat.map(MilliSatoshi).getOrElse(MilliSatoshi(0)),
       fundingTxFeeratePerKw_opt = fundingFeerateSatByte,
-      channelFlags = flags.map(_.toByte))).mapTo[String]
+      channelFlags = flags.map(_.toByte),
+      timeout_opt = timeoutCappedAt50s_opt)).mapTo[String]
   }
 
   override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String] = {

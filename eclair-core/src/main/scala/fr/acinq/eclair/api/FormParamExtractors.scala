@@ -1,11 +1,13 @@
 package fr.acinq.eclair.api
 
 import akka.http.scaladsl.unmarshalling.Unmarshaller
+import akka.util.Timeout
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.payment.PaymentRequest
 import scodec.bits.ByteVector
+import scala.concurrent.duration._
 
 object FormParamExtractors {
 
@@ -27,6 +29,10 @@ object FormParamExtractors {
 
   implicit val shortChannelIdUnmarshaller: Unmarshaller[String, ShortChannelId] = Unmarshaller.strict { str =>
     ShortChannelId(str)
+  }
+
+  implicit val timeoutUnmarshaller: Unmarshaller[String, Timeout] = Unmarshaller.strict { str =>
+    Timeout(str.toInt.seconds)
   }
 
 }
