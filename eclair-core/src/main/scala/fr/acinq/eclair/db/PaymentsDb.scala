@@ -16,12 +16,14 @@
 
 package fr.acinq.eclair.db
 
+import java.util.UUID
+
 import fr.acinq.bitcoin.ByteVector32
 
 /**
   * Store the Lightning payments received by the node. Sent and relayed payments are not persisted.
   * <p>
-  * A payment is a [[Payment]] object. In the local context of a LN node, it is safe to consider that
+  * A payment is a [[ReceivedPayment]] object. In the local context of a LN node, it is safe to consider that
   * a payment is uniquely identified by its payment hash. As such, implementations of this database can use the payment
   * hash as a unique key and index.
   * <p>
@@ -35,19 +37,33 @@ import fr.acinq.bitcoin.ByteVector32
   */
 trait PaymentsDb {
 
-  def addPayment(payment: Payment)
+  def addReceivedPayment(payment: ReceivedPayment)
 
-  def findByPaymentHash(paymentHash: ByteVector32): Option[Payment]
+  def addSentPayments(sent: SentPayment)
 
-  def listPayments(): Seq[Payment]
+  def receivedByPaymentHash(paymentHash: ByteVector32): Option[ReceivedPayment]
+
+  def listReceived(): Seq[ReceivedPayment]
+
+  def listSent(): Seq[SentPayment]
 
 }
 
 /**
-  * Payment object stored in DB.
+  * Received payment object stored in DB.
   *
-  * @param payment_hash identifier of the payment
+  * @param paymentHash identifier of the payment
+  * @param amount_msat amount of the payment, in milli-satoshis
+  * @param timestamp   absolute time in seconds since UNIX epoch when the payment was created.
+  */
+case class ReceivedPayment(paymentHash: ByteVector32, amountMsat: Long, timestamp: Long)
+
+/**
+  * Sent payment object stored in DB.
+  *
+  * @param id           internal payment identifier
+  * @param payment_hash payment_hash
   * @param amount_msat  amount of the payment, in milli-satoshis
   * @param timestamp    absolute time in seconds since UNIX epoch when the payment was created.
   */
-case class Payment(payment_hash: ByteVector32, amount_msat: Long, timestamp: Long)
+case class SentPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, timestamp: Long)

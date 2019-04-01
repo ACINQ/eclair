@@ -17,10 +17,11 @@
 package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
+import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
-import fr.acinq.eclair.db.{Payment, PaymentsDb}
+import fr.acinq.eclair.db.{PaymentsDb, ReceivedPayment, SentPayment}
 import grizzled.slf4j.Logging
 
 import scala.collection.immutable.Queue
@@ -40,41 +41,73 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   import SqliteUtils.ExtendedResultSet._
 
   val DB_NAME = "payments"
-  val CURRENT_VERSION = 1
+  val PREVIOUS_VERSION = 1
+  val CURRENT_VERSION = 2
 
   using(sqlite.createStatement()) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-  }
-
-  override def addPayment(payment: Payment): Unit = {
-    using(sqlite.prepareStatement("INSERT INTO payments VALUES (?, ?, ?)")) { statement =>
-      statement.setBytes(1, payment.payment_hash.toArray)
-      statement.setLong(2, payment.amount_msat)
-      statement.setLong(3, payment.timestamp)
-      val res = statement.executeUpdate()
-      logger.debug(s"inserted $res payment=${payment} in DB")
+    getVersion(statement, DB_NAME, CURRENT_VERSION) match {
+      case PREVIOUS_VERSION =>
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("ALTER TABLE payments RENAME TO received_payments")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL, payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+      case CURRENT_VERSION =>
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL, payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+      case unknownVersion =>
+        throw new RuntimeException(s"Unknown version of paymentsDB found, version=$unknownVersion")
     }
   }
 
-  override def findByPaymentHash(paymentHash: ByteVector32): Option[Payment] = {
-    using(sqlite.prepareStatement("SELECT payment_hash, amount_msat, timestamp FROM payments WHERE payment_hash = ?")) { statement =>
+  override def addReceivedPayment(payment: ReceivedPayment): Unit = {
+    using(sqlite.prepareStatement("INSERT INTO received_payments VALUES (?, ?, ?)")) { statement =>
+      statement.setBytes(1, payment.paymentHash.toArray)
+      statement.setLong(2, payment.amountMsat)
+      statement.setLong(3, payment.timestamp)
+      val res = statement.executeUpdate()
+      logger.debug(s"inserted $res payment=${payment.paymentHash} into payment DB")
+    }
+  }
+
+  override def addSentPayments(sent: SentPayment): Unit = {
+    using(sqlite.prepareStatement("INSERT INTO sent_payments VALUES (?, ?, ?, ?)")) { statement =>
+      statement.setBytes(1, sent.id.toString.getBytes)
+      statement.setBytes(2, sent.paymentHash.toArray)
+      statement.setLong(3, sent.amountMsat)
+      statement.setLong(4, sent.timestamp)
+      val res = statement.executeUpdate()
+      logger.debug(s"inserted $res payment=${sent.paymentHash} into payment DB")
+    }
+  }
+
+  override def receivedByPaymentHash(paymentHash: ByteVector32): Option[ReceivedPayment] = {
+    using(sqlite.prepareStatement("SELECT payment_hash, amount_msat, timestamp FROM received_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Some(Payment(rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp")))
+        Some(ReceivedPayment(rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp")))
       } else {
         None
       }
     }
   }
 
-  override def listPayments(): Seq[Payment] = {
+  override def listReceived(): Seq[ReceivedPayment] = {
     using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT payment_hash, amount_msat, timestamp FROM payments")
-      var q: Queue[Payment] = Queue()
+      val rs = statement.executeQuery("SELECT payment_hash, amount_msat, timestamp FROM received_payments")
+      var q: Queue[ReceivedPayment] = Queue()
       while (rs.next()) {
-        q = q :+ Payment(rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp"))
+        q = q :+ ReceivedPayment(rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp"))
+      }
+      q
+    }
+  }
+
+  override def listSent(): Seq[SentPayment] = {
+    using(sqlite.createStatement()) { statement =>
+      val rs = statement.executeQuery("SELECT id, payment_hash, amount_msat, timestamp FROM sent_payments")
+      var q: Queue[SentPayment] = Queue()
+      while (rs.next()) {
+        q = q :+ SentPayment(UUID.fromString(new String(rs.getBytes("id"))), rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp"))
       }
       q
     }
