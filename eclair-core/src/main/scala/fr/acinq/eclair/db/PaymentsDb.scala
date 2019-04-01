@@ -44,6 +44,8 @@ trait PaymentsDb {
 
   def addSentPayments(sent: OutgoingPayment)
 
+  def updateOutgoingStatus(id: UUID, newStatus: OutgoingPaymentStatus.Value)
+
   def receivedByPaymentHash(paymentHash: ByteVector32): Option[ReceivedPayment]
 
   def sentPaymentById(id: UUID): Option[OutgoingPayment]
@@ -72,9 +74,9 @@ case class ReceivedPayment(paymentHash: ByteVector32, amountMsat: Long, timestam
   * @param id           internal payment identifier
   * @param payment_hash payment_hash
   * @param amount_msat  amount of the payment, in milli-satoshis
-  * @param timestamp    absolute time in seconds since UNIX epoch when the payment was created.
+  * @param lastUpdate   absolute time in seconds since UNIX epoch when the payment was last updated.
   */
-case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, timestamp: Long, status: OutgoingPaymentStatus.Value)
+case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, lastUpdate: Long, status: OutgoingPaymentStatus.Value)
 
 object OutgoingPaymentStatus extends Enumeration {
   val PENDING = Value(1, "PENDING")

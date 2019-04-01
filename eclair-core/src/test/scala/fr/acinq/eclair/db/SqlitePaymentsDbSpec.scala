@@ -68,6 +68,10 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val s3 = s2.copy(amountMsat = 88776655, status = OutgoingPaymentStatus.SUCCEEDED)
     db.addSentPayments(s3)
     assert(db.sentPaymentById(s2.id).exists(el => el.amountMsat == s3.amountMsat && el.status == OutgoingPaymentStatus.SUCCEEDED))
+
+    db.updateOutgoingStatus(s3.id, OutgoingPaymentStatus.FAILED)
+    assert(db.sentPaymentById(s2.id).get.status == OutgoingPaymentStatus.FAILED)
+
   }
 
 }
