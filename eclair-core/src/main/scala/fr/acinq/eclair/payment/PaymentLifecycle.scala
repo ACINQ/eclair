@@ -25,6 +25,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Channel, Register}
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
+import fr.acinq.eclair.db.PaymentsDb
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router._
@@ -37,7 +38,7 @@ import scala.util.{Failure, Success}
 /**
   * Created by PM on 26/08/2016.
   */
-class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) extends FSM[PaymentLifecycle.State, PaymentLifecycle.Data] {
+class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, register: ActorRef, paymentsDb: PaymentsDb) extends FSM[PaymentLifecycle.State, PaymentLifecycle.Data] {
 
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
@@ -179,7 +180,7 @@ class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, regi
 
 object PaymentLifecycle {
 
-  def props(id: UUID, sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], id, sourceNodeId, router, register)
+  def props(id: UUID, sourceNodeId: PublicKey, router: ActorRef, register: ActorRef, paymentDb: PaymentsDb) = Props(classOf[PaymentLifecycle], id, sourceNodeId, router, register, paymentDb)
 
   // @formatter:off
   case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil, fallbackAddress: Option[String] = None)
