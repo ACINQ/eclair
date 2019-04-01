@@ -48,7 +48,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.receivedByPaymentHash(ByteVector32(hex"6e7e8018f05e169cf1d99e77dc22cb372d09f10b6a81f1eae410718c56cad187")) === None)
   }
 
-  test("add/retrieve sent payments") {
+  test("add/retrieve/update sent payments") {
 
     val db = new SqlitePaymentsDb(inmem)
 
@@ -64,6 +64,10 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.sentPaymentById(UUID.randomUUID()) === None)
     assert(db.sentPaymentByHash(s2.paymentHash) === Some(s2))
     assert(db.sentPaymentByHash(ByteVector32.Zeroes) === None)
+
+    val s3 = s2.copy(amountMsat = 88776655)
+    db.addSentPayments(s3)
+    assert(db.sentPaymentById(s2.id).exists(_.amountMsat == s3.amountMsat))
   }
 
 }

@@ -69,7 +69,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def addSentPayments(sent: SentPayment): Unit = {
-    using(sqlite.prepareStatement("INSERT INTO sent_payments VALUES (?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT OR REPLACE INTO sent_payments VALUES (?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, sent.id.toString.getBytes)
       statement.setBytes(2, sent.paymentHash.toArray)
       statement.setLong(3, sent.amountMsat)
