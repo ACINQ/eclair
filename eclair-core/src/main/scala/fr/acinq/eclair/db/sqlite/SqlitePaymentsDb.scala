@@ -21,21 +21,11 @@ import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
-import fr.acinq.eclair.db.{PaymentsDb, ReceivedPayment, SentPayment}
+import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentsDb, ReceivedPayment}
 import grizzled.slf4j.Logging
 
 import scala.collection.immutable.Queue
 
-/**
-  * Payments are stored in the `payments` table.
-  * The primary key in this DB is the `payment_hash` column. Columns are not nullable.
-  * <p>
-  * Types:
-  * <ul>
-  * <li>`payment_hash`: BLOB
-  * <li>`amount_msat`: INTEGER
-  * <li>`timestamp`: INTEGER (unix timestamp)
-  */
 class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   import SqliteUtils.ExtendedResultSet._
@@ -49,10 +39,10 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       case PREVIOUS_VERSION =>
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("ALTER TABLE payments RENAME TO received_payments")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL, status VARCHAR NOT NULL)")
       case CURRENT_VERSION =>
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL, status VARCHAR NOT NULL)")
       case unknownVersion =>
         throw new RuntimeException(s"Unknown version of paymentsDB found, version=$unknownVersion")
     }
@@ -68,12 +58,13 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def addSentPayments(sent: SentPayment): Unit = {
-    using(sqlite.prepareStatement("INSERT OR REPLACE INTO sent_payments VALUES (?, ?, ?, ?)")) { statement =>
+  override def addSentPayments(sent: OutgoingPayment): Unit = {
+    using(sqlite.prepareStatement("INSERT OR REPLACE INTO sent_payments VALUES (?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, sent.id.toString.getBytes)
       statement.setBytes(2, sent.paymentHash.toArray)
       statement.setLong(3, sent.amountMsat)
       statement.setLong(4, sent.timestamp)
+      statement.setString(5, sent.status.toString)
       val res = statement.executeUpdate()
       logger.debug(s"inserted $res payment=${sent.paymentHash} into payment DB")
     }
@@ -91,25 +82,34 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def sentPaymentById(id: UUID): Option[SentPayment] = {
-    using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, timestamp FROM sent_payments WHERE id = ?")) { statement =>
+  override def sentPaymentById(id: UUID): Option[OutgoingPayment] = {
+    using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, timestamp, status FROM sent_payments WHERE id = ?")) { statement =>
       statement.setBytes(1, id.toString.getBytes)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Some(SentPayment(UUID.fromString(new String(rs.getBytes("id"))), rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp")))
+        Some(OutgoingPayment(
+          UUID.fromString(new String(rs.getBytes("id"))),
+          rs.getByteVector32("payment_hash"),
+          rs.getLong("amount_msat"),
+          rs.getLong("timestamp"),
+          OutgoingPaymentStatus.withName(rs.getString("status"))))
       } else {
         None
       }
     }
   }
 
-  override def sentPaymentByHash(paymentHash: ByteVector32): Option[SentPayment] = {
-    using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, timestamp FROM sent_payments WHERE payment_hash = ?")) { statement =>
+  override def sentPaymentByHash(paymentHash: ByteVector32): Option[OutgoingPayment] = {
+    using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, timestamp, status FROM sent_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Some(SentPayment(UUID.fromString(new String(rs.getBytes("id"))), rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp")))
-      } else {
+        Some(OutgoingPayment(
+          UUID.fromString(new String(rs.getBytes("id"))),
+          rs.getByteVector32("payment_hash"),
+          rs.getLong("amount_msat"),
+          rs.getLong("timestamp"),
+          OutgoingPaymentStatus.withName(rs.getString("status"))))      } else {
         None
       }
     }
@@ -126,12 +126,17 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listSent(): Seq[SentPayment] = {
+  override def listSent(): Seq[OutgoingPayment] = {
     using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT id, payment_hash, amount_msat, timestamp FROM sent_payments")
-      var q: Queue[SentPayment] = Queue()
+      val rs = statement.executeQuery("SELECT id, payment_hash, amount_msat, timestamp, status FROM sent_payments")
+      var q: Queue[OutgoingPayment] = Queue()
       while (rs.next()) {
-        q = q :+ SentPayment(UUID.fromString(new String(rs.getBytes("id"))), rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp"))
+        q = q :+ OutgoingPayment(
+          UUID.fromString(new String(rs.getBytes("id"))),
+          rs.getByteVector32("payment_hash"),
+          rs.getLong("amount_msat"),
+          rs.getLong("timestamp"),
+          OutgoingPaymentStatus.withName(rs.getString("status")))
       }
       q
     }

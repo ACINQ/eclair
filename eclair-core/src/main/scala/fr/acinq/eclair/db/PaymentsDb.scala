@@ -29,7 +29,7 @@ import fr.acinq.bitcoin.ByteVector32
   * <p>
   *
   * <p>
-  * A sent payment is a [[SentPayment]] object.
+  * A sent payment is a [[OutgoingPayment]] object.
   * <p>
   * Basic operations on this DB are:
   * <ul>
@@ -42,17 +42,17 @@ trait PaymentsDb {
 
   def addReceivedPayment(payment: ReceivedPayment)
 
-  def addSentPayments(sent: SentPayment)
+  def addSentPayments(sent: OutgoingPayment)
 
   def receivedByPaymentHash(paymentHash: ByteVector32): Option[ReceivedPayment]
 
-  def sentPaymentById(id: UUID): Option[SentPayment]
+  def sentPaymentById(id: UUID): Option[OutgoingPayment]
 
-  def sentPaymentByHash(paymentHash: ByteVector32): Option[SentPayment]
+  def sentPaymentByHash(paymentHash: ByteVector32): Option[OutgoingPayment]
 
   def listReceived(): Seq[ReceivedPayment]
 
-  def listSent(): Seq[SentPayment]
+  def listSent(): Seq[OutgoingPayment]
 
 }
 
@@ -66,11 +66,18 @@ trait PaymentsDb {
 case class ReceivedPayment(paymentHash: ByteVector32, amountMsat: Long, timestamp: Long)
 
 /**
-  * Sent payment object stored in DB.
+  * Outgoing payment is every payment that is sent by this node, they may not be finalized and
+  * when is final it can be failed or successful.
   *
   * @param id           internal payment identifier
   * @param payment_hash payment_hash
   * @param amount_msat  amount of the payment, in milli-satoshis
   * @param timestamp    absolute time in seconds since UNIX epoch when the payment was created.
   */
-case class SentPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, timestamp: Long)
+case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, timestamp: Long, status: OutgoingPaymentStatus.Value)
+
+object OutgoingPaymentStatus extends Enumeration {
+  val PENDING = Value(1, "PENDING")
+  val SUCCEEDED = Value(2, "SUCCEEDED")
+  val FAILED = Value(3, "FAILED")
+}

@@ -52,8 +52,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val db = new SqlitePaymentsDb(inmem)
 
-    val s1 = SentPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928275L)
-    val s2 = SentPayment(UUID.randomUUID(), ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 54321, 1513871928275L)
+    val s1 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928275L, OutgoingPaymentStatus.PENDING)
+    val s2 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 54321, 1513871928275L, OutgoingPaymentStatus.PENDING)
 
     assert(db.listSent().isEmpty)
     db.addSentPayments(s1)
@@ -65,9 +65,9 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.sentPaymentByHash(s2.paymentHash) === Some(s2))
     assert(db.sentPaymentByHash(ByteVector32.Zeroes) === None)
 
-    val s3 = s2.copy(amountMsat = 88776655)
+    val s3 = s2.copy(amountMsat = 88776655, status = OutgoingPaymentStatus.SUCCEEDED)
     db.addSentPayments(s3)
-    assert(db.sentPaymentById(s2.id).exists(_.amountMsat == s3.amountMsat))
+    assert(db.sentPaymentById(s2.id).exists(el => el.amountMsat == s3.amountMsat && el.status == OutgoingPaymentStatus.SUCCEEDED))
   }
 
 }
