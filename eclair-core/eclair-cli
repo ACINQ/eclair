@@ -79,7 +79,7 @@ for arg in "${@}"; do
   case ${arg} in
     "--"*)  api_payload="$api_payload --data-urlencode \"${arg:2}\"";
             ;;
-    *)      echo "incorrect argument $arg"; exit 1;
+    *)      echo "incorrect argument, please use --arg=value"; usage;
             ;;
   esac
 done;
