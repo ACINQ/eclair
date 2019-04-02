@@ -4,7 +4,7 @@ services:
 dist: trusty
 language: scala
 scala:
- - 2.11.11
+ - 2.11.12
 env:
  - export LD_LIBRARY_PATH=/usr/local/lib
 before_install:

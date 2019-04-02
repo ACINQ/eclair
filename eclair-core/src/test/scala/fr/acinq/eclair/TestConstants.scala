@@ -16,18 +16,18 @@
 
 package fr.acinq.eclair
 
-import java.sql.DriverManager
+import java.sql.{Connection, DriverManager}
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
-
 import scala.concurrent.duration._
 
 /**
@@ -38,11 +38,14 @@ object TestConstants {
   val pushMsat = 200000000L
   val feeratePerKw = 10000L
 
+  def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
+
+  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.databaseByConnections(connection, connection, connection)
+
+
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-
-    def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
 
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams = NodeParams(
@@ -66,12 +69,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      channelsDb = new SqliteChannelsDb(sqlite),
-      peersDb = new SqlitePeersDb(sqlite),
-      networkDb = new SqliteNetworkDb(sqlite),
-      pendingRelayDb = new SqlitePendingRelayDb(sqlite),
-      paymentsDb = new SqlitePaymentsDb(sqlite),
-      auditDb = new SqliteAuditDb(sqlite),
+      db = inMemoryDb(sqliteInMemory),
       revocationTimeout = 20 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
@@ -114,8 +112,6 @@ object TestConstants {
     val seed = ByteVector32(ByteVector.fill(32)(2))
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
-    def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
-
     def nodeParams = NodeParams(
       keyManager = keyManager,
       alias = "bob",
@@ -137,12 +133,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      channelsDb = new SqliteChannelsDb(sqlite),
-      peersDb = new SqlitePeersDb(sqlite),
-      networkDb = new SqliteNetworkDb(sqlite),
-      pendingRelayDb = new SqlitePendingRelayDb(sqlite),
-      paymentsDb = new SqlitePaymentsDb(sqlite),
-      auditDb = new SqliteAuditDb(sqlite),
+      db = inMemoryDb(sqliteInMemory),
       revocationTimeout = 20 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,

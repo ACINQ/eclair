@@ -24,3 +24,16 @@ To only build the `eclair-node` module
 $ mvn install -pl eclair-node -am -DskipTests
 ```
 
+# Building the API documentation
+
+## Slate
+
+The API doc is generated via slate and hosted on github pages. To make a change and update the doc follow the steps:
+
+1.  git checkout slate-doc
+2.  Install your local dependencies for slate, more info [here](https://github.com/lord/slate#getting-started-with-slate)
+3.  Edit `source/index.html.md` and save your changes.
+4.  Commit all the changes to git, before deploying the repo should be clean.
+5.  Push your commit to remote.
+6.  Run `./deploy.sh`
+7.  Wait a few minutes and the doc should be updated at https://acinq.github.io/eclair

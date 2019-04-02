@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.Databases
 import fr.acinq.eclair.io.{Authenticator, NodeURI, Peer}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
@@ -40,7 +41,8 @@ import scala.concurrent.{Future, Promise}
   */
 class SyncLiteSetup(datadir: File,
                     overrideDefaults: Config = ConfigFactory.empty(),
-                    syncNodeURI: NodeURI)(implicit system: ActorSystem) extends Logging {
+                    syncNodeURI: NodeURI,
+                    db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
@@ -49,7 +51,11 @@ class SyncLiteSetup(datadir: File,
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val chain = config.getString("chain")
   val keyManager = new LocalKeyManager(PrivateKey(randomBytes(32), compressed = true).toBin, NodeParams.makeChainHash(chain))
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, torAddress_opt = None)
+  val database = db match {
+    case Some(d) => d
+    case None => Databases.sqliteJDBC(new File(datadir, chain))
+  }
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")

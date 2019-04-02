@@ -20,7 +20,7 @@
 
     <groupId>fr.acinq.eclair</groupId>
     <artifactId>eclair_2.11</artifactId>
-    <version>0.2-android-SNAPSHOT</version>
+    <version>0.3-android-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -215,6 +215,7 @@
                         <buildDirectory>${project.build.directory}</buildDirectory>
                     </systemProperties>
                     <argLine>-Xmx1024m</argLine>
+                    <argLine>-Dfile.encoding=UTF-8</argLine>
                 </configuration>
                 <executions>
                     <execution>

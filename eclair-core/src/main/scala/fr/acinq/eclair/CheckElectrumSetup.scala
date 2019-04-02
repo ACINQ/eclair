@@ -22,13 +22,14 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, ReceiveTimeout, SupervisorStrategy}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, Block}
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.ELECTRUM
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{SSL, computeScriptHash}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumClientPool}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.Databases
 import grizzled.slf4j.Logging
 
 import scala.concurrent.{ExecutionContext, Future, Promise}
@@ -40,7 +41,8 @@ import scala.concurrent.{ExecutionContext, Future, Promise}
   * @param overrideDefaults use this parameter to programmatically override the node configuration.
   */
 class CheckElectrumSetup(datadir: File,
-                         overrideDefaults: Config = ConfigFactory.empty())(implicit system: ActorSystem) extends Logging {
+                         overrideDefaults: Config = ConfigFactory.empty(),
+                         db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
@@ -51,7 +53,12 @@ class CheckElectrumSetup(datadir: File,
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val chain = config.getString("chain")
   val keyManager = new LocalKeyManager(PrivateKey(randomBytes(32), compressed = true).toBin, NodeParams.makeChainHash(chain))
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, torAddress_opt = None)
+  val database = db match {
+    case Some(d) => d
+    case None => Databases.sqliteJDBC(new File(datadir, chain))
+  }
+
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
@@ -63,7 +70,7 @@ class CheckElectrumSetup(datadir: File,
     *         false if at least one tx has been spent
     */
   def check: Future[WatchListener.WatchResult] = {
-    val channels = nodeParams.channelsDb.listChannels()
+    val channels = nodeParams.db.channels.listLocalChannels()
     if (channels.isEmpty) {
       Future.successful(WatchListener.Ok)
     } else {

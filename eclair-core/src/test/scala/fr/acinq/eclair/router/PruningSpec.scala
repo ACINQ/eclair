@@ -57,11 +57,11 @@ class PruningSpec extends TestkitBaseClass with BeforeAndAfterAll {
     val routingInfoA = fakeRoutingInfo
     routingInfoA.map {
       case (a, u1, u2, n1, n2) =>
-        paramsA.networkDb.addChannel(a, txid, Satoshi(100000))
-        paramsA.networkDb.addChannelUpdate(u1)
-        paramsA.networkDb.addChannelUpdate(u2)
-        paramsA.networkDb.addNode(n1)
-        paramsA.networkDb.addNode(n2)
+        paramsA.db.network.addChannel(a, txid, Satoshi(100000))
+        paramsA.db.network.addChannelUpdate(u1)
+        paramsA.db.network.addChannelUpdate(u2)
+        paramsA.db.network.addNode(n1)
+        paramsA.db.network.addNode(n2)
     }
     val probe = TestProbe()
     val switchboard = system.actorOf(Props(new Actor {

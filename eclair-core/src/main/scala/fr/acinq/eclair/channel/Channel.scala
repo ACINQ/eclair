@@ -83,7 +83,7 @@ object Channel {
 
 }
 
-class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
+class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
 
   import Channel._
   import nodeParams.keyManager
@@ -466,6 +466,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       wallet.rollback(d.fundingTx)
       replyToUser(Left(RemoteError(e)))
       handleRemoteError(e, d)
+
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
+      // we rollback the funding tx, it will never be published
+      wallet.rollback(d.fundingTx)
+      replyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      goto(CLOSED)
   })
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
@@ -645,7 +651,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
               trimmedHtlcs collect {
                 case DirectedHtlc(_, u) =>
                   log.info(s"adding paymentHash=${u.paymentHash} cltvExpiry=${u.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
-                  nodeParams.channelsDb.addOrUpdateHtlcInfo(d.channelId, nextCommitNumber, u.paymentHash, u.cltvExpiry)
+                  nodeParams.db.channels.addOrUpdateHtlcInfo(d.channelId, nextCommitNumber, u.paymentHash, u.cltvExpiry)
               }
               if (!Helpers.aboveReserve(d.commitments) && Helpers.aboveReserve(commitments1)) {
                 // we just went above reserve (can't go below), let's refresh our channel_update to enable/disable it accordingly
@@ -1300,7 +1306,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       stateData match {
         case d: HasCommitments =>
           log.info(s"deleting database record for channelId=${d.channelId}")
-          nodeParams.channelsDb.removeChannel(d.channelId)
+          nodeParams.db.channels.removeChannel(d.channelId)
         case _ => {}
       }
       log.info("shutting down")
@@ -1903,7 +1909,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
     log.warning(s"funding tx spent in txid=${tx.txid}")
 
-    Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.channelsDb) match {
+    Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.db.channels) match {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
         val exc = FundingTxSpent(d.channelId, tx)
@@ -2061,7 +2067,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   def store[T](d: T)(implicit tp: T <:< HasCommitments): T = {
     log.debug(s"updating database record for channelId={}", d.channelId)
-    nodeParams.channelsDb.addOrUpdateChannel(d)
+    nodeParams.db.channels.addOrUpdateChannel(d)
     context.system.eventStream.publish(ChannelPersisted(self, remoteNodeId, d.channelId, d))
     d
   }

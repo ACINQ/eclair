@@ -35,7 +35,8 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
-import fr.acinq.eclair.io.{Authenticator, Switchboard}
+import fr.acinq.eclair.db.Databases
+import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
@@ -55,18 +56,35 @@ import scala.concurrent.duration._
   */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
-            seed_opt: Option[ByteVector] = None)(implicit system: ActorSystem) extends Logging {
+            seed_opt: Option[ByteVector] = None,
+            db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   logger.info(s"datadir=${datadir.getCanonicalPath}")
 
 
+  datadir.mkdirs()
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, torAddress_opt = None)
+
+  val database = db match {
+    case Some(d) => d
+    case None => Databases.sqliteJDBC(new File(datadir, chain))
+  }
+
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database)
+
+  val serverBindingAddress = new InetSocketAddress(
+    config.getString("server.binding-ip"),
+    config.getInt("server.port"))
+
+  // early checks
+  DBCompatChecker.checkDBCompatibility(nodeParams)
+  DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
+  PortChecker.checkAvailable(serverBindingAddress)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")

@@ -27,6 +27,7 @@ import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, MilliSatoshi, Protoc
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.secureRandom
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
@@ -96,7 +97,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val address_opt = if (outgoing) {
         // we store the node address upon successful outgoing connection, so we can reconnect later
         // any previous address is overwritten
-        NodeAddress.fromParts(address.getHostString, address.getPort).map(nodeAddress => nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, nodeAddress))
+        NodeAddress.fromParts(address.getHostString, address.getPort).map(nodeAddress => nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, nodeAddress))
         Some(address)
       } else None
 
@@ -156,7 +157,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
         // let's bring existing/requested channels online
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport, d.localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }) forMax (30 seconds) // forMax will trigger a StateTimeout
+        // we will delay all rebroadcasts with this value in order to prevent herd effects (each peer has a different delay)
+        val rebroadcastDelay = Random.nextInt(nodeParams.routerConf.routerBroadcastInterval.toSeconds.toInt).seconds
+        log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
+        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }, rebroadcastDelay) forMax (30 seconds) // forMax will trigger a StateTimeout
       } else {
         log.warning(s"incompatible features, disconnecting")
         d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
@@ -246,7 +250,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           log.debug(s"received pong with latency=$latency")
           cancelTimer(PingTimeout.toString())
           // pings are sent periodically with some randomization
-          val nextDelay = nodeParams.pingInterval + secureRandom.nextInt(10).seconds
+          val nextDelay = nodeParams.pingInterval + Random.nextInt(10).seconds
           setTimer(SendPing.toString, SendPing, nextDelay, repeat = false)
         case None =>
           log.debug(s"received unexpected pong with size=${data.length}")
@@ -331,6 +335,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       stay
 
     case Event(rebroadcast: Rebroadcast, d: ConnectedData) =>
+      context.system.scheduler.scheduleOnce(d.rebroadcastDelay, self, DelayedRebroadcast(rebroadcast))(context.dispatcher)
+      stay
+
+    case Event(DelayedRebroadcast(rebroadcast), d: ConnectedData) =>
 
       /**
         * Send and count in a single iteration
@@ -467,6 +475,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       sender ! PeerInfo(remoteNodeId, stateName.toString, d.address_opt, d.channels.values.toSet.size) // we use toSet to dedup because a channel can have a TemporaryChannelId + a ChannelId
       stay
 
+    case Event(_: Rebroadcast, _) => stay // ignored
+
+    case Event(_: DelayedRebroadcast, _) => stay // ignored
+
+    case Event(_: RoutingState, _) => stay // ignored
+
     case Event(_: TransportHandler.ReadAck, _) => stay // ignored
 
     case Event(Peer.Reconnect, _) => stay // we got connected in the meantime
@@ -476,6 +490,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
 
     case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
+
+    case Event(_: BadMessage, _) => stay // we got disconnected while syncing
   }
 
   onTransition {
@@ -499,7 +515,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
   def stopPeer() = {
     log.info("removing peer from db")
-    nodeParams.peersDb.removePeer(remoteNodeId)
+    nodeParams.db.peers.removePeer(remoteNodeId)
     stop(FSM.Normal)
   }
 
@@ -540,7 +556,7 @@ object Peer {
   case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
   case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
   case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef], localInit: wire.Init) extends Data
-  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
+  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
   case class ExpectedPong(ping: Ping, timestamp: Long = Platform.currentTime)
   case class PingTimeout(ping: Ping)
 
@@ -567,6 +583,8 @@ object Peer {
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 
   case class PeerRoutingMessage(transport: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage)
+
+  case class DelayedRebroadcast(rebroadcast: Rebroadcast)
 
   sealed trait BadMessage
   case class InvalidSignature(r: RoutingMessage) extends BadMessage
