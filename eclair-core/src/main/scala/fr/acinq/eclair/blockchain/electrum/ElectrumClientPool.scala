@@ -88,15 +88,18 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
       stay
 
     case Event(Terminated(actor), d: ConnectedData) =>
-      log.info("lost connection to {}", addresses(actor))
+      val address = addresses(actor)
       addresses -= actor
       context.system.scheduler.scheduleOnce(5 seconds, self, Connect)
       val tips1 = d.tips - actor
       if (tips1.isEmpty) {
+        log.info("lost connection to {}, no active connections left", address)
         goto(Disconnected) using DisconnectedData // no more connections
       } else if (d.master != actor) {
+        log.info("lost connection to {}, we still have our master server", address)
         stay using d.copy(tips = tips1) // we don't care, this wasn't our master
       } else {
+        log.info("lost connection to our master server {}", address)
         // we choose next best candidate as master
         val tips1 = d.tips - actor
         val (bestClient, bestTip) = tips1.toSeq.maxBy(_._2._1)
