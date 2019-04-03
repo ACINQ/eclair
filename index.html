@@ -1307,7 +1307,8 @@ eclair-cli checkpayment --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 </blockquote>
 <pre class="highlight plaintext"><code>true
 </code></pre>
-<p>Check whether the given <em>payment_hash</em> has been paid.</p>
+<p>Check whether the given <em>payment_hash</em> has been paid, it is possible to use a BOLT11 invoice
+as parameter instead of the <em>payment_hash</em> but at least one of the two must be specified.</p>
 <h3 id='http-request-15'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/checkpayment</code></p>
 <h3 id='parameters-13'>Parameters</h3>
@@ -1324,6 +1325,12 @@ eclair-cli checkpayment --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 <td>The payment hash you want to check</td>
 <td>No</td>
 <td>32bytes-HexString (String)</td>
+</tr>
+<tr>
+<td>invoice</td>
+<td>The invoice containing the payment hash</td>
+<td>Yes</td>
+<td>String</td>
 </tr>
 </tbody></table>
 <h2 id='parseinvoice'>parseinvoice</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/parseinvoice"</span>
