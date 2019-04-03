@@ -137,8 +137,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[PaymentResult] = {
     val sendPayment = minFinalCltvExpiry match {
-      case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv)
-      case None  => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes)
+      case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv, maxAttempts = appKit.nodeParams.maxPaymentAttempts)
+      case None  => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, maxAttempts = appKit.nodeParams.maxPaymentAttempts)
     }
     (appKit.paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
       case s: PaymentSucceeded => s

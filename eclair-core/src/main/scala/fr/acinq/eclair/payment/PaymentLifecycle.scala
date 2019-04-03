@@ -181,15 +181,12 @@ object PaymentLifecycle {
 
   // @formatter:off
   case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil)
-  /**
-    * @param maxFeePct set by default to 3% as a safety measure (even if a route is found, if fee is higher than that payment won't be attempted)
-    */
   case class SendPayment(amountMsat: Long,
                          paymentHash: ByteVector32,
                          targetNodeId: PublicKey,
                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                          finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
-                         maxAttempts: Int = 5,
+                         maxAttempts: Int,
                          routeParams: Option[RouteParams] = None) {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
