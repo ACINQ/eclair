@@ -1,3 +1,19 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.api
 
 import akka.http.scaladsl.server._
@@ -15,9 +31,13 @@ import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.server.directives.{Credentials, LoggingMagnet}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
+import fr.acinq.eclair.api.JsonSupport.CustomTypeHints
 import fr.acinq.eclair.io.NodeURI
-import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentRequest}
+import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
+import fr.acinq.eclair.payment._
 import grizzled.slf4j.Logging
+import org.json4s.{ShortTypeHints, TypeHints}
+import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -31,6 +51,15 @@ trait Service extends Directives with Logging {
   import JsonSupport.marshaller
   import JsonSupport.formats
   import JsonSupport.serialization
+  // used to send typed messages over the websocket
+  val formatsWithTypeHint = formats.withTypeHintFieldName("type") +
+    CustomTypeHints(Map(
+      classOf[PaymentSent] -> "payment-sent",
+      classOf[PaymentRelayed] -> "payment-relayed",
+      classOf[PaymentReceived] -> "payment-received",
+      classOf[PaymentSettlingOnChain] -> "payment-settling-onchain",
+      classOf[PaymentFailed] -> "payment-failed"
+    ))
 
   def password: String
 
@@ -65,13 +94,19 @@ trait Service extends Directives with Logging {
     // create a flow transforming a queue of string -> string
     val (flowInput, flowOutput) = Source.queue[String](10, OverflowStrategy.dropTail).toMat(BroadcastHub.sink[String])(Keep.both).run()
 
-    // register an actor that feeds the queue when a payment is received
+    // register an actor that feeds the queue on payment related events
     actorSystem.actorOf(Props(new Actor {
-      override def preStart: Unit = context.system.eventStream.subscribe(self, classOf[PaymentReceived])
+
+      override def preStart: Unit = {
+        context.system.eventStream.subscribe(self, classOf[PaymentFailed])
+        context.system.eventStream.subscribe(self, classOf[PaymentEvent])
+      }
 
       def receive: Receive = {
-        case received: PaymentReceived => flowInput.offer(received.paymentHash.toString)
+        case message: PaymentFailed => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
+        case message: PaymentEvent => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
       }
+
     }))
 
     Flow[Message]
