@@ -335,7 +335,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 }
 
 object ElectrumClient {
-  val CLIENT_NAME = "3.3.2" // client name that we will include in our "version" message
+  val CLIENT_NAME = "3.3.4" // client name that we will include in our "version" message
   val PROTOCOL_VERSION = "1.4" // version of the protocol that we require
 
   // this is expensive and shared with all clients
