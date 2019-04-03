@@ -1143,6 +1143,7 @@ statistics about the routing activity of the channels.
 ## ws
 
 > Payment relayed event
+
 ```json
 {
    "type":"payment-relayed",
@@ -1156,6 +1157,7 @@ statistics about the routing activity of the channels.
 ```
 
 > Payment received event
+
 ```json
 {
    "type":"payment-received",
@@ -1167,6 +1169,7 @@ statistics about the routing activity of the channels.
 ```
 
 > Payment failed event
+
 ```json
 {
    "type":"payment-failed",
@@ -1176,6 +1179,7 @@ statistics about the routing activity of the channels.
 ```
 
 > Payment sent event
+
 ```json
 {
    "type":"payment-sent",
@@ -1189,6 +1193,7 @@ statistics about the routing activity of the channels.
 ```
 
 > Payment settling on-chain event
+
 ```json
 {
    "type":"payment-settling-onchain",
