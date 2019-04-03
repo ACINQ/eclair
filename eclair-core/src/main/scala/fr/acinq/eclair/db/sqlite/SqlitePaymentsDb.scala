@@ -20,7 +20,7 @@ import java.sql.Connection
 import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
+import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentsDb, ReceivedPayment}
 import grizzled.slf4j.Logging
 
@@ -38,9 +38,11 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   using(sqlite.createStatement()) { statement =>
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
       case PREVIOUS_VERSION =>
+        logger.warn(s"Performing db migration for paymentsDB, found version=$PREVIOUS_VERSION current=$CURRENT_VERSION")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("ALTER TABLE payments RENAME TO received_payments")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, updated_at INTEGER NOT NULL, status VARCHAR NOT NULL)")
+        setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, updated_at INTEGER NOT NULL, status VARCHAR NOT NULL)")
