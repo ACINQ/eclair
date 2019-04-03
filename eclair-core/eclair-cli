@@ -35,7 +35,6 @@ and COMMAND is one of:
 
 Examples
 --------
-  eclair-cli help                           display available commands
   eclair-cli -a localhost:1234 peers        list the peers of a node hosted on localhost:1234
   eclair-cli close --channelId=006fb...     closes the channel with id 006fb...
 
