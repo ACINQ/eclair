@@ -903,7 +903,8 @@ eclair-cli checkpayment --paymentHash=<some_hash>
 true
 ```
 
-Check whether the given _payment_hash_ has been paid.
+Check whether the given _payment_hash_ has been paid, it is possible to use a BOLT11 invoice
+as parameter instead of the _payment_hash_ but at least one of the two must be specified.
 
 ### HTTP Request
 
@@ -914,6 +915,7 @@ Check whether the given _payment_hash_ has been paid.
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
 paymentHash | The payment hash you want to check | No | 32bytes-HexString (String)
+invoice | The invoice containing the payment hash | Yes | String
 
 ## parseinvoice
 
