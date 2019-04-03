@@ -1574,7 +1574,94 @@ statistics about the routing activity of the channels.</p>
 <h3 id='http-request-21'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/channelstats</code></p>
 <h1 id='websocket'>Websocket</h1><h2 id='ws'>ws</h2>
-<p>This is a simple <a href="https://tools.ietf.org/html/rfc6455">websocket</a> that will output the <em>payment_hash</em> of incoming payments as soon as they are received.</p>
+<blockquote>
+<p>Payment relayed event
+<code>json
+{
+   &quot;type&quot;:&quot;payment-relayed&quot;,
+   &quot;amountIn&quot;:21,
+   &quot;amountOut&quot;:20,
+   &quot;paymentHash&quot;:&quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
+   &quot;fromChannelId&quot;:&quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
+   &quot;toChannelId&quot;:&quot;0100000000000000000000000000000000000000000000000000000000000000&quot;,
+   &quot;timestamp&quot;:1553784963659
+}
+</code></p>
+
+<p>Payment received event
+<code>json
+{
+   &quot;type&quot;:&quot;payment-received&quot;,
+   &quot;amount&quot;:21,
+   &quot;paymentHash&quot;:&quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
+   &quot;fromChannelId&quot;:&quot;0100000000000000000000000000000000000000000000000000000000000000&quot;,
+   &quot;timestamp&quot;:1553784963659
+}
+</code></p>
+
+<p>Payment failed event
+<code>json
+{
+   &quot;type&quot;:&quot;payment-failed&quot;,
+   &quot;paymentHash&quot;:&quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
+   &quot;failures&quot;:[ ]
+}
+</code></p>
+
+<p>Payment sent event
+<code>json
+{
+   &quot;type&quot;:&quot;payment-sent&quot;,
+   &quot;amount&quot;:21,
+   &quot;feesPaid&quot;:1,
+   &quot;paymentHash&quot;:&quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
+   &quot;paymentPreimage&quot;:&quot;0100000000000000000000000000000000000000000000000000000000000000&quot;,
+   &quot;toChannelId&quot;:&quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
+   &quot;timestamp&quot;:1553784337711
+}
+</code></p>
+
+<p>Payment settling on-chain event
+<code>json
+{
+   &quot;type&quot;:&quot;payment-settling-onchain&quot;,
+   &quot;amount&quot;:21,
+   &quot;paymentHash&quot;:&quot;0100000000000000000000000000000000000000000000000000000000000000&quot;,
+   &quot;timestamp&quot;:1553785442676
+}
+</code></p>
+</blockquote>
+
+<p>This is a simple <a href="https://tools.ietf.org/html/rfc6455">websocket</a> that will output payment related events, it supports
+several types covering all the possible outcomes.</p>
+<h3 id='response-types'>Response types</h3>
+<table><thead>
+<tr>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>payment-received</td>
+<td>A payment has been received</td>
+</tr>
+<tr>
+<td>payment-relayed</td>
+<td>A payment has been successfully relayed</td>
+</tr>
+<tr>
+<td>payment-sent</td>
+<td>A payment has been successfully sent</td>
+</tr>
+<tr>
+<td>payment-settling-onchain</td>
+<td>A payment wasn&#39;t fulfilled and its HTLC is being redeemed on-chain</td>
+</tr>
+<tr>
+<td>payment-failed</td>
+<td>A payment failed</td>
+</tr>
+</tbody></table>
 <h3 id='http-request-22'>HTTP Request</h3>
 <p><code>POST ws://localhost:8080/ws</code></p>
 <h1 id='errors'>Errors</h1>
