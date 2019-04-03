@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.payment.{CommandBuffer, ForwardAdd, ForwardFulfill, Local}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass, randomBytes32}
@@ -230,6 +230,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[LocalCommitConfirmed])
+    system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
     // alice sends an htlc to bob
     val (ra1, htlca1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
@@ -251,6 +252,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // actual test starts here
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 42, 0)
     assert(listener.expectMsgType[LocalCommitConfirmed].refundAtBlock == 42 + TestConstants.Bob.channelParams.toSelfDelay)
+    assert(listener.expectMsgType[PaymentSettlingOnChain].paymentHash == htlca1.paymentHash)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainDelayedTx), 200, 0)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(htlcTimeoutTx), 201, 0)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimDelayedTx), 202, 0)
@@ -260,6 +262,8 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BITCOIN_TX_CONFIRMED (local commit with htlcs only signed by local)") { f =>
     import f._
     val sender = TestProbe()
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     // alice sends an htlc
     val (r, htlc) = addHtlc(4200000, alice, bob, alice2bob, bob2alice)
@@ -282,11 +286,15 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
     relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverridenByLocalCommit(aliceData.channelId), origin, None, None)))
+    // the htlc will not settle on chain
+    listener.expectNoMsg(2 seconds)
   }
 
   test("recv BITCOIN_TX_CONFIRMED (remote commit with htlcs only signed by local in next remote commit)") { f =>
     import f._
     val sender = TestProbe()
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     // alice sends an htlc
     val (r, htlc) = addHtlc(4200000, alice, bob, alice2bob, bob2alice)
@@ -307,6 +315,8 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
     relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverridenByLocalCommit(aliceData.channelId), origin, None, None)))
+    // the htlc will not settle on chain
+    listener.expectNoMsg(2 seconds)
   }
 
   test("recv BITCOIN_FUNDING_SPENT (remote commit)") { f =>

@@ -1,25 +1,26 @@
 package fr.acinq.eclair
 
 import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.api.{AuditResponse, GetInfoResponse}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{NetworkFee, OutgoingPayment, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
-import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentRequest}
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import scodec.bits.ByteVector
-
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentRelayed, PaymentRequest, PaymentSent}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
+
+case class GetInfoResponse(nodeId: PublicKey, alias: String, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
+
+case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 
 trait Eclair {
 
@@ -153,12 +154,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = {
-    val (from, to) = (from_opt, to_opt) match {
-      case (Some(f), Some(t)) => (f, t)
-      case (None, Some(t)) => (0L, t)
-      case (Some(f), None) => (f, Long.MaxValue)
-      case _ => (0L, Long.MaxValue)
-    }
+    val from = from_opt.getOrElse(0L)
+    val to = to_opt.getOrElse(Long.MaxValue)
 
     Future(AuditResponse(
       sent = appKit.nodeParams.db.audit.listSent(from, to),
@@ -168,12 +165,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def networkFees(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[NetworkFee]] = {
-    val (from, to) = (from_opt, to_opt) match {
-      case (Some(f), Some(t)) => (f, t)
-      case (None, Some(t)) => (0L, t)
-      case (Some(f), None) => (f, Long.MaxValue)
-      case _ => (0L, Long.MaxValue)
-    }
+    val from = from_opt.getOrElse(0L)
+    val to = to_opt.getOrElse(Long.MaxValue)
 
     Future(appKit.nodeParams.db.audit.listNetworkFees(from, to))
   }

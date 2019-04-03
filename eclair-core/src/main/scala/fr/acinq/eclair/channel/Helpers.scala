@@ -263,9 +263,9 @@ object Helpers {
       *
       * @param now          current timet
       * @param waitingSince we have been waiting since that time
-      * @param delay    the nominal delay that we were supposed to wait
-      * @param minDelay the minimum delay even if the nominal one has expired
-      * @return  the delay we will actually wait
+      * @param delay        the nominal delay that we were supposed to wait
+      * @param minDelay     the minimum delay even if the nominal one has expired
+      * @return the delay we will actually wait
       */
     def computeFundingTimeout(now: Long, waitingSince: Long, delay: FiniteDuration, minDelay: FiniteDuration): FiniteDuration = {
       import scala.concurrent.duration._
@@ -804,15 +804,25 @@ object Helpers {
       }
 
     /**
+      * Tells if we were the origin of this outgoing htlc
+      *
+      * @param htlcId
+      * @param originChannels
+      * @return
+      */
+    def isSentByLocal(htlcId: Long, originChannels: Map[Long, Origin]) = originChannels.get(htlcId) match {
+      case Some(Local(_, _)) => true
+      case _ => false
+    }
+
+    /**
       * As soon as a local or remote commitment reaches min_depth, we know which htlcs will be settled on-chain (whether
       * or not they actually have an output in the commitment tx).
       *
       * @param localCommit
       * @param remoteCommit
       * @param nextRemoteCommit_opt
-      * @param tx
-      * @param eventStream
-      * @param log
+      * @param tx a transaction that is sufficiently buried in the blockchain
       */
     def onchainOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction): Set[UpdateAddHtlc] = {
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
