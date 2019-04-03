@@ -1,8 +1,9 @@
 package fr.acinq.eclair.router
 
-import java.io.PrintWriter
+import java.io._
 import java.nio.file.{Files, Paths}
 import java.sql.DriverManager
+import java.util.zip.{GZIPInputStream, GZIPOutputStream, ZipEntry, ZipOutputStream}
 
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
@@ -20,7 +21,6 @@ import scodec.bits.ByteVector
 import scala.util.{Failure, Random, Success}
 import scala.collection.immutable.TreeMap
 import scala.collection.mutable
-import scala.io.Source
 
 class FuzzyGraphSpec extends FunSuite {
 
@@ -34,9 +34,9 @@ class FuzzyGraphSpec extends FunSuite {
 
   val AMOUNT_TO_ROUTE = MilliSatoshi(1000000).toLong // 1000sat
 
-  lazy val initChannelUpdates = loadFromMockCsvFile("src/test/resources/mockNetwork.csv")
+  lazy val initChannelUpdates = loadFromMockGZIPCsvFile("src/test/resources/mockNetwork.csv.gz")
 
-//  writeToCsvFile("src/test/resources/mockNetwork.csv", initChannelUpdates)
+//  writeToCsvFile("src/test/resources/mockNetwork.csv.gz", initChannelUpdates)
 
   test("find 500 paths between random nodes in the graph") {
 
@@ -149,29 +149,6 @@ class FuzzyGraphSpec extends FunSuite {
     }
   }
 
-  def loadFromMockFile(location: String): Map[ChannelDesc, ChannelUpdate] = {
-    println(s"loading network data from '$location'")
-    val mockFile = Paths.get(location).toFile
-    val listOfUpdates = serialization.read[List[StrippedPublicChannel]](FileInput(mockFile))
-    println(s"loaded ${listOfUpdates.size} updates")
-
-    listOfUpdates.map { pc =>
-      ChannelDesc(ShortChannelId(pc.desc.shortChannelId), PublicKey(ByteVector.fromHex(pc.desc.a).get, checkValid = false), PublicKey(ByteVector.fromHex(pc.desc.b).get, checkValid = false)) -> ChannelUpdate(
-        signature = ByteVector32.Zeroes.bytes,
-        chainHash = ByteVector32.Zeroes,
-        shortChannelId = ShortChannelId(pc.update.shortChannelId),
-        timestamp = 0,
-        messageFlags = pc.update.messageFlags.toByte,
-        channelFlags = pc.update.channelFlags.toByte,
-        cltvExpiryDelta = pc.update.cltvExpiryDelta,
-        htlcMinimumMsat = pc.update.htlcMinimumMsat,
-        htlcMaximumMsat = pc.update.htlcMaximumMsat,
-        feeBaseMsat = pc.update.feeBaseMsat,
-        feeProportionalMillionths = pc.update.feeProportionalMillionths
-      )
-    }.toMap
-  }
-
   def loadFromDB(location: String, maxNodes: Int): Map[ChannelDesc, ChannelUpdate] = {
     val networkDbFile = Paths.get(location).toFile
     val dbConnection = DriverManager.getConnection(s"jdbc:sqlite:$networkDbFile")
@@ -202,30 +179,21 @@ class FuzzyGraphSpec extends FunSuite {
     updatesFiltered
   }
 
-  def writeToJsonFile(location: String, updates: Map[ChannelDesc, ChannelUpdate]) = {
-
-    val mockFile = Paths.get(location).toFile
-    if (!mockFile.exists()) mockFile.createNewFile()
-
-    println(s"Writing to $location '${updates.size}' updates")
-    val strippedUpdates = updates.map { case (desc, update) =>
-      StrippedPublicChannel(StrippedDesc(desc), StrippedChannelUpdate(update))
-    }
-    val jsonUpdates = serialization.writePretty(strippedUpdates)
-    Files.write(mockFile.toPath, jsonUpdates.getBytes)
-  }
+  /**
+    * Utils to read/write the mock network db, uses a custom encoding that strips signatures
+    * and writes a csv formatted output to a zip compressed file.
+    */
 
   def writeToCsvFile(location: String, updates: Map[ChannelDesc, ChannelUpdate]) = {
 
     val mockFile = Paths.get(location).toFile
     if (!mockFile.exists()) mockFile.createNewFile()
 
-    val writer = new PrintWriter(mockFile)
+    val out = new GZIPOutputStream(new FileOutputStream(mockFile)) // GZIPOutputStream is already buffered
 
     println(s"Writing to $location '${updates.size}' updates")
-
-    val header = "shortChannelId, a, b, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat"
-    writer.println(header)
+    val header = "shortChannelId, a, b, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat \n"
+    out.write(header.getBytes)
 
     updates.foreach { case (desc, update) =>
       val row = desc.shortChannelId + "," +
@@ -237,19 +205,19 @@ class FuzzyGraphSpec extends FunSuite {
         update.htlcMinimumMsat + "," +
         update.feeBaseMsat + "," +
         update.feeProportionalMillionths + "," +
-        update.htlcMaximumMsat.getOrElse(-1)
+        update.htlcMaximumMsat.getOrElse(-1) + "\n"
 
-      writer.println(row)
+      out.write(row.getBytes)
     }
-
-    writer.flush()
-    writer.close()
+    out.close()
   }
 
-  def loadFromMockCsvFile(location: String): Map[ChannelDesc, ChannelUpdate] = {
-    println(s"loading network data from '$location'")
+  def loadFromMockGZIPCsvFile(location: String): Map[ChannelDesc, ChannelUpdate] = {
     val mockFile = Paths.get(location).toFile
-    Source.fromFile(mockFile).getLines().drop(1).map { row =>
+    val in = new GZIPInputStream(new FileInputStream(mockFile))
+    val lines = new String(in.readAllBytes()).split("\n")
+    println(s"loading ${lines.size} updates from '$location'")
+    lines.drop(1).map { row =>
       val Array(shortChannelId, a, b, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat) = row.split(",")
       val desc = ChannelDesc(ShortChannelId(shortChannelId), PublicKey(ByteVector.fromValidHex(a)), PublicKey(ByteVector.fromValidHex(b)))
       val update = ChannelUpdate(
@@ -257,13 +225,13 @@ class FuzzyGraphSpec extends FunSuite {
         ByteVector32.Zeroes,
         ShortChannelId(shortChannelId),
         0,
-        Integer.valueOf(messageFlags).toByte,
-        Integer.valueOf(channelFlags).toByte,
-        Integer.valueOf(cltvExpiryDelta).intValue(),
-        Integer.valueOf(htlcMinimumMsat).longValue(),
-        Integer.valueOf(feeBaseMsat).longValue(),
-        Integer.valueOf(feeProportionalMillionths).longValue(),
-        Integer.valueOf(htlcMaximumMsat).longValue() match {
+        messageFlags.trim.toByte,
+        channelFlags.trim.toByte,
+        cltvExpiryDelta.trim.toInt,
+        htlcMinimumMsat.trim.toLong,
+        feeBaseMsat.trim.toLong,
+        feeProportionalMillionths.trim.toLong,
+        htlcMaximumMsat.trim.toLong match {
           case -1 => None
           case other => Some(other)
         }
@@ -273,19 +241,4 @@ class FuzzyGraphSpec extends FunSuite {
     }.toMap
   }
 
-}
-
-case class StrippedPublicChannel(desc: StrippedDesc, update: StrippedChannelUpdate)
-
-case class StrippedDesc(shortChannelId: String, a: String, b: String)
-
-case class StrippedChannelUpdate(shortChannelId: String, messageFlags: Int, channelFlags: Int, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Option[Long])
-
-object StrippedDesc {
-  def apply(d: ChannelDesc): StrippedDesc = new StrippedDesc(d.shortChannelId.toString, d.a.toString(), d.b.toString())
-}
-
-object StrippedChannelUpdate {
-  def apply(u: ChannelUpdate): StrippedChannelUpdate = new StrippedChannelUpdate(
-    u.shortChannelId.toString, u.messageFlags, u.channelFlags, u.cltvExpiryDelta, u.htlcMinimumMsat, u.feeBaseMsat, u.feeProportionalMillionths, u.htlcMaximumMsat)
 }
