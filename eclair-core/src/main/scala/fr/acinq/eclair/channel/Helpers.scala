@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.payment.{Local, Origin}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -262,9 +263,9 @@ object Helpers {
       *
       * @param now          current timet
       * @param waitingSince we have been waiting since that time
-      * @param delay    the nominal delay that we were supposed to wait
-      * @param minDelay the minimum delay even if the nominal one has expired
-      * @return  the delay we will actually wait
+      * @param delay        the nominal delay that we were supposed to wait
+      * @param minDelay     the minimum delay even if the nominal one has expired
+      * @return the delay we will actually wait
       */
     def computeFundingTimeout(now: Long, waitingSince: Long, delay: FiniteDuration, minDelay: FiniteDuration): FiniteDuration = {
       import scala.concurrent.duration._
@@ -803,6 +804,39 @@ object Helpers {
       }
 
     /**
+      * Tells if we were the origin of this outgoing htlc
+      *
+      * @param htlcId
+      * @param originChannels
+      * @return
+      */
+    def isSentByLocal(htlcId: Long, originChannels: Map[Long, Origin]) = originChannels.get(htlcId) match {
+      case Some(Local(_)) => true
+      case _ => false
+    }
+
+    /**
+      * As soon as a local or remote commitment reaches min_depth, we know which htlcs will be settled on-chain (whether
+      * or not they actually have an output in the commitment tx).
+      *
+      * @param localCommit
+      * @param remoteCommit
+      * @param nextRemoteCommit_opt
+      * @param tx a transaction that is sufficiently buried in the blockchain
+      */
+    def onchainOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction): Set[UpdateAddHtlc] = {
+      if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
+        localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
+      } else if (remoteCommit.txid == tx.txid) {
+        remoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add)
+      } else if (nextRemoteCommit_opt.map(_.txid) == Some(tx.txid)) {
+        nextRemoteCommit_opt.get.spec.htlcs.filter(_.direction == IN).map(_.add)
+      } else {
+        Set.empty
+      }
+    }
+
+    /**
       * If a local commitment tx reaches min_depth, we need to fail the outgoing htlcs that only us had signed, because
       * they will never reach the blockchain.
       *
@@ -814,7 +848,7 @@ object Helpers {
       * @param log
       * @return
       */
-    def overriddenHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
+    def overriddenOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
         // our commit got confirmed, so any htlc that we signed but they didn't sign will never reach the chain
         val mostRecentRemoteCommit = nextRemoteCommit_opt.getOrElse(remoteCommit)
