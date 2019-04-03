@@ -1142,7 +1142,76 @@ statistics about the routing activity of the channels.
 
 ## ws
 
-This is a simple [websocket](https://tools.ietf.org/html/rfc6455) that will output the _payment_hash_ of incoming payments as soon as they are received.
+> Payment relayed event
+```json
+{
+   "type":"payment-relayed",
+   "amountIn":21,
+   "amountOut":20,
+   "paymentHash":"0000000000000000000000000000000000000000000000000000000000000000",
+   "fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000",
+   "toChannelId":"0100000000000000000000000000000000000000000000000000000000000000",
+   "timestamp":1553784963659
+}
+```
+
+> Payment received event
+```json
+{
+   "type":"payment-received",
+   "amount":21,
+   "paymentHash":"0000000000000000000000000000000000000000000000000000000000000000",
+   "fromChannelId":"0100000000000000000000000000000000000000000000000000000000000000",
+   "timestamp":1553784963659
+}
+```
+
+> Payment failed event
+```json
+{
+   "type":"payment-failed",
+   "paymentHash":"0000000000000000000000000000000000000000000000000000000000000000",
+   "failures":[ ]
+}
+```
+
+> Payment sent event
+```json
+{
+   "type":"payment-sent",
+   "amount":21,
+   "feesPaid":1,
+   "paymentHash":"0000000000000000000000000000000000000000000000000000000000000000",
+   "paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000",
+   "toChannelId":"0000000000000000000000000000000000000000000000000000000000000000",
+   "timestamp":1553784337711
+}
+```
+
+> Payment settling on-chain event
+```json
+{
+   "type":"payment-settling-onchain",
+   "amount":21,
+   "paymentHash":"0100000000000000000000000000000000000000000000000000000000000000",
+   "timestamp":1553785442676
+}
+```
+
+This is a simple [websocket](https://tools.ietf.org/html/rfc6455) that will output payment related events, it supports
+several types covering all the possible outcomes.
+
+### Response types
+
+Type | Description 
+--------- | -----------
+payment-received | A payment has been received  
+payment-relayed | A payment has been successfully relayed 
+payment-sent | A payment has been successfully sent
+payment-settling-onchain | A payment wasn't fulfilled and its HTLC is being redeemed on-chain
+payment-failed | A payment failed
+ 
+ 
 
 ### HTTP Request
 
