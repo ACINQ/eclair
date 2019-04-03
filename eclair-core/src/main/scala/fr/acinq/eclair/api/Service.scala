@@ -203,8 +203,8 @@ trait Service extends Directives with Logging {
                     }
                   } ~
                   path("receive") {
-                    formFields("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?) { (desc, amountMsat, expire) =>
-                      complete(eclairApi.receive(desc, amountMsat, expire))
+                    formFields("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?, "fallbackAddress".as[String].?) { (desc, amountMsat, expire, fallBackAddress) =>
+                      complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress))
                     }
                   } ~
                   path("parseinvoice") {
