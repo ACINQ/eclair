@@ -18,32 +18,31 @@ package fr.acinq.eclair.api
 
 import java.util.UUID
 
-import akka.http.scaladsl.server._
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.{Eclair, Kit, ShortChannelId}
-import FormParamExtractors._
 import akka.NotUsed
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
-import akka.http.scaladsl.marshalling.{Marshaller, ToResponseMarshaller}
+import akka.actor.{Actor, ActorSystem, Props}
+import akka.http.scaladsl.marshalling.ToResponseMarshaller
 import akka.http.scaladsl.model.HttpMethods.POST
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
 import akka.http.scaladsl.model.headers.{`Access-Control-Allow-Headers`, `Access-Control-Allow-Methods`, `Cache-Control`}
 import akka.http.scaladsl.model.ws.{Message, TextMessage}
-import akka.http.scaladsl.server.directives.{Credentials, LoggingMagnet}
-import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.http.scaladsl.server._
+import akka.http.scaladsl.server.directives.Credentials
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
+import akka.stream.{ActorMaterializer, OverflowStrategy}
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.api.FormParamExtractors._
 import fr.acinq.eclair.api.JsonSupport.CustomTypeHints
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.{Eclair, ShortChannelId}
 import grizzled.slf4j.Logging
-import org.json4s.{ShortTypeHints, TypeHints}
 import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
@@ -52,9 +51,7 @@ case class ErrorResponse(error: String)
 trait Service extends Directives with Logging {
 
   // important! Must NOT import the unmarshaller as it is too generic...see https://github.com/akka/akka-http/issues/541
-  import JsonSupport.marshaller
-  import JsonSupport.formats
-  import JsonSupport.serialization
+  import JsonSupport.{formats, marshaller, serialization}
 
   // used to send typed messages over the websocket
   val formatsWithTypeHint = formats.withTypeHintFieldName("type") +
