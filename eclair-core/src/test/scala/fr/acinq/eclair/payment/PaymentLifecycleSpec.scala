@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelUnavailable}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
-import fr.acinq.eclair.db.OutgoingPaymentStatus
+import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}

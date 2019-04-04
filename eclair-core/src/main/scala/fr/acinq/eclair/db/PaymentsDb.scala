@@ -19,6 +19,7 @@ package fr.acinq.eclair.db
 import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
 
 /**
   * Store the Lightning payments received and sent by the node. Relayed payments are not persisted.
@@ -78,8 +79,12 @@ case class ReceivedPayment(paymentHash: ByteVector32, amountMsat: Long, timestam
   */
 case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, lastUpdate: Long, status: OutgoingPaymentStatus.Value)
 
-object OutgoingPaymentStatus extends Enumeration {
-  val PENDING = Value(1, "PENDING")
-  val SUCCEEDED = Value(2, "SUCCEEDED")
-  val FAILED = Value(3, "FAILED")
+object OutgoingPayment {
+
+  object OutgoingPaymentStatus extends Enumeration {
+    val PENDING = Value(1, "PENDING")
+    val SUCCEEDED = Value(2, "SUCCEEDED")
+    val FAILED = Value(3, "FAILED")
+  }
+
 }

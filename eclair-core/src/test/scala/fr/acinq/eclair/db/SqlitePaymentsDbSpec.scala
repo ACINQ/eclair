@@ -18,8 +18,10 @@ package fr.acinq.eclair.db
 
 import java.sql.DriverManager
 import java.util.UUID
+
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import org.scalatest.FunSuite
 import scodec.bits._

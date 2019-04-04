@@ -25,7 +25,8 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Channel, Register}
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
-import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentsDb}
+import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
+import fr.acinq.eclair.db.{OutgoingPayment, PaymentsDb}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router._

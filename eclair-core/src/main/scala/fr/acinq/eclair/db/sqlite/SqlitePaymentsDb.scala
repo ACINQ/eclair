@@ -20,8 +20,9 @@ import java.sql.Connection
 import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
-import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentsDb, ReceivedPayment}
+import fr.acinq.eclair.db.{OutgoingPayment, PaymentsDb, ReceivedPayment}
 import grizzled.slf4j.Logging
 
 import scala.collection.immutable.Queue
