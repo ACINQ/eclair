@@ -163,7 +163,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def paymentInfo(id: UUID): Future[Option[OutgoingPayment ]] = Future {
-    appKit.nodeParams.db.payments.sentPaymentById(id)
+    appKit.nodeParams.db.payments.getSent(id)
   }
 
   override def checkpayment(paymentHash: ByteVector32): Future[Boolean] = {

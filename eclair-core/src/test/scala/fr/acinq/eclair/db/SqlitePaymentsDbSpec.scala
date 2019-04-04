@@ -59,7 +59,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val pr1 = ReceivedPayment(ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 12345678, 1513871928275L)
     val ps1 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928274L, 1513871928275L, OutgoingPaymentStatus.PENDING)
     preMigrationDb.addReceivedPayment(pr1)
-    preMigrationDb.addSentPayments(ps1)
+    preMigrationDb.addSentPayment(ps1)
 
     assert(preMigrationDb.listReceived() == Seq(pr1))
     assert(preMigrationDb.listSent() == Seq(ps1))
@@ -84,8 +84,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
     db.addReceivedPayment(p1)
     db.addReceivedPayment(p2)
     assert(db.listReceived().toList === List(p1, p2))
-    assert(db.receivedByPaymentHash(p1.paymentHash) === Some(p1))
-    assert(db.receivedByPaymentHash(ByteVector32(hex"6e7e8018f05e169cf1d99e77dc22cb372d09f10b6a81f1eae410718c56cad187")) === None)
+    assert(db.getReceived(p1.paymentHash) === Some(p1))
+    assert(db.getReceived(ByteVector32(hex"6e7e8018f05e169cf1d99e77dc22cb372d09f10b6a81f1eae410718c56cad187")) === None)
   }
 
   test("add/retrieve/update sent payments") {
@@ -96,21 +96,21 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val s2 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 54321, 1513871928272L, 1513871928275L, OutgoingPaymentStatus.PENDING)
 
     assert(db.listSent().isEmpty)
-    db.addSentPayments(s1)
-    db.addSentPayments(s2)
+    db.addSentPayment(s1)
+    db.addSentPayment(s2)
 
     assert(db.listSent().toList == Seq(s1, s2))
-    assert(db.sentPaymentById(s1.id) === Some(s1))
-    assert(db.sentPaymentById(UUID.randomUUID()) === None)
-    assert(db.sentPaymentByHash(s2.paymentHash) === Some(s2))
-    assert(db.sentPaymentByHash(ByteVector32.Zeroes) === None)
+    assert(db.getSent(s1.id) === Some(s1))
+    assert(db.getSent(UUID.randomUUID()) === None)
+    assert(db.getSent(s2.paymentHash) === Some(s2))
+    assert(db.getSent(ByteVector32.Zeroes) === None)
 
     val s3 = s2.copy(id = UUID.randomUUID(), amountMsat = 88776655, status = OutgoingPaymentStatus.SUCCEEDED)
-    db.addSentPayments(s3)
-    assert(db.sentPaymentById(s3.id).exists(el => el.amountMsat == s3.amountMsat && el.status == OutgoingPaymentStatus.SUCCEEDED))
+    db.addSentPayment(s3)
+    assert(db.getSent(s3.id).exists(el => el.amountMsat == s3.amountMsat && el.status == OutgoingPaymentStatus.SUCCEEDED))
 
-    db.updateOutgoingStatus(s3.id, OutgoingPaymentStatus.FAILED)
-    assert(db.sentPaymentById(s3.id).get.status == OutgoingPaymentStatus.FAILED)
+    db.updateSentStatus(s3.id, OutgoingPaymentStatus.FAILED)
+    assert(db.getSent(s3.id).get.status == OutgoingPaymentStatus.FAILED)
 
   }
 

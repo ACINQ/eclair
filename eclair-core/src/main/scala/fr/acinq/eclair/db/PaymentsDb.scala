@@ -43,15 +43,15 @@ trait PaymentsDb {
 
   def addReceivedPayment(payment: ReceivedPayment)
 
-  def addSentPayments(sent: OutgoingPayment)
+  def addSentPayment(sent: OutgoingPayment)
 
-  def updateOutgoingStatus(id: UUID, newStatus: OutgoingPaymentStatus.Value)
+  def updateSentStatus(id: UUID, newStatus: OutgoingPaymentStatus.Value)
 
-  def receivedByPaymentHash(paymentHash: ByteVector32): Option[ReceivedPayment]
+  def getReceived(paymentHash: ByteVector32): Option[ReceivedPayment]
 
-  def sentPaymentById(id: UUID): Option[OutgoingPayment]
+  def getSent(id: UUID): Option[OutgoingPayment]
 
-  def sentPaymentByHash(paymentHash: ByteVector32): Option[OutgoingPayment]
+  def getSent(paymentHash: ByteVector32): Option[OutgoingPayment]
 
   def listReceived(): Seq[ReceivedPayment]
 

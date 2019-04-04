@@ -18,13 +18,11 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
 import java.util.UUID
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.db.{OutgoingPayment, PaymentsDb, ReceivedPayment}
 import grizzled.slf4j.Logging
-
 import scala.collection.immutable.Queue
 import scala.compat.Platform
 
@@ -62,7 +60,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def updateOutgoingStatus(id: UUID, newStatus: OutgoingPaymentStatus.Value) = {
+  override def updateSentStatus(id: UUID, newStatus: OutgoingPaymentStatus.Value) = {
     using(sqlite.prepareStatement(s"UPDATE sent_payments SET (status, updated_at) = (?, ?) WHERE id = ?")) { statement =>
       statement.setString(1, newStatus.toString)
       statement.setLong(2, Platform.currentTime)
@@ -71,7 +69,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def addSentPayments(sent: OutgoingPayment): Unit = {
+  override def addSentPayment(sent: OutgoingPayment): Unit = {
     using(sqlite.prepareStatement("INSERT INTO sent_payments VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, sent.id.toString.getBytes)
       statement.setBytes(2, sent.paymentHash.toArray)
@@ -84,7 +82,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def receivedByPaymentHash(paymentHash: ByteVector32): Option[ReceivedPayment] = {
+  override def getReceived(paymentHash: ByteVector32): Option[ReceivedPayment] = {
     using(sqlite.prepareStatement("SELECT payment_hash, amount_msat, timestamp FROM received_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
@@ -96,7 +94,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def sentPaymentById(id: UUID): Option[OutgoingPayment] = {
+  override def getSent(id: UUID): Option[OutgoingPayment] = {
     using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, created_at, updated_at, status FROM sent_payments WHERE id = ?")) { statement =>
       statement.setBytes(1, id.toString.getBytes)
       val rs = statement.executeQuery()
@@ -114,7 +112,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def sentPaymentByHash(paymentHash: ByteVector32): Option[OutgoingPayment] = {
+  override def getSent(paymentHash: ByteVector32): Option[OutgoingPayment] = {
     using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, created_at, updated_at, status FROM sent_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
