@@ -16,6 +16,4 @@ trait ExtraDirectives extends Directives {
     case Failure(thr) => reject
   }
 
-
-
 }

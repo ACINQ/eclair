@@ -127,10 +127,10 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
     case Status.Failure(AddHtlcFailed(_, paymentHash, error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt, originalCommand_opt)) =>
       originalCommand_opt match {
-        case Some(cmd) if cmd.redirected && cmd.upstream_opt.isRight => // cmd.upstream_opt.isDefined always true since origin = relayed
+        case Some(cmd) if cmd.redirected && cmd.upstream.isRight => // cmd.upstream_opt.isDefined always true since origin = relayed
           // if it was redirected, we give it one more try with the original requested channel (meaning that the error returned will always be for the requested channel)
           log.info(s"retrying htlc #$originHtlcId paymentHash=$paymentHash from channelId=$originChannelId")
-          self ! ForwardAdd(cmd.upstream_opt.right.get, canRedirect = false)
+          self ! ForwardAdd(cmd.upstream.right.get, canRedirect = false)
         case _ =>
           // otherwise we just return a failure
           val failure = (error, channelUpdate_opt) match {
@@ -271,7 +271,7 @@ object Relayer {
         Left(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
         val isRedirected = (channelUpdate.shortChannelId != payload.shortChannelId) // we may decide to use another channel (to the same node) from the one requested
-        Right(CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Right(add), commit = true, redirected = isRedirected))
+        Right(CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket.serialize, upstream = Right(add), commit = true, redirected = isRedirected))
     }
   }
 

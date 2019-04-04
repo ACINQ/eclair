@@ -78,7 +78,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
-    assert(fwd.message.upstream_opt === Right(add_ab))
+    assert(fwd.message.upstream === Right(add_ab))
 
     sender.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)
@@ -118,7 +118,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     val fwd1 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd1.shortChannelId === channelUpdate_bc.shortChannelId)
-    assert(fwd1.message.upstream_opt === Right(add_ab))
+    assert(fwd1.message.upstream === Right(add_ab))
 
     sender.send(relayer, Status.Failure(Register.ForwardShortIdFailure(fwd1)))
 
@@ -144,7 +144,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
-    assert(fwd.message.upstream_opt === Right(add_ab))
+    assert(fwd.message.upstream === Right(add_ab))
 
     sender.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)
