@@ -47,43 +47,43 @@ import scala.util.Try
 class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
   trait EclairMock extends Eclair {
-    override def connect(uri: String): Future[String] = ???
+    override def connect(uri: String)(implicit timeout: Timeout): Future[String] = ???
 
-    override def open(nodeId: Crypto.PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], timeout_opt: Option[Timeout]): Future[String] = ???
+    override def open(nodeId: Crypto.PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], timeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[String] = ???
 
-    override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String] = ???
+    override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector])(implicit timeout: Timeout): Future[String] = ???
 
-    override def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId]): Future[String] = ???
+    override def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[String] = ???
 
-    override def updateRelayFee(channelId: String, feeBaseMsat: Long, feeProportionalMillionths: Long): Future[String] = ???
+    override def updateRelayFee(channelId: String, feeBaseMsat: Long, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[String] = ???
 
-    override def peersInfo(): Future[Iterable[PeerInfo]] = ???
+    override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = ???
 
-    override def channelsInfo(toRemoteNode: Option[Crypto.PublicKey]): Future[Iterable[RES_GETINFO]] = ???
+    override def channelsInfo(toRemoteNode: Option[Crypto.PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]] = ???
 
-    override def channelInfo(channelId: ByteVector32): Future[RES_GETINFO] = ???
+    override def channelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[RES_GETINFO] = ???
 
-    override def allnodes(): Future[Iterable[NodeAnnouncement]] = ???
+    override def allnodes()(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]] = ???
 
-    override def allchannels(): Future[Iterable[ChannelDesc]] = ???
+    override def allchannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]] = ???
 
-    override def allupdates(nodeId: Option[Crypto.PublicKey]): Future[Iterable[ChannelUpdate]] = ???
+    override def allupdates(nodeId: Option[Crypto.PublicKey])(implicit timeout: Timeout): Future[Iterable[ChannelUpdate]] = ???
 
-    override def receive(description: String, amountMsat: Option[Long], expire: Option[Long]): Future[String] = ???
+    override def receive(description: String, amountMsat: Option[Long], expire: Option[Long])(implicit timeout: Timeout): Future[String] = ???
 
-    override def findRoute(targetNodeId: Crypto.PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]]): Future[RouteResponse] = ???
+    override def findRoute(targetNodeId: Crypto.PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]])(implicit timeout: Timeout): Future[RouteResponse] = ???
 
-    override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long]): Future[PaymentLifecycle.PaymentResult] = ???
+    override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long])(implicit timeout: Timeout): Future[PaymentLifecycle.PaymentResult] = ???
 
-    override def checkpayment(paymentHash: ByteVector32): Future[Boolean] = ???
+    override def checkpayment(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Boolean] = ???
 
-    override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = ???
+    override def audit(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[AuditResponse] = ???
 
-    override def networkFees(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[NetworkFee]] = ???
+    override def networkFees(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[NetworkFee]] = ???
 
-    override def channelStats(): Future[Seq[Stats]] = ???
+    override def channelStats()(implicit timeout: Timeout): Future[Seq[Stats]] = ???
 
-    override def getInfoResponse(): Future[GetInfoResponse] = ???
+    override def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse] = ???
   }
 
   implicit val formats = JsonSupport.formats
@@ -157,7 +157,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   test("'peers' should ask the switchboard for current known peers") {
 
     val mockService = new MockService(new EclairMock {
-      override def peersInfo(): Future[Iterable[PeerInfo]] = Future.successful(List(
+      override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = Future.successful(List(
         PeerInfo(
           nodeId = Alice.nodeParams.nodeId,
           state = "CONNECTED",
@@ -184,7 +184,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   test("'getinfo' response should include this node ID") {
 
     val mockService = new MockService(new EclairMock {
-      override def getInfoResponse(): Future[GetInfoResponse] = Future.successful(GetInfoResponse(
+      override def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse] = Future.successful(GetInfoResponse(
         nodeId = Alice.nodeParams.nodeId,
         alias = Alice.nodeParams.alias,
         chainHash = Alice.nodeParams.chainHash,
@@ -210,7 +210,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     val shortChannelIdSerialized = "42000x27x3"
 
     val mockService = new MockService(new EclairMock {
-      override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String] = {
+      override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector])(implicit timeout: Timeout): Future[String] = {
         Future.successful(Alice.nodeParams.nodeId.toString())
       }
     })
@@ -235,7 +235,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     val remoteUri = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735"
 
     val mockService = new MockService(new EclairMock {
-      override def connect(uri: String): Future[String] = Future.successful("connected")
+      override def connect(uri: String)(implicit timeout: Timeout): Future[String] = Future.successful("connected")
     })
 
     Post("/connect", FormData("nodeId" -> remoteNodeId, "host" -> remoteHost).toEntity) ~>
