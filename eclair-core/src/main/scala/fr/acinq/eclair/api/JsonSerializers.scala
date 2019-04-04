@@ -18,7 +18,6 @@ package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
 import java.util.UUID
-
 import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
