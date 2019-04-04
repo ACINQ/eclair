@@ -57,7 +57,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     // add a few rows
     val pr1 = ReceivedPayment(ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 12345678, 1513871928275L)
-    val ps1 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928275L, OutgoingPaymentStatus.PENDING)
+    val ps1 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928274L, 1513871928275L, OutgoingPaymentStatus.PENDING)
     preMigrationDb.addReceivedPayment(pr1)
     preMigrationDb.addSentPayments(ps1)
 
@@ -92,8 +92,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val db = new SqlitePaymentsDb(inmem)
 
-    val s1 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928275L, OutgoingPaymentStatus.PENDING)
-    val s2 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 54321, 1513871928275L, OutgoingPaymentStatus.PENDING)
+    val s1 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928273L, 1513871928275L, OutgoingPaymentStatus.PENDING)
+    val s2 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 54321, 1513871928272L, 1513871928275L, OutgoingPaymentStatus.PENDING)
 
     assert(db.listSent().isEmpty)
     db.addSentPayments(s1)
@@ -105,12 +105,12 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.sentPaymentByHash(s2.paymentHash) === Some(s2))
     assert(db.sentPaymentByHash(ByteVector32.Zeroes) === None)
 
-    val s3 = s2.copy(amountMsat = 88776655, status = OutgoingPaymentStatus.SUCCEEDED)
+    val s3 = s2.copy(id = UUID.randomUUID(), amountMsat = 88776655, status = OutgoingPaymentStatus.SUCCEEDED)
     db.addSentPayments(s3)
-    assert(db.sentPaymentById(s2.id).exists(el => el.amountMsat == s3.amountMsat && el.status == OutgoingPaymentStatus.SUCCEEDED))
+    assert(db.sentPaymentById(s3.id).exists(el => el.amountMsat == s3.amountMsat && el.status == OutgoingPaymentStatus.SUCCEEDED))
 
     db.updateOutgoingStatus(s3.id, OutgoingPaymentStatus.FAILED)
-    assert(db.sentPaymentById(s2.id).get.status == OutgoingPaymentStatus.FAILED)
+    assert(db.sentPaymentById(s3.id).get.status == OutgoingPaymentStatus.FAILED)
 
   }
 

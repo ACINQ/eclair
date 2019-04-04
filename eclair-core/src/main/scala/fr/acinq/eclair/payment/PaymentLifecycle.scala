@@ -47,7 +47,8 @@ class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, regi
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
-      paymentsDb.addSentPayments(OutgoingPayment(id, c.paymentHash, c.amountMsat, Platform.currentTime, OutgoingPaymentStatus.PENDING))
+      val currentTime = Platform.currentTime
+      paymentsDb.addSentPayments(OutgoingPayment(id, c.paymentHash, c.amountMsat, currentTime, currentTime, OutgoingPaymentStatus.PENDING))
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 

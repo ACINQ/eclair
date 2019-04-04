@@ -75,9 +75,9 @@ case class ReceivedPayment(paymentHash: ByteVector32, amountMsat: Long, timestam
   * @param id           internal payment identifier
   * @param payment_hash payment_hash
   * @param amount_msat  amount of the payment, in milli-satoshis
-  * @param lastUpdate   absolute time in seconds since UNIX epoch when the payment was last updated.
+  * @param updatedAt   absolute time in seconds since UNIX epoch when the payment was last updated.
   */
-case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, lastUpdate: Long, status: OutgoingPaymentStatus.Value)
+case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, createdAt: Long, updatedAt: Long, status: OutgoingPaymentStatus.Value)
 
 object OutgoingPayment {
 
