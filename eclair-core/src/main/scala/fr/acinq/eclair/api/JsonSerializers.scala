@@ -18,6 +18,7 @@ package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
 import java.util.UUID
+
 import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
@@ -25,7 +26,7 @@ import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.db.OutgoingPaymentStatus
+import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.RouteResponse
 import fr.acinq.eclair.transactions.Direction
