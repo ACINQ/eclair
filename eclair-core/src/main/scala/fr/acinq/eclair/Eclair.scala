@@ -64,7 +64,7 @@ trait Eclair {
 class EclairImpl(appKit: Kit) extends Eclair {
 
   implicit val ec = appKit.system.dispatcher
-  implicit val timeout = Timeout(60 seconds) // used by akka ask
+  implicit val timeout = Timeout(appKit.nodeParams.apiTimeout) // used by akka ask
 
   override def connect(uri: String): Future[String] = {
     (appKit.switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String]
