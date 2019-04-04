@@ -20,7 +20,6 @@ import java.util.UUID
 
 import akka.NotUsed
 import akka.actor.{Actor, ActorSystem, Props}
-import akka.http.scaladsl.marshalling.ToResponseMarshaller
 import akka.http.scaladsl.model.HttpMethods.POST
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
@@ -41,14 +40,12 @@ import fr.acinq.eclair.{Eclair, ShortChannelId}
 import grizzled.slf4j.Logging
 import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
-
 import scala.concurrent.Future
 import scala.concurrent.duration._
-import scala.util.{Failure, Success}
 
 case class ErrorResponse(error: String)
 
-trait Service extends Directives with Logging {
+trait Service extends ExtraDirectives with Logging {
 
   // important! Must NOT import the unmarshaller as it is too generic...see https://github.com/akka/akka-http/issues/541
   import JsonSupport.{formats, marshaller, serialization}
@@ -69,13 +66,6 @@ trait Service extends Directives with Logging {
 
   implicit val actorSystem: ActorSystem
   implicit val mat: ActorMaterializer
-
-  // custom directive to fail with HTTP 404 if the element was not found
-  def complete[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {
-    case Success(Some(t)) => complete(t)
-    case Success(None) => complete(StatusCodes.NotFound)
-    case Failure(thr) => throw thr
-  }
 
   // a named and typed URL parameter used across several routes, 32-bytes hex-encoded
   val channelId = "channelId".as[ByteVector32](sha256HashUnmarshaller)
@@ -236,7 +226,7 @@ trait Service extends Directives with Logging {
                   } ~
                   path("paymentinfo") {
                     formFields("id".as[UUID]) { id =>
-                      complete(eclairApi.paymentInfo(id))
+                      completeWithFutureOption(eclairApi.paymentInfo(id))
                     }
                   } ~
                   path("checkpayment") {
