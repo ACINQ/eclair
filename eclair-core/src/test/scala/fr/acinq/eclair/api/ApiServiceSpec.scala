@@ -16,24 +16,26 @@
 
 package fr.acinq.eclair.api
 
-import akka.actor.{Actor, ActorSystem, Props, Scheduler}
-import org.scalatest.FunSuite
+import akka.actor.ActorSystem
+import akka.http.scaladsl.model.FormData
 import akka.http.scaladsl.model.StatusCodes._
-import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
-import fr.acinq.eclair._
-import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-import TestConstants._
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
-import akka.http.scaladsl.server.Route
+import akka.http.scaladsl.server.{Directives, Route}
+import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe}
 import akka.stream.ActorMaterializer
-import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
 import akka.util.Timeout
-import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
+import fr.acinq.eclair.TestConstants._
+import fr.acinq.eclair._
 import fr.acinq.eclair.channel.RES_GETINFO
 import fr.acinq.eclair.db.{NetworkFee, Stats}
-import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentRequest}
+import fr.acinq.eclair.io.Peer.PeerInfo
+import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress, NodeAnnouncement}
+import org.json4s.jackson.Serialization
+import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 
 import scala.concurrent.Future
@@ -254,6 +256,53 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         println(entityAs[String])
         assert(entityAs[String] == "\"connected\"")
       }
+  }
+
+  test("the websocket should return typed objects") {
+
+    val mockService = new MockService(new EclairMock {})
+
+    val websocketRoute = Directives.path("ws") {
+      Directives.handleWebSocketMessages(mockService.makeSocketHandler)
+    }
+
+    val wsClient = WSProbe()
+
+    WS("/ws", wsClient.flow) ~> websocketRoute ~>
+      check {
+
+        val pf = PaymentFailed(ByteVector32.Zeroes, failures = Seq.empty)
+        val expectedSerializedPf = """{"type":"payment-failed","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[]}"""
+        Serialization.write(pf)(mockService.formatsWithTypeHint) === expectedSerializedPf
+        system.eventStream.publish(pf)
+        wsClient.expectMessage(expectedSerializedPf)
+
+        val ps = PaymentSent(amount = MilliSatoshi(21), feesPaid = MilliSatoshi(1), paymentHash = ByteVector32.Zeroes, paymentPreimage = ByteVector32.One, toChannelId = ByteVector32.Zeroes, timestamp = 1553784337711L)
+        val expectedSerializedPs = """{"type":"payment-sent","amount":21,"feesPaid":1,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":1553784337711}"""
+        Serialization.write(ps)(mockService.formatsWithTypeHint) === expectedSerializedPs
+        system.eventStream.publish(ps)
+        wsClient.expectMessage(expectedSerializedPs)
+
+        val prel = PaymentRelayed(amountIn = MilliSatoshi(21), amountOut = MilliSatoshi(20), paymentHash = ByteVector32.Zeroes, fromChannelId = ByteVector32.Zeroes, ByteVector32.One, timestamp = 1553784963659L)
+        val expectedSerializedPrel = """{"type":"payment-relayed","amountIn":21,"amountOut":20,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","toChannelId":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":1553784963659}"""
+        Serialization.write(prel)(mockService.formatsWithTypeHint) === expectedSerializedPrel
+        system.eventStream.publish(prel)
+        wsClient.expectMessage(expectedSerializedPrel)
+
+        val precv = PaymentReceived(amount = MilliSatoshi(21), paymentHash = ByteVector32.Zeroes, fromChannelId = ByteVector32.One, timestamp = 1553784963659L)
+        val expectedSerializedPrecv = """{"type":"payment-received","amount":21,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","fromChannelId":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":1553784963659}"""
+        Serialization.write(precv)(mockService.formatsWithTypeHint) === expectedSerializedPrecv
+        system.eventStream.publish(precv)
+        wsClient.expectMessage(expectedSerializedPrecv)
+
+        val pset = PaymentSettlingOnChain(amount = MilliSatoshi(21), paymentHash = ByteVector32.One, timestamp = 1553785442676L)
+        val expectedSerializedPset = """{"type":"payment-settling-onchain","amount":21,"paymentHash":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":1553785442676}"""
+        Serialization.write(pset)(mockService.formatsWithTypeHint) === expectedSerializedPset
+        system.eventStream.publish(pset)
+        wsClient.expectMessage(expectedSerializedPset)
+      }
+
+
   }
 
   private def matchTestJson(apiName: String, response: String) = {
