@@ -63,6 +63,7 @@ class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, regi
 
     case Event(Status.Failure(t), WaitingForRoute(s, c, failures)) =>
       reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ LocalFailure(t)))
+      paymentsDb.updateOutgoingStatus(id, OutgoingPaymentStatus.FAILED)
       stop(FSM.Normal)
   }
 
