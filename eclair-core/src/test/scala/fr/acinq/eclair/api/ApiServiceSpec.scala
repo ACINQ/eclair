@@ -27,9 +27,11 @@ import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import akka.http.scaladsl.server.{Directives, Route}
 import akka.stream.ActorMaterializer
 import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
+import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
-import fr.acinq.eclair.channel.{ChannelFundingPublished, RES_GETINFO}
+import fr.acinq.eclair.blockchain.TestWallet
+import fr.acinq.eclair.channel.{Channel, ChannelCreated, ChannelFundingPublished, ChannelIdAssigned, RES_GETINFO}
 import fr.acinq.eclair.db.{NetworkFee, Stats}
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment._
@@ -271,7 +273,23 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     WS("/ws", wsClient.flow) ~> websocketRoute ~>
       check {
 
+        val dummy = TestProbe().ref
+        val alice = system.actorOf(Channel.props(TestConstants.Alice.nodeParams, new TestWallet, Bob.nodeParams.nodeId, dummy, dummy, dummy, None))
+        val bob = system.actorOf(Channel.props(TestConstants.Bob.nodeParams, new TestWallet, Alice.nodeParams.nodeId, dummy, dummy, dummy, None))
+
         val pubkey = PublicKey(ByteVector.fromValidHex("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), checkValid = false)
+        val cc = ChannelCreated(alice, bob, remoteNodeId = pubkey, isFunder = true, temporaryChannelId = ByteVector32.Zeroes)
+        val expectedSerializedCc = """{"type":"channel-created","channel":"akka://fr-acinq-eclair-api-ApiServiceSpec/user/$b","peer":"akka://fr-acinq-eclair-api-ApiServiceSpec/user/$c","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","isFunder":true,"temporaryChannelId":"0000000000000000000000000000000000000000000000000000000000000000"}"""
+        Serialization.write(cc)(mockService.formatsWithTypeHint) === expectedSerializedCc
+        system.eventStream.publish(cc)
+        wsClient.expectMessage(expectedSerializedCc)
+
+        val cia = ChannelIdAssigned(alice, remoteNodeId = pubkey, temporaryChannelId = ByteVector32.Zeroes, channelId = ByteVector32.Zeroes)
+        val expectedSerializedCia = """{"type":"channel-id-assigned","channel":"akka://fr-acinq-eclair-api-ApiServiceSpec/user/$b","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","temporaryChannelId":"0000000000000000000000000000000000000000000000000000000000000000","channelId":"0000000000000000000000000000000000000000000000000000000000000000"}"""
+        Serialization.write(cia)(mockService.formatsWithTypeHint) === expectedSerializedCia
+        system.eventStream.publish(cia)
+        wsClient.expectMessage(expectedSerializedCia)
+
         val cfp = ChannelFundingPublished(ByteVector32.Zeroes, remoteNodeId = pubkey, channelId = ByteVector32.Zeroes)
         val expectedSerializedCfp = """{"type":"channel-funding-published","txid":"0000000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","channelId":"0000000000000000000000000000000000000000000000000000000000000000"}"""
         Serialization.write(cfp)(mockService.formatsWithTypeHint) === expectedSerializedCfp
