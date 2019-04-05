@@ -50,7 +50,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event STRING NOT NULL, timestamp INTEGER NOT NULL)")
 
           // add id
-          statement.executeUpdate("ALTER TABLE sent ADD id BLOB NOT NULL")
+          statement.executeUpdate(s"ALTER TABLE sent ADD id BLOB DEFAULT '${ChannelCodecs.UNKNOWN_UUID.toString}' NOT NULL")
 
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS balance_updated_idx ON balance_updated(timestamp)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_timestamp_idx ON sent(timestamp)")
@@ -63,7 +63,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           setVersion(statement, DB_NAME, CURRENT_VERSION)
         case CURRENT_VERSION =>
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS balance_updated (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, amount_msat INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, reserve_sat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (id BLOB NOT NULL, amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL, id BLOB NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (amount_in_msat INTEGER NOT NULL, amount_out_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
@@ -105,13 +105,14 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
 
   override def add(e: PaymentSent): Unit =
     using(sqlite.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, e.id.toString.getBytes)
-      statement.setLong(2, e.amount.toLong)
-      statement.setLong(3, e.feesPaid.toLong)
-      statement.setBytes(4, e.paymentHash.toArray)
-      statement.setBytes(5, e.paymentPreimage.toArray)
-      statement.setBytes(6, e.toChannelId.toArray)
-      statement.setLong(7, e.timestamp)
+      statement.setLong(1, e.amount.toLong)
+      statement.setLong(2, e.feesPaid.toLong)
+      statement.setBytes(3, e.paymentHash.toArray)
+      statement.setBytes(4, e.paymentPreimage.toArray)
+      statement.setBytes(5, e.toChannelId.toArray)
+      statement.setLong(6, e.timestamp)
+      statement.setBytes(7, e.id.toString.getBytes)
+
       statement.executeUpdate()
     }
 
