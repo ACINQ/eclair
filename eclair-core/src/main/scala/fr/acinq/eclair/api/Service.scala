@@ -51,6 +51,7 @@ trait Service extends Directives with Logging {
   import JsonSupport.marshaller
   import JsonSupport.formats
   import JsonSupport.serialization
+
   // used to send typed messages over the websocket
   val formatsWithTypeHint = formats.withTypeHintFieldName("type") +
     CustomTypeHints(Map(
@@ -81,7 +82,7 @@ trait Service extends Directives with Logging {
 
   // map all the rejections to a JSON error object ErrorResponse
   val apiRejectionHandler = RejectionHandler.default.mapRejectionResponse {
-    case res @ HttpResponse(_, _, ent: HttpEntity.Strict, _) =>
+    case res@HttpResponse(_, _, ent: HttpEntity.Strict, _) =>
       res.copy(entity = HttpEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse(ent.data.utf8String))))
   }
 
@@ -127,7 +128,7 @@ trait Service extends Directives with Logging {
   val route: Route = {
     respondWithDefaultHeaders(customHeaders) {
       handleExceptions(apiExceptionHandler) {
-        handleRejections(apiRejectionHandler){
+        handleRejections(apiRejectionHandler) {
           withRequestTimeoutResponse(timeoutResponse) {
             authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator) { _ =>
               post {
@@ -244,10 +245,11 @@ trait Service extends Directives with Logging {
                   } ~
                   path("channelstats") {
                     complete(eclairApi.channelStats())
-                  } ~
-                  path("ws") {
-                    handleWebSocketMessages(makeSocketHandler)
                   }
+              } ~ get {
+                path("ws") {
+                  handleWebSocketMessages(makeSocketHandler)
+                }
               }
             }
           }
