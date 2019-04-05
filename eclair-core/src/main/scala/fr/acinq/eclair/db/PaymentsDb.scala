@@ -19,7 +19,7 @@ package fr.acinq.eclair.db
 import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
+import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
 
 /**
   * Store the Lightning payments received and sent by the node. Relayed payments are not persisted.
@@ -30,7 +30,7 @@ import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
   * <p>
   *
   * <p>
-  * A sent payment is a [[OutgoingPayment]] object.
+  * A sent payment is a [[SentPayment]] object.
   * <p>
   * Basic operations on this DB are:
   * <ul>
@@ -43,19 +43,19 @@ trait PaymentsDb {
 
   def addReceivedPayment(payment: ReceivedPayment)
 
-  def addSentPayment(sent: OutgoingPayment)
+  def addSentPayment(sent: SentPayment)
 
-  def updateSentStatus(id: UUID, newStatus: OutgoingPaymentStatus.Value)
+  def updateSentStatus(id: UUID, newStatus: SentPaymentStatus.Value)
 
   def getReceived(paymentHash: ByteVector32): Option[ReceivedPayment]
 
-  def getSent(id: UUID): Option[OutgoingPayment]
+  def getSent(id: UUID): Option[SentPayment]
 
-  def getSent(paymentHash: ByteVector32): Option[OutgoingPayment]
+  def getSent(paymentHash: ByteVector32): Option[SentPayment]
 
   def listReceived(): Seq[ReceivedPayment]
 
-  def listSent(): Seq[OutgoingPayment]
+  def listSent(): Seq[SentPayment]
 
 }
 
@@ -63,13 +63,13 @@ trait PaymentsDb {
   * Received payment object stored in DB.
   *
   * @param paymentHash identifier of the payment
-  * @param amountMsat amount of the payment, in milli-satoshis
+  * @param amountMsat  amount of the payment, in milli-satoshis
   * @param timestamp   absolute time in seconds since UNIX epoch when the payment was created.
   */
 case class ReceivedPayment(paymentHash: ByteVector32, amountMsat: Long, timestamp: Long)
 
 /**
-  * Outgoing payment is every payment that is sent by this node, they may not be finalized and
+  * Sent payment is every payment that is sent by this node, they may not be finalized and
   * when is final it can be failed or successful.
   *
   * @param id           internal payment identifier
@@ -78,11 +78,11 @@ case class ReceivedPayment(paymentHash: ByteVector32, amountMsat: Long, timestam
   * @param createdAt    absolute time in seconds since UNIX epoch when the payment was created.
   * @param updatedAt    absolute time in seconds since UNIX epoch when the payment was last updated.
   */
-case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, createdAt: Long, updatedAt: Long, status: OutgoingPaymentStatus.Value)
+case class SentPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, createdAt: Long, updatedAt: Long, status: SentPaymentStatus.Value)
 
-object OutgoingPayment {
+object SentPayment {
 
-  object OutgoingPaymentStatus extends Enumeration {
+  object SentPaymentStatus extends Enumeration {
     val PENDING = Value(1, "PENDING")
     val SUCCEEDED = Value(2, "SUCCEEDED")
     val FAILED = Value(3, "FAILED")

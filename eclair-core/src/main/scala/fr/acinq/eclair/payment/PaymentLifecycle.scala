@@ -25,8 +25,8 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Channel, Register}
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
-import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
-import fr.acinq.eclair.db.{OutgoingPayment, PaymentsDb}
+import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
+import fr.acinq.eclair.db.{SentPayment, PaymentsDb}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router._
@@ -50,7 +50,7 @@ class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, regi
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
       val currentTime = Platform.currentTime
-      paymentsDb.addSentPayment(OutgoingPayment(id, c.paymentHash, c.amountMsat, currentTime, currentTime, OutgoingPaymentStatus.PENDING))
+      paymentsDb.addSentPayment(SentPayment(id, c.paymentHash, c.amountMsat, currentTime, currentTime, SentPaymentStatus.PENDING))
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 
@@ -67,7 +67,7 @@ class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, regi
 
     case Event(Status.Failure(t), WaitingForRoute(s, c, failures)) =>
       reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ LocalFailure(t)))
-      paymentsDb.updateSentStatus(id, OutgoingPaymentStatus.FAILED)
+      paymentsDb.updateSentStatus(id, SentPaymentStatus.FAILED)
       stop(FSM.Normal)
   }
 
@@ -75,7 +75,7 @@ class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, regi
     case Event("ok", _) => stay()
 
     case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, c, cmd, _, _, _, _, hops)) =>
-      paymentsDb.updateSentStatus(id, OutgoingPaymentStatus.SUCCEEDED)
+      paymentsDb.updateSentStatus(id, SentPaymentStatus.SUCCEEDED)
       reply(s, PaymentSucceeded(id, cmd.amountMsat, c.paymentHash, fulfill.paymentPreimage, hops))
       context.system.eventStream.publish(PaymentSent(id, MilliSatoshi(c.amountMsat), MilliSatoshi(cmd.amountMsat - c.amountMsat), cmd.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
       stop(FSM.Normal)
@@ -86,7 +86,7 @@ class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, regi
           // if destination node returns an error, we fail the payment immediately
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
           reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ RemoteFailure(hops, e)))
-          paymentsDb.updateSentStatus(id, OutgoingPaymentStatus.FAILED)
+          paymentsDb.updateSentStatus(id, SentPaymentStatus.FAILED)
           stop(FSM.Normal)
         case res if failures.size + 1 >= c.maxAttempts =>
           // otherwise we never try more than maxAttempts, no matter the kind of error returned
@@ -100,7 +100,7 @@ class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, regi
           }
           log.warning(s"too many failed attempts, failing the payment")
           reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ failure))
-          paymentsDb.updateSentStatus(id, OutgoingPaymentStatus.FAILED)
+          paymentsDb.updateSentStatus(id, SentPaymentStatus.FAILED)
           stop(FSM.Normal)
         case Failure(t) =>
           log.warning(s"cannot parse returned error: ${t.getMessage}")
@@ -165,7 +165,7 @@ class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, regi
 
     case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
       if (failures.size + 1 >= c.maxAttempts) {
-        paymentsDb.updateSentStatus(id, OutgoingPaymentStatus.FAILED)
+        paymentsDb.updateSentStatus(id, SentPaymentStatus.FAILED)
         reply(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))
         stop(FSM.Normal)
       } else {

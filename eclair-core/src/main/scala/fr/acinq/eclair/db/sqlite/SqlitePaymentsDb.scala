@@ -19,9 +19,9 @@ package fr.acinq.eclair.db.sqlite
 import java.sql.Connection
 import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
+import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
-import fr.acinq.eclair.db.{OutgoingPayment, PaymentsDb, ReceivedPayment}
+import fr.acinq.eclair.db.{SentPayment, PaymentsDb, ReceivedPayment}
 import grizzled.slf4j.Logging
 import scala.collection.immutable.Queue
 import scala.compat.Platform
@@ -60,7 +60,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def updateSentStatus(id: UUID, newStatus: OutgoingPaymentStatus.Value) = {
+  override def updateSentStatus(id: UUID, newStatus: SentPaymentStatus.Value) = {
     using(sqlite.prepareStatement(s"UPDATE sent_payments SET (status, updated_at) = (?, ?) WHERE id = ?")) { statement =>
       statement.setString(1, newStatus.toString)
       statement.setLong(2, Platform.currentTime)
@@ -69,7 +69,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def addSentPayment(sent: OutgoingPayment): Unit = {
+  override def addSentPayment(sent: SentPayment): Unit = {
     using(sqlite.prepareStatement("INSERT INTO sent_payments VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, sent.id.toString.getBytes)
       statement.setBytes(2, sent.paymentHash.toArray)
@@ -94,36 +94,36 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def getSent(id: UUID): Option[OutgoingPayment] = {
+  override def getSent(id: UUID): Option[SentPayment] = {
     using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, created_at, updated_at, status FROM sent_payments WHERE id = ?")) { statement =>
       statement.setBytes(1, id.toString.getBytes)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Some(OutgoingPayment(
+        Some(SentPayment(
           UUID.fromString(new String(rs.getBytes("id"))),
           rs.getByteVector32("payment_hash"),
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
           rs.getLong("updated_at"),
-          OutgoingPaymentStatus.withName(rs.getString("status"))))
+          SentPaymentStatus.withName(rs.getString("status"))))
       } else {
         None
       }
     }
   }
 
-  override def getSent(paymentHash: ByteVector32): Option[OutgoingPayment] = {
+  override def getSent(paymentHash: ByteVector32): Option[SentPayment] = {
     using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, created_at, updated_at, status FROM sent_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Some(OutgoingPayment(
+        Some(SentPayment(
           UUID.fromString(new String(rs.getBytes("id"))),
           rs.getByteVector32("payment_hash"),
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
           rs.getLong("updated_at"),
-          OutgoingPaymentStatus.withName(rs.getString("status"))))      } else {
+          SentPaymentStatus.withName(rs.getString("status"))))      } else {
         None
       }
     }
@@ -140,18 +140,18 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listSent(): Seq[OutgoingPayment] = {
+  override def listSent(): Seq[SentPayment] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT id, payment_hash, amount_msat, created_at, updated_at, status FROM sent_payments")
-      var q: Queue[OutgoingPayment] = Queue()
+      var q: Queue[SentPayment] = Queue()
       while (rs.next()) {
-        q = q :+ OutgoingPayment(
+        q = q :+ SentPayment(
           UUID.fromString(new String(rs.getBytes("id"))),
           rs.getByteVector32("payment_hash"),
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
           rs.getLong("updated_at"),
-          OutgoingPaymentStatus.withName(rs.getString("status")))
+          SentPaymentStatus.withName(rs.getString("status")))
       }
       q
     }

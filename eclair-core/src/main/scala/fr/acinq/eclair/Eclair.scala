@@ -23,7 +23,7 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.{NetworkFee, OutgoingPayment, Stats}
+import fr.acinq.eclair.db.{NetworkFee, SentPayment, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
@@ -68,9 +68,9 @@ trait Eclair {
 
   def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[UUID]
 
-  def paymentInfo(id: Either[UUID, ByteVector32]): Future[Option[OutgoingPayment]]
+  def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[SentPayment]]
 
-  def checkpayment(paymentHash: ByteVector32): Future[Boolean]
+  def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivePayment]]
 
   def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse]
 
@@ -162,15 +162,15 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 
-  override def paymentInfo(id: Either[UUID, ByteVector32]): Future[Option[OutgoingPayment ]] = Future {
+  override def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[SentPayment ]] = Future {
     id match {
       case Left(uuid) => appKit.nodeParams.db.payments.getSent(uuid)
       case Right(paymentHash) => appKit.nodeParams.db.payments.getSent(paymentHash)
     }
   }
 
-  override def checkpayment(paymentHash: ByteVector32): Future[Boolean] = {
-    (appKit.paymentHandler ? CheckPayment(paymentHash)).mapTo[Boolean]
+  override def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivePayment]] = {
+    (appKit.paymentHandler ? CheckPayment(paymentHash)).mapTo[Option[ReceivePayment]]
   }
 
   override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = {

@@ -31,8 +31,8 @@ import akka.stream.ActorMaterializer
 import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel.RES_GETINFO
-import fr.acinq.eclair.db.{NetworkFee, OutgoingPayment, Stats}
-import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
+import fr.acinq.eclair.db.{NetworkFee, SentPayment, Stats}
+import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, ReceivePayment}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress, NodeAnnouncement}
@@ -76,7 +76,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long]): Future[UUID] = ???
 
-    override def checkpayment(paymentHash: ByteVector32): Future[Boolean] = ???
+    override def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivePayment]] = ???
 
     override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = ???
 
@@ -86,7 +86,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def getInfoResponse(): Future[GetInfoResponse] = ???
 
-    override def paymentInfo(id: Either[UUID, ByteVector32]): Future[Option[OutgoingPayment]] = ???
+    override def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[SentPayment]] = ???
   }
 
   implicit val formats = JsonSupport.formats

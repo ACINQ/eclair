@@ -20,7 +20,7 @@ import java.util.UUID
 
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi, Transaction}
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, NetworkFeePaid}
-import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
+import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{ExtendedResultSet, getVersion, using}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}

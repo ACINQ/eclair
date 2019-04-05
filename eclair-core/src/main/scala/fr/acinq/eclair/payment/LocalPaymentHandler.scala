@@ -64,11 +64,9 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         context.become(run(hash2preimage + (paymentHash -> PendingPaymentRequest(paymentPreimage, paymentRequest))))
       } recover { case t => sender ! Status.Failure(t) }
 
+    // if the payment hasn't been received it will reply with None
     case CheckPayment(paymentHash) =>
-      nodeParams.db.payments.getReceived(paymentHash) match {
-        case Some(_) => sender ! true
-        case _ => sender ! false
-      }
+      sender ! nodeParams.db.payments.getReceived(paymentHash)
 
     case htlc: UpdateAddHtlc =>
       hash2preimage

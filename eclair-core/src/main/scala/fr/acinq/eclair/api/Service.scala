@@ -225,18 +225,18 @@ trait Service extends ExtraDirectives with Logging {
                       complete(eclairApi.send(nodeId, amountMsat, paymentHash))
                     }
                   } ~
-                  path("paymentinfo") {
+                  path("sentinfo") {
                     formFields("id".as[UUID]) { id =>
-                      completeWithFutureOption(eclairApi.paymentInfo(Left(id)))
+                      completeWithFutureOption(eclairApi.sentInfo(Left(id)))
                     } ~ formFields(paymentHash) { paymentHash =>
-                      completeWithFutureOption(eclairApi.paymentInfo(Right(paymentHash)))
+                      completeWithFutureOption(eclairApi.sentInfo(Right(paymentHash)))
                     }
                   } ~
-                  path("checkpayment") {
+                  path("receivedinfo") {
                     formFields(paymentHash) { paymentHash =>
-                      complete(eclairApi.checkpayment(paymentHash))
+                      complete(eclairApi.receivedInfo(paymentHash))
                     } ~ formFields("invoice".as[PaymentRequest]) { invoice =>
-                      complete(eclairApi.checkpayment(invoice.paymentHash))
+                      complete(eclairApi.receivedInfo(invoice.paymentHash))
                     }
                   } ~
                   path("audit") {

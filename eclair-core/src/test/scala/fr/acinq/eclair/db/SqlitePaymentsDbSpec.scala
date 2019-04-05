@@ -20,7 +20,7 @@ import java.util.UUID
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestConstants
-import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
+import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import org.scalatest.FunSuite
 import scodec.bits._
@@ -54,7 +54,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     // add a few rows
     val pr1 = ReceivedPayment(ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 12345678, 1513871928275L)
-    val ps1 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928274L, 1513871928275L, OutgoingPaymentStatus.PENDING)
+    val ps1 = SentPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928274L, 1513871928275L, SentPaymentStatus.PENDING)
     preMigrationDb.addReceivedPayment(pr1)
     preMigrationDb.addSentPayment(ps1)
 
@@ -89,8 +89,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
 
-    val s1 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928273L, 1513871928275L, OutgoingPaymentStatus.PENDING)
-    val s2 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 54321, 1513871928272L, 1513871928275L, OutgoingPaymentStatus.PENDING)
+    val s1 = SentPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928273L, 1513871928275L, SentPaymentStatus.PENDING)
+    val s2 = SentPayment(UUID.randomUUID(), ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 54321, 1513871928272L, 1513871928275L, SentPaymentStatus.PENDING)
 
     assert(db.listSent().isEmpty)
     db.addSentPayment(s1)
@@ -102,12 +102,12 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.getSent(s2.paymentHash) === Some(s2))
     assert(db.getSent(ByteVector32.Zeroes) === None)
 
-    val s3 = s2.copy(id = UUID.randomUUID(), amountMsat = 88776655, status = OutgoingPaymentStatus.SUCCEEDED)
+    val s3 = s2.copy(id = UUID.randomUUID(), amountMsat = 88776655, status = SentPaymentStatus.SUCCEEDED)
     db.addSentPayment(s3)
-    assert(db.getSent(s3.id).exists(el => el.amountMsat == s3.amountMsat && el.status == OutgoingPaymentStatus.SUCCEEDED))
+    assert(db.getSent(s3.id).exists(el => el.amountMsat == s3.amountMsat && el.status == SentPaymentStatus.SUCCEEDED))
 
-    db.updateSentStatus(s3.id, OutgoingPaymentStatus.FAILED)
-    assert(db.getSent(s3.id).get.status == OutgoingPaymentStatus.FAILED)
+    db.updateSentStatus(s3.id, SentPaymentStatus.FAILED)
+    assert(db.getSent(s3.id).get.status == SentPaymentStatus.FAILED)
 
   }
 
