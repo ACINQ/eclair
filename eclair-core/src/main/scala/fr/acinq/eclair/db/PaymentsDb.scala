@@ -20,6 +20,7 @@ import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
+import fr.acinq.eclair.payment.PaymentRequest
 
 /**
   * Store the Lightning payments received and sent by the node. Relayed payments are not persisted.
@@ -45,6 +46,8 @@ trait PaymentsDb {
 
   def addSentPayment(sent: SentPayment)
 
+  def addPaymentRequest(pr: PaymentRequest)
+
   def updateSentStatus(id: UUID, newStatus: SentPaymentStatus.Value)
 
   def getReceived(paymentHash: ByteVector32): Option[ReceivedPayment]
@@ -53,9 +56,13 @@ trait PaymentsDb {
 
   def getSent(paymentHash: ByteVector32): Option[SentPayment]
 
+  def getPaymentRequest(paymentHash: ByteVector32): Option[PaymentRequest]
+
   def listReceived(): Seq[ReceivedPayment]
 
   def listSent(): Seq[SentPayment]
+
+  def listPaymentRequests(): Seq[PaymentRequest]
 
 }
 

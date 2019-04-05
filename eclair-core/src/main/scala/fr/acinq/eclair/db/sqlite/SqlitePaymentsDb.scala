@@ -18,11 +18,14 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
 import java.util.UUID
+
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
-import fr.acinq.eclair.db.{SentPayment, PaymentsDb, ReceivedPayment}
+import fr.acinq.eclair.db.{PaymentsDb, ReceivedPayment, SentPayment}
+import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
+
 import scala.collection.immutable.Queue
 import scala.compat.Platform
 
@@ -41,12 +44,23 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("ALTER TABLE payments RENAME TO received_payments")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, status VARCHAR NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS payment_requests (payment_hash BLOB NOT NULL PRIMARY KEY, expiration INTEGER, payment_request BLOB NOT NULL)")
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, status VARCHAR NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS payment_requests (payment_hash BLOB NOT NULL PRIMARY KEY, expiration INTEGER, payment_request BLOB NOT NULL)")
       case unknownVersion =>
         throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
+    }
+  }
+
+  override def addPaymentRequest(pr: PaymentRequest): Unit = {
+    using(sqlite.prepareStatement("INSERT INTO payment_requests VALUES (?, ?, ?)")) { statement =>
+      statement.setBytes(1, pr.paymentHash.toArray)
+      pr.expiry.foreach { et => statement.setLong(2, et) }
+      statement.setBytes(3, PaymentRequest.write(pr).getBytes)
+      statement.executeUpdate()
     }
   }
 
@@ -123,11 +137,26 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
           rs.getLong("updated_at"),
-          SentPaymentStatus.withName(rs.getString("status"))))      } else {
+          SentPaymentStatus.withName(rs.getString("status"))))
+      } else {
         None
       }
     }
   }
+
+
+  override def getPaymentRequest(paymentHash: ByteVector32): Option[PaymentRequest] = {
+    using(sqlite.prepareStatement("SELECT payment_request FROM payment_requests WHERE payment_hash = ?")) { statement =>
+      statement.setBytes(1, paymentHash.toArray)
+      val rs = statement.executeQuery()
+      if (rs.next()) {
+        Some(PaymentRequest.read(rs.getString("payment_request")))
+      } else {
+        None
+      }
+    }
+  }
+
 
   override def listReceived(): Seq[ReceivedPayment] = {
     using(sqlite.createStatement()) { statement =>
@@ -152,6 +181,17 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           rs.getLong("created_at"),
           rs.getLong("updated_at"),
           SentPaymentStatus.withName(rs.getString("status")))
+      }
+      q
+    }
+  }
+
+  override def listPaymentRequests(): Seq[PaymentRequest] = {
+    using(sqlite.createStatement()) { statement =>
+      val rs = statement.executeQuery("SELECT payment_request FROM payment_requests")
+      var q: Queue[PaymentRequest] = Queue()
+      while (rs.next()) {
+        q = q :+ PaymentRequest.read(rs.getString("payment_request"))
       }
       q
     }
