@@ -16,15 +16,12 @@
 
 package fr.acinq.eclair.db
 
-import java.sql.DriverManager
-import java.util.UUID
-
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi, Transaction}
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, NetworkFeePaid}
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.ChannelCodecs
-import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.{ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 
 import scala.compat.Platform
@@ -32,16 +29,14 @@ import scala.compat.Platform
 
 class SqliteAuditDbSpec extends FunSuite {
 
-  def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
-
   test("init sqlite 2 times in a row") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db1 = new SqliteAuditDb(sqlite)
     val db2 = new SqliteAuditDb(sqlite)
   }
 
   test("add/list events") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteAuditDb(sqlite)
 
     val e1 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32)
@@ -71,7 +66,7 @@ class SqliteAuditDbSpec extends FunSuite {
   }
 
   test("stats") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteAuditDb(sqlite)
 
     val n1 = randomKey.publicKey

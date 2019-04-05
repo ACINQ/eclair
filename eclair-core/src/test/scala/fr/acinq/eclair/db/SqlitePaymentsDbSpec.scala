@@ -16,11 +16,10 @@
 
 package fr.acinq.eclair.db
 
-import java.sql.DriverManager
 import java.util.UUID
-
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.db.OutgoingPayment.OutgoingPaymentStatus
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import org.scalatest.FunSuite
@@ -28,17 +27,15 @@ import scodec.bits._
 
 class SqlitePaymentsDbSpec extends FunSuite {
 
-  def inmem() = DriverManager.getConnection("jdbc:sqlite::memory:")
-
   test("init sqlite 2 times in a row") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db1 = new SqlitePaymentsDb(sqlite)
     val db2 = new SqlitePaymentsDb(sqlite)
   }
 
   test("handle version migration 1->2") {
 
-    val connection = inmem()
+    val connection = TestConstants.sqliteInMemory()
 
     using(connection.createStatement()) { statement =>
       getVersion(statement, "payments", 1)
@@ -75,7 +72,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
   }
 
   test("add/list received payments/find 1 payment that exists/find 1 payment that does not exist") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db = new SqlitePaymentsDb(sqlite)
 
     val p1 = ReceivedPayment(ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 12345678, 1513871928275L)
@@ -90,7 +87,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
   test("add/retrieve/update sent payments") {
 
-    val db = new SqlitePaymentsDb(inmem)
+    val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
 
     val s1 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928273L, 1513871928275L, OutgoingPaymentStatus.PENDING)
     val s2 = OutgoingPayment(UUID.randomUUID(), ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 54321, 1513871928272L, 1513871928275L, OutgoingPaymentStatus.PENDING)
