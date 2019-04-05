@@ -68,7 +68,7 @@ trait Eclair {
 
   def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[UUID]
 
-  def paymentInfo(id: UUID): Future[Option[OutgoingPayment]]
+  def paymentInfo(id: Either[UUID, ByteVector32]): Future[Option[OutgoingPayment]]
 
   def checkpayment(paymentHash: ByteVector32): Future[Boolean]
 
@@ -162,8 +162,11 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 
-  override def paymentInfo(id: UUID): Future[Option[OutgoingPayment ]] = Future {
-    appKit.nodeParams.db.payments.getSent(id)
+  override def paymentInfo(id: Either[UUID, ByteVector32]): Future[Option[OutgoingPayment ]] = Future {
+    id match {
+      case Left(uuid) => appKit.nodeParams.db.payments.getSent(uuid)
+      case Right(paymentHash) => appKit.nodeParams.db.payments.getSent(paymentHash)
+    }
   }
 
   override def checkpayment(paymentHash: ByteVector32): Future[Boolean] = {

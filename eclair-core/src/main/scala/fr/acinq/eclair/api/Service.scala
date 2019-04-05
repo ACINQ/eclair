@@ -71,6 +71,7 @@ trait Service extends ExtraDirectives with Logging {
   val channelId = "channelId".as[ByteVector32](sha256HashUnmarshaller)
   val nodeId = "nodeId".as[PublicKey]
   val shortChannelId = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
+  val paymentHash = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
 
   val apiExceptionHandler = ExceptionHandler {
     case t: Throwable =>
@@ -220,17 +221,19 @@ trait Service extends ExtraDirectives with Logging {
                     }
                   } ~
                   path("sendtonode") {
-                    formFields("amountMsat".as[Long], "paymentHash".as[ByteVector32](sha256HashUnmarshaller), "nodeId".as[PublicKey]) { (amountMsat, paymentHash, nodeId) =>
+                    formFields("amountMsat".as[Long], paymentHash, "nodeId".as[PublicKey]) { (amountMsat, paymentHash, nodeId) =>
                       complete(eclairApi.send(nodeId, amountMsat, paymentHash))
                     }
                   } ~
                   path("paymentinfo") {
                     formFields("id".as[UUID]) { id =>
-                      completeWithFutureOption(eclairApi.paymentInfo(id))
+                      completeWithFutureOption(eclairApi.paymentInfo(Left(id)))
+                    } ~ formFields(paymentHash) { paymentHash =>
+                      completeWithFutureOption(eclairApi.paymentInfo(Right(paymentHash)))
                     }
                   } ~
                   path("checkpayment") {
-                    formFields("paymentHash".as[ByteVector32](sha256HashUnmarshaller)) { paymentHash =>
+                    formFields(paymentHash) { paymentHash =>
                       complete(eclairApi.checkpayment(paymentHash))
                     } ~ formFields("invoice".as[PaymentRequest]) { invoice =>
                       complete(eclairApi.checkpayment(invoice.paymentHash))
