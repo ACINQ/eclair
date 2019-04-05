@@ -63,7 +63,7 @@ trait PaymentsDb {
   * Received payment object stored in DB.
   *
   * @param paymentHash identifier of the payment
-  * @param amount_msat amount of the payment, in milli-satoshis
+  * @param amountMsat amount of the payment, in milli-satoshis
   * @param timestamp   absolute time in seconds since UNIX epoch when the payment was created.
   */
 case class ReceivedPayment(paymentHash: ByteVector32, amountMsat: Long, timestamp: Long)
@@ -75,7 +75,8 @@ case class ReceivedPayment(paymentHash: ByteVector32, amountMsat: Long, timestam
   * @param id           internal payment identifier
   * @param payment_hash payment_hash
   * @param amount_msat  amount of the payment, in milli-satoshis
-  * @param updatedAt   absolute time in seconds since UNIX epoch when the payment was last updated.
+  * @param createdAt    absolute time in seconds since UNIX epoch when the payment was created.
+  * @param updatedAt    absolute time in seconds since UNIX epoch when the payment was last updated.
   */
 case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, createdAt: Long, updatedAt: Long, status: OutgoingPaymentStatus.Value)
 

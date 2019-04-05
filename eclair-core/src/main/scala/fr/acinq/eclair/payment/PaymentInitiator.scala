@@ -20,18 +20,18 @@ import java.util.UUID
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.db.PaymentsDb
+import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
 
 /**
   * Created by PM on 29/08/2016.
   */
-class PaymentInitiator(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef, paymentDb: PaymentsDb) extends Actor with ActorLogging {
+class PaymentInitiator(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef, nodeParams: NodeParams) extends Actor with ActorLogging {
 
   override def receive: Receive = {
     case c: SendPayment =>
       val paymentId = UUID.randomUUID()
-      val payFsm = context.actorOf(PaymentLifecycle.props(paymentId, sourceNodeId, router, register, paymentDb))
+      val payFsm = context.actorOf(PaymentLifecycle.props(paymentId, sourceNodeId, router, register, nodeParams))
       payFsm forward c
       sender ! paymentId
   }
@@ -39,5 +39,5 @@ class PaymentInitiator(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 }
 
 object PaymentInitiator {
-  def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef, paymentDb: PaymentsDb) = Props(classOf[PaymentInitiator], sourceNodeId, router, register, paymentDb)
+  def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef, nodeParams: NodeParams) = Props(classOf[PaymentInitiator], sourceNodeId, router, register, nodeParams)
 }

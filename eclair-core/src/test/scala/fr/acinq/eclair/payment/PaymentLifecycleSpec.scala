@@ -35,8 +35,7 @@ import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnounce
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, ShortChannelId, TestConstants, randomBytes32}
-import scala.concurrent.duration._
+import fr.acinq.eclair._
 
 /**
   * Created by PM on 29/08/2016.
@@ -53,9 +52,10 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (route not found)") { fixture =>
     import fixture._
-    val paymentDb = TestConstants.inMemoryDb().payments
+    val nodeParams = TestConstants.Alice.nodeParams
+    val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(id, a, router, TestProbe().ref, paymentDb))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(id, a, router, TestProbe().ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -73,9 +73,10 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (route too expensive)") { fixture =>
     import fixture._
-    val paymentDb = TestConstants.inMemoryDb().payments
+    val nodeParams = TestConstants.Alice.nodeParams
+    val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(id, a, router, TestProbe().ref, paymentDb))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(id, a, router, TestProbe().ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -92,11 +93,12 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (unparsable failure)") { fixture =>
     import fixture._
-    val paymentDb = TestConstants.inMemoryDb().payments
+    val nodeParams = TestConstants.Alice.nodeParams
+    val paymentDb = nodeParams.db.payments
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, paymentDb))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -135,11 +137,12 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (local error)") { fixture =>
     import fixture._
-    val paymentDb = TestConstants.inMemoryDb().payments
+    val nodeParams = TestConstants.Alice.nodeParams
+    val paymentDb = nodeParams.db.payments
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, paymentDb))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -168,11 +171,12 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (first hop returns an UpdateFailMalformedHtlc)") { fixture =>
     import fixture._
-    val paymentDb = TestConstants.inMemoryDb().payments
+    val nodeParams = TestConstants.Alice.nodeParams
+    val paymentDb = nodeParams.db.payments
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, paymentDb))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -201,11 +205,11 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (TemporaryChannelFailure)") { fixture =>
     import fixture._
-    val paymentDb = TestConstants.inMemoryDb().payments
+    val nodeParams = TestConstants.Alice.nodeParams
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, paymentDb))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -240,11 +244,12 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (Update)") { fixture =>
     import fixture._
-    val paymentDb = TestConstants.inMemoryDb().payments
+    val nodeParams = TestConstants.Alice.nodeParams
+    val paymentDb = nodeParams.db.payments
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, paymentDb))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -303,11 +308,12 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (PermanentChannelFailure)") { fixture =>
     import fixture._
-    val paymentDb = TestConstants.inMemoryDb().payments
+    val nodeParams = TestConstants.Alice.nodeParams
+    val paymentDb = nodeParams.db.payments
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, paymentDb))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -342,9 +348,10 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment succeeded") { fixture =>
     import fixture._
-    val paymentDb = TestConstants.inMemoryDb().payments
+    val nodeParams = TestConstants.Alice.nodeParams
+    val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(id, a, router, TestProbe().ref, paymentDb))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(id, a, router, TestProbe().ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
     val eventListener = TestProbe()
@@ -370,7 +377,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   test("payment succeeded to a channel with fees=0") { fixture =>
     import fixture._
     import fr.acinq.eclair.randomKey
-    val paymentDb = TestConstants.inMemoryDb().payments
+    val nodeParams = TestConstants.Alice.nodeParams
+    val paymentDb = nodeParams.db.payments
 
     // the network will be a --(1)--> b ---(2)--> c --(3)--> d  and e --(4)--> f (we are a) and b -> g has fees=0
     //                                 \
@@ -393,7 +401,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     watcher.expectMsgType[WatchSpentBasic]
 
     // actual test begins
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(UUID.randomUUID(), a, router, TestProbe().ref, paymentDb))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(UUID.randomUUID(), a, router, TestProbe().ref, nodeParams))
     val monitor = TestProbe()
     val sender = TestProbe()
     val eventListener = TestProbe()

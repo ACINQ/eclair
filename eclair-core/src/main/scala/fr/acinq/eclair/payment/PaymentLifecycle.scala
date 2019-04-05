@@ -40,7 +40,9 @@ import scala.util.{Failure, Success}
 /**
   * Created by PM on 26/08/2016.
   */
-class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, register: ActorRef, paymentsDb: PaymentsDb) extends FSM[PaymentLifecycle.State, PaymentLifecycle.Data] {
+class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, register: ActorRef, nodeParams: NodeParams) extends FSM[PaymentLifecycle.State, PaymentLifecycle.Data] {
+
+  lazy val paymentsDb = nodeParams.db.payments
 
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
@@ -189,7 +191,7 @@ class PaymentLifecycle(id: UUID, sourceNodeId: PublicKey, router: ActorRef, regi
 
 object PaymentLifecycle {
 
-  def props(id: UUID, sourceNodeId: PublicKey, router: ActorRef, register: ActorRef, paymentDb: PaymentsDb) = Props(classOf[PaymentLifecycle], id, sourceNodeId, router, register, paymentDb)
+  def props(id: UUID, sourceNodeId: PublicKey, router: ActorRef, register: ActorRef, nodeParams: NodeParams) = Props(classOf[PaymentLifecycle], id, sourceNodeId, router, register, nodeParams)
 
   // @formatter:off
   case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil, fallbackAddress: Option[String] = None)
