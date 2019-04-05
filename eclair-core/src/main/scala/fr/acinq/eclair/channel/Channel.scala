@@ -450,6 +450,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           wallet.commit(fundingTx).onComplete {
             case Success(true) =>
               // NB: funding tx isn't confirmed at this point, so technically we didn't really pay the network fee yet, so this is a (fair) approximation
+              context.system.eventStream.publish(ChannelFundingPublished(fundingTx.txid, remoteNodeId, channelId))
               feePaid(fundingTxFee, fundingTx, "funding", commitments.channelId)
               replyToUser(Right(s"created channel $channelId"))
               if (commitments.zeroconfSpendablePushChannel) {

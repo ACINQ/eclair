@@ -27,8 +27,9 @@ import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import akka.http.scaladsl.server.{Directives, Route}
 import akka.stream.ActorMaterializer
 import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
-import fr.acinq.eclair.channel.RES_GETINFO
+import fr.acinq.eclair.channel.{ChannelFundingPublished, RES_GETINFO}
 import fr.acinq.eclair.db.{NetworkFee, Stats}
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment._
@@ -36,6 +37,7 @@ import fr.acinq.eclair.router.{ChannelDesc, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress, NodeAnnouncement}
 import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
+
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
@@ -268,6 +270,13 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     WS("/ws", wsClient.flow) ~> websocketRoute ~>
       check {
+
+        val pubkey = PublicKey(ByteVector.fromValidHex("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), checkValid = false)
+        val cfp = ChannelFundingPublished(ByteVector32.Zeroes, remoteNodeId = pubkey, channelId = ByteVector32.Zeroes)
+        val expectedSerializedCfp = """{"type":"channel-funding-published","txid":"0000000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","channelId":"0000000000000000000000000000000000000000000000000000000000000000"}"""
+        Serialization.write(cfp)(mockService.formatsWithTypeHint) === expectedSerializedCfp
+        system.eventStream.publish(cfp)
+        wsClient.expectMessage(expectedSerializedCfp)
 
         val pf = PaymentFailed(ByteVector32.Zeroes, failures = Seq.empty)
         val expectedSerializedPf = """{"type":"payment-failed","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[]}"""
