@@ -37,6 +37,8 @@ case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, tempora
 
 case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId) extends ChannelEvent
 
+case class ChannelFundingRolledBack(txid: ByteVector32, remoteNodeId: PublicKey, channelId: ByteVector32) extends ChannelEvent
+
 case class ChannelFundingPublished(txid: ByteVector32, remoteNodeId: PublicKey, channelId: ByteVector32) extends ChannelEvent
 
 case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: Commitments) extends ChannelEvent

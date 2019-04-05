@@ -31,7 +31,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.blockchain.TestWallet
-import fr.acinq.eclair.channel.{Channel, ChannelCreated, ChannelFundingPublished, ChannelIdAssigned, RES_GETINFO}
+import fr.acinq.eclair.channel.{Channel, ChannelCreated, ChannelFundingPublished, ChannelFundingRolledBack, ChannelIdAssigned, RES_GETINFO}
 import fr.acinq.eclair.db.{NetworkFee, Stats}
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment._
@@ -289,6 +289,12 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         Serialization.write(cia)(mockService.formatsWithTypeHint) === expectedSerializedCia
         system.eventStream.publish(cia)
         wsClient.expectMessage(expectedSerializedCia)
+
+        val cfrb = ChannelFundingRolledBack(ByteVector32.Zeroes, remoteNodeId = pubkey, channelId = ByteVector32.Zeroes)
+        val expectedSerializedCfrb = """{"type":"channel-funding-rolled-back","txid":"0000000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","channelId":"0000000000000000000000000000000000000000000000000000000000000000"}"""
+        Serialization.write(cfrb)(mockService.formatsWithTypeHint) === expectedSerializedCfrb
+        system.eventStream.publish(cfrb)
+        wsClient.expectMessage(expectedSerializedCfrb)
 
         val cfp = ChannelFundingPublished(ByteVector32.Zeroes, remoteNodeId = pubkey, channelId = ByteVector32.Zeroes)
         val expectedSerializedCfp = """{"type":"channel-funding-published","txid":"0000000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","channelId":"0000000000000000000000000000000000000000000000000000000000000000"}"""

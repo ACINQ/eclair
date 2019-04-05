@@ -427,8 +427,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
           // we rollback the funding tx, it will never be published
-          wallet.rollback(fundingTx)
-          replyToUser(Left(LocalError(cause)))
+          rollbackFundingTx(fundingTx, Left(LocalError(cause)), channelId)
           handleLocalError(InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx), d, Some(msg))
         case Success(_) =>
           val commitInput = localCommitTx.input
@@ -471,20 +470,17 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(CMD_CLOSE(_) | CMD_FORCECLOSE, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
-      replyToUser(Right("closed"))
+      rollbackFundingTx(d.fundingTx, Right("closed"), d.channelId)
       goto(CLOSED) replying "ok"
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
-      replyToUser(Left(RemoteError(e)))
+      rollbackFundingTx(d.fundingTx, Left(RemoteError(e)), d.channelId)
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
-      replyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      rollbackFundingTx(d.fundingTx, Left(LocalError(new RuntimeException("disconnected"))), d.channelId)
       goto(CLOSED)
   })
 
@@ -1336,7 +1332,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(MakeFundingTxResponse(fundingTx, _, _), _) =>
       // this may happen if connection is lost, or remote sends an error while we were waiting for the funding tx to be created by our wallet
       // in that case we rollback the tx
-      wallet.rollback(fundingTx)
+      rollbackFundingTx(fundingTx, Right("interrupted"), ByteVector32.Zeroes)
       stay
 
     case Event(INPUT_DISCONNECTED, _) => stay // we are disconnected, but it doesn't matter anymore
@@ -1664,6 +1660,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           888    888  d8888888888 888   Y8888 888  .d88P 888      888        888  T88b  Y88b  d88P
           888    888 d88P     888 888    Y888 8888888P"  88888888 8888888888 888   T88b  "Y8888P"
    */
+
+  def rollbackFundingTx(tx: Transaction, message: Either[Channel.ChannelError, String], channelId: ByteVector32) = {
+    wallet.rollback(tx)
+    log.info(s"Rolled back a funding tx=$tx with peer=$remoteNodeId for channel=$channelId")
+    context.system.eventStream.publish(ChannelFundingRolledBack(tx.txid, remoteNodeId, channelId))
+    replyToUser(message)
+  }
 
   /**
     * This function is used to return feedback to user at channel opening

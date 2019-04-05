@@ -32,7 +32,7 @@ import akka.http.scaladsl.server.directives.{Credentials, LoggingMagnet}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
 import fr.acinq.eclair.api.JsonSupport.CustomTypeHints
-import fr.acinq.eclair.channel.{ChannelCreated, ChannelFundingPublished, ChannelIdAssigned}
+import fr.acinq.eclair.channel.{ChannelCreated, ChannelFundingPublished, ChannelFundingRolledBack, ChannelIdAssigned}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment._
@@ -57,6 +57,7 @@ trait Service extends Directives with Logging {
     CustomTypeHints(Map(
       classOf[ChannelCreated] -> "channel-created",
       classOf[ChannelIdAssigned] -> "channel-id-assigned",
+      classOf[ChannelFundingRolledBack] -> "channel-funding-rolled-back",
       classOf[ChannelFundingPublished] -> "channel-funding-published",
       classOf[PaymentSent] -> "payment-sent",
       classOf[PaymentRelayed] -> "payment-relayed",
@@ -104,6 +105,7 @@ trait Service extends Directives with Logging {
       override def preStart: Unit = {
         context.system.eventStream.subscribe(self, classOf[ChannelCreated])
         context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
+        context.system.eventStream.subscribe(self, classOf[ChannelFundingRolledBack])
         context.system.eventStream.subscribe(self, classOf[ChannelFundingPublished])
         context.system.eventStream.subscribe(self, classOf[PaymentFailed])
         context.system.eventStream.subscribe(self, classOf[PaymentEvent])
@@ -112,6 +114,7 @@ trait Service extends Directives with Logging {
       def receive: Receive = {
         case message: ChannelCreated => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
         case message: ChannelIdAssigned => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
+        case message: ChannelFundingRolledBack => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
         case message: ChannelFundingPublished => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
         case message: PaymentFailed => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
         case message: PaymentEvent => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
