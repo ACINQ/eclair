@@ -5,6 +5,7 @@ import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
+import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{NetworkFee, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
@@ -17,6 +18,7 @@ import scodec.bits.ByteVector
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 
 case class GetInfoResponse(nodeId: PublicKey, alias: String, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
 
@@ -138,7 +140,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[PaymentResult] = {
     val sendPayment = minFinalCltvExpiry match {
       case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv)
-      case None  => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes)
+      case None => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes)
     }
     (appKit.paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
       case s: PaymentSucceeded => s
@@ -177,20 +179,25 @@ class EclairImpl(appKit: Kit) extends Eclair {
     * @param request
     * @return
     */
-  def sendToChannel(channelIdentifier: String, request: Any): Future[Any] =
-    for {
-      fwdReq <- Future(Register.ForwardShortId(ShortChannelId(channelIdentifier), request))
-        .recoverWith { case _ => Future(Register.Forward(ByteVector32.fromValidHex(channelIdentifier), request)) }
-        .recoverWith { case _ => Future.failed(new RuntimeException(s"invalid channel identifier '$channelIdentifier'")) }
-      res <- appKit.register ? fwdReq
-    } yield res
+  def sendToChannel(channelIdentifier: String, request: Any): Future[Any] = {
+    (Try(ForwardShortId(ShortChannelId(channelIdentifier), request)) match {
+      case Success(value) => Left(value.shortChannelId)
+      case Failure(_) => Try(Forward(ByteVector32.fromValidHex(channelIdentifier), request)) match {
+        case Success(v) => Right(v.channelId)
+        case Failure(_) => throw new RuntimeException(s"invalid channel identifier '$channelIdentifier'") // unrecoverable
+      }
+    }) match {
+      case Left(shortChannelId) => appKit.register ? ForwardShortId(shortChannelId, request)
+      case Right(channelId) => appKit.register ? Forward(channelId, request)
+    }
+  }
 
   override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
     GetInfoResponse(nodeId = appKit.nodeParams.nodeId,
-    alias = appKit.nodeParams.alias,
-    chainHash = appKit.nodeParams.chainHash,
-    blockHeight = Globals.blockCount.intValue(),
-    publicAddresses = appKit.nodeParams.publicAddresses)
+      alias = appKit.nodeParams.alias,
+      chainHash = appKit.nodeParams.chainHash,
+      blockHeight = Globals.blockCount.intValue(),
+      publicAddresses = appKit.nodeParams.publicAddresses)
   )
 
 }
