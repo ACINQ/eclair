@@ -100,7 +100,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
       remoteNodeId = nodeId,
       fundingSatoshis = Satoshi(fundingSatoshis),
       pushMsat = pushMsat.map(MilliSatoshi).getOrElse(MilliSatoshi(0)),
-      fundingTxFeeratePerKw_opt = fundingFeerateSatByte,
+      fundingTxFeeratePerKw_opt = fundingFeerateSatByte.map(feerateByte2Kw),
       channelFlags = flags.map(_.toByte))).mapTo[String]
   }
 
