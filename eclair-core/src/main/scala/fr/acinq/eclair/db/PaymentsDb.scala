@@ -46,7 +46,7 @@ trait PaymentsDb {
 
   def addSentPayment(sent: SentPayment)
 
-  def addPaymentRequest(pr: PaymentRequest)
+  def addPaymentRequest(pr: PaymentRequest, preimage: ByteVector32)
 
   def updateSentStatus(id: UUID, newStatus: SentPaymentStatus.Value)
 
@@ -63,6 +63,8 @@ trait PaymentsDb {
   def listSent(): Seq[SentPayment]
 
   def listPaymentRequests(): Seq[PaymentRequest]
+
+  def listNonExpiredPaymentRequests(): Seq[PaymentRequest]
 
 }
 

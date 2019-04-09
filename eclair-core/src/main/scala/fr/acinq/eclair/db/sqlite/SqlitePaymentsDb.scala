@@ -42,35 +42,53 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       case PREVIOUS_VERSION =>
         logger.warn(s"Performing db migration for DB $DB_NAME, found version=$PREVIOUS_VERSION current=$CURRENT_VERSION")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("ALTER TABLE payments RENAME TO received_payments")
+
+        // create the new table and copy data over it
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, received_msat INTEGER, received_at INTEGER)")
+        statement.executeUpdate("INSERT INTO received_payments (payment_hash, received_msat, received_at) SELECT payment_hash, amount_msat as received_msat, timestamp as received_at FROM payments")
+
+        // drop old table
+        statement.executeUpdate("DROP TABLE payments")
+
+        // now add columns for invoices
+        statement.executeUpdate("ALTER TABLE received_payments ADD COLUMN preimage BLOB")
+        statement.executeUpdate("ALTER TABLE received_payments ADD COLUMN expire_at INTEGER")
+        statement.executeUpdate("ALTER TABLE received_payments ADD COLUMN payment_request BLOB")
+
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, status VARCHAR NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS payment_requests (payment_hash BLOB NOT NULL PRIMARY KEY, expiration INTEGER, payment_request BLOB NOT NULL)")
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, received_msat INTEGER, received_at INTEGER, preimage BLOB, expire_at INTEGER, payment_request BLOB)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, status VARCHAR NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS payment_requests (payment_hash BLOB NOT NULL PRIMARY KEY, expiration INTEGER, payment_request BLOB NOT NULL)")
       case unknownVersion =>
         throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
   }
 
-  override def addPaymentRequest(pr: PaymentRequest): Unit = {
-    using(sqlite.prepareStatement("INSERT INTO payment_requests VALUES (?, ?, ?)")) { statement =>
+  override def addPaymentRequest(pr: PaymentRequest, preimage: ByteVector32): Unit = {
+    val insertStmt = pr.expiry match {
+      case Some(_) => "INSERT INTO received_payments (payment_hash, preimage, expire_at, payment_request) VALUES (?, ?, ?, ?)"
+      case None => "INSERT INTO received_payments (payment_hash, preimage, payment_request) VALUES (?, ?, ?)"
+    }
+
+    using(sqlite.prepareStatement(insertStmt)) { statement =>
       statement.setBytes(1, pr.paymentHash.toArray)
-      pr.expiry.foreach { et => statement.setLong(2, et) }
-      statement.setBytes(3, PaymentRequest.write(pr).getBytes)
+      // 2 received_msat
+      // 3 received_at
+      statement.setBytes(2, preimage.toArray)
+      pr.expiry.foreach { ex => statement.setLong(3, pr.timestamp + ex) } // we store "when" the invoice will expire
+      statement.setBytes(if(pr.expiry.isDefined) 4 else 3, PaymentRequest.write(pr).getBytes)
       statement.executeUpdate()
     }
   }
 
   override def addReceivedPayment(payment: ReceivedPayment): Unit = {
-    using(sqlite.prepareStatement("INSERT INTO received_payments VALUES (?, ?, ?)")) { statement =>
-      statement.setBytes(1, payment.paymentHash.toArray)
-      statement.setLong(2, payment.amountMsat)
-      statement.setLong(3, payment.timestamp)
+    using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (?, ?) WHERE payment_hash = ?")) { statement =>
+      statement.setLong(1, payment.amountMsat)
+      statement.setLong(2, payment.timestamp)
+      statement.setBytes(3, payment.paymentHash.toArray)
       val res = statement.executeUpdate()
-      logger.debug(s"inserted $res payment=${payment.paymentHash} into payment DB")
+      if(res == 0) throw new IllegalArgumentException("Inserted a received payment without having an invoice")
     }
   }
 
@@ -97,11 +115,11 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def getReceived(paymentHash: ByteVector32): Option[ReceivedPayment] = {
-    using(sqlite.prepareStatement("SELECT payment_hash, amount_msat, timestamp FROM received_payments WHERE payment_hash = ?")) { statement =>
+    using(sqlite.prepareStatement("SELECT payment_hash, received_msat, received_at FROM received_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Some(ReceivedPayment(rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp")))
+        Some(ReceivedPayment(rs.getByteVector32("payment_hash"), rs.getLong("received_msat"), rs.getLong("received_at")))
       } else {
         None
       }
@@ -146,7 +164,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
 
   override def getPaymentRequest(paymentHash: ByteVector32): Option[PaymentRequest] = {
-    using(sqlite.prepareStatement("SELECT payment_request FROM payment_requests WHERE payment_hash = ?")) { statement =>
+    using(sqlite.prepareStatement("SELECT payment_request FROM received_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       if (rs.next()) {
@@ -160,10 +178,10 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def listReceived(): Seq[ReceivedPayment] = {
     using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT payment_hash, amount_msat, timestamp FROM received_payments")
+      val rs = statement.executeQuery("SELECT payment_hash, received_msat, received_at FROM received_payments WHERE received_msat > 0")
       var q: Queue[ReceivedPayment] = Queue()
       while (rs.next()) {
-        q = q :+ ReceivedPayment(rs.getByteVector32("payment_hash"), rs.getLong("amount_msat"), rs.getLong("timestamp"))
+        q = q :+ ReceivedPayment(rs.getByteVector32("payment_hash"), rs.getLong("received_msat"), rs.getLong("received_at"))
       }
       q
     }
@@ -188,7 +206,19 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def listPaymentRequests(): Seq[PaymentRequest] = {
     using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT payment_request FROM payment_requests")
+      val rs = statement.executeQuery("SELECT payment_request FROM received_payments WHERE payment_request IS NOT NULL")
+      var q: Queue[PaymentRequest] = Queue()
+      while (rs.next()) {
+        q = q :+ PaymentRequest.read(rs.getString("payment_request"))
+      }
+      q
+    }
+  }
+
+  override def listNonExpiredPaymentRequests(): Seq[PaymentRequest] = {
+    using(sqlite.prepareStatement("SELECT payment_request FROM received_payments WHERE payment_request IS NOT NULL AND (expire_at < ? OR expire_at IS NULL)")) { statement =>
+      statement.setLong(1, Platform.currentTime / 1000)
+      val rs = statement.executeQuery()
       var q: Queue[PaymentRequest] = Queue()
       while (rs.next()) {
         q = q :+ PaymentRequest.read(rs.getString("payment_request"))
