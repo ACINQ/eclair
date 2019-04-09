@@ -219,12 +219,11 @@ class PaymentRequestSpec extends FunSuite {
   }
 
   test("expiry is a variable-length unsigned value") {
-    val pr = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(MilliSatoshi(100000L)), ByteVector32(hex"0001020304050607080900010203040506070809000102030405060708090102"),
-      priv, "test", fallbackAddress = None, expirySeconds = Some(21600), timestamp = System.currentTimeMillis() / 1000L)
+    val pr = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = None, paymentHash = ByteVector32.One, privateKey = priv, description = "Some invoice", expirySeconds = Some(123456), timestamp = 12345)
 
-    val serialized = PaymentRequest write pr
-    val pr1 = PaymentRequest read serialized
-    assert(pr.expiry === Some(21600))
+    val serialized = PaymentRequest.write(pr)
+    val pr1 = PaymentRequest.read(serialized)
+    assert(pr.expiry == Some(123456) && pr.expiry == pr1.expiry)
   }
 
   test("ignore unknown tags") {

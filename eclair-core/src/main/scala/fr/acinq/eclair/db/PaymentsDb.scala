@@ -21,6 +21,7 @@ import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
 import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.payment.PaymentRequest.PaymentHash
 
 /**
   * Store the Lightning payments received and sent by the node. Relayed payments are not persisted.
@@ -58,13 +59,20 @@ trait PaymentsDb {
 
   def getPaymentRequest(paymentHash: ByteVector32): Option[PaymentRequest]
 
+  // returns preimage + invoice if the request with the given paymentHash has not been paid yet (or expired)
+  def getActiveNonPaidPaymentRequest(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)]
+
   def listReceived(): Seq[ReceivedPayment]
 
   def listSent(): Seq[SentPayment]
 
   def listPaymentRequests(): Seq[PaymentRequest]
 
+  // returns non expired payment requests
   def listNonExpiredPaymentRequests(): Seq[PaymentRequest]
+
+  // returns non paid, non expired payment requests
+  def listPendingPaymentRequests(): Seq[PaymentRequest]
 
 }
 

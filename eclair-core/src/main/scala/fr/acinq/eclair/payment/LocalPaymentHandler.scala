@@ -41,18 +41,13 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
   import LocalPaymentHandler._
 
   implicit val ec: ExecutionContext = context.system.dispatcher
-  context.system.scheduler.schedule(10 minutes, 10 minutes)(self ! PurgeExpiredRequests)
+  lazy val paymentDb = nodeParams.db.payments
 
-  override def receive: Receive = run(Map.empty)
-
-  def run(hash2preimage: Map[ByteVector32, PendingPaymentRequest]): Receive = {
-
-    case PurgeExpiredRequests =>
-      context.become(run(hash2preimage.filterNot { case (_, pr) => hasExpired(pr) }))
+  override def receive: Receive = {
 
     case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt) =>
       Try {
-        if (hash2preimage.size > nodeParams.maxPendingPaymentRequests) {
+        if (paymentDb.listPendingPaymentRequests().size > nodeParams.maxPendingPaymentRequests) {
           throw new RuntimeException(s"too many pending payment requests (max=${nodeParams.maxPendingPaymentRequests})")
         }
         val paymentPreimage = randomBytes32
@@ -60,20 +55,19 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops)
         log.debug(s"generated payment request=${PaymentRequest.write(paymentRequest)} from amount=$amount_opt")
+        paymentDb.addPaymentRequest(paymentRequest, paymentPreimage)
         sender ! paymentRequest
-        context.become(run(hash2preimage + (paymentHash -> PendingPaymentRequest(paymentPreimage, paymentRequest))))
-      } recover { case t => sender ! Status.Failure(t) }
+      } recover {
+        case t => sender ! Status.Failure(t)
+      }
 
     // if the payment hasn't been received it will reply with None
     case CheckPayment(paymentHash) =>
-      sender ! nodeParams.db.payments.getReceived(paymentHash)
+      sender ! paymentDb.getReceived(paymentHash)
 
     case htlc: UpdateAddHtlc =>
-      hash2preimage
-        .get(htlc.paymentHash) // we retrieve the request
-        .filterNot(hasExpired) // and filter it out if it is expired (it will be purged independently)
-      match {
-        case Some(PendingPaymentRequest(paymentPreimage, paymentRequest)) =>
+      paymentDb.getActiveNonPaidPaymentRequest(htlc.paymentHash) match {
+        case Some((paymentPreimage, paymentRequest)) =>
           val minFinalExpiry = Globals.blockCount.get() + paymentRequest.minFinalCltvExpiry.getOrElse(Channel.MIN_CLTV_EXPIRY)
           // The htlc amount must be equal or greater than the requested amount. A slight overpaying is permitted, however
           // it must not be greater than two times the requested amount.
@@ -93,15 +87,14 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
               nodeParams.db.payments.addReceivedPayment(ReceivedPayment(htlc.paymentHash, htlc.amountMsat, Platform.currentTime / 1000))
               sender ! CMD_FULFILL_HTLC(htlc.id, paymentPreimage, commit = true)
               context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash, htlc.channelId))
-              context.become(run(hash2preimage - htlc.paymentHash))
           }
         case None =>
           sender ! CMD_FAIL_HTLC(htlc.id, Right(UnknownPaymentHash), commit = true)
       }
 
-    case 'requests =>
-      // this is just for testing
-      sender ! hash2preimage
+//    case 'requests =>
+//      // this is just for testing
+//      sender ! hash2preimage
   }
 
 }
@@ -109,14 +102,5 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
 object LocalPaymentHandler {
 
   def props(nodeParams: NodeParams): Props = Props(new LocalPaymentHandler(nodeParams))
-
-  case object PurgeExpiredRequests
-
-  case class PendingPaymentRequest(preimage: ByteVector32, paymentRequest: PaymentRequest)
-
-  def hasExpired(pr: PendingPaymentRequest): Boolean = pr.paymentRequest.expiry match {
-    case Some(expiry) => pr.paymentRequest.timestamp + expiry <= Platform.currentTime / 1000
-    case None => false // this request will never expire
-  }
 
 }

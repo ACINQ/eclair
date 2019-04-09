@@ -19,7 +19,8 @@ package fr.acinq.eclair.db
 import java.util.UUID
 
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{Block, ByteVector32, MilliSatoshi}
+import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.{TestConstants, payment}
 import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
@@ -144,18 +145,31 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
 
-    val i1 = PaymentRequest.read("lnbc5450n1pw2t4qdpp5vcrf6ylgpettyng4ac3vujsk0zpc25cj0q3zp7l7w44zvxmpzh8qdzz2pshjmt9de6zqen0wgsr2dp4ypcxj7r9d3ejqct5ypekzar0wd5xjuewwpkxzcm99cxqzjccqp2rzjqtspxelp67qc5l56p6999wkatsexzhs826xmupyhk6j8lxl038t27z9tsqqqgpgqqqqqqqlgqqqqqzsqpcz8z8hmy8g3ecunle4n3edn3zg2rly8g4klsk5md736vaqqy3ktxs30ht34rkfkqaffzxmjphvd0637dk2lp6skah2hq09z6lrjna3xqp3d4vyd")
-    val i2 = PaymentRequest.read("lnbc10u1pw2t4phpp5ezwm2gdccydhnphfyepklc0wjkxhz0r4tctg9paunh2lxgeqhcmsdqlxycrqvpqwdshgueqvfjhggr0dcsry7qcqzpgfa4ecv7447p9t5hkujy9qgrxvkkf396p9zar9p87rv2htmeuunkhydl40r64n5s2k0u7uelzc8twxmp37nkcch6m0wg5tvvx69yjz8qpk94qf3")
+    val bob = Bob.keyManager
+
+    val i1 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = None, paymentHash = ByteVector32.One, privateKey = bob.nodeKey.privateKey, description = "Some invoice", expirySeconds = Some(123456), timestamp = 12345)
+    val i2 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = Some(MilliSatoshi(123)), paymentHash = ByteVector32.Zeroes, privateKey = bob.nodeKey.privateKey, description = "Some invoice", expirySeconds = None, timestamp = 12345)
+
+    val serialized = PaymentRequest.write(i1)
+    val deserialized = PaymentRequest.read(serialized)
+
+    assert(deserialized.expiry == i1.expiry)
+
+    // i2 doesn't expire
+    assert(i1.expiry.isDefined && i2.expiry.isEmpty)
+    assert(i1.amount.isEmpty && i2.amount.isDefined)
 
     db.addPaymentRequest(i1, ByteVector32.Zeroes)
     db.addPaymentRequest(i2, ByteVector32.One)
 
-    assert(db.listPaymentRequests() == Seq(i1, i2))
+    //assert(db.listPaymentRequests() == Seq(i1, i2))
+    assert(db.getPaymentRequest(i1.paymentHash).get.expiry == i1.expiry)
     assert(db.getPaymentRequest(i1.paymentHash) == Some(i1))
     assert(db.getPaymentRequest(i2.paymentHash) == Some(i2))
 
     assert(db.listNonExpiredPaymentRequests() == Seq(i1, i2))
-
+    assert(db.getActiveNonPaidPaymentRequest(i1.paymentHash) == Some((ByteVector32.Zeroes, i1)))
+    assert(db.getActiveNonPaidPaymentRequest(i2.paymentHash) == Some((ByteVector32.One, i2)))
   }
 
 }
