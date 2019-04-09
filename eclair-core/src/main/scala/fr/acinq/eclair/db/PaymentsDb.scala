@@ -60,7 +60,7 @@ trait PaymentsDb {
   def getPaymentRequest(paymentHash: ByteVector32): Option[PaymentRequest]
 
   // returns preimage + invoice if the request with the given paymentHash has not been paid yet (or expired)
-  def getActiveNonPaidPaymentRequest(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)]
+  def getPendingRequestAndPreimage(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)]
 
   def listReceived(): Seq[ReceivedPayment]
 

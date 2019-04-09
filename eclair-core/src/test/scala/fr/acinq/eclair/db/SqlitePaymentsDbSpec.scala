@@ -162,14 +162,13 @@ class SqlitePaymentsDbSpec extends FunSuite {
     db.addPaymentRequest(i1, ByteVector32.Zeroes)
     db.addPaymentRequest(i2, ByteVector32.One)
 
-    //assert(db.listPaymentRequests() == Seq(i1, i2))
-    assert(db.getPaymentRequest(i1.paymentHash).get.expiry == i1.expiry)
+    assert(db.listPaymentRequests() == Seq(i1, i2))
     assert(db.getPaymentRequest(i1.paymentHash) == Some(i1))
     assert(db.getPaymentRequest(i2.paymentHash) == Some(i2))
 
     assert(db.listNonExpiredPaymentRequests() == Seq(i1, i2))
-    assert(db.getActiveNonPaidPaymentRequest(i1.paymentHash) == Some((ByteVector32.Zeroes, i1)))
-    assert(db.getActiveNonPaidPaymentRequest(i2.paymentHash) == Some((ByteVector32.One, i2)))
+    assert(db.getPendingRequestAndPreimage(i1.paymentHash) == Some((ByteVector32.Zeroes, i1)))
+    assert(db.getPendingRequestAndPreimage(i2.paymentHash) == Some((ByteVector32.One, i2)))
   }
 
 }
