@@ -87,6 +87,11 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     override def getInfoResponse(): Future[GetInfoResponse] = ???
 
     override def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[SentPayment]] = ???
+
+    override def pendingInvoices(): Future[Seq[PaymentRequest]] = ???
+
+    override def getInvoice(paymentHash: ByteVector32): Future[Option[PaymentRequest]] = ???
+
   }
 
   implicit val formats = JsonSupport.formats

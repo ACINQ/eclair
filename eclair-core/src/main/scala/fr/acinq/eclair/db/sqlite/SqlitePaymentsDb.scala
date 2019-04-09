@@ -77,7 +77,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       // 3 received_at
       statement.setBytes(2, preimage.toArray)
       pr.expiry.foreach { ex => statement.setLong(3, pr.timestamp + ex) } // we store "when" the invoice will expire
-      statement.setBytes(if(pr.expiry.isDefined) 4 else 3, PaymentRequest.write(pr).getBytes)
+      statement.setBytes(if (pr.expiry.isDefined) 4 else 3, PaymentRequest.write(pr).getBytes)
       statement.executeUpdate()
     }
   }
@@ -88,7 +88,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setLong(2, payment.timestamp)
       statement.setBytes(3, payment.paymentHash.toArray)
       val res = statement.executeUpdate()
-      if(res == 0) throw new IllegalArgumentException("Inserted a received payment without having an invoice")
+      if (res == 0) throw new IllegalArgumentException("Inserted a received payment without having an invoice")
     }
   }
 
@@ -191,8 +191,6 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       }
     }
   }
-
-
 
   override def listReceived(): Seq[ReceivedPayment] = {
     using(sqlite.createStatement()) { statement =>

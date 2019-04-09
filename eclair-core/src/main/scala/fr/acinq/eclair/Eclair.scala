@@ -80,6 +80,10 @@ trait Eclair {
 
   def getInfoResponse(): Future[GetInfoResponse]
 
+  def pendingInvoices(): Future[Seq[PaymentRequest]]
+
+  def getInvoice(paymentHash: ByteVector32): Future[Option[PaymentRequest]]
+
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -192,6 +196,14 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def channelStats(): Future[Seq[Stats]] = Future(appKit.nodeParams.db.audit.stats)
+
+  override def pendingInvoices(): Future[Seq[PaymentRequest]] = Future {
+    appKit.nodeParams.db.payments.listPendingPaymentRequests()
+  }
+
+  override def getInvoice(paymentHash: ByteVector32): Future[Option[PaymentRequest]] = Future {
+    appKit.nodeParams.db.payments.getPaymentRequest(paymentHash)
+  }
 
   /**
     * Sends a request to a channel and expects a response
