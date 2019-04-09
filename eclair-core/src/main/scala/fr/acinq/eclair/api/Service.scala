@@ -234,9 +234,9 @@ trait Service extends ExtraDirectives with Logging {
                   } ~
                   path("receivedinfo") {
                     formFields(paymentHash) { paymentHash =>
-                      complete(eclairApi.receivedInfo(paymentHash))
+                      completeWithFutureOption(eclairApi.receivedInfo(paymentHash))
                     } ~ formFields("invoice".as[PaymentRequest]) { invoice =>
-                      complete(eclairApi.receivedInfo(invoice.paymentHash))
+                      completeWithFutureOption(eclairApi.receivedInfo(invoice.paymentHash))
                     }
                   } ~
                   path("audit") {
