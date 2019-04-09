@@ -123,7 +123,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
           rs.getLong("updated_at"),
-          SentPaymentStatus.withName(rs.getString("status"))))      } else {
+          SentPaymentStatus.withName(rs.getString("status"))))
+      } else {
         None
       }
     }
