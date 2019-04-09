@@ -11,12 +11,14 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import org.scalatest.{Outcome, fixture}
 import scodec.bits._
 import TestConstants._
+import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
+
 import scala.util.{Failure, Success}
 
 class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSuiteLike {
 
-  case class FixtureParam(router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, kit: Kit)
+  case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, kit: Kit)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val watcher = TestProbe()
@@ -41,7 +43,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
       new TestWallet()
     )
 
-    withFixture(test.toNoArgTest(FixtureParam(router, paymentInitiator, switchboard, kit)))
+    withFixture(test.toNoArgTest(FixtureParam(register, router, paymentInitiator, switchboard, kit)))
   }
 
   test("convert fee rate properly") { f =>
@@ -132,5 +134,16 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     })
   }
 
+  test("forceclose should work both with channelId and shortChannelId") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    eclair.forceClose(Left(ByteVector32.Zeroes))
+    register.expectMsg(Register.Forward(ByteVector32.Zeroes, CMD_FORCECLOSE))
+
+    eclair.forceClose(Right(ShortChannelId("568749x2597x0")))
+    register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_FORCECLOSE))
+  }
 
 }
