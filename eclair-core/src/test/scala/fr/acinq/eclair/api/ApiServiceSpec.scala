@@ -293,13 +293,11 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     val mockService = new MockService(new EclairMock {})
     val fixedUUID = UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f")
 
-    val websocketRoute = Directives.path("ws") {
-      Directives.handleWebSocketMessages(mockService.makeSocketHandler)
-    }
-
     val wsClient = WSProbe()
 
-    WS("/ws", wsClient.flow) ~> websocketRoute ~>
+    WS("/ws", wsClient.flow) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      mockService.route ~>
       check {
 
         val pf = PaymentFailed(fixedUUID, ByteVector32.Zeroes, failures = Seq.empty)

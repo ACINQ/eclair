@@ -251,10 +251,11 @@ trait Service extends ExtraDirectives with Logging {
                   } ~
                   path("channelstats") {
                     complete(eclairApi.channelStats())
-                  } ~
-                  path("ws") {
-                    handleWebSocketMessages(makeSocketHandler)
                   }
+              } ~ get {
+                path("ws") {
+                  handleWebSocketMessages(makeSocketHandler)
+                }
               }
             }
           }
