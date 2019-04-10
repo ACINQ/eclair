@@ -1222,7 +1222,7 @@ payment-failed | A payment failed
 
 ### HTTP Request
 
-`POST ws://localhost:8080/ws`
+`GET ws://localhost:8080/ws`
 
 
 
