@@ -54,7 +54,6 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops)
         log.debug(s"generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
         paymentDb.addPaymentRequest(paymentRequest, paymentPreimage)
-        assert(paymentDb.getRequestAndPreimage(paymentHash).isDefined)
         sender ! paymentRequest
       } recover {
         case t => sender ! Status.Failure(t)
@@ -90,10 +89,6 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         case None =>
           sender ! CMD_FAIL_HTLC(htlc.id, Right(UnknownPaymentHash), commit = true)
       }
-
-//    case 'requests =>
-//      // this is just for testing
-//      sender ! hash2preimage
   }
 
 }

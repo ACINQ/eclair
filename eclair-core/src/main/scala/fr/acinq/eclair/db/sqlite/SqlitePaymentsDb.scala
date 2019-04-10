@@ -229,7 +229,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def listNonExpiredPaymentRequests(): Seq[PaymentRequest] = {
-    using(sqlite.prepareStatement("SELECT payment_request FROM received_payments WHERE payment_request IS NOT NULL AND (expire_at < ? OR expire_at IS NULL)")) { statement =>
+    using(sqlite.prepareStatement("SELECT payment_request FROM received_payments WHERE payment_request IS NOT NULL AND (expire_at > ? OR expire_at IS NULL)")) { statement =>
       statement.setLong(1, Platform.currentTime / 1000)
       val rs = statement.executeQuery()
       var q: Queue[PaymentRequest] = Queue()
@@ -241,7 +241,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def listPendingPaymentRequests(): Seq[PaymentRequest] = {
-    using(sqlite.prepareStatement("SELECT payment_request FROM received_payments WHERE payment_request IS NOT NULL AND (expire_at < ? OR expire_at IS NULL) AND received_msat IS NULL")) { statement =>
+    using(sqlite.prepareStatement("SELECT payment_request FROM received_payments WHERE payment_request IS NOT NULL AND (expire_at > ? OR expire_at IS NULL) AND received_msat IS NULL")) { statement =>
       statement.setLong(1, Platform.currentTime / 1000)
       val rs = statement.executeQuery()
       var q: Queue[PaymentRequest] = Queue()
