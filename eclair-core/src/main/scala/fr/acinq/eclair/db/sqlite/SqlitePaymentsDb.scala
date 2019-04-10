@@ -175,7 +175,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def getPendingRequestAndPreimage(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)] = {
+  override def getRequestAndPreimage(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)] = {
     using(sqlite.prepareStatement("SELECT payment_request, preimage FROM received_payments WHERE payment_request IS NOT NULL AND preimage IS NOT NULL AND payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()

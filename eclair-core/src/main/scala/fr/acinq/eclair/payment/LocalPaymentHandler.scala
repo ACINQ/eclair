@@ -54,7 +54,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops)
         log.debug(s"generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
         paymentDb.addPaymentRequest(paymentRequest, paymentPreimage)
-        assert(paymentDb.getPendingRequestAndPreimage(paymentHash).isDefined)
+        assert(paymentDb.getRequestAndPreimage(paymentHash).isDefined)
         sender ! paymentRequest
       } recover {
         case t => sender ! Status.Failure(t)
@@ -65,7 +65,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
       sender ! paymentDb.getReceived(paymentHash)
 
     case htlc: UpdateAddHtlc =>
-      paymentDb.getPendingRequestAndPreimage(htlc.paymentHash) match {
+      paymentDb.getRequestAndPreimage(htlc.paymentHash) match {
         case Some((paymentPreimage, paymentRequest)) =>
           val minFinalExpiry = Globals.blockCount.get() + paymentRequest.minFinalCltvExpiry.getOrElse(Channel.MIN_CLTV_EXPIRY)
           // The htlc amount must be equal or greater than the requested amount. A slight overpaying is permitted, however

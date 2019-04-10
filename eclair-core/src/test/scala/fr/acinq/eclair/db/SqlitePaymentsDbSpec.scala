@@ -165,12 +165,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     assert(db.listNonExpiredPaymentRequests() == Seq(i1, i2))
     assert(db.listPendingPaymentRequests() == Seq(i1, i2))
-    assert(db.getPendingRequestAndPreimage(paymentHash1) == Some((ByteVector32.Zeroes, i1)))
-    assert(db.getPendingRequestAndPreimage(paymentHash2) == Some((ByteVector32.One, i2)))
-
-    // now invoice i1 is being paid
-    db.addReceivedPayment(ReceivedPayment(paymentHash1, 123, 222))
-    assert(db.getPendingRequestAndPreimage(paymentHash1).isEmpty)
+    assert(db.getRequestAndPreimage(paymentHash1) == Some((ByteVector32.Zeroes, i1)))
+    assert(db.getRequestAndPreimage(paymentHash2) == Some((ByteVector32.One, i2)))
   }
 
 }
