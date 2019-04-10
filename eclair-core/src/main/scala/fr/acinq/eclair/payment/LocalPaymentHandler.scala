@@ -52,8 +52,9 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         val paymentHash = Crypto.sha256(paymentPreimage)
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops)
-        log.debug(s"generated payment request=${PaymentRequest.write(paymentRequest)} from amount=$amount_opt")
+        log.debug(s"generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
         paymentDb.addPaymentRequest(paymentRequest, paymentPreimage)
+        assert(paymentDb.getPendingRequestAndPreimage(paymentHash).isDefined)
         sender ! paymentRequest
       } recover {
         case t => sender ! Status.Failure(t)

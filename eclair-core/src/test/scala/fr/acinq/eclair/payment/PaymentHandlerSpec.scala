@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.ReceivedPayment
 import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UnknownPaymentHash, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UpdateAddHtlc}
 import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
 import org.scalatest.FunSuiteLike
 import scodec.bits.ByteVector
@@ -62,7 +62,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat, add.paymentHash, add.channelId, timestamp = 0))
       sender.send(handler, CheckPayment(pr.paymentHash))
       assert(sender.expectMsgType[Option[ReceivedPayment]].get.paymentHash === pr.paymentHash)
-      assert(nodeParams.db.payments.getPendingRequestAndPreimage(pr.paymentHash).isEmpty) // empty because the invoice is not "pending" anymore
+      assert(nodeParams.db.payments.getReceived(pr.paymentHash).exists(_.amountMsat == add.amountMsat))
     }
 
     {

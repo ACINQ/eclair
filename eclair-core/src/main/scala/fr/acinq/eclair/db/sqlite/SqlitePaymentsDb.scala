@@ -168,9 +168,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        val bytes = rs.getAsciiStream("payment_request").readAllBytes()
-        println(s"READ: ${new String(bytes)}")
-        Some(PaymentRequest.read(new String(bytes)))
+        Some(PaymentRequest.read(rs.getString("payment_request")))
       } else {
         None
       }
@@ -178,9 +176,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def getPendingRequestAndPreimage(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)] = {
-    using(sqlite.prepareStatement("SELECT payment_request, preimage FROM received_payments WHERE payment_request IS NOT NULL AND (expire_at < ? OR expire_at IS NULL) AND received_msat IS NULL AND payment_hash = ?")) { statement =>
-      statement.setLong(1, Platform.currentTime / 1000)
-      statement.setBytes(2, paymentHash.toArray)
+    using(sqlite.prepareStatement("SELECT payment_request, preimage FROM received_payments WHERE payment_request IS NOT NULL AND preimage IS NOT NULL AND payment_hash = ?")) { statement =>
+      statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       if (rs.next()) {
         val preimage = rs.getByteVector32("preimage")

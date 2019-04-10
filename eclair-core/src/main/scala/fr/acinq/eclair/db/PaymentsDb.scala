@@ -47,6 +47,7 @@ trait PaymentsDb {
 
   def addSentPayment(sent: SentPayment)
 
+  // adds a new payment request and stores its preimage with it
   def addPaymentRequest(pr: PaymentRequest, preimage: ByteVector32)
 
   def updateSentStatus(id: UUID, newStatus: SentPaymentStatus.Value)
@@ -57,15 +58,19 @@ trait PaymentsDb {
 
   def getSent(paymentHash: ByteVector32): Option[SentPayment]
 
+  // return the payment request associated with this paymentHash
   def getPaymentRequest(paymentHash: ByteVector32): Option[PaymentRequest]
 
   // returns preimage + invoice if the request with the given paymentHash has not been paid yet (or expired)
   def getPendingRequestAndPreimage(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)]
 
+  // returns all received payments
   def listReceived(): Seq[ReceivedPayment]
 
+  // returns all sent payments
   def listSent(): Seq[SentPayment]
 
+  // returns all payment request
   def listPaymentRequests(): Seq[PaymentRequest]
 
   // returns non expired payment requests

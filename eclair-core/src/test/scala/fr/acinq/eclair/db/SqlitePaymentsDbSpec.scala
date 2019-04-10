@@ -17,7 +17,6 @@
 package fr.acinq.eclair.db
 
 import java.util.UUID
-
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.bitcoin.{Block, ByteVector32, MilliSatoshi}
 import fr.acinq.eclair.TestConstants.Bob
@@ -27,6 +26,7 @@ import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.payment.PaymentRequest
 import org.scalatest.FunSuite
 import scodec.bits._
+import fr.acinq.eclair.randomBytes32
 
 class SqlitePaymentsDbSpec extends FunSuite {
 
@@ -147,13 +147,10 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val bob = Bob.keyManager
 
-    val i1 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = None, paymentHash = ByteVector32.One, privateKey = bob.nodeKey.privateKey, description = "Some invoice", expirySeconds = Some(123456), timestamp = 12345)
-    val i2 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = Some(MilliSatoshi(123)), paymentHash = ByteVector32.Zeroes, privateKey = bob.nodeKey.privateKey, description = "Some invoice", expirySeconds = None, timestamp = 12345)
+    val (paymentHash1, paymentHash2) = (randomBytes32, randomBytes32)
 
-    val serialized = PaymentRequest.write(i1)
-    val deserialized = PaymentRequest.read(serialized)
-
-    assert(deserialized.expiry == i1.expiry)
+    val i1 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = None, paymentHash = paymentHash1, privateKey = bob.nodeKey.privateKey, description = "Some invoice", expirySeconds = Some(123456), timestamp = 12345)
+    val i2 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = Some(MilliSatoshi(123)), paymentHash = paymentHash2, privateKey = bob.nodeKey.privateKey, description = "Some invoice", expirySeconds = None, timestamp = 12345)
 
     // i2 doesn't expire
     assert(i1.expiry.isDefined && i2.expiry.isEmpty)
@@ -167,8 +164,13 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.getPaymentRequest(i2.paymentHash) == Some(i2))
 
     assert(db.listNonExpiredPaymentRequests() == Seq(i1, i2))
-    assert(db.getPendingRequestAndPreimage(i1.paymentHash) == Some((ByteVector32.Zeroes, i1)))
-    assert(db.getPendingRequestAndPreimage(i2.paymentHash) == Some((ByteVector32.One, i2)))
+    assert(db.listPendingPaymentRequests() == Seq(i1, i2))
+    assert(db.getPendingRequestAndPreimage(paymentHash1) == Some((ByteVector32.Zeroes, i1)))
+    assert(db.getPendingRequestAndPreimage(paymentHash2) == Some((ByteVector32.One, i2)))
+
+    // now invoice i1 is being paid
+    db.addReceivedPayment(ReceivedPayment(paymentHash1, 123, 222))
+    assert(db.getPendingRequestAndPreimage(paymentHash1).isEmpty)
   }
 
 }
