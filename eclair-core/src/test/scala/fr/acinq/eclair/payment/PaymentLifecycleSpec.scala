@@ -55,7 +55,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val nodeParams = TestConstants.Alice.nodeParams
     val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(id, a, router, TestProbe().ref, nodeParams))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, id, router, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -76,7 +76,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val nodeParams = TestConstants.Alice.nodeParams
     val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(id, a, router, TestProbe().ref, nodeParams))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, id, router, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -98,7 +98,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, nodeParams))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, routerForwarder.ref, relayer.ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -141,7 +141,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, nodeParams))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, routerForwarder.ref, relayer.ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -173,7 +173,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, nodeParams))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, routerForwarder.ref, relayer.ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -204,7 +204,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, nodeParams))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, routerForwarder.ref, relayer.ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -244,7 +244,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, nodeParams))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, routerForwarder.ref, relayer.ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -306,7 +306,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(id, a, routerForwarder.ref, relayer.ref, nodeParams))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, routerForwarder.ref, relayer.ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -343,7 +343,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val nodeParams = TestConstants.Alice.nodeParams
     val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(id, a, router, TestProbe().ref, nodeParams))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, id, router, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
     val eventListener = TestProbe()
@@ -391,7 +391,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     watcher.expectMsgType[WatchSpentBasic]
 
     // actual test begins
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(UUID.randomUUID(), a, router, TestProbe().ref, nodeParams))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, UUID.randomUUID(), router, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
     val eventListener = TestProbe()
