@@ -264,7 +264,7 @@ trait Service extends ExtraDirectives with Logging {
                     formFields(from.?, to.?) { (from_opt, to_opt) =>
                       complete(eclairApi.allInvoices(from_opt, to_opt))
                     }
-                  }
+                  } ~
                   path("pendinginvoices") {
                     complete(eclairApi.pendingInvoices())
                   }

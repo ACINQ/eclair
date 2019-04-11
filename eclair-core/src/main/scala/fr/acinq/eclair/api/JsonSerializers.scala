@@ -150,6 +150,7 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format =
     JField("paymentHash", JString(p.paymentHash.toString())) ::
     JField("expiry", if (p.expiry.isDefined) JLong(p.expiry.get) else JNull) ::
     JField("minFinalCltvExpiry", if (p.minFinalCltvExpiry.isDefined) JLong(p.minFinalCltvExpiry.get) else JNull) ::
+    JField("serialized", JString(PaymentRequest.write(p))) ::
     Nil)
 }))
 

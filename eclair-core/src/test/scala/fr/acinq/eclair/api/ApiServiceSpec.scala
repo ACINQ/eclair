@@ -149,7 +149,6 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(handled)
         assert(status == BadRequest)
         val resp = entityAs[ErrorResponse](JsonSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
-        println(resp.error)
         assert(resp.error == "The form field 'channelId' was malformed:\nInvalid hexadecimal character 'h' at index 0")
       }
 
@@ -263,7 +262,6 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       check {
         assert(handled)
         assert(status == OK)
-        println(entityAs[String])
         assert(entityAs[String] == "\"connected\"")
       }
   }
