@@ -405,6 +405,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
       sender.send(nodes("A").paymentInitiator, sendReq)
       sender.expectMsgType[UUID]
+      sender.expectMsgType[PaymentSucceeded] // the payment FSM will also reply to the sender after the payment is completed
     }
   }
 
