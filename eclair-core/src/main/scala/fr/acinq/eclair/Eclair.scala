@@ -80,9 +80,11 @@ trait Eclair {
 
   def getInfoResponse(): Future[GetInfoResponse]
 
-  def pendingInvoices(): Future[Seq[PaymentRequest]]
+  def allInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]]
 
   def getInvoice(paymentHash: ByteVector32): Future[Option[PaymentRequest]]
+
+  def pendingInvoices(): Future[Seq[PaymentRequest]]
 
 }
 
@@ -161,12 +163,12 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[UUID] = {
     val sendPayment = minFinalCltvExpiry match {
       case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv)
-      case None  => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes)
+      case None => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes)
     }
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 
-  override def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[SentPayment ]] = Future {
+  override def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[SentPayment]] = Future {
     id match {
       case Left(uuid) => appKit.nodeParams.db.payments.getSent(uuid)
       case Right(paymentHash) => appKit.nodeParams.db.payments.getSent(paymentHash)
@@ -197,6 +199,13 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def channelStats(): Future[Seq[Stats]] = Future(appKit.nodeParams.db.audit.stats)
 
+  override def allInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]] = Future {
+    val from = from_opt.getOrElse(0L)
+    val to = to_opt.getOrElse(Long.MaxValue)
+
+    appKit.nodeParams.db.payments.listPaymentRequests(from, to)
+  }
+
   override def pendingInvoices(): Future[Seq[PaymentRequest]] = Future {
     appKit.nodeParams.db.payments.listPendingPaymentRequests()
   }
@@ -222,10 +231,10 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
     GetInfoResponse(nodeId = appKit.nodeParams.nodeId,
-    alias = appKit.nodeParams.alias,
-    chainHash = appKit.nodeParams.chainHash,
-    blockHeight = Globals.blockCount.intValue(),
-    publicAddresses = appKit.nodeParams.publicAddresses)
+      alias = appKit.nodeParams.alias,
+      chainHash = appKit.nodeParams.chainHash,
+      blockHeight = Globals.blockCount.intValue(),
+      publicAddresses = appKit.nodeParams.publicAddresses)
   )
 
 }

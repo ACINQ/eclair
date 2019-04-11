@@ -82,7 +82,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     assert(preMigrationDb.listReceived() == Seq(pr1))
     assert(preMigrationDb.listSent() == Seq(ps1))
-    assert(preMigrationDb.listPaymentRequests() == Seq(i1))
+    assert(preMigrationDb.listPaymentRequests(0, Long.MaxValue) == Seq(i1))
 
     val postMigrationDb = new SqlitePaymentsDb(connection)
 
@@ -92,7 +92,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     assert(postMigrationDb.listReceived() == Seq(pr1))
     assert(postMigrationDb.listSent() == Seq(ps1))
-    assert(preMigrationDb.listPaymentRequests() == Seq(i1))
+    assert(preMigrationDb.listPaymentRequests(0, Long.MaxValue) == Seq(i1))
   }
 
   test("add/list received payments/find 1 payment that exists/find 1 payment that does not exist") {
@@ -161,11 +161,10 @@ class SqlitePaymentsDbSpec extends FunSuite {
     db.addPaymentRequest(i1, ByteVector32.Zeroes)
     db.addPaymentRequest(i2, ByteVector32.One)
 
-    assert(db.listPaymentRequests() == Seq(i1, i2))
+    assert(db.listPaymentRequests(0, Long.MaxValue) == Seq(i1, i2))
     assert(db.getPaymentRequest(i1.paymentHash) == Some(i1))
     assert(db.getPaymentRequest(i2.paymentHash) == Some(i2))
 
-    assert(db.listNonExpiredPaymentRequests() == Seq(i1, i2))
     assert(db.listPendingPaymentRequests() == Seq(i1, i2))
     assert(db.getRequestAndPreimage(paymentHash1) == Some((ByteVector32.Zeroes, i1)))
     assert(db.getRequestAndPreimage(paymentHash2) == Some((ByteVector32.One, i2)))

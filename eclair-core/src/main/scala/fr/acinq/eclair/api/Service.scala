@@ -72,6 +72,8 @@ trait Service extends ExtraDirectives with Logging {
   val nodeId = "nodeId".as[PublicKey]
   val shortChannelId = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
   val paymentHash = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
+  val from = "from".as[Long]
+  val to = "to".as[Long]
 
   val apiExceptionHandler = ExceptionHandler {
     case t: Throwable =>
@@ -206,7 +208,8 @@ trait Service extends ExtraDirectives with Logging {
                       case (invoice, Some(overrideAmount)) => complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, invoice.routingInfo))
                       case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"))
                     }
-                  } ~ path("findroutetonode") {
+                  } ~
+                  path("findroutetonode") {
                   formFields(nodeId, "amountMsat".as[Long]) { (nodeId, amount) =>
                     complete(eclairApi.findRoute(nodeId, amount))
                   }
@@ -240,17 +243,30 @@ trait Service extends ExtraDirectives with Logging {
                     }
                   } ~
                   path("audit") {
-                    formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
-                      complete(eclairApi.audit(from, to))
+                    formFields(from.?, to.?) { (from_opt, to_opt) =>
+                      complete(eclairApi.audit(from_opt, to_opt))
                     }
                   } ~
                   path("networkfees") {
-                    formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
-                      complete(eclairApi.networkFees(from, to))
+                    formFields(from.?, to.?) { (from_opt, to_opt) =>
+                      complete(eclairApi.networkFees(from_opt, to_opt))
                     }
                   } ~
                   path("channelstats") {
                     complete(eclairApi.channelStats())
+                  } ~
+                  path("invoice") {
+                    formFields(paymentHash) { paymentHash =>
+                      complete(eclairApi.getInvoice(paymentHash))
+                    }
+                  } ~
+                  path("allinvoices") {
+                    formFields(from.?, to.?) { (from_opt, to_opt) =>
+                      complete(eclairApi.allInvoices(from_opt, to_opt))
+                    }
+                  }
+                  path("pendinginvoices") {
+                    complete(eclairApi.pendingInvoices())
                   }
               } ~ get {
                 path("ws") {

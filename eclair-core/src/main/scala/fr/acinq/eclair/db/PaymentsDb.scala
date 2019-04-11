@@ -52,10 +52,7 @@ trait PaymentsDb {
   def listSent(): Seq[SentPayment]
 
   // returns all payment request
-  def listPaymentRequests(): Seq[PaymentRequest]
-
-  // returns non expired payment requests
-  def listNonExpiredPaymentRequests(): Seq[PaymentRequest]
+  def listPaymentRequests(from: Long, to: Long): Seq[PaymentRequest]
 
   // returns non paid, non expired payment requests
   def listPendingPaymentRequests(): Seq[PaymentRequest]
