@@ -145,6 +145,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
   test("add/retrieve payment requests") {
 
+    val someTimestamp = 12345
     val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
 
     val bob = Bob.keyManager
@@ -152,7 +153,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val (paymentHash1, paymentHash2) = (randomBytes32, randomBytes32)
 
     val i1 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = None, paymentHash = paymentHash1, privateKey = bob.nodeKey.privateKey, description = "Some invoice", expirySeconds = Some(123456), timestamp = Platform.currentTime / 1000)
-    val i2 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = Some(MilliSatoshi(123)), paymentHash = paymentHash2, privateKey = bob.nodeKey.privateKey, description = "Some invoice", expirySeconds = None, timestamp = 12345)
+    val i2 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = Some(MilliSatoshi(123)), paymentHash = paymentHash2, privateKey = bob.nodeKey.privateKey, description = "Some invoice", expirySeconds = None, timestamp = someTimestamp)
 
     // i2 doesn't expire
     assert(i1.expiry.isDefined && i2.expiry.isEmpty)
@@ -168,6 +169,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.listPendingPaymentRequests() == Seq(i1, i2))
     assert(db.getRequestAndPreimage(paymentHash1) == Some((ByteVector32.Zeroes, i1)))
     assert(db.getRequestAndPreimage(paymentHash2) == Some((ByteVector32.One, i2)))
+
+    assert(db.listPaymentRequests(someTimestamp - 100, someTimestamp + 100) == Seq(i2))
   }
 
 }
