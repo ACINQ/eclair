@@ -17,6 +17,7 @@
 package fr.acinq.eclair.db
 
 import java.util.UUID
+
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.bitcoin.{Block, ByteVector32, MilliSatoshi}
 import fr.acinq.eclair.TestConstants.Bob
@@ -27,6 +28,8 @@ import fr.acinq.eclair.payment.PaymentRequest
 import org.scalatest.FunSuite
 import scodec.bits._
 import fr.acinq.eclair.randomBytes32
+
+import scala.compat.Platform
 
 class SqlitePaymentsDbSpec extends FunSuite {
 
@@ -149,7 +152,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val (paymentHash1, paymentHash2) = (randomBytes32, randomBytes32)
 
-    val i1 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = None, paymentHash = paymentHash1, privateKey = bob.nodeKey.privateKey, description = "Some invoice", expirySeconds = Some(123456), timestamp = 12345)
+    val i1 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = None, paymentHash = paymentHash1, privateKey = bob.nodeKey.privateKey, description = "Some invoice", expirySeconds = Some(123456), timestamp = Platform.currentTime / 1000)
     val i2 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = Some(MilliSatoshi(123)), paymentHash = paymentHash2, privateKey = bob.nodeKey.privateKey, description = "Some invoice", expirySeconds = None, timestamp = 12345)
 
     // i2 doesn't expire
