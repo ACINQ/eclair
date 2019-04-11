@@ -17,32 +17,13 @@
 package fr.acinq.eclair.db
 
 import java.util.UUID
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
 import fr.acinq.eclair.payment.PaymentRequest
-import fr.acinq.eclair.payment.PaymentRequest.PaymentHash
 
-/**
-  * Store the Lightning payments received and sent by the node. Relayed payments are not persisted.
-  * <p>
-  * A received payment is a [[ReceivedPayment]] object. In the local context of a LN node, it is safe to consider that
-  * a payment is uniquely identified by its payment hash. As such, implementations of this database can use the payment
-  * hash as a unique key and index.
-  * <p>
-  *
-  * <p>
-  * A sent payment is a [[SentPayment]] object.
-  * <p>
-  * Basic operations on this DB are:
-  * <ul>
-  * <li>insertion
-  * <li>find by payment hash
-  * <li>list all
-  * </ul>
-  */
 trait PaymentsDb {
 
+  // assumes there is already a payment request for it (the record for the given payment hash)
   def addReceivedPayment(payment: ReceivedPayment)
 
   def addSentPayment(sent: SentPayment)

@@ -43,22 +43,11 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         logger.warn(s"Performing db migration for DB $DB_NAME, found version=$PREVIOUS_VERSION current=$CURRENT_VERSION")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
 
-        // create the new table and copy data over it
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, received_msat INTEGER, received_at INTEGER)")
-        statement.executeUpdate("INSERT INTO received_payments (payment_hash, received_msat, received_at) SELECT payment_hash, amount_msat as received_msat, timestamp as received_at FROM payments")
-
-        // drop old table
-        statement.executeUpdate("DROP TABLE payments")
-
-        // now add columns for invoices
-        statement.executeUpdate("ALTER TABLE received_payments ADD COLUMN preimage BLOB")
-        statement.executeUpdate("ALTER TABLE received_payments ADD COLUMN expire_at INTEGER")
-        statement.executeUpdate("ALTER TABLE received_payments ADD COLUMN payment_request BLOB")
-
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request BLOB NOT NULL, received_msat INTEGER, received_at INTEGER, expire_at INTEGER)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, status VARCHAR NOT NULL)")
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, received_msat INTEGER, received_at INTEGER, preimage BLOB, expire_at INTEGER, payment_request BLOB)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request BLOB NOT NULL, received_msat INTEGER, received_at INTEGER, expire_at INTEGER)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, status VARCHAR NOT NULL)")
       case unknownVersion =>
         throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")

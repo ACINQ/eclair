@@ -68,8 +68,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
       assert(getVersion(statement, "payments", 1) == 2) // version has changed from 1 to 2!
     }
 
-    // the existing received payment can still be queried
-    assert(preMigrationDb.getReceived(oldReceivedPayment.paymentHash) == Some(oldReceivedPayment))
+    // the existing received payment can NOT be queried anymore
+    assert(preMigrationDb.getReceived(oldReceivedPayment.paymentHash).isEmpty)
 
     // add a few rows
     val ps1 = SentPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928274L, 1513871928275L, SentPaymentStatus.PENDING)
@@ -80,7 +80,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     preMigrationDb.addReceivedPayment(pr1)
     preMigrationDb.addSentPayment(ps1)
 
-    assert(preMigrationDb.listReceived() == Seq(oldReceivedPayment, pr1))
+    assert(preMigrationDb.listReceived() == Seq(pr1))
     assert(preMigrationDb.listSent() == Seq(ps1))
     assert(preMigrationDb.listPaymentRequests() == Seq(i1))
 
@@ -90,7 +90,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
       assert(getVersion(statement, "payments", 2) == 2) // version still to 2
     }
 
-    assert(postMigrationDb.listReceived() == Seq(oldReceivedPayment, pr1))
+    assert(postMigrationDb.listReceived() == Seq(pr1))
     assert(postMigrationDb.listSent() == Seq(ps1))
     assert(preMigrationDb.listPaymentRequests() == Seq(i1))
   }
@@ -141,7 +141,6 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     db.updateSentStatus(s3.id, SentPaymentStatus.FAILED)
     assert(db.getSent(s3.id).get.status == SentPaymentStatus.FAILED)
-
   }
 
   test("add/retrieve payment requests") {
