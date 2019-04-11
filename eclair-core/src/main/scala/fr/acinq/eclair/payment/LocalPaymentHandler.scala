@@ -20,13 +20,11 @@ import akka.actor.{Actor, ActorLogging, Props, Status}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.ReceivedPayment
-import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment}
+import fr.acinq.eclair.payment.PaymentLifecycle.{ReceivePayment}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, randomBytes32}
-
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration._
 import scala.util.Try
 
 /**
@@ -58,10 +56,6 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
       } recover {
         case t => sender ! Status.Failure(t)
       }
-
-    // if the payment hasn't been received it will reply with None
-    case CheckPayment(paymentHash) =>
-      sender ! paymentDb.getReceived(paymentHash)
 
     case htlc: UpdateAddHtlc =>
       paymentDb.getRequestAndPreimage(htlc.paymentHash) match {

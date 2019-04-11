@@ -307,7 +307,7 @@ trait OldService extends Logging {
                                 case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
                               }
                             }
-                            found <- (paymentHandler ? CheckPayment(ByteVector32.fromValidHex(identifier))).map(found => new JBool(found.asInstanceOf[Boolean]))
+                            found <- Future(appKit.nodeParams.db.payments.getReceived(ByteVector32.fromValidHex(identifier)).map(_ => JBool(true)).getOrElse(JBool(false)))
                           } yield found)
                           case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
                         }

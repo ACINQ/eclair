@@ -31,7 +31,7 @@ import akka.stream.ActorMaterializer
 import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel.RES_GETINFO
-import fr.acinq.eclair.db.{NetworkFee, SentPayment, Stats}
+import fr.acinq.eclair.db.{NetworkFee, ReceivedPayment, SentPayment, Stats}
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, ReceivePayment}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteResponse}
@@ -64,11 +64,11 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def channelInfo(channelId: ByteVector32): Future[RES_GETINFO] = ???
 
-    override def allnodes(): Future[Iterable[NodeAnnouncement]] = ???
+    override def allNodes(): Future[Iterable[NodeAnnouncement]] = ???
 
-    override def allchannels(): Future[Iterable[ChannelDesc]] = ???
+    override def allChannels(): Future[Iterable[ChannelDesc]] = ???
 
-    override def allupdates(nodeId: Option[Crypto.PublicKey]): Future[Iterable[ChannelUpdate]] = ???
+    override def allUpdates(nodeId: Option[Crypto.PublicKey]): Future[Iterable[ChannelUpdate]] = ???
 
     override def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String]): Future[String] = ???
 
@@ -76,7 +76,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long]): Future[UUID] = ???
 
-    override def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivePayment]] = ???
+    override def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivedPayment]] = ???
 
     override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = ???
 

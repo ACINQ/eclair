@@ -207,7 +207,6 @@ object PaymentLifecycle {
                          routeParams: Option[RouteParams] = None) {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
-  case class CheckPayment(paymentHash: ByteVector32)
 
   sealed trait PaymentResult
   case class PaymentSucceeded(id: UUID, amountMsat: Long, paymentHash: ByteVector32, paymentPreimage: ByteVector32, route: Seq[Hop]) extends PaymentResult // note: the amount includes fees

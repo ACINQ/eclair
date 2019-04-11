@@ -182,14 +182,14 @@ trait Service extends ExtraDirectives with Logging {
                     }
                   } ~
                   path("allnodes") {
-                    complete(eclairApi.allnodes())
+                    complete(eclairApi.allNodes())
                   } ~
                   path("allchannels") {
-                    complete(eclairApi.allchannels())
+                    complete(eclairApi.allChannels())
                   } ~
                   path("allupdates") {
                     formFields(nodeId.?) { nodeId_opt =>
-                      complete(eclairApi.allupdates(nodeId_opt))
+                      complete(eclairApi.allUpdates(nodeId_opt))
                     }
                   } ~
                   path("receive") {
@@ -210,10 +210,10 @@ trait Service extends ExtraDirectives with Logging {
                     }
                   } ~
                   path("findroutetonode") {
-                  formFields(nodeId, "amountMsat".as[Long]) { (nodeId, amount) =>
-                    complete(eclairApi.findRoute(nodeId, amount))
-                  }
-                } ~
+                    formFields(nodeId, "amountMsat".as[Long]) { (nodeId, amount) =>
+                      complete(eclairApi.findRoute(nodeId, amount))
+                    }
+                  } ~
                   path("send") {
                     formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
                       case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) =>

@@ -18,14 +18,12 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
 import java.util.UUID
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.db.{PaymentsDb, ReceivedPayment, SentPayment}
 import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
-
 import scala.collection.immutable.Queue
 import scala.compat.Platform
 

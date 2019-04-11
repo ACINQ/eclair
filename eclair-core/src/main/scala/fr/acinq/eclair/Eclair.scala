@@ -17,18 +17,20 @@
 package fr.acinq.eclair
 
 import java.util.UUID
+
 import akka.actor.ActorRef
 import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.{NetworkFee, SentPayment, Stats}
+import fr.acinq.eclair.db.{NetworkFee, ReceivedPayment, SentPayment, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import scodec.bits.ByteVector
+
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentRelayed, PaymentRequest, PaymentSent}
@@ -56,11 +58,11 @@ trait Eclair {
 
   def channelInfo(channelId: ByteVector32): Future[RES_GETINFO]
 
-  def allnodes(): Future[Iterable[NodeAnnouncement]]
+  def allNodes(): Future[Iterable[NodeAnnouncement]]
 
-  def allchannels(): Future[Iterable[ChannelDesc]]
+  def allChannels(): Future[Iterable[ChannelDesc]]
 
-  def allupdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]]
+  def allUpdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]]
 
   def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String]): Future[String]
 
@@ -70,7 +72,7 @@ trait Eclair {
 
   def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[SentPayment]]
 
-  def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivePayment]]
+  def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivedPayment]]
 
   def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse]
 
@@ -138,13 +140,13 @@ class EclairImpl(appKit: Kit) extends Eclair {
     sendToChannel(channelId.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
   }
 
-  override def allnodes(): Future[Iterable[NodeAnnouncement]] = (appKit.router ? 'nodes).mapTo[Iterable[NodeAnnouncement]]
+  override def allNodes(): Future[Iterable[NodeAnnouncement]] = (appKit.router ? 'nodes).mapTo[Iterable[NodeAnnouncement]]
 
-  override def allchannels(): Future[Iterable[ChannelDesc]] = {
+  override def allChannels(): Future[Iterable[ChannelDesc]] = {
     (appKit.router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)))
   }
 
-  override def allupdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]] = nodeId match {
+  override def allUpdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]] = nodeId match {
     case None => (appKit.router ? 'updates).mapTo[Iterable[ChannelUpdate]]
     case Some(pk) => (appKit.router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]].map(_.filter(e => e._1.a == pk || e._1.b == pk).values)
   }
@@ -175,8 +177,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
     }
   }
 
-  override def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivePayment]] = {
-    (appKit.paymentHandler ? CheckPayment(paymentHash)).mapTo[Option[ReceivePayment]]
+  override def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivedPayment]] = Future {
+    appKit.nodeParams.db.payments.getReceived(paymentHash)
   }
 
   override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = {
