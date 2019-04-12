@@ -37,7 +37,7 @@ import scala.util.Try
 class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 
   implicit val ec: ExecutionContext = context.system.dispatcher
-  lazy val paymentDb = nodeParams.db.payments
+  val paymentDb = nodeParams.db.payments
 
   override def receive: Receive = {
 

@@ -230,16 +230,16 @@ trait Service extends ExtraDirectives with Logging {
                   } ~
                   path("sentinfo") {
                     formFields("id".as[UUID]) { id =>
-                      completeWithFutureOption(eclairApi.sentInfo(Left(id)))
+                      completeOrNotFound(eclairApi.sentInfo(Left(id)))
                     } ~ formFields(paymentHash) { paymentHash =>
-                      completeWithFutureOption(eclairApi.sentInfo(Right(paymentHash)))
+                      completeOrNotFound(eclairApi.sentInfo(Right(paymentHash)))
                     }
                   } ~
                   path("receivedinfo") {
                     formFields(paymentHash) { paymentHash =>
-                      completeWithFutureOption(eclairApi.receivedInfo(paymentHash))
+                      completeOrNotFound(eclairApi.receivedInfo(paymentHash))
                     } ~ formFields("invoice".as[PaymentRequest]) { invoice =>
-                      completeWithFutureOption(eclairApi.receivedInfo(invoice.paymentHash))
+                      completeOrNotFound(eclairApi.receivedInfo(invoice.paymentHash))
                     }
                   } ~
                   path("audit") {
@@ -257,7 +257,7 @@ trait Service extends ExtraDirectives with Logging {
                   } ~
                   path("invoice") {
                     formFields(paymentHash) { paymentHash =>
-                      completeWithFutureOption(eclairApi.getInvoice(paymentHash))
+                      completeOrNotFound(eclairApi.getInvoice(paymentHash))
                     }
                   } ~
                   path("allinvoices") {

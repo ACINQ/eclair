@@ -33,8 +33,6 @@ import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import scodec.Attempt
 import scodec.bits.ByteVector
-
-import scala.compat.Platform
 import scala.util.{Failure, Success}
 
 /**
@@ -42,7 +40,7 @@ import scala.util.{Failure, Success}
   */
 class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, register: ActorRef) extends FSM[PaymentLifecycle.State, PaymentLifecycle.Data] {
 
-  lazy val paymentsDb = nodeParams.db.payments
+  val paymentsDb = nodeParams.db.payments
 
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 

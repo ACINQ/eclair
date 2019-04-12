@@ -27,7 +27,7 @@ import scala.util.{Failure, Success}
 trait ExtraDirectives extends Directives {
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
-  def completeWithFutureOption[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {
+  def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {
     case Success(Some(t)) => complete(t)
     case Success(None) =>
       complete(HttpResponse(NotFound).withEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse("Not found"))))
