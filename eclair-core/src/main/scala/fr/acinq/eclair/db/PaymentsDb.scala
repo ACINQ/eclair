@@ -22,41 +22,37 @@ import fr.acinq.eclair.payment.PaymentRequest
 
 trait PaymentsDb {
 
-  // assumes there is already a payment request for it (the record for the given payment hash)
-  def addIncomingPayment(payment: IncomingPayment)
-
   // creates a record for a non yet finalized outgoing payment
-  def addOutgoingPayment(sent: OutgoingPayment)
+  def addOutgoingPayment(outgoingPayment: OutgoingPayment)
 
   // updates the status of the payment, succeededAt OR failedAt
-  def updateOutgoingStatus(id: UUID, newStatus: OutgoingPaymentStatus.Value)
+  def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value)
 
-  // adds a new payment request and stores its preimage with it
+  def getOutgoingPayment(id: UUID): Option[OutgoingPayment]
+
+  def getOutgoingPayment(paymentHash: ByteVector32): Option[OutgoingPayment]
+
+  def listOutgoingPayments(): Seq[OutgoingPayment]
+
+
   def addPaymentRequest(pr: PaymentRequest, preimage: ByteVector32)
 
-  def getIncoming(paymentHash: ByteVector32): Option[IncomingPayment]
-
-  def getOutgoing(id: UUID): Option[OutgoingPayment]
-
-  def getOutgoing(paymentHash: ByteVector32): Option[OutgoingPayment]
-
-  // return the payment request associated with this paymentHash
   def getPaymentRequest(paymentHash: ByteVector32): Option[PaymentRequest]
 
-  // returns preimage + invoice
   def getRequestAndPreimage(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)]
 
-  // returns all received payments
-  def listIncoming(): Seq[IncomingPayment]
-
-  // returns all sent payments
-  def listOutgoing(): Seq[OutgoingPayment]
-
-  // returns all payment request
   def listPaymentRequests(from: Long, to: Long): Seq[PaymentRequest]
 
   // returns non paid, non expired payment requests
   def listPendingPaymentRequests(): Seq[PaymentRequest]
+
+
+  // assumes there is already a payment request for it (the record for the given payment hash)
+  def addIncomingPayment(payment: IncomingPayment)
+
+  def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]
+
+  def listIncomingPayments(): Seq[IncomingPayment]
 
 }
 

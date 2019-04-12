@@ -170,13 +170,13 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[OutgoingPayment]] = Future {
     id match {
-      case Left(uuid) => appKit.nodeParams.db.payments.getOutgoing(uuid)
-      case Right(paymentHash) => appKit.nodeParams.db.payments.getOutgoing(paymentHash)
+      case Left(uuid) => appKit.nodeParams.db.payments.getOutgoingPayment(uuid)
+      case Right(paymentHash) => appKit.nodeParams.db.payments.getOutgoingPayment(paymentHash)
     }
   }
 
   override def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]] = Future {
-    appKit.nodeParams.db.payments.getIncoming(paymentHash)
+    appKit.nodeParams.db.payments.getIncomingPayment(paymentHash)
   }
 
   override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = {
