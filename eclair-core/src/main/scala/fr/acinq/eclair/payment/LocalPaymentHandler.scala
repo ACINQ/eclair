@@ -55,7 +55,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
       }
 
     case htlc: UpdateAddHtlc =>
-      paymentDb.getPendingRequestAndPreimage(htlc.paymentHash) match {
+      paymentDb.getPendingPaymentRequestAndPreimage(htlc.paymentHash) match {
         case Some((paymentPreimage, paymentRequest)) =>
           val minFinalExpiry = Globals.blockCount.get() + paymentRequest.minFinalCltvExpiry.getOrElse(Channel.MIN_CLTV_EXPIRY)
           // The htlc amount must be equal or greater than the requested amount. A slight overpaying is permitted, however

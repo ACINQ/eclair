@@ -39,7 +39,7 @@ trait PaymentsDb {
 
   def getPaymentRequest(paymentHash: ByteVector32): Option[PaymentRequest]
 
-  def getPendingRequestAndPreimage(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)]
+  def getPendingPaymentRequestAndPreimage(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)]
 
   def listPaymentRequests(from: Long, to: Long): Seq[PaymentRequest]
 
