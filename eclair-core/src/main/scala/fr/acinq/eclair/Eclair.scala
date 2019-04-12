@@ -50,27 +50,21 @@ trait Eclair {
 
   def updateRelayFee(channelId: String, feeBaseMsat: Long, feeProportionalMillionths: Long): Future[String]
 
-  def peersInfo(): Future[Iterable[PeerInfo]]
-
   def channelsInfo(toRemoteNode: Option[PublicKey]): Future[Iterable[RES_GETINFO]]
 
   def channelInfo(channelId: ByteVector32): Future[RES_GETINFO]
 
-  def allNodes(): Future[Iterable[NodeAnnouncement]]
+  def peersInfo(): Future[Iterable[PeerInfo]]
 
-  def allChannels(): Future[Iterable[ChannelDesc]]
+  def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String]): Future[PaymentRequest]
 
-  def allUpdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]]
-
-  def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String]): Future[String]
-
-  def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse]
+  def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]]
 
   def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[UUID]
 
   def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[OutgoingPayment]]
 
-  def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]]
+  def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse]
 
   def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse]
 
@@ -78,13 +72,19 @@ trait Eclair {
 
   def channelStats(): Future[Seq[Stats]]
 
-  def getInfoResponse(): Future[GetInfoResponse]
-
-  def allInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]]
-
   def getInvoice(paymentHash: ByteVector32): Future[Option[PaymentRequest]]
 
   def pendingInvoices(): Future[Seq[PaymentRequest]]
+
+  def allInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]]
+
+  def allNodes(): Future[Iterable[NodeAnnouncement]]
+
+  def allChannels(): Future[Iterable[ChannelDesc]]
+
+  def allUpdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]]
+
+  def getInfoResponse(): Future[GetInfoResponse]
 
 }
 
@@ -149,11 +149,9 @@ class EclairImpl(appKit: Kit) extends Eclair {
     case Some(pk) => (appKit.router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]].map(_.filter(e => e._1.a == pk || e._1.b == pk).values)
   }
 
-  override def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String]): Future[String] = {
+  override def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String]): Future[PaymentRequest] = {
     fallbackAddress.map { fa => fr.acinq.eclair.addressToPublicKeyScript(fa, appKit.nodeParams.chainHash) } // if it's not a bitcoin address throws an exception
-    (appKit.paymentHandler ? ReceivePayment(description = description, amountMsat_opt = amountMsat.map(MilliSatoshi), expirySeconds_opt = expire, fallbackAddress = fallbackAddress)).mapTo[PaymentRequest].map { pr =>
-      PaymentRequest.write(pr)
-    }
+    (appKit.paymentHandler ? ReceivePayment(description = description, amountMsat_opt = amountMsat.map(MilliSatoshi), expirySeconds_opt = expire, fallbackAddress = fallbackAddress)).mapTo[PaymentRequest]
   }
 
   override def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse] = {
