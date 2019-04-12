@@ -337,6 +337,15 @@ object Helpers {
 
   object Closing {
 
+    // @formatter:off
+    sealed trait ClosingType
+    case object MutualClose extends ClosingType
+    case object LocalClose extends ClosingType
+    case object RemoteClose extends ClosingType
+    case object RecoveryClose extends ClosingType
+    case object RevokedClose extends ClosingType
+    // @formatter:on
+
     /**
       * Indicates whether local has anything at stake in this channel
       *
@@ -349,6 +358,30 @@ object Helpers {
         data.commitments.remoteCommit.index == 0 &&
         data.commitments.remoteCommit.spec.toRemoteMsat == 0 &&
         data.commitments.remoteNextCommitInfo.isRight
+
+    /**
+      * Check if a channel is closed (i.e. its closing tx has been confirmed)
+      * @param data channel state data
+      * @return the channel closing type, if any
+      */
+    def closingType(data: HasCommitments): Option[ClosingType] = data match {
+      case closing: DATA_CLOSING if closing.localCommitPublished.map(Closing.isLocalCommitDone(_)).getOrElse(false) =>
+        Some(LocalClose)
+
+      case closing: DATA_CLOSING if closing.remoteCommitPublished.map(Closing.isRemoteCommitDone(_)).getOrElse(false) =>
+        Some(RemoteClose)
+
+      case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.map(Closing.isRemoteCommitDone(_)).getOrElse(false) =>
+        Some(RemoteClose)
+
+      case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.map(Closing.isRemoteCommitDone(_)).getOrElse(false) =>
+        Some(RecoveryClose)
+
+      case closing: DATA_CLOSING if closing.revokedCommitPublished.map(Closing.isRevokedCommitDone(_)).exists(_ == true) =>
+        Some(RevokedClose)
+
+      case _ => None
+    }
 
     // used only to compute tx weights and estimate fees
     lazy val dummyPublicKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), true).publicKey

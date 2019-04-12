@@ -1258,34 +1258,24 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         .onchainOutgoingHtlcs(d.commitments.localCommit, d.commitments.remoteCommit, d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit), tx)
         .filter(add => Closing.isSentByLocal(add.id, d.commitments.originChannels)) // we only care about htlcs for which we were the original sender here
         .foreach(add => context.system.eventStream.publish(PaymentSettlingOnChain(amount = MilliSatoshi(add.amountMsat), add.paymentHash)))
-      // then let's see if any of the possible close scenarii can be considered done
-      val mutualCloseDone = d.mutualClosePublished.exists(_.txid == tx.txid) // this case is trivial, in a mutual close scenario we only need to make sure that one of the closing txes is confirmed
-      val localCommitDone = localCommitPublished1.map(Closing.isLocalCommitDone(_)).getOrElse(false)
-      val remoteCommitDone = remoteCommitPublished1.map(Closing.isRemoteCommitDone(_)).getOrElse(false)
-      val nextRemoteCommitDone = nextRemoteCommitPublished1.map(Closing.isRemoteCommitDone(_)).getOrElse(false)
-      val futureRemoteCommitDone = futureRemoteCommitPublished1.map(Closing.isRemoteCommitDone(_)).getOrElse(false)
-      val revokedCommitDone = revokedCommitPublished1.map(Closing.isRevokedCommitDone(_)).exists(_ == true) // we only need one revoked commit done
+
       // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay (note that we don't store the state)
       val d1 = d.copy(localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1, futureRemoteCommitPublished = futureRemoteCommitPublished1, revokedCommitPublished = revokedCommitPublished1)
       // we also send events related to fee
       Closing.networkFeePaid(tx, d1) map { case (fee, desc) => feePaid(fee, tx, desc, d.channelId) }
-      val closeType_opt = if (mutualCloseDone) {
-        Some("mutual")
-      } else if (localCommitDone) {
-        Some("local")
-      } else if (remoteCommitDone || nextRemoteCommitDone) {
-        Some("remote")
-      } else if (futureRemoteCommitDone) {
-        Some("recovery")
-      } else if (revokedCommitDone) {
-        Some("revoked")
+
+      // can we close this channel ?
+      val closeType_opt = if (d1.mutualClosePublished.exists(_.txid == tx.txid)) {
+        // this case is trivial, in a mutual close scenario we only need to make sure that one of the closing txes is confirmed)
+        Some(Closing.MutualClose)
       } else {
-        None
+        Closing.closingType(d1)
       }
+
       closeType_opt match {
         case Some(closeType) =>
           log.info(s"channel closed (type=$closeType)")
-          context.system.eventStream.publish(ChannelClosed(self, d.channelId, closeType, d.commitments))
+          context.system.eventStream.publish(ChannelClosed(self, d.channelId, closeType.toString, d.commitments))
           goto(CLOSED) using store(d1)
         case None =>
           stay using store(d1)
