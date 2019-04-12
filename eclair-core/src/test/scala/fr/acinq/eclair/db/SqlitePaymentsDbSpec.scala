@@ -67,7 +67,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     }
 
     // the existing received payment can NOT be queried anymore
-    assert(preMigrationDb.getIncoming(oldReceivedPayment.paymentHash).isEmpty)
+    assert(preMigrationDb.getIncomingPayment(oldReceivedPayment.paymentHash).isEmpty)
 
     // add a few rows
     val ps1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), amountMsat = 12345, createdAt = 12345)
@@ -78,8 +78,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
     preMigrationDb.addIncomingPayment(pr1)
     preMigrationDb.addOutgoingPayment(ps1)
 
-    assert(preMigrationDb.listIncoming() == Seq(pr1))
-    assert(preMigrationDb.listOutgoing() == Seq(ps1))
+    assert(preMigrationDb.listIncomingPayments() == Seq(pr1))
+    assert(preMigrationDb.listOutgoingPayments() == Seq(ps1))
     assert(preMigrationDb.listPaymentRequests(0, Long.MaxValue) == Seq(i1))
 
     val postMigrationDb = new SqlitePaymentsDb(connection)
@@ -88,8 +88,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
       assert(getVersion(statement, "payments", 2) == 2) // version still to 2
     }
 
-    assert(postMigrationDb.listIncoming() == Seq(pr1))
-    assert(postMigrationDb.listOutgoing() == Seq(ps1))
+    assert(postMigrationDb.listIncomingPayments() == Seq(pr1))
+    assert(postMigrationDb.listOutgoingPayments() == Seq(ps1))
     assert(preMigrationDb.listPaymentRequests(0, Long.MaxValue) == Seq(i1))
   }
 
@@ -108,12 +108,12 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val p1 = IncomingPayment(i1.paymentHash, 12345678, 1513871928275L)
     val p2 = IncomingPayment(i2.paymentHash, 12345678, 1513871928275L)
-    assert(db.listIncoming() === Nil)
+    assert(db.listIncomingPayments() === Nil)
     db.addIncomingPayment(p1)
     db.addIncomingPayment(p2)
-    assert(db.listIncoming().toList === List(p1, p2))
-    assert(db.getIncoming(p1.paymentHash) === Some(p1))
-    assert(db.getIncoming(ByteVector32(hex"6e7e8018f05e169cf1d99e77dc22cb372d09f10b6a81f1eae410718c56cad187")) === None)
+    assert(db.listIncomingPayments().toList === List(p1, p2))
+    assert(db.getIncomingPayment(p1.paymentHash) === Some(p1))
+    assert(db.getIncomingPayment(ByteVector32(hex"6e7e8018f05e169cf1d99e77dc22cb372d09f10b6a81f1eae410718c56cad187")) === None)
   }
 
   test("add/retrieve/update sent payments") {
@@ -123,24 +123,24 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val s1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), amountMsat = 12345, createdAt = 12345)
     val s2 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), amountMsat = 12345, createdAt = 12345)
 
-    assert(db.listOutgoing().isEmpty)
+    assert(db.listOutgoingPayments().isEmpty)
     db.addOutgoingPayment(s1)
     db.addOutgoingPayment(s2)
 
-    assert(db.listOutgoing().toList == Seq(s1, s2))
-    assert(db.getOutgoing(s1.id) === Some(s1))
-    assert(db.getOutgoing(UUID.randomUUID()) === None)
-    assert(db.getOutgoing(s2.paymentHash) === Some(s2))
-    assert(db.getOutgoing(ByteVector32.Zeroes) === None)
+    assert(db.listOutgoingPayments().toList == Seq(s1, s2))
+    assert(db.getOutgoingPayment(s1.id) === Some(s1))
+    assert(db.getOutgoingPayment(UUID.randomUUID()) === None)
+    assert(db.getOutgoingPayment(s2.paymentHash) === Some(s2))
+    assert(db.getOutgoingPayment(ByteVector32.Zeroes) === None)
 
     val s3 = s2.copy(id = UUID.randomUUID(), amountMsat = 88776655)
     db.addOutgoingPayment(s3)
 
-    db.updateOutgoingStatus(s3.id, OutgoingPaymentStatus.FAILED)
-    assert(db.getOutgoing(s3.id).get.status == OutgoingPaymentStatus.FAILED)
+    db.updateOutgoingPayment(s3.id, OutgoingPaymentStatus.FAILED)
+    assert(db.getOutgoingPayment(s3.id).get.status == OutgoingPaymentStatus.FAILED)
 
     // can't update again once it's in a final state
-    assertThrows[IllegalArgumentException](db.updateOutgoingStatus(s3.id, OutgoingPaymentStatus.SUCCEEDED))
+    assertThrows[IllegalArgumentException](db.updateOutgoingPayment(s3.id, OutgoingPaymentStatus.SUCCEEDED))
   }
 
   test("add/retrieve payment requests") {

@@ -81,7 +81,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def updateOutgoingStatus(id: UUID, newStatus: OutgoingPaymentStatus.Value) = {
+  override def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value) = {
     val updateStmt = newStatus match {
       case OutgoingPaymentStatus.SUCCEEDED => "UPDATE sent_payments SET succeeded_at = ? WHERE id = ? AND failed_at IS NULL"
       case OutgoingPaymentStatus.FAILED => "UPDATE sent_payments SET failed_at = ? WHERE id = ? AND succeeded_at IS NULL"
@@ -105,7 +105,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def getIncoming(paymentHash: ByteVector32): Option[IncomingPayment] = {
+  override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] = {
     using(sqlite.prepareStatement("SELECT payment_hash, received_msat, received_at FROM received_payments WHERE payment_hash = ? AND received_msat > 0")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
@@ -117,7 +117,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def getOutgoing(id: UUID): Option[OutgoingPayment] = {
+  override def getOutgoingPayment(id: UUID): Option[OutgoingPayment] = {
     using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, created_at, succeeded_at, failed_at FROM sent_payments WHERE id = ?")) { statement =>
       statement.setBytes(1, id.toString.getBytes)
       val rs = statement.executeQuery()
@@ -135,7 +135,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def getOutgoing(paymentHash: ByteVector32): Option[OutgoingPayment] = {
+  override def getOutgoingPayment(paymentHash: ByteVector32): Option[OutgoingPayment] = {
     using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, created_at, succeeded_at, failed_at FROM sent_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
@@ -180,7 +180,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listIncoming(): Seq[IncomingPayment] = {
+  override def listIncomingPayments(): Seq[IncomingPayment] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT payment_hash, received_msat, received_at FROM received_payments WHERE received_msat > 0")
       var q: Queue[IncomingPayment] = Queue()
@@ -191,7 +191,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listOutgoing(): Seq[OutgoingPayment] = {
+  override def listOutgoingPayments(): Seq[OutgoingPayment] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT id, payment_hash, amount_msat, created_at, succeeded_at, failed_at FROM sent_payments")
       var q: Queue[OutgoingPayment] = Queue()
