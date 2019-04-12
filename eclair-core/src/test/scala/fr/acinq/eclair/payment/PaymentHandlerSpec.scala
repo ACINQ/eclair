@@ -50,7 +50,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     {
       sender.send(handler, ReceivePayment(Some(amountMsat), "1 coffee"))
       val pr = sender.expectMsgType[PaymentRequest]
-      assert(nodeParams.db.payments.getReceived(pr.paymentHash).isEmpty)
+      assert(nodeParams.db.payments.getIncoming(pr.paymentHash).isEmpty)
       assert(nodeParams.db.payments.getRequestAndPreimage(pr.paymentHash).isDefined)
 
       val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
@@ -59,32 +59,32 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
       assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat, add.paymentHash, add.channelId, timestamp = 0))
-      assert(nodeParams.db.payments.getReceived(pr.paymentHash).exists(_.paymentHash == pr.paymentHash))
+      assert(nodeParams.db.payments.getIncoming(pr.paymentHash).exists(_.paymentHash == pr.paymentHash))
     }
 
     {
       sender.send(handler, ReceivePayment(Some(amountMsat), "another coffee"))
       val pr = sender.expectMsgType[PaymentRequest]
-      assert(nodeParams.db.payments.getReceived(pr.paymentHash).isEmpty)
+      assert(nodeParams.db.payments.getIncoming(pr.paymentHash).isEmpty)
 
       val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
       assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat, add.paymentHash, add.channelId, timestamp = 0))
-      assert(nodeParams.db.payments.getReceived(pr.paymentHash).exists(_.paymentHash == pr.paymentHash))
+      assert(nodeParams.db.payments.getIncoming(pr.paymentHash).exists(_.paymentHash == pr.paymentHash))
     }
 
     {
       sender.send(handler, ReceivePayment(Some(amountMsat), "bad expiry"))
       val pr = sender.expectMsgType[PaymentRequest]
-      assert(nodeParams.db.payments.getReceived(pr.paymentHash).isEmpty)
+      assert(nodeParams.db.payments.getIncoming(pr.paymentHash).isEmpty)
 
       val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, cltvExpiry = Globals.blockCount.get() + 3, ByteVector.empty)
       sender.send(handler, add)
       assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(FinalExpiryTooSoon))
       eventListener.expectNoMsg(300 milliseconds)
-      assert(nodeParams.db.payments.getReceived(pr.paymentHash).isEmpty)
+      assert(nodeParams.db.payments.getIncoming(pr.paymentHash).isEmpty)
     }
   }
 

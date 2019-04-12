@@ -22,13 +22,11 @@ import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.bitcoin.{Block, ByteVector32, MilliSatoshi}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.{TestConstants, payment}
-import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.payment.PaymentRequest
 import org.scalatest.FunSuite
 import scodec.bits._
 import fr.acinq.eclair.randomBytes32
-
 import scala.compat.Platform
 
 class SqlitePaymentsDbSpec extends FunSuite {
@@ -52,7 +50,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
       assert(getVersion(statement, "payments", 1) == 1) // version 1 is deployed now
     }
 
-    val oldReceivedPayment = ReceivedPayment(ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 123, 1233322)
+    val oldReceivedPayment = IncomingPayment(ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 123, 1233322)
 
     // insert old type record
     using(connection.prepareStatement("INSERT INTO payments VALUES (?, ?, ?)")) { statement =>
@@ -69,19 +67,19 @@ class SqlitePaymentsDbSpec extends FunSuite {
     }
 
     // the existing received payment can NOT be queried anymore
-    assert(preMigrationDb.getReceived(oldReceivedPayment.paymentHash).isEmpty)
+    assert(preMigrationDb.getIncoming(oldReceivedPayment.paymentHash).isEmpty)
 
     // add a few rows
-    val ps1 = SentPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928274L, 1513871928275L, SentPaymentStatus.PENDING)
+    val ps1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), amountMsat = 12345, createdAt = 12345)
     val i1 = PaymentRequest.read("lnbc10u1pw2t4phpp5ezwm2gdccydhnphfyepklc0wjkxhz0r4tctg9paunh2lxgeqhcmsdqlxycrqvpqwdshgueqvfjhggr0dcsry7qcqzpgfa4ecv7447p9t5hkujy9qgrxvkkf396p9zar9p87rv2htmeuunkhydl40r64n5s2k0u7uelzc8twxmp37nkcch6m0wg5tvvx69yjz8qpk94qf3")
-    val pr1 = ReceivedPayment(i1.paymentHash, 12345678, 1513871928275L)
+    val pr1 = IncomingPayment(i1.paymentHash, 12345678, 1513871928275L)
 
     preMigrationDb.addPaymentRequest(i1, ByteVector32.Zeroes)
-    preMigrationDb.addReceivedPayment(pr1)
-    preMigrationDb.addSentPayment(ps1)
+    preMigrationDb.addIncomingPayment(pr1)
+    preMigrationDb.addOutgoingPayment(ps1)
 
-    assert(preMigrationDb.listReceived() == Seq(pr1))
-    assert(preMigrationDb.listSent() == Seq(ps1))
+    assert(preMigrationDb.listIncoming() == Seq(pr1))
+    assert(preMigrationDb.listOutgoing() == Seq(ps1))
     assert(preMigrationDb.listPaymentRequests(0, Long.MaxValue) == Seq(i1))
 
     val postMigrationDb = new SqlitePaymentsDb(connection)
@@ -90,8 +88,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
       assert(getVersion(statement, "payments", 2) == 2) // version still to 2
     }
 
-    assert(postMigrationDb.listReceived() == Seq(pr1))
-    assert(postMigrationDb.listSent() == Seq(ps1))
+    assert(postMigrationDb.listIncoming() == Seq(pr1))
+    assert(postMigrationDb.listOutgoing() == Seq(ps1))
     assert(preMigrationDb.listPaymentRequests(0, Long.MaxValue) == Seq(i1))
   }
 
@@ -100,7 +98,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val db = new SqlitePaymentsDb(sqlite)
 
     // can't receive a payment without an invoice associated with it
-    assertThrows[IllegalArgumentException](db.addReceivedPayment(ReceivedPayment(ByteVector32(hex"6e7e8018f05e169cf1d99e77dc22cb372d09f10b6a81f1eae410718c56cad188"), 12345678, 1513871928275L)))
+    assertThrows[IllegalArgumentException](db.addIncomingPayment(IncomingPayment(ByteVector32(hex"6e7e8018f05e169cf1d99e77dc22cb372d09f10b6a81f1eae410718c56cad188"), 12345678, 1513871928275L)))
 
     val i1 = PaymentRequest.read("lnbc5450n1pw2t4qdpp5vcrf6ylgpettyng4ac3vujsk0zpc25cj0q3zp7l7w44zvxmpzh8qdzz2pshjmt9de6zqen0wgsr2dp4ypcxj7r9d3ejqct5ypekzar0wd5xjuewwpkxzcm99cxqzjccqp2rzjqtspxelp67qc5l56p6999wkatsexzhs826xmupyhk6j8lxl038t27z9tsqqqgpgqqqqqqqlgqqqqqzsqpcz8z8hmy8g3ecunle4n3edn3zg2rly8g4klsk5md736vaqqy3ktxs30ht34rkfkqaffzxmjphvd0637dk2lp6skah2hq09z6lrjna3xqp3d4vyd")
     val i2 = PaymentRequest.read("lnbc10u1pw2t4phpp5ezwm2gdccydhnphfyepklc0wjkxhz0r4tctg9paunh2lxgeqhcmsdqlxycrqvpqwdshgueqvfjhggr0dcsry7qcqzpgfa4ecv7447p9t5hkujy9qgrxvkkf396p9zar9p87rv2htmeuunkhydl40r64n5s2k0u7uelzc8twxmp37nkcch6m0wg5tvvx69yjz8qpk94qf3")
@@ -108,39 +106,41 @@ class SqlitePaymentsDbSpec extends FunSuite {
     db.addPaymentRequest(i1, ByteVector32.Zeroes)
     db.addPaymentRequest(i2, ByteVector32.Zeroes)
 
-    val p1 = ReceivedPayment(i1.paymentHash, 12345678, 1513871928275L)
-    val p2 = ReceivedPayment(i2.paymentHash, 12345678, 1513871928275L)
-    assert(db.listReceived() === Nil)
-    db.addReceivedPayment(p1)
-    db.addReceivedPayment(p2)
-    assert(db.listReceived().toList === List(p1, p2))
-    assert(db.getReceived(p1.paymentHash) === Some(p1))
-    assert(db.getReceived(ByteVector32(hex"6e7e8018f05e169cf1d99e77dc22cb372d09f10b6a81f1eae410718c56cad187")) === None)
+    val p1 = IncomingPayment(i1.paymentHash, 12345678, 1513871928275L)
+    val p2 = IncomingPayment(i2.paymentHash, 12345678, 1513871928275L)
+    assert(db.listIncoming() === Nil)
+    db.addIncomingPayment(p1)
+    db.addIncomingPayment(p2)
+    assert(db.listIncoming().toList === List(p1, p2))
+    assert(db.getIncoming(p1.paymentHash) === Some(p1))
+    assert(db.getIncoming(ByteVector32(hex"6e7e8018f05e169cf1d99e77dc22cb372d09f10b6a81f1eae410718c56cad187")) === None)
   }
 
   test("add/retrieve/update sent payments") {
 
     val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
 
-    val s1 = SentPayment(UUID.randomUUID(), ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), 12345, 1513871928273L, 1513871928275L, SentPaymentStatus.PENDING)
-    val s2 = SentPayment(UUID.randomUUID(), ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), 54321, 1513871928272L, 1513871928275L, SentPaymentStatus.PENDING)
+    val s1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), amountMsat = 12345, createdAt = 12345)
+    val s2 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), amountMsat = 12345, createdAt = 12345)
 
-    assert(db.listSent().isEmpty)
-    db.addSentPayment(s1)
-    db.addSentPayment(s2)
+    assert(db.listOutgoing().isEmpty)
+    db.addOutgoingPayment(s1)
+    db.addOutgoingPayment(s2)
 
-    assert(db.listSent().toList == Seq(s1, s2))
-    assert(db.getSent(s1.id) === Some(s1))
-    assert(db.getSent(UUID.randomUUID()) === None)
-    assert(db.getSent(s2.paymentHash) === Some(s2))
-    assert(db.getSent(ByteVector32.Zeroes) === None)
+    assert(db.listOutgoing().toList == Seq(s1, s2))
+    assert(db.getOutgoing(s1.id) === Some(s1))
+    assert(db.getOutgoing(UUID.randomUUID()) === None)
+    assert(db.getOutgoing(s2.paymentHash) === Some(s2))
+    assert(db.getOutgoing(ByteVector32.Zeroes) === None)
 
-    val s3 = s2.copy(id = UUID.randomUUID(), amountMsat = 88776655, status = SentPaymentStatus.SUCCEEDED)
-    db.addSentPayment(s3)
-    assert(db.getSent(s3.id).exists(el => el.amountMsat == s3.amountMsat && el.status == SentPaymentStatus.SUCCEEDED))
+    val s3 = s2.copy(id = UUID.randomUUID(), amountMsat = 88776655)
+    db.addOutgoingPayment(s3)
 
-    db.updateSentStatus(s3.id, SentPaymentStatus.FAILED)
-    assert(db.getSent(s3.id).get.status == SentPaymentStatus.FAILED)
+    db.updateOutgoingStatus(s3.id, OutgoingPaymentStatus.FAILED)
+    assert(db.getOutgoing(s3.id).get.status == OutgoingPaymentStatus.FAILED)
+
+    // can't update again once it's in a final state
+    assertThrows[IllegalArgumentException](db.updateOutgoingStatus(s3.id, OutgoingPaymentStatus.SUCCEEDED))
   }
 
   test("add/retrieve payment requests") {

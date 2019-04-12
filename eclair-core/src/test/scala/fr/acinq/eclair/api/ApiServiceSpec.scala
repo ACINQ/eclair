@@ -31,7 +31,7 @@ import akka.stream.ActorMaterializer
 import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel.RES_GETINFO
-import fr.acinq.eclair.db.{NetworkFee, ReceivedPayment, SentPayment, Stats}
+import fr.acinq.eclair.db.{NetworkFee, IncomingPayment, OutgoingPayment, Stats}
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, ReceivePayment}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteResponse}
@@ -76,7 +76,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long]): Future[UUID] = ???
 
-    override def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivedPayment]] = ???
+    override def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]] = ???
 
     override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = ???
 
@@ -86,7 +86,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def getInfoResponse(): Future[GetInfoResponse] = ???
 
-    override def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[SentPayment]] = ???
+    override def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[OutgoingPayment]] = ???
 
     override def allInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]] = ???
 
@@ -290,7 +290,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   test("'receivedinfo' method should respond HTTP 404 with a JSON encoded response if the element is not found") {
 
     val mockService = new MockService(new EclairMock {
-      override def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivedPayment]] = Future.successful(None) // element not found
+      override def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]] = Future.successful(None) // element not found
     })
 
     Post("/receivedinfo", FormData("paymentHash" -> ByteVector32.Zeroes.toHex).toEntity) ~>

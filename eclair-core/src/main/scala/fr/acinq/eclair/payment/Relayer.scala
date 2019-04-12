@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
+import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
@@ -122,7 +122,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case Status.Failure(AddHtlcFailed(_, paymentHash, _, Local(id, None), _, _)) =>
       // we sent the payment, but we probably restarted and the reference to the original sender was lost,
       // we publish the failure on the event stream and update the status in paymentDb
-      nodeParams.db.payments.updateSentStatus(id, SentPaymentStatus.FAILED)
+      nodeParams.db.payments.updateOutgoingStatus(id, OutgoingPaymentStatus.FAILED)
       context.system.eventStream.publish(PaymentFailed(id, paymentHash, Nil))
 
     case Status.Failure(AddHtlcFailed(_, _, error, Local(_, Some(sender)), _, _)) =>
@@ -156,7 +156,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       context.system.eventStream.publish(PaymentSent(id, MilliSatoshi(add.amountMsat), feesPaid, add.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
       // we sent the payment, but we probably restarted and the reference to the original sender was lost,
       // we publish the failure on the event stream and update the status in paymentDb
-      nodeParams.db.payments.updateSentStatus(id, SentPaymentStatus.SUCCEEDED)
+      nodeParams.db.payments.updateOutgoingStatus(id, OutgoingPaymentStatus.SUCCEEDED)
       context.system.eventStream.publish(PaymentSucceeded(id, add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil)) //
 
     case ForwardFulfill(fulfill, Local(_, Some(sender)), _) =>
@@ -170,7 +170,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardFail(_, Local(id, None), add) =>
       // we sent the payment, but we probably restarted and the reference to the original sender was lost
       // we publish the failure on the event stream and update the status in paymentDb
-      nodeParams.db.payments.updateSentStatus(id, SentPaymentStatus.FAILED)
+      nodeParams.db.payments.updateOutgoingStatus(id, OutgoingPaymentStatus.FAILED)
       context.system.eventStream.publish(PaymentFailed(id, add.paymentHash, Nil))
 
     case ForwardFail(fail, Local(_, Some(sender)), _) =>
@@ -183,7 +183,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardFailMalformed(_, Local(id, None), add) =>
       // we sent the payment, but we probably restarted and the reference to the original sender was lost
       // we publish the failure on the event stream and update the status in paymentDb
-      nodeParams.db.payments.updateSentStatus(id, SentPaymentStatus.FAILED)
+      nodeParams.db.payments.updateOutgoingStatus(id, OutgoingPaymentStatus.FAILED)
       context.system.eventStream.publish(PaymentFailed(id, add.paymentHash, Nil))
 
     case ForwardFailMalformed(fail, Local(_, Some(sender)), _) =>

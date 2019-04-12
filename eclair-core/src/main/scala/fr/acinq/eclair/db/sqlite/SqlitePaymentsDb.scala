@@ -16,16 +16,19 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.Connection
+import java.sql.{Connection, ResultSet}
+import java.time.Instant
 import java.util.UUID
+
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
-import fr.acinq.eclair.db.{PaymentsDb, ReceivedPayment, SentPayment}
+import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment, OutgoingPaymentStatus, PaymentsDb}
 import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
+
 import scala.collection.immutable.Queue
 import scala.compat.Platform
+import scala.util.{Failure, Success, Try}
 
 class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
@@ -42,11 +45,11 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
 
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request VARCHAR NOT NULL, received_msat INTEGER, received_at INTEGER, expire_at INTEGER, created_at INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, status VARCHAR NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, succeeded_at INTEGER, failed_at INTEGER)")
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request VARCHAR NOT NULL, received_msat INTEGER, received_at INTEGER, expire_at INTEGER, created_at INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, status VARCHAR NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id BLOB NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, succeeded_at INTEGER, failed_at INTEGER)")
       case unknownVersion =>
         throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
@@ -68,7 +71,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def addReceivedPayment(payment: ReceivedPayment): Unit = {
+  override def addIncomingPayment(payment: IncomingPayment): Unit = {
     using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (?, ?) WHERE payment_hash = ?")) { statement =>
       statement.setLong(1, payment.amountMsat)
       statement.setLong(2, payment.timestamp)
@@ -78,70 +81,72 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def updateSentStatus(id: UUID, newStatus: SentPaymentStatus.Value) = {
-    using(sqlite.prepareStatement(s"UPDATE sent_payments SET (status, updated_at) = (?, ?) WHERE id = ?")) { statement =>
-      statement.setString(1, newStatus.toString)
-      statement.setLong(2, Platform.currentTime)
-      statement.setBytes(3, id.toString.getBytes)
-      statement.executeUpdate()
+  override def updateOutgoingStatus(id: UUID, newStatus: OutgoingPaymentStatus.Value) = {
+    val updateStmt = newStatus match {
+      case OutgoingPaymentStatus.SUCCEEDED => "UPDATE sent_payments SET succeeded_at = ? WHERE id = ? AND failed_at IS NULL"
+      case OutgoingPaymentStatus.FAILED => "UPDATE sent_payments SET failed_at = ? WHERE id = ? AND succeeded_at IS NULL"
+    }
+
+    using(sqlite.prepareStatement(updateStmt)) { statement =>
+      statement.setLong(1, Instant.now().getEpochSecond)
+      statement.setBytes(2, id.toString.getBytes)
+      if(statement.executeUpdate() == 0) throw new IllegalArgumentException(s"Tried to update an outgoing payment (id=$id) already in final status with=$newStatus")
     }
   }
 
-  override def addSentPayment(sent: SentPayment): Unit = {
-    using(sqlite.prepareStatement("INSERT INTO sent_payments VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+  override def addOutgoingPayment(sent: OutgoingPayment): Unit = {
+    using(sqlite.prepareStatement("INSERT INTO sent_payments (id, payment_hash, amount_msat, created_at) VALUES (?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, sent.id.toString.getBytes)
       statement.setBytes(2, sent.paymentHash.toArray)
       statement.setLong(3, sent.amountMsat)
       statement.setLong(4, sent.createdAt)
-      statement.setLong(5, sent.updatedAt)
-      statement.setString(6, sent.status.toString)
       val res = statement.executeUpdate()
       logger.debug(s"inserted $res payment=${sent.paymentHash} into payment DB")
     }
   }
 
-  override def getReceived(paymentHash: ByteVector32): Option[ReceivedPayment] = {
+  override def getIncoming(paymentHash: ByteVector32): Option[IncomingPayment] = {
     using(sqlite.prepareStatement("SELECT payment_hash, received_msat, received_at FROM received_payments WHERE payment_hash = ? AND received_msat > 0")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Some(ReceivedPayment(rs.getByteVector32("payment_hash"), rs.getLong("received_msat"), rs.getLong("received_at")))
+        Some(IncomingPayment(rs.getByteVector32("payment_hash"), rs.getLong("received_msat"), rs.getLong("received_at")))
       } else {
         None
       }
     }
   }
 
-  override def getSent(id: UUID): Option[SentPayment] = {
-    using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, created_at, updated_at, status FROM sent_payments WHERE id = ?")) { statement =>
+  override def getOutgoing(id: UUID): Option[OutgoingPayment] = {
+    using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, created_at, succeeded_at, failed_at FROM sent_payments WHERE id = ?")) { statement =>
       statement.setBytes(1, id.toString.getBytes)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Some(SentPayment(
+        Some(OutgoingPayment(
           UUID.fromString(new String(rs.getBytes("id"))),
           rs.getByteVector32("payment_hash"),
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
-          rs.getLong("updated_at"),
-          SentPaymentStatus.withName(rs.getString("status"))))
+          getNullableTimestamp(rs, "succeeded_at"),
+          getNullableTimestamp(rs, "failed_at")))
       } else {
         None
       }
     }
   }
 
-  override def getSent(paymentHash: ByteVector32): Option[SentPayment] = {
-    using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, created_at, updated_at, status FROM sent_payments WHERE payment_hash = ?")) { statement =>
+  override def getOutgoing(paymentHash: ByteVector32): Option[OutgoingPayment] = {
+    using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, created_at, succeeded_at, failed_at FROM sent_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Some(SentPayment(
+        Some(OutgoingPayment(
           UUID.fromString(new String(rs.getBytes("id"))),
           rs.getByteVector32("payment_hash"),
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
-          rs.getLong("updated_at"),
-          SentPaymentStatus.withName(rs.getString("status"))))
+          getNullableTimestamp(rs, "succeeded_at"),
+          getNullableTimestamp(rs, "failed_at")))
       } else {
         None
       }
@@ -175,33 +180,40 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listReceived(): Seq[ReceivedPayment] = {
+  override def listIncoming(): Seq[IncomingPayment] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT payment_hash, received_msat, received_at FROM received_payments WHERE received_msat > 0")
-      var q: Queue[ReceivedPayment] = Queue()
+      var q: Queue[IncomingPayment] = Queue()
       while (rs.next()) {
-        q = q :+ ReceivedPayment(rs.getByteVector32("payment_hash"), rs.getLong("received_msat"), rs.getLong("received_at"))
+        q = q :+ IncomingPayment(rs.getByteVector32("payment_hash"), rs.getLong("received_msat"), rs.getLong("received_at"))
       }
       q
     }
   }
 
-  override def listSent(): Seq[SentPayment] = {
+  override def listOutgoing(): Seq[OutgoingPayment] = {
     using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT id, payment_hash, amount_msat, created_at, updated_at, status FROM sent_payments")
-      var q: Queue[SentPayment] = Queue()
+      val rs = statement.executeQuery("SELECT id, payment_hash, amount_msat, created_at, succeeded_at, failed_at FROM sent_payments")
+      var q: Queue[OutgoingPayment] = Queue()
       while (rs.next()) {
-        q = q :+ SentPayment(
+        q = q :+ OutgoingPayment(
           UUID.fromString(new String(rs.getBytes("id"))),
           rs.getByteVector32("payment_hash"),
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
-          rs.getLong("updated_at"),
-          SentPaymentStatus.withName(rs.getString("status")))
+          getNullableTimestamp(rs, "succeeded_at"),
+          getNullableTimestamp(rs, "failed_at"))
       }
       q
     }
   }
+
+  def getNullableTimestamp(rs: ResultSet, column: String): Option[Long] = Try(rs.getLong(column)) match {
+    case Success(0) => None
+    case Success(timestamp) => Some(timestamp)
+    case Failure(exception) => None
+  }
+
 
   override def listPaymentRequests(from: Long, to: Long): Seq[PaymentRequest] = {
     using(sqlite.prepareStatement("SELECT payment_request FROM received_payments WHERE created_at > ? AND created_at < ?")) { statement =>

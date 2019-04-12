@@ -18,26 +18,27 @@ package fr.acinq.eclair.db
 
 import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
 import fr.acinq.eclair.payment.PaymentRequest
 
 trait PaymentsDb {
 
   // assumes there is already a payment request for it (the record for the given payment hash)
-  def addReceivedPayment(payment: ReceivedPayment)
+  def addIncomingPayment(payment: IncomingPayment)
 
-  def addSentPayment(sent: SentPayment)
+  // creates a record for a non yet finalized outgoing payment
+  def addOutgoingPayment(sent: OutgoingPayment)
+
+  // updates the status of the payment, succeededAt OR failedAt
+  def updateOutgoingStatus(id: UUID, newStatus: OutgoingPaymentStatus.Value)
 
   // adds a new payment request and stores its preimage with it
   def addPaymentRequest(pr: PaymentRequest, preimage: ByteVector32)
 
-  def updateSentStatus(id: UUID, newStatus: SentPaymentStatus.Value)
+  def getIncoming(paymentHash: ByteVector32): Option[IncomingPayment]
 
-  def getReceived(paymentHash: ByteVector32): Option[ReceivedPayment]
+  def getOutgoing(id: UUID): Option[OutgoingPayment]
 
-  def getSent(id: UUID): Option[SentPayment]
-
-  def getSent(paymentHash: ByteVector32): Option[SentPayment]
+  def getOutgoing(paymentHash: ByteVector32): Option[OutgoingPayment]
 
   // return the payment request associated with this paymentHash
   def getPaymentRequest(paymentHash: ByteVector32): Option[PaymentRequest]
@@ -46,10 +47,10 @@ trait PaymentsDb {
   def getRequestAndPreimage(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)]
 
   // returns all received payments
-  def listReceived(): Seq[ReceivedPayment]
+  def listIncoming(): Seq[IncomingPayment]
 
   // returns all sent payments
-  def listSent(): Seq[SentPayment]
+  def listOutgoing(): Seq[OutgoingPayment]
 
   // returns all payment request
   def listPaymentRequests(from: Long, to: Long): Seq[PaymentRequest]
@@ -60,32 +61,44 @@ trait PaymentsDb {
 }
 
 /**
-  * Received payment object stored in DB.
+  * Incoming payment object stored in DB.
   *
   * @param paymentHash identifier of the payment
   * @param amountMsat  amount of the payment, in milli-satoshis
   * @param timestamp   absolute time in seconds since UNIX epoch when the payment was created.
   */
-case class ReceivedPayment(paymentHash: ByteVector32, amountMsat: Long, timestamp: Long)
+case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, timestamp: Long)
 
 /**
   * Sent payment is every payment that is sent by this node, they may not be finalized and
   * when is final it can be failed or successful.
   *
-  * @param id           internal payment identifier
-  * @param payment_hash payment_hash
-  * @param amount_msat  amount of the payment, in milli-satoshis
-  * @param createdAt    absolute time in seconds since UNIX epoch when the payment was created.
-  * @param updatedAt    absolute time in seconds since UNIX epoch when the payment was last updated.
+  * @param id          internal payment identifier
+  * @param paymentHash payment_hash
+  * @param amountMsat  amount of the payment, in milli-satoshis
+  * @param createdAt   absolute time in seconds since UNIX epoch when the payment was created.
+  * @param paidAt      absolute time in seconds since UNIX epoch when the payment was last updated.
   */
-case class SentPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, createdAt: Long, updatedAt: Long, status: SentPaymentStatus.Value)
+case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, createdAt: Long, succeededAt: Option[Long], failedAt: Option[Long], status: OutgoingPaymentStatus.Value)
 
-object SentPayment {
+object OutgoingPaymentStatus extends Enumeration {
+  val PENDING = Value(1, "PENDING")
+  val SUCCEEDED = Value(2, "SUCCEEDED")
+  val FAILED = Value(3, "FAILED")
+}
 
-  object SentPaymentStatus extends Enumeration {
-    val PENDING = Value(1, "PENDING")
-    val SUCCEEDED = Value(2, "SUCCEEDED")
-    val FAILED = Value(3, "FAILED")
+object OutgoingPayment {
+
+  import OutgoingPaymentStatus._
+
+  def apply(id: UUID, paymentHash: ByteVector32, amountMsat: Long, createdAt: Long, succeededAt: Option[Long] = None, failedAt: Option[Long] = None): OutgoingPayment = {
+    val status = (succeededAt, failedAt) match {
+      case (None, None) => PENDING
+      case (Some(_), None) => SUCCEEDED
+      case (None, Some(_)) => FAILED
+      case (Some(_), Some(_)) => throw new RuntimeException(s"Invalid update field found for outgoing payment id=$id")
+    }
+    new OutgoingPayment(id, paymentHash, amountMsat, createdAt, succeededAt, failedAt, status = status)
   }
 
 }

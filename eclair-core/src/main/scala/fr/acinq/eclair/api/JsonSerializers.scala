@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.db.SentPayment.SentPaymentStatus
+import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.RouteResponse
 import fr.acinq.eclair.transactions.Direction
@@ -158,8 +158,8 @@ class JavaUUIDSerializer extends CustomSerializer[UUID](format => ({ null }, {
   case id: UUID => JString(id.toString)
 }))
 
-class OutgoingPaymentStatusSerializer extends CustomSerializer[SentPaymentStatus.Value](format => ({ null }, {
-  case el: SentPaymentStatus.Value => JString(el.toString)
+class OutgoingPaymentStatusSerializer extends CustomSerializer[OutgoingPaymentStatus.Value](format => ({ null }, {
+  case el: OutgoingPaymentStatus.Value => JString(el.toString)
 }))
 
 object JsonSupport extends Json4sSupport {

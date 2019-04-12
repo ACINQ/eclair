@@ -17,23 +17,21 @@
 package fr.acinq.eclair
 
 import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.{NetworkFee, ReceivedPayment, SentPayment, Stats}
+import fr.acinq.eclair.db.{NetworkFee, IncomingPayment, OutgoingPayment, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import scodec.bits.ByteVector
-
 import scala.concurrent.Future
 import scala.concurrent.duration._
-import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentReceived, PaymentRelayed, PaymentRequest, PaymentSent}
+import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 
 case class GetInfoResponse(nodeId: PublicKey, alias: String, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
@@ -70,9 +68,9 @@ trait Eclair {
 
   def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[UUID]
 
-  def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[SentPayment]]
+  def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[OutgoingPayment]]
 
-  def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivedPayment]]
+  def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]]
 
   def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse]
 
@@ -170,15 +168,15 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 
-  override def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[SentPayment]] = Future {
+  override def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[OutgoingPayment]] = Future {
     id match {
-      case Left(uuid) => appKit.nodeParams.db.payments.getSent(uuid)
-      case Right(paymentHash) => appKit.nodeParams.db.payments.getSent(paymentHash)
+      case Left(uuid) => appKit.nodeParams.db.payments.getOutgoing(uuid)
+      case Right(paymentHash) => appKit.nodeParams.db.payments.getOutgoing(paymentHash)
     }
   }
 
-  override def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivedPayment]] = Future {
-    appKit.nodeParams.db.payments.getReceived(paymentHash)
+  override def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]] = Future {
+    appKit.nodeParams.db.payments.getIncoming(paymentHash)
   }
 
   override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = {
