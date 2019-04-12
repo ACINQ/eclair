@@ -74,6 +74,8 @@ trait Service extends ExtraDirectives with Logging {
   val paymentHash = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
   val from = "from".as[Long]
   val to = "to".as[Long]
+  val amountMsat = "amountMsat".as[Long]
+  val invoice = "invoice".as[PaymentRequest]
 
   val apiExceptionHandler = ExceptionHandler {
     case t: Throwable =>
@@ -193,29 +195,29 @@ trait Service extends ExtraDirectives with Logging {
                     }
                   } ~
                   path("receive") {
-                    formFields("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?, "fallbackAddress".as[String].?) { (desc, amountMsat, expire, fallBackAddress) =>
+                    formFields("description".as[String], amountMsat.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?) { (desc, amountMsat, expire, fallBackAddress) =>
                       complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress))
                     }
                   } ~
                   path("parseinvoice") {
-                    formFields("invoice".as[PaymentRequest]) { invoice =>
+                    formFields(invoice) { invoice =>
                       complete(invoice)
                     }
                   } ~
                   path("findroute") {
-                    formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
+                    formFields(invoice, amountMsat.?) {
                       case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) => complete(eclairApi.findRoute(nodeId, amount.toLong, invoice.routingInfo))
                       case (invoice, Some(overrideAmount)) => complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, invoice.routingInfo))
                       case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"))
                     }
                   } ~
                   path("findroutetonode") {
-                    formFields(nodeId, "amountMsat".as[Long]) { (nodeId, amount) =>
+                    formFields(nodeId, amountMsat) { (nodeId, amount) =>
                       complete(eclairApi.findRoute(nodeId, amount))
                     }
                   } ~
                   path("send") {
-                    formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
+                    formFields(invoice, amountMsat.?) {
                       case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) =>
                         complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry))
                       case (invoice, Some(overrideAmount)) =>
@@ -224,7 +226,7 @@ trait Service extends ExtraDirectives with Logging {
                     }
                   } ~
                   path("sendtonode") {
-                    formFields("amountMsat".as[Long], paymentHash, "nodeId".as[PublicKey]) { (amountMsat, paymentHash, nodeId) =>
+                    formFields(amountMsat, paymentHash, nodeId) { (amountMsat, paymentHash, nodeId) =>
                       complete(eclairApi.send(nodeId, amountMsat, paymentHash))
                     }
                   } ~
@@ -238,7 +240,7 @@ trait Service extends ExtraDirectives with Logging {
                   path("receivedinfo") {
                     formFields(paymentHash) { paymentHash =>
                       completeOrNotFound(eclairApi.receivedInfo(paymentHash))
-                    } ~ formFields("invoice".as[PaymentRequest]) { invoice =>
+                    } ~ formFields(invoice) { invoice =>
                       completeOrNotFound(eclairApi.receivedInfo(invoice.paymentHash))
                     }
                   } ~
