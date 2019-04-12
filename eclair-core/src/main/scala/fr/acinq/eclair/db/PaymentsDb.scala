@@ -44,8 +44,7 @@ trait PaymentsDb {
   def listPaymentRequests(from: Long, to: Long): Seq[PaymentRequest]
 
   // returns non paid, non expired payment requests
-  def listPendingPaymentRequests(): Seq[PaymentRequest]
-
+  def listPendingPaymentRequests(from: Long, to: Long): Seq[PaymentRequest]
 
   // assumes there is already a payment request for it (the record for the given payment hash)
   def addIncomingPayment(payment: IncomingPayment)

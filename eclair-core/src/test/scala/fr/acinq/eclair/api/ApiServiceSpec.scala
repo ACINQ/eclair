@@ -92,7 +92,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def getInvoice(paymentHash: ByteVector32): Future[Option[PaymentRequest]] = ???
 
-    override def pendingInvoices(): Future[Seq[PaymentRequest]] = ???
+    override def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]] = ???
 
   }
 

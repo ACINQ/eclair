@@ -74,7 +74,7 @@ trait Eclair {
 
   def getInvoice(paymentHash: ByteVector32): Future[Option[PaymentRequest]]
 
-  def pendingInvoices(): Future[Seq[PaymentRequest]]
+  def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]]
 
   def allInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]]
 
@@ -204,8 +204,11 @@ class EclairImpl(appKit: Kit) extends Eclair {
     appKit.nodeParams.db.payments.listPaymentRequests(from, to)
   }
 
-  override def pendingInvoices(): Future[Seq[PaymentRequest]] = Future {
-    appKit.nodeParams.db.payments.listPendingPaymentRequests()
+  override def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]] = Future {
+    val from = from_opt.getOrElse(0L)
+    val to = to_opt.getOrElse(Long.MaxValue)
+
+    appKit.nodeParams.db.payments.listPendingPaymentRequests(from, to)
   }
 
   override def getInvoice(paymentHash: ByteVector32): Future[Option[PaymentRequest]] = Future {

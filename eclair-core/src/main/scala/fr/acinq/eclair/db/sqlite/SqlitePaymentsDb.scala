@@ -162,22 +162,21 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listPaymentRequests(from: Long, to: Long): Seq[PaymentRequest] = {
-    using(sqlite.prepareStatement("SELECT payment_request FROM received_payments WHERE created_at > ? AND created_at < ?")) { statement =>
+  override def listPaymentRequests(from: Long, to: Long): Seq[PaymentRequest] = listPaymentRequests(from, to, pendingOnly = false)
+
+  override def listPendingPaymentRequests(from: Long, to: Long): Seq[PaymentRequest] = listPaymentRequests(from, to, pendingOnly = true)
+
+  def listPaymentRequests(from: Long, to: Long, pendingOnly: Boolean): Seq[PaymentRequest] = {
+    val queryStmt = pendingOnly match {
+      case true => "SELECT payment_request FROM received_payments WHERE created_at > ? AND created_at < ? AND (expire_at > ? OR expire_at IS NULL) AND received_msat IS NULL"
+      case false => "SELECT payment_request FROM received_payments WHERE created_at > ? AND created_at < ?"
+    }
+
+    using(sqlite.prepareStatement(queryStmt)) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      val rs = statement.executeQuery()
-      var q: Queue[PaymentRequest] = Queue()
-      while (rs.next()) {
-        q = q :+ PaymentRequest.read(rs.getString("payment_request"))
-      }
-      q
-    }
-  }
+      if(pendingOnly) statement.setLong(3, Instant.now().getEpochSecond)
 
-  override def listPendingPaymentRequests(): Seq[PaymentRequest] = {
-    using(sqlite.prepareStatement("SELECT payment_request FROM received_payments WHERE (expire_at > ? OR expire_at IS NULL) AND received_msat IS NULL")) { statement =>
-      statement.setLong(1, Platform.currentTime / 1000)
       val rs = statement.executeQuery()
       var q: Queue[PaymentRequest] = Queue()
       while (rs.next()) {
