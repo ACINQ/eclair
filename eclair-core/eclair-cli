@@ -30,8 +30,8 @@ and COMMAND is one of:
   getinfo, connect, open, close, forceclose, updaterelayfee,
   peers, channels, channel, allnodes, allchannels, allupdates,
   receive, parseinvoice, findroute, findroutetonode,
-  send, sendtonode, checkpayment,
-  audit, networkfees, channelstats
+  send, sendtonode, receivedinfo, audit, networkfees,
+  channelstats, sentinfo, invoice, allinvoice, pendinginvoices
 
 Examples
 --------
