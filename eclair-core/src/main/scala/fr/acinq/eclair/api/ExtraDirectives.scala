@@ -17,19 +17,21 @@
 package fr.acinq.eclair.api
 
 import akka.http.scaladsl.marshalling.ToResponseMarshaller
-import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
+import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.server.{Directives, Route}
-
-import scala.concurrent.Future
+import fr.acinq.eclair.api.JsonSupport._
+import scala.concurrent.{Future}
 import scala.util.{Failure, Success}
 
 trait ExtraDirectives extends Directives {
 
-  // custom directive to fail with HTTP 404 if the element was not found
+  // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
   def completeWithFutureOption[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {
     case Success(Some(t)) => complete(t)
-    case Success(None) => complete(StatusCodes.NotFound)
-    case Failure(thr) => reject
+    case Success(None) =>
+      complete(HttpResponse(NotFound).withEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse("Not found"))))
+    case Failure(_) => reject
   }
 
 }

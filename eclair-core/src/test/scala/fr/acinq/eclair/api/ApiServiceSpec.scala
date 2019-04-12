@@ -287,6 +287,23 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       }
   }
 
+  test("'receivedinfo' method should respond HTTP 404 with a JSON encoded response if the element is not found") {
+
+    val mockService = new MockService(new EclairMock {
+      override def receivedInfo(paymentHash: ByteVector32): Future[Option[ReceivedPayment]] = Future.successful(None) // element not found
+    })
+
+    Post("/receivedinfo", FormData("paymentHash" -> ByteVector32.Zeroes.toHex).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == NotFound)
+        val resp = entityAs[ErrorResponse](JsonSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
+        assert(resp == ErrorResponse("Not found"))
+      }
+  }
+
 
   test("the websocket should return typed objects") {
 
