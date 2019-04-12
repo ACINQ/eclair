@@ -61,9 +61,9 @@ trait PaymentsDb {
   *
   * @param paymentHash identifier of the payment
   * @param amountMsat  amount of the payment, in milli-satoshis
-  * @param timestamp   absolute time in seconds since UNIX epoch when the payment was created.
+  * @param receivedAt  absolute time in seconds since UNIX epoch when the payment was received.
   */
-case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, timestamp: Long)
+case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, receivedAt: Long)
 
 /**
   * Sent payment is every payment that is sent by this node, they may not be finalized and
@@ -73,7 +73,9 @@ case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, timestam
   * @param paymentHash payment_hash
   * @param amountMsat  amount of the payment, in milli-satoshis
   * @param createdAt   absolute time in seconds since UNIX epoch when the payment was created.
-  * @param paidAt      absolute time in seconds since UNIX epoch when the payment was last updated.
+  * @param succeededAt absolute time in seconds since UNIX epoch when the payment succeeded.
+  * @param failedAt    absolute time in seconds since UNIX epoch when the payment failed.
+  * @param status      current status of the payment.
   */
 case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, createdAt: Long, succeededAt: Option[Long], failedAt: Option[Long], status: OutgoingPaymentStatus.Value)
 

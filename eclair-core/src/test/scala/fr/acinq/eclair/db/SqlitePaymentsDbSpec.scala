@@ -56,7 +56,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     using(connection.prepareStatement("INSERT INTO payments VALUES (?, ?, ?)")) { statement =>
       statement.setBytes(1, oldReceivedPayment.paymentHash.toArray)
       statement.setLong(2, oldReceivedPayment.amountMsat)
-      statement.setLong(3, oldReceivedPayment.timestamp)
+      statement.setLong(3, oldReceivedPayment.receivedAt)
       statement.executeUpdate()
     }
 
