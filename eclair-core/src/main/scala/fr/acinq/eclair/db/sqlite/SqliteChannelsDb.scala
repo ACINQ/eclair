@@ -31,12 +31,17 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
   import SqliteUtils._
 
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 1
+  val CURRENT_VERSION = 2
 
   using(sqlite.createStatement()) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
+    getVersion(statement, DB_NAME, CURRENT_VERSION) match {
+      case 1 =>
+        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN closed BOOLEAN NOT NULL DEFAULT 0")
+        updateVersion(statement, DB_NAME, CURRENT_VERSION)
+      case CURRENT_VERSION => ()
+    }
     statement.execute("PRAGMA foreign_keys = ON")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, closed BOOLEAN NOT NULL DEFAULT 0)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
   }
@@ -47,7 +52,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
       update.setBytes(1, data)
       update.setBytes(2, state.channelId.toArray)
       if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?)")) { statement =>
+        using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?, 0)")) { statement =>
           statement.setBytes(1, state.channelId.toArray)
           statement.setBytes(2, data)
           statement.executeUpdate()
@@ -67,7 +72,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
       statement.executeUpdate()
     }
 
-    using(sqlite.prepareStatement("DELETE FROM local_channels WHERE channel_id=?")) { statement =>
+    using(sqlite.prepareStatement("UPDATE local_channels SET closed=1 WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.executeUpdate()
     }
@@ -75,7 +80,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
 
   override def listLocalChannels(): Seq[HasCommitments] = {
     using(sqlite.createStatement) { statement =>
-      val rs = statement.executeQuery("SELECT data FROM local_channels")
+      val rs = statement.executeQuery("SELECT data FROM local_channels WHERE closed=0")
       codecSequence(rs, stateDataCodec)
     }
   }

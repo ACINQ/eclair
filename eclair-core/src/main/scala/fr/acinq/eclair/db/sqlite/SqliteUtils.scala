@@ -60,6 +60,12 @@ object SqliteUtils {
     res.getInt("version")
   }
 
+  def updateVersion(statement: Statement, db_name: String, version: Int): Int = {
+    statement.executeUpdate(s"UPDATE versions SET version=$version WHERE db_name='$db_name'")
+    // if there was a previous version installed, this will return a different value from current version
+    val res = statement.executeQuery(s"SELECT version FROM versions WHERE db_name='$db_name'")
+    res.getInt("version")
+  }
   /**
     * This helper assumes that there is a "data" column available, decodable with the provided codec
     *
