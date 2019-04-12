@@ -116,21 +116,6 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     assert(pr.amount.contains(MilliSatoshi(100000000L)) && pr.nodeId.toString == nodeParams.nodeId.toString)
   }
 
-  test("Payment request generation should fail when there are too many pending requests") {
-    val nodeParams = Alice.nodeParams.copy(maxPendingPaymentRequests = 42)
-    val handler = system.actorOf(LocalPaymentHandler.props(nodeParams))
-    val sender = TestProbe()
-
-    for (i <- 0 to nodeParams.maxPendingPaymentRequests) {
-      sender.send(handler, ReceivePayment(None, s"Request #$i"))
-      sender.expectMsgType[PaymentRequest]
-    }
-
-    // over limit
-    sender.send(handler, ReceivePayment(None, "This one should fail"))
-    assert(sender.expectMsgType[Status.Failure].cause.getMessage === s"too many pending payment requests (max=${nodeParams.maxPendingPaymentRequests})")
-  }
-
   test("Payment request generation should succeed when the amount is not set") {
     val handler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
     val sender = TestProbe()

@@ -43,9 +43,6 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
 
     case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt) =>
       Try {
-        if (paymentDb.listPendingPaymentRequests().size > nodeParams.maxPendingPaymentRequests) {
-          throw new RuntimeException(s"too many pending payment requests (max=${nodeParams.maxPendingPaymentRequests})")
-        }
         val paymentPreimage = randomBytes32
         val paymentHash = Crypto.sha256(paymentPreimage)
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
