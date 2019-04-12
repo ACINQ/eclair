@@ -22,6 +22,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Stat
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
+import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.{HasCommitments, _}
 import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
@@ -44,7 +45,11 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
   // we load peers and channels from database
   {
-    val channels = nodeParams.db.channels.listLocalChannels()
+    val (channels, closedChannels) = nodeParams.db.channels.listLocalChannels().partition(c => Closing.closingType(c).isEmpty)
+    closedChannels.foreach(c => {
+      log.info(s"closing channel ${c.channelId}")
+      nodeParams.db.channels.removeChannel(c.channelId)
+    })
     val peers = nodeParams.db.peers.listPeers()
 
     checkBrokenHtlcsLink(channels, nodeParams.privateKey) match {
