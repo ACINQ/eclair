@@ -314,4 +314,17 @@ class PaymentRequestSpec extends FunSuite {
 
     for (req <- requests) { assert(PaymentRequest.write(PaymentRequest.read(req)) == req) }
   }
+
+  test("embedded lnurl is detected") {
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(MilliSatoshi(500000L)), paymentHash = ByteVector32(ByteVector.fromValidHex("00" * 32)),
+      priv, "Invoice with embedded lnurl", fallbackAddress = None, expirySeconds = None, extraHops = Nil, lnUrl = Some("https://lnurl.serice.com?tag=multipart"))
+    val serialized = PaymentRequest.write(pr)
+    val pr1 = PaymentRequest.read(serialized)
+    assert(pr1.prefix == "lnbc")
+    assert(pr1.amount == Some(MilliSatoshi(500000L)))
+    assert(pr1.paymentHash == ByteVector32(ByteVector.fromValidHex("00" * 32)))
+    assert(pr1.nodeId == pub)
+    assert(pr1.description == Left("Invoice with embedded lnurl"))
+    assert(pr.tags.collectFirst { case lnurl: PaymentRequest.LNUrl => lnurl.request }.contains("https://lnurl.serice.com?tag=multipart"))
+  }
 }

@@ -115,8 +115,8 @@ object PaymentRequest {
     Block.LivenetGenesisBlock.hash -> "lnbc")
 
   def apply(chainHash: ByteVector32, amount: Option[MilliSatoshi], paymentHash: ByteVector32, privateKey: PrivateKey,
-            description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
-            extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L): PaymentRequest = {
+            description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil,
+            timestamp: Long = System.currentTimeMillis() / 1000L, lnUrl: Option[String] = None): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
 
@@ -129,7 +129,8 @@ object PaymentRequest {
         Some(PaymentHash(paymentHash)),
         Some(Description(description)),
         fallbackAddress.map(FallbackAddress(_)),
-        expirySeconds.map(Expiry(_))
+        expirySeconds.map(Expiry(_)),
+        lnUrl.map(LNUrl(_))
       ).flatten ++ extraHops.map(RoutingInfo(_)),
       signature = ByteVector.empty)
       .sign(privateKey)
@@ -183,6 +184,13 @@ object PaymentRequest {
     * @param description a free-format string that will be included in the payment request
     */
   case class Description(description: String) extends TaggedField
+
+  /**
+    * LNUrl
+    *
+    * @param request an embedded query string for advanced interactions
+    */
+  case class LNUrl(request: String) extends TaggedField
 
   /**
     * Hash
@@ -341,7 +349,7 @@ object PaymentRequest {
       .typecase(9, dataCodec(ubyte(5) :: alignedBytesCodec(bytes)).as[FallbackAddress])
       .typecase(10, dataCodec(bits).as[UnknownTag10])
       .typecase(11, dataCodec(bits).as[UnknownTag11])
-      .typecase(12, dataCodec(bits).as[UnknownTag12])
+      .typecase(12, dataCodec(alignedBytesCodec(utf8)).as[LNUrl])
       .typecase(13, dataCodec(alignedBytesCodec(utf8)).as[Description])
       .typecase(14, dataCodec(bits).as[UnknownTag14])
       .typecase(15, dataCodec(bits).as[UnknownTag15])
