@@ -26,6 +26,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.payment.LocalPaymentHandler.GeneratedPaymentRequests
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
@@ -108,8 +109,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     override def receive: Receive = ???
 
     def waitingForPaymentRequest: Receive = {
-      case req: PaymentRequest =>
-        channel ! buildCmdAdd(req.paymentHash, req.nodeId)
+      case gpr: GeneratedPaymentRequests =>
+        channel ! buildCmdAdd(gpr.requests.head.paymentHash, gpr.requests.head.nodeId)
         context become waitingForFulfill(false)
     }
 
