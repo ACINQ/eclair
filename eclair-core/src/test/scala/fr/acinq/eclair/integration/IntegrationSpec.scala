@@ -34,6 +34,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
 import fr.acinq.eclair.io.{NodeURI, Peer}
+import fr.acinq.eclair.payment.LocalPaymentHandler.GeneratedPaymentRequests
 import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
 import fr.acinq.eclair.payment.{LocalPaymentHandler, PaymentRequest}
 import fr.acinq.eclair.router.Graph.WeightRatios
@@ -258,10 +259,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val amountMsat = MilliSatoshi(4200000)
     // first we retrieve a payment hash from D
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
-    val pr = sender.expectMsgType[PaymentRequest]
+    val gpr = sender.expectMsgType[GeneratedPaymentRequests]
     // then we make the actual payment
     sender.send(nodes("A").paymentInitiator,
-      SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams))
+      SendPayment(amountMsat.amount, gpr.requests.head.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams))
     sender.expectMsgType[PaymentSucceeded]
   }
 
@@ -281,9 +282,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // we retrieve a payment hash from D
     val amountMsat = MilliSatoshi(4200000)
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
-    val pr = sender.expectMsgType[PaymentRequest]
+    val gpr = sender.expectMsgType[GeneratedPaymentRequests]
     // then we make the actual payment, do not randomize the route to make sure we route through node B
-    val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
+    val sendReq = SendPayment(amountMsat.amount, gpr.requests.head.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
     sender.send(nodes("A").paymentInitiator, sendReq)
     // A will receive an error from B that include the updated channel update, then will retry the payment
     sender.expectMsgType[PaymentSucceeded](5 seconds)
@@ -317,9 +318,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we retrieve a payment hash from D
     val amountMsat = MilliSatoshi(300000000L)
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
-    val pr = sender.expectMsgType[PaymentRequest]
+    val gpr = sender.expectMsgType[GeneratedPaymentRequests]
     // then we make the payment (B-C has a smaller capacity than A-B and C-D)
-    val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
+    val sendReq = SendPayment(amountMsat.amount, gpr.requests.head.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
     sender.send(nodes("A").paymentInitiator, sendReq)
     // A will first receive an error from C, then retry and route around C: A->B->E->C->D
     sender.expectMsgType[PaymentSucceeded](5 seconds)
@@ -342,15 +343,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = MilliSatoshi(200000000L)
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
-    val pr = sender.expectMsgType[PaymentRequest]
+    val gpr = sender.expectMsgType[GeneratedPaymentRequests]
 
     // A send payment of only 1 mBTC
-    val sendReq = SendPayment(100000000L, pr.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
+    val sendReq = SendPayment(100000000L, gpr.requests.head.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
     sender.send(nodes("A").paymentInitiator, sendReq)
 
     // A will first receive an IncorrectPaymentAmount error from D
     val failed = sender.expectMsgType[PaymentFailed]
-    assert(failed.paymentHash === pr.paymentHash)
+    assert(failed.paymentHash === gpr.requests.head.paymentHash)
     assert(failed.failures.size === 1)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectPaymentAmount))
   }
@@ -360,15 +361,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = MilliSatoshi(200000000L)
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
-    val pr = sender.expectMsgType[PaymentRequest]
+    val gpr = sender.expectMsgType[GeneratedPaymentRequests]
 
     // A send payment of 6 mBTC
-    val sendReq = SendPayment(600000000L, pr.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
+    val sendReq = SendPayment(600000000L, gpr.requests.head.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
     sender.send(nodes("A").paymentInitiator, sendReq)
 
     // A will first receive an IncorrectPaymentAmount error from D
     val failed = sender.expectMsgType[PaymentFailed]
-    assert(failed.paymentHash === pr.paymentHash)
+    assert(failed.paymentHash === gpr.requests.head.paymentHash)
     assert(failed.failures.size === 1)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectPaymentAmount))
   }
@@ -378,10 +379,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = MilliSatoshi(200000000L)
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
-    val pr = sender.expectMsgType[PaymentRequest]
+    val gpr = sender.expectMsgType[GeneratedPaymentRequests]
 
     // A send payment of 3 mBTC, more than asked but it should still be accepted
-    val sendReq = SendPayment(300000000L, pr.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
+    val sendReq = SendPayment(300000000L, gpr.requests.head.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
     sender.send(nodes("A").paymentInitiator, sendReq)
     sender.expectMsgType[PaymentSucceeded]
   }
@@ -392,9 +393,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     for (_ <- 0 until 7) {
       val amountMsat = MilliSatoshi(1000000000L)
       sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 payment"))
-      val pr = sender.expectMsgType[PaymentRequest]
+      val gpr = sender.expectMsgType[GeneratedPaymentRequests]
 
-      val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
+      val sendReq = SendPayment(amountMsat.amount, gpr.requests.head.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams)
       sender.send(nodes("A").paymentInitiator, sendReq)
       sender.expectMsgType[PaymentSucceeded]
     }
@@ -405,11 +406,11 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we retrieve a payment hash from C
     val amountMsat = MilliSatoshi(2000)
     sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amountMsat), "Change from coffee"))
-    val pr = sender.expectMsgType[PaymentRequest](30 seconds)
+    val gpr = sender.expectMsgType[GeneratedPaymentRequests](30 seconds)
 
     // the payment is requesting to use a capacity-optimized route which will select node G even though it's a bit more expensive
     sender.send(nodes("A").paymentInitiator,
-      SendPayment(amountMsat.amount, pr.paymentHash, nodes("C").nodeParams.nodeId, maxAttempts = 1, routeParams = integrationTestRouteParams.map(_.copy(ratios = Some(WeightRatios(0, 0, 1))))))
+      SendPayment(amountMsat.amount, gpr.requests.head.paymentHash, nodes("C").nodeParams.nodeId, maxAttempts = 1, routeParams = integrationTestRouteParams.map(_.copy(ratios = Some(WeightRatios(0, 0, 1))))))
 
     awaitCond({
       sender.expectMsgType[PaymentResult](10 seconds) match {
@@ -736,8 +737,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we send 3 mBTC to F so that it has a balance
     val amountMsat = MilliSatoshi(300000000L)
     sender.send(paymentHandlerF, ReceivePayment(Some(amountMsat), "1 coffee"))
-    val pr = sender.expectMsgType[PaymentRequest]
-    val sendReq = SendPayment(300000000L, pr.paymentHash, pr.nodeId, routeParams = integrationTestRouteParams)
+    val gpr = sender.expectMsgType[GeneratedPaymentRequests]
+    val sendReq = SendPayment(300000000L, gpr.requests.head.paymentHash, gpr.requests.head.nodeId, routeParams = integrationTestRouteParams)
     sender.send(nodes("A").paymentInitiator, sendReq)
     // we forward the htlc to the payment handler
     forwardHandlerF.expectMsgType[UpdateAddHtlc]
@@ -749,8 +750,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // we now send a few htlcs C->F and F->C in order to obtain a commitments with multiple htlcs
     def send(amountMsat: Long, paymentHandler: ActorRef, paymentInitiator: ActorRef) = {
       sender.send(paymentHandler, ReceivePayment(Some(MilliSatoshi(amountMsat)), "1 coffee"))
-      val pr = sender.expectMsgType[PaymentRequest]
-      val sendReq = SendPayment(amountMsat, pr.paymentHash, pr.nodeId, routeParams = integrationTestRouteParams)
+      val gpr = sender.expectMsgType[GeneratedPaymentRequests]
+      val sendReq = SendPayment(amountMsat, gpr.requests.head.paymentHash, gpr.requests.head.nodeId, routeParams = integrationTestRouteParams)
       sender.send(paymentInitiator, sendReq)
       sender.expectNoMsg()
     }

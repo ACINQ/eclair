@@ -50,18 +50,28 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
     case PurgeExpiredRequests =>
       context.become(run(hash2preimage.filterNot { case (_, pr) => hasExpired(pr) }))
 
-    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt) =>
+    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, lnurl_opt, quantity) =>
+
       Try {
         if (hash2preimage.size > nodeParams.maxPendingPaymentRequests) {
           throw new RuntimeException(s"too many pending payment requests (max=${nodeParams.maxPendingPaymentRequests})")
         }
-        val paymentPreimage = randomBytes32
-        val paymentHash = Crypto.sha256(paymentPreimage)
-        val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
-        val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops)
-        log.debug(s"generated payment request=${PaymentRequest.write(paymentRequest)} from amount=$amount_opt")
-        sender ! paymentRequest
-        context.become(run(hash2preimage + (paymentHash -> PendingPaymentRequest(paymentPreimage, paymentRequest))))
+
+        val invoices = for (n <- 1 to quantity) yield {
+          val paymentPreimage = randomBytes32
+          val paymentHash = Crypto.sha256(paymentPreimage)
+          val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
+
+          val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey,
+            desc, fallbackAddress = None, expirySeconds = Some(expirySeconds), extraHops = extraHops, lnUrl = lnurl_opt)
+
+          log.debug(s"generated payment request=${PaymentRequest.write(paymentRequest)} from amount=$amount_opt")
+          PendingPaymentRequest(paymentPreimage, paymentRequest)
+        }
+
+        sender ! GeneratedPaymentRequests(invoices.toList.map(_.paymentRequest))
+        val invoices1 = for (ppr @ PendingPaymentRequest(_, paymentRequest) <- invoices) yield paymentRequest.paymentHash -> ppr
+        context.become(run(hash2preimage ++ invoices1.toMap))
       } recover { case t => sender ! Status.Failure(t) }
 
     case CheckPayment(paymentHash) =>
@@ -116,9 +126,10 @@ object LocalPaymentHandler {
 
   case class PendingPaymentRequest(preimage: ByteVector32, paymentRequest: PaymentRequest)
 
+  case class GeneratedPaymentRequests(requests: List[PaymentRequest])
+
   def hasExpired(pr: PendingPaymentRequest): Boolean = pr.paymentRequest.expiry match {
     case Some(expiry) => pr.paymentRequest.timestamp + expiry <= Platform.currentTime / 1000
     case None => false // this request will never expire
   }
-
 }

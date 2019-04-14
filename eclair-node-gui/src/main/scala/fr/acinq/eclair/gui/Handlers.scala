@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.io.{NodeURI, Peer}
+import fr.acinq.eclair.payment.LocalPaymentHandler.GeneratedPaymentRequests
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentResult, ReceivePayment, SendPayment}
 import fr.acinq.eclair.payment._
 import grizzled.slf4j.Logging
@@ -102,7 +103,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
 
   def receive(amountMsat_opt: Option[MilliSatoshi], description: String): Future[String] = for {
     kit <- fKit
-    res <- (kit.paymentHandler ? ReceivePayment(amountMsat_opt, description)).mapTo[PaymentRequest].map(PaymentRequest.write)
+    res <- (kit.paymentHandler ? ReceivePayment(amountMsat_opt, description)).mapTo[GeneratedPaymentRequests].map(PaymentRequest write _.requests.head)
   } yield res
 
   /**
