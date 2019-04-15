@@ -138,20 +138,29 @@ class DirectionSerializer extends CustomSerializer[Direction](format => ({ null 
   case d: Direction => JString(d.toString)
 }))
 
-class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format => ({ null },{
-  case p: PaymentRequest => JObject(JField("prefix", JString(p.prefix)) ::
-    JField("amount", if (p.amount.isDefined) JLong(p.amount.get.toLong) else JNull) ::
-    JField("timestamp", JLong(p.timestamp)) ::
-    JField("nodeId", JString(p.nodeId.toString())) ::
-    JField("description", JString(p.description match {
-      case Left(l) => l.toString()
-      case Right(r) => r.toString()
-    })) ::
-    JField("paymentHash", JString(p.paymentHash.toString())) ::
-    JField("expiry", if (p.expiry.isDefined) JLong(p.expiry.get) else JNull) ::
-    JField("minFinalCltvExpiry", if (p.minFinalCltvExpiry.isDefined) JLong(p.minFinalCltvExpiry.get) else JNull) ::
-    JField("serialized", JString(PaymentRequest.write(p))) ::
-    Nil)
+class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format => ( {
+  null
+}, {
+  case p: PaymentRequest => {
+    val expiry = p.expiry.map(ex => JField("expiry", JLong(ex))).toSeq
+    val minFinalCltvExpiry = p.minFinalCltvExpiry.map(mfce => JField("minFinalCltvExpiry", JLong(mfce))).toSeq
+    val amount = p.amount.map(msat => JField("amount", JLong(msat.toLong))).toSeq
+
+    val fieldList = List(JField("prefix", JString(p.prefix)),
+      JField("timestamp", JLong(p.timestamp)),
+      JField("nodeId", JString(p.nodeId.toString())),
+      JField("serialized", JString(PaymentRequest.write(p))),
+      JField("description", JString(p.description match {
+        case Left(l) => l.toString()
+        case Right(r) => r.toString()
+      })),
+      JField("paymentHash", JString(p.paymentHash.toString()))) ++
+      expiry ++
+      minFinalCltvExpiry ++
+      amount
+
+    JObject(fieldList)
+  }
 }))
 
 class JavaUUIDSerializer extends CustomSerializer[UUID](format => ({ null }, {
