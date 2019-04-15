@@ -151,6 +151,11 @@ trait Service extends ExtraDirectives with Logging {
                         complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags))
                     }
                   } ~
+                  path("updaterelayfee") {
+                    formFields(channelId, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
+                      complete(eclairApi.updateRelayFee(channelId.toString, feeBase, feeProportional))
+                    }
+                  } ~
                   path("close") {
                     formFields(channelId, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
                       complete(eclairApi.close(Left(channelId), scriptPubKey_opt))
@@ -163,11 +168,6 @@ trait Service extends ExtraDirectives with Logging {
                       complete(eclairApi.forceClose(Left(channelId)))
                     } ~ formFields(shortChannelId) { shortChannelId =>
                       complete(eclairApi.forceClose(Right(shortChannelId)))
-                    }
-                  } ~
-                  path("updaterelayfee") {
-                    formFields(channelId, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
-                      complete(eclairApi.updateRelayFee(channelId.toString, feeBase, feeProportional))
                     }
                   } ~
                   path("peers") {
@@ -194,16 +194,6 @@ trait Service extends ExtraDirectives with Logging {
                       complete(eclairApi.allUpdates(nodeId_opt))
                     }
                   } ~
-                  path("receive") {
-                    formFields("description".as[String], amountMsat.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?) { (desc, amountMsat, expire, fallBackAddress) =>
-                      complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress))
-                    }
-                  } ~
-                  path("parseinvoice") {
-                    formFields(invoice) { invoice =>
-                      complete(invoice)
-                    }
-                  } ~
                   path("findroute") {
                     formFields(invoice, amountMsat.?) {
                       case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) => complete(eclairApi.findRoute(nodeId, amount.toLong, invoice.routingInfo))
@@ -216,7 +206,12 @@ trait Service extends ExtraDirectives with Logging {
                       complete(eclairApi.findRoute(nodeId, amount))
                     }
                   } ~
-                  path("send") {
+                  path("parseinvoice") {
+                    formFields(invoice) { invoice =>
+                      complete(invoice)
+                    }
+                  } ~
+                  path("payinvoice") {
                     formFields(invoice, amountMsat.?) {
                       case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) =>
                         complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry))
@@ -230,14 +225,34 @@ trait Service extends ExtraDirectives with Logging {
                       complete(eclairApi.send(nodeId, amountMsat, paymentHash))
                     }
                   } ~
-                  path("sentinfo") {
+                  path("getsentinfo") {
                     formFields("id".as[UUID]) { id =>
                       complete(eclairApi.sentInfo(Left(id)))
                     } ~ formFields(paymentHash) { paymentHash =>
                       complete(eclairApi.sentInfo(Right(paymentHash)))
                     }
                   } ~
-                  path("receivedinfo") {
+                  path("createinvoice") {
+                    formFields("description".as[String], amountMsat.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?) { (desc, amountMsat, expire, fallBackAddress) =>
+                      complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress))
+                    }
+                  } ~
+                  path("getinvoice") {
+                    formFields(paymentHash) { paymentHash =>
+                      completeOrNotFound(eclairApi.getInvoice(paymentHash))
+                    }
+                  } ~
+                  path("allinvoices") {
+                    formFields(from.?, to.?) { (from_opt, to_opt) =>
+                      complete(eclairApi.allInvoices(from_opt, to_opt))
+                    }
+                  } ~
+                  path("listpendinginvoices") {
+                    formFields(from.?, to.?) { (from_opt, to_opt) =>
+                      complete(eclairApi.pendingInvoices(from_opt, to_opt))
+                    }
+                  } ~
+                  path("getreceivedinfo") {
                     formFields(paymentHash) { paymentHash =>
                       completeOrNotFound(eclairApi.receivedInfo(paymentHash))
                     } ~ formFields(invoice) { invoice =>
@@ -256,21 +271,6 @@ trait Service extends ExtraDirectives with Logging {
                   } ~
                   path("channelstats") {
                     complete(eclairApi.channelStats())
-                  } ~
-                  path("invoice") {
-                    formFields(paymentHash) { paymentHash =>
-                      completeOrNotFound(eclairApi.getInvoice(paymentHash))
-                    }
-                  } ~
-                  path("allinvoices") {
-                    formFields(from.?, to.?) { (from_opt, to_opt) =>
-                      complete(eclairApi.allInvoices(from_opt, to_opt))
-                    }
-                  } ~
-                  path("pendinginvoices") {
-                    formFields(from.?, to.?) { (from_opt, to_opt) =>
-                      complete(eclairApi.pendingInvoices(from_opt, to_opt))
-                    }
                   }
               } ~ get {
                 path("ws") {

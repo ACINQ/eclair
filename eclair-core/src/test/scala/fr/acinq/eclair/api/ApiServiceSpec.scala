@@ -277,7 +277,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       )
     })
 
-    Post("/send", FormData("invoice" -> invoice).toEntity) ~>
+    Post("/payinvoice", FormData("invoice" -> invoice).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       Route.seal(mockService.route) ~>
       check {
@@ -293,7 +293,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       override def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]] = Future.successful(None) // element not found
     })
 
-    Post("/receivedinfo", FormData("paymentHash" -> ByteVector32.Zeroes.toHex).toEntity) ~>
+    Post("/getreceivedinfo", FormData("paymentHash" -> ByteVector32.Zeroes.toHex).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       Route.seal(mockService.route) ~>
       check {
