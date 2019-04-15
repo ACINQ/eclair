@@ -807,7 +807,8 @@ eclair-cli send --invoice=<some_invoice>
 }
 ```
 
-Pays a **BOLT11** invoice sending the money to the recipient.
+Pays a **BOLT11** invoice sending the money to the recipient, if there is a remote failure the payment is retried with a different
+route up to `maxAttempts` times, default number of attempts is read from the configuration.
 
 ### HTTP Request
 
@@ -819,6 +820,7 @@ Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
 invoice | The invoice you want to pay | No | String
 amountMsat | Amount in to pay if the invoice does not have one | Yes | Millisatoshi (integer)
+maxAttempts | Max number of retries | Yes | Integer
 
 ## sendToNode
 
@@ -875,7 +877,8 @@ eclair-cli sendtonode --nodeId=<some_node> --amountMsat=<amount> --paymentHash=<
 }
 ```
 
-Pays a **BOLT11** invoice sending the money to the recipient.
+Sends out an HTLC that is redeemable with the preimage of the supplied `paymentHash`,  if there is a remote failure the payment is retried with a different
+route up to `maxAttempts` times, default number of attempts is read from the configuration.
 
 ### HTTP Request
 
@@ -888,6 +891,8 @@ Parameter | Description | Optional | Type
 nodeId | The recipient of this payment | No | 32bytes-HexString (String)
 amountMsat | Amount in to pay | No | Millisatoshi (integer)
 paymentHash | The payment hash for this payment | No | 32bytes-HexString (String)
+maxAttempts | Max number of retries | Yes | Integer
+
 
 ## checkpayment
 
