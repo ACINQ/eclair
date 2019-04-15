@@ -807,8 +807,8 @@ eclair-cli send --invoice=<some_invoice>
 }
 ```
 
-Pays a **BOLT11** invoice sending the money to the recipient, if there is a remote failure the payment is retried with a different
-route up to `maxAttempts` times, default number of attempts is read from the configuration.
+Pays a **BOLT11** invoice. In case of failure the payment will be retried up to `maxAttempts` times, 
+default number of attempts is read from the configuration.
 
 ### HTTP Request
 
@@ -877,8 +877,8 @@ eclair-cli sendtonode --nodeId=<some_node> --amountMsat=<amount> --paymentHash=<
 }
 ```
 
-Sends out an HTLC that is redeemable with the preimage of the supplied `paymentHash`,  if there is a remote failure the payment is retried with a different
-route up to `maxAttempts` times, default number of attempts is read from the configuration.
+Sends money to a node. In case of failure the payment will be retried up to `maxAttempts` times, 
+default number of attempts is read from the configuration.
 
 ### HTTP Request
 

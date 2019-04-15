@@ -1190,7 +1190,8 @@ eclair-cli send --invoice<span class="o">=</span>&lt;some_invoice&gt;
   </span><span class="p">]</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Pays a <strong>BOLT11</strong> invoice sending the money to the recipient.</p>
+<p>Pays a <strong>BOLT11</strong> invoice sending the money to the recipient, if there is a remote failure the payment is retried with a different
+route up to <code>maxAttempts</code> times, default number of attempts is read from the configuration.</p>
 <h3 id='http-request-13'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/send</code></p>
 <h3 id='parameters-11'>Parameters</h3>
@@ -1213,6 +1214,12 @@ eclair-cli send --invoice<span class="o">=</span>&lt;some_invoice&gt;
 <td>Amount in to pay if the invoice does not have one</td>
 <td>Yes</td>
 <td>Millisatoshi (integer)</td>
+</tr>
+<tr>
+<td>maxAttempts</td>
+<td>Max number of retries</td>
+<td>Yes</td>
+<td>Integer</td>
 </tr>
 </tbody></table>
 <h2 id='sendtonode'>sendToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
@@ -1266,7 +1273,8 @@ eclair-cli sendtonode --nodeId<span class="o">=</span>&lt;some_node&gt; --amount
   </span><span class="p">]</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Pays a <strong>BOLT11</strong> invoice sending the money to the recipient.</p>
+<p>Sends out an HTLC that is redeemable with the preimage of the supplied <code>paymentHash</code>,  if there is a remote failure the payment is retried with a different
+route up to <code>maxAttempts</code> times, default number of attempts is read from the configuration.</p>
 <h3 id='http-request-14'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtonode</code></p>
 <h3 id='parameters-12'>Parameters</h3>
@@ -1296,6 +1304,12 @@ eclair-cli sendtonode --nodeId<span class="o">=</span>&lt;some_node&gt; --amount
 <td>No</td>
 <td>32bytes-HexString (String)</td>
 </tr>
+<tr>
+<td>maxAttempts</td>
+<td>Max number of retries</td>
+<td>Yes</td>
+<td>Integer</td>
+</tr>
 </tbody></table>
 <h2 id='checkpayment'>checkpayment</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/checkpayment"</span>
 
@@ -1307,7 +1321,8 @@ eclair-cli checkpayment --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 </blockquote>
 <pre class="highlight plaintext"><code>true
 </code></pre>
-<p>Check whether the given <em>payment_hash</em> has been paid.</p>
+<p>Check whether the given <em>payment_hash</em> has been paid, it is possible to use a BOLT11 invoice
+as parameter instead of the <em>payment_hash</em> but at least one of the two must be specified.</p>
 <h3 id='http-request-15'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/checkpayment</code></p>
 <h3 id='parameters-13'>Parameters</h3>
@@ -1324,6 +1339,12 @@ eclair-cli checkpayment --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 <td>The payment hash you want to check</td>
 <td>No</td>
 <td>32bytes-HexString (String)</td>
+</tr>
+<tr>
+<td>invoice</td>
+<td>The invoice containing the payment hash</td>
+<td>Yes</td>
+<td>String</td>
 </tr>
 </tbody></table>
 <h2 id='parseinvoice'>parseinvoice</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/parseinvoice"</span>
@@ -1575,63 +1596,61 @@ statistics about the routing activity of the channels.</p>
 <p><code>POST http://localhost:8080/channelstats</code></p>
 <h1 id='websocket'>Websocket</h1><h2 id='ws'>ws</h2>
 <blockquote>
-<p>Payment relayed event
-<code>json
-{
-   &quot;type&quot;:&quot;payment-relayed&quot;,
-   &quot;amountIn&quot;:21,
-   &quot;amountOut&quot;:20,
-   &quot;paymentHash&quot;:&quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
-   &quot;fromChannelId&quot;:&quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
-   &quot;toChannelId&quot;:&quot;0100000000000000000000000000000000000000000000000000000000000000&quot;,
-   &quot;timestamp&quot;:1553784963659
-}
-</code></p>
-
-<p>Payment received event
-<code>json
-{
-   &quot;type&quot;:&quot;payment-received&quot;,
-   &quot;amount&quot;:21,
-   &quot;paymentHash&quot;:&quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
-   &quot;fromChannelId&quot;:&quot;0100000000000000000000000000000000000000000000000000000000000000&quot;,
-   &quot;timestamp&quot;:1553784963659
-}
-</code></p>
-
-<p>Payment failed event
-<code>json
-{
-   &quot;type&quot;:&quot;payment-failed&quot;,
-   &quot;paymentHash&quot;:&quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
-   &quot;failures&quot;:[ ]
-}
-</code></p>
-
-<p>Payment sent event
-<code>json
-{
-   &quot;type&quot;:&quot;payment-sent&quot;,
-   &quot;amount&quot;:21,
-   &quot;feesPaid&quot;:1,
-   &quot;paymentHash&quot;:&quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
-   &quot;paymentPreimage&quot;:&quot;0100000000000000000000000000000000000000000000000000000000000000&quot;,
-   &quot;toChannelId&quot;:&quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
-   &quot;timestamp&quot;:1553784337711
-}
-</code></p>
-
-<p>Payment settling on-chain event
-<code>json
-{
-   &quot;type&quot;:&quot;payment-settling-onchain&quot;,
-   &quot;amount&quot;:21,
-   &quot;paymentHash&quot;:&quot;0100000000000000000000000000000000000000000000000000000000000000&quot;,
-   &quot;timestamp&quot;:1553785442676
-}
-</code></p>
+<p>Payment relayed event</p>
 </blockquote>
-
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+   </span><span class="s2">"type"</span><span class="p">:</span><span class="s2">"payment-relayed"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"amountIn"</span><span class="p">:</span><span class="mi">21</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"amountOut"</span><span class="p">:</span><span class="mi">20</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="s2">"0000000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"fromChannelId"</span><span class="p">:</span><span class="s2">"0000000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"toChannelId"</span><span class="p">:</span><span class="s2">"0100000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="mi">1553784963659</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
+<blockquote>
+<p>Payment received event</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+   </span><span class="s2">"type"</span><span class="p">:</span><span class="s2">"payment-received"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"amount"</span><span class="p">:</span><span class="mi">21</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="s2">"0000000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"fromChannelId"</span><span class="p">:</span><span class="s2">"0100000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="mi">1553784963659</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
+<blockquote>
+<p>Payment failed event</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+   </span><span class="s2">"type"</span><span class="p">:</span><span class="s2">"payment-failed"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="s2">"0000000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"failures"</span><span class="p">:[</span><span class="w"> </span><span class="p">]</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
+<blockquote>
+<p>Payment sent event</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+   </span><span class="s2">"type"</span><span class="p">:</span><span class="s2">"payment-sent"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"amount"</span><span class="p">:</span><span class="mi">21</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"feesPaid"</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="s2">"0000000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"paymentPreimage"</span><span class="p">:</span><span class="s2">"0100000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"toChannelId"</span><span class="p">:</span><span class="s2">"0000000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="mi">1553784337711</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
+<blockquote>
+<p>Payment settling on-chain event</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+   </span><span class="s2">"type"</span><span class="p">:</span><span class="s2">"payment-settling-onchain"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"amount"</span><span class="p">:</span><span class="mi">21</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="s2">"0100000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="mi">1553785442676</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
 <p>This is a simple <a href="https://tools.ietf.org/html/rfc6455">websocket</a> that will output payment related events, it supports
 several types covering all the possible outcomes.</p>
 <h3 id='response-types'>Response types</h3>
@@ -1663,7 +1682,7 @@ several types covering all the possible outcomes.</p>
 </tr>
 </tbody></table>
 <h3 id='http-request-22'>HTTP Request</h3>
-<p><code>POST ws://localhost:8080/ws</code></p>
+<p><code>GET ws://localhost:8080/ws</code></p>
 <h1 id='errors'>Errors</h1>
 <blockquote>
 <p>Example error response: </p>
