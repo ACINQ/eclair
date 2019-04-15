@@ -1190,7 +1190,8 @@ eclair-cli send --invoice<span class="o">=</span>&lt;some_invoice&gt;
   </span><span class="p">]</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Pays a <strong>BOLT11</strong> invoice sending the money to the recipient.</p>
+<p>Pays a <strong>BOLT11</strong> invoice sending the money to the recipient, if there is a remote failure the payment is retried with a different
+route up to <code>maxAttempts</code> times, default number of attempts is read from the configuration.</p>
 <h3 id='http-request-13'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/send</code></p>
 <h3 id='parameters-11'>Parameters</h3>
@@ -1213,6 +1214,12 @@ eclair-cli send --invoice<span class="o">=</span>&lt;some_invoice&gt;
 <td>Amount in to pay if the invoice does not have one</td>
 <td>Yes</td>
 <td>Millisatoshi (integer)</td>
+</tr>
+<tr>
+<td>maxAttempts</td>
+<td>Max number of retries</td>
+<td>Yes</td>
+<td>Integer</td>
 </tr>
 </tbody></table>
 <h2 id='sendtonode'>sendToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
@@ -1266,7 +1273,8 @@ eclair-cli sendtonode --nodeId<span class="o">=</span>&lt;some_node&gt; --amount
   </span><span class="p">]</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Pays a <strong>BOLT11</strong> invoice sending the money to the recipient.</p>
+<p>Sends out an HTLC that is redeemable with the preimage of the supplied <code>paymentHash</code>,  if there is a remote failure the payment is retried with a different
+route up to <code>maxAttempts</code> times, default number of attempts is read from the configuration.</p>
 <h3 id='http-request-14'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtonode</code></p>
 <h3 id='parameters-12'>Parameters</h3>
@@ -1295,6 +1303,12 @@ eclair-cli sendtonode --nodeId<span class="o">=</span>&lt;some_node&gt; --amount
 <td>The payment hash for this payment</td>
 <td>No</td>
 <td>32bytes-HexString (String)</td>
+</tr>
+<tr>
+<td>maxAttempts</td>
+<td>Max number of retries</td>
+<td>Yes</td>
+<td>Integer</td>
 </tr>
 </tbody></table>
 <h2 id='checkpayment'>checkpayment</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/checkpayment"</span>
