@@ -217,17 +217,17 @@ trait Service extends ExtraDirectives with Logging {
                     }
                   } ~
                   path("payinvoice") {
-                    formFields(invoice, amountMsat.?) {
-                      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) =>
-                        complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry))
-                      case (invoice, Some(overrideAmount)) =>
-                        complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry))
+                    formFields(invoice, amountMsat.?, "maxAttempts".as[Int].?) {
+                      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts) =>
+                        complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts))
+                      case (invoice, Some(overrideAmount), maxAttempts) =>
+                        complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts))
                       case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
                     }
                   } ~
                   path("sendtonode") {
-                    formFields(amountMsat, paymentHash, nodeId) { (amountMsat, paymentHash, nodeId) =>
-                      complete(eclairApi.send(nodeId, amountMsat, paymentHash))
+                    formFields(amountMsat, paymentHash, nodeId, "maxAttempts".as[Int].?) { (amountMsat, paymentHash, nodeId, maxAttempts) =>
+                      complete(eclairApi.send(nodeId, amountMsat, paymentHash, maxAttempts = maxAttempts))
                     }
                   } ~
                   path("getsentinfo") {
@@ -247,7 +247,7 @@ trait Service extends ExtraDirectives with Logging {
                       completeOrNotFound(eclairApi.getInvoice(paymentHash))
                     }
                   } ~
-                  path("allinvoices") {
+                  path("listinvoices") {
                     formFields(from.?, to.?) { (from_opt, to_opt) =>
                       complete(eclairApi.allInvoices(from_opt, to_opt))
                     }
