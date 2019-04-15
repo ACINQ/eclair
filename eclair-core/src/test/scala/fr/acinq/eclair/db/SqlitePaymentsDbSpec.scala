@@ -28,6 +28,7 @@ import org.scalatest.FunSuite
 import scodec.bits._
 import fr.acinq.eclair.randomBytes32
 import scala.compat.Platform
+import OutgoingPaymentStatus._
 
 class SqlitePaymentsDbSpec extends FunSuite {
 
@@ -70,7 +71,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(preMigrationDb.getIncomingPayment(oldReceivedPayment.paymentHash).isEmpty)
 
     // add a few rows
-    val ps1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), amountMsat = 12345, createdAt = 12345)
+    val ps1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING)
     val i1 = PaymentRequest.read("lnbc10u1pw2t4phpp5ezwm2gdccydhnphfyepklc0wjkxhz0r4tctg9paunh2lxgeqhcmsdqlxycrqvpqwdshgueqvfjhggr0dcsry7qcqzpgfa4ecv7447p9t5hkujy9qgrxvkkf396p9zar9p87rv2htmeuunkhydl40r64n5s2k0u7uelzc8twxmp37nkcch6m0wg5tvvx69yjz8qpk94qf3")
     val pr1 = IncomingPayment(i1.paymentHash, 12345678, 1513871928275L)
 
@@ -120,8 +121,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
 
-    val s1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), amountMsat = 12345, createdAt = 12345)
-    val s2 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), amountMsat = 12345, createdAt = 12345)
+    val s1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING)
+    val s2 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), None, amountMsat = 12345, createdAt = 12345, None, PENDING)
 
     assert(db.listOutgoingPayments().isEmpty)
     db.addOutgoingPayment(s1)
@@ -129,6 +130,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     assert(db.listOutgoingPayments().toList == Seq(s1, s2))
     assert(db.getOutgoingPayment(s1.id) === Some(s1))
+    assert(db.getOutgoingPayment(s1.id).get.completedAt.isEmpty)
     assert(db.getOutgoingPayment(UUID.randomUUID()) === None)
     assert(db.getOutgoingPayments(s2.paymentHash) === Seq(s2))
     assert(db.getOutgoingPayments(ByteVector32.Zeroes) === Seq.empty)
@@ -136,11 +138,17 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val s3 = s2.copy(id = UUID.randomUUID(), amountMsat = 88776655)
     db.addOutgoingPayment(s3)
 
-    db.updateOutgoingPayment(s3.id, OutgoingPaymentStatus.FAILED)
-    assert(db.getOutgoingPayment(s3.id).get.status == OutgoingPaymentStatus.FAILED)
+    db.updateOutgoingPayment(s3.id, FAILED)
+    assert(db.getOutgoingPayment(s3.id).get.status == FAILED)
+    assert(db.getOutgoingPayment(s3.id).get.preimage.isEmpty) // failed sent payments don't have a preimage
+    assert(db.getOutgoingPayment(s3.id).get.completedAt.isDefined)
 
     // can't update again once it's in a final state
-    assertThrows[IllegalArgumentException](db.updateOutgoingPayment(s3.id, OutgoingPaymentStatus.SUCCEEDED))
+    assertThrows[IllegalArgumentException](db.updateOutgoingPayment(s3.id, SUCCEEDED))
+
+    db.updateOutgoingPayment(s1.id, SUCCEEDED, Some(ByteVector32.One))
+    assert(db.getOutgoingPayment(s1.id).get.preimage.isDefined)
+    assert(db.getOutgoingPayment(s1.id).get.completedAt.isDefined)
   }
 
   test("add/retrieve payment requests") {

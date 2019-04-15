@@ -19,15 +19,13 @@ package fr.acinq.eclair.db.sqlite
 import java.sql.Connection
 import java.time.Instant
 import java.util.UUID
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment, OutgoingPaymentStatus, PaymentsDb}
 import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
-
 import scala.collection.immutable.Queue
-import scala.compat.Platform
+import OutgoingPaymentStatus._
 
 class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
@@ -39,46 +37,48 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   using(sqlite.createStatement()) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) <= CURRENT_VERSION) // version 2 is "backward compatible" in the sense that it uses separate tables from version 1. There is no migration though
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, succeeded_at INTEGER, failed_at INTEGER)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL)")
     setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
   override def addOutgoingPayment(sent: OutgoingPayment): Unit = {
-    using(sqlite.prepareStatement("INSERT INTO sent_payments (id, payment_hash, amount_msat, created_at) VALUES (?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT INTO sent_payments (id, payment_hash, amount_msat, created_at, status) VALUES (?, ?, ?, ?, ?)")) { statement =>
       statement.setString(1, sent.id.toString)
       statement.setBytes(2, sent.paymentHash.toArray)
       statement.setLong(3, sent.amountMsat)
       statement.setLong(4, sent.createdAt)
+      statement.setString(5, sent.status.toString)
       val res = statement.executeUpdate()
       logger.debug(s"inserted $res payment=${sent.paymentHash} into payment DB")
     }
   }
 
-  override def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value) = {
-    val updateStmt = newStatus match {
-      case OutgoingPaymentStatus.SUCCEEDED => "UPDATE sent_payments SET succeeded_at = ? WHERE id = ? AND failed_at IS NULL"
-      case OutgoingPaymentStatus.FAILED => "UPDATE sent_payments SET failed_at = ? WHERE id = ? AND succeeded_at IS NULL"
-    }
+  override def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value, preimage: Option[ByteVector32] = None) = {
+    require((newStatus == SUCCEEDED && preimage.isDefined) || (newStatus == FAILED && preimage.isEmpty), "Wrong combination of state/preimage")
 
-    using(sqlite.prepareStatement(updateStmt)) { statement =>
+    using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, preimage, status) = (?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
       statement.setLong(1, Instant.now().getEpochSecond)
-      statement.setString(2, id.toString)
+      statement.setBytes(2, if (preimage.isEmpty) null else preimage.get.toArray)
+      statement.setString(3, newStatus.toString)
+      statement.setString(4, id.toString)
       if (statement.executeUpdate() == 0) throw new IllegalArgumentException(s"Tried to update an outgoing payment (id=$id) already in final status with=$newStatus")
     }
   }
 
   override def getOutgoingPayment(id: UUID): Option[OutgoingPayment] = {
-    using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, created_at, succeeded_at, failed_at FROM sent_payments WHERE id = ?")) { statement =>
+    using(sqlite.prepareStatement("SELECT id, payment_hash, preimage, amount_msat, created_at, completed_at, status FROM sent_payments WHERE id = ?")) { statement =>
       statement.setString(1, id.toString)
       val rs = statement.executeQuery()
       if (rs.next()) {
         Some(OutgoingPayment(
           UUID.fromString(rs.getString("id")),
           rs.getByteVector32("payment_hash"),
+          rs.getByteVector32Nullable("preimage"),
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
-          getNullableLong(rs, "succeeded_at"),
-          getNullableLong(rs, "failed_at")))
+          getNullableLong(rs, "completed_at"),
+          OutgoingPaymentStatus.withName(rs.getString("status"))
+        ))
       } else {
         None
       }
@@ -86,7 +86,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def getOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment] = {
-    using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, created_at, succeeded_at, failed_at FROM sent_payments WHERE payment_hash = ?")) { statement =>
+    using(sqlite.prepareStatement("SELECT id, payment_hash, preimage, amount_msat, created_at, completed_at, status FROM sent_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       var q: Queue[OutgoingPayment] = Queue()
@@ -94,10 +94,12 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         q = q :+ OutgoingPayment(
           UUID.fromString(rs.getString("id")),
           rs.getByteVector32("payment_hash"),
+          rs.getByteVector32Nullable("preimage"),
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
-          getNullableLong(rs, "succeeded_at"),
-          getNullableLong(rs, "failed_at"))
+          getNullableLong(rs, "completed_at"),
+          OutgoingPaymentStatus.withName(rs.getString("status"))
+        )
       }
       q
     }
@@ -105,16 +107,18 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def listOutgoingPayments(): Seq[OutgoingPayment] = {
     using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT id, payment_hash, amount_msat, created_at, succeeded_at, failed_at FROM sent_payments")
+      val rs = statement.executeQuery("SELECT id, payment_hash, preimage, amount_msat, created_at, completed_at, status FROM sent_payments")
       var q: Queue[OutgoingPayment] = Queue()
       while (rs.next()) {
         q = q :+ OutgoingPayment(
           UUID.fromString(rs.getString("id")),
           rs.getByteVector32("payment_hash"),
+          rs.getByteVector32Nullable("preimage"),
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
-          getNullableLong(rs, "succeeded_at"),
-          getNullableLong(rs, "failed_at"))
+          getNullableLong(rs, "completed_at"),
+          OutgoingPaymentStatus.withName(rs.getString("status"))
+        )
       }
       q
     }
@@ -175,7 +179,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement(queryStmt)) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      if(pendingOnly) statement.setLong(3, Instant.now().getEpochSecond)
+      if (pendingOnly) statement.setLong(3, Instant.now().getEpochSecond)
 
       val rs = statement.executeQuery()
       var q: Queue[PaymentRequest] = Queue()

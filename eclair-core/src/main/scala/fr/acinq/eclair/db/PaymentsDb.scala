@@ -25,8 +25,8 @@ trait PaymentsDb {
   // creates a record for a non yet finalized outgoing payment
   def addOutgoingPayment(outgoingPayment: OutgoingPayment)
 
-  // updates the status of the payment, succeededAt OR failedAt
-  def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value)
+  // updates the status of the payment, if the newStatus is SUCCEEDED you must supply a preimage
+  def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value, preimage: Option[ByteVector32] = None)
 
   def getOutgoingPayment(id: UUID): Option[OutgoingPayment]
 
@@ -76,26 +76,10 @@ case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, received
   * @param failedAt    absolute time in seconds since UNIX epoch when the payment failed.
   * @param status      current status of the payment.
   */
-case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, amountMsat: Long, createdAt: Long, succeededAt: Option[Long], failedAt: Option[Long], status: OutgoingPaymentStatus.Value)
+case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, preimage:Option[ByteVector32], amountMsat: Long, createdAt: Long, completedAt: Option[Long], status: OutgoingPaymentStatus.Value)
 
 object OutgoingPaymentStatus extends Enumeration {
   val PENDING = Value(1, "PENDING")
   val SUCCEEDED = Value(2, "SUCCEEDED")
   val FAILED = Value(3, "FAILED")
-}
-
-object OutgoingPayment {
-
-  import OutgoingPaymentStatus._
-
-  def apply(id: UUID, paymentHash: ByteVector32, amountMsat: Long, createdAt: Long, succeededAt: Option[Long] = None, failedAt: Option[Long] = None): OutgoingPayment = {
-    val status = (succeededAt, failedAt) match {
-      case (None, None) => PENDING
-      case (Some(_), None) => SUCCEEDED
-      case (None, Some(_)) => FAILED
-      case (Some(_), Some(_)) => throw new RuntimeException(s"Invalid update field found for outgoing payment id=$id")
-    }
-    new OutgoingPayment(id, paymentHash, amountMsat, createdAt, succeededAt, failedAt, status = status)
-  }
-
 }

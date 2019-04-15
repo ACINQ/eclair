@@ -126,6 +126,11 @@ object SqliteUtils {
     def getByteVector(columnLabel: String): ByteVector = ByteVector(rs.getBytes(columnLabel))
 
     def getByteVector32(columnLabel: String): ByteVector32 = ByteVector32(ByteVector(rs.getBytes(columnLabel)))
+
+    def getByteVector32Nullable(columnLabel: String): Option[ByteVector32] = {
+      val bytes = rs.getBytes(columnLabel)
+      if(rs.wasNull()) None else Some(ByteVector32(ByteVector(bytes)))
+    }
   }
 
   object ExtendedResultSet {
