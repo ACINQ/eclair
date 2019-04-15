@@ -19,7 +19,7 @@ package fr.acinq.eclair.api
 import akka.http.scaladsl.server._
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.{Eclair, Kit, ShortChannelId}
+import fr.acinq.eclair.{Eclair, Kit, NodeParams, ShortChannelId}
 import FormParamExtractors._
 import akka.NotUsed
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
@@ -213,17 +213,17 @@ trait Service extends Directives with Logging {
                   }
                 } ~
                   path("send") {
-                    formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
-                      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) =>
-                        complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry))
-                      case (invoice, Some(overrideAmount)) =>
-                        complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry))
+                    formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?, "maxAttempts".as[Int].?) {
+                      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts) =>
+                        complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts))
+                      case (invoice, Some(overrideAmount), maxAttempts) =>
+                        complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts))
                       case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
                     }
                   } ~
                   path("sendtonode") {
-                    formFields("amountMsat".as[Long], "paymentHash".as[ByteVector32](sha256HashUnmarshaller), "nodeId".as[PublicKey]) { (amountMsat, paymentHash, nodeId) =>
-                      complete(eclairApi.send(nodeId, amountMsat, paymentHash))
+                    formFields("amountMsat".as[Long], "paymentHash".as[ByteVector32](sha256HashUnmarshaller), "nodeId".as[PublicKey], "maxAttempts".as[Int].?) { (amountMsat, paymentHash, nodeId, maxAttempts) =>
+                      complete(eclairApi.send(nodeId, amountMsat, paymentHash, maxAttempts = maxAttempts))
                     }
                   } ~
                   path("checkpayment") {

@@ -96,7 +96,8 @@ object TestConstants {
         searchRatioChannelAge = 0.0,
         searchRatioChannelCapacity = 0.0
       ),
-      socksProxy_opt = None
+      socksProxy_opt = None,
+      maxPaymentAttempts = 5
     )
 
     def channelParams = Peer.makeChannelParams(
@@ -160,7 +161,8 @@ object TestConstants {
         searchRatioChannelAge = 0.0,
         searchRatioChannelCapacity = 0.0
       ),
-      socksProxy_opt = None
+      socksProxy_opt = None,
+      maxPaymentAttempts = 5
     )
 
     def channelParams = Peer.makeChannelParams(
