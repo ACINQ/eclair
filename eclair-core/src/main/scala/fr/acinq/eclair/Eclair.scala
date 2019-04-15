@@ -60,7 +60,7 @@ trait Eclair {
 
   def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]]
 
-  def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[UUID]
+  def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None, maxAttempts: Option[Int] = None): Future[UUID]
 
   def sentInfo(id: Either[UUID, ByteVector32]): Future[Seq[OutgoingPayment]]
 
@@ -158,10 +158,11 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amountMsat, assistedRoutes)).mapTo[RouteResponse]
   }
 
-  override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[UUID] = {
-    val sendPayment = minFinalCltvExpiry match {
-      case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv)
-      case None => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes)
+  override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry_opt: Option[Long] = None, maxAttempts_opt: Option[Int] = None): Future[UUID] = {
+    val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
+    val sendPayment = minFinalCltvExpiry_opt match {
+      case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv, maxAttempts = maxAttempts)
+      case None => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, maxAttempts = maxAttempts)
     }
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }

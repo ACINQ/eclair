@@ -88,8 +88,8 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     (for {
       kit <- fKit
       sendPayment = req.minFinalCltvExpiry match {
-        case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo)
-        case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiry = minFinalCltvExpiry)
+        case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, maxAttempts = kit.nodeParams.maxPaymentAttempts)
+        case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiry = minFinalCltvExpiry, maxAttempts = kit.nodeParams.maxPaymentAttempts)
       }
       res <- (kit.paymentInitiator ? sendPayment).mapTo[UUID]
     } yield res).recover {

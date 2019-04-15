@@ -16,6 +16,11 @@
 
 package fr.acinq.eclair.api
 
+import akka.http.scaladsl.server._
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
+import fr.acinq.eclair.{Eclair, Kit, NodeParams, ShortChannelId}
+import FormParamExtractors._
 import java.util.UUID
 
 import akka.NotUsed
