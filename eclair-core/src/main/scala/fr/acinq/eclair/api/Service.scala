@@ -232,9 +232,9 @@ trait Service extends ExtraDirectives with Logging {
                   } ~
                   path("sentinfo") {
                     formFields("id".as[UUID]) { id =>
-                      completeOrNotFound(eclairApi.sentInfo(Left(id)))
+                      complete(eclairApi.sentInfo(Left(id)))
                     } ~ formFields(paymentHash) { paymentHash =>
-                      completeOrNotFound(eclairApi.sentInfo(Right(paymentHash)))
+                      complete(eclairApi.sentInfo(Right(paymentHash)))
                     }
                   } ~
                   path("receivedinfo") {

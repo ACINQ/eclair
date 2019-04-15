@@ -85,21 +85,21 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def getOutgoingPayment(paymentHash: ByteVector32): Option[OutgoingPayment] = {
+  override def getOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment] = {
     using(sqlite.prepareStatement("SELECT id, payment_hash, amount_msat, created_at, succeeded_at, failed_at FROM sent_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
-      if (rs.next()) {
-        Some(OutgoingPayment(
+      var q: Queue[OutgoingPayment] = Queue()
+      while (rs.next()) {
+        q = q :+ OutgoingPayment(
           UUID.fromString(rs.getString("id")),
           rs.getByteVector32("payment_hash"),
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
           getNullableLong(rs, "succeeded_at"),
-          getNullableLong(rs, "failed_at")))
-      } else {
-        None
+          getNullableLong(rs, "failed_at"))
       }
+      q
     }
   }
 

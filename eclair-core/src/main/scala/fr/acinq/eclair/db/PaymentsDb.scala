@@ -30,10 +30,10 @@ trait PaymentsDb {
 
   def getOutgoingPayment(id: UUID): Option[OutgoingPayment]
 
-  def getOutgoingPayment(paymentHash: ByteVector32): Option[OutgoingPayment]
+  // all the outgoing payment (attempts) to pay the given paymentHash
+  def getOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment]
 
   def listOutgoingPayments(): Seq[OutgoingPayment]
-
 
   def addPaymentRequest(pr: PaymentRequest, preimage: ByteVector32)
 

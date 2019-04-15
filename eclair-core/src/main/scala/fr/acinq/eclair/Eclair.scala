@@ -62,7 +62,7 @@ trait Eclair {
 
   def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[UUID]
 
-  def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[OutgoingPayment]]
+  def sentInfo(id: Either[UUID, ByteVector32]): Future[Seq[OutgoingPayment]]
 
   def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse]
 
@@ -166,10 +166,10 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 
-  override def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[OutgoingPayment]] = Future {
+  override def sentInfo(id: Either[UUID, ByteVector32]): Future[Seq[OutgoingPayment]] = Future {
     id match {
-      case Left(uuid) => appKit.nodeParams.db.payments.getOutgoingPayment(uuid)
-      case Right(paymentHash) => appKit.nodeParams.db.payments.getOutgoingPayment(paymentHash)
+      case Left(uuid) => appKit.nodeParams.db.payments.getOutgoingPayment(uuid).toSeq
+      case Right(paymentHash) => appKit.nodeParams.db.payments.getOutgoingPayments(paymentHash)
     }
   }
 

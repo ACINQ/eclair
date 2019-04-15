@@ -130,8 +130,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.listOutgoingPayments().toList == Seq(s1, s2))
     assert(db.getOutgoingPayment(s1.id) === Some(s1))
     assert(db.getOutgoingPayment(UUID.randomUUID()) === None)
-    assert(db.getOutgoingPayment(s2.paymentHash) === Some(s2))
-    assert(db.getOutgoingPayment(ByteVector32.Zeroes) === None)
+    assert(db.getOutgoingPayments(s2.paymentHash) === Seq(s2))
+    assert(db.getOutgoingPayments(ByteVector32.Zeroes) === Seq.empty)
 
     val s3 = s2.copy(id = UUID.randomUUID(), amountMsat = 88776655)
     db.addOutgoingPayment(s3)

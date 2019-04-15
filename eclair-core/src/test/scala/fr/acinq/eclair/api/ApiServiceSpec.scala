@@ -86,7 +86,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def getInfoResponse(): Future[GetInfoResponse] = ???
 
-    override def sentInfo(id: Either[UUID, ByteVector32]): Future[Option[OutgoingPayment]] = ???
+    override def sentInfo(id: Either[UUID, ByteVector32]): Future[Seq[OutgoingPayment]] = ???
 
     override def allInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]] = ???
 
