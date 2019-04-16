@@ -760,6 +760,40 @@ description | A description for the invoice | No | String
 amountMsat | Amount in millisatoshi for this invoice | Yes | Millisatoshi (integer)
 expireIn | Number of seconds that the invoice will be valid | Yes | Seconds (integer)
 
+## parseinvoice
+
+```shell
+curl -u :<eclair_api_password> -X POST -F invoice=<some_bolt11invoice> "http://localhost:8080/parseinvoice"
+
+#with eclair-cli
+eclair-cli parseinvoice --invoice=<some_bolt11invoice>
+```
+> The above command returns:
+
+```json
+{
+  "prefix": "lnbc",
+  "timestamp": 1555416528,
+  "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
+  "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
+  "description": "wassa wassa",
+  "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb",
+  "expiry": 21600
+}
+```
+
+Returns detailed information about the given invoice.
+
+### HTTP Request
+
+`POST http://localhost:8080/parseinvoice`
+
+### Parameters
+
+Parameter | Description | Optional | Type
+--------- | ----------- | --------- | ---------
+invoice | The invoice you want to decode | No | String
+
 ## payinvoice
 
 ```shell
@@ -900,7 +934,6 @@ amountMsat | Amount in to pay | No | Millisatoshi (integer)
 paymentHash | The payment hash for this payment | No | 32bytes-HexString (String)
 maxAttempts | Max number of retries | Yes | Integer
 
-
 ## checkpayment
 
 ```shell
@@ -928,41 +961,6 @@ Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
 paymentHash | The payment hash you want to check | No | 32bytes-HexString (String)
 invoice | The invoice containing the payment hash | Yes | String
-
-## parseinvoice
-
-```shell
-curl -u :<eclair_api_password> -X POST -F invoice=<some_bolt11invoice> "http://localhost:8080/parseinvoice"
-
-#with eclair-cli
-eclair-cli parseinvoice --invoice=<some_bolt11invoice>
-```
-> The above command returns:
-
-```json
-{
-  "prefix": "lntb",
-  "amount": 123,
-  "timestamp": 1545150074,
-  "nodeId": "0217e8131150248362318e06afc5adc29fc61ff0e6a34c390d8907e13576e70fe0",
-  "description": "wassa wassa",
-  "paymentHash": "bb9cf74c2c1bb6cb169fa60f0a291867fb91f29efb2691bfb7fa0e492d59ec80",
-  "expiry": 2333,
-  "minFinalCltvExpiry": null
-}
-```
-
-Returns detailed information about the given invoice.
-
-### HTTP Request
-
-`POST http://localhost:8080/parseinvoice`
-
-### Parameters
-
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-invoice | The invoice you want to decode | No | String
 
 # Route
 
