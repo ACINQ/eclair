@@ -368,7 +368,7 @@ object Helpers {
       case closing: DATA_CLOSING if closing.localCommitPublished.exists(Closing.isLocalCommitDone(_)) =>
         Some(LocalClose)
 
-      case closing: DATA_CLOSING if closing.remoteCommitPublished.map(Closing.isRemoteCommitDone(_)).getOrElse(false) =>
+      case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(Closing.isRemoteCommitDone(_)) =>
         Some(RemoteClose)
 
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(Closing.isRemoteCommitDone(_)) =>
