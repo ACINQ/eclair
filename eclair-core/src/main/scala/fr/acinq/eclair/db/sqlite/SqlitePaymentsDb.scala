@@ -173,8 +173,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   def listPaymentRequests(from: Long, to: Long, pendingOnly: Boolean): Seq[PaymentRequest] = {
     val queryStmt = pendingOnly match {
-      case true => "SELECT payment_request FROM received_payments WHERE created_at > ? AND created_at < ? AND (expire_at > ? OR expire_at IS NULL) AND received_msat IS NULL"
-      case false => "SELECT payment_request FROM received_payments WHERE created_at > ? AND created_at < ?"
+      case true => "SELECT payment_request FROM received_payments WHERE created_at > ? AND created_at < ? AND (expire_at > ? OR expire_at IS NULL) AND received_msat IS NULL ORDER BY created_at DESC"
+      case false => "SELECT payment_request FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at DESC"
     }
 
     using(sqlite.prepareStatement(queryStmt)) { statement =>
