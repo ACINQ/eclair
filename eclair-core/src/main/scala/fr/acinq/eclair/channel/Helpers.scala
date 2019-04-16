@@ -364,7 +364,7 @@ object Helpers {
       * @param data channel state data
       * @return the channel closing type, if applicable
       */
-    def closingType(data: HasCommitments): Option[ClosingType] = data match {
+    def isClosed(data: HasCommitments): Option[ClosingType] = data match {
       case closing: DATA_CLOSING if closing.localCommitPublished.exists(Closing.isLocalCommitDone(_)) =>
         Some(LocalClose)
 
