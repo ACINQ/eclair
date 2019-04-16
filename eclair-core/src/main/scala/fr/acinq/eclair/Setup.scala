@@ -43,7 +43,7 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
-import fr.acinq.eclair.db.Databases
+import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
@@ -220,11 +220,11 @@ class Setup(datadir: File,
       routerTimeout = after(FiniteDuration(config.getDuration("router.init-timeout").getSeconds, TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
       _ <- Future.firstCompletedOf(routerInitialized.future :: routerTimeout :: Nil)
 
+      chaindir = new File(datadir, chain)
       wallet = bitcoin match {
         case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
         case Electrum(electrumClient) =>
           // TODO: DRY
-          val chaindir = new File(datadir, chain)
           val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
           val walletDb = new SqliteWalletDb(sqlite)
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
@@ -234,7 +234,15 @@ class Setup(datadir: File,
       _ = wallet.getFinalAddress.map {
         case address => logger.info(s"initial wallet address=$address")
       }
-
+      backupHandler = system.actorOf(
+        SimpleSupervisor.props(Props(
+          new BackupHandler(
+            nodeParams.db,
+            new File(chaindir, config.getString("backup-file").concat(".wip")),
+            new File(chaindir, config.getString("backup-file"))
+          )
+        ), "backup", SupervisorStrategy.Resume)
+      )
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
         case "local" => LocalPaymentHandler.props(nodeParams)
