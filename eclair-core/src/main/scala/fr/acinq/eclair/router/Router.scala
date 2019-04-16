@@ -19,6 +19,7 @@ package fr.acinq.eclair.router
 import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
+import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
@@ -111,6 +112,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
   import Router._
 
   import ExecutionContext.Implicits.global
+
+  // we pass these to helpers classes so that they have the logging context
+  implicit def implicitLog = log
 
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
@@ -454,7 +458,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       stay
 
     case Event(u: ChannelUpdate, d: Data) =>
-      // it was sent by us, routing messages that are sent by  our peers are now wrapped in a PeerRoutingMessage
+      // it was sent by us (e.g. the payment lifecycle); routing messages that are sent by our peers are now wrapped in a PeerRoutingMessage
       log.debug("received channel update from {}", sender)
       stay using handle(u, sender, d)
 
@@ -644,14 +648,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
           case true => d.graph.removeEdge(desc).addEdge(desc, u)
           case false => d.graph.removeEdge(desc) // if the channel is now disabled, we remove it from the graph
         }
-        d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
+        val origin_opt = if (origin == self) None else Some(origin)
+        d.copy(updates = d.updates + (desc -> u), rebroadcast = maybeRebroadcast(d.rebroadcast, u, origin_opt), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.addChannelUpdate(u)
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u)
-        d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
+        val origin_opt = if (origin == self) None else Some(origin)
+        d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = maybeRebroadcast(d.rebroadcast, u, origin_opt), graph = graph1)
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
@@ -757,6 +763,28 @@ object Router {
 
   def hasChannels(nodeId: PublicKey, channels: Iterable[ChannelAnnouncement]): Boolean = channels.exists(c => isRelatedTo(c, nodeId))
 
+  /**
+    * Simple heuristic which will prevent the router from broadcasting disabled updates for local channels. The goal is to prevent
+    * sending a lot of updates for flappy channels.
+    */
+  def maybeRebroadcast(r: Rebroadcast, u: ChannelUpdate, origin_opt: Option[ActorRef])(implicit log: LoggingAdapter): Rebroadcast = {
+    require(!r.updates.contains(u))
+    origin_opt match {
+      case Some(origin) =>
+        // we always rebroadcast external updates
+        log.info("rebroadcasting external update for shortChannelId={} u={}", u.shortChannelId, u)
+        r.copy(updates = r.updates + (u -> Set(origin)))
+      case None if !Announcements.isEnabled(u.channelFlags) =>
+        // we don't rebroadcast disabled updates for local channels
+        log.info("*not* rebroadcasting disabled update for shortChannelId={} u={}", u.shortChannelId, u)
+        r
+      case _ =>
+      // otherwise we rebroadcast the update
+        log.info("broadcasting local update for shortChannelId={} u={}", u.shortChannelId, u)
+        r.copy(updates = r.updates + (u -> Set.empty))
+    }
+  }
+
   def isStale(u: ChannelUpdate): Boolean = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update
@@ -843,7 +871,6 @@ object Router {
     * @param extraEdges   a set of extra edges we want to CONSIDER during the search
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
     * @param routeParams  a set of parameters that can restrict the route search
-    * @param wr           an object containing the ratios used to 'weight' edges when searching for the shortest path
     * @return the computed route to the destination @targetNodeId
     */
   def findRoute(g: DirectedGraph,
