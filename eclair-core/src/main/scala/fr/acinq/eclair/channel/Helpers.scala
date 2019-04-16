@@ -362,9 +362,13 @@ object Helpers {
     /**
       * Check if a channel is closed (i.e. its closing tx has been confirmed)
       * @param data channel state data
+      * @param closingTx closing transaction, needed in case of mutual close
       * @return the channel closing type, if applicable
       */
-    def isClosed(data: HasCommitments): Option[ClosingType] = data match {
+    def isClosed(data: HasCommitments, closingTx: Option[Transaction]): Option[ClosingType] = data match {
+      case closing: DATA_CLOSING if closingTx.isDefined && closing.mutualClosePublished.exists(_.txid == closingTx.get.txid) =>
+        Some(MutualClose)
+
       case closing: DATA_CLOSING if closing.localCommitPublished.exists(Closing.isLocalCommitDone(_)) =>
         Some(LocalClose)
 
