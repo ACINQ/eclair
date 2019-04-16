@@ -377,7 +377,7 @@ object Helpers {
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.map(Closing.isRemoteCommitDone(_)).getOrElse(false) =>
         Some(RecoveryClose)
 
-      case closing: DATA_CLOSING if closing.revokedCommitPublished.map(Closing.isRevokedCommitDone(_)).exists(_ == true) =>
+      case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(Closing.isRevokedCommitDone(_)) =>
         Some(RevokedClose)
 
       case _ => None
