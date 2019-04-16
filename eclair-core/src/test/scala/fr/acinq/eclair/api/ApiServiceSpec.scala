@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.api
 
+import java.util.UUID
+
 import akka.actor.{Actor, ActorSystem, Props, Scheduler}
 import org.scalatest.FunSuite
 import akka.http.scaladsl.model.StatusCodes._
@@ -29,13 +31,14 @@ import akka.stream.ActorMaterializer
 import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel.RES_GETINFO
-import fr.acinq.eclair.db.{NetworkFee, Stats}
-import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
+import fr.acinq.eclair.db.{NetworkFee, IncomingPayment, OutgoingPayment, Stats}
+import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, ReceivePayment}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress, NodeAnnouncement}
 import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
+
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
@@ -61,19 +64,19 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def channelInfo(channelId: ByteVector32): Future[RES_GETINFO] = ???
 
-    override def allnodes(): Future[Iterable[NodeAnnouncement]] = ???
+    override def allNodes(): Future[Iterable[NodeAnnouncement]] = ???
 
-    override def allchannels(): Future[Iterable[ChannelDesc]] = ???
+    override def allChannels(): Future[Iterable[ChannelDesc]] = ???
 
-    override def allupdates(nodeId: Option[Crypto.PublicKey]): Future[Iterable[ChannelUpdate]] = ???
+    override def allUpdates(nodeId: Option[Crypto.PublicKey]): Future[Iterable[ChannelUpdate]] = ???
 
-    override def receive(description: String, amountMsat: Option[Long], expire: Option[Long]): Future[String] = ???
+    override def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String]): Future[PaymentRequest] = ???
 
     override def findRoute(targetNodeId: Crypto.PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]]): Future[RouteResponse] = ???
 
-    override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long], maxAttempts: Option[Int] = None): Future[PaymentLifecycle.PaymentResult] = ???
+    override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long], maxAttempts: Option[Int] = None): Future[UUID] = ???
 
-    override def checkpayment(paymentHash: ByteVector32): Future[Boolean] = ???
+    override def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]] = ???
 
     override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = ???
 
@@ -82,6 +85,15 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     override def channelStats(): Future[Seq[Stats]] = ???
 
     override def getInfoResponse(): Future[GetInfoResponse] = ???
+
+    override def sentInfo(id: Either[UUID, ByteVector32]): Future[Seq[OutgoingPayment]] = ???
+
+    override def allInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]] = ???
+
+    override def getInvoice(paymentHash: ByteVector32): Future[Option[PaymentRequest]] = ???
+
+    override def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]] = ???
+
   }
 
   implicit val formats = JsonSupport.formats
@@ -137,7 +149,6 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(handled)
         assert(status == BadRequest)
         val resp = entityAs[ErrorResponse](JsonSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
-        println(resp.error)
         assert(resp.error == "The form field 'channelId' was malformed:\nInvalid hexadecimal character 'h' at index 0")
       }
 
@@ -251,14 +262,53 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       check {
         assert(handled)
         assert(status == OK)
-        println(entityAs[String])
         assert(entityAs[String] == "\"connected\"")
       }
   }
 
+  test("'send' method should return the UUID of the outgoing payment") {
+
+    val id = UUID.randomUUID()
+    val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
+
+    val mockService = new MockService(new EclairMock {
+      override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long], maxAttempts: Option[Int] = None): Future[UUID] = Future.successful(
+        id
+      )
+    })
+
+    Post("/payinvoice", FormData("invoice" -> invoice).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[String] == "\""+id.toString+"\"")
+      }
+  }
+
+  test("'receivedinfo' method should respond HTTP 404 with a JSON encoded response if the element is not found") {
+
+    val mockService = new MockService(new EclairMock {
+      override def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]] = Future.successful(None) // element not found
+    })
+
+    Post("/getreceivedinfo", FormData("paymentHash" -> ByteVector32.Zeroes.toHex).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == NotFound)
+        val resp = entityAs[ErrorResponse](JsonSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
+        assert(resp == ErrorResponse("Not found"))
+      }
+  }
+
+
   test("the websocket should return typed objects") {
 
     val mockService = new MockService(new EclairMock {})
+    val fixedUUID = UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f")
 
     val wsClient = WSProbe()
 
@@ -267,14 +317,14 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       mockService.route ~>
       check {
 
-        val pf = PaymentFailed(ByteVector32.Zeroes, failures = Seq.empty)
-        val expectedSerializedPf = """{"type":"payment-failed","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[]}"""
+        val pf = PaymentFailed(fixedUUID, ByteVector32.Zeroes, failures = Seq.empty)
+        val expectedSerializedPf = """{"type":"payment-failed","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[]}"""
         Serialization.write(pf)(mockService.formatsWithTypeHint) === expectedSerializedPf
         system.eventStream.publish(pf)
         wsClient.expectMessage(expectedSerializedPf)
 
-        val ps = PaymentSent(amount = MilliSatoshi(21), feesPaid = MilliSatoshi(1), paymentHash = ByteVector32.Zeroes, paymentPreimage = ByteVector32.One, toChannelId = ByteVector32.Zeroes, timestamp = 1553784337711L)
-        val expectedSerializedPs = """{"type":"payment-sent","amount":21,"feesPaid":1,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":1553784337711}"""
+        val ps = PaymentSent(fixedUUID, amount = MilliSatoshi(21), feesPaid = MilliSatoshi(1), paymentHash = ByteVector32.Zeroes, paymentPreimage = ByteVector32.One, toChannelId = ByteVector32.Zeroes, timestamp = 1553784337711L)
+        val expectedSerializedPs = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"feesPaid":1,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":1553784337711}"""
         Serialization.write(ps)(mockService.formatsWithTypeHint) === expectedSerializedPs
         system.eventStream.publish(ps)
         wsClient.expectMessage(expectedSerializedPs)
@@ -291,13 +341,12 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         system.eventStream.publish(precv)
         wsClient.expectMessage(expectedSerializedPrecv)
 
-        val pset = PaymentSettlingOnChain(amount = MilliSatoshi(21), paymentHash = ByteVector32.One, timestamp = 1553785442676L)
-        val expectedSerializedPset = """{"type":"payment-settling-onchain","amount":21,"paymentHash":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":1553785442676}"""
+        val pset = PaymentSettlingOnChain(fixedUUID, amount = MilliSatoshi(21), paymentHash = ByteVector32.One, timestamp = 1553785442676L)
+        val expectedSerializedPset = """{"type":"payment-settling-onchain","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"paymentHash":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":1553785442676}"""
         Serialization.write(pset)(mockService.formatsWithTypeHint) === expectedSerializedPset
         system.eventStream.publish(pset)
         wsClient.expectMessage(expectedSerializedPset)
       }
-
 
   }
 

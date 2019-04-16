@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.payment
 
+import java.util.UUID
+
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{Block, Crypto, DeterministicWallet}
 import fr.acinq.eclair.channel.Channel
@@ -96,7 +98,7 @@ class HtlcGenerationSpec extends FunSuite {
 
   test("build a command including the onion") {
 
-    val (add, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops)
+    val (add, _) = buildCommand(UUID.randomUUID, finalAmountMsat, finalExpiry, paymentHash, hops)
 
     assert(add.amountMsat > finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry + channelUpdate_de.cltvExpiryDelta + channelUpdate_cd.cltvExpiryDelta + channelUpdate_bc.cltvExpiryDelta)
@@ -130,7 +132,7 @@ class HtlcGenerationSpec extends FunSuite {
   }
 
   test("build a command with no hops") {
-    val (add, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops.take(1))
+    val (add, _) = buildCommand(UUID.randomUUID(), finalAmountMsat, finalExpiry, paymentHash, hops.take(1))
 
     assert(add.amountMsat === finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry)

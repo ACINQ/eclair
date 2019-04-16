@@ -16,9 +16,8 @@
 
 package fr.acinq.eclair.blockchain.electrum.db.sqlite
 
-import java.sql.DriverManager
-
 import fr.acinq.bitcoin.{Block, BlockHeader, OutPoint, Satoshi, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
@@ -29,8 +28,6 @@ import scala.util.Random
 class SqliteWalletDbSpec extends FunSuite {
   val random = new Random()
 
-  def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
-
   def makeChildHeader(header: BlockHeader): BlockHeader = header.copy(hashPreviousBlock = header.hash, nonce = random.nextLong() & 0xffffffffL)
 
   def makeHeaders(n: Int, acc: Seq[BlockHeader] = Seq(Block.RegtestGenesisBlock.header)): Seq[BlockHeader] = {
@@ -38,7 +35,7 @@ class SqliteWalletDbSpec extends FunSuite {
   }
 
   test("add/get/list headers") {
-    val db = new SqliteWalletDb(inmem)
+    val db = new SqliteWalletDb(TestConstants.sqliteInMemory())
     val headers = makeHeaders(100)
     db.addHeaders(2016, headers)
 
@@ -61,7 +58,7 @@ class SqliteWalletDbSpec extends FunSuite {
   }
 
   test("serialize persistent data") {
-    val db = new SqliteWalletDb(inmem)
+    val db = new SqliteWalletDb(TestConstants.sqliteInMemory())
 
     import fr.acinq.eclair.{randomBytes, randomBytes32}
 
