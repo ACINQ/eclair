@@ -36,8 +36,8 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
   using(sqlite.createStatement()) { statement =>
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
       case 1 =>
-        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN closed BOOLEAN NOT NULL DEFAULT 0")
-        updateVersion(statement, DB_NAME, CURRENT_VERSION)
+        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT 0")
+        setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION => ()
     }
     statement.execute("PRAGMA foreign_keys = ON")
@@ -72,7 +72,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
       statement.executeUpdate()
     }
 
-    using(sqlite.prepareStatement("UPDATE local_channels SET closed=1 WHERE channel_id=?")) { statement =>
+    using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=1 WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.executeUpdate()
     }
@@ -80,7 +80,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
 
   override def listLocalChannels(): Seq[HasCommitments] = {
     using(sqlite.createStatement) { statement =>
-      val rs = statement.executeQuery("SELECT data FROM local_channels WHERE closed=0")
+      val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
       codecSequence(rs, stateDataCodec)
     }
   }

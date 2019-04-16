@@ -60,12 +60,19 @@ object SqliteUtils {
     res.getInt("version")
   }
 
-  def updateVersion(statement: Statement, db_name: String, version: Int): Int = {
-    statement.executeUpdate(s"UPDATE versions SET version=$version WHERE db_name='$db_name'")
-    // if there was a previous version installed, this will return a different value from current version
-    val res = statement.executeQuery(s"SELECT version FROM versions WHERE db_name='$db_name'")
-    res.getInt("version")
+  /**
+    * Updates the version for a particular logical database, it will overwrite the previous version.
+    * @param statement
+    * @param db_name
+    * @param newVersion
+    * @return
+    */
+  def setVersion(statement: Statement, db_name: String, newVersion: Int) = {
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS versions (db_name TEXT NOT NULL PRIMARY KEY, version INTEGER NOT NULL)")
+    // overwrite the existing version
+    statement.executeUpdate(s"UPDATE versions SET version=$newVersion WHERE db_name='$db_name'")
   }
+
   /**
     * This helper assumes that there is a "data" column available, decodable with the provided codec
     *
