@@ -307,19 +307,31 @@
             <a href="#payments" class="toc-h1 toc-link" data-title="Payments">Payments</a>
               <ul class="toc-list-h2">
                   <li>
-                    <a href="#receive" class="toc-h2 toc-link" data-title="receive">receive</a>
+                    <a href="#createinvoice" class="toc-h2 toc-link" data-title="CreateInvoice">CreateInvoice</a>
                   </li>
                   <li>
-                    <a href="#send" class="toc-h2 toc-link" data-title="send">send</a>
+                    <a href="#parseinvoice" class="toc-h2 toc-link" data-title="ParseInvoice">ParseInvoice</a>
                   </li>
                   <li>
-                    <a href="#sendtonode" class="toc-h2 toc-link" data-title="sendToNode">sendToNode</a>
+                    <a href="#payinvoice" class="toc-h2 toc-link" data-title="PayInvoice">PayInvoice</a>
                   </li>
                   <li>
-                    <a href="#checkpayment" class="toc-h2 toc-link" data-title="checkpayment">checkpayment</a>
+                    <a href="#sendtonode" class="toc-h2 toc-link" data-title="SendToNode">SendToNode</a>
                   </li>
                   <li>
-                    <a href="#parseinvoice" class="toc-h2 toc-link" data-title="parseinvoice">parseinvoice</a>
+                    <a href="#getsentinfo" class="toc-h2 toc-link" data-title="GetSentInfo">GetSentInfo</a>
+                  </li>
+                  <li>
+                    <a href="#getreceivedinfo" class="toc-h2 toc-link" data-title="GetReceivedInfo">GetReceivedInfo</a>
+                  </li>
+                  <li>
+                    <a href="#getinvoice" class="toc-h2 toc-link" data-title="GetInvoice">GetInvoice</a>
+                  </li>
+                  <li>
+                    <a href="#listinvoices" class="toc-h2 toc-link" data-title="ListInvoices">ListInvoices</a>
+                  </li>
+                  <li>
+                    <a href="#listpendinginvoices" class="toc-h2 toc-link" data-title="ListPendingInvoices">ListPendingInvoices</a>
                   </li>
               </ul>
           </li>
@@ -1098,20 +1110,28 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 </tbody></table>
 <h1 id='payments'>Payments</h1>
 <p>Interfaces for sending and receiving payments through eclair.</p>
-<h2 id='receive'>receive</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">description</span><span class="o">=</span>&lt;some_description&gt; <span class="se">\</span>
-     -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;some_amount&gt; <span class="s2">"http://localhost:8080/receive"</span>
+<h2 id='createinvoice'>CreateInvoice</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">description</span><span class="o">=</span>&lt;some_description&gt; <span class="se">\</span>
+     -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;some_amount&gt; <span class="s2">"http://localhost:8080/createinvoice"</span>
 
 <span class="c">#with eclair-cli</span>
-eclair-cli receive --description<span class="o">=</span>&lt;some_description&gt; --amountMsat<span class="o">=</span>&lt;some_amount&gt;
+eclair-cli createinvoice --description<span class="o">=</span>&lt;some_description&gt; --amountMsat<span class="o">=</span>&lt;some_amount&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight plaintext"><code>lnbc4200n1pwf36wlpp5dhysplnjqrqzsvlhct07csechwrz7usr5u69e68v5759m4qz46eqdzz2pshjmt9de6zqen0wgsrgv3sypcxj7r9d3ejqct5ypekzar0wd5xjuewwpkxzcm99cxqzjccqp2rzjqwe3ukal9nd7z9d5sk3tfq88pg0089g6phrd7jcjxtsw2meaecvdvzyu2sqq94gqqyqqqqlgqqqqqzsqpcptp3ys9qgxcfnazf7cqluus56anmur8jy2yzj4wcscpw08u8hl5hjwv0uhm7dv3vvqh623289chcen0a35ynjkk8kd6tz38syntfg2gp6nz0wa
-</code></pre>
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+  </span><span class="s2">"prefix"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1555416528</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"serialized"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"A payment description"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">21600</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
 <p>Create a <strong>BOLT11</strong> payment invoice.</p>
 <h3 id='http-request-12'>HTTP Request</h3>
-<p><code>POST http://localhost:8080/receive</code></p>
+<p><code>POST http://localhost:8080/createinvoice</code></p>
 <h3 id='parameters-10'>Parameters</h3>
 <table><thead>
 <tr>
@@ -1139,62 +1159,66 @@ eclair-cli receive --description<span class="o">=</span>&lt;some_description&gt;
 <td>Yes</td>
 <td>Seconds (integer)</td>
 </tr>
+<tr>
+<td>fallbackAddress</td>
+<td>An on-chain fallback address to receive the payment</td>
+<td>Yes</td>
+<td>Bitcoin address (String)</td>
+</tr>
 </tbody></table>
-<h2 id='send'>send</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_invoice&gt; <span class="s2">"http://localhost:8080/send"</span>
+<h2 id='parseinvoice'>ParseInvoice</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/parseinvoice"</span>
 
 <span class="c">#with eclair-cli</span>
-eclair-cli send --invoice<span class="o">=</span>&lt;some_invoice&gt;
+eclair-cli parseinvoice --invoice<span class="o">=</span>&lt;some_bolt11invoice&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
-  </span><span class="s2">"amountMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">151015</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"427309c52a46f8c005ad840c106fcdc9c4c60f95769525bc91c4a742133e4fe3"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"paymentPreimage"</span><span class="p">:</span><span class="w"> </span><span class="s2">"14b0c3443226f8a570332737501e0945910e44778ad1740b6f036f8016fb9982"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"route"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-    </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"nextNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"lastUpdate"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3045022100be4eafab56a122bdfa740f7a35d3ffc6080f08882d9231f80d802ac15192a82a022006ac2679d5ca3b93738b6dd970855c6e3eb264f006c0bd2dc6fb14df5ba634c801"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"chainHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"565779x2711x0"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1553527352</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"messageFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"cltvExpiryDelta"</span><span class="p">:</span><span class="w"> </span><span class="mi">144</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"htlcMinimumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"feeBaseMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"feeProportionalMillionths"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"htlcMaximumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">230000000</span><span class="w">
-      </span><span class="p">}</span><span class="w">
-    </span><span class="p">},</span><span class="w">
-    </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"nextNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"lastUpdate"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3045022100aaddab2207ece615e5e6546de4b1d1535be6926ba24c9e35596f7eb869d0d48302202c5a28721962e5e3e2b1b08a0fd2e739b77fd9d5a9f7cdbb7f8b2542aa3b6d7001"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"chainHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"568496x2864x1"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1553522210</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"messageFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"cltvExpiryDelta"</span><span class="p">:</span><span class="w"> </span><span class="mi">144</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"htlcMinimumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"feeBaseMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"feeProportionalMillionths"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"htlcMaximumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">16777215000</span><span class="w">
-      </span><span class="p">}</span><span class="w">
-    </span><span class="p">}</span><span class="w">
-  </span><span class="p">]</span><span class="w">
+  </span><span class="s2">"prefix"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1555416528</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"serialized"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"wassa wassa"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">21600</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Pays a <strong>BOLT11</strong> invoice. In case of failure the payment will be retried up to <code>maxAttempts</code> times, 
-default number of attempts is read from the configuration.</p>
+<p>Returns detailed information about the given invoice.</p>
 <h3 id='http-request-13'>HTTP Request</h3>
-<p><code>POST http://localhost:8080/send</code></p>
+<p><code>POST http://localhost:8080/parseinvoice</code></p>
 <h3 id='parameters-11'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+<th>Optional</th>
+<th>Type</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>invoice</td>
+<td>The invoice you want to decode</td>
+<td>No</td>
+<td>String</td>
+</tr>
+</tbody></table>
+<h2 id='payinvoice'>PayInvoice</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_invoice&gt; <span class="s2">"http://localhost:8080/payinvoice"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli payinvoice --invoice<span class="o">=</span>&lt;some_invoice&gt;
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight plaintext"><code>"e4227601-38b3-404e-9aa0-75a829e9bec0"
+</code></pre>
+<p>Pays a <strong>BOLT11</strong> invoice, in case of failure the payment will be retried up to <code>maxAttempts</code> times, 
+default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where 
+the unique identifier for this payment attempt is immediately returned to the caller.</p>
+<h3 id='http-request-14'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/payinvoice</code></p>
+<h3 id='parameters-12'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1222,7 +1246,7 @@ default number of attempts is read from the configuration.</p>
 <td>Integer</td>
 </tr>
 </tbody></table>
-<h2 id='sendtonode'>sendToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
+<h2 id='sendtonode'>SendToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
     -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount&gt; -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/sendtonode"</span>
 
 <span class="c">#with eclair-cli</span>
@@ -1231,53 +1255,14 @@ eclair-cli sendtonode --nodeId<span class="o">=</span>&lt;some_node&gt; --amount
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
-  </span><span class="s2">"amountMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">151015</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"427309c52a46f8c005ad840c106fcdc9c4c60f95769525bc91c4a742133e4fe3"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"paymentPreimage"</span><span class="p">:</span><span class="w"> </span><span class="s2">"14b0c3443226f8a570332737501e0945910e44778ad1740b6f036f8016fb9982"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"route"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-    </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"nextNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"lastUpdate"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3045022100be4eafab56a122bdfa740f7a35d3ffc6080f08882d9231f80d802ac15192a82a022006ac2679d5ca3b93738b6dd970855c6e3eb264f006c0bd2dc6fb14df5ba634c801"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"chainHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"565779x2711x0"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1553527352</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"messageFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"cltvExpiryDelta"</span><span class="p">:</span><span class="w"> </span><span class="mi">144</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"htlcMinimumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"feeBaseMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"feeProportionalMillionths"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"htlcMaximumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">230000000</span><span class="w">
-      </span><span class="p">}</span><span class="w">
-    </span><span class="p">},</span><span class="w">
-    </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"nextNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"lastUpdate"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3045022100aaddab2207ece615e5e6546de4b1d1535be6926ba24c9e35596f7eb869d0d48302202c5a28721962e5e3e2b1b08a0fd2e739b77fd9d5a9f7cdbb7f8b2542aa3b6d7001"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"chainHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"568496x2864x1"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1553522210</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"messageFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"cltvExpiryDelta"</span><span class="p">:</span><span class="w"> </span><span class="mi">144</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"htlcMinimumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"feeBaseMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"feeProportionalMillionths"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"htlcMaximumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">16777215000</span><span class="w">
-      </span><span class="p">}</span><span class="w">
-    </span><span class="p">}</span><span class="w">
-  </span><span class="p">]</span><span class="w">
-</span><span class="p">}</span><span class="w">
-</span></code></pre>
-<p>Sends money to a node. In case of failure the payment will be retried up to <code>maxAttempts</code> times, 
-default number of attempts is read from the configuration.</p>
-<h3 id='http-request-14'>HTTP Request</h3>
+<pre class="highlight plaintext"><code>"e4227601-38b3-404e-9aa0-75a829e9bec0"
+</code></pre>
+<p>Sends money to a node, in case of failure the payment will be retried up to <code>maxAttempts</code> times, 
+default number of attempts is read from the configuration.The API works in a fire-and-forget fashion where 
+the unique identifier for this payment attempt is immediately returned to the caller.</p>
+<h3 id='http-request-15'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtonode</code></p>
-<h3 id='parameters-12'>Parameters</h3>
+<h3 id='parameters-13'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1311,21 +1296,79 @@ default number of attempts is read from the configuration.</p>
 <td>Integer</td>
 </tr>
 </tbody></table>
-<h2 id='checkpayment'>checkpayment</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/checkpayment"</span>
+<h2 id='getsentinfo'>GetSentInfo</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/getsentinfo"</span>
 
 <span class="c">#with eclair-cli</span>
-eclair-cli checkpayment --paymentHash<span class="o">=</span>&lt;some_hash&gt;
+eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight plaintext"><code>true
+<pre class="highlight plaintext"><code>[
+  {
+    "id": "89922845-e6a7-4038-8a74-d3e4fcd625b8",
+    "paymentHash": "f68cd4fcf0b62cbc22d45abcbeab9ae3d6a08aa89a8484aee23cc9835e4ab095",
+    "preimage": "bac250cbbc1996e593be6e59537130fa8ff437439e98cbb746eea978f2d4815b",
+    "amountMsat": 1000001,
+    "createdAt": 1555406910,
+    "completedAt": 1555407047,
+    "status": "SUCCEEDED"
+  },
+  {
+    "id": "e4227601-38b3-404e-9aa0-75a829e9bec0",
+    "paymentHash": "f68cd4fcf0b62cbc22d45abcbeab9ae3d6a08aa89a8484aee23cc9835e4ab095",
+    "amountMsat": 1000001,
+    "createdAt": 1555407047,
+    "completedAt": 1555407049,
+    "status": "FAILED"
+  }
+]
 </code></pre>
-<p>Check whether the given <em>payment_hash</em> has been paid, it is possible to use a BOLT11 invoice
-as parameter instead of the <em>payment_hash</em> but at least one of the two must be specified.</p>
-<h3 id='http-request-15'>HTTP Request</h3>
-<p><code>POST http://localhost:8080/checkpayment</code></p>
-<h3 id='parameters-13'>Parameters</h3>
+<p>Returns a list of attempts to send an outgoing payment, the possible statuses are PENDING, FAILED and SUCCEEDED. The API can 
+be queried by <code>paymentHash</code> OR by <code>uuid</code>, if the latter is used the API returns a list containing at most one element.</p>
+<h3 id='http-request-16'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/getsentinfo</code></p>
+<h3 id='parameters-14'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+<th>Optional</th>
+<th>Type</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>paymentHash</td>
+<td>The payment hash common to all payment attepts to be retrieved</td>
+<td>No</td>
+<td>32bytes-HexString (String)</td>
+</tr>
+<tr>
+<td>id</td>
+<td>The unique id of the payment attempt</td>
+<td>Yes</td>
+<td>Java&#39;s UUID (String)</td>
+</tr>
+</tbody></table>
+<h2 id='getreceivedinfo'>GetReceivedInfo</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/getreceivedinfo"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli getreceivedinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+  </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"587593ec3511dbefda58735695d3e615aca1db671ecd79b6b89884c498fe4e4f"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"amountMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">250000</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"receivedAt"</span><span class="p">:</span><span class="w"> </span><span class="mi">1555407387</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
+<p>Check whether a payment corresponding to the given <code>paymentHash</code> has been received, it is possible to use a BOLT11 invoice
+as parameter instead of the <code>paymentHash</code> but at least one of the two must be specified.</p>
+<h3 id='http-request-17'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/getreceivedinfo</code></p>
+<h3 id='parameters-15'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1347,29 +1390,28 @@ as parameter instead of the <em>payment_hash</em> but at least one of the two mu
 <td>String</td>
 </tr>
 </tbody></table>
-<h2 id='parseinvoice'>parseinvoice</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/parseinvoice"</span>
+<h2 id='getinvoice'>GetInvoice</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/getinvoice"</span>
 
 <span class="c">#with eclair-cli</span>
-eclair-cli parseinvoice --invoice<span class="o">=</span>&lt;some_bolt11invoice&gt;
+eclair-cli getinvoice --description<span class="o">=</span>&lt;some_description&gt; --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
-  </span><span class="s2">"prefix"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lntb"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">123</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1545150074</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0217e8131150248362318e06afc5adc29fc61ff0e6a34c390d8907e13576e70fe0"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"wassa wassa"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"bb9cf74c2c1bb6cb169fa60f0a291867fb91f29efb2691bfb7fa0e492d59ec80"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">2333</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"minFinalCltvExpiry"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="w">
+  </span><span class="s2">"prefix"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1555416528</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"serialized"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"A payment description"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">21600</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Returns detailed information about the given invoice.</p>
-<h3 id='http-request-16'>HTTP Request</h3>
-<p><code>POST http://localhost:8080/parseinvoice</code></p>
-<h3 id='parameters-14'>Parameters</h3>
+<p>Queries the payment DB for a stored invoice with the given <code>paymentHash</code>, if none is found it responds HTTP 404.</p>
+<h3 id='http-request-18'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/getinvoice</code></p>
+<h3 id='parameters-16'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1379,10 +1421,117 @@ eclair-cli parseinvoice --invoice<span class="o">=</span>&lt;some_bolt11invoice&
 </tr>
 </thead><tbody>
 <tr>
-<td>invoice</td>
-<td>The invoice you want to decode</td>
+<td>paymentHash</td>
+<td>The payment hash of the invoice you want to retrieve</td>
 <td>No</td>
-<td>String</td>
+<td>32bytes-HexString (String)</td>
+</tr>
+</tbody></table>
+<h2 id='listinvoices'>ListInvoices</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/listinvoices"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli listinvoices
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">[</span><span class="w">
+  </span><span class="p">{</span><span class="w">
+    </span><span class="s2">"prefix"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1555416528</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"serialized"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"A payment description"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">21600</span><span class="w">
+  </span><span class="p">},</span><span class="w">
+  </span><span class="p">{</span><span class="w">
+    </span><span class="s2">"prefix"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1555416528</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"serialized"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"wassa wassa"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb"</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">]</span><span class="w">
+</span></code></pre>
+<p>Returns all the <strong>BOLT11</strong> invoice stored.</p>
+<h3 id='http-request-19'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/listinvoices</code></p>
+<h3 id='parameters-17'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+<th>Optional</th>
+<th>Type</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>from</td>
+<td>Filters elements no older than this unix-timestamp</td>
+<td>Yes</td>
+<td>Unix timestamp (Integer)</td>
+</tr>
+<tr>
+<td>to</td>
+<td>Filters elements no younger than this unix-timestamp</td>
+<td>Yes</td>
+<td>Unix timestamp (Integer)</td>
+</tr>
+</tbody></table>
+<h2 id='listpendinginvoices'>ListPendingInvoices</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/listpendinginvoices"</span>
+
+<span class="c">#with eclair-cli</span>
+eclair-cli listpendinginvoices
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">[</span><span class="w">
+  </span><span class="p">{</span><span class="w">
+    </span><span class="s2">"prefix"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1555416528</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"serialized"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"A payment description"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">21600</span><span class="w">
+  </span><span class="p">},</span><span class="w">
+  </span><span class="p">{</span><span class="w">
+    </span><span class="s2">"prefix"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1555416528</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"serialized"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"wassa wassa"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb"</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">]</span><span class="w">
+</span></code></pre>
+<p>Returns all non paid, non expired <strong>BOLT11</strong> invoices stored, the result can be filtered by dates and is outputted in descending
+order.</p>
+<h3 id='http-request-20'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/listpendinginvoices</code></p>
+<h3 id='parameters-18'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+<th>Optional</th>
+<th>Type</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>from</td>
+<td>Filters elements no older than this unix-timestamp</td>
+<td>Yes</td>
+<td>Unix timestamp (Integer)</td>
+</tr>
+<tr>
+<td>to</td>
+<td>Filters elements no younger than this unix-timestamp</td>
+<td>Yes</td>
+<td>Unix timestamp (Integer)</td>
 </tr>
 </tbody></table>
 <h1 id='route'>Route</h1><h2 id='findroute'>findroute</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/findroute"</span>
@@ -1399,10 +1548,11 @@ eclair-cli findroute --invoice<span class="o">=</span>&lt;some_bolt11invoice&gt;
   </span><span class="s2">"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
-<p>Finds a route to the node specified by the invoice.</p>
-<h3 id='http-request-17'>HTTP Request</h3>
+<p>Finds a route to the node specified by the invoice, if the invoice does not specify an amount 
+you must do so via the <code>amountMsat</code> parameter.</p>
+<h3 id='http-request-21'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/findroute</code></p>
-<h3 id='parameters-15'>Parameters</h3>
+<h3 id='parameters-19'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1440,9 +1590,9 @@ eclair-cli --nodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span c
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Finds a route to the node.</p>
-<h3 id='http-request-18'>HTTP Request</h3>
+<h3 id='http-request-22'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/findroutetonode</code></p>
-<h3 id='parameters-16'>Parameters</h3>
+<h3 id='parameters-20'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1504,9 +1654,9 @@ eclair-cli audit
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about payments handled by this node such as: sent, received and relayed payments.</p>
-<h3 id='http-request-19'>HTTP Request</h3>
+<h3 id='http-request-23'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/audit</code></p>
-<h3 id='parameters-17'>Parameters</h3>
+<h3 id='parameters-21'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1548,9 +1698,9 @@ eclair-cli networkfees
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about on-chain fees paid during channel operations.</p>
-<h3 id='http-request-20'>HTTP Request</h3>
+<h3 id='http-request-24'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/networkfees</code></p>
-<h3 id='parameters-18'>Parameters</h3>
+<h3 id='parameters-22'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1592,7 +1742,7 @@ eclair-cli channelstats
 </span></code></pre>
 <p>Retrieves information about local channels, the information is then aggregated in order to display
 statistics about the routing activity of the channels.</p>
-<h3 id='http-request-21'>HTTP Request</h3>
+<h3 id='http-request-25'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/channelstats</code></p>
 <h1 id='websocket'>Websocket</h1><h2 id='ws'>ws</h2>
 <blockquote>
@@ -1681,7 +1831,7 @@ several types covering all the possible outcomes.</p>
 <td>A payment failed</td>
 </tr>
 </tbody></table>
-<h3 id='http-request-22'>HTTP Request</h3>
+<h3 id='http-request-26'>HTTP Request</h3>
 <p><code>GET ws://localhost:8080/ws</code></p>
 <h1 id='errors'>Errors</h1>
 <blockquote>
