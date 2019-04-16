@@ -718,32 +718,39 @@ Parameter | Description | Optional | Type
 --------- | ----------- | --------- | --------
 nodeId | The node id of the node to be used as filter for the updates | Yes | 32bytes-HexString (String)
 
-
 # Payments
 
 Interfaces for sending and receiving payments through eclair.
 
-## receive
+## createinvoice
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F description=<some_description> \
-     -F amountMsat=<some_amount> "http://localhost:8080/receive"
+     -F amountMsat=<some_amount> "http://localhost:8080/createinvoice"
 
 #with eclair-cli
-eclair-cli receive --description=<some_description> --amountMsat=<some_amount>
+eclair-cli createinvoice --description=<some_description> --amountMsat=<some_amount>
 ```
 
 > The above command returns:
 
-```
-lnbc4200n1pwf36wlpp5dhysplnjqrqzsvlhct07csechwrz7usr5u69e68v5759m4qz46eqdzz2pshjmt9de6zqen0wgsrgv3sypcxj7r9d3ejqct5ypekzar0wd5xjuewwpkxzcm99cxqzjccqp2rzjqwe3ukal9nd7z9d5sk3tfq88pg0089g6phrd7jcjxtsw2meaecvdvzyu2sqq94gqqyqqqqlgqqqqqzsqpcptp3ys9qgxcfnazf7cqluus56anmur8jy2yzj4wcscpw08u8hl5hjwv0uhm7dv3vvqh623289chcen0a35ynjkk8kd6tz38syntfg2gp6nz0wa
+```json
+{
+  "prefix": "lnbc",
+  "timestamp": 1555416528,
+  "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
+  "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
+  "description": "A payment description",
+  "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb",
+  "expiry": 21600
+}
 ```
 
 Create a **BOLT11** payment invoice.
 
 ### HTTP Request
 
-`POST http://localhost:8080/receive`
+`POST http://localhost:8080/createinvoice`
 
 ### Parameters
 
@@ -753,13 +760,13 @@ description | A description for the invoice | No | String
 amountMsat | Amount in millisatoshi for this invoice | Yes | Millisatoshi (integer)
 expireIn | Number of seconds that the invoice will be valid | Yes | Seconds (integer)
 
-## send
+## payinvoice
 
 ```shell
-curl -u :<eclair_api_password> -X POST -F invoice=<some_invoice> "http://localhost:8080/send"
+curl -u :<eclair_api_password> -X POST -F invoice=<some_invoice> "http://localhost:8080/payinvoice"
 
 #with eclair-cli
-eclair-cli send --invoice=<some_invoice>
+eclair-cli payinvoice --invoice=<some_invoice>
 ```
 > The above command returns:
 
@@ -812,7 +819,7 @@ default number of attempts is read from the configuration.
 
 ### HTTP Request
 
-`POST http://localhost:8080/send`
+`POST http://localhost:8080/payinvoice`
 
 ### Parameters
 
@@ -977,7 +984,9 @@ eclair-cli findroute --invoice=<some_bolt11invoice>
 ]
 ```
 
-Finds a route to the node specified by the invoice.
+Finds a route to the node specified by the invoice, if the invoice does not specify an amount 
+you must do so via the `amountMsat` parameter.
+
 
 ### HTTP Request
 
