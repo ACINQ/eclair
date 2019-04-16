@@ -722,7 +722,7 @@ nodeId | The node id of the node to be used as filter for the updates | Yes | 32
 
 Interfaces for sending and receiving payments through eclair.
 
-## createinvoice
+## CreateInvoice
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F description=<some_description> \
@@ -759,8 +759,9 @@ Parameter | Description | Optional | Type
 description | A description for the invoice | No | String
 amountMsat | Amount in millisatoshi for this invoice | Yes | Millisatoshi (integer)
 expireIn | Number of seconds that the invoice will be valid | Yes | Seconds (integer)
+fallbackAddress | An on-chain fallback address to receive the payment | Yes | Bitcoin address (String)
 
-## parseinvoice
+## ParseInvoice
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F invoice=<some_bolt11invoice> "http://localhost:8080/parseinvoice"
@@ -794,7 +795,7 @@ Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
 invoice | The invoice you want to decode | No | String
 
-## payinvoice
+## PayInvoice
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F invoice=<some_invoice> "http://localhost:8080/payinvoice"
@@ -804,52 +805,13 @@ eclair-cli payinvoice --invoice=<some_invoice>
 ```
 > The above command returns:
 
-```json
-{
-  "amountMsat": 151015,
-  "paymentHash": "427309c52a46f8c005ad840c106fcdc9c4c60f95769525bc91c4a742133e4fe3",
-  "paymentPreimage": "14b0c3443226f8a570332737501e0945910e44778ad1740b6f036f8016fb9982",
-  "route": [
-    {
-      "nodeId": "036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96",
-      "nextNodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-      "lastUpdate": {
-        "signature": "3045022100be4eafab56a122bdfa740f7a35d3ffc6080f08882d9231f80d802ac15192a82a022006ac2679d5ca3b93738b6dd970855c6e3eb264f006c0bd2dc6fb14df5ba634c801",
-        "chainHash": "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000",
-        "shortChannelId": "565779x2711x0",
-        "timestamp": 1553527352,
-        "messageFlags": 1,
-        "channelFlags": 0,
-        "cltvExpiryDelta": 144,
-        "htlcMinimumMsat": 1,
-        "feeBaseMsat": 1000,
-        "feeProportionalMillionths": 100,
-        "htlcMaximumMsat": 230000000
-      }
-    },
-    {
-      "nodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-      "nextNodeId": "03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7",
-      "lastUpdate": {
-        "signature": "3045022100aaddab2207ece615e5e6546de4b1d1535be6926ba24c9e35596f7eb869d0d48302202c5a28721962e5e3e2b1b08a0fd2e739b77fd9d5a9f7cdbb7f8b2542aa3b6d7001",
-        "chainHash": "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000",
-        "shortChannelId": "568496x2864x1",
-        "timestamp": 1553522210,
-        "messageFlags": 1,
-        "channelFlags": 0,
-        "cltvExpiryDelta": 144,
-        "htlcMinimumMsat": 1000,
-        "feeBaseMsat": 1000,
-        "feeProportionalMillionths": 100,
-        "htlcMaximumMsat": 16777215000
-      }
-    }
-  ]
-}
+```
+"e4227601-38b3-404e-9aa0-75a829e9bec0"
 ```
 
-Pays a **BOLT11** invoice. In case of failure the payment will be retried up to `maxAttempts` times, 
-default number of attempts is read from the configuration.
+Pays a **BOLT11** invoice, in case of failure the payment will be retried up to `maxAttempts` times, 
+default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where 
+the unique identifier for this payment attempt is immediately returned to the caller.
 
 ### HTTP Request
 
@@ -863,7 +825,7 @@ invoice | The invoice you want to pay | No | String
 amountMsat | Amount in to pay if the invoice does not have one | Yes | Millisatoshi (integer)
 maxAttempts | Max number of retries | Yes | Integer
 
-## sendToNode
+## SendToNode
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F nodeId=<some_node> \
@@ -874,52 +836,13 @@ eclair-cli sendtonode --nodeId=<some_node> --amountMsat=<amount> --paymentHash=<
 ```
 > The above command returns:
 
-```json
-{
-  "amountMsat": 151015,
-  "paymentHash": "427309c52a46f8c005ad840c106fcdc9c4c60f95769525bc91c4a742133e4fe3",
-  "paymentPreimage": "14b0c3443226f8a570332737501e0945910e44778ad1740b6f036f8016fb9982",
-  "route": [
-    {
-      "nodeId": "036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96",
-      "nextNodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-      "lastUpdate": {
-        "signature": "3045022100be4eafab56a122bdfa740f7a35d3ffc6080f08882d9231f80d802ac15192a82a022006ac2679d5ca3b93738b6dd970855c6e3eb264f006c0bd2dc6fb14df5ba634c801",
-        "chainHash": "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000",
-        "shortChannelId": "565779x2711x0",
-        "timestamp": 1553527352,
-        "messageFlags": 1,
-        "channelFlags": 0,
-        "cltvExpiryDelta": 144,
-        "htlcMinimumMsat": 1,
-        "feeBaseMsat": 1000,
-        "feeProportionalMillionths": 100,
-        "htlcMaximumMsat": 230000000
-      }
-    },
-    {
-      "nodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-      "nextNodeId": "03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7",
-      "lastUpdate": {
-        "signature": "3045022100aaddab2207ece615e5e6546de4b1d1535be6926ba24c9e35596f7eb869d0d48302202c5a28721962e5e3e2b1b08a0fd2e739b77fd9d5a9f7cdbb7f8b2542aa3b6d7001",
-        "chainHash": "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000",
-        "shortChannelId": "568496x2864x1",
-        "timestamp": 1553522210,
-        "messageFlags": 1,
-        "channelFlags": 0,
-        "cltvExpiryDelta": 144,
-        "htlcMinimumMsat": 1000,
-        "feeBaseMsat": 1000,
-        "feeProportionalMillionths": 100,
-        "htlcMaximumMsat": 16777215000
-      }
-    }
-  ]
-}
+```
+"e4227601-38b3-404e-9aa0-75a829e9bec0"
 ```
 
-Sends money to a node. In case of failure the payment will be retried up to `maxAttempts` times, 
-default number of attempts is read from the configuration.
+Sends money to a node, in case of failure the payment will be retried up to `maxAttempts` times, 
+default number of attempts is read from the configuration.The API works in a fire-and-forget fashion where 
+the unique identifier for this payment attempt is immediately returned to the caller.
 
 ### HTTP Request
 
@@ -934,26 +857,76 @@ amountMsat | Amount in to pay | No | Millisatoshi (integer)
 paymentHash | The payment hash for this payment | No | 32bytes-HexString (String)
 maxAttempts | Max number of retries | Yes | Integer
 
-## checkpayment
+## GetSentInfo
 
 ```shell
-curl -u :<eclair_api_password> -X POST -F paymentHash=<some_hash> "http://localhost:8080/checkpayment"
+curl -u :<eclair_api_password> -X POST -F paymentHash=<some_hash> "http://localhost:8080/getsentinfo"
 
 #with eclair-cli
-eclair-cli checkpayment --paymentHash=<some_hash>
+eclair-cli getsentinfo --paymentHash=<some_hash>
 ```
 > The above command returns:
 
 ```
-true
+[
+  {
+    "id": "89922845-e6a7-4038-8a74-d3e4fcd625b8",
+    "paymentHash": "f68cd4fcf0b62cbc22d45abcbeab9ae3d6a08aa89a8484aee23cc9835e4ab095",
+    "preimage": "bac250cbbc1996e593be6e59537130fa8ff437439e98cbb746eea978f2d4815b",
+    "amountMsat": 1000001,
+    "createdAt": 1555406910,
+    "completedAt": 1555407047,
+    "status": "SUCCEEDED"
+  },
+  {
+    "id": "e4227601-38b3-404e-9aa0-75a829e9bec0",
+    "paymentHash": "f68cd4fcf0b62cbc22d45abcbeab9ae3d6a08aa89a8484aee23cc9835e4ab095",
+    "amountMsat": 1000001,
+    "createdAt": 1555407047,
+    "completedAt": 1555407049,
+    "status": "FAILED"
+  }
+]
 ```
 
-Check whether the given _payment_hash_ has been paid, it is possible to use a BOLT11 invoice
-as parameter instead of the _payment_hash_ but at least one of the two must be specified.
+Returns a list of attempts to send an outgoing payment, the possible statuses are PENDING, FAILED and SUCCEEDED. The API can 
+be queried by `paymentHash` OR by `uuid`, if the latter is used the API returns a list containing at most one element.
 
 ### HTTP Request
 
-`POST http://localhost:8080/checkpayment`
+`POST http://localhost:8080/getsentinfo`
+
+### Parameters
+
+Parameter | Description | Optional | Type
+--------- | ----------- | --------- | ---------
+paymentHash | The payment hash common to all payment attepts to be retrieved | No | 32bytes-HexString (String)
+id | The unique id of the payment attempt | Yes | Java's UUID (String)
+
+## GetReceivedInfo
+
+```shell
+curl -u :<eclair_api_password> -X POST -F paymentHash=<some_hash> "http://localhost:8080/getreceivedinfo"
+
+#with eclair-cli
+eclair-cli getreceivedinfo --paymentHash=<some_hash>
+```
+> The above command returns:
+
+```json
+{
+  "paymentHash": "587593ec3511dbefda58735695d3e615aca1db671ecd79b6b89884c498fe4e4f",
+  "amountMsat": 250000,
+  "receivedAt": 1555407387
+}
+```
+
+Check whether a payment corresponding to the given `paymentHash` has been received, it is possible to use a BOLT11 invoice
+as parameter instead of the `paymentHash` but at least one of the two must be specified.
+
+### HTTP Request
+
+`POST http://localhost:8080/getreceivedinfo`
 
 ### Parameters
 
@@ -961,6 +934,134 @@ Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
 paymentHash | The payment hash you want to check | No | 32bytes-HexString (String)
 invoice | The invoice containing the payment hash | Yes | String
+
+## GetInvoice
+
+```shell
+curl -u :<eclair_api_password> -X POST -F paymentHash=<some_hash> "http://localhost:8080/getinvoice"
+
+#with eclair-cli
+eclair-cli getinvoice --description=<some_description> --paymentHash=<some_hash>
+```
+
+> The above command returns:
+
+```json
+{
+  "prefix": "lnbc",
+  "timestamp": 1555416528,
+  "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
+  "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
+  "description": "A payment description",
+  "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb",
+  "expiry": 21600
+}
+```
+
+Queries the payment DB for a stored invoice with the given `paymentHash`, if none is found it responds HTTP 404.
+
+### HTTP Request
+
+`POST http://localhost:8080/getinvoice`
+
+### Parameters
+
+Parameter | Description | Optional | Type
+--------- | ----------- | --------- | ---------
+paymentHash | The payment hash of the invoice you want to retrieve | No | 32bytes-HexString (String)
+
+## ListInvoices
+
+```shell
+curl -u :<eclair_api_password> -X POST "http://localhost:8080/listinvoices"
+
+#with eclair-cli
+eclair-cli listinvoices
+```
+
+> The above command returns:
+
+```json
+[
+  {
+    "prefix": "lnbc",
+    "timestamp": 1555416528,
+    "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
+    "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
+    "description": "A payment description",
+    "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb",
+    "expiry": 21600
+  },
+  {
+    "prefix": "lnbc",
+    "timestamp": 1555416528,
+    "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
+    "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
+    "description": "wassa wassa",
+    "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb"
+  }
+]
+```
+
+Returns all the **BOLT11** invoice stored.
+
+### HTTP Request
+
+`POST http://localhost:8080/listinvoices`
+
+### Parameters
+
+Parameter | Description | Optional | Type
+--------- | ----------- | --------- | ---------
+from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp (Integer)
+to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp (Integer)
+
+## ListPendingInvoices
+
+```shell
+curl -u :<eclair_api_password> -X POST "http://localhost:8080/listpendinginvoices"
+
+#with eclair-cli
+eclair-cli listpendinginvoices
+```
+
+> The above command returns:
+
+```json
+[
+  {
+    "prefix": "lnbc",
+    "timestamp": 1555416528,
+    "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
+    "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
+    "description": "A payment description",
+    "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb",
+    "expiry": 21600
+  },
+  {
+    "prefix": "lnbc",
+    "timestamp": 1555416528,
+    "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
+    "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
+    "description": "wassa wassa",
+    "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb"
+  }
+]
+```
+
+Returns all non paid, non expired **BOLT11** invoices stored, the result can be filtered by dates and is outputted in descending
+order.
+
+### HTTP Request
+
+`POST http://localhost:8080/listpendinginvoices`
+
+### Parameters
+
+Parameter | Description | Optional | Type
+--------- | ----------- | --------- | ---------
+from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp (Integer)
+to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp (Integer)
 
 # Route
 
