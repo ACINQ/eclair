@@ -101,7 +101,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
 
       // let's we set up the router
       val watcher = TestProbe()
-      val router = system.actorOf(Router.props(Alice.nodeParams, watcher.ref))
+      val router = system.actorOf(Router.props(Alice.nodeParams.copy(keyManager = testKeyManager), watcher.ref))
       // we announce channels
       router ! PeerRoutingMessage(null, remoteNodeId, chan_ab)
       router ! PeerRoutingMessage(null, remoteNodeId, chan_bc)
