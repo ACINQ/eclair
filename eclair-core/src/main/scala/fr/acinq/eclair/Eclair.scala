@@ -66,6 +66,8 @@ trait Eclair {
 
   def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse]
 
+  def sendToRoute(route: Seq[PublicKey], amountMsat: Long, paymentHash: ByteVector32, finalCltv: Long): Future[UUID]
+
   def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse]
 
   def networkFees(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[NetworkFee]]
@@ -156,6 +158,10 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse] = {
     (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amountMsat, assistedRoutes)).mapTo[RouteResponse]
+  }
+
+  override def sendToRoute(route: Seq[PublicKey], amountMsat: Long, paymentHash: ByteVector32, finalCltv: Long): Future[UUID] = {
+    (appKit.paymentInitiator ? SendPaymentToRoute(amountMsat, paymentHash, route, finalCltv)).mapTo[UUID]
   }
 
   override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry_opt: Option[Long] = None, maxAttempts_opt: Option[Int] = None): Future[UUID] = {

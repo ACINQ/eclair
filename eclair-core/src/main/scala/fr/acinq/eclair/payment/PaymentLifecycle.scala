@@ -45,6 +45,12 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
   when(WAITING_FOR_REQUEST) {
+    case Event(SendPaymentToRoute(amountMsat, paymentHash, hops, finalCltv), WaitingForRequest) =>
+      val send = SendPayment(amountMsat, paymentHash, hops.last, finalCltvExpiry = finalCltv, maxAttempts = 1)
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, paymentHash, None, amountMsat, Instant.now().getEpochSecond, None, OutgoingPaymentStatus.PENDING))
+      router ! PartialRouteRequest(hops)
+      goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
+
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
       paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Instant.now().getEpochSecond, None, OutgoingPaymentStatus.PENDING))
@@ -192,13 +198,15 @@ object PaymentLifecycle {
 
   // @formatter:off
   case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil, fallbackAddress: Option[String] = None)
+  sealed trait GenericSendPayment
+  case class SendPaymentToRoute(amountMsat: Long, paymentHash: ByteVector32, hops: Seq[PublicKey], finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY) extends GenericSendPayment
   case class SendPayment(amountMsat: Long,
                          paymentHash: ByteVector32,
                          targetNodeId: PublicKey,
                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                          finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
                          maxAttempts: Int,
-                         routeParams: Option[RouteParams] = None) {
+                         routeParams: Option[RouteParams] = None) extends GenericSendPayment {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
 

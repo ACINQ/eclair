@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import java.util.UUID
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
+import fr.acinq.eclair.payment.PaymentLifecycle.{GenericSendPayment, SendPayment, SendPaymentToRoute}
 
 /**
   * Created by PM on 29/08/2016.
@@ -27,10 +27,10 @@ import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
 class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: ActorRef) extends Actor with ActorLogging {
 
   override def receive: Receive = {
-    case c: SendPayment =>
+    case c:GenericSendPayment =>
       val paymentId = UUID.randomUUID()
       val payFsm = context.actorOf(PaymentLifecycle.props(nodeParams, paymentId, router, register))
-      payFsm forward c
+      payFsm.forward(c)
       sender ! paymentId
   }
 

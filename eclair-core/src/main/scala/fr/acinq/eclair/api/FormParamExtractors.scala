@@ -17,7 +17,7 @@
 package fr.acinq.eclair.api
 
 import java.util.UUID
-
+import JsonSupport._
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -49,6 +49,12 @@ object FormParamExtractors {
 
   implicit val javaUUIDUnmarshaller: Unmarshaller[String, UUID] = Unmarshaller.strict { str =>
     UUID.fromString(str)
+  }
+
+  implicit val pubkeyListUnmarshaller: Unmarshaller[String, List[PublicKey]] = Unmarshaller.strict { str =>
+    serialization.read[List[String]](str).map { el =>
+      PublicKey(ByteVector.fromValidHex(el), checkValid = false)
+    }
   }
 
 }

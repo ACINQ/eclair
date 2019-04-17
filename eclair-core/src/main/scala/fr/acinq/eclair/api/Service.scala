@@ -276,6 +276,11 @@ trait Service extends ExtraDirectives with Logging {
                   } ~
                   path("channelstats") {
                     complete(eclairApi.channelStats())
+                  } ~
+                  path("sendtoroute") {
+                    formFields(amountMsat, paymentHash, "finalCltvExpiry".as[Long], "route".as[List[PublicKey]](pubkeyListUnmarshaller)) { (amountMsat, paymentHash, finalCltvExpiry, route) =>
+                      complete(eclairApi.sendToRoute(route, amountMsat, paymentHash, finalCltvExpiry))
+                    }
                   }
               } ~ get {
                 path("ws") {
