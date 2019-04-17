@@ -16,27 +16,23 @@
 
 package fr.acinq.eclair.db
 
-import java.sql.DriverManager
-
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.sqlite.SqlitePendingRelayDb
-import fr.acinq.eclair.randomBytes32
+import fr.acinq.eclair.{TestConstants, randomBytes32}
 import fr.acinq.eclair.wire.FailureMessageCodecs
 import org.scalatest.FunSuite
 
 
 class SqlitePendingRelayDbSpec extends FunSuite {
 
-  def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
-
   test("init sqlite 2 times in a row") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db1 = new SqlitePendingRelayDb(sqlite)
     val db2 = new SqlitePendingRelayDb(sqlite)
   }
 
   test("add/remove/list messages") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db = new SqlitePendingRelayDb(sqlite)
 
     val channelId1 = randomBytes32

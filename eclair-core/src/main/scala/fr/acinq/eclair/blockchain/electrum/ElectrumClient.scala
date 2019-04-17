@@ -42,6 +42,7 @@ import scodec.bits.ByteVector
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 
 /**
   * For later optimizations, see http://normanmaurer.me/presentations/2014-facebook-eng-netty/slides.html
@@ -334,7 +335,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 }
 
 object ElectrumClient {
-  val CLIENT_NAME = "3.3.2" // client name that we will include in our "version" message
+  val CLIENT_NAME = "3.3.4" // client name that we will include in our "version" message
   val PROTOCOL_VERSION = "1.4" // version of the protocol that we require
 
   // this is expensive and shared with all clients
@@ -599,9 +600,15 @@ object ElectrumClient {
           case _ => ScriptHashSubscriptionResponse(scriptHash, "")
         }
         case BroadcastTransaction(tx) =>
-          val JString(txid) = json.result
-          require(ByteVector32.fromValidHex(txid) == tx.txid)
-          BroadcastTransactionResponse(tx, None)
+          val JString(message) = json.result
+          // if we got here, it means that the server's response does not contain an error and message should be our
+          // transaction id. However, it seems that at least on testnet some servers still use an older version of the
+          // Electrum protocol and return an error message in the result field
+          Try(ByteVector32.fromValidHex(message)) match {
+            case Success(txid) if txid == tx.txid => BroadcastTransactionResponse(tx, None)
+            case Success(txid) => BroadcastTransactionResponse(tx, Some(Error(1, s"response txid $txid does not match request txid ${tx.txid}")))
+            case Failure(_) => BroadcastTransactionResponse(tx, Some(Error(1, message)))
+          }
         case GetHeader(height) =>
           val JString(hex) = json.result
           GetHeaderResponse(height, BlockHeader.read(hex))
