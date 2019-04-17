@@ -42,7 +42,7 @@ import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
+import fr.acinq.eclair.{AuditResponse, GetInfoResponse, Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JBool, JInt, JString}
 import org.json4s.{JValue, jackson}
@@ -57,8 +57,6 @@ case class JsonRPCBody(jsonrpc: String = "1.0", id: String = "eclair-node", meth
 case class Error(code: Int, message: String)
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 case class Status(node_id: String)
-case class GetInfoResponse(nodeId: PublicKey, alias: String, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
-case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 trait RPCRejection extends Rejection {
   def requestId: String
 }
@@ -267,7 +265,7 @@ trait OldService extends Logging {
                         case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
                           (Try(ByteVector32.fromValidHex(paymentHash)), Try(PublicKey(ByteVector.fromValidHex(nodeId)))) match {
                             case (Success(ph), Success(pk)) => completeRpcFuture(req.id, (paymentInitiator ?
-                              SendPayment(amountMsat.toLong, ph, pk)).mapTo[PaymentResult].map {
+                              SendPayment(amountMsat.toLong, ph, pk, maxAttempts = appKit.nodeParams.maxPaymentAttempts)).mapTo[PaymentResult].map {
                               case s: PaymentSucceeded => s
                               case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
                             })
@@ -287,8 +285,8 @@ trait OldService extends Logging {
                             logger.debug(s"api call for sending payment with amount_msat=$amount_msat")
                             // optional cltv expiry
                             val sendPayment = pr.minFinalCltvExpiry match {
-                              case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId)
-                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry)
+                              case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, maxAttempts = appKit.nodeParams.maxPaymentAttempts)
+                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry, maxAttempts = appKit.nodeParams.maxPaymentAttempts)
                             }
                             completeRpcFuture(req.id, (paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
                               case s: PaymentSucceeded => s
@@ -309,7 +307,7 @@ trait OldService extends Logging {
                                 case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
                               }
                             }
-                            found <- (paymentHandler ? CheckPayment(ByteVector32.fromValidHex(identifier))).map(found => new JBool(found.asInstanceOf[Boolean]))
+                            found <- Future(appKit.nodeParams.db.payments.getIncomingPayment(ByteVector32.fromValidHex(identifier)).map(_ => JBool(true)).getOrElse(JBool(false)))
                           } yield found)
                           case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
                         }

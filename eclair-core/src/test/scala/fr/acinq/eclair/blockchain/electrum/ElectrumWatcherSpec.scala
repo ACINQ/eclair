@@ -50,7 +50,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     TestKit.shutdownActorSystem(system)
   }
 
-  val electrumAddress = ElectrumServerAddress(new InetSocketAddress("localhost", 50001), SSL.OFF)
+  val electrumAddress = ElectrumServerAddress(new InetSocketAddress("localhost", electrumPort), SSL.OFF)
 
   test("watch for confirmed transactions") {
     val probe = TestProbe()

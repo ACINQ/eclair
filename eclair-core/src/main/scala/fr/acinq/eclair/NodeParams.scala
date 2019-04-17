@@ -73,10 +73,10 @@ case class NodeParams(keyManager: KeyManager,
                       channelFlags: Byte,
                       watcherType: WatcherType,
                       paymentRequestExpiry: FiniteDuration,
-                      maxPendingPaymentRequests: Int,
                       minFundingSatoshis: Long,
                       routerConf: RouterConf,
-                      socksProxy_opt: Option[Socks5ProxyParams]) {
+                      socksProxy_opt: Option[Socks5ProxyParams],
+                      maxPaymentAttempts: Int) {
 
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
@@ -209,7 +209,6 @@ object NodeParams {
       channelFlags = config.getInt("channel-flags").toByte,
       watcherType = watcherType,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
-      maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"),
       minFundingSatoshis = config.getLong("min-funding-satoshis"),
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
@@ -224,7 +223,8 @@ object NodeParams {
         searchRatioChannelAge = config.getDouble("router.path-finding.ratio-channel-age"),
         searchRatioChannelCapacity = config.getDouble("router.path-finding.ratio-channel-capacity")
       ),
-      socksProxy_opt = socksProxy_opt
+      socksProxy_opt = socksProxy_opt,
+      maxPaymentAttempts = config.getInt("max-payment-attempts")
     )
   }
 }
