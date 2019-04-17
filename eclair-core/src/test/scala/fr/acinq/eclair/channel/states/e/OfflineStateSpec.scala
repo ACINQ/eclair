@@ -366,42 +366,4 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     channelUpdateListener.expectNoMsg(300 millis)
   }
 
-  test("bump timestamp in case of quick reconnection") { f =>
-    import f._
-    val sender = TestProbe()
-
-    // we simulate a disconnection
-    sender.send(alice, INPUT_DISCONNECTED)
-    sender.send(bob, INPUT_DISCONNECTED)
-    awaitCond(alice.stateName == OFFLINE)
-    awaitCond(bob.stateName == OFFLINE)
-
-    // alice and bob announce that their channel is OFFLINE
-    val channelUpdate_alice_disabled = channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate
-    val channelUpdate_bob_disabled = channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate
-    assert(Announcements.isEnabled(channelUpdate_alice_disabled.channelFlags) == false)
-    assert(Announcements.isEnabled(channelUpdate_bob_disabled.channelFlags) == false)
-
-    // we immediately reconnect them
-    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
-    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
-
-    // peers exchange channel_reestablish messages
-    alice2bob.expectMsgType[ChannelReestablish]
-    bob2alice.expectMsgType[ChannelReestablish]
-    alice2bob.forward(bob)
-    bob2alice.forward(alice)
-
-    // both nodes reach NORMAL state, and broadcast a new channel_update
-    val channelUpdate_alice_enabled = channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate
-    val channelUpdate_bob_enabled = channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate
-    assert(Announcements.isEnabled(channelUpdate_alice_enabled.channelFlags) == true)
-    assert(Announcements.isEnabled(channelUpdate_bob_enabled.channelFlags) == true)
-
-    // let's check that the two successive channel_update have a different timestamp
-    assert(channelUpdate_alice_enabled.timestamp > channelUpdate_alice_disabled.timestamp)
-    assert(channelUpdate_bob_enabled.timestamp > channelUpdate_bob_disabled.timestamp)
-
-  }
-
 }

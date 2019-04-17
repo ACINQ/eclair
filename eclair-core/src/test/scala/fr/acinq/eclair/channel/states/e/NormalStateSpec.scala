@@ -25,7 +25,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
-import fr.acinq.eclair.channel.Channel.{RevocationTimeout, TickRefreshChannelUpdate}
+import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh, RevocationTimeout}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.io.Peer
@@ -2082,7 +2082,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsg(annSigsA)
   }
 
-  test("recv TickRefreshChannelUpdate", Tag("channels_public")) { f =>
+  test("recv BroadcastChannelUpdate", Tag("channels_public")) { f =>
     import f._
     val sender = TestProbe()
     sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
@@ -2093,7 +2093,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test starts here
     Thread.sleep(1100)
-    sender.send(alice, TickRefreshChannelUpdate)
+    sender.send(alice, BroadcastChannelUpdate(PeriodicRefresh))
     val update2 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
   }

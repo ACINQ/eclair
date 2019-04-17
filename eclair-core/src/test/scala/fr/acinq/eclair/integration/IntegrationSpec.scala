@@ -28,7 +28,7 @@ import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypt
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
-import fr.acinq.eclair.channel.Channel.TickRefreshChannelUpdate
+import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
@@ -308,7 +308,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
     sender.expectNoMsg(3 seconds)
-    sender.send(nodes("B").register, ForwardShortId(shortIdBC, TickRefreshChannelUpdate))
+    sender.send(nodes("B").register, ForwardShortId(shortIdBC, BroadcastChannelUpdate(PeriodicRefresh)))
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, CMD_GETINFO))
     val channelUpdateBC_new = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].channelUpdate
     logger.info(s"channelUpdateBC=$channelUpdateBC")
