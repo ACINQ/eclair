@@ -811,7 +811,7 @@ object Helpers {
       * @return
       */
     def isSentByLocal(htlcId: Long, originChannels: Map[Long, Origin]) = originChannels.get(htlcId) match {
-      case Some(Local(_)) => true
+      case Some(Local(_, _)) => true
       case _ => false
     }
 
