@@ -235,13 +235,12 @@ class Setup(datadir: File,
         case address => logger.info(s"initial wallet address=$address")
       }
       backupHandler = system.actorOf(
-        SimpleSupervisor.props(Props(
-          new BackupHandler(
+        SimpleSupervisor.props(
+          BackupHandler.props(
             nodeParams.db,
-            new File(chaindir, config.getString("backup-file").concat(".wip")),
-            new File(chaindir, config.getString("backup-file"))
-          )
-        ), "backup", SupervisorStrategy.Resume)
+            new File(chaindir, "eclair.bak.wip"),
+            new File(chaindir, "eclair.bak")
+          ), "backup", SupervisorStrategy.Resume)
       )
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
@@ -353,8 +352,11 @@ class Setup(datadir: File,
 
 // @formatter:off
 sealed trait Bitcoin
+
 case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient) extends Bitcoin
+
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
+
 // @formatter:on
 
 case class Kit(nodeParams: NodeParams,
