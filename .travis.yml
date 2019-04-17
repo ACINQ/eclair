@@ -13,7 +13,7 @@ before_install:
  - export M2_HOME=$PWD/apache-maven-3.6.0
  - export PATH=$M2_HOME/bin:$PATH
 script:
- - mvn install
+ - mvn test -pl eclair-core -Dsuites='fr.acinq.eclair.payment.PaymentLifecycleSpec'
 cache:
  directories:
   - .autoconf
