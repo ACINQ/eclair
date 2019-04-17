@@ -85,4 +85,13 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelp
     awaitCond(alice.stateName == CLOSED)
   }
 
+  test("recv INPUT_DISCONNECTED") { f =>
+    import f._
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_SIGNED].fundingTx
+    assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.isEmpty)
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == CLOSED)
+    assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.contains(fundingTx))
+  }
+
 }

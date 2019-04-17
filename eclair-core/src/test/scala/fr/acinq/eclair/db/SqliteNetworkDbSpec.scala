@@ -24,7 +24,7 @@ import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.{Announcements, PublicChannel}
 import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
-import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.{ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 
 import scala.collection.SortedMap
@@ -32,18 +32,16 @@ import scala.collection.SortedMap
 
 class SqliteNetworkDbSpec extends FunSuite {
 
-  def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
-
   val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
 
   test("init sqlite 2 times in a row") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db1 = new SqliteNetworkDb(sqlite)
     val db2 = new SqliteNetworkDb(sqlite)
   }
 
   test("migration test 1->2") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
 
     using(sqlite.createStatement()) { statement =>
       getVersion(statement, "network", 1) // this will set version to 1
@@ -82,7 +80,7 @@ class SqliteNetworkDbSpec extends FunSuite {
   }
 
   test("add/remove/list nodes") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteNetworkDb(sqlite)
 
     val node_1 = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil)
@@ -162,12 +160,12 @@ class SqliteNetworkDbSpec extends FunSuite {
   }
 
   test("add/remove/list channels and channel_updates") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     simpleTest(sqlite)
   }
 
   test("remove many channels") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteNetworkDb(sqlite)
     val sig = Crypto.encodeSignature(Crypto.sign(randomBytes32, randomKey)) :+ 1.toByte
     val priv = randomKey
@@ -188,7 +186,7 @@ class SqliteNetworkDbSpec extends FunSuite {
   }
 
   test("prune many channels") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteNetworkDb(sqlite)
 
     db.addToPruned(shortChannelIds)

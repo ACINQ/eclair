@@ -44,7 +44,8 @@ object SqliteUtils {
 
   /**
     * Several logical databases (channels, network, peers) may be stored in the same physical sqlite database.
-    * We keep track of their respective version using a dedicated table.
+    * We keep track of their respective version using a dedicated table. The version entry will be created if
+    * there is none but will never be updated here (use setVersion to do that).
     *
     * @param statement
     * @param db_name
@@ -60,10 +61,17 @@ object SqliteUtils {
     res.getInt("version")
   }
 
-  def setVersion(statement: Statement, db_name: String, currentVersion: Int) = {
+  /**
+    * Updates the version for a particular logical database, it will overwrite the previous version.
+    * @param statement
+    * @param db_name
+    * @param newVersion
+    * @return
+    */
+  def setVersion(statement: Statement, db_name: String, newVersion: Int) = {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS versions (db_name TEXT NOT NULL PRIMARY KEY, version INTEGER NOT NULL)")
-    // if there was no version for the current db, then insert the current version
-    statement.executeUpdate(s"UPDATE versions SET version=$currentVersion WHERE db_name='$db_name'")
+    // overwrite the existing version
+    statement.executeUpdate(s"UPDATE versions SET version=$newVersion WHERE db_name='$db_name'")
   }
 
   /**
@@ -82,6 +90,19 @@ object SqliteUtils {
       q = q :+ codec.decode(BitVector(rs.getBytes("data"))).require.value
     }
     q
+  }
+
+  /**
+    * This helper retrieves the value from a nullable integer column and interprets it as an option. This is needed
+    * because `rs.getLong` would return `0` for a null value.
+    * It is used on Android only
+    *
+    * @param label
+    * @return
+    */
+  def getNullableLong(rs: ResultSet, label: String) : Option[Long] = {
+    val result = rs.getLong(label)
+    if (rs.wasNull()) None else Some(result)
   }
 
   /**
@@ -107,6 +128,11 @@ object SqliteUtils {
     def getByteVector(columnLabel: String): ByteVector = ByteVector(rs.getBytes(columnLabel))
 
     def getByteVector32(columnLabel: String): ByteVector32 = ByteVector32(ByteVector(rs.getBytes(columnLabel)))
+
+    def getByteVector32Nullable(columnLabel: String): Option[ByteVector32] = {
+      val bytes = rs.getBytes(columnLabel)
+      if(rs.wasNull()) None else Some(ByteVector32(ByteVector(bytes)))
+    }
   }
 
   object ExtendedResultSet {

@@ -1,23 +1,42 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair
 
+import java.util.UUID
 import akka.actor.ActorRef
 import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.api.{AuditResponse, GetInfoResponse}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.{NetworkFee, Stats}
+import fr.acinq.eclair.db.{NetworkFee, IncomingPayment, OutgoingPayment, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
-import fr.acinq.eclair.payment.{PaymentLifecycle, PaymentRequest}
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import scodec.bits.ByteVector
-
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentRequest, PaymentSent}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
+
+case class GetInfoResponse(nodeId: PublicKey, alias: String, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
+
+case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 
 trait Eclair {
 
@@ -31,31 +50,39 @@ trait Eclair {
 
   def updateRelayFee(channelId: String, feeBaseMsat: Long, feeProportionalMillionths: Long): Future[String]
 
-  def peersInfo(): Future[Iterable[PeerInfo]]
-
   def channelsInfo(toRemoteNode: Option[PublicKey]): Future[Iterable[RES_GETINFO]]
 
   def channelInfo(channelId: ByteVector32): Future[RES_GETINFO]
 
-  def allnodes(): Future[Iterable[NodeAnnouncement]]
+  def peersInfo(): Future[Iterable[PeerInfo]]
 
-  def allchannels(): Future[Iterable[ChannelDesc]]
+  def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String]): Future[PaymentRequest]
 
-  def allupdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]]
+  def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]]
 
-  def receive(description: String, amountMsat: Option[Long], expire: Option[Long]): Future[String]
+  def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None, maxAttempts: Option[Int] = None): Future[UUID]
+
+  def sentInfo(id: Either[UUID, ByteVector32]): Future[Seq[OutgoingPayment]]
 
   def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse]
-
-  def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[PaymentResult]
-
-  def checkpayment(paymentHash: ByteVector32): Future[Boolean]
 
   def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse]
 
   def networkFees(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[NetworkFee]]
 
   def channelStats(): Future[Seq[Stats]]
+
+  def getInvoice(paymentHash: ByteVector32): Future[Option[PaymentRequest]]
+
+  def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]]
+
+  def allInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]]
+
+  def allNodes(): Future[Iterable[NodeAnnouncement]]
+
+  def allChannels(): Future[Iterable[ChannelDesc]]
+
+  def allUpdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]]
 
   def getInfoResponse(): Future[GetInfoResponse]
 
@@ -75,7 +102,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
       remoteNodeId = nodeId,
       fundingSatoshis = Satoshi(fundingSatoshis),
       pushMsat = pushMsat.map(MilliSatoshi).getOrElse(MilliSatoshi(0)),
-      fundingTxFeeratePerKw_opt = fundingFeerateSatByte,
+      fundingTxFeeratePerKw_opt = fundingFeerateSatByte.map(feerateByte2Kw),
       channelFlags = flags.map(_.toByte))).mapTo[String]
   }
 
@@ -111,47 +138,49 @@ class EclairImpl(appKit: Kit) extends Eclair {
     sendToChannel(channelId.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
   }
 
-  override def allnodes(): Future[Iterable[NodeAnnouncement]] = (appKit.router ? 'nodes).mapTo[Iterable[NodeAnnouncement]]
+  override def allNodes(): Future[Iterable[NodeAnnouncement]] = (appKit.router ? 'nodes).mapTo[Iterable[NodeAnnouncement]]
 
-  override def allchannels(): Future[Iterable[ChannelDesc]] = {
+  override def allChannels(): Future[Iterable[ChannelDesc]] = {
     (appKit.router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)))
   }
 
-  override def allupdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]] = nodeId match {
+  override def allUpdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]] = nodeId match {
     case None => (appKit.router ? 'updates).mapTo[Iterable[ChannelUpdate]]
     case Some(pk) => (appKit.router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]].map(_.filter(e => e._1.a == pk || e._1.b == pk).values)
   }
 
-  override def receive(description: String, amountMsat: Option[Long], expire: Option[Long]): Future[String] = {
-    (appKit.paymentHandler ? ReceivePayment(description = description, amountMsat_opt = amountMsat.map(MilliSatoshi), expirySeconds_opt = expire)).mapTo[PaymentRequest].map { pr =>
-      PaymentRequest.write(pr)
-    }
+  override def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String]): Future[PaymentRequest] = {
+    fallbackAddress.map { fa => fr.acinq.eclair.addressToPublicKeyScript(fa, appKit.nodeParams.chainHash) } // if it's not a bitcoin address throws an exception
+    (appKit.paymentHandler ? ReceivePayment(description = description, amountMsat_opt = amountMsat.map(MilliSatoshi), expirySeconds_opt = expire, fallbackAddress = fallbackAddress)).mapTo[PaymentRequest]
   }
 
   override def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse] = {
     (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amountMsat, assistedRoutes)).mapTo[RouteResponse]
   }
 
-  override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None): Future[PaymentResult] = {
-    val sendPayment = minFinalCltvExpiry match {
-      case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv)
-      case None  => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes)
+  override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry_opt: Option[Long] = None, maxAttempts_opt: Option[Int] = None): Future[UUID] = {
+    val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
+    val sendPayment = minFinalCltvExpiry_opt match {
+      case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv, maxAttempts = maxAttempts)
+      case None => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, maxAttempts = maxAttempts)
     }
-    (appKit.paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
-      case s: PaymentSucceeded => s
-      case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
+    (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
+  }
+
+  override def sentInfo(id: Either[UUID, ByteVector32]): Future[Seq[OutgoingPayment]] = Future {
+    id match {
+      case Left(uuid) => appKit.nodeParams.db.payments.getOutgoingPayment(uuid).toSeq
+      case Right(paymentHash) => appKit.nodeParams.db.payments.getOutgoingPayments(paymentHash)
     }
   }
 
-  override def checkpayment(paymentHash: ByteVector32): Future[Boolean] = {
-    (appKit.paymentHandler ? CheckPayment(paymentHash)).mapTo[Boolean]
+  override def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]] = Future {
+    appKit.nodeParams.db.payments.getIncomingPayment(paymentHash)
   }
 
   override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = {
-    val (from, to) = (from_opt, to_opt) match {
-      case (Some(f), Some(t)) => (f, t)
-      case _ => (0L, Long.MaxValue)
-    }
+    val from = from_opt.getOrElse(0L)
+    val to = to_opt.getOrElse(Long.MaxValue)
 
     Future(AuditResponse(
       sent = appKit.nodeParams.db.audit.listSent(from, to),
@@ -161,15 +190,31 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def networkFees(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[NetworkFee]] = {
-    val (from, to) = (from_opt, to_opt) match {
-      case (Some(f), Some(t)) => (f, t)
-      case _ => (0L, Long.MaxValue)
-    }
+    val from = from_opt.getOrElse(0L)
+    val to = to_opt.getOrElse(Long.MaxValue)
 
     Future(appKit.nodeParams.db.audit.listNetworkFees(from, to))
   }
 
   override def channelStats(): Future[Seq[Stats]] = Future(appKit.nodeParams.db.audit.stats)
+
+  override def allInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]] = Future {
+    val from = from_opt.getOrElse(0L)
+    val to = to_opt.getOrElse(Long.MaxValue)
+
+    appKit.nodeParams.db.payments.listPaymentRequests(from, to)
+  }
+
+  override def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]] = Future {
+    val from = from_opt.getOrElse(0L)
+    val to = to_opt.getOrElse(Long.MaxValue)
+
+    appKit.nodeParams.db.payments.listPendingPaymentRequests(from, to)
+  }
+
+  override def getInvoice(paymentHash: ByteVector32): Future[Option[PaymentRequest]] = Future {
+    appKit.nodeParams.db.payments.getPaymentRequest(paymentHash)
+  }
 
   /**
     * Sends a request to a channel and expects a response
@@ -188,10 +233,10 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
     GetInfoResponse(nodeId = appKit.nodeParams.nodeId,
-    alias = appKit.nodeParams.alias,
-    chainHash = appKit.nodeParams.chainHash,
-    blockHeight = Globals.blockCount.intValue(),
-    publicAddresses = appKit.nodeParams.publicAddresses)
+      alias = appKit.nodeParams.alias,
+      chainHash = appKit.nodeParams.chainHash,
+      blockHeight = Globals.blockCount.intValue(),
+      publicAddresses = appKit.nodeParams.publicAddresses)
   )
 
 }

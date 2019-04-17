@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.wire
 
+import java.util.UUID
+import akka.actor.ActorSystem
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{DeterministicWallet, OutPoint}
 import fr.acinq.eclair.channel._
@@ -26,7 +28,6 @@ import fr.acinq.eclair.wire.ChannelCodecs._
 import fr.acinq.eclair.{UInt64, randomBytes, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits._
-
 import scala.compat.Platform
 import scala.util.Random
 
@@ -140,19 +141,21 @@ class ChannelCodecsSpec extends FunSuite {
   }
 
   test("encode/decode origin") {
-    assert(originCodec.decodeValue(originCodec.encode(Local(None)).require).require === Local(None))
+    val id = UUID.randomUUID()
+    assert(originCodec.decodeValue(originCodec.encode(Local(id, Some(ActorSystem("system").deadLetters))).require).require === Local(id, None))
+    // TODO: add backward compatibility check
     val relayed = Relayed(randomBytes32, 4324, 12000000L, 11000000L)
     assert(originCodec.decodeValue(originCodec.encode(relayed).require).require === relayed)
   }
 
   test("encode/decode map of origins") {
     val map = Map(
-      1L -> Local(None),
+      1L -> Local(UUID.randomUUID(), None),
       42L -> Relayed(randomBytes32, 4324, 12000000L, 11000000L),
       130L -> Relayed(randomBytes32, -45, 13000000L, 12000000L),
       1000L -> Relayed(randomBytes32, 10, 14000000L, 13000000L),
       -32L -> Relayed(randomBytes32, 54, 15000000L, 14000000L),
-      -4L -> Local(None))
+      -4L -> Local(UUID.randomUUID(), None))
     assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require === map)
   }
 

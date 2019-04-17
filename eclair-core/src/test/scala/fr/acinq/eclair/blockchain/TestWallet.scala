@@ -27,6 +27,8 @@ import scala.util.Try
   */
 class TestWallet extends EclairWallet {
 
+  var rolledback = Set.empty[Transaction]
+
   override def getBalance: Future[Satoshi] = ???
 
   override def getFinalAddress: Future[String] = Future.successful("2MsRZ1asG6k94m6GYUufDGaZJMoJ4EV5JKs")
@@ -36,7 +38,10 @@ class TestWallet extends EclairWallet {
 
   override def commit(tx: Transaction): Future[Boolean] = Future.successful(true)
 
-  override def rollback(tx: Transaction): Future[Boolean] = Future.successful(true)
+  override def rollback(tx: Transaction): Future[Boolean] = {
+    rolledback = rolledback + tx
+    Future.successful(true)
+  }
 
   override def doubleSpent(tx: Transaction): Future[Boolean] = Future.successful(false)
 }

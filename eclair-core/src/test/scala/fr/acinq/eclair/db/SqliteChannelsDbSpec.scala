@@ -16,9 +16,8 @@
 
 package fr.acinq.eclair.db
 
-import java.sql.DriverManager
-
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqlitePendingRelayDb}
 import org.scalatest.FunSuite
 import org.sqlite.SQLiteException
@@ -27,16 +26,14 @@ import scodec.bits.ByteVector
 
 class SqliteChannelsDbSpec extends FunSuite {
 
-  def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
-
   test("init sqlite 2 times in a row") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db1 = new SqliteChannelsDb(sqlite)
     val db2 = new SqliteChannelsDb(sqlite)
   }
 
   test("add/remove/list channels") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteChannelsDb(sqlite)
     new SqlitePendingRelayDb(sqlite) // needed by db.removeChannel
 
