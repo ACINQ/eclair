@@ -43,19 +43,16 @@ import fr.acinq.eclair._
 
 class PaymentLifecycleSpec extends BaseRouterSpec {
 
-  val initialBlockCount = 420000
-  Globals.blockCount.set(initialBlockCount)
-
   val defaultAmountMsat = 142000000L
-  val defaultPaymentHash = randomBytes32
-
 
   test("payment failed (route not found)") { fixture =>
     import fixture._
-    val nodeParams = TestConstants.Alice.nodeParams
+    val defaultPaymentHash = randomBytes32
+    val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, router, TestProbe().ref))
+    val routerForwarder = TestProbe()
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, id, routerForwarder.ref, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -64,15 +61,18 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val request = SendPayment(defaultAmountMsat, defaultPaymentHash, f, maxAttempts = 5)
     sender.send(paymentFSM, request)
-    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val routeRequest = routerForwarder.expectMsgType[RouteRequest]
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
 
+    routerForwarder.forward(router, routeRequest)
     sender.expectMsg(PaymentFailed(id, request.paymentHash, LocalFailure(RouteNotFound) :: Nil))
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
   }
 
   test("payment failed (route too expensive)") { fixture =>
     import fixture._
+    val defaultPaymentHash = randomBytes32
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
@@ -93,6 +93,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (unparsable failure)") { fixture =>
     import fixture._
+    val defaultPaymentHash = randomBytes32
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
     val relayer = TestProbe()
@@ -136,6 +137,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (local error)") { fixture =>
     import fixture._
+    val defaultPaymentHash = randomBytes32
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
     val relayer = TestProbe()
@@ -168,6 +170,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (first hop returns an UpdateFailMalformedHtlc)") { fixture =>
     import fixture._
+    val defaultPaymentHash = randomBytes32
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
     val relayer = TestProbe()
@@ -200,6 +203,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (TemporaryChannelFailure)") { fixture =>
     import fixture._
+    val defaultPaymentHash = randomBytes32
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
@@ -239,6 +243,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (Update)") { fixture =>
     import fixture._
+    val defaultPaymentHash = randomBytes32
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
     val relayer = TestProbe()
@@ -301,6 +306,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment failed (PermanentChannelFailure)") { fixture =>
     import fixture._
+    val defaultPaymentHash = randomBytes32
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
     val relayer = TestProbe()
@@ -340,6 +346,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment succeeded") { fixture =>
     import fixture._
+    val defaultPaymentHash = randomBytes32
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
@@ -369,6 +376,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   test("payment succeeded to a channel with fees=0") { fixture =>
     import fixture._
     import fr.acinq.eclair.randomKey
+    val defaultPaymentHash = randomBytes32
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     // the network will be a --(1)--> b ---(2)--> c --(3)--> d  and e --(4)--> f (we are a) and b -> g has fees=0
     //                                 \
