@@ -211,7 +211,7 @@ object SqliteWalletDb {
       ("history" | historyCodec) ::
       ("proofs" | proofsCodec) ::
       ("pendingTransactions" | listOfN(uint16, txCodec)) ::
-      ("locks" | setCodec(txCodec))).as[PersistentData]
+      ("locks" | provide(Set.empty[Transaction]))).as[PersistentData]
 
   def serialize(data: PersistentData): Array[Byte] = persistentDataCodec.encode(data).require.toByteArray
 
