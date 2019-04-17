@@ -43,16 +43,12 @@ import fr.acinq.eclair._
 
 class PaymentLifecycleSpec extends BaseRouterSpec {
 
-  val initialBlockCount = 420000
-  Globals.blockCount.set(initialBlockCount)
-
   val defaultAmountMsat = 142000000L
-  val defaultPaymentHash = randomBytes32
-
+  def defaultPaymentHash = randomBytes32
 
   test("payment failed (route not found)") { fixture =>
     import fixture._
-    val nodeParams = TestConstants.Alice.nodeParams
+    val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
     val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, router, TestProbe().ref))
