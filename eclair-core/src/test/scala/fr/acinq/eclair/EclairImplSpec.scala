@@ -40,12 +40,12 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with FunSuiteLike 
     implicit val timeout = Timeout(30 seconds)
 
     // standard conversion
-    eclair.open(nodeId, fundingSatoshis = 10000000L, pushMsat = None, fundingFeerateSatByte = Some(5), flags = None, timeout_opt = None)
+    eclair.open(nodeId, fundingSatoshis = 10000000L, pushMsat = None, fundingFeerateSatByte = Some(5), flags = None, openTimeout_opt = None)
     val open = switchboard.expectMsgType[OpenChannel]
     assert(open.fundingTxFeeratePerKw_opt == Some(1250))
 
     // check that minimum fee rate of 253 sat/bw is used
-    eclair.open(nodeId, fundingSatoshis = 10000000L, pushMsat = None, fundingFeerateSatByte = Some(1), flags = None, timeout_opt = None)
+    eclair.open(nodeId, fundingSatoshis = 10000000L, pushMsat = None, fundingFeerateSatByte = Some(1), flags = None, openTimeout_opt = None)
     val open1 = switchboard.expectMsgType[OpenChannel]
     assert(open1.fundingTxFeeratePerKw_opt == Some(MinimumFeeratePerKw))
   }
