@@ -22,7 +22,7 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Satoshi}
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
@@ -31,10 +31,10 @@ import fr.acinq.eclair.channel.{ChannelCreated, HasCommitments}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
-import fr.acinq.eclair.router.{Rebroadcast, RoutingSyncSpec}
-import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, EncodedShortChannelIds, EncodingType, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong, QueryShortChannelIds, Tlv, TlvStream}
+import fr.acinq.eclair.router.{Rebroadcast, RoutingSyncSpec, SendChannelQuery}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, EncodedShortChannelIds, EncodingType, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong, QueryShortChannelIds, TlvStream}
 import org.scalatest.{Outcome, Tag}
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, _}
 
 import scala.concurrent.duration._
 
@@ -52,15 +52,6 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
   case class FixtureParam(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: TestFSMRef[Peer.State, Peer.Data, Peer])
 
   override protected def withFixture(test: OneArgTest): Outcome = {
-    val aParams = Alice.nodeParams
-    val aliceParams = test.tags.contains("with_node_announcements") match {
-      case true =>
-        val bobAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
-        aParams.db.network.addNode(bobAnnouncement)
-        aParams
-      case false => aParams
-    }
-
     val authenticator = TestProbe()
     val watcher = TestProbe()
     val router = TestProbe()
@@ -69,20 +60,35 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val transport = TestProbe()
     val wallet: EclairWallet = new TestWallet()
     val remoteNodeId = Bob.nodeParams.nodeId
+
+    import com.softwaremill.quicklens._
+    val aliceParams = TestConstants.Alice.nodeParams
+      .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-bob"))(Set(remoteNodeId))
+      .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-random"))(Set(randomKey.publicKey))
+
+    if (test.tags.contains("with_node_announcements")) {
+      val bobAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+      aliceParams.db.network.addNode(bobAnnouncement)
+    }
+
     val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
     withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)))
   }
 
-  def connect(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: ActorRef, channels: Set[HasCommitments] = Set.empty): Unit = {
+  def connect(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: ActorRef, channels: Set[HasCommitments] = Set.empty, remoteInit: wire.Init = wire.Init(Bob.nodeParams.globalFeatures, Bob.nodeParams.localFeatures), expectSync: Boolean = false): Unit = {
     // let's simulate a connection
     val probe = TestProbe()
     probe.send(peer, Peer.Init(None, channels))
     authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, None))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
-    transport.send(peer, wire.Init(Bob.nodeParams.globalFeatures, Bob.nodeParams.localFeatures))
+    transport.send(peer, remoteInit)
     transport.expectMsgType[TransportHandler.ReadAck]
-    router.expectNoMsg(1 second) // bob's features require no sync
+    if (expectSync) {
+      router.expectMsgType[SendChannelQuery]
+    } else {
+      router.expectNoMsg(1 second)
+    }
     probe.send(peer, Peer.GetPeerInfo)
     assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
   }
@@ -253,6 +259,24 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val channelCreated = probe.expectMsgType[ChannelCreated]
     assert(channelCreated.initialFeeratePerKw == peer.feeEstimator.getFeeratePerKw(peer.feeTargets.commitmentBlockTarget))
     assert(channelCreated.fundingTxFeeratePerKw.get == peer.feeEstimator.getFeeratePerKw(peer.feeTargets.fundingBlockTarget))
+  }
+
+  test("sync if no whitelist is defined") { f =>
+    import f._
+    val remoteInit = wire.Init(Bob.nodeParams.globalFeatures, bin"10000000".toByteVector) // bob support channel range queries
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, Set.empty, remoteInit, expectSync = true)
+  }
+
+  test("sync if whitelist contains peer", Tag("sync-whitelist-bob")) { f =>
+    import f._
+    val remoteInit = wire.Init(Bob.nodeParams.globalFeatures, bin"10000000".toByteVector) // bob support channel range queries
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, Set.empty, remoteInit, expectSync = true)
+  }
+
+  test("don't sync if whitelist doesn't contain peer", Tag("sync-whitelist-random")) { f =>
+    import f._
+    val remoteInit = wire.Init(Bob.nodeParams.globalFeatures, bin"10000000".toByteVector) // bob support channel range queries
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, Set.empty, remoteInit, expectSync = false)
   }
 
   test("reply to ping") { f =>
