@@ -202,6 +202,21 @@ eclair.bitcoind.rpcuser=<your-mainnet-rpc-user-here>
 eclair.bitcoind.rpcpassword=<your-mainnet-rpc-password-here>
 ```
 
+### Backups
+
+The files that you need to backup are located in your data directory. You must backup:
+- your seed (`seed.dat`)
+- your channel database (`eclair.bak` in`mainnet`, `testnet` or `regtest` depending on which chain you're running on)
+
+Your seed never changes once it is created, but your channels do change whenever you receive our send payments.
+`eclair.bak` is safe to backup even when your system is running. We recommend that you implement your backup 
+process in 2 steps:
+- first, rename `eclair.bak` to a new local file
+- then, backup the renamed file using whatever tool you like.
+
+
+
+
 ## Resources
 - [1] [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
 - [2] [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
