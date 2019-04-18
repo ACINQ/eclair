@@ -53,7 +53,7 @@ object FormParamExtractors {
     UUID.fromString(str)
   }
 
-  implicit val timeoutUnmarshaller: Unmarshaller[String, Timeout] = Unmarshaller.strict { str =>
+  implicit val timeoutSecondsUnmarshaller: Unmarshaller[String, Timeout] = Unmarshaller.strict { str =>
     Timeout(str.toInt.seconds)
   }
 

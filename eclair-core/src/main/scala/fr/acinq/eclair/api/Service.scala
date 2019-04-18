@@ -78,7 +78,6 @@ trait Service extends ExtraDirectives with Logging {
   val to = "to".as[Long]
   val amountMsat = "amountMsat".as[Long]
   val invoice = "invoice".as[PaymentRequest]
-  val timeout = "timeout".as[Timeout](timeoutUnmarshaller)
 
   val apiExceptionHandler = ExceptionHandler {
     case t: Throwable =>
@@ -135,7 +134,7 @@ trait Service extends ExtraDirectives with Logging {
     respondWithDefaultHeaders(customHeaders) {
       handleExceptions(apiExceptionHandler) {
         handleRejections(apiRejectionHandler) {
-          formFields(timeout.?) { tm_opt =>
+          formFields("timeoutSeconds".as[Timeout].?) { tm_opt =>
             // this is the akka timeout
             implicit val timeout = tm_opt.getOrElse(Timeout(30 seconds))
             // we ensure that http timeout is greater than akka timeout
@@ -154,9 +153,9 @@ trait Service extends ExtraDirectives with Logging {
                         }
                       } ~
                       path("open") {
-                        formFields(nodeId, "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?, "timeoutSeconds".as[Timeout].?) {
-                          (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, timeout_opt) =>
-                            complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, timeout_opt))
+                        formFields(nodeId, "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?, "openTimeoutSeconds".as[Timeout].?) {
+                          (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, openTimeout_opt) =>
+                            complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, openTimeout_opt))
                         }
                       } ~
                       path("updaterelayfee") {
