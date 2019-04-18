@@ -1,9 +1,14 @@
 package fr.acinq.eclair.db
 
 import java.io.File
+import java.util.concurrent.TimeUnit
 
-import akka.actor.{Actor, ActorLogging, Props}
+import akka.actor.{Actor, ActorLogging, ActorSystem, Deploy, PoisonPill, Props}
+import akka.dispatch.{BoundedMailbox, BoundedMessageQueueSemantics, NonBlockingBoundedMailbox, PriorityGenerator, RequiresMessageQueue, UnboundedPriorityMailbox}
+import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.eclair.channel.ChannelPersisted
+
+import scala.concurrent.duration.FiniteDuration
 
 
 /**
@@ -25,7 +30,7 @@ import fr.acinq.eclair.channel.ChannelPersisted
   * @param tmpFile temporary file
   * @param backupFile final backup file
   */
-class BackupHandler(databases: Databases, tmpFile: File, backupFile: File) extends Actor with ActorLogging {
+class BackupHandler(databases: Databases, tmpFile: File, backupFile: File) extends Actor with RequiresMessageQueue[BoundedMessageQueueSemantics] with ActorLogging {
 
   // we listen to ChannelPersisted events, which will trigger a backup
   context.system.eventStream.subscribe(self, classOf[ChannelPersisted])
@@ -41,6 +46,9 @@ class BackupHandler(databases: Databases, tmpFile: File, backupFile: File) exten
   }
 }
 
+trait BackupHandlerMailboxSemantics
+
 object BackupHandler {
-  def props(databases: Databases, tmpFile: File, backupFile: File) = Props(new BackupHandler(databases: Databases, wip: File, destination: File)).withMailbox("eclair.backup-mailbox")
+
+  def props(databases: Databases, tmpFile: File, backupFile: File) = Props(new BackupHandler(databases, tmpFile, backupFile))
 }

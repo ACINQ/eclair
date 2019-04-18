@@ -88,11 +88,12 @@ class Setup(datadir: File,
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
+  val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
 
   val database = db match {
     case Some(d) => d
-    case None => Databases.sqliteJDBC(new File(datadir, chain))
+    case None => Databases.sqliteJDBC(chaindir)
   }
 
   val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database)
@@ -220,7 +221,6 @@ class Setup(datadir: File,
       routerTimeout = after(FiniteDuration(config.getDuration("router.init-timeout").getSeconds, TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
       _ <- Future.firstCompletedOf(routerInitialized.future :: routerTimeout :: Nil)
 
-      chaindir = new File(datadir, chain)
       wallet = bitcoin match {
         case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
         case Electrum(electrumClient) =>
@@ -234,13 +234,14 @@ class Setup(datadir: File,
       _ = wallet.getFinalAddress.map {
         case address => logger.info(s"initial wallet address=$address")
       }
+      // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
       backupHandler = system.actorOf(
         SimpleSupervisor.props(
           BackupHandler.props(
             nodeParams.db,
             new File(chaindir, "eclair.bak.wip"),
             new File(chaindir, "eclair.bak")
-          ), "backup", SupervisorStrategy.Resume)
+          ), "backuphandler", SupervisorStrategy.Resume)
       )
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
@@ -352,11 +353,8 @@ class Setup(datadir: File,
 
 // @formatter:off
 sealed trait Bitcoin
-
 case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient) extends Bitcoin
-
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
-
 // @formatter:on
 
 case class Kit(nodeParams: NodeParams,
