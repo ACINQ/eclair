@@ -22,10 +22,10 @@ import fr.acinq.eclair.channel.ChannelPersisted
   * Messages that cannot be processed will be sent to dead letters
   *
   * @param databases database to backup
-  * @param wip work-in-progress file
-  * @param destination destination file
+  * @param tmpFile temporary file
+  * @param backupFile final backup file
   */
-class BackupHandler(databases: Databases, wip: File, destination: File) extends Actor with ActorLogging {
+class BackupHandler(databases: Databases, tmpFile: File, backupFile: File) extends Actor with ActorLogging {
 
   // we listen to ChannelPersisted events, which will trigger a backup
   context.system.eventStream.subscribe(self, classOf[ChannelPersisted])
@@ -33,14 +33,14 @@ class BackupHandler(databases: Databases, wip: File, destination: File) extends 
   def receive = {
     case persisted: ChannelPersisted =>
       val start = System.currentTimeMillis()
-      databases.backup(wip)
-      val result = wip.renameTo(destination)
-      require(result, s"cannot rename $wip to $destination")
+      databases.backup(tmpFile)
+      val result = tmpFile.renameTo(backupFile)
+      require(result, s"cannot rename $tmpFile to $backupFile")
       val end = System.currentTimeMillis()
-      log.info(s" database backup triggered by ${persisted.channelId} to $destination done in ${end - start} ms")
+      log.info(s"database backup triggered by channelId=${persisted.channelId} took ${end - start}ms")
   }
 }
 
 object BackupHandler {
-  def props(databases: Databases, wip: File, destination: File) = Props(new BackupHandler(databases: Databases, wip: File, destination: File)).withMailbox("eclair.backup-mailbox")
+  def props(databases: Databases, tmpFile: File, backupFile: File) = Props(new BackupHandler(databases: Databases, wip: File, destination: File)).withMailbox("eclair.backup-mailbox")
 }
