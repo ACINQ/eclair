@@ -19,13 +19,15 @@ package fr.acinq.eclair.db
 import java.util.UUID
 
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi, Transaction}
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, NetworkFeePaid}
+import fr.acinq.eclair.channel.Channel.{LocalError, RemoteError}
+import fr.acinq.eclair.channel.{AvailableBalanceChanged, ChannelErrorOccured, NetworkFeePaid}
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
-import fr.acinq.eclair.db.sqlite.SqliteUtils.{ExtendedResultSet, getVersion, using}
+import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.ChannelCodecs
-import fr.acinq.eclair.{ShortChannelId, TestConstants, randomBytes32, randomKey}
+import fr.acinq.eclair._
 import org.scalatest.FunSuite
+
 import scala.compat.Platform
 
 
@@ -49,6 +51,8 @@ class SqliteAuditDbSpec extends FunSuite {
     val e6 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32, timestamp = Platform.currentTime * 2)
     val e7 = AvailableBalanceChanged(null, randomBytes32, ShortChannelId(500000, 42, 1), 456123000, ChannelStateSpec.commitments)
     val e8 = ChannelLifecycleEvent(randomBytes32, randomKey.publicKey, 456123000, true, false, "mutual")
+    val e9 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), true)
+    val e10 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), true)
 
     db.add(e1)
     db.add(e2)
@@ -58,6 +62,8 @@ class SqliteAuditDbSpec extends FunSuite {
     db.add(e6)
     db.add(e7)
     db.add(e8)
+    db.add(e9)
+    db.add(e10)
 
     assert(db.listSent(from = 0L, to = Long.MaxValue).toSet === Set(e1, e5, e6))
     assert(db.listSent(from = 100000L, to = Platform.currentTime + 1).toList === List(e1))
@@ -96,9 +102,8 @@ class SqliteAuditDbSpec extends FunSuite {
     ))
   }
 
-  test("handle migration version 1 -> 2") {
+  test("handle migration version 1 -> 3") {
 
-    import ExtendedResultSet._
     val connection = TestConstants.sqliteInMemory()
 
     // simulate existing previous version db
@@ -120,12 +125,14 @@ class SqliteAuditDbSpec extends FunSuite {
     }
 
     using(connection.createStatement()) { statement =>
-      assert(getVersion(statement, "audit", 1) == 1) // version 1 is deployed now
+      assert(getVersion(statement, "audit", 3) == 1) // version 1 is deployed now
     }
 
     val ps = PaymentSent(UUID.randomUUID(), MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32)
     val ps1 = PaymentSent(UUID.randomUUID(), MilliSatoshi(42001), MilliSatoshi(1001), randomBytes32, randomBytes32, randomBytes32)
     val ps2 = PaymentSent(UUID.randomUUID(), MilliSatoshi(42002), MilliSatoshi(1002), randomBytes32, randomBytes32, randomBytes32)
+    val e1 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), true)
+    val e2 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), true)
 
     // add a row (no ID on sent)
     using(connection.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
@@ -141,7 +148,7 @@ class SqliteAuditDbSpec extends FunSuite {
     val migratedDb = new SqliteAuditDb(connection)
 
     using(connection.createStatement()) { statement =>
-      assert(getVersion(statement, "audit", 1) == 2) // version changed from 1 -> 2
+      assert(getVersion(statement, "audit", 3) == 3) // version changed from 1 -> 3
     }
 
     // existing rows will use 00000000-0000-0000-0000-000000000000 as default
@@ -150,14 +157,62 @@ class SqliteAuditDbSpec extends FunSuite {
     val postMigrationDb = new SqliteAuditDb(connection)
 
     using(connection.createStatement()) { statement =>
-      assert(getVersion(statement, "audit", 2) == 2) // version 2
+      assert(getVersion(statement, "audit", 3) == 3) // version 3
     }
 
     postMigrationDb.add(ps1)
     postMigrationDb.add(ps2)
+    postMigrationDb.add(e1)
+    postMigrationDb.add(e2)
 
     // the old record will have the UNKNOWN_UUID but the new ones will have their actual id
     assert(postMigrationDb.listSent(0, Long.MaxValue) == Seq(ps.copy(id = ChannelCodecs.UNKNOWN_UUID), ps1, ps2))
+  }
+
+  test("handle migration version 2 -> 3") {
+
+    val connection = TestConstants.sqliteInMemory()
+
+    // simulate existing previous version db
+    using(connection.createStatement()) { statement =>
+      getVersion(statement, "audit", 2)
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS balance_updated (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, amount_msat INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, reserve_sat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL, id BLOB NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (amount_in_msat INTEGER NOT NULL, amount_out_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event STRING NOT NULL, timestamp INTEGER NOT NULL)")
+
+      statement.executeUpdate("CREATE INDEX IF NOT EXISTS balance_updated_idx ON balance_updated(timestamp)")
+      statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_timestamp_idx ON sent(timestamp)")
+      statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_timestamp_idx ON received(timestamp)")
+      statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_timestamp_idx ON relayed(timestamp)")
+      statement.executeUpdate("CREATE INDEX IF NOT EXISTS network_fees_timestamp_idx ON network_fees(timestamp)")
+      statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_events_timestamp_idx ON channel_events(timestamp)")
+    }
+
+    using(connection.createStatement()) { statement =>
+      assert(getVersion(statement, "audit", 3) == 2) // version 2 is deployed now
+    }
+
+    val e1 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), true)
+    val e2 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), true)
+
+    val migratedDb = new SqliteAuditDb(connection)
+
+    using(connection.createStatement()) { statement =>
+      assert(getVersion(statement, "audit", 3) == 3) // version changed from 2 -> 3
+    }
+
+    migratedDb.add(e1)
+
+    val postMigrationDb = new SqliteAuditDb(connection)
+
+    using(connection.createStatement()) { statement =>
+      assert(getVersion(statement, "audit", 3) == 3) // version 2
+    }
+
+    postMigrationDb.add(e2)
   }
 
 }

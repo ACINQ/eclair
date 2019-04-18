@@ -1655,7 +1655,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def replyToUser(message: Either[Channel.ChannelError, String]) = {
     val m = message match {
       case Left(LocalError(t)) => Status.Failure(t)
-      case Left(RemoteError(e)) => Status.Failure(new RuntimeException(s"peer sent error: '${if (isAsciiPrintable(e.data)) new String(e.data.toArray, StandardCharsets.US_ASCII) else e.data.toString()}'"))
+      case Left(RemoteError(e)) => Status.Failure(new RuntimeException(s"peer sent error: ascii='${e.toAscii}' bin=${e.data.toHex}"))
       case Right(s) => s
     }
     origin_opt.map(_ ! m)
@@ -1671,6 +1671,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case _: ChannelException => ()
       case _ => log.error(cause, s"msg=$cmd stateData=$stateData ")
     }
+    context.system.eventStream.publish(ChannelErrorOccured(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(cause), isFatal = false))
     stay replying Status.Failure(cause)
   }
 
@@ -1680,7 +1681,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val error = Error(d.channelId, exc.getMessage)
     // NB: we don't use the handleLocalError handler because it would result in the commit tx being published, which we don't want:
     // implementation *guarantees* that in case of BITCOIN_FUNDING_PUBLISH_FAILED, the funding tx hasn't and will never be published, so we can close the channel right away
-    context.system.eventStream.publish(ChannelFailed(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc)))
+    context.system.eventStream.publish(ChannelErrorOccured(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc), isFatal = true))
     goto(CLOSED) sending error
   }
 
@@ -1688,7 +1689,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     log.warning(s"funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE")
     val exc = FundingTxTimedout(d.channelId)
     val error = Error(d.channelId, exc.getMessage)
-    context.system.eventStream.publish(ChannelFailed(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc)))
+    context.system.eventStream.publish(ChannelErrorOccured(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc), isFatal = true))
     goto(ERR_FUNDING_TIMEOUT) sending error
   }
 
@@ -1712,7 +1713,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case _ => log.error(cause, s"msg=${msg.getOrElse("n/a")} stateData=$stateData ")
     }
     val error = Error(Helpers.getChannelId(d), cause.getMessage)
-    context.system.eventStream.publish(ChannelFailed(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(cause)))
+    context.system.eventStream.publish(ChannelErrorOccured(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(cause), isFatal = true))
 
     d match {
       case dd: HasCommitments if Closing.nothingAtStake(dd) => goto(CLOSED)
@@ -1727,8 +1728,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   def handleRemoteError(e: Error, d: Data) = {
     // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
-    log.error(s"peer sent error: ascii='${if (isAsciiPrintable(e.data)) new String(e.data.toArray, StandardCharsets.US_ASCII) else "n/a"}' bin=${e.data}")
-    context.system.eventStream.publish(ChannelFailed(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, RemoteError(e)))
+    log.error(s"peer sent error: ascii='${e.toAscii}' bin=${e.data.toHex}")
+    context.system.eventStream.publish(ChannelErrorOccured(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, RemoteError(e), isFatal = true))
 
     d match {
       case _: DATA_CLOSING => stay // nothing to do, there is already a spending tx published
