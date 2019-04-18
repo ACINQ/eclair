@@ -558,7 +558,7 @@ object Peer {
     require(pushMsat.amount <= 1000 * fundingSatoshis.amount, s"pushMsat must be less or equal to fundingSatoshis")
     require(fundingSatoshis.amount >= 0, s"fundingSatoshis must be positive")
     require(pushMsat.amount >= 0, s"pushMsat must be positive")
-    require(fundingTxFeeratePerKw_opt.getOrElse(0L) >= 0, s"funding tx feerate must be positive")
+    fundingTxFeeratePerKw_opt.foreach(feeratePerKw => require(feeratePerKw >= MinimumFeeratePerKw, s"fee rate $feeratePerKw is below minimum $MinimumFeeratePerKw rate/kw"))
   }
   case object GetPeerInfo
   case object SendPing

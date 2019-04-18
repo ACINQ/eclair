@@ -265,7 +265,7 @@ trait OldService extends Logging {
                         case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
                           (Try(ByteVector32.fromValidHex(paymentHash)), Try(PublicKey(ByteVector.fromValidHex(nodeId)))) match {
                             case (Success(ph), Success(pk)) => completeRpcFuture(req.id, (paymentInitiator ?
-                              SendPayment(amountMsat.toLong, ph, pk)).mapTo[PaymentResult].map {
+                              SendPayment(amountMsat.toLong, ph, pk, maxAttempts = appKit.nodeParams.maxPaymentAttempts)).mapTo[PaymentResult].map {
                               case s: PaymentSucceeded => s
                               case f: PaymentFailed => f.copy(failures = PaymentLifecycle.transformForUser(f.failures))
                             })
@@ -285,8 +285,8 @@ trait OldService extends Logging {
                             logger.debug(s"api call for sending payment with amount_msat=$amount_msat")
                             // optional cltv expiry
                             val sendPayment = pr.minFinalCltvExpiry match {
-                              case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId)
-                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry)
+                              case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, maxAttempts = appKit.nodeParams.maxPaymentAttempts)
+                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry, maxAttempts = appKit.nodeParams.maxPaymentAttempts)
                             }
                             completeRpcFuture(req.id, (paymentInitiator ? sendPayment).mapTo[PaymentResult].map {
                               case s: PaymentSucceeded => s
@@ -307,7 +307,7 @@ trait OldService extends Logging {
                                 case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
                               }
                             }
-                            found <- (paymentHandler ? CheckPayment(ByteVector32.fromValidHex(identifier))).map(found => new JBool(found.asInstanceOf[Boolean]))
+                            found <- Future(appKit.nodeParams.db.payments.getIncomingPayment(ByteVector32.fromValidHex(identifier)).map(_ => JBool(true)).getOrElse(JBool(false)))
                           } yield found)
                           case _ => reject(UnknownParamsRejection(req.id, "[paymentHash] or [paymentRequest]"))
                         }

@@ -17,6 +17,7 @@
 package fr.acinq.eclair.api
 
 import java.net.InetAddress
+import java.util.UUID
 
 import fr.acinq.bitcoin.{MilliSatoshi, OutPoint}
 import fr.acinq.eclair._
@@ -27,7 +28,6 @@ import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
 import org.json4s.jackson.Serialization
-import org.json4s.{DefaultFormats, ShortTypeHints}
 import org.scalatest.{FunSuite, Matchers}
 import scodec.bits._
 
@@ -74,12 +74,12 @@ class JsonSerializersSpec extends FunSuite with Matchers {
   test("Payment Request") {
     val ref = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
     val pr = PaymentRequest.read(ref)
-    Serialization.write(pr)(org.json4s.DefaultFormats + new PaymentRequestSerializer) shouldBe """{"prefix":"lnbc","amount":250000000,"timestamp":1496314658,"nodeId":"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad","description":"1 cup coffee","paymentHash":"0001020304050607080900010203040506070809000102030405060708090102","expiry":60,"minFinalCltvExpiry":null}"""
+    JsonSupport.serialization.write(pr)(JsonSupport.formats) shouldBe """{"prefix":"lnbc","timestamp":1496314658,"nodeId":"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad","serialized":"lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp","description":"1 cup coffee","paymentHash":"0001020304050607080900010203040506070809000102030405060708090102","expiry":60,"amount":250000000}"""
   }
 
   test("type hints") {
-    implicit val formats = DefaultFormats.withTypeHintFieldName("type") + CustomTypeHints(Map(classOf[PaymentSettlingOnChain] -> "payment-settling-onchain")) + new MilliSatoshiSerializer
-    val e1 = PaymentSettlingOnChain(MilliSatoshi(42), randomBytes32)
+    implicit val formats = JsonSupport.formats.withTypeHintFieldName("type") + CustomTypeHints(Map(classOf[PaymentSettlingOnChain] -> "payment-settling-onchain")) + new MilliSatoshiSerializer
+    val e1 = PaymentSettlingOnChain(UUID.randomUUID, MilliSatoshi(42), randomBytes32)
     assert(Serialization.writePretty(e1).contains("\"type\" : \"payment-settling-onchain\""))
   }
 }
