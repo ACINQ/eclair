@@ -224,7 +224,6 @@ class Setup(datadir: File,
       wallet = bitcoin match {
         case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
         case Electrum(electrumClient) =>
-          // TODO: DRY
           val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
           val walletDb = new SqliteWalletDb(sqlite)
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
@@ -235,14 +234,7 @@ class Setup(datadir: File,
         case address => logger.info(s"initial wallet address=$address")
       }
       // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
-      backupHandler = system.actorOf(
-        SimpleSupervisor.props(
-          BackupHandler.props(
-            nodeParams.db,
-            new File(chaindir, "eclair.bak.wip"),
-            new File(chaindir, "eclair.bak")
-          ), "backuphandler", SupervisorStrategy.Resume)
-      )
+      backupHandler = system.actorOf(SimpleSupervisor.props(BackupHandler.props(nodeParams.db, new File(chaindir, "eclair.bak")), "backuphandler", SupervisorStrategy.Resume))
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
         case "local" => LocalPaymentHandler.props(nodeParams)
