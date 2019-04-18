@@ -73,6 +73,8 @@ object Channel {
 
   case object TickRefreshChannelUpdate
 
+  case object TickChannelOpenTimeout
+
   case class RevocationTimeout(remoteCommitNumber: Long, peer: ActorRef) // we will receive this message when we waited too long for a revocation for that commit number (NB: we explicitely specify the peer to allow for testing)
 
   sealed trait ChannelError
@@ -239,6 +241,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED) replying "ok"
+
+    case Event(TickChannelOpenTimeout, _) =>
+      replyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+      goto(CLOSED)
   })
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
@@ -328,6 +334,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(INPUT_DISCONNECTED, _) =>
       replyToUser(Left(LocalError(new RuntimeException("disconnected"))))
       goto(CLOSED)
+
+    case Event(TickChannelOpenTimeout, _) =>
+      replyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+      goto(CLOSED)
   })
 
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
@@ -364,6 +374,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(INPUT_DISCONNECTED, _) =>
       replyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      goto(CLOSED)
+
+    case Event(TickChannelOpenTimeout, _) =>
+      replyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
       goto(CLOSED)
   })
 
@@ -471,6 +485,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
       replyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      goto(CLOSED)
+
+    case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
+      // we rollback the funding tx, it will never be published
+      wallet.rollback(d.fundingTx)
+      replyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
       goto(CLOSED)
   })
 
