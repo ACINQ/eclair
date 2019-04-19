@@ -136,6 +136,18 @@ Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a different 
 java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gui-<version>-<commit_id>.jar
 ```
 
+#### Backup
+
+The files that you need to backup are located in your data directory. You must backup:
+- your seed (`seed.dat`)
+- your channel database (`eclair.bak` under directory `mainnet`, `testnet` or `regtest` depending on which chain you're running on)
+
+Your seed never changes once it is created, but your channels do change whenever you receive our send payments.
+`eclair.bak` is safe to backup even when your system is running. We recommend that you implement your backup 
+process in 2 steps:
+- first, rename `eclair.bak` to a new local file
+- then, backup the renamed file using whatever tool you like.
+
 ## Docker
 
 A [Dockerfile](Dockerfile) image is built on each commit on [docker hub](https://hub.docker.com/r/acinq/eclair) for running a dockerized eclair-node.
@@ -201,18 +213,6 @@ eclair.bitcoind.rpcport=8332
 eclair.bitcoind.rpcuser=<your-mainnet-rpc-user-here>
 eclair.bitcoind.rpcpassword=<your-mainnet-rpc-password-here>
 ```
-
-### Backups
-
-The files that you need to backup are located in your data directory. You must backup:
-- your seed (`seed.dat`)
-- your channel database (`eclair.bak` under directory `mainnet`, `testnet` or `regtest` depending on which chain you're running on)
-
-Your seed never changes once it is created, but your channels do change whenever you receive our send payments.
-`eclair.bak` is safe to backup even when your system is running. We recommend that you implement your backup 
-process in 2 steps:
-- first, rename `eclair.bak` to a new local file
-- then, backup the renamed file using whatever tool you like.
 
 
 
