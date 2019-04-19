@@ -368,22 +368,16 @@ object Helpers {
     def isClosed(data: HasCommitments, closingTx: Option[Transaction]): Option[ClosingType] = data match {
       case closing: DATA_CLOSING if closingTx.isDefined && closing.mutualClosePublished.exists(_.txid == closingTx.get.txid) =>
         Some(MutualClose)
-
       case closing: DATA_CLOSING if closing.localCommitPublished.exists(Closing.isLocalCommitDone(_)) =>
         Some(LocalClose)
-
       case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(Closing.isRemoteCommitDone(_)) =>
         Some(RemoteClose)
-
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(Closing.isRemoteCommitDone(_)) =>
         Some(RemoteClose)
-
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(Closing.isRemoteCommitDone(_)) =>
         Some(RecoveryClose)
-
       case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(Closing.isRevokedCommitDone(_)) =>
         Some(RevokedClose)
-
       case _ => None
     }
 
