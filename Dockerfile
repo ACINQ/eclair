@@ -4,11 +4,11 @@ FROM openjdk:8u171-jdk-alpine as BUILD
 # We can alternatively do as proposed by https://github.com/carlossg/docker-maven#packaging-a-local-repository-with-the-image
 # this was meant to make the image smaller, but we use multi-stage build so we don't care
 
-RUN apk add --no-cache curl tar bash
+RUN apk add --no-cache curl tar bash bind-tools
 
 ARG MAVEN_VERSION=3.6.0
 ARG USER_HOME_DIR="/root"
-ARG SHA=ce50b1c91364cb77efe3776f756a6d92b76d9038b0a0782f7d53acf1e997a14d
+ARG SHA=6a1b346af36a1f1a491c1c1a141667c5de69b42e6611d3687df26868bc0f4637
 ARG BASE_URL=https://apache.osuosl.org/maven/maven-3/${MAVEN_VERSION}/binaries
 
 RUN mkdir -p /usr/share/maven /usr/share/maven/ref \
@@ -43,6 +43,7 @@ RUN mvn package -pl eclair-node -am -DskipTests -Dgit.commit.id=notag -Dgit.comm
 
 # We currently use a debian image for runtime because of some jni-related issue with sqlite
 FROM openjdk:8u181-jre-slim
+RUN apt-get update && apt-get install dnsutils -y
 WORKDIR /app
 # Eclair only needs the eclair-node-*.jar to run
 COPY --from=BUILD /usr/src/eclair-node/target/eclair-node-*.jar .
@@ -53,5 +54,6 @@ ENV JAVA_OPTS=
 
 RUN mkdir -p "$ECLAIR_DATADIR"
 VOLUME [ "/data" ]
+COPY contrib/docker-entrypoint.sh entrypoint.sh
 
-ENTRYPOINT java $JAVA_OPTS -Declair.datadir=$ECLAIR_DATADIR -jar eclair-node.jar
+ENTRYPOINT [ "./entrypoint.sh"]
