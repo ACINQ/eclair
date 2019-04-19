@@ -44,5 +44,7 @@ class BackupHandler private(databases: Databases, backupFile: File) extends Acto
 }
 
 object BackupHandler {
-  def props(databases: Databases, backupFile: File) = Props(new BackupHandler(databases, backupFile)).withMailbox("eclair.backup-mailbox")
+  // using this method is the only way to create a BackupHandler actor
+  // we make sure that it uses a custom bounded mailbox, and a custom pinned dispatcher (i.e our actor will have its own thread pool with 1 single thread)
+  def props(databases: Databases, backupFile: File) = Props(new BackupHandler(databases, backupFile)).withMailbox("eclair.backup-mailbox").withDispatcher("eclair.backup-dispatcher")
 }
