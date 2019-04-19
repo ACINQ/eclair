@@ -145,7 +145,7 @@ The files that you need to backup are located in your data directory. You must b
 Your seed never changes once it is created, but your channels do change whenever you receive our send payments.
 `eclair.bak` is safe to backup even when your system is running. We recommend that you implement your backup 
 process in 2 steps:
-- first, rename `eclair.bak` to a new local file
+- first, move `eclair.bak` to a new local file
 - then, backup the renamed file using whatever tool you like.
 
 ## Docker
