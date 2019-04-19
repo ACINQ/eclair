@@ -206,7 +206,7 @@ eclair.bitcoind.rpcpassword=<your-mainnet-rpc-password-here>
 
 The files that you need to backup are located in your data directory. You must backup:
 - your seed (`seed.dat`)
-- your channel database (`eclair.bak` in`mainnet`, `testnet` or `regtest` depending on which chain you're running on)
+- your channel database (`eclair.bak` under directory `mainnet`, `testnet` or `regtest` depending on which chain you're running on)
 
 Your seed never changes once it is created, but your channels do change whenever you receive our send payments.
 `eclair.bak` is safe to backup even when your system is running. We recommend that you implement your backup 
