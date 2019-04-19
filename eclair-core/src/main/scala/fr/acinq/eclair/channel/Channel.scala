@@ -1270,7 +1270,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // we also send events related to fee
       Closing.networkFeePaid(tx, d1) map { case (fee, desc) => feePaid(fee, tx, desc, d.channelId) }
 
-      // can we close this channel ?
+      // can we consider this channel closed?
       val closeType_opt =  Closing.isClosed(d1, Some(tx))
 
       closeType_opt match {
