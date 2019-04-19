@@ -16,16 +16,17 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.Connection
+import java.sql.{Connection, Statement}
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
+import grizzled.slf4j.Logging
 
 import scala.collection.immutable.Queue
 
-class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
+class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
 
   import SqliteUtils.ExtendedResultSet._
   import SqliteUtils._
@@ -33,17 +34,24 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
   val DB_NAME = "channels"
   val CURRENT_VERSION = 2
 
+  private def migration12(statement: Statement) = {
+    statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT 0")
+  }
+
   using(sqlite.createStatement()) { statement =>
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
       case 1 =>
-        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT 0")
+        logger.warn(s"migrating db $DB_NAME, found version=1 current=$CURRENT_VERSION")
+        migration12(statement)
         setVersion(statement, DB_NAME, CURRENT_VERSION)
-      case CURRENT_VERSION => ()
+      case CURRENT_VERSION =>
+        statement.execute("PRAGMA foreign_keys = ON")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
+
+      case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
-    statement.execute("PRAGMA foreign_keys = ON")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
   }
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = {
