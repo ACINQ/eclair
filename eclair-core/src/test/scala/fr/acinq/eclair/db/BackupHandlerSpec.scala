@@ -25,7 +25,7 @@ class BackupHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     db.channels.addOrUpdateChannel(channel)
     assert(db.channels.listLocalChannels() == Seq(channel))
 
-    val handler = system.actorOf(BackupHandler.props(db, dest))
+    val handler = system.actorOf(BackupHandler.props(db, dest, ""))
     handler ! ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32, null)
     handler ! ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32, null)
     handler ! ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32, null)
