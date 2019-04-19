@@ -142,11 +142,10 @@ The files that you need to backup are located in your data directory. You must b
 - your seed (`seed.dat`)
 - your channel database (`eclair.bak` under directory `mainnet`, `testnet` or `regtest` depending on which chain you're running on)
 
-Your seed never changes once it is created, but your channels do change whenever you receive our send payments.
-`eclair.bak` is safe to backup even when your system is running. We recommend that you implement your backup 
-process in 2 steps:
-- first, move `eclair.bak` to a new local file
-- then, backup the renamed file using whatever tool you like.
+Your seed never changes once it has been created, but your channels will change whenever you receive our send payments. Eclair will
+create and maintain a snapshot of its database, named `eclair.bak`, in your data directory, and update it when needed. This file is 
+always consistent and safe to use even when Eclair is running, and this is what you should backup (for example, you could 
+move/rename it and upload the renamed file to a dedicated backup system, ...)
 
 ## Docker
 
