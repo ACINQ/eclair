@@ -234,7 +234,13 @@ class Setup(datadir: File,
         case address => logger.info(s"initial wallet address=$address")
       }
       // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
-      backupHandler = system.actorOf(SimpleSupervisor.props(BackupHandler.props(nodeParams.db, new File(chaindir, "eclair.bak"), config.getString("backup-notify-script")), "backuphandler", SupervisorStrategy.Resume))
+
+      backupHandler = system.actorOf(SimpleSupervisor.props(
+        BackupHandler.props(
+          nodeParams.db,
+          new File(chaindir, "eclair.bak"),
+          if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
+        ),"backuphandler", SupervisorStrategy.Resume))
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
         case "local" => LocalPaymentHandler.props(nodeParams)

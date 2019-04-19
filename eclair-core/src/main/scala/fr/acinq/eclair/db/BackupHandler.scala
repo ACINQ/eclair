@@ -6,6 +6,7 @@ import akka.actor.{Actor, ActorLogging, Props}
 import akka.dispatch.{BoundedMessageQueueSemantics, RequiresMessageQueue}
 import fr.acinq.eclair.channel.ChannelPersisted
 
+import scala.sys.process.Process
 import scala.util.{Failure, Success, Try}
 
 
@@ -28,7 +29,7 @@ import scala.util.{Failure, Success, Try}
   *
   * Constructor is private so users will have to use BackupHandler.props() which always specific a custom mailbox
   */
-class BackupHandler private(databases: Databases, backupFile: File, backupScript: String) extends Actor with RequiresMessageQueue[BoundedMessageQueueSemantics] with ActorLogging {
+class BackupHandler private(databases: Databases, backupFile: File, backupScript_opt: Option[String]) extends Actor with RequiresMessageQueue[BoundedMessageQueueSemantics] with ActorLogging {
 
   // we listen to ChannelPersisted events, which will trigger a backup
   context.system.eventStream.subscribe(self, classOf[ChannelPersisted])
@@ -42,21 +43,20 @@ class BackupHandler private(databases: Databases, backupFile: File, backupScript
       require(result, s"cannot rename $tmpFile to $backupFile")
       val end = System.currentTimeMillis()
       log.info(s"database backup triggered by channelId=${persisted.channelId} took ${end - start}ms")
-      if (!backupScript.isEmpty) {
+      backupScript_opt.foreach(backupScript => {
         Try {
-          val processBuilder = new ProcessBuilder(backupScript)
-          // this process will run in the background
-          processBuilder.start()
+          // run the script in the current thread and wait until it terminates
+          Process(backupScript).!
         } match {
-          case Success(_) => log.info(s"backup notify script $backupScript started successfully")
+          case Success(exitCode) => log.info(s"backup notify script $backupScript returned $exitCode")
           case Failure(cause) => log.warning(s"cannot start backup notify script $backupScript:  $cause")
         }
-      }
+      })
   }
 }
 
 object BackupHandler {
   // using this method is the only way to create a BackupHandler actor
   // we make sure that it uses a custom bounded mailbox, and a custom pinned dispatcher (i.e our actor will have its own thread pool with 1 single thread)
-  def props(databases: Databases, backupFile: File, backupScript: String) = Props(new BackupHandler(databases, backupFile, backupScript)).withMailbox("eclair.backup-mailbox").withDispatcher("eclair.backup-dispatcher")
+  def props(databases: Databases, backupFile: File, backupScript_opt: Option[String]) = Props(new BackupHandler(databases, backupFile, backupScript_opt)).withMailbox("eclair.backup-mailbox").withDispatcher("eclair.backup-dispatcher")
 }

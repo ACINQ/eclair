@@ -146,15 +146,17 @@ Your seed never changes once it has been created, but your channels will change 
 create and maintain a snapshot of its database, named `eclair.bak`, in your data directory, and update it when needed. This file is 
 always consistent and safe to use even when Eclair is running, and this is what you should backup regularly, e.g. with a `cron` task.
 
-Note that depending on your filesystem, we recommend first moving `eclair.bak` to some temporary file before copying that file to your final backup location.
-
-You can configure an optional script/exe to be called by eclair once a new database snapshot has been created, using the following option:
+You can configure an optional notification script/exe to be called by eclair once a new database snapshot has been created, using the following option:
 
 ```
 eclair.backup-notify-script = "absolute-path-to-your-script"
 ```
 
 Make sure that your script is executable and uses an absolute path name for `eclair.bak`
+
+Note that depending on your filesystem, in your backup process we recommend first moving `eclair.bak` to some temporary file 
+before copying that file to your final backup location.
+
 
 ## Docker
 
@@ -221,9 +223,6 @@ eclair.bitcoind.rpcport=8332
 eclair.bitcoind.rpcuser=<your-mainnet-rpc-user-here>
 eclair.bitcoind.rpcpassword=<your-mainnet-rpc-password-here>
 ```
-
-
-
 
 ## Resources
 - [1] [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
