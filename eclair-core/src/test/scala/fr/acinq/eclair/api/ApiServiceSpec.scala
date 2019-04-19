@@ -16,30 +16,32 @@
 
 package fr.acinq.eclair.api
 
-import akka.actor.{Actor, ActorSystem, Props, Scheduler}
-import org.scalatest.FunSuite
+import java.util.UUID
+import akka.actor.ActorSystem
+import akka.http.scaladsl.model.FormData
 import akka.http.scaladsl.model.StatusCodes._
-import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe}
-import fr.acinq.eclair._
-import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-import TestConstants._
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
-import akka.http.scaladsl.server.{Directives, Route}
+import akka.http.scaladsl.server.Route
+import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe}
 import akka.stream.ActorMaterializer
-import akka.http.scaladsl.model.{ContentTypes, FormData, MediaTypes, Multipart}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.channel.{Channel, ChannelCreated, ChannelFundingPublished, ChannelFundingRolledBack, ChannelIdAssigned, RES_GETINFO}
-import fr.acinq.eclair.db.{NetworkFee, Stats}
+import akka.util.Timeout
+import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
+import fr.acinq.eclair.TestConstants._
+import fr.acinq.eclair._
+import fr.acinq.eclair.channel.RES_GETINFO
+import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
+import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteResponse}
 import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress, NodeAnnouncement}
 import org.json4s.jackson.Serialization
+import org.scalatest.FunSuite
 import scodec.bits.ByteVector
-
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
@@ -49,43 +51,51 @@ import scala.util.Try
 class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
   trait EclairMock extends Eclair {
-    override def connect(uri: String): Future[String] = ???
+    override def connect(uri: String)(implicit timeout: Timeout): Future[String] = ???
 
-    override def open(nodeId: Crypto.PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int]): Future[String] = ???
+    override def open(nodeId: Crypto.PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], timeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[String] = ???
 
-    override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String] = ???
+    override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector])(implicit timeout: Timeout): Future[String] = ???
 
-    override def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId]): Future[String] = ???
+    override def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[String] = ???
 
-    override def updateRelayFee(channelId: String, feeBaseMsat: Long, feeProportionalMillionths: Long): Future[String] = ???
+    override def updateRelayFee(channelId: String, feeBaseMsat: Long, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[String] = ???
 
-    override def peersInfo(): Future[Iterable[PeerInfo]] = ???
+    override def channelsInfo(toRemoteNode: Option[Crypto.PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]] = ???
 
-    override def channelsInfo(toRemoteNode: Option[Crypto.PublicKey]): Future[Iterable[RES_GETINFO]] = ???
+    override def channelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[RES_GETINFO] = ???
 
-    override def channelInfo(channelId: ByteVector32): Future[RES_GETINFO] = ???
+    override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = ???
 
-    override def allnodes(): Future[Iterable[NodeAnnouncement]] = ???
+    override def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String])(implicit timeout: Timeout): Future[PaymentRequest] = ???
 
-    override def allchannels(): Future[Iterable[ChannelDesc]] = ???
+    override def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]] = ???
 
-    override def allupdates(nodeId: Option[Crypto.PublicKey]): Future[Iterable[ChannelUpdate]] = ???
+    override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long], maxAttempts: Option[Int])(implicit timeout: Timeout): Future[UUID] = ???
 
-    override def receive(description: String, amountMsat: Option[Long], expire: Option[Long]): Future[String] = ???
+    override def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]] = ???
 
-    override def findRoute(targetNodeId: Crypto.PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]]): Future[RouteResponse] = ???
+    override def findRoute(targetNodeId: Crypto.PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]])(implicit timeout: Timeout): Future[RouteResponse] = ???
 
-    override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long]): Future[PaymentLifecycle.PaymentResult] = ???
+    override def audit(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[AuditResponse] = ???
 
-    override def checkpayment(paymentHash: ByteVector32): Future[Boolean] = ???
+    override def networkFees(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[NetworkFee]] = ???
 
-    override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = ???
+    override def channelStats()(implicit timeout: Timeout): Future[Seq[Stats]] = ???
 
-    override def networkFees(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[NetworkFee]] = ???
+    override def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[PaymentRequest]] = ???
 
-    override def channelStats(): Future[Seq[Stats]] = ???
+    override def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = ???
 
-    override def getInfoResponse(): Future[GetInfoResponse] = ???
+    override def allInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = ???
+
+    override def allNodes()(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]] = ???
+
+    override def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]] = ???
+
+    override def allUpdates(nodeId: Option[Crypto.PublicKey])(implicit timeout: Timeout): Future[Iterable[ChannelUpdate]] = ???
+
+    override def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse] = ???
   }
 
   implicit val formats = JsonSupport.formats
@@ -141,7 +151,6 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(handled)
         assert(status == BadRequest)
         val resp = entityAs[ErrorResponse](JsonSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
-        println(resp.error)
         assert(resp.error == "The form field 'channelId' was malformed:\nInvalid hexadecimal character 'h' at index 0")
       }
 
@@ -159,7 +168,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   test("'peers' should ask the switchboard for current known peers") {
 
     val mockService = new MockService(new EclairMock {
-      override def peersInfo(): Future[Iterable[PeerInfo]] = Future.successful(List(
+      override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = Future.successful(List(
         PeerInfo(
           nodeId = Alice.nodeParams.nodeId,
           state = "CONNECTED",
@@ -186,7 +195,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
   test("'getinfo' response should include this node ID") {
 
     val mockService = new MockService(new EclairMock {
-      override def getInfoResponse(): Future[GetInfoResponse] = Future.successful(GetInfoResponse(
+      override def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse] = Future.successful(GetInfoResponse(
         nodeId = Alice.nodeParams.nodeId,
         alias = Alice.nodeParams.alias,
         chainHash = Alice.nodeParams.chainHash,
@@ -212,7 +221,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     val shortChannelIdSerialized = "42000x27x3"
 
     val mockService = new MockService(new EclairMock {
-      override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String] = {
+      override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector])(implicit timeout: Timeout): Future[String] = {
         Future.successful(Alice.nodeParams.nodeId.toString())
       }
     })
@@ -237,7 +246,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     val remoteUri = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735"
 
     val mockService = new MockService(new EclairMock {
-      override def connect(uri: String): Future[String] = Future.successful("connected")
+      override def connect(uri: String)(implicit timeout: Timeout): Future[String] = Future.successful("connected")
     })
 
     Post("/connect", FormData("nodeId" -> remoteNodeId, "host" -> remoteHost).toEntity) ~>
@@ -255,14 +264,54 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       check {
         assert(handled)
         assert(status == OK)
-        println(entityAs[String])
         assert(entityAs[String] == "\"connected\"")
       }
   }
 
+  test("'send' method should return the UUID of the outgoing payment") {
+
+    val id = UUID.randomUUID()
+    val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
+
+    val mockService = new MockService(new EclairMock {
+      override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long], maxAttempts: Option[Int] = None)(implicit timeout: Timeout): Future[UUID] = Future.successful(
+        id
+      )
+    })
+
+    Post("/payinvoice", FormData("invoice" -> invoice).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[String] == "\""+id.toString+"\"")
+      }
+  }
+
+  test("'receivedinfo' method should respond HTTP 404 with a JSON encoded response if the element is not found") {
+
+    val mockService = new MockService(new EclairMock {
+      override def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]] = Future.successful(None) // element not found
+    })
+
+    Post("/getreceivedinfo", FormData("paymentHash" -> ByteVector32.Zeroes.toHex).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == NotFound)
+        val resp = entityAs[ErrorResponse](JsonSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
+        assert(resp == ErrorResponse("Not found"))
+      }
+  }
+
+
   test("the websocket should return typed objects") {
 
     val mockService = new MockService(new EclairMock {})
+
+    val fixedUUID = UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f")
 
     val wsClient = WSProbe()
 
@@ -300,14 +349,15 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         system.eventStream.publish(cfp)
         wsClient.expectMessage(expectedSerializedCfp)
 
-        val pf = PaymentFailed(ByteVector32.Zeroes, failures = Seq.empty)
-        val expectedSerializedPf = """{"type":"payment-failed","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[]}"""
+        val pf = PaymentFailed(fixedUUID, ByteVector32.Zeroes, failures = Seq.empty)
+        val expectedSerializedPf = """{"type":"payment-failed","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[]}"""
+
         Serialization.write(pf)(mockService.formatsWithTypeHint) === expectedSerializedPf
         system.eventStream.publish(pf)
         wsClient.expectMessage(expectedSerializedPf)
 
-        val ps = PaymentSent(amount = MilliSatoshi(21), feesPaid = MilliSatoshi(1), paymentHash = ByteVector32.Zeroes, paymentPreimage = ByteVector32.One, toChannelId = ByteVector32.Zeroes, timestamp = 1553784337711L)
-        val expectedSerializedPs = """{"type":"payment-sent","amount":21,"feesPaid":1,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":1553784337711}"""
+        val ps = PaymentSent(fixedUUID, amount = MilliSatoshi(21), feesPaid = MilliSatoshi(1), paymentHash = ByteVector32.Zeroes, paymentPreimage = ByteVector32.One, toChannelId = ByteVector32.Zeroes, timestamp = 1553784337711L)
+        val expectedSerializedPs = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"feesPaid":1,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":1553784337711}"""
         Serialization.write(ps)(mockService.formatsWithTypeHint) === expectedSerializedPs
         system.eventStream.publish(ps)
         wsClient.expectMessage(expectedSerializedPs)
@@ -324,13 +374,12 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         system.eventStream.publish(precv)
         wsClient.expectMessage(expectedSerializedPrecv)
 
-        val pset = PaymentSettlingOnChain(amount = MilliSatoshi(21), paymentHash = ByteVector32.One, timestamp = 1553785442676L)
-        val expectedSerializedPset = """{"type":"payment-settling-onchain","amount":21,"paymentHash":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":1553785442676}"""
+        val pset = PaymentSettlingOnChain(fixedUUID, amount = MilliSatoshi(21), paymentHash = ByteVector32.One, timestamp = 1553785442676L)
+        val expectedSerializedPset = """{"type":"payment-settling-onchain","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"paymentHash":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":1553785442676}"""
         Serialization.write(pset)(mockService.formatsWithTypeHint) === expectedSerializedPset
         system.eventStream.publish(pset)
         wsClient.expectMessage(expectedSerializedPset)
       }
-
 
   }
 

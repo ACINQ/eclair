@@ -16,42 +16,42 @@
 
 package fr.acinq.eclair.api
 
-import akka.http.scaladsl.server._
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.{Eclair, Kit, ShortChannelId}
-import FormParamExtractors._
+import java.util.UUID
+
 import akka.NotUsed
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.actor.{Actor, ActorSystem, Props}
 import akka.http.scaladsl.model.HttpMethods.POST
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
 import akka.http.scaladsl.model.headers.{`Access-Control-Allow-Headers`, `Access-Control-Allow-Methods`, `Cache-Control`}
 import akka.http.scaladsl.model.ws.{Message, TextMessage}
-import akka.http.scaladsl.server.directives.{Credentials, LoggingMagnet}
-import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.http.scaladsl.server._
+import akka.http.scaladsl.server.directives.Credentials
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
+import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.util.Timeout
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.api.FormParamExtractors._
 import fr.acinq.eclair.api.JsonSupport.CustomTypeHints
 import fr.acinq.eclair.channel.{ChannelCreated, ChannelFundingPublished, ChannelFundingRolledBack, ChannelIdAssigned}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
-import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.{PaymentReceived, PaymentRequest, _}
+import fr.acinq.eclair.{Eclair, ShortChannelId}
 import grizzled.slf4j.Logging
-import org.json4s.{ShortTypeHints, TypeHints}
 import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 import scala.concurrent.duration._
 
 case class ErrorResponse(error: String)
 
-trait Service extends Directives with Logging {
+trait Service extends ExtraDirectives with Logging {
 
   // important! Must NOT import the unmarshaller as it is too generic...see https://github.com/akka/akka-http/issues/541
-  import JsonSupport.marshaller
-  import JsonSupport.formats
-  import JsonSupport.serialization
+  import JsonSupport.{formats, marshaller, serialization}
 
   // used to send typed messages over the websocket
   val formatsWithTypeHint = formats.withTypeHintFieldName("type") +
@@ -74,10 +74,15 @@ trait Service extends Directives with Logging {
   implicit val actorSystem: ActorSystem
   implicit val mat: ActorMaterializer
 
-  // a named and typed URL parameter used across several routes, 32-bytes hex-encoded
+  // named and typed URL parameters used across several routes
   val channelId = "channelId".as[ByteVector32](sha256HashUnmarshaller)
   val nodeId = "nodeId".as[PublicKey]
   val shortChannelId = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
+  val paymentHash = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
+  val from = "from".as[Long]
+  val to = "to".as[Long]
+  val amountMsat = "amountMsat".as[Long]
+  val invoice = "invoice".as[PaymentRequest]
 
   val apiExceptionHandler = ExceptionHandler {
     case t: Throwable =>
@@ -142,126 +147,156 @@ trait Service extends Directives with Logging {
     respondWithDefaultHeaders(customHeaders) {
       handleExceptions(apiExceptionHandler) {
         handleRejections(apiRejectionHandler) {
-          withRequestTimeoutResponse(timeoutResponse) {
-            authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator) { _ =>
-              post {
-                path("getinfo") {
-                  complete(eclairApi.getInfoResponse())
-                } ~
-                  path("connect") {
-                    formFields("uri".as[String]) { uri =>
-                      complete(eclairApi.connect(uri))
-                    } ~ formFields(nodeId, "host".as[String], "port".as[Int].?) { (nodeId, host, port_opt) =>
-                      complete(eclairApi.connect(s"$nodeId@$host:${port_opt.getOrElse(NodeURI.DEFAULT_PORT)}"))
+          formFields("timeoutSeconds".as[Timeout].?) { tm_opt =>
+            // this is the akka timeout
+            implicit val timeout = tm_opt.getOrElse(Timeout(30 seconds))
+            // we ensure that http timeout is greater than akka timeout
+            withRequestTimeout(timeout.duration + 2.seconds) {
+              withRequestTimeoutResponse(timeoutResponse) {
+                authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator) { _ =>
+                  post {
+                    path("getinfo") {
+                      complete(eclairApi.getInfoResponse())
+                    } ~
+                      path("connect") {
+                        formFields("uri".as[String]) { uri =>
+                          complete(eclairApi.connect(uri))
+                        } ~ formFields(nodeId, "host".as[String], "port".as[Int].?) { (nodeId, host, port_opt) =>
+                          complete(eclairApi.connect(s"$nodeId@$host:${port_opt.getOrElse(NodeURI.DEFAULT_PORT)}"))
+                        }
+                      } ~
+                      path("open") {
+                        formFields(nodeId, "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?, "openTimeoutSeconds".as[Timeout].?) {
+                          (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, openTimeout_opt) =>
+                            complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, openTimeout_opt))
+                        }
+                      } ~
+                      path("updaterelayfee") {
+                        formFields(channelId, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
+                          complete(eclairApi.updateRelayFee(channelId.toString, feeBase, feeProportional))
+                        }
+                      } ~
+                      path("close") {
+                        formFields(channelId, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
+                          complete(eclairApi.close(Left(channelId), scriptPubKey_opt))
+                        } ~ formFields(shortChannelId, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (shortChannelId, scriptPubKey_opt) =>
+                          complete(eclairApi.close(Right(shortChannelId), scriptPubKey_opt))
+                        }
+                      } ~
+                      path("forceclose") {
+                        formFields(channelId) { channelId =>
+                          complete(eclairApi.forceClose(Left(channelId)))
+                        } ~ formFields(shortChannelId) { shortChannelId =>
+                          complete(eclairApi.forceClose(Right(shortChannelId)))
+                        }
+                      } ~
+                      path("peers") {
+                        complete(eclairApi.peersInfo())
+                      } ~
+                      path("channels") {
+                        formFields(nodeId.?) { toRemoteNodeId_opt =>
+                          complete(eclairApi.channelsInfo(toRemoteNodeId_opt))
+                        }
+                      } ~
+                      path("channel") {
+                        formFields(channelId) { channelId =>
+                          complete(eclairApi.channelInfo(channelId))
+                        }
+                      } ~
+                      path("allnodes") {
+                        complete(eclairApi.allNodes())
+                      } ~
+                      path("allchannels") {
+                        complete(eclairApi.allChannels())
+                      } ~
+                      path("allupdates") {
+                        formFields(nodeId.?) { nodeId_opt =>
+                          complete(eclairApi.allUpdates(nodeId_opt))
+                        }
+                      } ~
+                      path("findroute") {
+                        formFields(invoice, amountMsat.?) {
+                          case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) => complete(eclairApi.findRoute(nodeId, amount.toLong, invoice.routingInfo))
+                          case (invoice, Some(overrideAmount)) => complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, invoice.routingInfo))
+                          case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"))
+                        }
+                      } ~
+                      path("findroutetonode") {
+                        formFields(nodeId, amountMsat) { (nodeId, amount) =>
+                          complete(eclairApi.findRoute(nodeId, amount))
+                        }
+                      } ~
+                      path("parseinvoice") {
+                        formFields(invoice) { invoice =>
+                          complete(invoice)
+                        }
+                      } ~
+                      path("payinvoice") {
+                        formFields(invoice, amountMsat.?, "maxAttempts".as[Int].?) {
+                          case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts) =>
+                            complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts))
+                          case (invoice, Some(overrideAmount), maxAttempts) =>
+                            complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts))
+                          case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
+                        }
+                      } ~
+                      path("sendtonode") {
+                        formFields(amountMsat, paymentHash, nodeId, "maxAttempts".as[Int].?) { (amountMsat, paymentHash, nodeId, maxAttempts) =>
+                          complete(eclairApi.send(nodeId, amountMsat, paymentHash, maxAttempts = maxAttempts))
+                        }
+                      } ~
+                      path("getsentinfo") {
+                        formFields("id".as[UUID]) { id =>
+                          complete(eclairApi.sentInfo(Left(id)))
+                        } ~ formFields(paymentHash) { paymentHash =>
+                          complete(eclairApi.sentInfo(Right(paymentHash)))
+                        }
+                      } ~
+                      path("createinvoice") {
+                        formFields("description".as[String], amountMsat.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?) { (desc, amountMsat, expire, fallBackAddress) =>
+                          complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress))
+                        }
+                      } ~
+                      path("getinvoice") {
+                        formFields(paymentHash) { paymentHash =>
+                          completeOrNotFound(eclairApi.getInvoice(paymentHash))
+                        }
+                      } ~
+                      path("listinvoices") {
+                        formFields(from.?, to.?) { (from_opt, to_opt) =>
+                          complete(eclairApi.allInvoices(from_opt, to_opt))
+                        }
+                      } ~
+                      path("listpendinginvoices") {
+                        formFields(from.?, to.?) { (from_opt, to_opt) =>
+                          complete(eclairApi.pendingInvoices(from_opt, to_opt))
+                        }
+                      } ~
+                      path("getreceivedinfo") {
+                        formFields(paymentHash) { paymentHash =>
+                          completeOrNotFound(eclairApi.receivedInfo(paymentHash))
+                        } ~ formFields(invoice) { invoice =>
+                          completeOrNotFound(eclairApi.receivedInfo(invoice.paymentHash))
+                        }
+                      } ~
+                      path("audit") {
+                        formFields(from.?, to.?) { (from_opt, to_opt) =>
+                          complete(eclairApi.audit(from_opt, to_opt))
+                        }
+                      } ~
+                      path("networkfees") {
+                        formFields(from.?, to.?) { (from_opt, to_opt) =>
+                          complete(eclairApi.networkFees(from_opt, to_opt))
+                        }
+                      } ~
+                      path("channelstats") {
+                        complete(eclairApi.channelStats())
+                      }
+                  } ~ get {
+                    path("ws") {
+                      handleWebSocketMessages(makeSocketHandler)
                     }
-                  } ~
-                  path("open") {
-                    formFields(nodeId, "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?) {
-                      (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags) =>
-                        complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags))
-                    }
-                  } ~
-                  path("close") {
-                    formFields(channelId, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
-                      complete(eclairApi.close(Left(channelId), scriptPubKey_opt))
-                    } ~ formFields(shortChannelId, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (shortChannelId, scriptPubKey_opt) =>
-                      complete(eclairApi.close(Right(shortChannelId), scriptPubKey_opt))
-                    }
-                  } ~
-                  path("forceclose") {
-                    formFields(channelId) { channelId =>
-                      complete(eclairApi.forceClose(Left(channelId)))
-                    } ~ formFields(shortChannelId) { shortChannelId =>
-                      complete(eclairApi.forceClose(Right(shortChannelId)))
-                    }
-                  } ~
-                  path("updaterelayfee") {
-                    formFields(channelId, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
-                      complete(eclairApi.updateRelayFee(channelId.toString, feeBase, feeProportional))
-                    }
-                  } ~
-                  path("peers") {
-                    complete(eclairApi.peersInfo())
-                  } ~
-                  path("channels") {
-                    formFields(nodeId.?) { toRemoteNodeId_opt =>
-                      complete(eclairApi.channelsInfo(toRemoteNodeId_opt))
-                    }
-                  } ~
-                  path("channel") {
-                    formFields(channelId) { channelId =>
-                      complete(eclairApi.channelInfo(channelId))
-                    }
-                  } ~
-                  path("allnodes") {
-                    complete(eclairApi.allnodes())
-                  } ~
-                  path("allchannels") {
-                    complete(eclairApi.allchannels())
-                  } ~
-                  path("allupdates") {
-                    formFields(nodeId.?) { nodeId_opt =>
-                      complete(eclairApi.allupdates(nodeId_opt))
-                    }
-                  } ~
-                  path("receive") {
-                    formFields("description".as[String], "amountMsat".as[Long].?, "expireIn".as[Long].?) { (desc, amountMsat, expire) =>
-                      complete(eclairApi.receive(desc, amountMsat, expire))
-                    }
-                  } ~
-                  path("parseinvoice") {
-                    formFields("invoice".as[PaymentRequest]) { invoice =>
-                      complete(invoice)
-                    }
-                  } ~
-                  path("findroute") {
-                    formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
-                      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) => complete(eclairApi.findRoute(nodeId, amount.toLong, invoice.routingInfo))
-                      case (invoice, Some(overrideAmount)) => complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, invoice.routingInfo))
-                      case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"))
-                    }
-                  } ~ path("findroutetonode") {
-                  formFields(nodeId, "amountMsat".as[Long]) { (nodeId, amount) =>
-                    complete(eclairApi.findRoute(nodeId, amount))
                   }
-                } ~
-                  path("send") {
-                    formFields("invoice".as[PaymentRequest], "amountMsat".as[Long].?) {
-                      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) =>
-                        complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry))
-                      case (invoice, Some(overrideAmount)) =>
-                        complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry))
-                      case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
-                    }
-                  } ~
-                  path("sendtonode") {
-                    formFields("amountMsat".as[Long], "paymentHash".as[ByteVector32](sha256HashUnmarshaller), "nodeId".as[PublicKey]) { (amountMsat, paymentHash, nodeId) =>
-                      complete(eclairApi.send(nodeId, amountMsat, paymentHash))
-                    }
-                  } ~
-                  path("checkpayment") {
-                    formFields("paymentHash".as[ByteVector32](sha256HashUnmarshaller)) { paymentHash =>
-                      complete(eclairApi.checkpayment(paymentHash))
-                    } ~ formFields("invoice".as[PaymentRequest]) { invoice =>
-                      complete(eclairApi.checkpayment(invoice.paymentHash))
-                    }
-                  } ~
-                  path("audit") {
-                    formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
-                      complete(eclairApi.audit(from, to))
-                    }
-                  } ~
-                  path("networkfees") {
-                    formFields("from".as[Long].?, "to".as[Long].?) { (from, to) =>
-                      complete(eclairApi.networkFees(from, to))
-                    }
-                  } ~
-                  path("channelstats") {
-                    complete(eclairApi.channelStats())
-                  }
-              } ~ get {
-                path("ws") {
-                  handleWebSocketMessages(makeSocketHandler)
                 }
               }
             }

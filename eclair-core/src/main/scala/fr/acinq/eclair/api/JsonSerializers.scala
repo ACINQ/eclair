@@ -17,10 +17,8 @@
 package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
-
 import akka.actor.ActorRef
-import akka.http.scaladsl.model.MediaType
-import akka.http.scaladsl.model.MediaTypes._
+import java.util.UUID
 import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
@@ -28,6 +26,7 @@ import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.{Channel, State}
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.RouteResponse
 import fr.acinq.eclair.transactions.Direction
@@ -144,19 +143,37 @@ class DirectionSerializer extends CustomSerializer[Direction](format => ({ null 
   case d: Direction => JString(d.toString)
 }))
 
-class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format => ({ null },{
-  case p: PaymentRequest => JObject(JField("prefix", JString(p.prefix)) ::
-    JField("amount", if (p.amount.isDefined) JLong(p.amount.get.toLong) else JNull) ::
-    JField("timestamp", JLong(p.timestamp)) ::
-    JField("nodeId", JString(p.nodeId.toString())) ::
-    JField("description", JString(p.description match {
-      case Left(l) => l.toString()
-      case Right(r) => r.toString()
-    })) ::
-    JField("paymentHash", JString(p.paymentHash.toString())) ::
-    JField("expiry", if (p.expiry.isDefined) JLong(p.expiry.get) else JNull) ::
-    JField("minFinalCltvExpiry", if (p.minFinalCltvExpiry.isDefined) JLong(p.minFinalCltvExpiry.get) else JNull) ::
-    Nil)
+class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format => ( {
+  null
+}, {
+  case p: PaymentRequest => {
+    val expiry = p.expiry.map(ex => JField("expiry", JLong(ex))).toSeq
+    val minFinalCltvExpiry = p.minFinalCltvExpiry.map(mfce => JField("minFinalCltvExpiry", JLong(mfce))).toSeq
+    val amount = p.amount.map(msat => JField("amount", JLong(msat.toLong))).toSeq
+
+    val fieldList = List(JField("prefix", JString(p.prefix)),
+      JField("timestamp", JLong(p.timestamp)),
+      JField("nodeId", JString(p.nodeId.toString())),
+      JField("serialized", JString(PaymentRequest.write(p))),
+      JField("description", JString(p.description match {
+        case Left(l) => l.toString()
+        case Right(r) => r.toString()
+      })),
+      JField("paymentHash", JString(p.paymentHash.toString()))) ++
+      expiry ++
+      minFinalCltvExpiry ++
+      amount
+
+    JObject(fieldList)
+  }
+}))
+
+class JavaUUIDSerializer extends CustomSerializer[UUID](format => ({ null }, {
+  case id: UUID => JString(id.toString)
+}))
+
+class OutgoingPaymentStatusSerializer extends CustomSerializer[OutgoingPaymentStatus.Value](format => ({ null }, {
+  case el: OutgoingPaymentStatus.Value => JString(el.toString)
 }))
 
 object JsonSupport extends Json4sSupport {
@@ -188,7 +205,9 @@ object JsonSupport extends Json4sSupport {
     new FailureMessageSerializer +
     new NodeAddressSerializer +
     new DirectionSerializer +
-    new PaymentRequestSerializer
+    new PaymentRequestSerializer +
+    new JavaUUIDSerializer +
+    new OutgoingPaymentStatusSerializer
 
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
