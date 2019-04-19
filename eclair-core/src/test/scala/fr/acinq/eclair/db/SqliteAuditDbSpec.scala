@@ -125,7 +125,7 @@ class SqliteAuditDbSpec extends FunSuite {
     }
 
     using(connection.createStatement()) { statement =>
-      assert(getVersion(statement, "audit", 3) == 1) // version 1 is deployed now
+      assert(getVersion(statement, "audit", 3) == 1) // we expect version 1
     }
 
     val ps = PaymentSent(UUID.randomUUID(), MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32)
@@ -209,7 +209,7 @@ class SqliteAuditDbSpec extends FunSuite {
     val postMigrationDb = new SqliteAuditDb(connection)
 
     using(connection.createStatement()) { statement =>
-      assert(getVersion(statement, "audit", 3) == 3) // version 2
+      assert(getVersion(statement, "audit", 3) == 3) // version 3
     }
 
     postMigrationDb.add(e2)
