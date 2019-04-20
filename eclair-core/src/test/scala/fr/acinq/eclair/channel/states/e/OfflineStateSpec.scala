@@ -335,9 +335,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == OFFLINE)
     awaitCond(bob.stateName == OFFLINE)
 
-    // alice and bob announce that their channel is OFFLINE
-    assert(Announcements.isEnabled(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags) == false)
-    assert(Announcements.isEnabled(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags) == false)
+    // alice and bob will not announce that their channel is OFFLINE
+    channelUpdateListener.expectNoMsg(300 millis)
 
     // we make alice update here relay fee
     sender.send(alice, CMD_UPDATE_RELAY_FEE(4200, 123456))
@@ -356,8 +355,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // note that we don't forward the channel_reestablish so that only alice reaches NORMAL state, it facilitates the test below
     bob2alice.forward(alice)
 
-    // then alice reaches NORMAL state, and during the transition she broadcasts the channel_update
-    val channelUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate](10 seconds).channelUpdate
+    // then alice reaches NORMAL state, and after a delay she broadcasts the channel_update
+    val channelUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate](20 seconds).channelUpdate
     assert(channelUpdate.feeBaseMsat === 4200)
     assert(channelUpdate.feeProportionalMillionths === 123456)
     assert(Announcements.isEnabled(channelUpdate.channelFlags) == true)

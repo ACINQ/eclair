@@ -2098,7 +2098,43 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
   }
 
-  test("recv INPUT_DISCONNECTED", Tag("channels_public")) { f =>
+  test("recv INPUT_DISCONNECTED") { f =>
+    import f._
+    val sender = TestProbe()
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    val update1a = alice2bob.expectMsgType[ChannelUpdate]
+    assert(Announcements.isEnabled(update1a.channelFlags) == true)
+
+    // actual test starts here
+    sender.send(alice, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    alice2bob.expectNoMsg(1 second)
+    channelUpdateListener.expectNoMsg(1 second)
+  }
+
+  test("recv INPUT_DISCONNECTED (with pending unsigned htlcs)") { f =>
+    import f._
+    val sender = TestProbe()
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    val update1a = alice2bob.expectMsgType[ChannelUpdate]
+    assert(Announcements.isEnabled(update1a.channelFlags) == true)
+    val (_, htlc1) = addHtlc(10000, alice, bob, alice2bob, bob2alice)
+    val (_, htlc2) = addHtlc(10000, alice, bob, alice2bob, bob2alice)
+    val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(aliceData.commitments.localChanges.proposed.size == 2)
+
+    // actual test starts here
+    Thread.sleep(1100)
+    sender.send(alice, INPUT_DISCONNECTED)
+    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc1.paymentHash)
+    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc2.paymentHash)
+    val update2a = alice2bob.expectMsgType[ChannelUpdate]
+    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate === update2a)
+    assert(Announcements.isEnabled(update2a.channelFlags) == false)
+    awaitCond(alice.stateName == OFFLINE)
+  }
+
+  test("recv INPUT_DISCONNECTED (public channel)", Tag("channels_public")) { f =>
     import f._
     val sender = TestProbe()
     sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
@@ -2109,26 +2145,36 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(Announcements.isEnabled(update1.channelUpdate.channelFlags) == true)
 
     // actual test starts here
-    Thread.sleep(1100)
     sender.send(alice, INPUT_DISCONNECTED)
-    val update2 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
-    assert(Announcements.isEnabled(update2.channelUpdate.channelFlags) == false)
     awaitCond(alice.stateName == OFFLINE)
+    channelUpdateListener.expectNoMsg(1 second)
   }
 
-  test("recv INPUT_DISCONNECTED (with pending unsigned htlcs)") { f =>
+  test("recv INPUT_DISCONNECTED (public channel, with pending unsigned htlcs)", Tag("channels_public")) { f =>
     import f._
     val sender = TestProbe()
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob)
+    val update1a = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    val update1b = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(Announcements.isEnabled(update1a.channelUpdate.channelFlags) == true)
     val (_, htlc1) = addHtlc(10000, alice, bob, alice2bob, bob2alice)
     val (_, htlc2) = addHtlc(10000, alice, bob, alice2bob, bob2alice)
     val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
     assert(aliceData.commitments.localChanges.proposed.size == 2)
 
     // actual test starts here
+    Thread.sleep(1100)
     sender.send(alice, INPUT_DISCONNECTED)
     assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc1.paymentHash)
     assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc2.paymentHash)
+    val update2a = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(update1a.channelUpdate.timestamp < update2a.channelUpdate.timestamp)
+    assert(Announcements.isEnabled(update2a.channelUpdate.channelFlags) == false)
     awaitCond(alice.stateName == OFFLINE)
   }
 
