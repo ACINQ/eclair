@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel
 
 import java.nio.charset.StandardCharsets
+import java.time.Instant
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
@@ -874,10 +875,17 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       goto(NORMAL) using store(d.copy(channelUpdate = channelUpdate)) replying "ok"
 
     case Event(BroadcastChannelUpdate(reason), d: DATA_NORMAL) =>
-      log.info(s"updating channel_update announcement (reason=$reason)")
-      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
-      // we use GOTO instead of stay because we want to fire transitions
-      goto(NORMAL) using store(d.copy(channelUpdate = channelUpdate))
+      reason match {
+        case Reconnected if Announcements.isEnabled(d.channelUpdate.channelFlags) && (Platform.currentTime / 1000 - d.channelUpdate.timestamp) < 3600 =>
+          // we already sent an enabled channel_update recently (flapping protection in case we keep being disconnected/reconnected)
+          log.info(s"not sending a new channel_update, last one was sent very recently")
+          stay
+        case _ =>
+          log.info(s"updating channel_update announcement (reason=$reason)")
+          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
+          // we use GOTO instead of stay because we want to fire transitions
+          goto(NORMAL) using store(d.copy(channelUpdate = channelUpdate))
+      }
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NORMAL) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
