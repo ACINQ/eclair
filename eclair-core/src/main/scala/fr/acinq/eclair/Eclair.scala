@@ -228,15 +228,12 @@ class EclairImpl(appKit: Kit) extends Eclair {
     * @return
     */
   def sendToChannel(channelIdentifier: String, request: Any)(implicit timeout: Timeout): Future[Any] = {
-    (Try(ForwardShortId(ShortChannelId(channelIdentifier), request)) match {
-      case Success(value) => Left(value.shortChannelId)
+    Try(ForwardShortId(ShortChannelId(channelIdentifier), request)) match {
+      case Success(shortChannelIdRequest) => appKit.register ? shortChannelIdRequest
       case Failure(_) => Try(Forward(ByteVector32.fromValidHex(channelIdentifier), request)) match {
-        case Success(v) => Right(v.channelId)
+        case Success(channelIdRequest) => appKit.register ? channelIdRequest
         case Failure(_) => throw new RuntimeException(s"invalid channel identifier '$channelIdentifier'") // unrecoverable
       }
-    }) match {
-      case Left(shortChannelId) => appKit.register ? ForwardShortId(shortChannelId, request)
-      case Right(channelId) => appKit.register ? Forward(channelId, request)
     }
   }
 
