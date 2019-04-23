@@ -19,11 +19,13 @@ package fr.acinq.eclair.api
 import java.util.UUID
 import JsonSupport._
 import akka.http.scaladsl.unmarshalling.Unmarshaller
+import akka.util.Timeout
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.payment.PaymentRequest
 import scodec.bits.ByteVector
+import scala.concurrent.duration._
 
 object FormParamExtractors {
 
@@ -49,6 +51,10 @@ object FormParamExtractors {
 
   implicit val javaUUIDUnmarshaller: Unmarshaller[String, UUID] = Unmarshaller.strict { str =>
     UUID.fromString(str)
+  }
+
+  implicit val timeoutSecondsUnmarshaller: Unmarshaller[String, Timeout] = Unmarshaller.strict { str =>
+    Timeout(str.toInt.seconds)
   }
 
   implicit val pubkeyListUnmarshaller: Unmarshaller[String, List[PublicKey]] = Unmarshaller.strict { str =>

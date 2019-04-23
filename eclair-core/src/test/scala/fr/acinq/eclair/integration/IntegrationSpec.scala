@@ -168,7 +168,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       fundingSatoshis = Satoshi(fundingSatoshis),
       pushMsat = MilliSatoshi(pushMsat),
       fundingTxFeeratePerKw_opt = None,
-      channelFlags = None))
+      channelFlags = None,
+      timeout_opt = None))
     assert(sender.expectMsgType[String](10 seconds).startsWith("created channel"))
   }
 
