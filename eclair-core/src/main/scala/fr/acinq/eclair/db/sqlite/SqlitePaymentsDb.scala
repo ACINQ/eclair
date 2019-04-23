@@ -43,7 +43,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   val CURRENT_VERSION = 1
 
   using(sqlite.createStatement()) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
+    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible versions of $DB_NAME DB found") // there is only one version currently deployed
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
   }
 
