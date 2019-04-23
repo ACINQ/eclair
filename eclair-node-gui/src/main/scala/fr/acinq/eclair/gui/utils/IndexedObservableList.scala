@@ -51,7 +51,9 @@ class IndexedObservableList[K, V] {
     if (map2index.containsKey(key)) {
       val index = map2index.get(key)
       map2index.remove(key)
-      list.remove(index)
+      if (index >= 0 && index < list.size()) {
+        list.remove(index)
+      }
     }
   }
 
