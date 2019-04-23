@@ -542,6 +542,12 @@ you can send to the remote a <em>pushMsat</em> value and you can specify wether 
 <td>Yes</td>
 <td>Integer</td>
 </tr>
+<tr>
+<td>openTimeoutSeconds</td>
+<td>Timeout for the operation to complete</td>
+<td>Yes</td>
+<td>Seconds (Integer)</td>
+</tr>
 </tbody></table>
 <h1 id='close'>Close</h1><h2 id='close-2'>Close</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt; <span class="s2">"http://localhost:8080/close"</span>
 
