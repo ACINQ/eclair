@@ -156,13 +156,13 @@ trait OldService extends Logging {
                         }
                         case "open" => req.params match {
                           case JString(nodeId) :: JInt(fundingSatoshis) :: Nil =>
-                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(ByteVector.fromValidHex(nodeId)), Satoshi(fundingSatoshis.toLong), MilliSatoshi(0), fundingTxFeeratePerKw_opt = None, channelFlags = None)).mapTo[String])
+                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(ByteVector.fromValidHex(nodeId)), Satoshi(fundingSatoshis.toLong), MilliSatoshi(0), fundingTxFeeratePerKw_opt = None, channelFlags = None, timeout_opt = None)).mapTo[String])
                           case JString(nodeId) :: JInt(fundingSatoshis) :: JInt(pushMsat) :: Nil =>
-                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(ByteVector.fromValidHex(nodeId)), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = None, fundingTxFeeratePerKw_opt = None)).mapTo[String])
+                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(ByteVector.fromValidHex(nodeId)), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = None, fundingTxFeeratePerKw_opt = None, timeout_opt = None)).mapTo[String])
                           case JString(nodeId) :: JInt(fundingSatoshis) :: JInt(pushMsat) :: JInt(fundingFeerateSatPerByte) :: Nil =>
-                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(ByteVector.fromValidHex(nodeId)), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = None)).mapTo[String])
+                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(ByteVector.fromValidHex(nodeId)), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = None, timeout_opt = None)).mapTo[String])
                           case JString(nodeId) :: JInt(fundingSatoshis) :: JInt(pushMsat) :: JInt(fundingFeerateSatPerByte) :: JInt(flags) :: Nil =>
-                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(ByteVector.fromValidHex(nodeId)), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = Some(flags.toByte))).mapTo[String])
+                            completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(ByteVector.fromValidHex(nodeId)), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = Some(flags.toByte), timeout_opt = None)).mapTo[String])
                           case _ => reject(UnknownParamsRejection(req.id, s"[nodeId, fundingSatoshis], [nodeId, fundingSatoshis, pushMsat], [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte] or [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte, flag]"))
                         }
                         case "close" => req.params match {
