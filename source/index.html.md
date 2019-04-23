@@ -159,6 +159,7 @@ fundingSatoshis | Amount of satoshis to spend in the funding of the channel | No
 pushMsat | Amount of millisatoshi to unilaterally push to the counterparty | Yes | Millisatoshis (Integer)
 fundingFeerateSatByte | Feerate in sat/byte to apply to the funding transaction | Yes | Satoshis (Integer)
 channelFlags | Flags for the new channel: 0 = private, 1 = public | Yes | Integer
+openTimeoutSeconds | Timeout for the operation to complete | Yes | Seconds (Integer)
 
 # Close
 
