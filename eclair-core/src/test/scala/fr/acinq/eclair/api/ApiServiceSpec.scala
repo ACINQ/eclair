@@ -75,7 +75,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def findRoute(targetNodeId: Crypto.PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]])(implicit timeout: Timeout): Future[RouteResponse] = ???
 
-    override def sendToRoute(route: Seq[Crypto.PublicKey], amountMsat: Long, paymentHash: ByteVector32, finalCltv: Long): Future[UUID] = ???
+    override def sendToRoute(route: Seq[Crypto.PublicKey], amountMsat: Long, paymentHash: ByteVector32, finalCltv: Long)(implicit timeout: Timeout): Future[UUID] = ???
 
     override def networkFees(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[NetworkFee]] = ???
 
@@ -94,6 +94,8 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     override def allUpdates(nodeId: Option[Crypto.PublicKey])(implicit timeout: Timeout): Future[Iterable[ChannelUpdate]] = ???
 
     override def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse] = ???
+
+    override def audit(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[AuditResponse] = ???
   }
 
   implicit val formats = JsonSupport.formats
