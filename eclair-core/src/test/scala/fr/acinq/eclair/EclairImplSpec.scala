@@ -19,6 +19,8 @@ import scala.concurrent.duration._
 
 class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSuiteLike {
 
+  implicit val timeout = Timeout(30 seconds)
+
   case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, kit: Kit)
 
   override def withFixture(test: OneArgTest): Outcome = {
@@ -52,8 +54,6 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
 
     val eclair = new EclairImpl(kit)
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
-
-    implicit val timeout = Timeout(30 seconds)
 
     // standard conversion
     eclair.open(nodeId, fundingSatoshis = 10000000L, pushMsat = None, fundingFeerateSatByte = Some(5), flags = None, openTimeout_opt = None)
