@@ -47,7 +47,7 @@ case class ChannelSignatureSent(channel: ActorRef, commitments: Commitments) ext
 
 case class ChannelSignatureReceived(channel: ActorRef, commitments: Commitments) extends ChannelEvent
 
-case class ChannelFailed(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, data: Data, error: ChannelError) extends ChannelEvent
+case class ChannelErrorOccured(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, data: Data, error: ChannelError, isFatal: Boolean) extends ChannelEvent
 
 case class NetworkFeePaid(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, tx: Transaction, fee: Satoshi, txType: String) extends ChannelEvent
 

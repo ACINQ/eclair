@@ -238,7 +238,8 @@ object PaymentRequest {
   }
 
   /**
-    * This returns a bitvector with the minimum size necessary to encode the long
+    * This returns a bitvector with the minimum size necessary to encode the long, left padded
+    * to have a length (in bits) multiples of 5
     * @param l
     */
   def long2bits(l: Long) = {
@@ -247,7 +248,11 @@ object PaymentRequest {
     for (i <- 0 until bin.size.toInt) {
       if (highest == -1 && bin(i)) highest = i
     }
-    if (highest == -1) BitVector.empty else bin.drop(highest)
+    val nonPadded = if (highest == -1) BitVector.empty else bin.drop(highest)
+    nonPadded.size % 5 match {
+      case 0 => nonPadded
+      case remaining => BitVector.fill(5 - remaining)(false) ++ nonPadded
+    }
   }
 
   /**

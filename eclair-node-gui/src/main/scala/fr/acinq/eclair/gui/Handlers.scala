@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.gui
 
+import java.util.UUID
+
 import akka.pattern.{AskTimeoutException, ask}
 import akka.util.Timeout
 import fr.acinq.bitcoin.MilliSatoshi
@@ -89,7 +91,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
         case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, maxAttempts = kit.nodeParams.maxPaymentAttempts)
         case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiry = minFinalCltvExpiry, maxAttempts = kit.nodeParams.maxPaymentAttempts)
       }
-      res <- (kit.paymentInitiator ? sendPayment).mapTo[PaymentResult]
+      res <- (kit.paymentInitiator ? sendPayment).mapTo[UUID]
     } yield res).recover {
       // completed payment will be handled by the GUIUpdater by listening to PaymentSucceeded/PaymentFailed events
       case _: AskTimeoutException =>
