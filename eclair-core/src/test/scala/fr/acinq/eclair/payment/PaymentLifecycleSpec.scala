@@ -80,7 +80,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, router, TestProbe().ref))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, id, router, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -89,8 +89,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val request = SendPayment(defaultAmountMsat, defaultPaymentHash, f, maxAttempts = 5)
     sender.send(paymentFSM, request)
-    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
 
     sender.expectMsg(PaymentFailed(id, request.paymentHash, LocalFailure(RouteNotFound) :: Nil))
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))

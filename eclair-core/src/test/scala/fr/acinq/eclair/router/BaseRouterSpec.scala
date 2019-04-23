@@ -90,7 +90,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   override def withFixture(test: OneArgTest): Outcome = {
     // the network will be a --(1)--> b ---(2)--> c --(3)--> d and e --(4)--> f (we are a)
 
-    within(30 seconds) {
+    within(120 seconds) {
 
       // first we make sure that we correctly resolve channelId+direction to nodeId
       assert(Router.getDesc(channelUpdate_ab, chan_ab) === ChannelDesc(chan_ab.shortChannelId, priv_a.publicKey, priv_b.publicKey))
