@@ -45,8 +45,8 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
   when(WAITING_FOR_REQUEST) {
-    case Event(SendPaymentToRoute(amountMsat, paymentHash, hops, finalCltv), WaitingForRequest) =>
-      val send = SendPayment(amountMsat, paymentHash, hops.last, finalCltvExpiry = finalCltv, maxAttempts = 1)
+    case Event(SendPaymentToRoute(amountMsat, paymentHash, hops, finalCltvExpiry), WaitingForRequest) =>
+      val send = SendPayment(amountMsat, paymentHash, hops.last, finalCltvExpiry = finalCltvExpiry, maxAttempts = 1)
       paymentsDb.addOutgoingPayment(OutgoingPayment(id, paymentHash, None, amountMsat, Instant.now().getEpochSecond, None, OutgoingPaymentStatus.PENDING))
       router ! PartialRouteRequest(hops)
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
