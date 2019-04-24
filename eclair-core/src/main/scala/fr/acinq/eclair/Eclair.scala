@@ -22,6 +22,7 @@ import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
+import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{NetworkFee, IncomingPayment, OutgoingPayment, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
@@ -31,6 +32,7 @@ import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import scodec.bits.ByteVector
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 
@@ -225,13 +227,15 @@ class EclairImpl(appKit: Kit) extends Eclair {
     * @param request
     * @return
     */
-  def sendToChannel(channelIdentifier: String, request: Any)(implicit timeout: Timeout): Future[Any] =
-    for {
-      fwdReq <- Future(Register.ForwardShortId(ShortChannelId(channelIdentifier), request))
-        .recoverWith { case _ => Future(Register.Forward(ByteVector32.fromValidHex(channelIdentifier), request)) }
-        .recoverWith { case _ => Future.failed(new RuntimeException(s"invalid channel identifier '$channelIdentifier'")) }
-      res <- appKit.register ? fwdReq
-    } yield res
+  def sendToChannel(channelIdentifier: String, request: Any)(implicit timeout: Timeout): Future[Any] = {
+    Try(ForwardShortId(ShortChannelId(channelIdentifier), request)) match {
+      case Success(shortChannelIdRequest) => appKit.register ? shortChannelIdRequest
+      case Failure(_) => Try(Forward(ByteVector32.fromValidHex(channelIdentifier), request)) match {
+        case Success(channelIdRequest) => appKit.register ? channelIdRequest
+        case Failure(_) => throw new RuntimeException(s"invalid channel identifier '$channelIdentifier'") // unrecoverable
+      }
+    }
+  }
 
   override def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse] = Future.successful(
     GetInfoResponse(nodeId = appKit.nodeParams.nodeId,
