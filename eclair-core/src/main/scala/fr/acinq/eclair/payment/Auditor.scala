@@ -19,6 +19,7 @@ package fr.acinq.eclair.payment
 import akka.actor.{Actor, ActorLogging, Props}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.channel.Channel.{LocalError, RemoteError}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent}
 
@@ -27,11 +28,12 @@ import scala.concurrent.duration._
 
 class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
-  val db = nodeParams.auditDb
+  val db = nodeParams.db.audit
 
   context.system.eventStream.subscribe(self, classOf[PaymentEvent])
   context.system.eventStream.subscribe(self, classOf[NetworkFeePaid])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
+  context.system.eventStream.subscribe(self, classOf[ChannelErrorOccured])
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
   context.system.eventStream.subscribe(self, classOf[ChannelClosed])
 
@@ -48,6 +50,8 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
     case e: NetworkFeePaid => db.add(e)
 
     case e: AvailableBalanceChanged => balanceEventThrottler ! e
+
+    case e: ChannelErrorOccured => db.add(e)
 
     case e: ChannelStateChanged =>
       e match {

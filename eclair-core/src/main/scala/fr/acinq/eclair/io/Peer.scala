@@ -22,11 +22,13 @@ import java.nio.ByteOrder
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
+import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.secureRandom
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
@@ -95,7 +97,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       val address_opt = if (outgoing) {
         // we store the node address upon successful outgoing connection, so we can reconnect later
         // any previous address is overwritten
-        NodeAddress.fromParts(address.getHostString, address.getPort).map(nodeAddress => nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, nodeAddress))
+        NodeAddress.fromParts(address.getHostString, address.getPort).map(nodeAddress => nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, nodeAddress))
         Some(address)
       } else None
 
@@ -142,7 +144,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
         // let's bring existing/requested channels online
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport, d.localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }) forMax (30 seconds) // forMax will trigger a StateTimeout
+        // we will delay all rebroadcasts with this value in order to prevent herd effects (each peer has a different delay)
+        val rebroadcastDelay = Random.nextInt(nodeParams.routerConf.routerBroadcastInterval.toSeconds.toInt).seconds
+        log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
+        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }, rebroadcastDelay) forMax (30 seconds) // forMax will trigger a StateTimeout
       } else {
         log.warning(s"incompatible features, disconnecting")
         d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
@@ -156,12 +161,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       // we kill this one
       log.warning(s"killing parallel connection $connection")
       connection ! PoisonPill
-      stay
-
-    case Event(o: Peer.OpenChannel, _) =>
-      // we're almost there, just wait a little
-      import scala.concurrent.ExecutionContext.Implicits.global
-      context.system.scheduler.scheduleOnce(100 milliseconds, self, o)
       stay
 
     case Event(Terminated(actor), d: InitializingData) if actor == d.transport =>
@@ -232,7 +231,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           log.debug(s"received pong with latency=$latency")
           cancelTimer(PingTimeout.toString())
           // pings are sent periodically with some randomization
-          val nextDelay = nodeParams.pingInterval + secureRandom.nextInt(10).seconds
+          val nextDelay = nodeParams.pingInterval + Random.nextInt(10).seconds
           setTimer(SendPing.toString, SendPing, nextDelay, repeat = false)
         case None =>
           log.debug(s"received unexpected pong with size=${data.length}")
@@ -256,11 +255,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       stay
 
     case Event(c: Peer.OpenChannel, d: ConnectedData) =>
-      log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt}")
       val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis.toLong, origin_opt = Some(sender))
+      c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
       val temporaryChannelId = randomBytes32
       val channelFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
       val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(Globals.feeratesPerKw.get.blocks_6)
+      log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
       channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.transport, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
       stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
@@ -268,9 +268,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       d.transport ! TransportHandler.ReadAck(msg)
       d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
         case None =>
-          log.info(s"accepting a new channel to $remoteNodeId")
           val (channel, localParams) = createNewChannel(nodeParams, funder = false, fundingSatoshis = msg.fundingSatoshis, origin_opt = None)
           val temporaryChannelId = msg.temporaryChannelId
+          log.info(s"accepting a new channel to $remoteNodeId temporaryChannelId=$temporaryChannelId localParams=$localParams")
           channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.transport, d.remoteInit)
           channel ! msg
           stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
@@ -317,6 +317,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       stay
 
     case Event(rebroadcast: Rebroadcast, d: ConnectedData) =>
+      context.system.scheduler.scheduleOnce(d.rebroadcastDelay, self, DelayedRebroadcast(rebroadcast))(context.dispatcher)
+      stay
+
+    case Event(DelayedRebroadcast(rebroadcast), d: ConnectedData) =>
 
       /**
         * Send and count in a single iteration
@@ -325,7 +329,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         case (count, (_, origins)) if origins.contains(self) =>
           // the announcement came from this peer, we don't send it back
           count
-        case (count, (msg: HasTimestamp, _)) if !timestampInRange(msg, d.gossipTimestampFilter) =>
+        case (count, (msg, _)) if !timestampInRange(msg, d.gossipTimestampFilter) =>
           // the peer has set up a filter on timestamp and this message is out of range
           count
         case (count, (msg, _)) =>
@@ -455,6 +459,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(_: Rebroadcast, _) => stay // ignored
 
+    case Event(_: DelayedRebroadcast, _) => stay // ignored
+
     case Event(_: RoutingState, _) => stay // ignored
 
     case Event(_: TransportHandler.ReadAck, _) => stay // ignored
@@ -466,6 +472,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
 
     case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
+
+    case Event(_: BadMessage, _) => stay // we got disconnected while syncing
   }
 
   onTransition {
@@ -489,7 +497,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
   def stopPeer() = {
     log.info("removing peer from db")
-    nodeParams.peersDb.removePeer(remoteNodeId)
+    nodeParams.db.peers.removePeer(remoteNodeId)
     stop(FSM.Normal)
   }
 
@@ -530,7 +538,7 @@ object Peer {
   case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
   case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
   case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef], localInit: wire.Init) extends Data
-  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
+  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
   case class ExpectedPong(ping: Ping, timestamp: Long = Platform.currentTime)
   case class PingTimeout(ping: Ping)
 
@@ -545,18 +553,20 @@ object Peer {
   case object Reconnect
   case object Disconnect
   case object ResumeAnnouncements
-  case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte]) {
+  case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) {
     require(fundingSatoshis.amount < Channel.MAX_FUNDING_SATOSHIS, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING_SATOSHIS}")
     require(pushMsat.amount <= 1000 * fundingSatoshis.amount, s"pushMsat must be less or equal to fundingSatoshis")
     require(fundingSatoshis.amount >= 0, s"fundingSatoshis must be positive")
     require(pushMsat.amount >= 0, s"pushMsat must be positive")
-    require(fundingTxFeeratePerKw_opt.getOrElse(0L) >= 0, s"funding tx feerate must be positive")
+    fundingTxFeeratePerKw_opt.foreach(feeratePerKw => require(feeratePerKw >= MinimumFeeratePerKw, s"fee rate $feeratePerKw is below minimum $MinimumFeeratePerKw rate/kw"))
   }
   case object GetPeerInfo
   case object SendPing
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 
   case class PeerRoutingMessage(transport: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage)
+
+  case class DelayedRebroadcast(rebroadcast: Rebroadcast)
 
   sealed trait BadMessage
   case class InvalidSignature(r: RoutingMessage) extends BadMessage
@@ -596,14 +606,15 @@ object Peer {
     *
     * @param gossipTimestampFilter_opt optional gossip timestamp range
     * @return
-    *           - true if the msg's timestamp is in the requested range, or if there is no filtering
+    *           - true if there is a filter and msg has no timestamp, or has one that matches the filter 
     *           - false otherwise
     */
-  def timestampInRange(msg: HasTimestamp, gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
+  def timestampInRange(msg: RoutingMessage, gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
     // check if this message has a timestamp that matches our timestamp filter
-    gossipTimestampFilter_opt match {
-      case None => true // no filtering
-      case Some(GossipTimestampFilter(_, firstTimestamp, timestampRange)) => msg.timestamp >= firstTimestamp && msg.timestamp <= firstTimestamp + timestampRange
+    (msg, gossipTimestampFilter_opt) match {
+      case (_, None) => false // BOLT 7: A node which wants any gossip messages would have to send this, otherwise [...] no gossip messages would be received.
+      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= firstTimestamp + timestampRange
+      case _ => true // if there is a filter and message doesn't have a timestamp (e.g. channel_announcement), then we send it
     }
   }
 }

@@ -16,12 +16,15 @@
 
 package fr.acinq.eclair.payment
 
+import java.util.UUID
+
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
@@ -35,7 +38,7 @@ import scala.util.{Failure, Success, Try}
 // @formatter:off
 
 sealed trait Origin
-case class Local(sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
+case class Local(id: UUID, sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
 case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
 
 sealed trait ForwardMessage
@@ -111,24 +114,26 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
       }
 
-    case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(shortChannelId, CMD_ADD_HTLC(_, _, _, _, Some(add), _, _)))) =>
+    case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(shortChannelId, CMD_ADD_HTLC(_, _, _, _, Right(add), _, _)))) =>
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
       commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
 
-    case Status.Failure(AddHtlcFailed(_, paymentHash, _, Local(None), _, _)) =>
-      // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
-      context.system.eventStream.publish(PaymentFailed(paymentHash, Nil))
+    case Status.Failure(AddHtlcFailed(_, paymentHash, _, Local(id, None), _, _)) =>
+      // we sent the payment, but we probably restarted and the reference to the original sender was lost,
+      // we publish the failure on the event stream and update the status in paymentDb
+      nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+      context.system.eventStream.publish(PaymentFailed(id, paymentHash, Nil))
 
-    case Status.Failure(AddHtlcFailed(_, _, error, Local(Some(sender)), _, _)) =>
+    case Status.Failure(AddHtlcFailed(_, _, error, Local(_, Some(sender)), _, _)) =>
       sender ! Status.Failure(error)
 
     case Status.Failure(AddHtlcFailed(_, paymentHash, error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt, originalCommand_opt)) =>
       originalCommand_opt match {
-        case Some(cmd) if cmd.redirected && cmd.upstream_opt.isDefined => // cmd.upstream_opt.isDefined always true since origin = relayed
+        case Some(cmd) if cmd.redirected && cmd.upstream.isRight => // cmd.upstream_opt.isDefined always true since origin = relayed
           // if it was redirected, we give it one more try with the original requested channel (meaning that the error returned will always be for the requested channel)
           log.info(s"retrying htlc #$originHtlcId paymentHash=$paymentHash from channelId=$originChannelId")
-          self ! ForwardAdd(cmd.upstream_opt.get, canRedirect = false)
+          self ! ForwardAdd(cmd.upstream.right.get, canRedirect = false)
         case _ =>
           // otherwise we just return a failure
           val failure = (error, channelUpdate_opt) match {
@@ -146,13 +151,15 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmdFail)
       }
 
-    case ForwardFulfill(fulfill, Local(None), add) =>
+    case ForwardFulfill(fulfill, Local(id, None), add) =>
       val feesPaid = MilliSatoshi(0)
-      context.system.eventStream.publish(PaymentSent(MilliSatoshi(add.amountMsat), feesPaid, add.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
-      // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the success on the event stream
-      context.system.eventStream.publish(PaymentSucceeded(add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil)) //
+      context.system.eventStream.publish(PaymentSent(id, MilliSatoshi(add.amountMsat), feesPaid, add.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
+      // we sent the payment, but we probably restarted and the reference to the original sender was lost,
+      // we publish the failure on the event stream and update the status in paymentDb
+      nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.SUCCEEDED, Some(fulfill.paymentPreimage))
+      context.system.eventStream.publish(PaymentSucceeded(id, add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil)) //
 
-    case ForwardFulfill(fulfill, Local(Some(sender)), _) =>
+    case ForwardFulfill(fulfill, Local(_, Some(sender)), _) =>
       sender ! fulfill
 
     case ForwardFulfill(fulfill, Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut), add) =>
@@ -160,22 +167,26 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
       context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), add.paymentHash, fromChannelId = originChannelId, toChannelId = fulfill.channelId))
 
-    case ForwardFail(_, Local(None), add) =>
-      // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
-      context.system.eventStream.publish(PaymentFailed(add.paymentHash, Nil))
+    case ForwardFail(_, Local(id, None), add) =>
+      // we sent the payment, but we probably restarted and the reference to the original sender was lost
+      // we publish the failure on the event stream and update the status in paymentDb
+      nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+      context.system.eventStream.publish(PaymentFailed(id, add.paymentHash, Nil))
 
-    case ForwardFail(fail, Local(Some(sender)), _) =>
+    case ForwardFail(fail, Local(_, Some(sender)), _) =>
       sender ! fail
 
     case ForwardFail(fail, Relayed(originChannelId, originHtlcId, _, _), _) =>
       val cmd = CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
       commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
 
-    case ForwardFailMalformed(_, Local(None), add) =>
-      // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
-      context.system.eventStream.publish(PaymentFailed(add.paymentHash, Nil))
+    case ForwardFailMalformed(_, Local(id, None), add) =>
+      // we sent the payment, but we probably restarted and the reference to the original sender was lost
+      // we publish the failure on the event stream and update the status in paymentDb
+      nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+      context.system.eventStream.publish(PaymentFailed(id, add.paymentHash, Nil))
 
-    case ForwardFailMalformed(fail, Local(Some(sender)), _) =>
+    case ForwardFailMalformed(fail, Local(_, Some(sender)), _) =>
       sender ! fail
 
     case ForwardFailMalformed(fail, Relayed(originChannelId, originHtlcId, _, _), _) =>
@@ -269,7 +280,7 @@ object Relayer {
         Left(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
         val isRedirected = (channelUpdate.shortChannelId != payload.shortChannelId) // we may decide to use another channel (to the same node) from the one requested
-        Right(CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Some(add), commit = true, redirected = isRedirected))
+        Right(CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket.serialize, upstream = Right(add), commit = true, redirected = isRedirected))
     }
   }
 

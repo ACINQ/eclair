@@ -31,7 +31,7 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
-import fr.acinq.eclair.api.{GetInfoResponse, Service}
+import fr.acinq.eclair.api._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
@@ -43,6 +43,7 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
@@ -67,7 +68,14 @@ import scala.concurrent.duration._
   */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
-            seed_opt: Option[ByteVector] = None)(implicit system: ActorSystem) extends Logging {
+            seed_opt: Option[ByteVector] = None,
+            db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
+
+  implicit val materializer = ActorMaterializer()
+  implicit val timeout = Timeout(30 seconds)
+  implicit val formats = org.json4s.DefaultFormats
+  implicit val ec = ExecutionContext.Implicits.global
+  implicit val sttpBackend = OkHttpFutureBackend()
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
@@ -76,17 +84,19 @@ class Setup(datadir: File,
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
   secureRandom.nextInt()
 
+  datadir.mkdirs()
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
+  val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
-  implicit val materializer = ActorMaterializer()
-  implicit val timeout = Timeout(30 seconds)
-  implicit val formats = org.json4s.DefaultFormats
-  implicit val ec = ExecutionContext.Implicits.global
-  implicit val sttpBackend = OkHttpFutureBackend()
 
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager, initTor())
+  val database = db match {
+    case Some(d) => d
+    case None => Databases.sqliteJDBC(chaindir)
+  }
+
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database)
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),
@@ -126,15 +136,13 @@ class Setup(datadir: File,
       } yield (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
       // blocking sanity checks
       val (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
-      assert(bitcoinVersion >= 160300, "Eclair requires Bitcoin Core 0.16.3 or higher")
+      assert(bitcoinVersion >= 170000, "Eclair requires Bitcoin Core 0.17.0 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
         assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Make sure that all your UTXOS are segwit UTXOS and not p2pkh (check out our README for more details)")
       }
       assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress")
       assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks")
-      // TODO: add a check on bitcoin version?
-
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       val addresses = config.hasPath("electrum") match {
@@ -216,8 +224,6 @@ class Setup(datadir: File,
       wallet = bitcoin match {
         case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
         case Electrum(electrumClient) =>
-          // TODO: DRY
-          val chaindir = new File(datadir, chain)
           val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
           val walletDb = new SqliteWalletDb(sqlite)
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
@@ -227,7 +233,14 @@ class Setup(datadir: File,
       _ = wallet.getFinalAddress.map {
         case address => logger.info(s"initial wallet address=$address")
       }
+      // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 
+      backupHandler = system.actorOf(SimpleSupervisor.props(
+        BackupHandler.props(
+          nodeParams.db,
+          new File(chaindir, "eclair.bak"),
+          if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
+        ),"backuphandler", SupervisorStrategy.Resume))
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
         case "local" => LocalPaymentHandler.props(nodeParams)
@@ -238,7 +251,7 @@ class Setup(datadir: File,
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
-      paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.nodeId, router, register), "payment-initiator", SupervisorStrategy.Restart))
+      paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, register), "payment-initiator", SupervisorStrategy.Restart))
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
 
       kit = Kit(
@@ -264,28 +277,32 @@ class Setup(datadir: File,
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
         implicit val materializer = ActorMaterializer()
-        val api = new Service {
-
-          override def scheduler = system.scheduler
-
-          override val password = {
-            val p = config.getString("api.password")
-            if (p.isEmpty) throw EmptyAPIPasswordException else p
-          }
-
-          override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
-            GetInfoResponse(nodeId = nodeParams.nodeId,
-              alias = nodeParams.alias,
-              port = config.getInt("server.port"),
-              chainHash = nodeParams.chainHash,
-              blockHeight = Globals.blockCount.intValue(),
-              publicAddresses = nodeParams.publicAddresses))
-
-          override def appKit: Kit = kit
-
-          override val socketHandler = makeSocketHandler(system)(materializer)
+        val getInfo = GetInfoResponse(nodeId = nodeParams.nodeId,
+          alias = nodeParams.alias,
+          chainHash = nodeParams.chainHash,
+          blockHeight = Globals.blockCount.intValue(),
+          publicAddresses = nodeParams.publicAddresses)
+        val apiPassword = config.getString("api.password") match {
+          case "" => throw EmptyAPIPasswordException
+          case valid => valid
         }
-        val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+        val apiRoute = if (!config.getBoolean("api.use-old-api")) {
+          new Service {
+            override val actorSystem = kit.system
+            override val mat = materializer
+            override val password = apiPassword
+            override val eclairApi: Eclair = new EclairImpl(kit)
+          }.route
+        } else {
+          new OldService {
+            override val scheduler = system.scheduler
+            override val password = apiPassword
+            override val getInfoResponse: Future[GetInfoResponse] = Future.successful(getInfo)
+            override val appKit: Kit = kit
+            override val socketHandler = makeSocketHandler(system)(materializer)
+          }.route
+        }
+        val httpBound = Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
           case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
         }
         val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("api.port"))))

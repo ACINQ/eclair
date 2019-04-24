@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.payment.{Local, Origin}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -262,9 +263,9 @@ object Helpers {
       *
       * @param now          current timet
       * @param waitingSince we have been waiting since that time
-      * @param delay    the nominal delay that we were supposed to wait
-      * @param minDelay the minimum delay even if the nominal one has expired
-      * @return  the delay we will actually wait
+      * @param delay        the nominal delay that we were supposed to wait
+      * @param minDelay     the minimum delay even if the nominal one has expired
+      * @return the delay we will actually wait
       */
     def computeFundingTimeout(now: Long, waitingSince: Long, delay: FiniteDuration, minDelay: FiniteDuration): FiniteDuration = {
       import scala.concurrent.duration._
@@ -336,6 +337,15 @@ object Helpers {
 
   object Closing {
 
+    // @formatter:off
+    sealed trait ClosingType
+    case object MutualClose extends ClosingType
+    case object LocalClose extends ClosingType
+    case object RemoteClose extends ClosingType
+    case object RecoveryClose extends ClosingType
+    case object RevokedClose extends ClosingType
+    // @formatter:on
+
     /**
       * Indicates whether local has anything at stake in this channel
       *
@@ -348,6 +358,30 @@ object Helpers {
         data.commitments.remoteCommit.index == 0 &&
         data.commitments.remoteCommit.spec.toRemoteMsat == 0 &&
         data.commitments.remoteNextCommitInfo.isRight
+
+    /**
+      * Checks if a channel is closed (i.e. its closing tx has been confirmed)
+      *
+      * @param data channel state data
+      * @param additionalConfirmedTx_opt additional confirmed transaction; we need this for the mutual close scenario
+      *                                  because we don't store the closing tx in the channel state
+      * @return the channel closing type, if applicable
+      */
+    def isClosed(data: HasCommitments, additionalConfirmedTx_opt: Option[Transaction]): Option[ClosingType] = data match {
+      case closing: DATA_CLOSING if additionalConfirmedTx_opt.exists(closing.mutualClosePublished.contains) =>
+        Some(MutualClose)
+      case closing: DATA_CLOSING if closing.localCommitPublished.exists(Closing.isLocalCommitDone) =>
+        Some(LocalClose)
+      case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
+        Some(RemoteClose)
+      case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
+        Some(RemoteClose)
+      case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
+        Some(RecoveryClose)
+      case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(Closing.isRevokedCommitDone) =>
+        Some(RevokedClose)
+      case _ => None
+    }
 
     // used only to compute tx weights and estimate fees
     lazy val dummyPublicKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), true).publicKey
@@ -803,6 +837,39 @@ object Helpers {
       }
 
     /**
+      * Tells if we were the origin of this outgoing htlc
+      *
+      * @param htlcId
+      * @param originChannels
+      * @return
+      */
+    def isSentByLocal(htlcId: Long, originChannels: Map[Long, Origin]) = originChannels.get(htlcId) match {
+      case Some(Local(_, _)) => true
+      case _ => false
+    }
+
+    /**
+      * As soon as a local or remote commitment reaches min_depth, we know which htlcs will be settled on-chain (whether
+      * or not they actually have an output in the commitment tx).
+      *
+      * @param localCommit
+      * @param remoteCommit
+      * @param nextRemoteCommit_opt
+      * @param tx a transaction that is sufficiently buried in the blockchain
+      */
+    def onchainOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction): Set[UpdateAddHtlc] = {
+      if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
+        localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
+      } else if (remoteCommit.txid == tx.txid) {
+        remoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add)
+      } else if (nextRemoteCommit_opt.map(_.txid) == Some(tx.txid)) {
+        nextRemoteCommit_opt.get.spec.htlcs.filter(_.direction == IN).map(_.add)
+      } else {
+        Set.empty
+      }
+    }
+
+    /**
       * If a local commitment tx reaches min_depth, we need to fail the outgoing htlcs that only us had signed, because
       * they will never reach the blockchain.
       *
@@ -814,7 +881,7 @@ object Helpers {
       * @param log
       * @return
       */
-    def overriddenHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
+    def overriddenOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
         // our commit got confirmed, so any htlc that we signed but they didn't sign will never reach the chain
         val mostRecentRemoteCommit = nextRemoteCommit_opt.getOrElse(remoteCommit)

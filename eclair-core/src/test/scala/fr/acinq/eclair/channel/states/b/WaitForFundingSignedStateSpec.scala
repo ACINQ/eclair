@@ -20,6 +20,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingSigned, Init, OpenChannel}
@@ -82,6 +83,21 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelp
   test("recv CMD_FORCECLOSE") { f =>
     import f._
     alice ! CMD_FORCECLOSE
+    awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv INPUT_DISCONNECTED") { f =>
+    import f._
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_SIGNED].fundingTx
+    assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.isEmpty)
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == CLOSED)
+    assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.contains(fundingTx))
+  }
+
+  test("recv TickChannelOpenTimeout") { f =>
+    import f._
+    alice ! TickChannelOpenTimeout
     awaitCond(alice.stateName == CLOSED)
   }
 

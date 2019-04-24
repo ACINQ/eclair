@@ -172,8 +172,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
       } else {
         client ! ElectrumClient.GetHeaders(data.blockchain.tip.height + 1, RETARGETING_PERIOD)
         log.info(s"syncing headers from ${data.blockchain.height} to ${height}, ready=${data.isReady(params.swipeRange)}")
-        // tell everyone we're ready while we catch up
-        goto(SYNCING) using persistAndNotify(data)
+        goto(SYNCING) using data
       }
   }
 

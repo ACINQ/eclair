@@ -21,7 +21,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.11</artifactId>
-        <version>0.2-SNAPSHOT</version>
+        <version>0.3-SNAPSHOT</version>
     </parent>
 
     <artifactId>eclair-core_2.11</artifactId>
@@ -79,10 +79,10 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.16.3/bitcoin-0.16.3-x86_64-linux-gnu.tar.gz
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.17.1/bitcoin-0.17.1-x86_64-linux-gnu.tar.gz
                 </bitcoind.url>
-                <bitcoind.md5>c371e383f024c6c45fb255d528a6beec</bitcoind.md5>
-                <bitcoind.sha1>e6d8ab1f7661a6654fd81e236b9b5fd35a3d4dcb</bitcoind.sha1>
+                <bitcoind.md5>724043999e2b5ed0c088e8db34f15d43</bitcoind.md5>
+                <bitcoind.sha1>546ee35d4089c7ccc040a01cdff3362599b8bc53</bitcoind.sha1>
             </properties>
         </profile>
         <profile>
@@ -93,10 +93,10 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.16.3/bitcoin-0.16.3-osx64.tar.gz
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.17.1/bitcoin-0.17.1-osx64.tar.gz
                 </bitcoind.url>
-                <bitcoind.md5>bacd87d0c3f65a5acd666e33d094a59e</bitcoind.md5>
-                <bitcoind.sha1>62cc5bd9ced610bb9e8d4a854396bfe2139e3d0f</bitcoind.sha1>
+                <bitcoind.md5>b5a792c6142995faa42b768273a493bd</bitcoind.md5>
+                <bitcoind.sha1>8bd51c7024d71de07df381055993e9f472013db8</bitcoind.sha1>
             </properties>
         </profile>
         <profile>
@@ -107,9 +107,9 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.16.3/bitcoin-0.16.3-win64.zip</bitcoind.url>
-                <bitcoind.md5>bbde9b1206956d19298034319e9f405e</bitcoind.md5>
-                <bitcoind.sha1>85e3dc8a9c6f93b1b20cb79fa5850b5ce81da221</bitcoind.sha1>
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.17.1/bitcoin-0.17.1-win64.zip</bitcoind.url>
+                <bitcoind.md5>b0e824e9dd02580b5b01f073f3c89858</bitcoind.md5>
+                <bitcoind.sha1>4e17bad7d08c465b444143a93cd6eb1c95076e3f</bitcoind.sha1>
             </properties>
         </profile>
     </profiles>
@@ -203,7 +203,7 @@
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
-            <version>3.21.0.1</version>
+            <version>3.27.2.1</version>
         </dependency>
         <dependency>
             <!-- This is to get rid of '[WARNING] warning: Class javax.annotation.Nonnull not found - continuing with a stub.' compile errors -->

@@ -61,12 +61,7 @@ case class NodeParams(keyManager: KeyManager,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double,
-                      channelsDb: ChannelsDb,
-                      peersDb: PeersDb,
-                      networkDb: NetworkDb,
-                      pendingRelayDb: PendingRelayDb,
-                      paymentsDb: PaymentsDb,
-                      auditDb: AuditDb,
+                      db: Databases,
                       revocationTimeout: FiniteDuration,
                       pingInterval: FiniteDuration,
                       pingTimeout: FiniteDuration,
@@ -78,10 +73,10 @@ case class NodeParams(keyManager: KeyManager,
                       channelFlags: Byte,
                       watcherType: WatcherType,
                       paymentRequestExpiry: FiniteDuration,
-                      maxPendingPaymentRequests: Int,
                       minFundingSatoshis: Long,
                       routerConf: RouterConf,
-                      socksProxy_opt: Option[Socks5ProxyParams]) {
+                      socksProxy_opt: Option[Socks5ProxyParams],
+                      maxPaymentAttempts: Int) {
 
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
@@ -129,28 +124,10 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress]): NodeParams = {
-
-    datadir.mkdirs()
+  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases): NodeParams = {
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
-
-    val chaindir = new File(datadir, chain)
-    chaindir.mkdir()
-
-    val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
-    SqliteUtils.obtainExclusiveLock(sqlite) // there should only be one process writing to this file
-    val channelsDb = new SqliteChannelsDb(sqlite)
-    val peersDb = new SqlitePeersDb(sqlite)
-    val pendingRelayDb = new SqlitePendingRelayDb(sqlite)
-    val paymentsDb = new SqlitePaymentsDb(sqlite)
-
-    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "network.sqlite")}")
-    val networkDb = new SqliteNetworkDb(sqliteNetwork)
-
-    val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "audit.sqlite")}")
-    val auditDb = new SqliteAuditDb(sqliteAudit)
 
     val color = ByteVector.fromValidHex(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
@@ -220,12 +197,7 @@ object NodeParams {
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
-      channelsDb = channelsDb,
-      peersDb = peersDb,
-      networkDb = networkDb,
-      pendingRelayDb = pendingRelayDb,
-      paymentsDb = paymentsDb,
-      auditDb = auditDb,
+      db = database,
       revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
@@ -237,7 +209,6 @@ object NodeParams {
       channelFlags = config.getInt("channel-flags").toByte,
       watcherType = watcherType,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
-      maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"),
       minFundingSatoshis = config.getLong("min-funding-satoshis"),
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
@@ -252,7 +223,8 @@ object NodeParams {
         searchRatioChannelAge = config.getDouble("router.path-finding.ratio-channel-age"),
         searchRatioChannelCapacity = config.getDouble("router.path-finding.ratio-channel-capacity")
       ),
-      socksProxy_opt = socksProxy_opt
+      socksProxy_opt = socksProxy_opt,
+      maxPaymentAttempts = config.getInt("max-payment-attempts")
     )
   }
 }
