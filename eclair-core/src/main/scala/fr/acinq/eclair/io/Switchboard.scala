@@ -22,6 +22,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Stat
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
+import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.{HasCommitments, _}
 import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
@@ -44,7 +45,14 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
   // we load peers and channels from database
   {
-    val channels = nodeParams.db.channels.listLocalChannels()
+    // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
+    // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
+    // Closed channels will be removed, other channels will be restored.
+    val (channels, closedChannels) = nodeParams.db.channels.listLocalChannels().partition(c => Closing.isClosed(c, None).isEmpty)
+    closedChannels.foreach(c => {
+      log.info(s"closing channel ${c.channelId}")
+      nodeParams.db.channels.removeChannel(c.channelId)
+    })
     val peers = nodeParams.db.peers.listPeers()
 
     checkBrokenHtlcsLink(channels, nodeParams.privateKey) match {
@@ -72,13 +80,13 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     case Peer.Connect(NodeURI(publicKey, _)) if publicKey == nodeParams.nodeId =>
       sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
-    case c@Peer.Connect(NodeURI(remoteNodeId, _)) =>
+    case c: Peer.Connect =>
       // we create a peer if it doesn't exist
-      val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
+      val peer = createOrGetPeer(c.uri.nodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward c
 
-    case o@Peer.OpenChannel(remoteNodeId, _, _, _, _) =>
-      getPeer(remoteNodeId) match {
+    case o: Peer.OpenChannel =>
+      getPeer(o.remoteNodeId) match {
         case Some(peer) => peer forward o
         case None => sender ! Status.Failure(new RuntimeException("no connection to peer"))
       }
