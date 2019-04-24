@@ -2,18 +2,20 @@ package fr.acinq.eclair
 
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.io.Peer.OpenChannel
-import fr.acinq.eclair.payment.PaymentLifecycle.{SendPayment}
+import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import org.scalatest.{Outcome, fixture}
 import scodec.bits._
 import TestConstants._
 import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register}
+import fr.acinq.eclair.payment.LocalPaymentHandler
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
+
 import scala.util.{Failure, Success}
 import scala.concurrent.duration._
 
@@ -135,6 +137,23 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
 
     eclair.forceClose(Right(ShortChannelId("568749x2597x0")))
     register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_FORCECLOSE))
+  }
+
+  test("passing a preimage to /createinvoice should result in an invoice with payment_hash=H(preimage)") { fixture =>
+
+    val paymentHandler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
+    val kitWithPaymentHandler = fixture.kit.copy(paymentHandler = paymentHandler)
+    val eclair = new EclairImpl(kitWithPaymentHandler)
+    val preimage = randomBytes32
+
+    val fResp = eclair.receive(description = "some desc", amountMsat = None, expire = None, fallbackAddress = None, preimage = Some(preimage))
+    awaitCond({
+      fResp.value match {
+        case Some(Success(pr)) => pr.paymentHash == Crypto.sha256(preimage)
+        case _ => false
+      }
+    })
+
   }
 
 }
