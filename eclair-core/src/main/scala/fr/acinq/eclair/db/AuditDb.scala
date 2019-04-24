@@ -35,6 +35,8 @@ trait AuditDb {
 
   def add(networkFeePaid: NetworkFeePaid)
 
+  def add(channelErrorOccured: ChannelErrorOccured)
+
   def listSent(from: Long, to: Long): Seq[PaymentSent]
 
   def listReceived(from: Long, to: Long): Seq[PaymentReceived]

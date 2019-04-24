@@ -40,90 +40,92 @@ case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived],
 
 trait Eclair {
 
-  def connect(uri: String): Future[String]
+  def connect(uri: String)(implicit timeout: Timeout): Future[String]
 
-  def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int]): Future[String]
+  def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[String]
 
-  def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String]
+  def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector])(implicit timeout: Timeout): Future[String]
 
-  def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId]): Future[String]
+  def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[String]
 
-  def updateRelayFee(channelId: String, feeBaseMsat: Long, feeProportionalMillionths: Long): Future[String]
+  def updateRelayFee(channelId: String, feeBaseMsat: Long, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[String]
 
-  def channelsInfo(toRemoteNode: Option[PublicKey]): Future[Iterable[RES_GETINFO]]
+  def channelsInfo(toRemoteNode: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]]
 
-  def channelInfo(channelId: ByteVector32): Future[RES_GETINFO]
+  def channelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[RES_GETINFO]
 
-  def peersInfo(): Future[Iterable[PeerInfo]]
+  def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
 
-  def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String]): Future[PaymentRequest]
+  def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String])(implicit timeout: Timeout): Future[PaymentRequest]
 
-  def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]]
+  def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
-  def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None, maxAttempts: Option[Int] = None): Future[UUID]
+  def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry: Option[Long] = None, maxAttempts: Option[Int] = None)(implicit timeout: Timeout): Future[UUID]
 
-  def sentInfo(id: Either[UUID, ByteVector32]): Future[Seq[OutgoingPayment]]
+  def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
 
-  def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse]
+  def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse]
 
-  def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse]
+  def audit(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[AuditResponse]
 
-  def networkFees(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[NetworkFee]]
+  def networkFees(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[NetworkFee]]
 
-  def channelStats(): Future[Seq[Stats]]
+  def channelStats()(implicit timeout: Timeout): Future[Seq[Stats]]
 
-  def getInvoice(paymentHash: ByteVector32): Future[Option[PaymentRequest]]
+  def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[PaymentRequest]]
 
-  def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]]
+  def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]]
 
-  def allInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]]
+  def allInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]]
 
-  def allNodes(): Future[Iterable[NodeAnnouncement]]
+  def allNodes()(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]]
 
-  def allChannels(): Future[Iterable[ChannelDesc]]
+  def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]]
 
-  def allUpdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]]
+  def allUpdates(nodeId: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[ChannelUpdate]]
 
-  def getInfoResponse(): Future[GetInfoResponse]
+  def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse]
 
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
 
   implicit val ec = appKit.system.dispatcher
-  implicit val timeout = Timeout(60 seconds) // used by akka ask
 
-  override def connect(uri: String): Future[String] = {
+  override def connect(uri: String)(implicit timeout: Timeout): Future[String] = {
     (appKit.switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String]
   }
 
-  override def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int]): Future[String] = {
+  override def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[String] = {
+    // we want the open timeout to expire *before* the default ask timeout, otherwise user won't get a generic response
+    val openTimeout = openTimeout_opt.getOrElse(Timeout(10 seconds))
     (appKit.switchboard ? Peer.OpenChannel(
       remoteNodeId = nodeId,
       fundingSatoshis = Satoshi(fundingSatoshis),
       pushMsat = pushMsat.map(MilliSatoshi).getOrElse(MilliSatoshi(0)),
       fundingTxFeeratePerKw_opt = fundingFeerateSatByte.map(feerateByte2Kw),
-      channelFlags = flags.map(_.toByte))).mapTo[String]
+      channelFlags = flags.map(_.toByte),
+      timeout_opt = Some(openTimeout))).mapTo[String]
   }
 
-  override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector]): Future[String] = {
+  override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector])(implicit timeout: Timeout): Future[String] = {
     sendToChannel(channelIdentifier.fold[String](_.toString(), _.toString()), CMD_CLOSE(scriptPubKey)).mapTo[String]
   }
 
-  override def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId]): Future[String] = {
+  override def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[String] = {
     sendToChannel(channelIdentifier.fold[String](_.toString(), _.toString()), CMD_FORCECLOSE).mapTo[String]
   }
 
-  override def updateRelayFee(channelId: String, feeBaseMsat: Long, feeProportionalMillionths: Long): Future[String] = {
+  override def updateRelayFee(channelId: String, feeBaseMsat: Long, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[String] = {
     sendToChannel(channelId, CMD_UPDATE_RELAY_FEE(feeBaseMsat, feeProportionalMillionths)).mapTo[String]
   }
 
-  override def peersInfo(): Future[Iterable[PeerInfo]] = for {
+  override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = for {
     peers <- (appKit.switchboard ? 'peers).mapTo[Iterable[ActorRef]]
     peerinfos <- Future.sequence(peers.map(peer => (peer ? GetPeerInfo).mapTo[PeerInfo]))
   } yield peerinfos
 
-  override def channelsInfo(toRemoteNode: Option[PublicKey]): Future[Iterable[RES_GETINFO]] = toRemoteNode match {
+  override def channelsInfo(toRemoteNode: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]] = toRemoteNode match {
     case Some(pk) => for {
       channelsId <- (appKit.register ? 'channelsTo).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(_._2 == pk).keys)
       channels <- Future.sequence(channelsId.map(channelId => sendToChannel(channelId.toString(), CMD_GETINFO).mapTo[RES_GETINFO]))
@@ -134,31 +136,31 @@ class EclairImpl(appKit: Kit) extends Eclair {
     } yield channels
   }
 
-  override def channelInfo(channelId: ByteVector32): Future[RES_GETINFO] = {
+  override def channelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[RES_GETINFO] = {
     sendToChannel(channelId.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
   }
 
-  override def allNodes(): Future[Iterable[NodeAnnouncement]] = (appKit.router ? 'nodes).mapTo[Iterable[NodeAnnouncement]]
+  override def allNodes()(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]] = (appKit.router ? 'nodes).mapTo[Iterable[NodeAnnouncement]]
 
-  override def allChannels(): Future[Iterable[ChannelDesc]] = {
+  override def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]] = {
     (appKit.router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)))
   }
 
-  override def allUpdates(nodeId: Option[PublicKey]): Future[Iterable[ChannelUpdate]] = nodeId match {
+  override def allUpdates(nodeId: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[ChannelUpdate]] = nodeId match {
     case None => (appKit.router ? 'updates).mapTo[Iterable[ChannelUpdate]]
     case Some(pk) => (appKit.router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]].map(_.filter(e => e._1.a == pk || e._1.b == pk).values)
   }
 
-  override def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String]): Future[PaymentRequest] = {
+  override def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String])(implicit timeout: Timeout): Future[PaymentRequest] = {
     fallbackAddress.map { fa => fr.acinq.eclair.addressToPublicKeyScript(fa, appKit.nodeParams.chainHash) } // if it's not a bitcoin address throws an exception
     (appKit.paymentHandler ? ReceivePayment(description = description, amountMsat_opt = amountMsat.map(MilliSatoshi), expirySeconds_opt = expire, fallbackAddress = fallbackAddress)).mapTo[PaymentRequest]
   }
 
-  override def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty): Future[RouteResponse] = {
+  override def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse] = {
     (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amountMsat, assistedRoutes)).mapTo[RouteResponse]
   }
 
-  override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry_opt: Option[Long] = None, maxAttempts_opt: Option[Int] = None): Future[UUID] = {
+  override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry_opt: Option[Long] = None, maxAttempts_opt: Option[Int] = None)(implicit timeout: Timeout): Future[UUID] = {
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
     val sendPayment = minFinalCltvExpiry_opt match {
       case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv, maxAttempts = maxAttempts)
@@ -167,18 +169,18 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 
-  override def sentInfo(id: Either[UUID, ByteVector32]): Future[Seq[OutgoingPayment]] = Future {
+  override def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]] = Future {
     id match {
       case Left(uuid) => appKit.nodeParams.db.payments.getOutgoingPayment(uuid).toSeq
       case Right(paymentHash) => appKit.nodeParams.db.payments.getOutgoingPayments(paymentHash)
     }
   }
 
-  override def receivedInfo(paymentHash: ByteVector32): Future[Option[IncomingPayment]] = Future {
+  override def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]] = Future {
     appKit.nodeParams.db.payments.getIncomingPayment(paymentHash)
   }
 
-  override def audit(from_opt: Option[Long], to_opt: Option[Long]): Future[AuditResponse] = {
+  override def audit(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[AuditResponse] = {
     val from = from_opt.getOrElse(0L)
     val to = to_opt.getOrElse(Long.MaxValue)
 
@@ -189,30 +191,30 @@ class EclairImpl(appKit: Kit) extends Eclair {
     ))
   }
 
-  override def networkFees(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[NetworkFee]] = {
+  override def networkFees(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[NetworkFee]] = {
     val from = from_opt.getOrElse(0L)
     val to = to_opt.getOrElse(Long.MaxValue)
 
     Future(appKit.nodeParams.db.audit.listNetworkFees(from, to))
   }
 
-  override def channelStats(): Future[Seq[Stats]] = Future(appKit.nodeParams.db.audit.stats)
+  override def channelStats()(implicit timeout: Timeout): Future[Seq[Stats]] = Future(appKit.nodeParams.db.audit.stats)
 
-  override def allInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]] = Future {
+  override def allInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
     val from = from_opt.getOrElse(0L)
     val to = to_opt.getOrElse(Long.MaxValue)
 
     appKit.nodeParams.db.payments.listPaymentRequests(from, to)
   }
 
-  override def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long]): Future[Seq[PaymentRequest]] = Future {
+  override def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
     val from = from_opt.getOrElse(0L)
     val to = to_opt.getOrElse(Long.MaxValue)
 
     appKit.nodeParams.db.payments.listPendingPaymentRequests(from, to)
   }
 
-  override def getInvoice(paymentHash: ByteVector32): Future[Option[PaymentRequest]] = Future {
+  override def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[PaymentRequest]] = Future {
     appKit.nodeParams.db.payments.getPaymentRequest(paymentHash)
   }
 
@@ -223,7 +225,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     * @param request
     * @return
     */
-  def sendToChannel(channelIdentifier: String, request: Any): Future[Any] =
+  def sendToChannel(channelIdentifier: String, request: Any)(implicit timeout: Timeout): Future[Any] =
     for {
       fwdReq <- Future(Register.ForwardShortId(ShortChannelId(channelIdentifier), request))
         .recoverWith { case _ => Future(Register.Forward(ByteVector32.fromValidHex(channelIdentifier), request)) }
@@ -231,7 +233,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
       res <- appKit.register ? fwdReq
     } yield res
 
-  override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
+  override def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse] = Future.successful(
     GetInfoResponse(nodeId = appKit.nodeParams.nodeId,
       alias = appKit.nodeParams.alias,
       chainHash = appKit.nodeParams.chainHash,

@@ -20,6 +20,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
+import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL, _}
 import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
@@ -151,6 +152,12 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
   test("recv CMD_CLOSE") { f =>
     import f._
     alice ! CMD_CLOSE(None)
+    awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv TickChannelOpenTimeout") { f =>
+    import f._
+    alice ! TickChannelOpenTimeout
     awaitCond(alice.stateName == CLOSED)
   }
 

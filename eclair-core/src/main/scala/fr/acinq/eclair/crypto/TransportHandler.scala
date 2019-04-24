@@ -274,7 +274,7 @@ object TransportHandler {
 
   def props[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], connection: ActorRef, codec: Codec[T]): Props = Props(new TransportHandler(keyPair, rs, connection, codec))
 
-  val MAX_BUFFERED = 100000L
+  val MAX_BUFFERED = 1000000L
 
   // see BOLT #8
   // this prefix is prepended to all Noise messages sent during the handshake phase
