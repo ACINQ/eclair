@@ -19,6 +19,7 @@ trait Databases {
 
   val pendingRelay: PendingRelayDb
 
+  def backup(file: File) : Unit
 }
 
 object Databases {
@@ -45,6 +46,12 @@ object Databases {
     override val peers = new SqlitePeersDb(eclairJdbc)
     override val payments = new SqlitePaymentsDb(eclairJdbc)
     override val pendingRelay = new SqlitePendingRelayDb(eclairJdbc)
+    override def backup(file: File): Unit = {
+      SqliteUtils.using(eclairJdbc.createStatement()) {
+        statement =>  {
+          statement.executeUpdate(s"backup to ${file.getAbsolutePath}")
+        }
+      }
+    }
   }
-
 }

@@ -38,7 +38,7 @@ For more information please visit the [API documentation website](https://acinq.
 
 ### Configuring Bitcoin Core
 
-:warning: Eclair requires Bitcoin Core 0.16.3 or higher. If you are upgrading an existing wallet, you need to create a new address and send all your funds to that address.
+:warning: Eclair requires Bitcoin Core 0.17.1 or higher. If you are upgrading an existing wallet, you need to create a new address and send all your funds to that address.
 
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node. 
 Eclair will use any BTC it finds in the Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet.
@@ -53,11 +53,6 @@ txindex=1
 zmqpubrawblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
 addresstype=p2sh-segwit
-```
-
-:warning: If you are using Bitcoin Core 0.17.0 you need to add following line to your `bitcoin.conf`:
-```
-deprecatedrpc=signrawtransaction
 ```
 
 ### Installing Eclair
@@ -136,6 +131,26 @@ Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a different 
 java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gui-<version>-<commit_id>.jar
 ```
 
+#### Backup
+
+The files that you need to backup are located in your data directory. You must backup:
+- your seed (`seed.dat`)
+- your channel database (`eclair.bak` under directory `mainnet`, `testnet` or `regtest` depending on which chain you're running on)
+
+Your seed never changes once it has been created, but your channels will change whenever you receive or send payments. Eclair will
+create and maintain a snapshot of its database, named `eclair.bak`, in your data directory, and update it when needed. This file is 
+always consistent and safe to use even when Eclair is running, and this is what you should backup regularly.
+
+For example you could configure a `cron` task for your backup job. Or you could configure an optional notification script to be called by eclair once a new database snapshot has been created, using the following option:
+```
+eclair.backup-notify-script = "absolute-path-to-your-script"
+```
+Make sure that your script is executable and uses an absolute path name for `eclair.bak`.
+
+Note that depending on your filesystem, in your backup process we recommend first moving `eclair.bak` to some temporary file 
+before copying that file to your final backup location.
+
+
 ## Docker
 
 A [Dockerfile](Dockerfile) image is built on each commit on [docker hub](https://hub.docker.com/r/acinq/eclair) for running a dockerized eclair-node.
@@ -150,6 +165,17 @@ If you want to persist the data directory, you can make the volume to your host 
 
 ```
 docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConsole" acinq/eclair
+```
+
+## Plugins
+
+For advanced usage, Eclair supports plugins written in Scala, Java, or any JVM-compatible language.
+
+A valid plugin is a jar that contains an implementation of the [Plugin](eclair-node/src/main/scala/fr/acinq/eclair/Plugin.scala) interface.
+
+Here is how to run Eclair with plugins:
+```shell
+java -jar eclair-node-<version>-<commit_id>.jar <plugin1.jar> <plugin2.jar> <...>
 ```
 
 ## Mainnet usage

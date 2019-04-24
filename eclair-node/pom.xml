@@ -75,6 +75,12 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <!-- for plugins -->
+            <groupId>org.clapper</groupId>
+            <artifactId>classutil_${scala.version.short}</artifactId>
+            <version>1.4.0</version>
+        </dependency>
+        <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
             <version>1.2.3</version>
