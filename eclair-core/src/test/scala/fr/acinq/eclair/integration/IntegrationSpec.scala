@@ -247,20 +247,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(bitcoincli, BitcoinReq("generate", 4))
     sender.expectMsgType[JValue]
     // A requires private channels, as a consequence:
-    // - only A and B know about channel A-B
-    // - A is not announced
-    // The case for updates is a bit complicated because not all of them are broadcast
-    // - for A and B:
-    //   - one update per public channel (the side that is above reserve and is enabled)
-    //   - two updates per local private channel (both sides because peers directly send it to each other)
-    // - for other nodes:
-    //   - one update per public channel (the side that is above reserve and is enabled)
-    //   - one update per incoming public channel (the local side that is below reserve, and won't be broadcast)
-    awaitAnnouncements(nodes.filterKeys(key => List("A", "B").contains(key)), 10, 12, 14)
-    awaitAnnouncements(nodes.filterKeys(key => List("C").contains(key)), 10, 12, 15)
-    awaitAnnouncements(nodes.filterKeys(key => List("D").contains(key)), 10, 12, 14)
-    awaitAnnouncements(nodes.filterKeys(key => List("E", "G").contains(key)), 10, 12, 13)
-    awaitAnnouncements(nodes.filterKeys(key => key.startsWith("F")), 10, 12, 13)
+    // - only A and B know about channel A-B (and there is no channel_announcement)
+    // - A is not announced (no node_announcement)
+    awaitAnnouncements(nodes.filterKeys(key => List("A", "B").contains(key)), 10, 12, 26)
+    awaitAnnouncements(nodes.filterKeys(key => !List("A", "B").contains(key)), 10, 12, 24)
   }
 
   test("send an HTLC A->D") {
@@ -333,8 +323,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(nodes("A").paymentInitiator, sendReq)
     // A will first receive an error from C, then retry and route around C: A->B->E->C->D
     sender.expectMsgType[PaymentSucceeded](5 seconds)
-    // some channels are now above reserve and will broadcast an update
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 10, 12, 16)
   }
 
   test("send an HTLC A->D with an unknown payment hash") {
@@ -410,8 +398,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       sender.send(nodes("A").paymentInitiator, sendReq)
       sender.expectMsgType[PaymentSucceeded]
     }
-    // some channels are now above reserve and will broadcast an update
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 10, 12, 19)
   }
 
   test("send an HTLC A->B->G->C using heuristics to select the route") {
@@ -526,7 +512,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.expectMsgType[JValue](10 seconds)
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 9, 11, 18)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 9, 11, 24)
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
@@ -601,7 +587,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.expectMsgType[JValue](10 seconds)
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 8, 10, 17)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 8, 10, 22)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (local commit)") {
@@ -661,7 +647,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.expectMsgType[JValue](10 seconds)
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 7, 9, 16)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 7, 9, 20)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (remote commit)") {
@@ -724,7 +710,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.expectMsgType[JValue](10 seconds)
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 6, 8, 15)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 6, 8, 18)
   }
 
   test("punish a node that has published a revoked commit tx") {
@@ -849,7 +835,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     // this will remove the channel
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 5, 7, 14)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 5, 7, 16)
   }
 
   test("generate and validate lots of channels") {

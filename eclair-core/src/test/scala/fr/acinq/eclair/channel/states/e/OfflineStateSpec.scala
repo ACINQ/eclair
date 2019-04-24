@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel.states.e
 
+import akka.actor.Status
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
@@ -363,6 +364,29 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // no more messages
     channelUpdateListener.expectNoMsg(300 millis)
+  }
+
+  test("broadcast disabled channel_update while offline") { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // alice and bob will not announce that their channel is OFFLINE
+    channelUpdateListener.expectNoMsg(300 millis)
+
+    // we attempt to send a payment
+    sender.send(alice, CMD_ADD_HTLC(4200, randomBytes32, 123456))
+    val failure = sender.expectMsgType[Status.Failure]
+    val AddHtlcFailed(_, _, ChannelUnavailable(_), _, _, _) = failure.cause
+
+    // alice doesn't broadcast the new channel_update yet
+    val update = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(Announcements.isEnabled(update.channelUpdate.channelFlags) == false)
   }
 
 }
