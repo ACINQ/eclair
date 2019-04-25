@@ -32,6 +32,9 @@ import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
+import scala.concurrent.duration._
+
+
 /**
   * Created by PM on 02/06/2017.
   */

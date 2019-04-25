@@ -24,6 +24,7 @@ import scodec.bits.{BitVector, ByteVector}
 import shapeless.HNil
 
 import scala.compat.Platform
+import scala.concurrent.duration._
 
 
 /**
