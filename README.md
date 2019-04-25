@@ -143,7 +143,7 @@ always consistent and safe to use even when Eclair is running, and this is what 
 
 For example you could configure a `cron` task for your backup job. Or you could configure an optional notification script to be called by eclair once a new database snapshot has been created, using the following option:
 ```
-eclair.backup-notify-script = "/path/to/script.sh"
+eclair.backup-notify-script = "/absolute/path/to/script.sh"
 ```
 Make sure that your script is executable and uses an absolute path name for `eclair.sqlite.bak`.
 
