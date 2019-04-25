@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair.channel
 
-import java.nio.charset.StandardCharsets
-import java.time.Instant
-
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
@@ -37,7 +34,7 @@ import fr.acinq.eclair.wire.{ChannelReestablish, _}
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
-import scala.util.{Failure, Random, Success, Try}
+import scala.util.{Failure, Success, Try}
 
 
 /**
@@ -217,7 +214,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
           // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
           // we take into account the date of the last update so that we don't send superfluous updates when we restart the app
-          val periodicRefreshInitialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL - normal.channelUpdate.timestamp.seconds + Platform.currentTime.milliseconds
+          val periodicRefreshInitialDelay = Helpers.nextChannelUpdateRefresh(normal.channelUpdate.timestamp)
           log.info(s"will refresh channel_update in {} days", periodicRefreshInitialDelay.toDays)
           context.system.scheduler.schedule(initialDelay = periodicRefreshInitialDelay, interval = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
 
