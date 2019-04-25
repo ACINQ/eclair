@@ -49,6 +49,7 @@ class HelpersSpec extends FunSuite {
 
   test("compute refresh delay") {
     import org.scalatest.Matchers._
+    implicit val log = akka.event.NoLogging
     Helpers.nextChannelUpdateRefresh(1544400000).toSeconds should equal (0)
     Helpers.nextChannelUpdateRefresh((Platform.currentTime.milliseconds - 9.days).toSeconds).toSeconds should equal (24 * 3600L +- 100)
     Helpers.nextChannelUpdateRefresh((Platform.currentTime.milliseconds - 3.days).toSeconds).toSeconds should equal (7 * 24 * 3600L +- 100)
