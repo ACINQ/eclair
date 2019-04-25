@@ -163,8 +163,11 @@ object Helpers {
     * @param currentUpdateTimestamp
     * @return the delay until the next update
     */
-  def nextChannelUpdateRefresh(currentUpdateTimestamp: Long): FiniteDuration = {
-    0.days.max(REFRESH_CHANNEL_UPDATE_INTERVAL - (Platform.currentTime.milliseconds - currentUpdateTimestamp.seconds))
+  def nextChannelUpdateRefresh(currentUpdateTimestamp: Long)(implicit log: LoggingAdapter): FiniteDuration = {
+    val age = Platform.currentTime.milliseconds - currentUpdateTimestamp.seconds
+    val delay = 0.days.max(REFRESH_CHANNEL_UPDATE_INTERVAL - age)
+    log.info("current channel_update was created {} days ago, will refresh it in {} days", age.toDays, delay.toDays)
+    delay
   }
 
   /**
