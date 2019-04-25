@@ -215,7 +215,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
           // we take into account the date of the last update so that we don't send superfluous updates when we restart the app
           val periodicRefreshInitialDelay = Helpers.nextChannelUpdateRefresh(normal.channelUpdate.timestamp)
-          log.info(s"will refresh channel_update in {} days", periodicRefreshInitialDelay.toDays)
+          log.info(s"current channel_update was created {} days ago, will refresh it in {} days", (Platform.currentTime.milliseconds - normal.channelUpdate.timestamp.seconds).toDays, periodicRefreshInitialDelay.toDays)
           context.system.scheduler.schedule(initialDelay = periodicRefreshInitialDelay, interval = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
 
           goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate)
