@@ -130,10 +130,10 @@ class RouterSpec extends BaseRouterSpec {
   test("handle bad signature for NodeAnnouncement") { fixture =>
     import fixture._
     val sender = TestProbe()
-    val buggy_ann_b = ann_b.copy(signature = ann_c.signature, timestamp = ann_b.timestamp + 1)
-    sender.send(router, PeerRoutingMessage(null, remoteNodeId, buggy_ann_b))
-    sender.expectMsg(TransportHandler.ReadAck(buggy_ann_b))
-    sender.expectMsg(InvalidSignature(buggy_ann_b))
+    val buggy_ann_a = ann_a.copy(signature = ann_b.signature, timestamp = ann_a.timestamp + 1)
+    sender.send(router, PeerRoutingMessage(null, remoteNodeId, buggy_ann_a))
+    sender.expectMsg(TransportHandler.ReadAck(buggy_ann_a))
+    sender.expectMsg(InvalidSignature(buggy_ann_a))
   }
 
   test("handle bad signature for ChannelUpdate") { fixture =>
