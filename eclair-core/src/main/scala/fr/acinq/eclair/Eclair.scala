@@ -52,7 +52,7 @@ trait Eclair {
 
   def channelsInfo(toRemoteNode: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]]
 
-  def channelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[RES_GETINFO]
+  def channelInfo(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[RES_GETINFO]
 
   def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
 
@@ -136,8 +136,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
     } yield channels
   }
 
-  override def channelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[RES_GETINFO] = {
-    sendToChannel(channelId.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
+  override def channelInfo(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[RES_GETINFO] = {
+    sendToChannel(channelIdentifier.fold[String](_.toString(), _.toString()), CMD_GETINFO).mapTo[RES_GETINFO]
   }
 
   override def allNodes()(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]] = (appKit.router ? 'nodes).mapTo[Iterable[NodeAnnouncement]]

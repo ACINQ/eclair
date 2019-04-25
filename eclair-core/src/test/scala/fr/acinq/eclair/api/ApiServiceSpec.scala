@@ -61,7 +61,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def channelsInfo(toRemoteNode: Option[Crypto.PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]] = ???
 
-    override def channelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[RES_GETINFO] = ???
+    override def channelInfo(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[RES_GETINFO] = ???
 
     override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = ???
 

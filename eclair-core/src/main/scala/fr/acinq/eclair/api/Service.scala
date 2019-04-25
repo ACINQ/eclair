@@ -187,7 +187,9 @@ trait Service extends ExtraDirectives with Logging {
                       } ~
                       path("channel") {
                         formFields(channelId) { channelId =>
-                          complete(eclairApi.channelInfo(channelId))
+                          complete(eclairApi.channelInfo(Left(channelId)))
+                        } ~ formFields(shortChannelId) { shortChannelId =>
+                          complete(eclairApi.channelInfo(Right(shortChannelId)))
                         }
                       } ~
                       path("allnodes") {
