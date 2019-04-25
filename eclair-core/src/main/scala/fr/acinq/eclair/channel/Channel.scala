@@ -110,9 +110,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   // this will be used to make sure the current commitment fee is up-to-date
   context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
 
-  // we need to periodically re-send channel updates (with some initial randomization to smooth herd effect), otherwise channel will be considered stale and get pruned by network
-  context.system.scheduler.schedule(initialDelay = Random.nextInt(48).hours, interval = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
-
   /*
           8888888 888b    888 8888888 88888888888
             888   8888b   888   888       888
@@ -217,6 +214,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // we rebuild a new channel_update with values from the configuration because they may have changed while eclair was down
           val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, normal.channelUpdate.shortChannelId, nodeParams.expiryDeltaBlocks,
             normal.commitments.remoteParams.htlcMinimumMsat, normal.channelUpdate.feeBaseMsat, normal.channelUpdate.feeProportionalMillionths, normal.commitments.localCommit.spec.totalFunds, enable = false)
+
+          // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
+          // we take into account the date of the last update so that we don't send superfluous updates when we restart the app
+          val periodicRefreshInitialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL - normal.channelUpdate.timestamp.seconds + Platform.currentTime.milliseconds
+          log.info(s"will refresh channel_update in {} days", periodicRefreshInitialDelay.toDays)
+          context.system.scheduler.schedule(initialDelay = periodicRefreshInitialDelay, interval = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
 
           goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate)
 
@@ -549,6 +552,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortChannelId))
       // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
       val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, d.commitments.remoteParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
+      // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
+      context.system.scheduler.schedule(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, interval = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
       goto(NORMAL) using store(DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), shortChannelId, buried = false, None, initialChannelUpdate, None, None))
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_LOCKED) if d.commitments.announceChannel =>
@@ -751,10 +756,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c@CMD_CLOSE(localScriptPubKey_opt), d: DATA_NORMAL) =>
       val localScriptPubKey = localScriptPubKey_opt.getOrElse(d.commitments.localParams.defaultFinalScriptPubKey)
       if (d.localShutdown.isDefined)
-        handleCommandError(ClosingAlreadyInProgress((d.channelId)), c)
+        handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
       else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments))
       // TODO: simplistic behavior, we could also sign-then-close
-        handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs((d.channelId)), c)
+        handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
       else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey))
         handleCommandError(InvalidFinalScript(d.channelId), c)
       else {
@@ -896,9 +901,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(BroadcastChannelUpdate(reason), d: DATA_NORMAL) =>
       reason match {
-        case Reconnected if Announcements.isEnabled(d.channelUpdate.channelFlags) && (Platform.currentTime / 1000 - d.channelUpdate.timestamp) < 3600 =>
+        case Reconnected if Announcements.isEnabled(d.channelUpdate.channelFlags) && (Platform.currentTime.milliseconds - d.channelUpdate.timestamp.seconds) < REFRESH_CHANNEL_UPDATE_INTERVAL =>
           // we already sent an enabled channel_update recently (flapping protection in case we keep being disconnected/reconnected)
-          log.info(s"not sending a new channel_update, last one was sent very recently")
+          log.info(s"not sending a new channel_update, current one was created {} days ago", (Platform.currentTime.milliseconds - d.channelUpdate.timestamp.seconds).toDays)
           stay
         case _ =>
           log.info(s"updating channel_update announcement (reason=$reason)")
