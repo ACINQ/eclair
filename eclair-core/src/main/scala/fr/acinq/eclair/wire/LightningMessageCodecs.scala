@@ -49,6 +49,47 @@ object LightningMessageCodecs {
 
   val uint64ex: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
 
+  // bitcoin style varint codec copied from scodec's example codecs
+  val varIntCodec = Codec[Long](
+    (n: Long) =>
+      n match {
+        case i if (i < 0xfd) =>
+          uint8L.encode(i.toInt)
+        case i if (i < 0xffff) =>
+          for {
+            a <- uint8L.encode(0xfd)
+            b <- uint16L.encode(i.toInt)
+          } yield a ++ b
+        case i if (i < 0xffffffffL) =>
+          for {
+            a <- uint8L.encode(0xfe)
+            b <- uint32L.encode(i)
+          } yield a ++ b
+        case i =>
+          for {
+            a <- uint8L.encode(0xff)
+            b <- uint64.encode(i)
+          } yield a ++ b
+      },
+    (buf: BitVector) => {
+      uint8L.decode(buf) match {
+        case scodec.Attempt.Successful(byte) =>
+          byte.value match {
+            case 0xff =>
+              uint64.decode(byte.remainder)
+            case 0xfe =>
+              uint32L.decode(byte.remainder)
+            case 0xfd =>
+              uint16L.decode(byte.remainder)
+                .map { case b => b.map(_.toLong) }
+            case _ =>
+              scodec.Attempt.Successful(scodec.DecodeResult(byte.value.toLong, byte.remainder))
+          }
+        case scodec.Attempt.Failure(err) =>
+          scodec.Attempt.Failure(err)
+      }
+    })
+
   def bytes32: Codec[ByteVector32] = limitedSizeBytes(32, bytesStrict(32).xmap(d => ByteVector32(d), d => d.bytes))
 
   def varsizebinarydata: Codec[ByteVector] = variableSizeBytes(uint16, bytes)
@@ -309,6 +350,17 @@ object LightningMessageCodecs {
     ("signature" | signature) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
+  val genericTlvCodec: Codec[GenericTLV] = (
+    ("type" | byte) :: variableSizeBytesLong(varIntCodec, bytes)).as[GenericTLV]
+
+  def tlvFallbackCodec(codec: Codec[TLV]): Codec[TLV] = discriminatorFallback(genericTlvCodec, codec).xmap(_ match {
+    case Left(l) => l
+    case Right(r) => r
+  }, _ match {
+    case g: GenericTLV => Left(g)
+    case o => Right(o)
+  })
+
   val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] =
     discriminated[EncodedShortChannelIds].by(byte)
       .\(0) { case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
@@ -319,46 +371,73 @@ object LightningMessageCodecs {
       .\(0) { case a@EncodedQueryFlags(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(byte)).as[EncodedQueryFlags])
       .\(1) { case a@EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(byte))).as[EncodedQueryFlags])
 
-  val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = (
-    ("chainHash" | bytes32) ::
-      ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
-      ("queryFlags_opt" | optional(bitsRemaining, variableSizeBytes(uint16, encodedQueryFlagsCodec)))
+  val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = {
+    val extensionsCodec: Codec[TLV] = tlvFallbackCodec(
+      discriminated[TLV].by(byte)
+        .typecase(1, variableSizeBytesLong(varIntCodec, encodedQueryFlagsCodec))
+    )
+
+    Codec(
+      ("chainHash" | bytes32) ::
+        ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
+        ("extensions" | list(extensionsCodec))
     ).as[QueryShortChannelIds]
+  }
 
   val replyShortChanelIdsEndCodec: Codec[ReplyShortChannelIdsEnd] = (
     ("chainHash" | bytes32) ::
       ("complete" | byte)
     ).as[ReplyShortChannelIdsEnd]
 
-  val extendedQueryFlagsCodec: Codec[ExtendedQueryFlags] =
-    discriminated[ExtendedQueryFlags].by(byte)
-    .typecase(1, provide(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS))
+  val queryChannelRangeExtensionCodec: Codec[QueryChannelRangeExtension] = Codec(("flag" | byte)).as[QueryChannelRangeExtension]
 
-  val queryChannelRangeCodec: Codec[QueryChannelRange] = (
-    ("chainHash" | bytes32) ::
-      ("firstBlockNum" | uint32) ::
-      ("numberOfBlocks" | uint32) ::
-      ("optionExtendedQueryFlags" | optional(bitsRemaining, extendedQueryFlagsCodec))
-    ).as[QueryChannelRange]
+  val queryChannelRangeCodec: Codec[QueryChannelRange] = {
+    val extensionsCodec: Codec[TLV] = tlvFallbackCodec(
+      discriminated[TLV].by(byte)
+        .typecase(1, variableSizeBytesLong(varIntCodec, queryChannelRangeExtensionCodec))
+    )
 
-  val timestampsAndChecksumsCodec: Codec[TimestampsAndChecksums] = (
-        ("timestamp1" | uint32) ::
-        ("timestamp2" | uint32) ::
-        ("checksum1" | uint32) ::
-        ("checksum2" | uint32)
-      ).as[TimestampsAndChecksums]
+    Codec(
+      ("chainHash" | bytes32) ::
+        ("firstBlockNum" | uint32) ::
+        ("numberOfBlocks" | uint32) ::
+        ("extensions" | list(extensionsCodec))
+      ).as[QueryChannelRange]
+  }
 
-  val extendedInfoCodec: Codec[ExtendedInfo] = list(timestampsAndChecksumsCodec).as[ExtendedInfo]
+  val timestampsCodec: Codec[Timestamps] = (
+    ("checksum1" | uint32) ::
+      ("checksum2" | uint32)
+    ).as[Timestamps]
 
-  val replyChannelRangeCodec: Codec[ReplyChannelRange] = (
-    ("chainHash" | bytes32) ::
-      ("firstBlockNum" | uint32) ::
-      ("numberOfBlocks" | uint32) ::
-      ("complete" | byte) ::
-      ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
-      ("optionExtendedQueryFlags_opt" | optional(bitsRemaining, extendedQueryFlagsCodec)) ::
-      ("extendedInfo_opt" | optional(bitsRemaining, variableSizeBytes(uint16, extendedInfoCodec)))
-    ).as[ReplyChannelRange]
+  val encodedTimestampsCodec: Codec[EncodedTimestamps] =
+    discriminated[EncodedTimestamps].by(byte)
+      .\(0) { case a@EncodedTimestamps(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(timestampsCodec)).as[EncodedTimestamps])
+      .\(1) { case a@EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(timestampsCodec))).as[EncodedTimestamps])
+
+  val checksumsCodec: Codec[Checksums] = (
+    ("checksum1" | uint32) ::
+      ("checksum2" | uint32)
+    ).as[Checksums]
+
+  val encodedChecksumsCodec: Codec[EncodedChecksums] = Codec(("checksums" | list(checksumsCodec))).as[EncodedChecksums]
+
+  val replyChannelRangeCodec: Codec[ReplyChannelRange] =  {
+    val extensionsCodec: Codec[TLV] = tlvFallbackCodec(
+      discriminated[TLV].by(byte)
+        .typecase(1, variableSizeBytesLong(varIntCodec, encodedTimestampsCodec))
+        .typecase(3, variableSizeBytesLong(varIntCodec, encodedChecksumsCodec))
+    )
+
+    Codec(
+      ("chainHash" | bytes32) ::
+        ("firstBlockNum" | uint32) ::
+        ("numberOfBlocks" | uint32) ::
+        ("complete" | byte) ::
+        ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
+        ("extensions" | list(extensionsCodec))
+      ).as[ReplyChannelRange]
+  }
 
   val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
     ("chainHash" | bytes32) ::

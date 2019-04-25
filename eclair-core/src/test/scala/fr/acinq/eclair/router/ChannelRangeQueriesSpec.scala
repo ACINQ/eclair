@@ -57,28 +57,28 @@ class ChannelRangeQueriesSpec extends FunSuite {
       cd1 -> ucd1
     )
 
-    import fr.acinq.eclair.wire.QueryFlagTypes._
+    import fr.acinq.eclair.wire.QueryFlagType._
 
-    assert(Router.getChannelDigestInfo(channels, updates)(ab.shortChannelId) == TimestampsAndChecksums(now, 714408668, now, 714408668))
+    assert(Router.getChannelDigestInfo(channels, updates)(ab.shortChannelId) == (Timestamps(now, now), Checksums(714408668, 714408668)))
 
     // no extended info but we know the channel: we ask for the updates
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, None) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, None, None) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte)
     // same checksums, newer timestamps: we don't ask anything
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now + 1, 714408668, now + 1, 714408668))) === 0.toByte)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(714408668, 714408668))) === 0.toByte)
     // different checksums, newer timestamps: we ask for the updates
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now + 1, 154654604, now, 714408668))) === INCLUDE_CHANNEL_UPDATE_1)
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now, 714408668, now + 1, 45664546))) === INCLUDE_CHANNEL_UPDATE_2)
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now + 1, 154654604, now + 1, 45664546+6))) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now + 1, now)), Some(Checksums(154654604, 714408668))) === INCLUDE_CHANNEL_UPDATE_1)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now, now + 1)), Some(Checksums(714408668, 45664546))) === INCLUDE_CHANNEL_UPDATE_2)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(154654604, 45664546+6))) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte)
     // different checksums, older timestamps: we don't ask anything
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now - 1, 154654604, now, 714408668))) === 0.toByte)
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now, 714408668, now - 1, 45664546))) === 0.toByte)
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now - 1, 154654604, now - 1, 45664546))) === 0.toByte)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now - 1, now)), Some(Checksums(154654604, 714408668))) === 0.toByte)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now, now - 1)), Some(Checksums(714408668, 45664546))) === 0.toByte)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now - 1, now - 1)), Some(Checksums(154654604, 45664546))) === 0.toByte)
 
     // missing channel update: we ask for it
-    assert(Router.computeFlag(channels, updates)(cd.shortChannelId, Some(TimestampsAndChecksums(now, 714408668, now, 714408668))) === INCLUDE_CHANNEL_UPDATE_2)
+    assert(Router.computeFlag(channels, updates)(cd.shortChannelId, Some(Timestamps(now, now)), Some(Checksums(714408668, 714408668))) === INCLUDE_CHANNEL_UPDATE_2)
 
     // unknown channel: we ask everything
-    assert(Router.computeFlag(channels, updates)(ef.shortChannelId, None) === QueryFlagTypes.INCLUDE_ALL)
+    assert(Router.computeFlag(channels, updates)(ef.shortChannelId, None, None) === INCLUDE_ALL)
 
   }
 }
