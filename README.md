@@ -135,19 +135,19 @@ java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gu
 
 The files that you need to backup are located in your data directory. You must backup:
 - your seed (`seed.dat`)
-- your channel database (`eclair.bak` under directory `mainnet`, `testnet` or `regtest` depending on which chain you're running on)
+- your channel database (`eclair.sqlite.bak` under directory `mainnet`, `testnet` or `regtest` depending on which chain you're running on)
 
 Your seed never changes once it has been created, but your channels will change whenever you receive or send payments. Eclair will
-create and maintain a snapshot of its database, named `eclair.bak`, in your data directory, and update it when needed. This file is 
+create and maintain a snapshot of its database, named `eclair.sqlite.bak`, in your data directory, and update it when needed. This file is 
 always consistent and safe to use even when Eclair is running, and this is what you should backup regularly.
 
 For example you could configure a `cron` task for your backup job. Or you could configure an optional notification script to be called by eclair once a new database snapshot has been created, using the following option:
 ```
-eclair.backup-notify-script = "absolute-path-to-your-script"
+eclair.backup-notify-script = "/path/to/script.sh"
 ```
-Make sure that your script is executable and uses an absolute path name for `eclair.bak`.
+Make sure that your script is executable and uses an absolute path name for `eclair.sqlite.bak`.
 
-Note that depending on your filesystem, in your backup process we recommend first moving `eclair.bak` to some temporary file 
+Note that depending on your filesystem, in your backup process we recommend first moving `eclair.sqlite.bak` to some temporary file 
 before copying that file to your final backup location.
 
 
