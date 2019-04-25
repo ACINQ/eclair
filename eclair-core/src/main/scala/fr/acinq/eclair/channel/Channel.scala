@@ -906,16 +906,17 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       goto(NORMAL) using store(d.copy(channelUpdate = channelUpdate)) replying "ok"
 
     case Event(BroadcastChannelUpdate(reason), d: DATA_NORMAL) =>
+      val age = Platform.currentTime.milliseconds - d.channelUpdate.timestamp.seconds
+      val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
       reason match {
-        case Reconnected if Announcements.isEnabled(d.channelUpdate.channelFlags) && (Platform.currentTime.milliseconds - d.channelUpdate.timestamp.seconds) < REFRESH_CHANNEL_UPDATE_INTERVAL =>
-          // we already sent an enabled channel_update recently (flapping protection in case we keep being disconnected/reconnected)
-          log.info(s"not sending a new channel_update, current one was created {} days ago", (Platform.currentTime.milliseconds - d.channelUpdate.timestamp.seconds).toDays)
+        case Reconnected if channelUpdate1.copy(signature = ByteVector.empty, timestamp = 0) == d.channelUpdate.copy(signature = ByteVector.empty, timestamp = 0) && age < REFRESH_CHANNEL_UPDATE_INTERVAL =>
+          // we already sent an identical channel_update not long ago (flapping protection in case we keep being disconnected/reconnected)
+          log.info(s"not sending a new identical channel_update, current one was created {} days ago", age.toDays)
           stay
         case _ =>
           log.info(s"refreshing channel_update announcement (reason=$reason)")
-          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
           // we use GOTO instead of stay because we want to fire transitions
-          goto(NORMAL) using store(d.copy(channelUpdate = channelUpdate))
+          goto(NORMAL) using store(d.copy(channelUpdate = channelUpdate1))
       }
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NORMAL) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
@@ -1318,7 +1319,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // and we also send events related to fee
       Closing.networkFeePaid(tx, d1) map { case (fee, desc) => feePaid(fee, tx, desc, d.channelId) }
       // then let's see if any of the possible close scenarii can be considered done
-      val closeType_opt =  Closing.isClosed(d1, Some(tx))
+      val closeType_opt = Closing.isClosed(d1, Some(tx))
       // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay (note that we don't store the state)
       closeType_opt match {
         case Some(closeType) =>
@@ -1659,7 +1660,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           ()
         case (WAIT_FOR_FUNDING_LOCKED | NORMAL | OFFLINE | SYNCING, NORMAL | OFFLINE, _, normal: DATA_NORMAL) =>
           // when we do WAIT_FOR_FUNDING_LOCKED->NORMAL or NORMAL->NORMAL or SYNCING->NORMAL or NORMAL->OFFLINE, we send out the new channel_update (most of the time it will just be to enable/disable the channel)
-          log.info(s"broadcasting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
+          log.info(s"emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
           context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
         case (_, _, _: DATA_NORMAL, _: DATA_NORMAL) =>
           // in any other case (e.g. WAIT_FOR_INIT_INTERNAL->OFFLINE) we do nothing

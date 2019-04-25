@@ -2101,20 +2101,16 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
   }
 
-  test("recv BroadcastChannelUpdate (two in a row)", Tag("channels_public")) { f =>
+  test("recv BroadcastChannelUpdate (no changes)", Tag("channels_public")) { f =>
     import f._
     val sender = TestProbe()
     sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
     sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
-    val update1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    channelUpdateListener.expectMsgType[LocalChannelUpdate]
 
     // actual test starts here
-    Thread.sleep(1100)
-    sender.send(alice, BroadcastChannelUpdate(PeriodicRefresh))
-    val update2 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
     Thread.sleep(1100)
     sender.send(alice, BroadcastChannelUpdate(Reconnected))
     channelUpdateListener.expectNoMsg(1 second)
