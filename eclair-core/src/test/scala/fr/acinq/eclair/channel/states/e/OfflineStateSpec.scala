@@ -386,7 +386,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val failure = sender.expectMsgType[Status.Failure]
     val AddHtlcFailed(_, _, ChannelUnavailable(_), _, _, _) = failure.cause
 
-    // alice doesn't broadcast the new channel_update yet
+    // alice will broadcast a new disabled channel_update
     val update = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(Announcements.isEnabled(update.channelUpdate.channelFlags) == false)
   }
