@@ -327,9 +327,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams, maxAttempts = 5)
     sender.send(nodes("A").paymentInitiator, sendReq)
     // A will first receive an error from C, then retry and route around C: A->B->E->C->D
-    val paymentId = sender.expectMsgType[UUID](5 seconds)
-    val ps = sender.expectMsgType[PaymentSucceeded](5 seconds)
-    assert(ps.id == paymentId)
+    sender.expectMsgType[UUID](5 seconds)
+    sender.expectMsgType[PaymentSucceeded] // the payment FSM will also reply to the sender after the payment is completed
   }
 
   test("send an HTLC A->D with an unknown payment hash") {
