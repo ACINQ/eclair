@@ -217,7 +217,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             // if there was no configuration change we keep the existing channel update
             normal.channelUpdate
           } else {
-            log.info("refreshing channel_update due to configuration changes")
+            log.info("refreshing channel_update due to configuration changes old={} new={}", normal.channelUpdate, candidateChannelUpdate)
             candidateChannelUpdate
           }
           // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
