@@ -23,7 +23,7 @@ import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, randomBytes32}
-
+import concurrent.duration._
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success, Try}
@@ -75,7 +75,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
             case _ =>
               log.info(s"received payment for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
               // amount is correct or was not specified in the payment request
-              nodeParams.db.payments.addIncomingPayment(IncomingPayment(htlc.paymentHash, htlc.amountMsat, Platform.currentTime / 1000))
+              nodeParams.db.payments.addIncomingPayment(IncomingPayment(htlc.paymentHash, htlc.amountMsat, Platform.currentTime))
               sender ! CMD_FULFILL_HTLC(htlc.id, paymentPreimage, commit = true)
               context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash, htlc.channelId))
           }

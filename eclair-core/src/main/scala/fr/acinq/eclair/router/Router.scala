@@ -458,7 +458,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       // the first_timestamp field to the current date/time and timestamp_range to the maximum value
       // NB: we can't just set firstTimestamp to 0, because in that case peer would send us all past messages matching
       // that (i.e. the whole routing table)
-      val filter = GossipTimestampFilter(nodeParams.chainHash, firstTimestamp = Platform.currentTime / 1000, timestampRange = Int.MaxValue)
+      val filter = GossipTimestampFilter(nodeParams.chainHash, firstTimestamp = Platform.currentTime.milliseconds.toSeconds, timestampRange = Int.MaxValue)
       remote ! filter
 
       // clean our sync state for this peer: we receive a SendChannelQuery just when we connect/reconnect to a peer and
@@ -776,7 +776,7 @@ object Router {
   def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
   // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
   // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
-    ChannelUpdate(signature = ByteVector.empty, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime / 1000, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0L, extraHop.feeBaseMsat, extraHop.feeProportionalMillionths, None)
+    ChannelUpdate(signature = ByteVector.empty, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0L, extraHop.feeBaseMsat, extraHop.feeProportionalMillionths, None)
 
 
   def toAssistedChannels(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Map[ShortChannelId, AssistedChannel] = {
@@ -801,13 +801,13 @@ object Router {
   def isStale(timestamp: Long): Boolean = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update
-    val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
+    val staleThresholdSeconds = (Platform.currentTime.milliseconds - 14.days).toSeconds
     timestamp < staleThresholdSeconds
   }
 
   def isAlmostStale(timestamp: Long): Boolean = {
-    // we define almost stale as 2 weeks minus 4 days (
-    val staleThresholdSeconds = Platform.currentTime / 1000 - 864000
+    // we define almost stale as 2 weeks minus 4 days
+    val staleThresholdSeconds = (Platform.currentTime.milliseconds - 10.days).toSeconds
     timestamp < staleThresholdSeconds
   }
 
