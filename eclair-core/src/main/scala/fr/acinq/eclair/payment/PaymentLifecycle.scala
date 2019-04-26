@@ -47,7 +47,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
-      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime.milliseconds.toSeconds, None, OutgoingPaymentStatus.PENDING))
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 

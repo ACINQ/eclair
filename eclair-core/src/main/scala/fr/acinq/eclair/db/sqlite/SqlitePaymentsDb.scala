@@ -59,7 +59,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     require((newStatus == SUCCEEDED && preimage.isDefined) || (newStatus == FAILED && preimage.isEmpty), "Wrong combination of state/preimage")
 
     using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, preimage, status) = (?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
-      statement.setLong(1, Platform.currentTime.milliseconds.toSeconds)
+      statement.setLong(1, Platform.currentTime)
       statement.setBytes(2, if (preimage.isEmpty) null else preimage.get.toArray)
       statement.setString(3, newStatus.toString)
       statement.setString(4, id.toString)
