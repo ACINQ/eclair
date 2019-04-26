@@ -49,7 +49,7 @@ trait ExtraDirectives extends Directives {
     case Failure(_) => reject
   }
 
-  def channelOrShortChannelId: Directive1[Either[ByteVector32, ShortChannelId]] = formFields(channelIdFormParam.?, shortChannelIdFormParam.?).tflatMap {
+  def withChannelIdentifier: Directive1[Either[ByteVector32, ShortChannelId]] = formFields(channelIdFormParam.?, shortChannelIdFormParam.?).tflatMap {
     case (None, None) => reject(MalformedFormFieldRejection("channelId/shortChannelId", "Must specify either the channelId or shortChannelId"))
     case (Some(channelId), None) => provide(Left(channelId))
     case (None, Some(shortChannelId)) => provide(Right(shortChannelId))

@@ -148,21 +148,21 @@ trait Service extends ExtraDirectives with Logging {
                         }
                       } ~
                       path("updaterelayfee") {
-                        channelOrShortChannelId { channelIdentifier =>
+                        withChannelIdentifier { channelIdentifier =>
                           formFields("feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (feeBase, feeProportional) =>
                             complete(eclairApi.updateRelayFee(channelIdentifier, feeBase, feeProportional))
                           }
                         }
                       } ~
                       path("close") {
-                        channelOrShortChannelId { channelIdenfitier =>
+                        withChannelIdentifier { channelIdentifier =>
                           formFields("scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { scriptPubKey_opt =>
-                            complete(eclairApi.close(channelIdenfitier, scriptPubKey_opt))
+                            complete(eclairApi.close(channelIdentifier, scriptPubKey_opt))
                           }
                         }
                       } ~
                       path("forceclose") {
-                        channelOrShortChannelId { channelIdentifier =>
+                        withChannelIdentifier { channelIdentifier =>
                           complete(eclairApi.forceClose(channelIdentifier))
                         }
                       } ~
@@ -175,7 +175,7 @@ trait Service extends ExtraDirectives with Logging {
                         }
                       } ~
                       path("channel") {
-                        channelOrShortChannelId { channelIdentifier =>
+                        withChannelIdentifier { channelIdentifier =>
                           complete(eclairApi.channelInfo(channelIdentifier))
                         }
                       } ~
