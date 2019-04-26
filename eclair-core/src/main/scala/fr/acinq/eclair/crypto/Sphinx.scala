@@ -74,7 +74,7 @@ object Sphinx extends Logging {
 
   def computeSharedSecret(pub: PublicKey, secret: PrivateKey): ByteVector32 = Crypto.sha256(pub.multiply(secret).value)
 
-  def computeblindingFactor(pub: PublicKey, secret: ByteVector): ByteVector32 = Crypto.sha256(pub.value ++ secret)
+  def computeBlindingFactor(pub: PublicKey, secret: ByteVector): ByteVector32 = Crypto.sha256(pub.value ++ secret)
 
   def blind(pub: PublicKey, blindingFactor: ByteVector32): PublicKey = pub.multiply(PrivateKey(blindingFactor))
 
@@ -90,7 +90,7 @@ object Sphinx extends Logging {
   def computeEphemeralPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: Seq[PublicKey]): (Seq[PublicKey], Seq[ByteVector32]) = {
     val ephemeralPublicKey0 = blind(PublicKey(Crypto.curve.getG), sessionKey.value)
     val secret0 = computeSharedSecret(publicKeys.head, sessionKey)
-    val blindingFactor0 = computeblindingFactor(ephemeralPublicKey0, secret0)
+    val blindingFactor0 = computeBlindingFactor(ephemeralPublicKey0, secret0)
     computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys.tail, Seq(ephemeralPublicKey0), Seq(blindingFactor0), Seq(secret0))
   }
 
@@ -101,7 +101,7 @@ object Sphinx extends Logging {
     else {
       val ephemeralPublicKey = blind(ephemeralPublicKeys.last, blindingFactors.last)
       val secret = computeSharedSecret(blind(publicKeys.head, blindingFactors), sessionKey)
-      val blindingFactor = computeblindingFactor(ephemeralPublicKey, secret)
+      val blindingFactor = computeBlindingFactor(ephemeralPublicKey, secret)
       computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys.tail, ephemeralPublicKeys :+ ephemeralPublicKey, blindingFactors :+ blindingFactor, sharedSecrets :+ secret)
     }
   }
@@ -189,7 +189,7 @@ object Sphinx extends Logging {
     val hmac = ByteVector32(bin.slice(PayloadLength, PayloadLength + MacLength))
     val nextRouteInfo = bin.drop(PayloadLength + MacLength)
 
-    val nextPubKey = blind(PublicKey(packet.publicKey), computeblindingFactor(PublicKey(packet.publicKey), sharedSecret))
+    val nextPubKey = blind(PublicKey(packet.publicKey), computeBlindingFactor(PublicKey(packet.publicKey), sharedSecret))
 
     ParsedPacket(payload, Packet(Version, nextPubKey.value, hmac, nextRouteInfo), sharedSecret)
   }
