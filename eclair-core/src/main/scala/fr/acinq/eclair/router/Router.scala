@@ -760,7 +760,7 @@ object Router {
   def isStale(u: ChannelUpdate): Boolean = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update
-    val staleThresholdSeconds = Platform.currentTime.milliseconds.toSeconds - 1209600
+    val staleThresholdSeconds = (Platform.currentTime.milliseconds - 14.days).toSeconds
     u.timestamp < staleThresholdSeconds
   }
 
