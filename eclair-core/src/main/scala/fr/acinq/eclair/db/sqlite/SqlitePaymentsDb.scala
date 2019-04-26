@@ -17,7 +17,6 @@
 package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
-import java.time.Instant
 import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
@@ -26,6 +25,8 @@ import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 import scala.collection.immutable.Queue
 import OutgoingPaymentStatus._
+import concurrent.duration._
+import scala.compat.Platform
 
 class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
@@ -58,7 +59,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     require((newStatus == SUCCEEDED && preimage.isDefined) || (newStatus == FAILED && preimage.isEmpty), "Wrong combination of state/preimage")
 
     using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, preimage, status) = (?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
-      statement.setLong(1, Instant.now().getEpochSecond)
+      statement.setLong(1, Platform.currentTime.milliseconds.toSeconds)
       statement.setBytes(2, if (preimage.isEmpty) null else preimage.get.toArray)
       statement.setString(3, newStatus.toString)
       statement.setString(4, id.toString)
@@ -180,7 +181,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement(queryStmt)) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      if (pendingOnly) statement.setLong(3, Instant.now().getEpochSecond)
+      if (pendingOnly) statement.setLong(3, Platform.currentTime.milliseconds.toSeconds)
 
       val rs = statement.executeQuery()
       var q: Queue[PaymentRequest] = Queue()
