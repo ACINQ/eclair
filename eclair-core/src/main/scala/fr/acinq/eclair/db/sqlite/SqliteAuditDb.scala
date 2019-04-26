@@ -18,7 +18,6 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.{Connection, Statement}
 import java.util.UUID
-
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, Channel, ChannelErrorOccured, NetworkFeePaid}
@@ -26,7 +25,7 @@ import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent, NetworkFee, Stats}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.ChannelCodecs
 import grizzled.slf4j.Logging
-
+import concurrent.duration._
 import scala.collection.immutable.Queue
 import scala.compat.Platform
 
@@ -87,7 +86,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setLong(3, e.localBalanceMsat)
       statement.setLong(4, e.commitments.commitInput.txOut.amount.toLong)
       statement.setLong(5, e.commitments.remoteParams.channelReserveSatoshis) // remote decides what our reserve should be
-      statement.setLong(6, Platform.currentTime)
+      statement.setLong(6, Platform.currentTime.milliseconds.toSeconds)
       statement.executeUpdate()
     }
 
@@ -99,7 +98,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setBoolean(4, e.isFunder)
       statement.setBoolean(5, e.isPrivate)
       statement.setString(6, e.event)
-      statement.setLong(7, Platform.currentTime)
+      statement.setLong(7, Platform.currentTime.milliseconds.toSeconds)
       statement.executeUpdate()
     }
 
@@ -143,7 +142,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(3, e.tx.txid.toArray)
       statement.setLong(4, e.fee.toLong)
       statement.setString(5, e.txType)
-      statement.setLong(6, Platform.currentTime)
+      statement.setLong(6, Platform.currentTime.milliseconds.toSeconds)
       statement.executeUpdate()
     }
 
@@ -158,7 +157,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setString(3, errorName)
       statement.setString(4, errorMessage)
       statement.setBoolean(5, e.isFatal)
-      statement.setLong(6, Platform.currentTime)
+      statement.setLong(6, Platform.currentTime.milliseconds.toSeconds)
       statement.executeUpdate()
     }
 
