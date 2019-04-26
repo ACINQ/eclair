@@ -25,15 +25,9 @@ import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent, NetworkFee, Stats}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.ChannelCodecs
 import grizzled.slf4j.Logging
-import concurrent.duration._
 import scala.collection.immutable.Queue
 import scala.compat.Platform
 
-/**
-  * AUDIT DB stores timestamp in milliseconds instead of seconds, objects instances will still have the timestamp in seconds but
-  * when written/read from the DB a conversion must occur, all conversions are handled in this class.
-  * @param sqlite
-  */
 class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
 
   import SqliteUtils._
