@@ -160,7 +160,10 @@ trait Service extends ExtraDirectives with Logging {
                       } ~
                       path("updaterelayfee") {
                         formFields(channelId, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
-                          complete(eclairApi.updateRelayFee(channelId.toString, feeBase, feeProportional))
+                          complete(eclairApi.updateRelayFee(Left(channelId), feeBase, feeProportional))
+                        } ~
+                        formFields(shortChannelId, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (shortChannelId, feeBase, feeProportional) =>
+                          complete(eclairApi.updateRelayFee(Right(shortChannelId), feeBase, feeProportional))
                         }
                       } ~
                       path("close") {
