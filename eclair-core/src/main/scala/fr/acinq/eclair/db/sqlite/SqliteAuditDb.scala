@@ -91,7 +91,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setLong(3, e.localBalanceMsat)
       statement.setLong(4, e.commitments.commitInput.txOut.amount.toLong)
       statement.setLong(5, e.commitments.remoteParams.channelReserveSatoshis) // remote decides what our reserve should be
-      statement.setLong(6, Platform.currentTime.milliseconds.toMillis) // in audit DB we store timestamps as milliseconds
+      statement.setLong(6, Platform.currentTime)
       statement.executeUpdate()
     }
 
@@ -103,7 +103,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setBoolean(4, e.isFunder)
       statement.setBoolean(5, e.isPrivate)
       statement.setString(6, e.event)
-      statement.setLong(7, Platform.currentTime.milliseconds.toMillis) // in audit DB we store timestamps as milliseconds
+      statement.setLong(7, Platform.currentTime)
       statement.executeUpdate()
     }
 
@@ -114,7 +114,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(3, e.paymentHash.toArray)
       statement.setBytes(4, e.paymentPreimage.toArray)
       statement.setBytes(5, e.toChannelId.toArray)
-      statement.setLong(6, e.timestamp.seconds.toMillis) // Conversion needed because in auditDB we store timestamps in milliseconds!
+      statement.setLong(6, e.timestamp)
       statement.setBytes(7, e.id.toString.getBytes)
 
       statement.executeUpdate()
@@ -125,7 +125,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setLong(1, e.amount.toLong)
       statement.setBytes(2, e.paymentHash.toArray)
       statement.setBytes(3, e.fromChannelId.toArray)
-      statement.setLong(4, e.timestamp.seconds.toMillis) // Conversion needed because in auditDB we store timestamps in milliseconds!
+      statement.setLong(4, e.timestamp)
       statement.executeUpdate()
     }
 
@@ -136,7 +136,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(3, e.paymentHash.toArray)
       statement.setBytes(4, e.fromChannelId.toArray)
       statement.setBytes(5, e.toChannelId.toArray)
-      statement.setLong(6, e.timestamp.seconds.toMillis) // Conversion needed because in auditDB we store timestamps in milliseconds!
+      statement.setLong(6, e.timestamp)
       statement.executeUpdate()
     }
 
@@ -147,7 +147,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(3, e.tx.txid.toArray)
       statement.setLong(4, e.fee.toLong)
       statement.setString(5, e.txType)
-      statement.setLong(6, Platform.currentTime.milliseconds.toMillis)
+      statement.setLong(6, Platform.currentTime)
       statement.executeUpdate()
     }
 
@@ -162,7 +162,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setString(3, errorName)
       statement.setString(4, errorMessage)
       statement.setBoolean(5, e.isFatal)
-      statement.setLong(6, Platform.currentTime.milliseconds.toMillis)
+      statement.setLong(6, Platform.currentTime)
       statement.executeUpdate()
     }
 
@@ -180,7 +180,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           paymentHash = rs.getByteVector32("payment_hash"),
           paymentPreimage = rs.getByteVector32("payment_preimage"),
           toChannelId = rs.getByteVector32("to_channel_id"),
-          timestamp = rs.getLong("timestamp").millisecond.toSeconds) // Conversion needed because in auditDB we store timestamps in milliseconds!
+          timestamp = rs.getLong("timestamp"))
       }
       q
     }
@@ -196,7 +196,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           amount = MilliSatoshi(rs.getLong("amount_msat")),
           paymentHash = rs.getByteVector32("payment_hash"),
           fromChannelId = rs.getByteVector32("from_channel_id"),
-          timestamp = rs.getLong("timestamp").milliseconds.toSeconds)
+          timestamp = rs.getLong("timestamp"))
       }
       q
     }
@@ -214,7 +214,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           paymentHash = rs.getByteVector32("payment_hash"),
           fromChannelId = rs.getByteVector32("from_channel_id"),
           toChannelId = rs.getByteVector32("to_channel_id"),
-          timestamp = rs.getLong("timestamp").milliseconds.toSeconds)
+          timestamp = rs.getLong("timestamp"))
       }
       q
     }
@@ -232,7 +232,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           txId = rs.getByteVector32("tx_id"),
           feeSat = rs.getLong("fee_sat"),
           txType = rs.getString("tx_type"),
-          timestamp = rs.getLong("timestamp").milliseconds.toSeconds)
+          timestamp = rs.getLong("timestamp"))
       }
       q
     }

@@ -48,7 +48,7 @@ class SqliteAuditDbSpec extends FunSuite {
     val e3 = PaymentRelayed(MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32)
     val e4 = NetworkFeePaid(null, randomKey.publicKey, randomBytes32, Transaction(0, Seq.empty, Seq.empty, 0), Satoshi(42), "mutual")
     val e5 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32, timestamp = 0)
-    val e6 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32, timestamp = Platform.currentTime.milliseconds.toSeconds * 2)
+    val e6 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32, timestamp = Platform.currentTime * 2)
     val e7 = AvailableBalanceChanged(null, randomBytes32, ShortChannelId(500000, 42, 1), 456123000, ChannelStateSpec.commitments)
     val e8 = ChannelLifecycleEvent(randomBytes32, randomKey.publicKey, 456123000, true, false, "mutual")
     val e9 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), true)
@@ -141,7 +141,7 @@ class SqliteAuditDbSpec extends FunSuite {
       statement.setBytes(3, ps.paymentHash.toArray)
       statement.setBytes(4, ps.paymentPreimage.toArray)
       statement.setBytes(5, ps.toChannelId.toArray)
-      statement.setLong(6, ps.timestamp.seconds.toMillis)
+      statement.setLong(6, ps.timestamp)
       statement.executeUpdate()
     }
 
