@@ -179,8 +179,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
 
     using(sqlite.prepareStatement(queryStmt)) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
+      statement.setLong(1, from.seconds.toMillis)
+      statement.setLong(2, to.seconds.toMillis)
       if (pendingOnly) statement.setLong(3, Platform.currentTime)
 
       val rs = statement.executeQuery()

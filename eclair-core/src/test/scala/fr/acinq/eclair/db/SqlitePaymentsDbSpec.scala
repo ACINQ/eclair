@@ -81,7 +81,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     assert(preMigrationDb.listIncomingPayments() == Seq(pr1))
     assert(preMigrationDb.listOutgoingPayments() == Seq(ps1))
-    assert(preMigrationDb.listPaymentRequests(0, Long.MaxValue) == Seq(i1))
+    assert(preMigrationDb.listPaymentRequests(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) == Seq(i1))
 
     val postMigrationDb = new SqlitePaymentsDb(connection)
 
@@ -91,7 +91,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     assert(postMigrationDb.listIncomingPayments() == Seq(pr1))
     assert(postMigrationDb.listOutgoingPayments() == Seq(ps1))
-    assert(preMigrationDb.listPaymentRequests(0, Long.MaxValue) == Seq(i1))
+    assert(preMigrationDb.listPaymentRequests(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) == Seq(i1))
   }
 
   test("add/list received payments/find 1 payment that exists/find 1 payment that does not exist") {
@@ -171,16 +171,16 @@ class SqlitePaymentsDbSpec extends FunSuite {
     db.addPaymentRequest(i2, ByteVector32.One)
 
     // order matters, i2 has a more recent timestamp than i1
-    assert(db.listPaymentRequests(0, Long.MaxValue) == Seq(i2, i1))
+    assert(db.listPaymentRequests(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) == Seq(i2, i1))
     assert(db.getPaymentRequest(i1.paymentHash) == Some(i1))
     assert(db.getPaymentRequest(i2.paymentHash) == Some(i2))
 
-    assert(db.listPendingPaymentRequests(0, Long.MaxValue) == Seq(i2, i1))
+    assert(db.listPendingPaymentRequests(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) == Seq(i2, i1))
     assert(db.getPendingPaymentRequestAndPreimage(paymentHash1) == Some((ByteVector32.Zeroes, i1)))
     assert(db.getPendingPaymentRequestAndPreimage(paymentHash2) == Some((ByteVector32.One, i2)))
 
-    val from = (someTimestamp - 100).seconds.toMillis
-    val to = (someTimestamp + 100).seconds.toMillis
+    val from = (someTimestamp - 100).seconds.toSeconds
+    val to = (someTimestamp + 100).seconds.toSeconds
     assert(db.listPaymentRequests(from, to) == Seq(i1))
   }
 
