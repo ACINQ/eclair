@@ -179,7 +179,9 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.getPendingPaymentRequestAndPreimage(paymentHash1) == Some((ByteVector32.Zeroes, i1)))
     assert(db.getPendingPaymentRequestAndPreimage(paymentHash2) == Some((ByteVector32.One, i2)))
 
-    assert(db.listPaymentRequests(someTimestamp - 100, someTimestamp + 100) == Seq(i1))
+    val from = (someTimestamp - 100).seconds.toMillis
+    val to = (someTimestamp + 100).seconds.toMillis
+    assert(db.listPaymentRequests(from, to) == Seq(i1))
   }
 
 }

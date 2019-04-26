@@ -136,8 +136,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setBytes(1, pr.paymentHash.toArray)
       statement.setBytes(2, preimage.toArray)
       statement.setString(3, PaymentRequest.write(pr))
-      statement.setLong(4, pr.timestamp)
-      pr.expiry.foreach { ex => statement.setLong(5, pr.timestamp + ex) } // we store "when" the invoice will expire
+      statement.setLong(4, pr.timestamp.seconds.toMillis) // BOLT11 timestamp is in seconds
+      pr.expiry.foreach { ex => statement.setLong(5, pr.timestamp.seconds.toMillis + ex.seconds.toMillis) } // we store "when" the invoice will expire, in milliseconds
       statement.executeUpdate()
     }
   }
@@ -181,7 +181,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement(queryStmt)) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      if (pendingOnly) statement.setLong(3, Platform.currentTime.milliseconds.toSeconds)
+      if (pendingOnly) statement.setLong(3, Platform.currentTime)
 
       val rs = statement.executeQuery()
       var q: Queue[PaymentRequest] = Queue()
