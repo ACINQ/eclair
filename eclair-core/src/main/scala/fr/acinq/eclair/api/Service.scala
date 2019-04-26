@@ -70,9 +70,9 @@ trait Service extends ExtraDirectives with Logging {
   implicit val mat: ActorMaterializer
 
   // named and typed URL parameters used across several routes
-  val channelId = "channelId".as[ByteVector32](sha256HashUnmarshaller)
+  //val channelId = "channelId".as[ByteVector32](sha256HashUnmarshaller)
   val nodeId = "nodeId".as[PublicKey]
-  val shortChannelId = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
+  //val shortChannelId = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
   val paymentHash = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
   val from = "from".as[Long]
   val to = "to".as[Long]
@@ -159,25 +159,22 @@ trait Service extends ExtraDirectives with Logging {
                         }
                       } ~
                       path("updaterelayfee") {
-                        formFields(channelId, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (channelId, feeBase, feeProportional) =>
-                          complete(eclairApi.updateRelayFee(Left(channelId), feeBase, feeProportional))
-                        } ~
-                        formFields(shortChannelId, "feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (shortChannelId, feeBase, feeProportional) =>
-                          complete(eclairApi.updateRelayFee(Right(shortChannelId), feeBase, feeProportional))
+                        channelOrShortChannelId { channelIdentifier =>
+                          formFields("feeBaseMsat".as[Long], "feeProportionalMillionths".as[Long]) { (feeBase, feeProportional) =>
+                            complete(eclairApi.updateRelayFee(channelIdentifier, feeBase, feeProportional))
+                          }
                         }
                       } ~
                       path("close") {
-                        formFields(channelId, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (channelId, scriptPubKey_opt) =>
-                          complete(eclairApi.close(Left(channelId), scriptPubKey_opt))
-                        } ~ formFields(shortChannelId, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { (shortChannelId, scriptPubKey_opt) =>
-                          complete(eclairApi.close(Right(shortChannelId), scriptPubKey_opt))
+                        channelOrShortChannelId { channelIdenfitier =>
+                          formFields("scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { scriptPubKey_opt =>
+                            complete(eclairApi.close(channelIdenfitier, scriptPubKey_opt))
+                          }
                         }
                       } ~
                       path("forceclose") {
-                        formFields(channelId) { channelId =>
-                          complete(eclairApi.forceClose(Left(channelId)))
-                        } ~ formFields(shortChannelId) { shortChannelId =>
-                          complete(eclairApi.forceClose(Right(shortChannelId)))
+                        channelOrShortChannelId { channelIdentifier =>
+                          complete(eclairApi.forceClose(channelIdentifier))
                         }
                       } ~
                       path("peers") {
@@ -189,10 +186,8 @@ trait Service extends ExtraDirectives with Logging {
                         }
                       } ~
                       path("channel") {
-                        formFields(channelId) { channelId =>
-                          complete(eclairApi.channelInfo(Left(channelId)))
-                        } ~ formFields(shortChannelId) { shortChannelId =>
-                          complete(eclairApi.channelInfo(Right(shortChannelId)))
+                        channelOrShortChannelId { channelIdentifier =>
+                          complete(eclairApi.channelInfo(channelIdentifier))
                         }
                       } ~
                       path("allnodes") {

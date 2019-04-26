@@ -19,12 +19,18 @@ package fr.acinq.eclair.api
 import akka.http.scaladsl.marshalling.ToResponseMarshaller
 import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
 import akka.http.scaladsl.model.StatusCodes._
-import akka.http.scaladsl.server.{Directives, Route}
+import akka.http.scaladsl.server.{Directive1, Directives, MalformedFormFieldRejection, Route}
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.api.FormParamExtractors.{sha256HashUnmarshaller, shortChannelIdUnmarshaller}
 import fr.acinq.eclair.api.JsonSupport._
-import scala.concurrent.{Future}
+import scala.concurrent.Future
 import scala.util.{Failure, Success}
 
 trait ExtraDirectives extends Directives {
+
+  val shortChannelId = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
+  val channelId = "channelId".as[ByteVector32](sha256HashUnmarshaller)
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
   def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {
@@ -32,6 +38,13 @@ trait ExtraDirectives extends Directives {
     case Success(None) =>
       complete(HttpResponse(NotFound).withEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse("Not found"))))
     case Failure(_) => reject
+  }
+
+  def channelOrShortChannelId: Directive1[Either[ByteVector32, ShortChannelId]] = formFields(channelId.?, shortChannelId.?).tflatMap {
+    case (None, None) => reject(MalformedFormFieldRejection("channelId/shortChannelId", "Must specify either the channelId or shortChannelId"))
+    case (Some(channelId), None) => provide(Left(channelId))
+    case (None, Some(shortChannelId)) => provide(Right(shortChannelId))
+    case _ => reject
   }
 
 }
