@@ -21,16 +21,25 @@ import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.server.{Directive1, Directives, MalformedFormFieldRejection, Route}
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.api.FormParamExtractors.{sha256HashUnmarshaller, shortChannelIdUnmarshaller}
 import fr.acinq.eclair.api.JsonSupport._
+import fr.acinq.eclair.payment.PaymentRequest
 import scala.concurrent.Future
 import scala.util.{Failure, Success}
 
 trait ExtraDirectives extends Directives {
 
-  val shortChannelId = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
-  val channelId = "channelId".as[ByteVector32](sha256HashUnmarshaller)
+  // named and typed URL parameters used across several routes
+  val shortChannelIdFormParam = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
+  val channelIdFormParam = "channelId".as[ByteVector32](sha256HashUnmarshaller)
+  val nodeIdFormParam = "nodeId".as[PublicKey]
+  val paymentHashFormParam = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
+  val fromFormParam = "from".as[Long]
+  val toFormParam = "to".as[Long]
+  val amountMsatFormParam = "amountMsat".as[Long]
+  val invoiceFormParam = "invoice".as[PaymentRequest]
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
   def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {
@@ -40,11 +49,11 @@ trait ExtraDirectives extends Directives {
     case Failure(_) => reject
   }
 
-  def channelOrShortChannelId: Directive1[Either[ByteVector32, ShortChannelId]] = formFields(channelId.?, shortChannelId.?).tflatMap {
+  def channelOrShortChannelId: Directive1[Either[ByteVector32, ShortChannelId]] = formFields(channelIdFormParam.?, shortChannelIdFormParam.?).tflatMap {
     case (None, None) => reject(MalformedFormFieldRejection("channelId/shortChannelId", "Must specify either the channelId or shortChannelId"))
     case (Some(channelId), None) => provide(Left(channelId))
     case (None, Some(shortChannelId)) => provide(Right(shortChannelId))
-    case _ => reject
+    case _ => reject(MalformedFormFieldRejection("channelId/shortChannelId", "Must specify either the channelId or shortChannelId"))
   }
 
 }
