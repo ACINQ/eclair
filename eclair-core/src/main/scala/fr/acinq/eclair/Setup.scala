@@ -238,7 +238,7 @@ class Setup(datadir: File,
       backupHandler = system.actorOf(SimpleSupervisor.props(
         BackupHandler.props(
           nodeParams.db,
-          new File(chaindir, "eclair.bak"),
+          new File(chaindir, "eclair.sqlite.bak"),
           if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
         ),"backuphandler", SupervisorStrategy.Resume))
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))

@@ -17,7 +17,6 @@
 package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
-import java.time.Instant
 import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
@@ -26,6 +25,8 @@ import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 import scala.collection.immutable.Queue
 import OutgoingPaymentStatus._
+import concurrent.duration._
+import scala.compat.Platform
 
 class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
@@ -58,7 +59,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     require((newStatus == SUCCEEDED && preimage.isDefined) || (newStatus == FAILED && preimage.isEmpty), "Wrong combination of state/preimage")
 
     using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, preimage, status) = (?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
-      statement.setLong(1, Instant.now().getEpochSecond)
+      statement.setLong(1, Platform.currentTime)
       statement.setBytes(2, if (preimage.isEmpty) null else preimage.get.toArray)
       statement.setString(3, newStatus.toString)
       statement.setString(4, id.toString)
@@ -135,8 +136,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setBytes(1, pr.paymentHash.toArray)
       statement.setBytes(2, preimage.toArray)
       statement.setString(3, PaymentRequest.write(pr))
-      statement.setLong(4, pr.timestamp)
-      pr.expiry.foreach { ex => statement.setLong(5, pr.timestamp + ex) } // we store "when" the invoice will expire
+      statement.setLong(4, pr.timestamp.seconds.toMillis) // BOLT11 timestamp is in seconds
+      pr.expiry.foreach { ex => statement.setLong(5, pr.timestamp.seconds.toMillis + ex.seconds.toMillis) } // we store "when" the invoice will expire, in milliseconds
       statement.executeUpdate()
     }
   }
@@ -178,9 +179,9 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
 
     using(sqlite.prepareStatement(queryStmt)) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
-      if (pendingOnly) statement.setLong(3, Instant.now().getEpochSecond)
+      statement.setLong(1, from.seconds.toMillis)
+      statement.setLong(2, to.seconds.toMillis)
+      if (pendingOnly) statement.setLong(3, Platform.currentTime)
 
       val rs = statement.executeQuery()
       var q: Queue[PaymentRequest] = Queue()
