@@ -22,10 +22,9 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, serializationResult}
 import scodec.bits.{BitVector, ByteVector}
 import shapeless.HNil
-
+import scala.concurrent.duration._
 import scala.compat.Platform
 import scala.concurrent.duration._
-
 
 /**
   * Created by PM on 03/02/2017.

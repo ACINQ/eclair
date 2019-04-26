@@ -257,7 +257,7 @@ class RouterSpec extends BaseRouterSpec {
     val state = sender.expectMsgType[RoutingState]
 
 
-    val update1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, cltvExpiryDelta = 7, htlcMinimumMsat = 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000L, timestamp = Platform.currentTime.milliseconds.toSeconds)
+    val update1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, cltvExpiryDelta = 7, htlcMinimumMsat = 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000L, timestamp = Platform.currentTime.millisecond.toSeconds)
 
     // we want to make sure that transport receives the query
     val transport = TestProbe()

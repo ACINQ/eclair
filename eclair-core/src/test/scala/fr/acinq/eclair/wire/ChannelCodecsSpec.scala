@@ -33,6 +33,7 @@ import scodec.bits._
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
+import scala.concurrent.duration._
 
 /**
   * Created by PM on 31/05/2016.
