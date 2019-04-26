@@ -323,8 +323,8 @@ class LightningMessageCodecsSpec extends FunSuite {
     }))
 
     class ExtendedQueryFlagsSerializer extends CustomSerializer[QueryChannelRangeExtension](format => ({ null }, {
-      // TODO: FIXME
-      case QueryChannelRangeExtension(flag) => JString("TIMESTAMPS_AND_CHECKSUMS")
+      case QueryChannelRangeExtension(flag) =>
+        JString(((if (QueryChannelRangeExtension.wantTimestamps(flag)) List("WANT_TIMESTAMPS") else List()) ::: (if (QueryChannelRangeExtension.wantChecksums(flag)) List("WANT_CHECKSUMS") else List())) mkString(" | "))
     }))
 
     implicit val formats = org.json4s.DefaultFormats.withTypeHintFieldName("type") + new EncodingTypeSerializer + new ExtendedQueryFlagsSerializer + new ByteVectorSerializer + new ByteVector32Serializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer +new PaymentRequestSerializer +
