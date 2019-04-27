@@ -316,7 +316,7 @@ trait OldService extends Logging {
                         case "audit" =>
                           val (from, to) = req.params match {
                             case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
-                            case _ => (0L, Long.MaxValue)
+                            case _ => (0L, Duration.fromNanos(Long.MaxValue).toSeconds)
                           }
                           completeRpcFuture(req.id, Future(AuditResponse(
                             sent = nodeParams.db.audit.listSent(from, to),
@@ -327,7 +327,7 @@ trait OldService extends Logging {
                         case "networkfees" =>
                           val (from, to) = req.params match {
                             case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
-                            case _ => (0L, Long.MaxValue)
+                            case _ => (0L, Duration.fromNanos(Long.MaxValue).toSeconds)
                           }
                           completeRpcFuture(req.id, Future(nodeParams.db.audit.listNetworkFees(from, to)))
 
