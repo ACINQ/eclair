@@ -23,10 +23,10 @@ import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
-
 import scala.collection.immutable.Queue
 
-class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
+class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging{
+  implicit val log = logger
 
   import SqliteUtils.ExtendedResultSet._
   import SqliteUtils._
@@ -38,7 +38,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT 0")
   }
 
-  using(sqlite.createStatement()) { statement =>
+  usingMetric(statement=sqlite.createStatement(),metric=Some("channeldb.tablecreation")) { statement =>
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
       case 1 =>
         logger.warn(s"migrating db $DB_NAME, found version=1 current=$CURRENT_VERSION")
@@ -56,7 +56,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = {
     val data = stateDataCodec.encode(state).require.toByteArray
-    using (sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
+    usingMetric (statement=sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?"),metric=Some("channeldb.addOrUpdateChannel")) { update =>
       update.setBytes(1, data)
       update.setBytes(2, state.channelId.toArray)
       if (update.executeUpdate() == 0) {
@@ -70,31 +70,32 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   }
 
   override def removeChannel(channelId: ByteVector32): Unit = {
-    using(sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
+    usingMetric (statement=sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?"),metric=Some("channeldb.removeChannel.pending_relay")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.executeUpdate()
     }
 
-    using(sqlite.prepareStatement("DELETE FROM htlc_infos WHERE channel_id=?")) { statement =>
+    usingMetric (statement=sqlite.prepareStatement("DELETE FROM htlc_infos WHERE channel_id=?"),metric=Some("channeldb.removeChannel.htlc_infos")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.executeUpdate()
     }
 
-    using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=1 WHERE channel_id=?")) { statement =>
+    usingMetric (statement=sqlite.prepareStatement("UPDATE local_channels SET is_closed=1 WHERE channel_id=?"),metric=Some("channeldb.removeChannel.local_channels")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.executeUpdate()
     }
   }
 
   override def listLocalChannels(): Seq[HasCommitments] = {
-    using(sqlite.createStatement) { statement =>
+    usingMetric (statement=sqlite.createStatement,metric=Some("channeldb.listLocalChannels")) { statement =>
       val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
+
       codecSequence(rs, stateDataCodec)
     }
   }
 
   def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: Long): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
+    usingMetric (statement=sqlite.prepareStatement("INSERT OR IGNORE INTO htlc_infos VALUES (?, ?, ?, ?)"),metric=Some("channeldb.addOrUpdateHtlcInfo")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
       statement.setBytes(3, paymentHash.toArray)
@@ -104,7 +105,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   }
 
   def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, Long)] = {
-    using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
+    usingMetric (statement=sqlite.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?"),metric=Some("channeldb.listHtlcInfos")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
       val rs = statement.executeQuery

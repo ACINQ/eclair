@@ -23,8 +23,33 @@ import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
 
 import scala.collection.immutable.Queue
+import grizzled.slf4j.Logger
 
 object SqliteUtils {
+  /**
+    * Manages closing of statement
+    *
+    * @param statement
+    * @param block
+    */
+  def usingMetric[T <: Statement, U](statement: T, disableAutoCommit: Boolean = false, metric: Option[String]=None)(block: T => U)(implicit logger: Logger): U = {
+    val startTime=System.nanoTime()
+    try {
+      if (disableAutoCommit) statement.getConnection.setAutoCommit(false)
+      block(statement)
+    } finally {
+      if (disableAutoCommit) statement.getConnection.setAutoCommit(true)
+      if (statement != null) statement.close()
+      metric match  {
+        case Some(s) => {
+          val timeTaken=System.nanoTime()-startTime
+          logger.debug(s"[DB METRIC]:$s,$timeTaken")
+          Unit
+        }
+        case None =>
+      }
+    }
+  }
 
   /**
     * Manages closing of statement
