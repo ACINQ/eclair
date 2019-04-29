@@ -1,6 +1,7 @@
 package fr.acinq.eclair.db
 
 import java.io.File
+import java.nio.file.{Files, StandardCopyOption}
 
 import akka.actor.{Actor, ActorLogging, Props}
 import akka.dispatch.{BoundedMessageQueueSemantics, RequiresMessageQueue}
@@ -39,10 +40,16 @@ class BackupHandler private(databases: Databases, backupFile: File, backupScript
       val start = System.currentTimeMillis()
       val tmpFile = new File(backupFile.getAbsolutePath.concat(".tmp"))
       databases.backup(tmpFile)
-      val result = tmpFile.renameTo(backupFile)
-      require(result, s"cannot rename $tmpFile to $backupFile")
+      // this will throw an exception if it fails, which is possible if the backup file is not on the same filesystem
+      // as the temporary file
+      Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
       val end = System.currentTimeMillis()
+
+      // publish a notification that we have updated our backup
+      context.system.eventStream.publish(BackupCompleted)
+
       log.info(s"database backup triggered by channelId=${persisted.channelId} took ${end - start}ms")
+
       backupScript_opt.foreach(backupScript => {
         Try {
           // run the script in the current thread and wait until it terminates
@@ -54,6 +61,11 @@ class BackupHandler private(databases: Databases, backupFile: File, backupScript
       })
   }
 }
+
+sealed trait BackupEvent
+
+// this notification is sent when we have completed our backup process (our backup file is ready to be used)
+case object BackupCompleted extends BackupEvent
 
 object BackupHandler {
   // using this method is the only way to create a BackupHandler actor
