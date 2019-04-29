@@ -73,7 +73,7 @@ class SphinxSpec extends FunSuite {
    */
   test("generate filler") {
     val (_, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
-    val filler = generateFiller("rho", sharedsecrets.dropRight(1), PayloadLength + MacLength, 20)
+    val filler = generateFiller("rho", sharedsecrets.dropRight(1), payloads.dropRight(1))
     assert(filler == hex"c6b008cf6414ed6e4c42c291eb505e9f22f5fe7d0ecdd15a833f4d016ac974d33adc6ea3293e20859e87ebfb937ba406abd025d14af692b12e9c9c2adbe307a679779259676211c071e614fdb386d1ff02db223a5b2fae03df68d321c7b29f7c7240edd3fa1b7cb6903f89dc01abf41b2eb0b49b6b8d73bb0774b58204c0d0e96d3cce45ad75406be0bc009e327b3e712a4bd178609c00b41da2daf8a4b0e1319f07a492ab4efb056f0f599f75e6dc7e0d10ce1cf59088ab6e873de377343880f7a24f0e36731a0b72092f8d5bc8cd346762e93b2bf203d00264e4bc136fc142de8f7b69154deb05854ea88e2d7506222c95ba1aab065c8a851391377d3406a35a9af3ac")
   }
 
@@ -93,7 +93,7 @@ class SphinxSpec extends FunSuite {
     assert(packets(1).hmac == ByteVector32(hex"548e58057ab0a0e6c2d8ad8e855d89f9224279a5652895ea14f60bffb81590eb"))
     assert(packets(2).hmac == ByteVector32(hex"0daed5f832ef34ea8d0d2cc0699134287a2739c77152d9edc8fe5ccce7ec838f"))
     assert(packets(3).hmac == ByteVector32(hex"62cc962876e734e089e79eda497077fb411fac5f36afd43329040ecd1e16c6d9"))
-    // this means that node #4 us the last node
+    // this means that node #4 is the last node
     assert(packets(4).hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
   }
 
