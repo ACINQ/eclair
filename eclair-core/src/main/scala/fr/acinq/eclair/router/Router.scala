@@ -454,7 +454,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       stay
 
     case Event(u: ChannelUpdate, d: Data) =>
-      // it was sent by us, routing messages that are sent by  our peers are now wrapped in a PeerRoutingMessage
+      // it was sent by us (e.g. the payment lifecycle); routing messages that are sent by our peers are now wrapped in a PeerRoutingMessage
       log.debug("received channel update from {}", sender)
       stay using handle(u, sender, d)
 
@@ -758,7 +758,7 @@ object Router {
   def hasChannels(nodeId: PublicKey, channels: Iterable[ChannelAnnouncement]): Boolean = channels.exists(c => isRelatedTo(c, nodeId))
 
   def isStale(u: ChannelUpdate): Boolean = {
-    // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
+    // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update
     val staleThresholdSeconds = (Platform.currentTime.milliseconds - 14.days).toSeconds
     u.timestamp < staleThresholdSeconds
@@ -843,7 +843,6 @@ object Router {
     * @param extraEdges   a set of extra edges we want to CONSIDER during the search
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
     * @param routeParams  a set of parameters that can restrict the route search
-    * @param wr           an object containing the ratios used to 'weight' edges when searching for the shortest path
     * @return the computed route to the destination @targetNodeId
     */
   def findRoute(g: DirectedGraph,

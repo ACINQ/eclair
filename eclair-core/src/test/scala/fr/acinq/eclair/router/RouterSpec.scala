@@ -242,7 +242,7 @@ class RouterSpec extends BaseRouterSpec {
     val blockHeight = Globals.blockCount.get().toInt - 2020
     val channelId = ShortChannelId(blockHeight, 5, 0)
     val announcement = channelAnnouncement(channelId, priv_a, priv_c, priv_funding_a, priv_funding_c)
-    val timestamp = Platform.currentTime.millisecond.toSeconds - 1209600 - 1
+    val timestamp = (Platform.currentTime.milliseconds - 14.days - 1.day).toSeconds
     val update = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, cltvExpiryDelta = 7, htlcMinimumMsat = 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, htlcMaximumMsat = 5, timestamp = timestamp)
     val probe = TestProbe()
     probe.ignoreMsg { case _: TransportHandler.ReadAck => true }

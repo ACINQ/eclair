@@ -34,6 +34,9 @@ import scodec.{Attempt, Codec}
 import scala.concurrent.duration._
 import scala.compat.Platform
 
+import scala.concurrent.duration._
+
+
 /**
   * Created by PM on 02/06/2017.
   */
