@@ -287,8 +287,6 @@ object Sphinx extends Logging {
     *         shared secrets (one per node) can be used to parse returned error messages if needed
     */
   def makePacket(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector], associatedData: ByteVector32): PacketAndSecrets = {
-    require(payloadFrameCount(payloads.last) == 1, "last packet should use a single frame")
-
     val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     val filler = generateFiller("rho", sharedsecrets.dropRight(1), payloads.dropRight(1))
 
