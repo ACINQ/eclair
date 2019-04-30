@@ -1,6 +1,6 @@
 ![Eclair Logo](.readme/logo.png)
 
-[![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=master)](https://travis-ci.org/ACINQ/eclair)
+[![Build Status](https://travis-ci.org/araspitzu/eclair.svg?branch=master)](https://travis-ci.org/araspitzu/eclair)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Gitter chat](https://img.shields.io/badge/chat-on%20gitter-red.svg)](https://gitter.im/ACINQ/eclair)
 
