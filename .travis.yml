@@ -7,8 +7,6 @@ scala:
  - 2.11.12
 env:
  - export LD_LIBRARY_PATH=/usr/local/lib
- global:
-    - CODECOV_TOKEN="eadc3ab4-14c9-441a-841b-9a5ae511059f"
 before_install:
  - wget http://apache.crihan.fr/dist/maven/maven-3/3.6.0/binaries/apache-maven-3.6.0-bin.zip
  - unzip -qq apache-maven-3.6.0-bin.zip
@@ -25,5 +23,3 @@ jdk:
 notifications:
  email:
   - ops@acinq.fr
-after_success:
- - bash <(curl -s https://codecov.io/bash)
