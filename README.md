@@ -24,7 +24,7 @@ Please see the latest [release note](https://github.com/ACINQ/eclair/releases) f
 
 ## Overview
 
-![Eclair Demo](.readme/screen-1.png)
+![Eclair Demo](.readme/screen-1.png)```
 
 ## JSON API
 
