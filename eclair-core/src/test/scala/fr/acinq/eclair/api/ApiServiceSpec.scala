@@ -57,11 +57,11 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[String] = ???
 
-    override def updateRelayFee(channelId: String, feeBaseMsat: Long, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[String] = ???
+    override def updateRelayFee(channelIdentifier: Either[ByteVector32, ShortChannelId], feeBaseMsat: Long, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[String] = ???
 
     override def channelsInfo(toRemoteNode: Option[Crypto.PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]] = ???
 
-    override def channelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[RES_GETINFO] = ???
+    override def channelInfo(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[RES_GETINFO] = ???
 
     override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = ???
 
@@ -216,9 +216,10 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       }
   }
 
-  test("'close' method should accept a shortChannelId") {
+  test("'close' method should accept a channelId and shortChannelId") {
 
     val shortChannelIdSerialized = "42000x27x3"
+    val channelId = "56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e"
 
     val mockService = new MockService(new EclairMock {
       override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey: Option[ByteVector])(implicit timeout: Timeout): Future[String] = {
@@ -227,6 +228,18 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     })
 
     Post("/close", FormData("shortChannelId" -> shortChannelIdSerialized).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val resp = entityAs[String]
+        assert(resp.contains(Alice.nodeParams.nodeId.toString))
+        matchTestJson("close", resp)
+      }
+
+    Post("/close", FormData("channelId" -> channelId).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>

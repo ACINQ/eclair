@@ -17,7 +17,6 @@
 package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
-import java.time.Instant
 import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
@@ -26,6 +25,8 @@ import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 import scala.collection.immutable.Queue
 import OutgoingPaymentStatus._
+import concurrent.duration._
+import scala.compat.Platform
 
 class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
@@ -35,7 +36,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   val CURRENT_VERSION = 2
 
   using(sqlite.createStatement()) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) <= CURRENT_VERSION) // version 2 is "backward compatible" in the sense that it uses separate tables from version 1. There is no migration though
+    require(getVersion(statement, DB_NAME, CURRENT_VERSION) <= CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // version 2 is "backward compatible" in the sense that it uses separate tables from version 1. There is no migration though
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON sent_payments(payment_hash)")
@@ -58,7 +59,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     require((newStatus == SUCCEEDED && preimage.isDefined) || (newStatus == FAILED && preimage.isEmpty), "Wrong combination of state/preimage")
 
     using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, preimage, status) = (?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
-      statement.setLong(1, Instant.now().getEpochSecond)
+      statement.setLong(1, Platform.currentTime)
       statement.setBytes(2, if (preimage.isEmpty) null else preimage.get.toArray)
       statement.setString(3, newStatus.toString)
       statement.setString(4, id.toString)
@@ -135,8 +136,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setBytes(1, pr.paymentHash.toArray)
       statement.setBytes(2, preimage.toArray)
       statement.setString(3, PaymentRequest.write(pr))
-      statement.setLong(4, pr.timestamp)
-      pr.expiry.foreach { ex => statement.setLong(5, pr.timestamp + ex) } // we store "when" the invoice will expire
+      statement.setLong(4, pr.timestamp.seconds.toMillis) // BOLT11 timestamp is in seconds
+      pr.expiry.foreach { ex => statement.setLong(5, pr.timestamp.seconds.toMillis + ex.seconds.toMillis) } // we store "when" the invoice will expire, in milliseconds
       statement.executeUpdate()
     }
   }
@@ -178,9 +179,9 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
 
     using(sqlite.prepareStatement(queryStmt)) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
-      if (pendingOnly) statement.setLong(3, Instant.now().getEpochSecond)
+      statement.setLong(1, from.seconds.toMillis)
+      statement.setLong(2, to.seconds.toMillis)
+      if (pendingOnly) statement.setLong(3, Platform.currentTime)
 
       val rs = statement.executeQuery()
       var q: Queue[PaymentRequest] = Queue()

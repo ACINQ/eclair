@@ -448,7 +448,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       // the first_timestamp field to the current date/time and timestamp_range to the maximum value
       // NB: we can't just set firstTimestamp to 0, because in that case peer would send us all past messages matching
       // that (i.e. the whole routing table)
-      val filter = GossipTimestampFilter(nodeParams.chainHash, firstTimestamp = Platform.currentTime / 1000, timestampRange = Int.MaxValue)
+      val filter = GossipTimestampFilter(nodeParams.chainHash, firstTimestamp = Platform.currentTime.milliseconds.toSeconds, timestampRange = Int.MaxValue)
       remote ! filter
 
       // clean our sync state for this peer: we receive a SendChannelQuery just when we connect/reconnect to a peer and
@@ -462,7 +462,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       stay
 
     case Event(u: ChannelUpdate, d: Data) =>
-      // it was sent by us, routing messages that are sent by  our peers are now wrapped in a PeerRoutingMessage
+      // it was sent by us (e.g. the payment lifecycle); routing messages that are sent by our peers are now wrapped in a PeerRoutingMessage
       log.debug("received channel update from {}", sender)
       stay using handle(u, sender, d)
 
@@ -746,7 +746,7 @@ object Router {
   def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
   // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
   // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
-    ChannelUpdate(signature = ByteVector.empty, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime / 1000, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0L, extraHop.feeBaseMsat, extraHop.feeProportionalMillionths, None)
+    ChannelUpdate(signature = ByteVector.empty, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0L, extraHop.feeBaseMsat, extraHop.feeProportionalMillionths, None)
 
   def toFakeUpdates(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Map[ChannelDesc, ChannelUpdate] = {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
@@ -766,9 +766,9 @@ object Router {
   def hasChannels(nodeId: PublicKey, channels: Iterable[ChannelAnnouncement]): Boolean = channels.exists(c => isRelatedTo(c, nodeId))
 
   def isStale(u: ChannelUpdate): Boolean = {
-    // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
+    // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update
-    val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
+    val staleThresholdSeconds = (Platform.currentTime.milliseconds - 14.days).toSeconds
     u.timestamp < staleThresholdSeconds
   }
 
@@ -851,7 +851,6 @@ object Router {
     * @param extraEdges   a set of extra edges we want to CONSIDER during the search
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
     * @param routeParams  a set of parameters that can restrict the route search
-    * @param wr           an object containing the ratios used to 'weight' edges when searching for the shortest path
     * @return the computed route to the destination @targetNodeId
     */
   def findRoute(g: DirectedGraph,
