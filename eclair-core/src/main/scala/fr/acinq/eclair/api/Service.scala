@@ -222,7 +222,7 @@ trait Service extends ExtraDirectives with Logging {
                         }
                       } ~
                       path("sendtoroute") {
-                        formFields(amountMsat, paymentHash, "finalCltvExpiry".as[Long], "route".as[List[PublicKey]](pubkeyListUnmarshaller)) { (amountMsat, paymentHash, finalCltvExpiry, route) =>
+                        formFields(amountMsatFormParam, paymentHashFormParam, "finalCltvExpiry".as[Long], "route".as[List[PublicKey]](pubkeyListUnmarshaller)) { (amountMsat, paymentHash, finalCltvExpiry, route) =>
                           complete(eclairApi.sendToRoute(route, amountMsat, paymentHash, finalCltvExpiry))
                         }
                       } ~
