@@ -29,7 +29,7 @@ import fr.acinq.eclair.{randomBytes, randomBytes32}
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
-
+import scodec.bits._
 import scala.io.Source
 import scala.util.{Failure, Random, Success, Try}
 

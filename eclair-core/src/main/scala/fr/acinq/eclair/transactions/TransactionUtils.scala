@@ -1,6 +1,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.{Crypto, LexicographicalOrdering, OutPoint, Satoshi, Script, ScriptElt, Transaction, TxIn, TxOut}
+import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 
@@ -30,7 +31,7 @@ object TransactionUtils {
   def compareAmounts(a: Satoshi, b: Satoshi): Int = a.amount.compareTo(b.amount)
 
   @tailrec
-  def lexicographicalOrder(a: Seq[Byte], b: Seq[Byte]): Int = {
+  def lexicographicalOrder(a: ByteVector, b: ByteVector): Int = {
     if (a.isEmpty && b.isEmpty) 0
     else if (a.isEmpty) 1
     else if (b.isEmpty) -1

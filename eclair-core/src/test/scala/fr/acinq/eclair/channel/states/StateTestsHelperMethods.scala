@@ -113,7 +113,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     val R: ByteVector32 = preimage.getOrElse {
       randomBytes32
     }
-    val H: BinaryData = Crypto.sha256(R)
+    val H: ByteVector32 = Crypto.sha256(R)
     val sender = TestProbe()
     val receiverPubkey = r.underlyingActor.nodeParams.nodeId
     val cmd = PaymentLifecycle.buildCommand(UUID.randomUUID, amountMsat, cltvExpiry, H, Hop(null, receiverPubkey, null) :: Nil)._1.copy(commit = false)

@@ -490,12 +490,12 @@ class TestVectorsSpec extends FunSuite with Logging {
   test("commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage") {
     val name = "commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage"
 
-    val preimage = BinaryData("0505050505050505050505050505050505050505050505050505050505050505")
+    val preimage = hex"0505050505050505050505050505050505050505050505050505050505050505"
 
     val someHtlc = Seq(
-      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Crypto.sha256(paymentPreimages(0)), 500, BinaryData.empty)),
-      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(5000000).amount, Crypto.sha256(preimage), 505, BinaryData.empty)),
-      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(5000000).amount, Crypto.sha256(preimage), 506, BinaryData.empty))
+      DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(1000000).amount, Crypto.sha256(paymentPreimages(0)), 500, ByteVector.empty)),
+      DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(5000000).amount, Crypto.sha256(preimage), 505, ByteVector.empty)),
+      DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(5000000).amount, Crypto.sha256(preimage), 506, ByteVector.empty))
     )
 
     val spec = CommitmentSpec(htlcs = someHtlc.toSet, feeratePerKw = 253, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
