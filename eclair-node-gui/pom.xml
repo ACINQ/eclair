@@ -21,7 +21,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.11</artifactId>
-        <version>0.2-SNAPSHOT</version>
+        <version>0.3-SNAPSHOT</version>
     </parent>
 
     <artifactId>eclair-node-gui_2.11</artifactId>
@@ -101,6 +101,7 @@
                             <skipNativeVersionNumberSanitizing>true</skipNativeVersionNumberSanitizing>
                             <nativeOutputDir>${project.build.directory}/jfx/installer</nativeOutputDir>
                             <mainClass>fr.acinq.eclair.JavafxBoot</mainClass>
+                            <preLoader>fr.acinq.eclair.gui.FxPreloader</preLoader>
                             <verbose>false</verbose>
                             <bundler>EXE</bundler>
                             <updateExistingJar>true</updateExistingJar>
@@ -121,6 +122,16 @@
             <groupId>com.google.zxing</groupId>
             <artifactId>core</artifactId>
             <version>3.3.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+            <version>11.0.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-fxml</artifactId>
+            <version>11.0.2</version>
         </dependency>
         <!-- TESTS -->
         <dependency>

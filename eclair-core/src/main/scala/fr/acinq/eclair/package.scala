@@ -19,10 +19,11 @@ package fr.acinq
 import java.security.SecureRandom
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, _}
+import fr.acinq.bitcoin._
 import scodec.Attempt
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 
+import scala.concurrent.duration.Duration
 import scala.util.{Failure, Success, Try}
 
 package object eclair {
@@ -33,23 +34,25 @@ package object eclair {
     */
   val secureRandom = new SecureRandom()
 
-  def randomBytes(length: Int): BinaryData = {
+  def randomBytes(length: Int): ByteVector = {
     val buffer = new Array[Byte](length)
     secureRandom.nextBytes(buffer)
-    buffer
+    ByteVector.view(buffer)
   }
 
-  def randomKey: PrivateKey = PrivateKey(randomBytes(32), compressed = true)
+  def randomBytes32: ByteVector32 = ByteVector32(randomBytes(32))
 
-  def toLongId(fundingTxHash: BinaryData, fundingOutputIndex: Int): BinaryData = {
+  def randomKey: PrivateKey = PrivateKey(randomBytes32, compressed = true)
+
+  def toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 = {
     require(fundingOutputIndex < 65536, "fundingOutputIndex must not be greater than FFFF")
     require(fundingTxHash.size == 32, "fundingTxHash must be of length 32B")
-    val channelId = fundingTxHash.take(30) :+ (fundingTxHash.data(30) ^ (fundingOutputIndex >> 8)).toByte :+ (fundingTxHash.data(31) ^ fundingOutputIndex).toByte
-    BinaryData(channelId)
+    val channelId = ByteVector32(fundingTxHash.take(30) :+ (fundingTxHash(30) ^ (fundingOutputIndex >> 8)).toByte :+ (fundingTxHash(31) ^ fundingOutputIndex).toByte)
+    channelId
   }
 
-  def serializationResult(attempt: Attempt[BitVector]): BinaryData = attempt match {
-    case Attempt.Successful(bin) => BinaryData(bin.toByteArray)
+  def serializationResult(attempt: Attempt[BitVector]): ByteVector = attempt match {
+    case Attempt.Successful(bin) => bin.toByteVector
     case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
   }
 
@@ -68,7 +71,7 @@ package object eclair {
     */
   def feerateKw2Byte(feeratesPerKw: Long): Long = feeratesPerKw / 250
 
-  /*
+  /**
     why 253 and not 250 since feerate-per-kw is feerate-per-kb / 250 and the minimum relay fee rate is 1000 satoshi/Kb ?
 
     because bitcoin core uses neither the actual tx size in bytes or the tx weight to check fees, but a "virtual size"
@@ -80,13 +83,13 @@ package object eclair {
     with a conservative minimum weight of 400, we get a minimum feerate_per-kw of 253
 
     see https://github.com/ElementsProject/lightning/pull/1251
-   */
+   **/
   val MinimumFeeratePerKw = 253
 
-  /*
+  /**
     minimum relay fee rate, in satoshi per kilo
     bitcoin core uses virtual size and not the actual size in bytes, see above
-   */
+   **/
   val MinimumRelayFeeRate = 1000
 
   /**
@@ -112,7 +115,7 @@ package object eclair {
     *
     * @param data to check
     */
-  def isAsciiPrintable(data: BinaryData): Boolean = data.data.forall(ch => ch >= 32 && ch < 127)
+  def isAsciiPrintable(data: ByteVector): Boolean = data.toArray.forall(ch => ch >= 32 && ch < 127)
 
   /**
     *
@@ -130,7 +133,7 @@ package object eclair {
     * @return the public key script that matches the input address.
     */
 
-  def addressToPublicKeyScript(address: String, chainHash: BinaryData): Seq[ScriptElt] = {
+  def addressToPublicKeyScript(address: String, chainHash: ByteVector32): Seq[ScriptElt] = {
     Try(Base58Check.decode(address)) match {
       case Success((Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)) if chainHash == Block.TestnetGenesisBlock.hash || chainHash == Block.RegtestGenesisBlock.hash => Script.pay2pkh(pubKeyHash)
       case Success((Base58.Prefix.PubkeyAddress, pubKeyHash)) if chainHash == Block.LivenetGenesisBlock.hash => Script.pay2pkh(pubKeyHash)
@@ -149,4 +152,9 @@ package object eclair {
         }
     }
   }
+
+  /**
+    * We use this in the context of timestamp filtering, when we don't need an upper bound.
+    */
+  val MaxEpochSeconds = Duration.fromNanos(Long.MaxValue).toSeconds
 }

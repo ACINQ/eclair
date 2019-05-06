@@ -18,8 +18,10 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.InetSocketAddress
+import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
+import akka.Done
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.http.scaladsl.Http
 import akka.pattern.after
@@ -27,66 +29,86 @@ import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.{BinaryData, Block}
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
-import fr.acinq.eclair.api.{GetInfoResponse, Service}
+import fr.acinq.eclair.api._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum._
+import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
+import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
+import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
+import fr.acinq.eclair.wire.NodeAddress
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
+import scodec.bits.ByteVector
 
-import scala.concurrent.duration._
 import scala.concurrent._
+import scala.concurrent.duration._
 
 /**
   * Setup eclair from a data directory.
   *
   * Created by PM on 25/01/2016.
   *
-  * @param datadir  directory where eclair-core will write/read its data.
+  * @param datadir          directory where eclair-core will write/read its data.
   * @param overrideDefaults use this parameter to programmatically override the node configuration .
-  * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
+  * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
   */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
-            seed_opt: Option[BinaryData] = None)(implicit system: ActorSystem) extends Logging {
+            seed_opt: Option[ByteVector] = None,
+            db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
+
+  implicit val materializer = ActorMaterializer()
+  implicit val timeout = Timeout(30 seconds)
+  implicit val formats = org.json4s.DefaultFormats
+  implicit val ec = ExecutionContext.Implicits.global
+  implicit val sttpBackend = OkHttpFutureBackend()
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   logger.info(s"datadir=${datadir.getCanonicalPath}")
-
-
-  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
-  val chain = config.getString("chain")
-  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
-
-  // early checks
-  DBCompatChecker.checkDBCompatibility(nodeParams)
-  DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
-  PortChecker.checkAvailable(config.getString("server.binding-ip"), config.getInt("server.port"))
-
-  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
-  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
-
   logger.info(s"initializing secure random generator")
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
   secureRandom.nextInt()
 
-  implicit val ec = ExecutionContext.Implicits.global
-  implicit val sttpBackend = OkHttpFutureBackend()
+  datadir.mkdirs()
+  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
+  val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
+  val chain = config.getString("chain")
+  val chaindir = new File(datadir, chain)
+  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
+
+  val database = db match {
+    case Some(d) => d
+    case None => Databases.sqliteJDBC(chaindir)
+  }
+
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database)
+
+  val serverBindingAddress = new InetSocketAddress(
+    config.getString("server.binding-ip"),
+    config.getInt("server.port"))
+
+  // early checks
+  DBCompatChecker.checkDBCompatibility(nodeParams)
+  DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
+  PortChecker.checkAvailable(serverBindingAddress)
+
+  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
+  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>
@@ -104,7 +126,7 @@ class Setup(datadir: File,
         progress = (json \ "verificationprogress").extract[Double]
         blocks = (json \ "blocks").extract[Long]
         headers = (json \ "headers").extract[Long]
-        chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
+        chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(s => ByteVector32.fromValidHex(s)).map(_.reverse)
         bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[Int])
         unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) =>
           values
@@ -114,15 +136,13 @@ class Setup(datadir: File,
       } yield (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
       // blocking sanity checks
       val (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
-      assert(bitcoinVersion >= 160300, "Eclair requires Bitcoin Core 0.16.3 or higher")
+      assert(bitcoinVersion >= 170000, "Eclair requires Bitcoin Core 0.17.0 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
         assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Make sure that all your UTXOS are segwit UTXOS and not p2pkh (check out our README for more details)")
       }
       assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress")
       assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks")
-      // TODO: add a check on bitcoin version?
-
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       val addresses = config.hasPath("electrum") match {
@@ -153,11 +173,11 @@ class Setup(datadir: File,
   def bootstrap: Future[Kit] = {
     for {
       _ <- Future.successful(true)
-      feeratesRetrieved = Promise[Boolean]()
-      zmqBlockConnected = Promise[Boolean]()
-      zmqTxConnected = Promise[Boolean]()
-      tcpBound = Promise[Unit]()
-      routerInitialized = Promise[Unit]()
+      feeratesRetrieved = Promise[Done]()
+      zmqBlockConnected = Promise[Done]()
+      zmqTxConnected = Promise[Done]()
+      tcpBound = Promise[Done]()
+      routerInitialized = Promise[Done]()
 
       defaultFeerates = FeeratesPerKB(
         block_1 = config.getLong("default-feerates.delay-blocks.1"),
@@ -172,7 +192,7 @@ class Setup(datadir: File,
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case (_, Bitcoind(bitcoinClient)) =>
-            new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+          new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
         case _ =>
           new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
       }
@@ -182,7 +202,7 @@ class Setup(datadir: File,
           Globals.feeratesPerKw.set(FeeratesPerKw(feerates))
           system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
           logger.info(s"current feeratesPerKB=${Globals.feeratesPerKB.get()} feeratesPerKw=${Globals.feeratesPerKw.get()}")
-          feeratesRetrieved.trySuccess(true)
+          feeratesRetrieved.trySuccess(Done)
       })
       _ <- feeratesRetrieved.future
 
@@ -192,26 +212,35 @@ class Setup(datadir: File,
           system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
           system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoinClient))), "watcher", SupervisorStrategy.Resume))
         case Electrum(electrumClient) =>
-          zmqBlockConnected.success(true)
-          zmqTxConnected.success(true)
+          zmqBlockConnected.success(Done)
+          zmqTxConnected.success(Done)
           system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
       }
 
       router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, Some(routerInitialized)), "router", SupervisorStrategy.Resume))
-      routerTimeout = after(FiniteDuration(config.getDuration("router-init-timeout").getSeconds, TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
+      routerTimeout = after(FiniteDuration(config.getDuration("router.init-timeout").getSeconds, TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
       _ <- Future.firstCompletedOf(routerInitialized.future :: routerTimeout :: Nil)
 
       wallet = bitcoin match {
         case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
         case Electrum(electrumClient) =>
-          val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash)), "electrum-wallet")
+          val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
+          val walletDb = new SqliteWalletDb(sqlite)
+          val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
           implicit val timeout = Timeout(30 seconds)
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
       }
       _ = wallet.getFinalAddress.map {
         case address => logger.info(s"initial wallet address=$address")
       }
+      // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 
+      backupHandler = system.actorOf(SimpleSupervisor.props(
+        BackupHandler.props(
+          nodeParams.db,
+          new File(chaindir, "eclair.sqlite.bak"),
+          if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
+        ),"backuphandler", SupervisorStrategy.Resume))
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
         case "local" => LocalPaymentHandler.props(nodeParams)
@@ -221,8 +250,9 @@ class Setup(datadir: File,
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
-      server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port")), Some(tcpBound)), "server", SupervisorStrategy.Restart))
-      paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.nodeId, router, register), "payment-initiator", SupervisorStrategy.Restart))
+      server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
+      paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, register), "payment-initiator", SupervisorStrategy.Restart))
+      _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
 
       kit = Kit(
         nodeParams = nodeParams,
@@ -247,27 +277,32 @@ class Setup(datadir: File,
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
         implicit val materializer = ActorMaterializer()
-        val api = new Service {
-
-          override def scheduler = system.scheduler
-
-          override val password = {
-            val p = config.getString("api.password")
-            if (p.isEmpty) throw EmptyAPIPasswordException else p
-          }
-
-          override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
-            GetInfoResponse(nodeId = nodeParams.nodeId,
-              alias = nodeParams.alias,
-              port = config.getInt("server.port"),
-              chainHash = nodeParams.chainHash,
-              blockHeight = Globals.blockCount.intValue()))
-
-          override def appKit: Kit = kit
-
-          override val socketHandler = makeSocketHandler(system)(materializer)
+        val getInfo = GetInfoResponse(nodeId = nodeParams.nodeId,
+          alias = nodeParams.alias,
+          chainHash = nodeParams.chainHash,
+          blockHeight = Globals.blockCount.intValue(),
+          publicAddresses = nodeParams.publicAddresses)
+        val apiPassword = config.getString("api.password") match {
+          case "" => throw EmptyAPIPasswordException
+          case valid => valid
         }
-        val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+        val apiRoute = if (!config.getBoolean("api.use-old-api")) {
+          new Service {
+            override val actorSystem = kit.system
+            override val mat = materializer
+            override val password = apiPassword
+            override val eclairApi: Eclair = new EclairImpl(kit)
+          }.route
+        } else {
+          new OldService {
+            override val scheduler = system.scheduler
+            override val password = apiPassword
+            override val getInfoResponse: Future[GetInfoResponse] = Future.successful(getInfo)
+            override val appKit: Kit = kit
+            override val socketHandler = makeSocketHandler(system)(materializer)
+          }.route
+        }
+        val httpBound = Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
           case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
         }
         val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("api.port"))))
@@ -287,6 +322,31 @@ class Setup(datadir: File,
       throw e
   }
 
+  private def initTor(): Option[NodeAddress] = {
+    if (config.getBoolean("tor.enabled")) {
+      val promiseTorAddress = Promise[NodeAddress]()
+      val auth = config.getString("tor.auth") match {
+        case "password" => TorProtocolHandler.Password(config.getString("tor.password"))
+        case "safecookie" => TorProtocolHandler.SafeCookie()
+      }
+      val protocolHandlerProps = TorProtocolHandler.props(
+        version = OnionServiceVersion(config.getString("tor.protocol")),
+        authentication = auth,
+        privateKeyPath = new File(datadir, config.getString("tor.private-key-file")).toPath,
+        virtualPort = config.getInt("server.port"),
+        onionAdded = Some(promiseTorAddress))
+
+      val controller = system.actorOf(SimpleSupervisor.props(Controller.props(
+        address = new InetSocketAddress(config.getString("tor.host"), config.getInt("tor.port")),
+        protocolHandlerProps = protocolHandlerProps), "tor", SupervisorStrategy.Stop))
+
+      val torAddress = await(promiseTorAddress.future, 30 seconds, "tor did not respond after 30 seconds")
+      logger.info(s"Tor address $torAddress")
+      Some(torAddress)
+    } else {
+      None
+    }
+  }
 }
 
 // @formatter:off

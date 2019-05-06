@@ -16,33 +16,34 @@
 
 package fr.acinq.eclair.blockchain.bitcoind.zmq
 
+import akka.Done
 import akka.actor.{Actor, ActorLogging}
 import fr.acinq.bitcoin.{Block, Transaction}
 import fr.acinq.eclair.blockchain.{NewBlock, NewTransaction}
 import org.zeromq.ZMQ.Event
-import org.zeromq.{ZContext, ZMQ, ZMsg}
+import org.zeromq.{SocketType, ZContext, ZMQ, ZMsg}
 
 import scala.annotation.tailrec
-import scala.concurrent.{ExecutionContext, Promise}
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.Try
 
 /**
   * Created by PM on 04/04/2017.
   */
-class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) extends Actor with ActorLogging {
+class ZMQActor(address: String, connected: Option[Promise[Done]] = None) extends Actor with ActorLogging {
 
   import ZMQActor._
 
   val ctx = new ZContext
 
-  val subscriber = ctx.createSocket(ZMQ.SUB)
+  val subscriber = ctx.createSocket(SocketType.SUB)
   subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
   subscriber.connect(address)
   subscriber.subscribe("rawblock".getBytes(ZMQ.CHARSET))
   subscriber.subscribe("rawtx".getBytes(ZMQ.CHARSET))
 
-  val monitor = ctx.createSocket(ZMQ.PAIR)
+  val monitor = ctx.createSocket(SocketType.PAIR)
   monitor.connect("inproc://events")
 
   implicit val ec: ExecutionContext = context.system.dispatcher
@@ -79,7 +80,7 @@ class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) exte
     case event: Event => event.getEvent match {
       case ZMQ.EVENT_CONNECTED =>
         log.info(s"connected to ${event.getAddress}")
-        Try(connected.map(_.success(true)))
+        Try(connected.map(_.success(Done)))
         context.system.eventStream.publish(ZMQConnected)
       case ZMQ.EVENT_DISCONNECTED =>
         log.warning(s"disconnected from ${event.getAddress}")

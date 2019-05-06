@@ -22,6 +22,7 @@ import akka.actor.ActorSystem
 import grizzled.slf4j.Logging
 
 import scala.concurrent.ExecutionContext
+import scala.util.{Failure, Success}
 
 /**
   * Created by PM on 25/01/2016.
@@ -31,10 +32,15 @@ object Boot extends App with Logging {
   val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
 
   try {
+    val plugins = Plugin.loadPlugins(args.map(new File(_)))
+    plugins.foreach(plugin => logger.info(s"loaded plugin ${plugin.getClass.getSimpleName}"))
     implicit val system: ActorSystem = ActorSystem("eclair-node")
     implicit val ec: ExecutionContext = system.dispatcher
-    new Setup(datadir).bootstrap onFailure {
-      case t: Throwable => onError(t)
+    val setup = new Setup(datadir)
+    plugins.foreach(_.onSetup(setup))
+    setup.bootstrap onComplete {
+      case Success(kit) => plugins.foreach(_.onKit(kit))
+      case Failure(t) => onError(t)
     }
   } catch {
     case t: Throwable => onError(t)
@@ -43,8 +49,7 @@ object Boot extends App with Logging {
   def onError(t: Throwable): Unit = {
     val errorMsg = if (t.getMessage != null) t.getMessage else t.getClass.getSimpleName
     System.err.println(s"fatal error: $errorMsg")
-    logger.error(s"fatal error: $errorMsg")
+    logger.error(s"fatal error: $errorMsg", t)
     System.exit(1)
   }
 }
-

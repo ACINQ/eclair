@@ -1,10 +1,25 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
-import fr.acinq.eclair.randomBytes
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.EclairWallet
@@ -13,7 +28,7 @@ import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, ResumeAnnouncements, SendPing}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
 import fr.acinq.eclair.wire.{Error, Ping, Pong}
-import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, wire}
+import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, randomBytes, wire}
 import org.scalatest.Outcome
 
 import scala.concurrent.duration._
@@ -45,7 +60,7 @@ class PeerSpec extends TestkitBaseClass {
     // let's simulate a connection
     val probe = TestProbe()
     probe.send(peer, Peer.Init(None, Set.empty))
-    authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, InetSocketAddress.createUnresolved("foo.bar", 42000), false, None))
+    authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, new InetSocketAddress("1.2.3.4", 42000), outgoing = true, None))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
     transport.send(peer, wire.Init(Bob.nodeParams.globalFeatures, Bob.nodeParams.localFeatures))
@@ -94,9 +109,7 @@ class PeerSpec extends TestkitBaseClass {
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
     val rebroadcast = Rebroadcast(channels.map(_ -> Set.empty[ActorRef]).toMap, updates.map(_ -> Set.empty[ActorRef]).toMap, nodes.map(_ -> Set.empty[ActorRef]).toMap)
     probe.send(peer, rebroadcast)
-    channels.foreach(transport.expectMsg(_))
-    updates.foreach(transport.expectMsg(_))
-    nodes.foreach(transport.expectMsg(_))
+    transport.expectNoMsg(2 seconds)
   }
 
   test("filter gossip message (filtered by origin)") { f =>
@@ -107,6 +120,8 @@ class PeerSpec extends TestkitBaseClass {
       channels.map(_ -> Set.empty[ActorRef]).toMap + (channels(5) -> Set(peer)),
       updates.map(_ -> Set.empty[ActorRef]).toMap + (updates(6) -> Set(peer)) + (updates(10) -> Set(peer)),
       nodes.map(_ -> Set.empty[ActorRef]).toMap + (nodes(4) -> Set(peer)))
+    val filter = wire.GossipTimestampFilter(Alice.nodeParams.chainHash, 0, Long.MaxValue) // no filtering on timestamps
+    probe.send(peer, filter)
     probe.send(peer, rebroadcast)
     // peer won't send out announcements that came from itself
     (channels.toSet - channels(5)).foreach(transport.expectMsg(_))
@@ -168,36 +183,20 @@ class PeerSpec extends TestkitBaseClass {
     }
     transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
 
-    // now let's assume that the router isn't happy with those channels because the funding tx is not found
-    for (c <- channels) {
-      router.send(peer, Peer.NonexistingChannel(c))
-    }
-    // peer will temporary ignore announcements coming from bob
-    for (ann <- channels ++ updates) {
-      transport.send(peer, ann)
-      transport.expectMsg(TransportHandler.ReadAck(ann))
-    }
-    router.expectNoMsg(1 second)
-    // other routing messages go through
-    transport.send(peer, query)
-    router.expectMsg(Peer.PeerRoutingMessage(transport.ref, remoteNodeId, query))
+    // now let's assume that the router isn't happy with those channels because the announcement is invalid
+    router.send(peer, Peer.InvalidAnnouncement(channels(0)))
+    // peer will return a connection-wide error, including the hex-encoded representation of the bad message
+    val error1 = transport.expectMsgType[Error]
+    assert(error1.channelId === CHANNELID_ZERO)
+    assert(new String(error1.data.toArray).startsWith("couldn't verify channel! shortChannelId="))
 
-    // after a while the ban is lifted
-    probe.send(peer, ResumeAnnouncements)
-
-    // and announcements are processed again
-    for (c <- channels) {
-      transport.send(peer, c)
-      router.expectMsg(Peer.PeerRoutingMessage(transport.ref, remoteNodeId, c))
-    }
-    transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
 
     // let's assume that one of the sigs were invalid
     router.send(peer, Peer.InvalidSignature(channels(0)))
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
-    val error = transport.expectMsgType[Error]
-    assert(error.channelId === CHANNELID_ZERO)
-    assert(new String(error.data).startsWith("bad announcement sig! bin=0100"))
+    val error2 = transport.expectMsgType[Error]
+    assert(error2.channelId === CHANNELID_ZERO)
+    assert(new String(error2.data.toArray).startsWith("bad announcement sig! bin=0100"))
   }
 
 }

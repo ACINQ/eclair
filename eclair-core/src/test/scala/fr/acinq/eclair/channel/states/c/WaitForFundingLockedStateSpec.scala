@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.c
 
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.{ByteVector32, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -43,8 +43,8 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
-      bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, bob2alice.ref, aliceInit)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
@@ -99,7 +99,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
   test("recv Error") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
-    alice ! Error("00" * 32, "oops".getBytes)
+    alice ! Error(ByteVector32.Zeroes, "oops")
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap]

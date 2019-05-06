@@ -18,21 +18,18 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, SupervisorStrategy}
+import akka.Done
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.crypto.Noise.KeyPair
-import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
-import fr.acinq.eclair.wire.{LightningMessage, LightningMessageCodecs}
 
 import scala.concurrent.Promise
 
 /**
   * Created by PM on 27/10/2015.
   */
-class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, bound: Option[Promise[Unit]] = None) extends Actor with ActorLogging {
+class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, bound: Option[Promise[Done]] = None) extends Actor with ActorLogging {
 
   import Tcp._
   import context.system
@@ -41,7 +38,7 @@ class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
 
   def receive() = {
     case Bound(localAddress) =>
-      bound.map(_.success(Unit))
+      bound.map(_.success(Done))
       log.info(s"bound on $localAddress")
       // Accept connections one by one
       sender() ! ResumeAccepting(batchSize = 1)
@@ -65,7 +62,7 @@ class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
 
 object Server {
 
-  def props(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress, bound: Option[Promise[Unit]] = None): Props = Props(new Server(nodeParams, switchboard, address, bound))
+  def props(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress, bound: Option[Promise[Done]] = None): Props = Props(new Server(nodeParams, switchboard, address, bound))
 
 }
 

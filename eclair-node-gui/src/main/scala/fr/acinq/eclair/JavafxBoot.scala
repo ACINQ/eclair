@@ -19,9 +19,9 @@ package fr.acinq.eclair
 import java.io.File
 
 import akka.actor.ActorSystem
-import com.sun.javafx.application.LauncherImpl
 import fr.acinq.eclair.gui.{FxApp, FxPreloader}
 import grizzled.slf4j.Logging
+import javafx.application.Application
 
 /**
   * Created by PM on 25/01/2016.
@@ -35,12 +35,14 @@ object JavafxBoot extends App with Logging {
       implicit val system = ActorSystem("eclair-node-gui")
       new Setup(datadir).bootstrap
     } else {
-      LauncherImpl.launchApplication(classOf[FxApp], classOf[FxPreloader], Array(datadir.getAbsolutePath))
+      System.setProperty("javafx.preloader", classOf[FxPreloader].getName)
+      Application.launch(classOf[FxApp], datadir.getAbsolutePath)
     }
   } catch {
     case t: Throwable =>
-      System.err.println(s"fatal error: ${t.getMessage}")
-      logger.error(s"fatal error: ${t.getMessage}")
+      val errorMsg = if (t.getMessage != null) t.getMessage else t.getClass.getSimpleName
+      System.err.println(s"fatal error: $errorMsg")
+      logger.error(s"fatal error: $errorMsg", t)
       System.exit(1)
   }
 }

@@ -16,38 +16,70 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.BinaryData
+import java.util.UUID
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.payment.PaymentRequest
 
-/**
-  * Store the Lightning payments received by the node. Sent and relayed payments are not persisted.
-  * <p>
-  * A payment is a [[Payment]] object. In the local context of a LN node, it is safe to consider that
-  * a payment is uniquely identified by its payment hash. As such, implementations of this database can use the payment
-  * hash as a unique key and index.
-  * <p>
-  * Basic operations on this DB are:
-  * <ul>
-  * <li>insertion
-  * <li>find by payment hash
-  * <li>list all
-  * </ul>
-  * Payments should not be updated nor deleted.
-  */
 trait PaymentsDb {
 
-  def addPayment(payment: Payment)
+  // creates a record for a non yet finalized outgoing payment
+  def addOutgoingPayment(outgoingPayment: OutgoingPayment)
 
-  def findByPaymentHash(paymentHash: BinaryData): Option[Payment]
+  // updates the status of the payment, if the newStatus is SUCCEEDED you must supply a preimage
+  def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value, preimage: Option[ByteVector32] = None)
 
-  def listPayments(): Seq[Payment]
+  def getOutgoingPayment(id: UUID): Option[OutgoingPayment]
+
+  // all the outgoing payment (attempts) to pay the given paymentHash
+  def getOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment]
+
+  def listOutgoingPayments(): Seq[OutgoingPayment]
+
+  def addPaymentRequest(pr: PaymentRequest, preimage: ByteVector32)
+
+  def getPaymentRequest(paymentHash: ByteVector32): Option[PaymentRequest]
+
+  def getPendingPaymentRequestAndPreimage(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)]
+
+  def listPaymentRequests(from: Long, to: Long): Seq[PaymentRequest]
+
+  // returns non paid, non expired payment requests
+  def listPendingPaymentRequests(from: Long, to: Long): Seq[PaymentRequest]
+
+  // assumes there is already a payment request for it (the record for the given payment hash)
+  def addIncomingPayment(payment: IncomingPayment)
+
+  def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]
+
+  def listIncomingPayments(): Seq[IncomingPayment]
 
 }
 
 /**
-  * Payment object stored in DB.
+  * Incoming payment object stored in DB.
   *
-  * @param payment_hash identifier of the payment
-  * @param amount_msat  amount of the payment, in milli-satoshis
-  * @param timestamp    absolute time in seconds since UNIX epoch when the payment was created.
+  * @param paymentHash identifier of the payment
+  * @param amountMsat  amount of the payment, in milli-satoshis
+  * @param receivedAt  absolute time in seconds since UNIX epoch when the payment was received.
   */
-case class Payment(payment_hash: BinaryData, amount_msat: Long, timestamp: Long)
+case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, receivedAt: Long)
+
+/**
+  * Sent payment is every payment that is sent by this node, they may not be finalized and
+  * when is final it can be failed or successful.
+  *
+  * @param id          internal payment identifier
+  * @param paymentHash payment_hash
+  * @param preimage    the preimage of the payment_hash, known if the outgoing payment was successful
+  * @param amountMsat  amount of the payment, in milli-satoshis
+  * @param createdAt   absolute time in seconds since UNIX epoch when the payment was created.
+  * @param completedAt absolute time in seconds since UNIX epoch when the payment succeeded.
+  * @param status      current status of the payment.
+  */
+case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, preimage:Option[ByteVector32], amountMsat: Long, createdAt: Long, completedAt: Option[Long], status: OutgoingPaymentStatus.Value)
+
+object OutgoingPaymentStatus extends Enumeration {
+  val PENDING = Value(1, "PENDING")
+  val SUCCEEDED = Value(2, "SUCCEEDED")
+  val FAILED = Value(3, "FAILED")
+}

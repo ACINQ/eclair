@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.TxCoordinates
-import fr.acinq.eclair.blockchain.ValidateResult
+import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateResult}
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import org.json4s.JsonAST._
 
@@ -55,7 +55,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       }
       // with a verbosity of 0, getblock returns the raw serialized block
       block <- rpcClient.invoke("getblock", blockhash, 0).collect { case JString(b) => Block.read(b) }
-      prevblockhash = BinaryData(block.header.hashPreviousBlock.reverse).toString
+      prevblockhash = block.header.hashPreviousBlock.reverse.toHex
       res <- block.tx.find(tx => tx.txIn.exists(i => i.outPoint.txid.toString() == txid && i.outPoint.index == outputIndex)) match {
         case None => lookForSpendingTx(Some(prevblockhash), txid, outputIndex)
         case Some(tx) => Future.successful(tx)
@@ -144,17 +144,25 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     val TxCoordinates(blockHeight, txIndex, outputIndex) = coordinates(c.shortChannelId)
 
     for {
-      blockHash: String <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOrElse[String]("00" * 32))
+      blockHash: String <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOrElse[String](ByteVector32.Zeroes.toHex))
       txid: String <- rpcClient.invoke("getblock", blockHash).map {
         case json => Try {
           val JArray(txs) = json \ "tx"
           txs(txIndex).extract[String]
-        } getOrElse ("00" * 32)
+        } getOrElse ByteVector32.Zeroes.toHex
       }
       tx <- getRawTransaction(txid)
       unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
-    } yield ValidateResult(c, Some(Transaction.read(tx)), unspent, None)
+      fundingTxStatus <- if (unspent) {
+        Future.successful(UtxoStatus.Unspent)
+      } else {
+        // if this returns true, it means that the spending tx is *not* in the blockchain
+        isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map {
+          case res => UtxoStatus.Spent(spendingTxConfirmed = !res)
+        }
+      }
+    } yield ValidateResult(c, Right((Transaction.read(tx), fundingTxStatus)))
 
-  } recover { case t: Throwable => ValidateResult(c, None, false, Some(t)) }
+  } recover { case t: Throwable => ValidateResult(c, Left(t)) }
 
 }

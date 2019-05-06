@@ -1,22 +1,39 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import org.scalatest.FunSuite
-import RouteCalculationSpec._
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.wire.ChannelUpdate
+import org.scalatest.FunSuite
+import scodec.bits._
 
 class GraphSpec extends FunSuite {
 
   val (a, b, c, d, e, f, g) = (
-    PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //a
-    PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), //b
-    PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), //c
-    PublicKey("029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c"), //d
-    PublicKey("02f38f4e37142cc05df44683a83e22dea608cf4691492829ff4cf99888c5ec2d3a"), //e
-    PublicKey("03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc"), //f
-    PublicKey("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f") //g
+    PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //a
+    PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), //b
+    PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), //c
+    PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c"), //d
+    PublicKey(hex"02f38f4e37142cc05df44683a83e22dea608cf4691492829ff4cf99888c5ec2d3a"), //e
+    PublicKey(hex"03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc"), //f
+    PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f") //g
   )
 
   /**
@@ -55,7 +72,6 @@ class GraphSpec extends FunSuite {
     assert(otherGraph.vertexSet().size === 5)
 
     // add some edges to the graph
-
     val (descAB, updateAB) = makeUpdate(1L, a, b, 0, 0)
     val (descBC, updateBC) = makeUpdate(2L, b, c, 0, 0)
     val (descAD, updateAD) = makeUpdate(3L, a, d, 0, 0)
@@ -75,9 +91,9 @@ class GraphSpec extends FunSuite {
     assert(graphWithEdges.edgesOf(d).size === 1)
     assert(graphWithEdges.edgesOf(e).size === 0)
 
-    val withRemovedEdges = graphWithEdges.removeEdge(descDC)
+    val withRemovedEdges = graphWithEdges.removeEdge(descAD)
 
-    assert(withRemovedEdges.edgesOf(d).size === 0)
+    assert(withRemovedEdges.edgesOf(d).size === 1)
   }
 
   test("instantiate a graph adding edges only") {
@@ -98,6 +114,7 @@ class GraphSpec extends FunSuite {
 
     assert(graph.vertexSet().size === 5)
     assert(graph.edgesOf(c).size === 1)
+    assert(graph.getIncomingEdgesOf(c).size === 2)
     assert(graph.edgeSet().size === 6)
   }
 
@@ -134,6 +151,8 @@ class GraphSpec extends FunSuite {
 
     assert(graph.edgeSet().size === 6)
 
+    assert(graph.containsEdge(descBE))
+
     val withRemovedEdge = graph.removeEdge(descBE)
     assert(withRemovedEdge.edgeSet().size === 5)
 
@@ -142,7 +161,7 @@ class GraphSpec extends FunSuite {
 
     val withoutAnyIncomingEdgeInE = graph.removeEdges(Seq(descBE, descCE))
     assert(withoutAnyIncomingEdgeInE.containsVertex(e))
-    assert(withoutAnyIncomingEdgeInE.getIncomingEdgesOf(e).size == 0)
+    assert(withoutAnyIncomingEdgeInE.edgesOf(e).size == 0)
   }
 
   test("should get an edge given two vertices") {
@@ -161,10 +180,15 @@ class GraphSpec extends FunSuite {
     assert(edgesAB.head.desc.a === a)
     assert(edgesAB.head.desc.b === b)
 
-    val bNeighbors = graph.edgesOf(b)
-    assert(bNeighbors.size === 1)
-    assert(bNeighbors.exists(_.desc.a === b)) //there should be an edge b -- c
-    assert(bNeighbors.exists(_.desc.b === c))
+    val bIncoming = graph.getIncomingEdgesOf(b)
+    assert(bIncoming.size === 1)
+    assert(bIncoming.exists(_.desc.a === a)) //there should be an edge a --> b
+    assert(bIncoming.exists(_.desc.b === b))
+
+    val bOutgoing = graph.edgesOf(b)
+    assert(bOutgoing.size === 1)
+    assert(bOutgoing.exists(_.desc.a === b))
+    assert(bOutgoing.exists(_.desc.b === c))
   }
 
   test("there can be multiple edges between the same vertices") {

@@ -16,38 +16,52 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.Connection
+import java.sql.{Connection, Statement}
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
+import grizzled.slf4j.Logging
 
 import scala.collection.immutable.Queue
 
-class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
+class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
 
+  import SqliteUtils.ExtendedResultSet._
   import SqliteUtils._
 
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 1
+  val CURRENT_VERSION = 2
+
+  private def migration12(statement: Statement) = {
+    statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT 0")
+  }
 
   using(sqlite.createStatement()) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
-    statement.execute("PRAGMA foreign_keys = ON")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
+    getVersion(statement, DB_NAME, CURRENT_VERSION) match {
+      case 1 =>
+        logger.warn(s"migrating db $DB_NAME, found version=1 current=$CURRENT_VERSION")
+        migration12(statement)
+        setVersion(statement, DB_NAME, CURRENT_VERSION)
+      case CURRENT_VERSION =>
+        statement.execute("PRAGMA foreign_keys = ON")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
+
+      case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
+    }
   }
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = {
     val data = stateDataCodec.encode(state).require.toByteArray
     using (sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
       update.setBytes(1, data)
-      update.setBytes(2, state.channelId)
+      update.setBytes(2, state.channelId.toArray)
       if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?)")) { statement =>
-          statement.setBytes(1, state.channelId)
+        using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?, 0)")) { statement =>
+          statement.setBytes(1, state.channelId.toArray)
           statement.setBytes(2, data)
           statement.executeUpdate()
         }
@@ -55,50 +69,52 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
     }
   }
 
-  override def removeChannel(channelId: BinaryData): Unit = {
+  override def removeChannel(channelId: ByteVector32): Unit = {
     using(sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
-      statement.setBytes(1, channelId)
+      statement.setBytes(1, channelId.toArray)
       statement.executeUpdate()
     }
 
     using(sqlite.prepareStatement("DELETE FROM htlc_infos WHERE channel_id=?")) { statement =>
-      statement.setBytes(1, channelId)
+      statement.setBytes(1, channelId.toArray)
       statement.executeUpdate()
     }
 
-    using(sqlite.prepareStatement("DELETE FROM local_channels WHERE channel_id=?")) { statement =>
-      statement.setBytes(1, channelId)
+    using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=1 WHERE channel_id=?")) { statement =>
+      statement.setBytes(1, channelId.toArray)
       statement.executeUpdate()
     }
   }
 
-  override def listChannels(): Seq[HasCommitments] = {
+  override def listLocalChannels(): Seq[HasCommitments] = {
     using(sqlite.createStatement) { statement =>
-      val rs = statement.executeQuery("SELECT data FROM local_channels")
+      val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
       codecSequence(rs, stateDataCodec)
     }
   }
 
-  def addOrUpdateHtlcInfo(channelId: BinaryData, commitmentNumber: Long, paymentHash: BinaryData, cltvExpiry: Long): Unit = {
+  def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: Long): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, channelId)
+      statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
-      statement.setBytes(3, paymentHash)
+      statement.setBytes(3, paymentHash.toArray)
       statement.setLong(4, cltvExpiry)
       statement.executeUpdate()
     }
   }
 
-  def listHtlcInfos(channelId: BinaryData, commitmentNumber: Long): Seq[(BinaryData, Long)] = {
+  def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, Long)] = {
     using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
-      statement.setBytes(1, channelId)
+      statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
       val rs = statement.executeQuery
-      var q: Queue[(BinaryData, Long)] = Queue()
+      var q: Queue[(ByteVector32, Long)] = Queue()
       while (rs.next()) {
-        q = q :+ (BinaryData(rs.getBytes("payment_hash")), rs.getLong("cltv_expiry"))
+        q = q :+ (ByteVector32(rs.getByteVector32("payment_hash")), rs.getLong("cltv_expiry"))
       }
       q
     }
   }
+
+  override def close(): Unit = sqlite.close
 }

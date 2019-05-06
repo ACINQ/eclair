@@ -16,12 +16,16 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.channel.NetworkFeePaid
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 
 trait AuditDb {
+
+  def add(availableBalanceChanged: AvailableBalanceChanged)
+
+  def add(channelLifecycle: ChannelLifecycleEvent)
 
   def add(paymentSent: PaymentSent)
 
@@ -30,6 +34,8 @@ trait AuditDb {
   def add(paymentRelayed: PaymentRelayed)
 
   def add(networkFeePaid: NetworkFeePaid)
+
+  def add(channelErrorOccured: ChannelErrorOccured)
 
   def listSent(from: Long, to: Long): Seq[PaymentSent]
 
@@ -41,8 +47,12 @@ trait AuditDb {
 
   def stats: Seq[Stats]
 
+  def close: Unit
+
 }
 
-case class NetworkFee(remoteNodeId: PublicKey, channelId: BinaryData, txId: BinaryData, feeSat: Long, txType: String, timestamp: Long)
+case class ChannelLifecycleEvent(channelId: ByteVector32, remoteNodeId: PublicKey, capacitySat: Long, isFunder: Boolean, isPrivate: Boolean, event: String)
 
-case class Stats(channelId: BinaryData, avgPaymentAmountSatoshi: Long, paymentCount: Int, relayFeeSatoshi: Long, networkFeeSatoshi: Long)
+case class NetworkFee(remoteNodeId: PublicKey, channelId: ByteVector32, txId: ByteVector32, feeSat: Long, txType: String, timestamp: Long)
+
+case class Stats(channelId: ByteVector32, avgPaymentAmountSatoshi: Long, paymentCount: Int, relayFeeSatoshi: Long, networkFeeSatoshi: Long)

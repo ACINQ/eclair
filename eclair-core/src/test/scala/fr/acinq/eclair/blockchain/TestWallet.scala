@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.{BinaryData, Crypto, OP_PUSHDATA, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, OP_PUSHDATA, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import scodec.bits.ByteVector
 
 import scala.concurrent.Future
 import scala.util.Try
@@ -26,23 +27,30 @@ import scala.util.Try
   */
 class TestWallet extends EclairWallet {
 
+  var rolledback = Set.empty[Transaction]
+
   override def getBalance: Future[Satoshi] = ???
 
   override def getFinalAddress: Future[String] = Future.successful("2MsRZ1asG6k94m6GYUufDGaZJMoJ4EV5JKs")
 
-  override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] =
+  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] =
     Future.successful(TestWallet.makeDummyFundingTx(pubkeyScript, amount, feeRatePerKw))
 
   override def commit(tx: Transaction): Future[Boolean] = Future.successful(true)
 
-  override def rollback(tx: Transaction): Future[Boolean] = Future.successful(true)
+  override def rollback(tx: Transaction): Future[Boolean] = {
+    rolledback = rolledback + tx
+    Future.successful(true)
+  }
+
+  override def doubleSpent(tx: Transaction): Future[Boolean] = Future.successful(false)
 }
 
 object TestWallet {
 
-  def makeDummyFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): MakeFundingTxResponse = {
+  def makeDummyFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): MakeFundingTxResponse = {
     val fundingTx = Transaction(version = 2,
-      txIn = TxIn(OutPoint("42" * 32, 42), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+      txIn = TxIn(OutPoint(ByteVector32(ByteVector.fill(32)(1)), 42), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
       txOut = TxOut(amount, pubkeyScript) :: Nil,
       lockTime = 0)
     MakeFundingTxResponse(fundingTx, 0, Satoshi(420))

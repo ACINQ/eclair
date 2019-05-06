@@ -21,7 +21,7 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction}
+import fr.acinq.bitcoin.{Block, Satoshi, Script, Transaction}
 import fr.acinq.eclair.blockchain.ValidateResult
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
@@ -29,6 +29,7 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{ShortChannelId, randomKey}
 import org.scalatest.FunSuite
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
@@ -59,13 +60,13 @@ class AnnouncementsBatchValidationSpec extends FunSuite {
     val sender = TestProbe()
 
     extendedBitcoinClient.validate(announcements(0)).pipeTo(sender.ref)
-    sender.expectMsgType[ValidateResult].tx.isDefined
+    sender.expectMsgType[ValidateResult].fundingTx.isRight
 
     extendedBitcoinClient.validate(announcements(1).copy(shortChannelId = ShortChannelId(Long.MaxValue))).pipeTo(sender.ref) // invalid block height
-    sender.expectMsgType[ValidateResult].tx.isEmpty
+    sender.expectMsgType[ValidateResult].fundingTx.isRight
 
     extendedBitcoinClient.validate(announcements(2).copy(shortChannelId = ShortChannelId(500, 1000, 0))).pipeTo(sender.ref) // invalid tx index
-    sender.expectMsgType[ValidateResult].tx.isEmpty
+    sender.expectMsgType[ValidateResult].fundingTx.isRight
 
   }
 
@@ -96,8 +97,8 @@ object AnnouncementsBatchValidationSpec {
   def makeChannelAnnouncement(c: SimulatedChannel)(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext): ChannelAnnouncement = {
     val (blockHeight, txIndex) = Await.result(extendedBitcoinClient.getTransactionShortId(c.fundingTx.txid.toString()), 10 seconds)
     val shortChannelId = ShortChannelId(blockHeight, txIndex, c.fundingOutputIndex)
-    val (channelAnnNodeSig1, channelAnnBitcoinSig1) = Announcements.signChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, c.node1Key, c.node2Key.publicKey, c.node1FundingKey, c.node2FundingKey.publicKey, BinaryData.empty)
-    val (channelAnnNodeSig2, channelAnnBitcoinSig2) = Announcements.signChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, c.node2Key, c.node1Key.publicKey, c.node2FundingKey, c.node1FundingKey.publicKey, BinaryData.empty)
+    val (channelAnnNodeSig1, channelAnnBitcoinSig1) = Announcements.signChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, c.node1Key, c.node2Key.publicKey, c.node1FundingKey, c.node2FundingKey.publicKey, ByteVector.empty)
+    val (channelAnnNodeSig2, channelAnnBitcoinSig2) = Announcements.signChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, c.node2Key, c.node1Key.publicKey, c.node2FundingKey, c.node1FundingKey.publicKey, ByteVector.empty)
     val channelAnnouncement = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, c.node1Key.publicKey, c.node2Key.publicKey, c.node1FundingKey.publicKey, c.node2FundingKey.publicKey, channelAnnNodeSig1, channelAnnNodeSig2, channelAnnBitcoinSig1, channelAnnBitcoinSig2)
     channelAnnouncement
   }

@@ -18,13 +18,14 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
-import fr.acinq.eclair.payment.Origin
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, UInt64}
+import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success}
 
@@ -34,10 +35,10 @@ case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessag
 }
 case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage], signed: List[UpdateMessage])
 case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
-case class HtlcTxAndSigs(txinfo: TransactionWithInputInfo, localSig: BinaryData, remoteSig: BinaryData)
+case class HtlcTxAndSigs(txinfo: TransactionWithInputInfo, localSig: ByteVector, remoteSig: ByteVector)
 case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs])
 case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs)
-case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, remotePerCommitmentPoint: Point)
+case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, remotePerCommitmentPoint: Point)
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 // @formatter:on
 
@@ -57,20 +58,26 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, the id of the previous channel
                        remoteNextCommitInfo: Either[WaitingForRevocation, Point],
                        commitInput: InputInfo,
-                       remotePerCommitmentSecrets: ShaChain, channelId: BinaryData) {
+                       remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
-  def hasTimedoutOutgoingHtlcs(blockheight: Long): Boolean =
-    localCommit.spec.htlcs.exists(htlc => htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry) ||
-      remoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry) ||
-      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry)).getOrElse(false)
+  def timedoutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
+    (localCommit.spec.htlcs.filter(htlc => htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry) ++
+      remoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry) ++
+      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry)).getOrElse(Set.empty[DirectedHtlc])).map(_.add)
 
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
   def announceChannel: Boolean = (channelFlags & 0x01) != 0
+
+  def availableBalanceForSendMsat: Long = {
+    val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
+    val feesMsat = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced).amount * 1000 else 0
+    reduced.toRemoteMsat - remoteParams.channelReserveSatoshis * 1000 - feesMsat
+  }
 }
 
 object Commitments {
@@ -94,10 +101,6 @@ object Commitments {
     * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
     */
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
-
-    if (cmd.paymentHash.size != 32) {
-      return Left(InvalidPaymentHash(commitments.channelId))
-    }
 
     val blockCount = Globals.blockCount.get()
     // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
@@ -149,10 +152,6 @@ object Commitments {
   def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Commitments = {
     if (add.id != commitments.remoteNextHtlcId) {
       throw UnexpectedHtlcId(commitments.channelId, expected = commitments.remoteNextHtlcId, actual = add.id)
-    }
-
-    if (add.paymentHash.size != 32) {
-      throw InvalidPaymentHash(commitments.channelId)
     }
 
     if (add.amountMsat < commitments.localParams.htlcMinimumMsat) {
@@ -347,9 +346,9 @@ object Commitments {
 
   def remoteHasChanges(commitments: Commitments): Boolean = commitments.localChanges.acked.size > 0 || commitments.remoteChanges.proposed.size > 0
 
-  def revocationPreimage(seed: BinaryData, index: Long): BinaryData = ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - index)
+  def revocationPreimage(seed: ByteVector32, index: Long): ByteVector32 = ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - index)
 
-  def revocationHash(seed: BinaryData, index: Long): BinaryData = Crypto.sha256(revocationPreimage(seed, index))
+  def revocationHash(seed: ByteVector32, index: Long): ByteVector32 = Crypto.sha256(revocationPreimage(seed, index))
 
   def sendCommit(commitments: Commitments, keyManager: KeyManager)(implicit log: LoggingAdapter): (Commitments, CommitSig) = {
     import commitments._
@@ -455,30 +454,47 @@ object Commitments {
       publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs))
     val ourChanges1 = localChanges.copy(acked = Nil)
     val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
-    // the outgoing following htlcs have been completed (fulfilled or failed) when we received this sig
-    val completedOutgoingHtlcs = commitments.localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add.id) -- localCommit1.spec.htlcs.filter(_.direction == OUT).map(_.add.id)
-    // we remove the newly completed htlcs from the origin map
-    val originChannels1 = commitments.originChannels -- completedOutgoingHtlcs
-    val commitments1 = commitments.copy(localCommit = localCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1, originChannels = originChannels1)
+    val commitments1 = commitments.copy(localCommit = localCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
 
     (commitments1, revocation)
   }
 
-  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): Commitments = {
+  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): (Commitments, Seq[ForwardMessage]) = {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
       case Left(_) if revocation.perCommitmentSecret.toPoint != remoteCommit.remotePerCommitmentPoint =>
         throw InvalidRevocation(commitments.channelId)
       case Left(WaitingForRevocation(theirNextCommit, _, _, _)) =>
+         val forwards = commitments.remoteChanges.signed collect {
+          // we forward adds downstream only when they have been committed by both sides
+          // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
+          case add: UpdateAddHtlc => ForwardAdd(add)
+          // same for fails: we need to make sure that they are in neither commitment before propagating the fail upstream
+          case fail: UpdateFailHtlc =>
+            val origin = commitments.originChannels(fail.id)
+            val add = commitments.remoteCommit.spec.htlcs.find(p => p.direction == IN && p.add.id == fail.id).map(_.add).get
+            ForwardFail(fail, origin, add)
+          // same as above
+          case fail: UpdateFailMalformedHtlc =>
+            val origin = commitments.originChannels(fail.id)
+            val add = commitments.remoteCommit.spec.htlcs.find(p => p.direction == IN && p.add.id == fail.id).map(_.add).get
+            ForwardFailMalformed(fail, origin, add)
+        }
+        // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
+        // they have been removed from both local and remote commitment
+        // (since fulfill/fail are sent by remote, they are (1) signed by them, (2) revoked by us, (3) signed by us, (4) revoked by them
+        val completedOutgoingHtlcs = commitments.remoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add.id) -- theirNextCommit.spec.htlcs.filter(_.direction == IN).map(_.add.id)
+        // we remove the newly completed htlcs from the origin map
+        val originChannels1 = commitments.originChannels -- completedOutgoingHtlcs
         val commitments1 = commitments.copy(
           localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
           remoteChanges = remoteChanges.copy(signed = Nil),
           remoteCommit = theirNextCommit,
           remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
-          remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index))
-
-        commitments1
+          remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.toBin, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index),
+          originChannels = originChannels1)
+        (commitments1, forwards)
       case Right(_) =>
         throw UnexpectedRevocation(commitments.channelId)
     }

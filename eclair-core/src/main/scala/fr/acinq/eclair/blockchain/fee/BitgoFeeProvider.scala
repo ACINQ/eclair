@@ -18,14 +18,14 @@ package fr.acinq.eclair.blockchain.fee
 
 import com.softwaremill.sttp._
 import com.softwaremill.sttp.json4s._
-import fr.acinq.bitcoin.{BinaryData, Block}
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JInt, JValue}
 import org.json4s.jackson.Serialization
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class BitgoFeeProvider(chainHash: BinaryData)(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
+class BitgoFeeProvider(chainHash: ByteVector32)(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
 
   import BitgoFeeProvider._
 

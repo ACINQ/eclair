@@ -1,11 +1,28 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.router
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, InputStream}
 import java.nio.ByteOrder
 import java.util.zip.{DeflaterOutputStream, GZIPInputStream, GZIPOutputStream, InflaterInputStream}
 
-import fr.acinq.bitcoin.{BinaryData, Protocol}
+import fr.acinq.bitcoin.Protocol
 import fr.acinq.eclair.ShortChannelId
+import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 import scala.collection.SortedSet
@@ -15,7 +32,7 @@ object ChannelRangeQueries {
   val UNCOMPRESSED_FORMAT = 0.toByte
   val ZLIB_FORMAT = 1.toByte
 
-  case class ShortChannelIdsBlock(val firstBlock: Long, val numBlocks: Long, shortChannelIds: BinaryData)
+  case class ShortChannelIdsBlock(val firstBlock: Long, val numBlocks: Long, shortChannelIds: ByteVector)
 
   /**
     * Compressed a sequence of *sorted* short channel id.
@@ -26,7 +43,7 @@ object ChannelRangeQueries {
   def encodeShortChannelIds(firstBlockIn: Long, numBlocksIn: Long, shortChannelIds: SortedSet[ShortChannelId], format: Byte, useGzip: Boolean = false): List[ShortChannelIdsBlock] = {
     if (shortChannelIds.isEmpty) {
       // special case: reply with an "empty" block
-      List(ShortChannelIdsBlock(firstBlockIn, numBlocksIn, BinaryData("00")))
+      List(ShortChannelIdsBlock(firstBlockIn, numBlocksIn, ByteVector(0)))
     } else {
       // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
       val count = format match {
@@ -45,7 +62,7 @@ object ChannelRangeQueries {
     }
   }
 
-  def encodeShortChannelIdsSingle(shortChannelIds: Iterable[ShortChannelId], format: Byte, useGzip: Boolean): BinaryData = {
+  def encodeShortChannelIdsSingle(shortChannelIds: Iterable[ShortChannelId], format: Byte, useGzip: Boolean): ByteVector = {
     val bos = new ByteArrayOutputStream()
     bos.write(format)
     format match {
@@ -56,7 +73,7 @@ object ChannelRangeQueries {
         shortChannelIds.foreach(id => Protocol.writeUInt64(id.toLong, output, ByteOrder.BIG_ENDIAN))
         output.finish()
     }
-    bos.toByteArray
+    ByteVector.view(bos.toByteArray)
   }
 
   /**
@@ -65,7 +82,7 @@ object ChannelRangeQueries {
     * @param data
     * @return a sorted set of short channel ids
     */
-  def decodeShortChannelIds(data: BinaryData): (Byte, SortedSet[ShortChannelId], Boolean) = {
+  def decodeShortChannelIds(data: ByteVector): (Byte, SortedSet[ShortChannelId], Boolean) = {
     val format = data.head
     if (data.tail.isEmpty) (format, SortedSet.empty[ShortChannelId], false) else {
       val buffer = new Array[Byte](8)

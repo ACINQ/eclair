@@ -25,18 +25,21 @@ import org.scalatest.Suite
 trait ElectrumxService extends DockerTestKit {
   self: Suite =>
 
+  val electrumPort = 47000
+
   val electrumxContainer = if (System.getProperty("os.name").startsWith("Linux")) {
     // "host" mode will let the container access the host network on linux
-    DockerContainer("lukechilds/electrumx")
+    // we use our own docker image because other images on Docker lag behind and don't yet support 1.4
+    DockerContainer("acinq/electrumx")
       .withNetworkMode("host")
-      .withEnv("DAEMON_URL=http://foo:bar@localhost:28332", "COIN=BitcoinSegwit", "NET=regtest")
+      .withEnv("DAEMON_URL=http://foo:bar@localhost:28332", "COIN=BitcoinSegwit", "NET=regtest", s"TCP_PORT=$electrumPort")
       //.withLogLineReceiver(LogLineReceiver(true, println))
   } else {
     // on windows or oxs, host mode is not available, but from docker 18.03 on host.docker.internal can be used instead
     // host.docker.internal is not (yet ?) available on linux though
-    DockerContainer("lukechilds/electrumx")
-      .withPorts(50001 -> Some(50001))
-      .withEnv("DAEMON_URL=http://foo:bar@host.docker.internal:28332", "COIN=BitcoinSegwit", "NET=regtest", "TCP_PORT=50001")
+    DockerContainer("acinq/electrumx")
+      .withPorts(electrumPort -> Some(electrumPort))
+      .withEnv("DAEMON_URL=http://foo:bar@host.docker.internal:28332", "COIN=BitcoinSegwit", "NET=regtest", s"TCP_PORT=$electrumPort")
       //.withLogLineReceiver(LogLineReceiver(true, println))
   }
 

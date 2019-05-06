@@ -16,20 +16,23 @@
 
 package fr.acinq.eclair.channel.states.g
 
+import java.util.UUID
+
 import akka.actor.Status.Failure
 import akka.event.LoggingAdapter
-import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Satoshi
+import akka.testkit.TestProbe
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment.Local
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
 import fr.acinq.eclair.{Globals, TestkitBaseClass}
 import org.scalatest.{Outcome, Tag}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.util.Success
@@ -40,13 +43,13 @@ import scala.util.Success
 
 class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe)
+  type FixtureParam = SetupFixture
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer)
+      reachNormal(setup)
       val sender = TestProbe()
       // alice initiates a closing
       if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4319)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(10000))
@@ -61,7 +64,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4316)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(5000))
       alice2bob.forward(bob)
       awaitCond(bob.stateName == NEGOTIATING)
-      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)))
+      withFixture(test.toNoArgTest(setup))
     }
   }
 
@@ -69,10 +72,10 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     import f._
     alice2bob.expectMsgType[ClosingSigned]
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(500000000, "11" * 32, cltvExpiry = 300000)
+    val add = CMD_ADD_HTLC(500000000, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = 300000, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), None, Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), None, Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -121,7 +124,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
     sender.send(bob, aliceCloseSig.copy(feeSatoshis = 99000)) // sig doesn't matter, it is checked later
   val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data).startsWith("invalid close fee: fee_satoshis=99000"))
+    assert(new String(error.data.toArray).startsWith("invalid close fee: fee_satoshis=99000"))
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -132,9 +135,9 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
     val sender = TestProbe()
     val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
-    sender.send(bob, aliceCloseSig.copy(signature = "00" * 64))
+    sender.send(bob, aliceCloseSig.copy(signature = ByteVector.fill(64)(0)))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data).startsWith("invalid close signature"))
+    assert(new String(error.data.toArray).startsWith("invalid close signature"))
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
@@ -197,7 +200,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
   test("recv Error") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
-    alice ! Error("00" * 32, "oops".getBytes())
+    alice ! Error(ByteVector32.Zeroes, "oops")
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap]

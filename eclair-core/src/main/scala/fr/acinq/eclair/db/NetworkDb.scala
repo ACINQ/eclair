@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.{BinaryData, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 
@@ -31,17 +31,18 @@ trait NetworkDb {
 
   def listNodes(): Seq[NodeAnnouncement]
 
-  def addChannel(c: ChannelAnnouncement, txid: BinaryData, capacity: Satoshi)
+  def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi)
+
+  def removeChannel(shortChannelId: ShortChannelId) = removeChannels(Seq(shortChannelId))
 
   /**
-    * This method removes 1 channel announcement and 2 channel updates (at both ends of the same channel)
+    * This method removes channel announcements and associated channel updates for a list of channel ids
     *
-    * @param shortChannelId
-    * @return
+    * @param shortChannelIds list of short channel ids
     */
-  def removeChannel(shortChannelId: ShortChannelId)
+  def removeChannels(shortChannelIds: Iterable[ShortChannelId])
 
-  def listChannels(): Map[ChannelAnnouncement, (BinaryData, Satoshi)]
+  def listChannels(): Map[ChannelAnnouncement, (ByteVector32, Satoshi)]
 
   def addChannelUpdate(u: ChannelUpdate)
 
@@ -49,10 +50,12 @@ trait NetworkDb {
 
   def listChannelUpdates(): Seq[ChannelUpdate]
 
-  def addToPruned(shortChannelId: ShortChannelId)
+  def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit
 
   def removeFromPruned(shortChannelId: ShortChannelId)
 
   def isPruned(shortChannelId: ShortChannelId): Boolean
+
+  def close(): Unit
 
 }

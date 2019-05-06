@@ -16,8 +16,11 @@
 
 package fr.acinq.eclair.wire
 
+import java.util.UUID
+
+import akka.actor.ActorRef
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
-import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.{Local, Origin, Relayed}
@@ -25,9 +28,14 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import grizzled.slf4j.Logging
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
+import scala.concurrent.duration._
+import scala.compat.Platform
+
+import scala.concurrent.duration._
+
 
 /**
   * Created by PM on 02/06/2017.
@@ -37,8 +45,8 @@ object ChannelCodecs extends Logging {
   val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
 
   val extendedPrivateKeyCodec: Codec[ExtendedPrivateKey] = (
-    ("secretkeybytes" | binarydata(32)) ::
-      ("chaincode" | binarydata(32)) ::
+    ("secretkeybytes" | bytes32) ::
+      ("chaincode" | bytes32) ::
       ("depth" | uint16) ::
       ("path" | keyPathCodec) ::
       ("parent" | int64)).as[ExtendedPrivateKey]
@@ -93,11 +101,11 @@ object ChannelCodecs extends Logging {
       ("toLocalMsat" | uint64) ::
       ("toRemoteMsat" | uint64)).as[CommitmentSpec]
 
-  def outPointCodec: Codec[OutPoint] = variableSizeBytes(uint16, bytes.xmap(d => OutPoint.read(d.toArray), d => ByteVector(OutPoint.write(d).data)))
+  def outPointCodec: Codec[OutPoint] = variableSizeBytes(uint16, bytes.xmap(d => OutPoint.read(d.toArray), d => OutPoint.write(d)))
 
-  def txOutCodec: Codec[TxOut] = variableSizeBytes(uint16, bytes.xmap(d => TxOut.read(d.toArray), d => ByteVector(TxOut.write(d).data)))
+  def txOutCodec: Codec[TxOut] = variableSizeBytes(uint16, bytes.xmap(d => TxOut.read(d.toArray), d => TxOut.write(d)))
 
-  def txCodec: Codec[Transaction] = variableSizeBytes(uint16, bytes.xmap(d => Transaction.read(d.toArray), d => ByteVector(Transaction.write(d).data)))
+  def txCodec: Codec[Transaction] = variableSizeBytes(uint16, bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
   val inputInfoCodec: Codec[InputInfo] = (
     ("outPoint" | outPointCodec) ::
@@ -106,7 +114,7 @@ object ChannelCodecs extends Logging {
 
   val txWithInputInfoCodec: Codec[TransactionWithInputInfo] = discriminated[TransactionWithInputInfo].by(uint16)
     .typecase(0x01, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx])
-    .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | binarydata(32))).as[HtlcSuccessTx])
+    .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32)).as[HtlcSuccessTx])
     .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcTimeoutTx])
     .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcSuccessTx])
     .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcTimeoutTx])
@@ -133,7 +141,7 @@ object ChannelCodecs extends Logging {
   val remoteCommitCodec: Codec[RemoteCommit] = (
     ("index" | uint64) ::
       ("spec" | commitmentSpecCodec) ::
-      ("txid" | binarydata(32)) ::
+      ("txid" | bytes32) ::
       ("remotePerCommitmentPoint" | point)).as[RemoteCommit]
 
   val updateMessageCodec: Codec[UpdateMessage] = lightningMessageCodec.narrow(f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g)
@@ -154,14 +162,23 @@ object ChannelCodecs extends Logging {
       ("sentAfterLocalCommitIndex" | uint64) ::
       ("reSignAsap" | bool)).as[WaitingForRevocation]
 
+  val localCodec: Codec[Local] = (
+    ("id" | uuid) ::
+      ("sender" | provide(Option.empty[ActorRef]))
+    ).as[Local]
+
   val relayedCodec: Codec[Relayed] = (
-    ("originChannelId" | binarydata(32)) ::
+    ("originChannelId" | bytes32) ::
       ("originHtlcId" | int64) ::
       ("amountMsatIn" | uint64) ::
       ("amountMsatOut" | uint64)).as[Relayed]
 
+  // this is for backward compatibility to handle legacy payments that didn't have identifiers
+  val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
+
   val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
-    .typecase(0x01, provide(Local(None)))
+    .typecase(0x03, localCodec) // backward compatible
+    .typecase(0x01, provide(Local(UNKNOWN_UUID, None)))
     .typecase(0x02, relayedCodec)
 
   val originsListCodec: Codec[List[(Long, Origin)]] = listOfN(uint16, int64 ~ originCodec)
@@ -171,10 +188,10 @@ object ChannelCodecs extends Logging {
     (wire: BitVector) => originsListCodec.decode(wire).map(_.map(_.toMap))
   )
 
-  val spentListCodec: Codec[List[(OutPoint, BinaryData)]] = listOfN(uint16, outPointCodec ~ binarydata(32))
+  val spentListCodec: Codec[List[(OutPoint, ByteVector32)]] = listOfN(uint16, outPointCodec ~ bytes32)
 
-  val spentMapCodec: Codec[Map[OutPoint, BinaryData]] = Codec[Map[OutPoint, BinaryData]](
-    (map: Map[OutPoint, BinaryData]) => spentListCodec.encode(map.toList),
+  val spentMapCodec: Codec[Map[OutPoint, ByteVector32]] = Codec[Map[OutPoint, ByteVector32]](
+    (map: Map[OutPoint, ByteVector32]) => spentListCodec.encode(map.toList),
     (wire: BitVector) => spentListCodec.decode(wire).map(_.map(_.toMap))
   )
 
@@ -192,7 +209,7 @@ object ChannelCodecs extends Logging {
       ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, point)) ::
       ("commitInput" | inputInfoCodec) ::
       ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
-      ("channelId" | binarydata(32))).as[Commitments]
+      ("channelId" | bytes32)).as[Commitments]
 
   val closingTxProposedCodec: Codec[ClosingTxProposed] = (
     ("unsignedTx" | txCodec) ::
@@ -221,8 +238,18 @@ object ChannelCodecs extends Logging {
       ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, txCodec)) ::
       ("spent" | spentMapCodec)).as[RevokedCommitPublished]
 
+  // this is a decode-only codec compatible with versions 997acee and below, with placeholders for new fields
+  val DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
+    ("commitments" | commitmentsCodec) ::
+      ("fundingTx" | provide[Option[Transaction]](None)) ::
+      ("waitingSince" | provide(Platform.currentTime.milliseconds.toSeconds)) ::
+      ("deferred" | optional(bool, fundingLockedCodec)) ::
+      ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
+
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::
+      ("fundingTx" | optional(bool, txCodec)) ::
+      ("waitingSince" | int64) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
 
@@ -266,8 +293,21 @@ object ChannelCodecs extends Logging {
     ("commitments" | commitmentsCodec) ::
       ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
 
+
+  /**
+    * Order matters!!
+    *
+    * We use the fact that the discriminated codec encodes using the first suitable codec it finds in the list to handle
+    * database migration.
+    *
+    * For example, a data encoded with type 01 will be decoded using [[DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec]] and
+    * encoded to a type 08 using [[DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec]].
+    *
+    * More info here: https://github.com/scodec/scodec/issues/122
+    */
   val stateDataCodec: Codec[HasCommitments] = ("version" | constant(0x00)) ~> discriminated[HasCommitments].by(uint16)
-    .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
+    .typecase(0x08, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
+    .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec)
     .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
     .typecase(0x03, DATA_NORMAL_Codec)
     .typecase(0x04, DATA_SHUTDOWN_Codec)

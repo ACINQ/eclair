@@ -27,10 +27,11 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
-import fr.acinq.eclair.router.Router.DEFAULT_AMOUNT_MSAT
+import fr.acinq.eclair.router.RouteCalculationSpec.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.QueryShortChannelIds
 import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
+import scodec.bits._
 
 import scala.collection.SortedSet
 import scala.compat.Platform
@@ -41,6 +42,8 @@ import scala.concurrent.duration._
   */
 
 class RouterSpec extends BaseRouterSpec {
+
+  val relaxedRouteParams = Some(RouteCalculationSpec.DEFAULT_ROUTE_PARAMS.copy(maxFeePct = 0.3))
 
   test("properly announce valid new channels and ignore invalid ones") { fixture =>
     import fixture._
@@ -78,14 +81,14 @@ class RouterSpec extends BaseRouterSpec {
     watcher.expectMsg(ValidateRequest(chan_ax))
     watcher.expectMsg(ValidateRequest(chan_ay))
     watcher.expectMsg(ValidateRequest(chan_az))
-    watcher.send(router, ValidateResult(chan_ac, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true, None))
-    watcher.send(router, ValidateResult(chan_ax, None, false, None))
-    watcher.send(router, ValidateResult(chan_ay, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0)), true, None))
-    watcher.send(router, ValidateResult(chan_az, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0)), false, None))
+    watcher.send(router, ValidateResult(chan_ac, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
+    watcher.send(router, ValidateResult(chan_ax, Left(new RuntimeException(s"funding tx not found"))))
+    watcher.send(router, ValidateResult(chan_ay, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
+    watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = true))))
     watcher.expectMsgType[WatchSpentBasic]
     watcher.expectNoMsg(1 second)
 
-    eventListener.expectMsg(ChannelDiscovered(chan_ac, Satoshi(1000000)))
+    eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(chan_ac, Satoshi(1000000)) :: Nil))
   }
 
   test("properly announce lost channels and nodes") { fixture =>
@@ -169,7 +172,7 @@ class RouterSpec extends BaseRouterSpec {
   test("route found") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.hops.last.nextNodeId === d)
@@ -178,9 +181,9 @@ class RouterSpec extends BaseRouterSpec {
   test("route found (with extra routing info)") { fixture =>
     import fixture._
     val sender = TestProbe()
-    val x = PublicKey("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73")
-    val y = PublicKey("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a")
-    val z = PublicKey("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484")
+    val x = PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73")
+    val y = PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a")
+    val z = PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484")
     val extraHop_cx = ExtraHop(c, ShortChannelId(1), 10, 11, 12)
     val extraHop_xy = ExtraHop(x, ShortChannelId(2), 10, 11, 12)
     val extraHop_yz = ExtraHop(y, ShortChannelId(3), 20, 21, 22)
@@ -193,7 +196,7 @@ class RouterSpec extends BaseRouterSpec {
   test("route not found (channel disabled)") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.hops.last.nextNodeId === d)
@@ -201,26 +204,26 @@ class RouterSpec extends BaseRouterSpec {
     val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000L, enable = false)
     sender.send(router, PeerRoutingMessage(null, remoteNodeId, channelUpdate_cd1))
     sender.expectMsg(TransportHandler.ReadAck(channelUpdate_cd1))
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("temporary channel exclusion") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
     sender.expectMsgType[RouteResponse]
     val bc = ChannelDesc(channelId_bc, b, c)
     // let's exclude channel b->c
     sender.send(router, ExcludeChannel(bc))
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
     sender.expectMsg(Failure(RouteNotFound))
     // note that cb is still available!
-    sender.send(router, RouteRequest(d, a, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(d, a, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
     sender.expectMsgType[RouteResponse]
     // let's remove the exclusion
     sender.send(router, LiftChannelExclusion(bc))
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
     sender.expectMsgType[RouteResponse]
   }
 
@@ -239,14 +242,14 @@ class RouterSpec extends BaseRouterSpec {
     val blockHeight = Globals.blockCount.get().toInt - 2020
     val channelId = ShortChannelId(blockHeight, 5, 0)
     val announcement = channelAnnouncement(channelId, priv_a, priv_c, priv_funding_a, priv_funding_c)
-    val timestamp = Platform.currentTime / 1000 - 1209600 - 1
+    val timestamp = (Platform.currentTime.milliseconds - 14.days - 1.day).toSeconds
     val update = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, cltvExpiryDelta = 7, htlcMinimumMsat = 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, htlcMaximumMsat = 5, timestamp = timestamp)
     val probe = TestProbe()
     probe.ignoreMsg { case _: TransportHandler.ReadAck => true }
     probe.send(router, PeerRoutingMessage(null, remoteNodeId, announcement))
     watcher.expectMsgType[ValidateRequest]
     probe.send(router, PeerRoutingMessage(null, remoteNodeId, update))
-    watcher.send(router, ValidateResult(announcement, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true, None))
+    watcher.send(router, ValidateResult(announcement, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
 
     probe.send(router, TickPruneStaleChannels)
     val sender = TestProbe()
@@ -254,7 +257,7 @@ class RouterSpec extends BaseRouterSpec {
     val state = sender.expectMsgType[RoutingState]
 
 
-    val update1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, cltvExpiryDelta = 7, htlcMinimumMsat = 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000L, timestamp = Platform.currentTime / 1000)
+    val update1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, cltvExpiryDelta = 7, htlcMinimumMsat = 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000L, timestamp = Platform.currentTime.millisecond.toSeconds)
 
     // we want to make sure that transport receives the query
     val transport = TestProbe()

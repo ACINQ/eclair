@@ -19,15 +19,15 @@ package fr.acinq.eclair.payment
 import akka.actor.Status.Failure
 import akka.actor.{ActorSystem, Status}
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
-import fr.acinq.eclair.payment.LocalPaymentHandler.PendingPaymentRequest
-import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment}
+import fr.acinq.eclair.payment.PaymentLifecycle.{ReceivePayment}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UnknownPaymentHash, UpdateAddHtlc}
 import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
 import org.scalatest.FunSuiteLike
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -50,65 +50,41 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     {
       sender.send(handler, ReceivePayment(Some(amountMsat), "1 coffee"))
       val pr = sender.expectMsgType[PaymentRequest]
-      sender.send(handler, CheckPayment(pr.paymentHash))
-      assert(sender.expectMsgType[Boolean] === false)
-      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
+      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
+      assert(nodeParams.db.payments.getPendingPaymentRequestAndPreimage(pr.paymentHash).isDefined)
+
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
+
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
       assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat, add.paymentHash, add.channelId, timestamp = 0))
-      sender.send(handler, CheckPayment(pr.paymentHash))
-      assert(sender.expectMsgType[Boolean] === true)
+      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.paymentHash == pr.paymentHash))
     }
 
     {
       sender.send(handler, ReceivePayment(Some(amountMsat), "another coffee"))
       val pr = sender.expectMsgType[PaymentRequest]
-      sender.send(handler, CheckPayment(pr.paymentHash))
-      assert(sender.expectMsgType[Boolean] === false)
-      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
+      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
+
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
       assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat, add.paymentHash, add.channelId, timestamp = 0))
-      sender.send(handler, CheckPayment(pr.paymentHash))
-      assert(sender.expectMsgType[Boolean] === true)
+      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.paymentHash == pr.paymentHash))
     }
 
     {
       sender.send(handler, ReceivePayment(Some(amountMsat), "bad expiry"))
       val pr = sender.expectMsgType[PaymentRequest]
-      sender.send(handler, CheckPayment(pr.paymentHash))
-      assert(sender.expectMsgType[Boolean] === false)
-      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, cltvExpiry = Globals.blockCount.get() + 3, "")
+      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
+
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, cltvExpiry = Globals.blockCount.get() + 3, ByteVector.empty)
       sender.send(handler, add)
       assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(FinalExpiryTooSoon))
       eventListener.expectNoMsg(300 milliseconds)
-      sender.send(handler, CheckPayment(pr.paymentHash))
-      assert(sender.expectMsgType[Boolean] === false)
-    }
-    {
-      sender.send(handler, ReceivePayment(Some(amountMsat), "timeout expired", Some(1L)))
-      //allow request to timeout
-      Thread.sleep(1001)
-      val pr = sender.expectMsgType[PaymentRequest]
-      sender.send(handler, CheckPayment(pr.paymentHash))
-      assert(sender.expectMsgType[Boolean] === false)
-      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
-      sender.send(handler, add)
-      assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(UnknownPaymentHash))
-      // We chose UnknownPaymentHash on purpose. So if you have expired by 1 second or 1 hour you get the same error message.
-      eventListener.expectNoMsg(300 milliseconds)
-      sender.send(handler, CheckPayment(pr.paymentHash))
-      assert(sender.expectMsgType[Boolean] === false)
-      // make sure that the request is indeed pruned
-      sender.send(handler, 'requests)
-      sender.expectMsgType[Map[BinaryData, PendingPaymentRequest]].contains(pr.paymentHash)
-      sender.send(handler, LocalPaymentHandler.PurgeExpiredRequests)
-      awaitCond({
-        sender.send(handler, 'requests)
-        sender.expectMsgType[Map[BinaryData, PendingPaymentRequest]].contains(pr.paymentHash) == false
-      })
+      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
     }
   }
 
@@ -138,21 +114,6 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     sender.send(handler, ReceivePayment(Some(MilliSatoshi(100000000L)), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
     assert(pr.amount.contains(MilliSatoshi(100000000L)) && pr.nodeId.toString == nodeParams.nodeId.toString)
-  }
-
-  test("Payment request generation should fail when there are too many pending requests") {
-    val nodeParams = Alice.nodeParams.copy(maxPendingPaymentRequests = 42)
-    val handler = system.actorOf(LocalPaymentHandler.props(nodeParams))
-    val sender = TestProbe()
-
-    for (i <- 0 to nodeParams.maxPendingPaymentRequests) {
-      sender.send(handler, ReceivePayment(None, s"Request #$i"))
-      sender.expectMsgType[PaymentRequest]
-    }
-
-    // over limit
-    sender.send(handler, ReceivePayment(None, "This one should fail"))
-    assert(sender.expectMsgType[Status.Failure].cause.getMessage === s"too many pending payment requests (max=${nodeParams.maxPendingPaymentRequests})")
   }
 
   test("Payment request generation should succeed when the amount is not set") {
@@ -187,7 +148,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     val route_x_z = extraHop_x_y :: extraHop_y_z :: Nil
     val route_x_t = extraHop_x_t :: Nil
 
-    sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee with additional routing info", extraHops = Seq(route_x_z, route_x_t)))
+    sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee with additional routing info", extraHops = List(route_x_z, route_x_t)))
     assert(sender.expectMsgType[PaymentRequest].routingInfo === Seq(route_x_z, route_x_t))
 
     sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee without routing info"))

@@ -16,12 +16,16 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
+import java.sql.DriverManager
+
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey}
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
+import scodec.bits.ByteVector
 
 import scala.util.{Failure, Random, Success, Try}
 
@@ -36,7 +40,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   val feeRatePerKw = 20000
   val minimumFee = Satoshi(2000)
 
-  val master = DeterministicWallet.generate(BinaryData("01" * 32))
+  val master = DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1)))
   val accountMaster = accountKey(master, Block.RegtestGenesisBlock.hash)
   val accountIndex = 0
 
@@ -46,17 +50,17 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   val firstAccountKeys = (0 until 10).map(i => derivePrivateKey(accountMaster, i)).toVector
   val firstChangeKeys = (0 until 10).map(i => derivePrivateKey(changeMaster, i)).toVector
 
-  val params = ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash)
+  val params = ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")))
 
-  val state = Data(params, ElectrumClient.Header.RegtestGenesisHeader, firstAccountKeys, firstChangeKeys)
+  val state = Data(params, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.load(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
     .copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
 
   def addFunds(data: Data, key: ExtendedPrivateKey, amount: Satoshi): Data = {
     val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(amount, ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
     val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(key.publicKey)
-    val scriptHashHistory = data.history.getOrElse(scriptHash, Seq.empty[ElectrumClient.TransactionHistoryItem])
+    val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
-      history = data.history.updated(scriptHash, scriptHashHistory :+ ElectrumClient.TransactionHistoryItem(100, tx.txid)),
+      history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
       transactions = data.transactions + (tx.txid -> tx)
     )
   }
@@ -64,9 +68,9 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   def addFunds(data: Data, keyamount: (ExtendedPrivateKey, Satoshi)): Data = {
     val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(keyamount._2, ElectrumWallet.computePublicKeyScript(keyamount._1.publicKey)) :: Nil, lockTime = 0)
     val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(keyamount._1.publicKey)
-    val scriptHashHistory = data.history.getOrElse(scriptHash, Seq.empty[ElectrumClient.TransactionHistoryItem])
+    val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
-      history = data.history.updated(scriptHash, scriptHashHistory :+ ElectrumClient.TransactionHistoryItem(100, tx.txid)),
+      history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
       transactions = data.transactions + (tx.txid -> tx)
     )
   }
@@ -94,7 +98,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     val state1 = addFunds(state, state.accountKeys.head, 1 btc)
     val (confirmed1, unconfirmed1) = state1.balance
 
-    val pub = PrivateKey(BinaryData("01" * 32), compressed = true).publicKey
+    val pub = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), compressed = true).publicKey
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(pub)) :: Nil, lockTime = 0)
     val (state2, tx1, fee1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
     val Some((_, _, Some(fee))) = state2.computeTransactionDelta(tx1)
@@ -174,7 +178,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     assert(state3.utxos.length == 3)
     assert(state3.balance == (Satoshi(350000000),Satoshi(0)))
 
-    val (tx, fee) = state3.spendAll(Script.pay2wpkh(BinaryData("01" * 20)), feeRatePerKw)
+    val (tx, fee) = state3.spendAll(Script.pay2wpkh(ByteVector.fill(20)(1)), feeRatePerKw)
     val Some((received, sent, Some(fee1))) = state3.computeTransactionDelta(tx)
     assert(received == Satoshi(0))
     assert(fee == fee1)
