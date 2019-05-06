@@ -96,6 +96,9 @@ object ChaCha20 {
   */
 object ChaCha20Poly1305 extends Logging {
 
+  // This logger is used to dump encryption keys to enable traffic analysis by the lightning-dissector.
+  // See https://github.com/nayutaco/lightning-dissector for more details.
+  // It is disabled by default (in the logback.xml configuration file).
   val keyLogger = Logger("keylog")
 
   /**
