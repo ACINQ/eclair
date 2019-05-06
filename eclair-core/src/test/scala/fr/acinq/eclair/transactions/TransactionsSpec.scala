@@ -317,11 +317,26 @@ class TransactionsSpec extends FunSuite with Logging {
 
   test("sort the htlc outputs using BIP69") {
 
+    val localFundingPriv = PrivateKey(hex"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1" :+ 1.toByte)
+    val remoteFundingPriv = PrivateKey(hex"a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2" :+ 1.toByte)
+    val localRevocationPriv = PrivateKey(hex"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3" :+ 1.toByte)
+    val localPaymentPriv = PrivateKey(hex"a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4" :+ 1.toByte)
+    val localDelayedPaymentPriv = PrivateKey(hex"a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5" :+ 1.toByte)
+    val remotePaymentPriv = PrivateKey(hex"a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6" :+ 1.toByte)
+    val localHtlcPriv = PrivateKey(hex"a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7" :+ 1.toByte)
+    val remoteHtlcPriv = PrivateKey(hex"a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8" :+ 1.toByte)
+    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(hex"a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9", true).publicKey))
+    val commitInput = Funding.makeFundingInputInfo(ByteVector32(hex"a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+    val toLocalDelay = 144
+    val localDustLimit = Satoshi(546)
+    val feeratePerKw = 22000
+
+
     // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
     // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey
-    val paymentPreimage1 = hex"1111111111111111111111111111111111111111111111111111111111111111"
-    val paymentPreimage2 = hex"2222222222222222222222222222222222222222222222222222222222222222"
-    val paymentPreimage3 = hex"3333333333333333333333333333333333333333333333333333333333333333"
+    val paymentPreimage1 = ByteVector32(hex"1111111111111111111111111111111111111111111111111111111111111111")
+    val paymentPreimage2 = ByteVector32(hex"2222222222222222222222222222222222222222222222222222222222222222")
+    val paymentPreimage3 = ByteVector32(hex"3333333333333333333333333333333333333333333333333333333333333333")
     val htlc1 = UpdateAddHtlc(ByteVector32.Zeroes, 0, millibtc2satoshi(MilliBtc(100)).amount * 1000, sha256(paymentPreimage1), 300, ByteVector.empty)
     val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 1, millibtc2satoshi(MilliBtc(200)).amount * 1000, sha256(paymentPreimage2), 300, ByteVector.empty)
     val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 1, millibtc2satoshi(MilliBtc(200)).amount * 1000, sha256(paymentPreimage3), 300, ByteVector.empty)
@@ -350,9 +365,9 @@ class TransactionsSpec extends FunSuite with Logging {
     assert(htlcOut3.amount.amount == 20000000)
 
     //htlc2 comes first because its pubKeyScript is lexicographically smaller than htlc3's
-    assert(htlcOut2.publicKeyScript.toString() < htlcOut3.publicKeyScript.toString())
-    assert(htlcOut2.publicKeyScript.toString() == "002001ced9e8dad97b85eb0b7d101f7a79587fa890b79ffa7cf98cff1812444b8fe8")
-    assert(htlcOut3.publicKeyScript.toString() == "0020d9a3e115fe05f3438f2ca36668f63567488c4ff940abebd674e68f4effa6cf73")
+    assert(htlcOut2.publicKeyScript.toHex < htlcOut3.publicKeyScript.toHex)
+    assert(htlcOut2.publicKeyScript.toHex == "002001ced9e8dad97b85eb0b7d101f7a79587fa890b79ffa7cf98cff1812444b8fe8")
+    assert(htlcOut3.publicKeyScript.toHex == "0020d9a3e115fe05f3438f2ca36668f63567488c4ff940abebd674e68f4effa6cf73")
   }
 
   def checkSuccessOrFailTest[T](input: Try[T]) = input match {
