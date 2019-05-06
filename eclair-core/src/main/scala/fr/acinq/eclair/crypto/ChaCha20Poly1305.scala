@@ -19,6 +19,7 @@ package fr.acinq.eclair.crypto
 import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.{ByteVector32, Protocol}
+import grizzled.slf4j.Logger
 import grizzled.slf4j.Logging
 import org.spongycastle.crypto.engines.ChaCha7539Engine
 import org.spongycastle.crypto.params.{KeyParameter, ParametersWithIV}
@@ -31,8 +32,8 @@ import scodec.bits.ByteVector
 object Poly1305 {
   /**
     *
-    * @param key  input key
-    * @param data input data
+    * @param key   input key
+    * @param datas input data
     * @return a 16 byte authentication tag
     */
   def mac(key: ByteVector, datas: ByteVector*): ByteVector = {
@@ -50,6 +51,7 @@ object Poly1305 {
   * see https://tools.ietf.org/html/rfc7539#section-2.5
   */
 object ChaCha20 {
+  val NonceLength = 12
 
   def encrypt(plaintext: ByteVector, key: ByteVector, nonce: ByteVector, counter: Int = 0): ByteVector = {
     val engine = new ChaCha7539Engine()
@@ -94,6 +96,8 @@ object ChaCha20 {
   */
 object ChaCha20Poly1305 extends Logging {
 
+  val keyLogger = Logger("keylog")
+
   /**
     *
     * @param key       32 bytes encryption key
@@ -106,7 +110,12 @@ object ChaCha20Poly1305 extends Logging {
     val polykey = ChaCha20.encrypt(ByteVector32.Zeroes, key, nonce)
     val ciphertext = ChaCha20.encrypt(plaintext, key, nonce, 1)
     val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN), Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN))
+
     logger.debug(s"encrypt($key, $nonce, $aad, $plaintext) = ($ciphertext, $tag)")
+    if (nonce === ByteVector.fill(ChaCha20.NonceLength)(0.byteValue)) {
+      keyLogger.debug(s"${tag.toHex} ${key.toHex}")
+    }
+
     (ciphertext, tag)
   }
 
@@ -124,7 +133,12 @@ object ChaCha20Poly1305 extends Logging {
     val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN), Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN))
     require(tag == mac, "invalid mac")
     val plaintext = ChaCha20.decrypt(ciphertext, key, nonce, 1)
+
     logger.debug(s"decrypt($key, $nonce, $aad, $ciphertext, $mac) = $plaintext")
+    if (nonce === ByteVector.fill(ChaCha20.NonceLength)(0.byteValue)) {
+      keyLogger.debug(s"${mac.toHex} ${key.toHex}")
+    }
+
     plaintext
   }
 
