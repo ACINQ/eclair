@@ -51,7 +51,8 @@ object Poly1305 {
   * see https://tools.ietf.org/html/rfc7539#section-2.5
   */
 object ChaCha20 {
-  val NonceLength = 12
+  // Whenever key rotation happens, we start with a nonce value of 0 and increment it for each message.
+  val ZeroNonce = ByteVector.fill(12)(0.byteValue)
 
   def encrypt(plaintext: ByteVector, key: ByteVector, nonce: ByteVector, counter: Int = 0): ByteVector = {
     val engine = new ChaCha7539Engine()
@@ -115,7 +116,7 @@ object ChaCha20Poly1305 extends Logging {
     val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN), Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN))
 
     logger.debug(s"encrypt($key, $nonce, $aad, $plaintext) = ($ciphertext, $tag)")
-    if (nonce === ByteVector.fill(ChaCha20.NonceLength)(0.byteValue)) {
+    if (nonce === ChaCha20.ZeroNonce) {
       keyLogger.debug(s"${tag.toHex} ${key.toHex}")
     }
 
@@ -138,7 +139,7 @@ object ChaCha20Poly1305 extends Logging {
     val plaintext = ChaCha20.decrypt(ciphertext, key, nonce, 1)
 
     logger.debug(s"decrypt($key, $nonce, $aad, $ciphertext, $mac) = $plaintext")
-    if (nonce === ByteVector.fill(ChaCha20.NonceLength)(0.byteValue)) {
+    if (nonce === ChaCha20.ZeroNonce) {
       keyLogger.debug(s"${mac.toHex} ${key.toHex}")
     }
 
