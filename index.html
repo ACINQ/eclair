@@ -1477,13 +1477,13 @@ eclair-cli listinvoices
 <td>from</td>
 <td>Filters elements no older than this unix-timestamp</td>
 <td>Yes</td>
-<td>Unix timestamp (Integer)</td>
+<td>Unix timestamp in seconds (Integer)</td>
 </tr>
 <tr>
 <td>to</td>
 <td>Filters elements no younger than this unix-timestamp</td>
 <td>Yes</td>
-<td>Unix timestamp (Integer)</td>
+<td>Unix timestamp in seconds (Integer)</td>
 </tr>
 </tbody></table>
 <h2 id='listpendinginvoices'>ListPendingInvoices</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/listpendinginvoices"</span>
@@ -1531,13 +1531,13 @@ order.</p>
 <td>from</td>
 <td>Filters elements no older than this unix-timestamp</td>
 <td>Yes</td>
-<td>Unix timestamp (Integer)</td>
+<td>Unix timestamp in seconds (Integer)</td>
 </tr>
 <tr>
 <td>to</td>
 <td>Filters elements no younger than this unix-timestamp</td>
 <td>Yes</td>
-<td>Unix timestamp (Integer)</td>
+<td>Unix timestamp in seconds (Integer)</td>
 </tr>
 </tbody></table>
 <h1 id='route'>Route</h1><h2 id='findroute'>findroute</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/findroute"</span>
@@ -1675,13 +1675,13 @@ eclair-cli audit
 <td>from</td>
 <td>Filters elements no older than this unix-timestamp</td>
 <td>Yes</td>
-<td>Unix timestamp (Integer)</td>
+<td>Unix timestamp in seconds (Integer)</td>
 </tr>
 <tr>
 <td>to</td>
 <td>Filters elements no younger than this unix-timestamp</td>
 <td>Yes</td>
-<td>Unix timestamp (Integer)</td>
+<td>Unix timestamp in seconds (Integer)</td>
 </tr>
 </tbody></table>
 <h2 id='networkfees'>networkfees</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/networkfees"</span>
@@ -1719,13 +1719,13 @@ eclair-cli networkfees
 <td>from</td>
 <td>Filters elements no older than this unix-timestamp</td>
 <td>Yes</td>
-<td>Unix timestamp (Integer)</td>
+<td>Unix timestamp in seconds (Integer)</td>
 </tr>
 <tr>
 <td>to</td>
 <td>Filters elements no younger than this unix-timestamp</td>
 <td>Yes</td>
-<td>Unix timestamp (Integer)</td>
+<td>Unix timestamp in seconds (Integer)</td>
 </tr>
 </tbody></table>
 <h2 id='channelstats'>channelstats</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/channelstats"</span>
