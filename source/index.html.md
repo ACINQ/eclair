@@ -1014,8 +1014,8 @@ Returns all the **BOLT11** invoice stored.
 
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
-from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp (Integer)
-to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp (Integer)
+from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
+to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
 
 ## ListPendingInvoices
 
@@ -1061,8 +1061,8 @@ order.
 
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
-from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp (Integer)
-to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp (Integer)
+from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
+to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
 
 # Route
 
@@ -1186,8 +1186,8 @@ Retrieves information about payments handled by this node such as: sent, receive
 
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
-from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp (Integer)
-to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp (Integer)
+from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
+to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
 
 ## networkfees
 
@@ -1222,8 +1222,8 @@ Retrieves information about on-chain fees paid during channel operations.
 
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
-from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp (Integer)
-to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp (Integer)
+from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
+to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
 
 ## channelstats
 
