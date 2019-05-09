@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentResult, RemoteFailure, SendPayment}
 import fr.acinq.eclair.router.{Announcements, Data}
-import fr.acinq.eclair.wire.UnknownPaymentHash
+import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails}
 import fr.acinq.eclair.{NodeParams, randomBytes32, secureRandom}
 
 import scala.concurrent.duration._
@@ -62,7 +62,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
 
     case paymentResult: PaymentResult =>
       paymentResult match {
-        case PaymentFailed(_, _, _ :+ RemoteFailure(_, ErrorPacket(targetNodeId, UnknownPaymentHash))) =>
+        case PaymentFailed(_, _, _ :+ RemoteFailure(_, ErrorPacket(targetNodeId, IncorrectOrUnknownPaymentDetails(_)))) =>
           log.info(s"payment probe successful to node=$targetNodeId")
         case _ =>
           log.info(s"payment probe failed with paymentResult=$paymentResult")
