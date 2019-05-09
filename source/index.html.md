@@ -193,7 +193,7 @@ channelId | The channelId of the channel you want to close | No | 32bytes-HexStr
 shortChannelId | The shortChannelId of the channel you want to close | Yes | ShortChannelId (String)
 scriptPubKey | A serialized scriptPubKey that you want to use to close the channel | Yes | HexString (String)
 
-## Force Close
+## ForceClose
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F channelId=<channel> "http://localhost:8080/forceclose"
@@ -224,7 +224,7 @@ shortChannelId | The shortChannelId of the channel you want to close | Yes | Sho
 
 # UpdateRelayFee
 
-## updaterelayfee
+## UpdateRelayFee
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F channelId=<channel> \
@@ -260,7 +260,7 @@ feeProportionalMillionths | The new proportional fee to use | No | Integer
 
 # Peers
 
-## peers
+## Peers
 
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/peers"
@@ -295,7 +295,7 @@ Returns the list of currently known peers, both connected and disconnected.
 
 # Channels
 
-## channels
+## Channels
 
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/channels"
@@ -442,7 +442,7 @@ Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
 nodeId | The remote node id to be used as filter for the channels | Yes | 32bytes-HexString (String)
 
-## channel
+## Channel
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F channelId=<channel>  "http://localhost:8080/channel"
@@ -592,7 +592,7 @@ channelId | The channel id of the requested channel | No | 32bytes-HexString (St
 
 A set of API to query the network view of eclair.
 
-## allnodes
+## AllNodes
 
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/allnodes"
@@ -633,7 +633,7 @@ eclair-cli allnodes
 
 Returns information about all public nodes on the lightning network, this information is taken from the _node_announcement_ network message.
 
-## allchannels
+## AllChannels
 
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/allchannels"
@@ -661,7 +661,7 @@ eclair-cli allchannels
 
 Returns non detailed information about all public channels in the network.
 
-## allupdates
+## AllUpdates
 
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/allupdates"
@@ -1066,7 +1066,7 @@ to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestam
 
 # Route
 
-## findroute
+## FindRoute
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F invoice=<some_bolt11invoice> "http://localhost:8080/findroute"
@@ -1099,7 +1099,7 @@ Parameter | Description | Optional | Type
 invoice | The invoice containing the destination | No | String
 amountMsat | The amount that should go through the route | Yes | Millisatoshi (Integer)
 
-## findrouteToNode
+## FindRouteToNode
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F nodeId=<some_node> \
@@ -1133,7 +1133,7 @@ amountMsat | The amount that should go through the route | No | Millisatoshi (In
 
 # Miscellaneous
 
-## audit
+## Audit
 
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/audit"
@@ -1189,7 +1189,7 @@ Parameter | Description | Optional | Type
 from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
 to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
 
-## networkfees
+## NetworkFees
 
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/networkfees"
@@ -1225,7 +1225,7 @@ Parameter | Description | Optional | Type
 from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
 to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
 
-## channelstats
+## ChannelStats
 
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/channelstats"
@@ -1256,7 +1256,7 @@ statistics about the routing activity of the channels.
 
 # Websocket
 
-## ws
+## WS
 
 > Payment relayed event
 
