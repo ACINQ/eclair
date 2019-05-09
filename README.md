@@ -12,7 +12,7 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
  
  :construction: Both the BOLTs and Eclair itself are still a work in progress. Expect things to break/change!
  
- :rotating_light: If you intend to run Eclair on mainnet (which is the default setting):
+ :rotating_light: If you run Eclair on mainnet (which is the default setting):
  - Keep in mind that it is beta-quality software and **don't put too much money** in it
  - Eclair's JSON API should **NOT** be accessible from the outside world (similarly to Bitcoin Core API)
  
@@ -175,28 +175,22 @@ Here is how to run Eclair with plugins:
 java -jar eclair-node-<version>-<commit_id>.jar <plugin1.jar> <plugin2.jar> <...>
 ```
 
-## Mainnet usage
+## Testnet usage
 
-Eclair is configured to run on mainnet by default.
-Following are the minimum configuration files you need to use for Bitcoin Core and Eclair.
-
-### Bitcoin Core configuration
+Eclair is configured to run on mainnet by default, but you can still run it on testnet (or regtest): start your Bitcoin Node in
+ testnet mode (add `testnet=1` in `bitcoin.conf` or start with `-testnet`), and change Eclair's chain parameter and Bitcoin RPC port:
 
 ```
-server=1
-rpcuser=<your-rpc-user-here>
-rpcpassword=<your-rpc-password-here>
-txindex=1
-zmqpubrawblock=tcp://127.0.0.1:29000
-zmqpubrawtx=tcp://127.0.0.1:29000
+eclair.chain=testnet
+eclair.bitcoind.rpcport=18332
 ```
 
-You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network specific, so you can easily run your bitcoin node on both mainnet and testnet. For example you could use:
+You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network specific, 
+so you can easily run your bitcoin node on both mainnet and testnet. For example you could use:
 
 ```
 server=1
 txindex=1
-addresstype=p2sh-segwit
 [main]
 rpcuser=<your-mainnet-rpc-user-here>
 rpcpassword=<your-mainnet-rpc-password-here>
@@ -207,25 +201,6 @@ rpcuser=<your-testnet-rpc-user-here>
 rpcpassword=<your-testnet-rpc-password-here>
 zmqpubrawblock=tcp://127.0.0.1:29001
 zmqpubrawtx=tcp://127.0.0.1:29001
-```
-
-### Eclair configuration
-
-```
-eclair.chain=mainnet
-eclair.bitcoind.rpcport=8332
-eclair.bitcoind.rpcuser=<your-mainnet-rpc-user-here>
-eclair.bitcoind.rpcpassword=<your-mainnet-rpc-password-here>
-```
-
-## Testnet usage
-
-To run Eclair on testnet, start your Bitcoin Node is testnet mode (add `testnet=1` in `bitcoin.conf` or start with `-testnet`), and 
-change Eclair's chain parameter and Bitcoin RPC port:
-
-```
-eclair.chain=testnet
-eclair.bitcoind.rpcport=18332
 ```
 
 ## Resources
