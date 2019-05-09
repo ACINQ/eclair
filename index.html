@@ -258,7 +258,7 @@
                     <a href="#close-2" class="toc-h2 toc-link" data-title="Close">Close</a>
                   </li>
                   <li>
-                    <a href="#force-close" class="toc-h2 toc-link" data-title="Force Close">Force Close</a>
+                    <a href="#forceclose" class="toc-h2 toc-link" data-title="ForceClose">ForceClose</a>
                   </li>
               </ul>
           </li>
@@ -266,7 +266,7 @@
             <a href="#updaterelayfee" class="toc-h1 toc-link" data-title="UpdateRelayFee">UpdateRelayFee</a>
               <ul class="toc-list-h2">
                   <li>
-                    <a href="#updaterelayfee-2" class="toc-h2 toc-link" data-title="updaterelayfee">updaterelayfee</a>
+                    <a href="#updaterelayfee-2" class="toc-h2 toc-link" data-title="UpdateRelayFee">UpdateRelayFee</a>
                   </li>
               </ul>
           </li>
@@ -274,7 +274,7 @@
             <a href="#peers" class="toc-h1 toc-link" data-title="Peers">Peers</a>
               <ul class="toc-list-h2">
                   <li>
-                    <a href="#peers-2" class="toc-h2 toc-link" data-title="peers">peers</a>
+                    <a href="#peers-2" class="toc-h2 toc-link" data-title="Peers">Peers</a>
                   </li>
               </ul>
           </li>
@@ -282,10 +282,10 @@
             <a href="#channels" class="toc-h1 toc-link" data-title="Channels">Channels</a>
               <ul class="toc-list-h2">
                   <li>
-                    <a href="#channels-2" class="toc-h2 toc-link" data-title="channels">channels</a>
+                    <a href="#channels-2" class="toc-h2 toc-link" data-title="Channels">Channels</a>
                   </li>
                   <li>
-                    <a href="#channel" class="toc-h2 toc-link" data-title="channel">channel</a>
+                    <a href="#channel" class="toc-h2 toc-link" data-title="Channel">Channel</a>
                   </li>
               </ul>
           </li>
@@ -293,13 +293,13 @@
             <a href="#network" class="toc-h1 toc-link" data-title="Network">Network</a>
               <ul class="toc-list-h2">
                   <li>
-                    <a href="#allnodes" class="toc-h2 toc-link" data-title="allnodes">allnodes</a>
+                    <a href="#allnodes" class="toc-h2 toc-link" data-title="AllNodes">AllNodes</a>
                   </li>
                   <li>
-                    <a href="#allchannels" class="toc-h2 toc-link" data-title="allchannels">allchannels</a>
+                    <a href="#allchannels" class="toc-h2 toc-link" data-title="AllChannels">AllChannels</a>
                   </li>
                   <li>
-                    <a href="#allupdates" class="toc-h2 toc-link" data-title="allupdates">allupdates</a>
+                    <a href="#allupdates" class="toc-h2 toc-link" data-title="AllUpdates">AllUpdates</a>
                   </li>
               </ul>
           </li>
@@ -339,10 +339,10 @@
             <a href="#route" class="toc-h1 toc-link" data-title="Route">Route</a>
               <ul class="toc-list-h2">
                   <li>
-                    <a href="#findroute" class="toc-h2 toc-link" data-title="findroute">findroute</a>
+                    <a href="#findroute" class="toc-h2 toc-link" data-title="FindRoute">FindRoute</a>
                   </li>
                   <li>
-                    <a href="#findroutetonode" class="toc-h2 toc-link" data-title="findrouteToNode">findrouteToNode</a>
+                    <a href="#findroutetonode" class="toc-h2 toc-link" data-title="FindRouteToNode">FindRouteToNode</a>
                   </li>
               </ul>
           </li>
@@ -350,13 +350,13 @@
             <a href="#miscellaneous" class="toc-h1 toc-link" data-title="Miscellaneous">Miscellaneous</a>
               <ul class="toc-list-h2">
                   <li>
-                    <a href="#audit" class="toc-h2 toc-link" data-title="audit">audit</a>
+                    <a href="#audit" class="toc-h2 toc-link" data-title="Audit">Audit</a>
                   </li>
                   <li>
-                    <a href="#networkfees" class="toc-h2 toc-link" data-title="networkfees">networkfees</a>
+                    <a href="#networkfees" class="toc-h2 toc-link" data-title="NetworkFees">NetworkFees</a>
                   </li>
                   <li>
-                    <a href="#channelstats" class="toc-h2 toc-link" data-title="channelstats">channelstats</a>
+                    <a href="#channelstats" class="toc-h2 toc-link" data-title="ChannelStats">ChannelStats</a>
                   </li>
               </ul>
           </li>
@@ -364,7 +364,7 @@
             <a href="#websocket" class="toc-h1 toc-link" data-title="Websocket">Websocket</a>
               <ul class="toc-list-h2">
                   <li>
-                    <a href="#ws" class="toc-h2 toc-link" data-title="ws">ws</a>
+                    <a href="#ws" class="toc-h2 toc-link" data-title="WS">WS</a>
                   </li>
               </ul>
           </li>
@@ -591,7 +591,7 @@ If you specified a scriptPubKey then the closing transaction will spend to that 
 <td>HexString (String)</td>
 </tr>
 </tbody></table>
-<h2 id='force-close'>Force Close</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt; <span class="s2">"http://localhost:8080/forceclose"</span>
+<h2 id='forceclose'>ForceClose</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt; <span class="s2">"http://localhost:8080/forceclose"</span>
 
 <span class="c">#with eclair-cli</span>
 eclair-cli forceclose --channelId<span class="o">=</span>&lt;channel&gt;
@@ -627,7 +627,7 @@ transaction id. Note that you must specify at least a <em>channelId</em> <strong
 <td>ShortChannelId (String)</td>
 </tr>
 </tbody></table>
-<h1 id='updaterelayfee'>UpdateRelayFee</h1><h2 id='updaterelayfee-2'>updaterelayfee</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt; <span class="se">\</span>
+<h1 id='updaterelayfee'>UpdateRelayFee</h1><h2 id='updaterelayfee-2'>UpdateRelayFee</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt; <span class="se">\</span>
      -F <span class="nv">feeBaseMsat</span><span class="o">=</span>&lt;feebase&gt; -F <span class="nv">feeProportionalMillionths</span><span class="o">=</span>&lt;feeproportional&gt; <span class="se">\</span>
      <span class="s2">"http://localhost:8080/updaterelayfee"</span>
 
@@ -673,7 +673,7 @@ eclair-cli updaterelayfee <span class="se">\</span>
 <td>Integer</td>
 </tr>
 </tbody></table>
-<h1 id='peers'>Peers</h1><h2 id='peers-2'>peers</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/peers"</span>
+<h1 id='peers'>Peers</h1><h2 id='peers-2'>Peers</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/peers"</span>
 
 <span class="c">#with eclair-cli</span>
 eclair-cli peers
@@ -698,7 +698,7 @@ eclair-cli peers
 <p>Returns the list of currently known peers, both connected and disconnected.</p>
 <h3 id='http-request-8'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/peers</code></p>
-<h1 id='channels'>Channels</h1><h2 id='channels-2'>channels</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/channels"</span>
+<h1 id='channels'>Channels</h1><h2 id='channels-2'>Channels</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/channels"</span>
 
 <span class="c">#with eclair-cli</span>
 eclair-cli channels
@@ -847,7 +847,7 @@ eclair-cli channels
 <td>32bytes-HexString (String)</td>
 </tr>
 </tbody></table>
-<h2 id='channel'>channel</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt;  <span class="s2">"http://localhost:8080/channel"</span>
+<h2 id='channel'>Channel</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt;  <span class="s2">"http://localhost:8080/channel"</span>
 
 <span class="c">#with eclair-cli</span>
 eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
@@ -997,7 +997,7 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
 </tbody></table>
 <h1 id='network'>Network</h1>
 <p>A set of API to query the network view of eclair.</p>
-<h2 id='allnodes'>allnodes</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/allnodes"</span>
+<h2 id='allnodes'>AllNodes</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/allnodes"</span>
 
 <span class="c">#with eclair-cli</span>
 eclair-cli allnodes
@@ -1032,7 +1032,7 @@ eclair-cli allnodes
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Returns information about all public nodes on the lightning network, this information is taken from the <em>node_announcement</em> network message.</p>
-<h2 id='allchannels'>allchannels</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/allchannels"</span>
+<h2 id='allchannels'>AllChannels</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/allchannels"</span>
 
 <span class="c">#with eclair-cli</span>
 eclair-cli allchannels
@@ -1054,7 +1054,7 @@ eclair-cli allchannels
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Returns non detailed information about all public channels in the network.</p>
-<h2 id='allupdates'>allupdates</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/allupdates"</span>
+<h2 id='allupdates'>AllUpdates</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/allupdates"</span>
 
 <span class="c">#with eclair-cli</span>
 eclair-cli allupdates
@@ -1540,7 +1540,7 @@ order.</p>
 <td>Unix timestamp in seconds (Integer)</td>
 </tr>
 </tbody></table>
-<h1 id='route'>Route</h1><h2 id='findroute'>findroute</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/findroute"</span>
+<h1 id='route'>Route</h1><h2 id='findroute'>FindRoute</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/findroute"</span>
 
 <span class="c">#with eclair-cli</span>
 eclair-cli findroute --invoice<span class="o">=</span>&lt;some_bolt11invoice&gt;
@@ -1580,7 +1580,7 @@ you must do so via the <code>amountMsat</code> parameter.</p>
 <td>Millisatoshi (Integer)</td>
 </tr>
 </tbody></table>
-<h2 id='findroutetonode'>findrouteToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
+<h2 id='findroutetonode'>FindRouteToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
      -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;some_amount&gt; <span class="s2">"http://localhost:8080/findroutetonode"</span>
 
 <span class="c">#with eclair-cli</span>
@@ -1620,7 +1620,7 @@ eclair-cli --nodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span c
 <td>Millisatoshi (Integer)</td>
 </tr>
 </tbody></table>
-<h1 id='miscellaneous'>Miscellaneous</h1><h2 id='audit'>audit</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/audit"</span>
+<h1 id='miscellaneous'>Miscellaneous</h1><h2 id='audit'>Audit</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/audit"</span>
 
 <span class="c">#with eclair-cli</span>
 eclair-cli audit
@@ -1684,7 +1684,7 @@ eclair-cli audit
 <td>Unix timestamp in seconds (Integer)</td>
 </tr>
 </tbody></table>
-<h2 id='networkfees'>networkfees</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/networkfees"</span>
+<h2 id='networkfees'>NetworkFees</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/networkfees"</span>
 
 <span class="c">#with eclair-cli</span>
 eclair-cli networkfees
@@ -1728,7 +1728,7 @@ eclair-cli networkfees
 <td>Unix timestamp in seconds (Integer)</td>
 </tr>
 </tbody></table>
-<h2 id='channelstats'>channelstats</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/channelstats"</span>
+<h2 id='channelstats'>ChannelStats</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/channelstats"</span>
 
 <span class="c">#with eclair-cli</span>
 eclair-cli channelstats
@@ -1750,7 +1750,7 @@ eclair-cli channelstats
 statistics about the routing activity of the channels.</p>
 <h3 id='http-request-25'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/channelstats</code></p>
-<h1 id='websocket'>Websocket</h1><h2 id='ws'>ws</h2>
+<h1 id='websocket'>Websocket</h1><h2 id='ws'>WS</h2>
 <blockquote>
 <p>Payment relayed event</p>
 </blockquote>
