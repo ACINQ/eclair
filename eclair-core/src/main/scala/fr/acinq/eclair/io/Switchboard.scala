@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Stat
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
+import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.{HasCommitments, _}
 import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
@@ -44,7 +45,14 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
   // we load peers and channels from database
   {
-    val channels = nodeParams.db.channels.listLocalChannels()
+    // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
+    // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
+    // Closed channels will be removed, other channels will be restored.
+    val (channels, closedChannels) = nodeParams.db.channels.listLocalChannels().partition(c => Closing.isClosed(c, None).isEmpty)
+    closedChannels.foreach(c => {
+      log.info(s"closing channel ${c.channelId}")
+      nodeParams.db.channels.removeChannel(c.channelId)
+    })
     val peers = nodeParams.db.peers.listPeers()
 
     checkBrokenHtlcsLink(channels, nodeParams.privateKey) match {

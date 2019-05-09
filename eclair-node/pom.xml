@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2018 ACINQ SAS
+  ~ Copyright 2019 ACINQ SAS
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -73,6 +73,12 @@
             <groupId>fr.acinq.eclair</groupId>
             <artifactId>eclair-core_${scala.version.short}</artifactId>
             <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <!-- for plugins -->
+            <groupId>org.clapper</groupId>
+            <artifactId>classutil_${scala.version.short}</artifactId>
+            <version>1.4.0</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>

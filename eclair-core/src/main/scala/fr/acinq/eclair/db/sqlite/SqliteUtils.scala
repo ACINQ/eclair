@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -109,7 +109,7 @@ object SqliteUtils {
     * Obtain an exclusive lock on a sqlite database. This is useful when we want to make sure that only one process
     * accesses the database file (see https://www.sqlite.org/pragma.html).
     *
-    * The lock will be kept until the database is closed, or if the locking mode is explicitely reset.
+    * The lock will be kept until the database is closed, or if the locking mode is explicitly reset.
     *
     * @param sqlite
     */

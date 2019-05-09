@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,8 @@ trait AuditDb {
   def add(paymentRelayed: PaymentRelayed)
 
   def add(networkFeePaid: NetworkFeePaid)
+
+  def add(channelErrorOccured: ChannelErrorOccured)
 
   def listSent(from: Long, to: Long): Seq[PaymentSent]
 

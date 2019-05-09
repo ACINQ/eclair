@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,9 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqlitePendingRelayDb}
+import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import org.scalatest.FunSuite
 import org.sqlite.SQLiteException
 import scodec.bits.ByteVector
@@ -63,4 +65,32 @@ class SqliteChannelsDbSpec extends FunSuite {
     assert(db.listHtlcInfos(channel.channelId, commitNumber).toList == Nil)
   }
 
+  test("migrate channel database v1 -> v2") {
+    val sqlite = TestConstants.sqliteInMemory()
+
+    // create a v1 channels database
+    using(sqlite.createStatement()) { statement =>
+      getVersion(statement, "channels", 1)
+      statement.execute("PRAGMA foreign_keys = ON")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+      statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
+    }
+
+    // insert 1 row
+    val channel = ChannelStateSpec.normal
+    val data = stateDataCodec.encode(channel).require.toByteArray
+    using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?)")) { statement =>
+      statement.setBytes(1, channel.channelId.toArray)
+      statement.setBytes(2, data)
+      statement.executeUpdate()
+    }
+
+    // check that db migration works
+    val db = new SqliteChannelsDb(sqlite)
+    using(sqlite.createStatement()) { statement =>
+      assert(getVersion(statement, "channels", 1) == 2) // version changed from 1 -> 2
+    }
+    assert(db.listLocalChannels() === List(channel))
+  }
 }
