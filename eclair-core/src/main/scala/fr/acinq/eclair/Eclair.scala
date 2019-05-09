@@ -183,7 +183,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def audit(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[AuditResponse] = {
     val from = from_opt.getOrElse(0L)
-    val to = to_opt.getOrElse(Long.MaxValue)
+    val to = to_opt.getOrElse(MaxEpochSeconds)
 
     Future(AuditResponse(
       sent = appKit.nodeParams.db.audit.listSent(from, to),
@@ -194,7 +194,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def networkFees(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[NetworkFee]] = {
     val from = from_opt.getOrElse(0L)
-    val to = to_opt.getOrElse(Long.MaxValue)
+    val to = to_opt.getOrElse(MaxEpochSeconds)
 
     Future(appKit.nodeParams.db.audit.listNetworkFees(from, to))
   }
@@ -203,14 +203,14 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def allInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
     val from = from_opt.getOrElse(0L)
-    val to = to_opt.getOrElse(Long.MaxValue)
+    val to = to_opt.getOrElse(MaxEpochSeconds)
 
     appKit.nodeParams.db.payments.listPaymentRequests(from, to)
   }
 
   override def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
     val from = from_opt.getOrElse(0L)
-    val to = to_opt.getOrElse(Long.MaxValue)
+    val to = to_opt.getOrElse(MaxEpochSeconds)
 
     appKit.nodeParams.db.payments.listPendingPaymentRequests(from, to)
   }
