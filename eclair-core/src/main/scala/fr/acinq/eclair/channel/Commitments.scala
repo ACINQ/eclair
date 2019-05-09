@@ -395,8 +395,9 @@ object Commitments {
     // we will reply to this sig with our old revocation hash preimage (at index) and our next revocation hash (at index + 1)
     // and will increment our index
 
-    if (!remoteHasChanges(commitments))
-      throw CannotSignWithoutChanges(commitments.channelId)
+    // LND sometimes sends a new signature without any changes, which is a (harmless) spec violation
+    //if (!remoteHasChanges(commitments))
+    //  throw CannotSignWithoutChanges(commitments.channelId)
 
     // check that their signature is valid
     // signatures are now optional in the commit message, and will be sent only if the other party is actually
