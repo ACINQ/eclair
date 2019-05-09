@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire
 
 import java.util.UUID
+
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{DeterministicWallet, OutPoint}
@@ -28,7 +29,9 @@ import fr.acinq.eclair.wire.ChannelCodecs._
 import fr.acinq.eclair.{UInt64, randomBytes, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits._
+
 import scala.compat.Platform
+import scala.concurrent.duration._
 import scala.util.Random
 import scala.concurrent.duration._
 
