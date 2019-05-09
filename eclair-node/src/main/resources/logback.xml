@@ -39,6 +39,13 @@
         </encoder>
     </appender>
 
+    <appender name="KEYLOG" class="ch.qos.logback.core.FileAppender">
+        <file>${eclair.datadir:-${user.home}/.eclair}/keys.log</file>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
     <if condition='isDefined("eclair.printToConsole")'>
         <then>
             <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
@@ -51,6 +58,16 @@
             </root>
         </then>
     </if>
+
+    <!--
+    This logger can be used to dump encryption keys for traffic analysis.
+    It is used by the wireshark lightning dissector to troubleshoot issues between nodes.
+    To enable it, set the log level to "DEBUG" for this logger (no need to set it for the root logger).
+    See https://github.com/nayutaco/lightning-dissector for details.
+     -->
+    <logger level="OFF" name="keylog" additivity="false">
+        <appender-ref ref="KEYLOG"/>
+    </logger>
 
     <root level="INFO">
         <appender-ref ref="ROLLING"/>
