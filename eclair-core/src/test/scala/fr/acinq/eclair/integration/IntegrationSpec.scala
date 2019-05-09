@@ -342,7 +342,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(failed.id == paymentId)
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, UnknownPaymentHash))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000L)))
   }
 
   test("send an HTLC A->D with a lower amount than requested") {
@@ -362,7 +362,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(failed.id == paymentId)
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectPaymentAmount))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000L)))
   }
 
   test("send an HTLC A->D with too much overpayment") {
@@ -382,7 +382,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentId == failed.id)
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectPaymentAmount))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(600000000L)))
   }
 
   test("send an HTLC A->D with a reasonable overpayment") {
