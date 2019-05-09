@@ -51,7 +51,7 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Ine
           log.info(s"connecting to ${str(remoteAddress)}")
           (remoteAddress, None)
       }
-      IO(Tcp) ! Tcp.Connect(peerOrProxyAddress, timeout = Some(50 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
+      IO(Tcp) ! Tcp.Connect(peerOrProxyAddress, timeout = Some(20 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
       context become connecting(proxyParams_opt)
   }
 
