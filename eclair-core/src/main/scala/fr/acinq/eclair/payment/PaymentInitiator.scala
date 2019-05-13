@@ -30,7 +30,7 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: Actor
     case c: GenericSendPayment =>
       val paymentId = UUID.randomUUID()
       val payFsm = context.actorOf(PaymentLifecycle.props(nodeParams, paymentId, router, register))
-      payFsm.forward(c)
+      payFsm forward c
       sender ! paymentId
   }
 
