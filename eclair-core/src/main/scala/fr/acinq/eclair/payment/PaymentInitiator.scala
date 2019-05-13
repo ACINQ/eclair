@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import java.util.UUID
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.payment.PaymentLifecycle.{GenericSendPayment, SendPayment, SendPaymentToRoute}
+import fr.acinq.eclair.payment.PaymentLifecycle.GenericSendPayment
 
 /**
   * Created by PM on 29/08/2016.
