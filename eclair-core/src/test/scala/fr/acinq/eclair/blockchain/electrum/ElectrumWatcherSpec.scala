@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,7 +50,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     TestKit.shutdownActorSystem(system)
   }
 
-  val electrumAddress = ElectrumServerAddress(new InetSocketAddress("localhost", 50001), SSL.OFF)
+  val electrumAddress = ElectrumServerAddress(new InetSocketAddress("localhost", electrumPort), SSL.OFF)
 
   test("watch for confirmed transactions") {
     val probe = TestProbe()

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.payment
 
+import java.util.UUID
 import akka.actor.{ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
@@ -24,25 +25,30 @@ import fr.acinq.eclair.blockchain.WatchEventSpentBasic
 import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Channel, Register, _}
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
+import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import scodec.Attempt
 import scodec.bits.ByteVector
-
+import concurrent.duration._
+import scala.compat.Platform
 import scala.util.{Failure, Success}
 
 /**
   * Created by PM on 26/08/2016.
   */
-class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) extends FSM[PaymentLifecycle.State, PaymentLifecycle.Data] {
+class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, register: ActorRef) extends FSM[PaymentLifecycle.State, PaymentLifecycle.Data] {
+
+  val paymentsDb = nodeParams.db.payments
 
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPayment, WaitingForRequest) =>
-      router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
+      router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 
@@ -53,13 +59,14 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       // we add one block in order to not have our htlc fail when a new block has just been found
       val finalExpiry = Globals.blockCount.get().toInt + c.finalCltvExpiry.toInt + 1
 
-      val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
+      val (cmd, sharedSecrets) = buildCommand(id, c.amountMsat, finalExpiry, c.paymentHash, hops)
       log.info("forwarding shortId={} from firstHop.lastUpdate={}", firstHop.lastUpdate.shortChannelId, firstHop.lastUpdate)
       register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
     case Event(Status.Failure(t), WaitingForRoute(s, c, failures)) =>
-      reply(s, PaymentFailed(c.paymentHash, failures = failures :+ LocalFailure(t)))
+      reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ LocalFailure(t)))
+      paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
       stop(FSM.Normal)
   }
 
@@ -67,8 +74,9 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
     case Event("ok", _) => stay()
 
     case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, c, cmd, _, _, _, _, hops)) =>
-      reply(s, PaymentSucceeded(cmd.amountMsat, c.paymentHash, fulfill.paymentPreimage, hops))
-      context.system.eventStream.publish(PaymentSent(MilliSatoshi(c.amountMsat), MilliSatoshi(cmd.amountMsat - c.amountMsat), cmd.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
+      paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.SUCCEEDED, preimage = Some(fulfill.paymentPreimage))
+      reply(s, PaymentSucceeded(id, cmd.amountMsat, c.paymentHash, fulfill.paymentPreimage, hops))
+      context.system.eventStream.publish(PaymentSent(id, MilliSatoshi(c.amountMsat), MilliSatoshi(cmd.amountMsat - c.amountMsat), cmd.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
       stop(FSM.Normal)
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
@@ -76,7 +84,8 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
         case Success(e@ErrorPacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
           // if destination node returns an error, we fail the payment immediately
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
-          reply(s, PaymentFailed(c.paymentHash, failures = failures :+ RemoteFailure(hops, e)))
+          reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ RemoteFailure(hops, e)))
+          paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
           stop(FSM.Normal)
         case res if failures.size + 1 >= c.maxAttempts =>
           // otherwise we never try more than maxAttempts, no matter the kind of error returned
@@ -89,19 +98,20 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
               UnreadableRemoteFailure(hops)
           }
           log.warning(s"too many failed attempts, failing the payment")
-          reply(s, PaymentFailed(c.paymentHash, failures = failures :+ failure))
+          reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ failure))
+          paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
           stop(FSM.Normal)
         case Failure(t) =>
           log.warning(s"cannot parse returned error: ${t.getMessage}")
           // in that case we don't know which node is sending garbage, let's try to blacklist all nodes except the one we are directly connected to and the destination node
           val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1)
           log.warning(s"blacklisting intermediate nodes=${blacklist.mkString(",")}")
-          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes ++ blacklist, ignoreChannels, c.routeParams)
+          router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes ++ blacklist, ignoreChannels, c.routeParams)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ UnreadableRemoteFailure(hops))
         case Success(e@ErrorPacket(nodeId, failureMessage: Node)) =>
           log.info(s"received 'Node' type error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
           // let's try to route around this node
-          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, c.routeParams)
+          router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, c.routeParams)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
         case Success(e@ErrorPacket(nodeId, failureMessage: Update)) =>
           log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
@@ -129,11 +139,11 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
             // in any case, we forward the update to the router
             router ! failureMessage.update
             // let's try again, router will have updated its state
-            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels, c.routeParams)
+            router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels, c.routeParams)
           } else {
             // this node is fishy, it gave us a bad sig!! let's filter it out
             log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
-            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, c.routeParams)
+            router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, c.routeParams)
           }
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
         case Success(e@ErrorPacket(nodeId, failureMessage)) =>
@@ -146,7 +156,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
             router ! WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(hop.lastUpdate.shortChannelId))
             ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId)
           }
-          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels ++ faultyChannel.toSet, c.routeParams)
+          router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels ++ faultyChannel.toSet, c.routeParams)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
       }
 
@@ -166,16 +176,17 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
           // note that if the channel is in fact still alive, we will get it again via network announcements anyway
           log.warning(s"local shortChannelId=${fwd.shortChannelId} doesn't seem to exist, excluding it from routes")
           router ! WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(fwd.shortChannelId))
-          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
+          router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures)
         case _ =>
           if (failures.size + 1 >= c.maxAttempts) {
-            reply(s, PaymentFailed(c.paymentHash, failures :+ LocalFailure(t)))
+            paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+            reply(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))
             stop(FSM.Normal)
           } else {
             log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
             val faultyChannel = ChannelDesc(hops.head.lastUpdate.shortChannelId, hops.head.nodeId, hops.head.nextNodeId)
-            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels + faultyChannel, c.routeParams)
+            router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes, ignoreChannels + faultyChannel, c.routeParams)
             goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ LocalFailure(t))
           }
       }
@@ -195,31 +206,27 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
 object PaymentLifecycle {
 
-  def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router, register)
+  def props(nodeParams: NodeParams, id: UUID, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], nodeParams, id, router, register)
 
   // @formatter:off
   case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil, fallbackAddress: Option[String] = None)
-  /**
-    * @param maxFeePct set by default to 3% as a safety measure (even if a route is found, if fee is higher than that payment won't be attempted)
-    */
   case class SendPayment(amountMsat: Long,
                          paymentHash: ByteVector32,
                          targetNodeId: PublicKey,
                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                          finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
-                         maxAttempts: Int = 5,
+                         maxAttempts: Int,
                          routeParams: Option[RouteParams] = None) {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
-  case class CheckPayment(paymentHash: ByteVector32)
 
   sealed trait PaymentResult
-  case class PaymentSucceeded(amountMsat: Long, paymentHash: ByteVector32, paymentPreimage: ByteVector32, route: Seq[Hop]) extends PaymentResult // note: the amount includes fees
+  case class PaymentSucceeded(id: UUID, amountMsat: Long, paymentHash: ByteVector32, paymentPreimage: ByteVector32, route: Seq[Hop]) extends PaymentResult // note: the amount includes fees
   sealed trait PaymentFailure
   case class LocalFailure(t: Throwable) extends PaymentFailure
   case class RemoteFailure(route: Seq[Hop], e: ErrorPacket) extends PaymentFailure
   case class UnreadableRemoteFailure(route: Seq[Hop]) extends PaymentFailure
-  case class PaymentFailed(paymentHash: ByteVector32, failures: Seq[PaymentFailure]) extends PaymentResult
+  case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[PaymentFailure]) extends PaymentResult
 
   sealed trait Data
   case object WaitingForRequest extends Data
@@ -263,12 +270,12 @@ object PaymentLifecycle {
         (msat + nextFee, expiry + hop.lastUpdate.cltvExpiryDelta, PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
     }
 
-  def buildCommand(finalAmountMsat: Long, finalExpiry: Long, paymentHash: ByteVector32, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
+  def buildCommand(id: UUID, finalAmountMsat: Long, finalExpiry: Long, paymentHash: ByteVector32, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
     val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
     val onion = buildOnion(nodes, payloads, paymentHash)
-    CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, Packet.write(onion.packet), upstream_opt = None, commit = true) -> onion.sharedSecrets
+    CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, Packet.write(onion.packet), upstream = Left(id), commit = true) -> onion.sharedSecrets
   }
 
   /**

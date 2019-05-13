@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,31 +16,39 @@
 
 package fr.acinq.eclair.db
 
-import java.sql.DriverManager
-
 import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.{ChannelAnnouncement, Color, NodeAddress, Tor2}
-import fr.acinq.eclair.{ShortChannelId, randomKey, randomBytes32}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, Color, NodeAddress, Tor2}
+import fr.acinq.eclair.{ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 import org.sqlite.SQLiteException
 
 
 class SqliteNetworkDbSpec extends FunSuite {
 
-  def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
-
   val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
 
+  def prune(ca: ChannelAnnouncement): ChannelAnnouncement = ca.copy(
+      nodeSignature1 = null,
+      nodeSignature2 = null,
+      bitcoinSignature1 = null,
+      bitcoinSignature2 = null,
+      features = null,
+      chainHash = null,
+      bitcoinKey1 = null,
+      bitcoinKey2 = null)
+
+  def prune(cu: ChannelUpdate): ChannelUpdate = cu.copy(signature = null, chainHash = null)
+
   test("init sqlite 2 times in a row") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db1 = new SqliteNetworkDb(sqlite)
     val db2 = new SqliteNetworkDb(sqlite)
   }
 
   test("add/remove/list nodes") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteNetworkDb(sqlite)
 
     val node_1 = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil)
@@ -64,7 +72,7 @@ class SqliteNetworkDbSpec extends FunSuite {
   }
 
   test("add/remove/list channels and channel_updates") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteNetworkDb(sqlite)
 
     def sig = Crypto.encodeSignature(Crypto.sign(randomBytes32, randomKey)) :+ 1.toByte
@@ -84,9 +92,9 @@ class SqliteNetworkDbSpec extends FunSuite {
     assert(db.listChannels().size === 1)
     db.addChannel(channel_2, txid_2, capacity)
     db.addChannel(channel_3, txid_3, capacity)
-    assert(db.listChannels().size === 3)
+    assert(db.listChannels().keySet == Set(channel_1, channel_2, channel_3).map(prune))
     db.removeChannel(channel_2.shortChannelId)
-    assert(db.listChannels().size === 2)
+    assert(db.listChannels().keySet == Set(channel_1, channel_3).map(prune))
 
     val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(42), 5, 7000000, 50000, 100, 500000000L, true)
     val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(43), 5, 7000000, 50000, 100, 500000000L, true)
@@ -99,13 +107,13 @@ class SqliteNetworkDbSpec extends FunSuite {
     intercept[SQLiteException](db.addChannelUpdate(channel_update_2))
     db.addChannelUpdate(channel_update_3)
     db.removeChannel(channel_3.shortChannelId)
-    assert(db.listChannels().size === 1)
-    assert(db.listChannelUpdates().map(_.shortChannelId).toSet === Set(channel_update_1.shortChannelId))
+    assert(db.listChannels().keySet === Set(channel_1).map(prune))
+    assert(db.listChannelUpdates().toSet === Set(channel_update_1).map(prune))
     db.updateChannelUpdate(channel_update_1)
   }
 
   test("remove many channels") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteNetworkDb(sqlite)
     val sig = Crypto.encodeSignature(Crypto.sign(randomBytes32, randomKey)) :+ 1.toByte
     val priv = randomKey
@@ -118,17 +126,17 @@ class SqliteNetworkDbSpec extends FunSuite {
     val txid = randomBytes32
     channels.foreach(ca => db.addChannel(ca, txid, capacity))
     updates.foreach(u => db.addChannelUpdate(u))
-    assert(db.listChannels().keySet.map(_.shortChannelId) === channels.map(_.shortChannelId).toSet)
-    assert(db.listChannelUpdates().map(_.shortChannelId) === updates.map(_.shortChannelId))
+    assert(db.listChannels().keySet === channels.map(prune).toSet)
+    assert(db.listChannelUpdates() === updates.map(prune))
 
     val toDelete = channels.map(_.shortChannelId).drop(500).take(2500)
     db.removeChannels(toDelete)
-    assert(db.listChannels().keySet.map(_.shortChannelId) === channels.filterNot(a => toDelete.contains(a.shortChannelId)).map(_.shortChannelId).toSet)
-    assert(db.listChannelUpdates().map(_.shortChannelId).toSet === updates.filterNot(u => toDelete.contains(u.shortChannelId)).map(_.shortChannelId).toSet)
+    assert(db.listChannels().keySet === channels.filterNot(a => toDelete.contains(a.shortChannelId)).map(prune).toSet)
+    assert(db.listChannelUpdates().toSet === updates.filterNot(u => toDelete.contains(u.shortChannelId)).map(prune).toSet)
   }
 
   test("prune many channels") {
-    val sqlite = inmem
+    val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteNetworkDb(sqlite)
 
     db.addToPruned(shortChannelIds)

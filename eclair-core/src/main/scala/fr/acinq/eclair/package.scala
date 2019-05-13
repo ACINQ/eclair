@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import fr.acinq.bitcoin._
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
+import scala.concurrent.duration.Duration
 import scala.util.{Failure, Success, Try}
 
 package object eclair {
@@ -70,7 +71,7 @@ package object eclair {
     */
   def feerateKw2Byte(feeratesPerKw: Long): Long = feeratesPerKw / 250
 
-  /*
+  /**
     why 253 and not 250 since feerate-per-kw is feerate-per-kb / 250 and the minimum relay fee rate is 1000 satoshi/Kb ?
 
     because bitcoin core uses neither the actual tx size in bytes or the tx weight to check fees, but a "virtual size"
@@ -82,13 +83,13 @@ package object eclair {
     with a conservative minimum weight of 400, we get a minimum feerate_per-kw of 253
 
     see https://github.com/ElementsProject/lightning/pull/1251
-   */
+   **/
   val MinimumFeeratePerKw = 253
 
-  /*
+  /**
     minimum relay fee rate, in satoshi per kilo
     bitcoin core uses virtual size and not the actual size in bytes, see above
-   */
+   **/
   val MinimumRelayFeeRate = 1000
 
   /**
@@ -151,4 +152,9 @@ package object eclair {
         }
     }
   }
+
+  /**
+    * We use this in the context of timestamp filtering, when we don't need an upper bound.
+    */
+  val MaxEpochSeconds = Duration.fromNanos(Long.MaxValue).toSeconds
 }

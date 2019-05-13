@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingSigned, Init, OpenChannel}
@@ -92,6 +93,12 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelp
     alice ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == CLOSED)
     assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.contains(fundingTx))
+  }
+
+  test("recv TickChannelOpenTimeout") { f =>
+    import f._
+    alice ! TickChannelOpenTimeout
+    awaitCond(alice.stateName == CLOSED)
   }
 
 }

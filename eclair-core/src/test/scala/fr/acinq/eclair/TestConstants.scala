@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,7 +81,6 @@ object TestConstants {
       channelFlags = 1,
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
-      maxPendingPaymentRequests = 10000000,
       minFundingSatoshis = 1000L,
       routerConf = RouterConf(
         randomizeRouteSelection = false,
@@ -96,7 +95,8 @@ object TestConstants {
         searchRatioChannelAge = 0.0,
         searchRatioChannelCapacity = 0.0
       ),
-      socksProxy_opt = None
+      socksProxy_opt = None,
+      maxPaymentAttempts = 5
     )
 
     def channelParams = Peer.makeChannelParams(
@@ -145,7 +145,6 @@ object TestConstants {
       channelFlags = 1,
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
-      maxPendingPaymentRequests = 10000000,
       minFundingSatoshis = 1000L,
       routerConf = RouterConf(
         randomizeRouteSelection = false,
@@ -160,7 +159,8 @@ object TestConstants {
         searchRatioChannelAge = 0.0,
         searchRatioChannelCapacity = 0.0
       ),
-      socksProxy_opt = None
+      socksProxy_opt = None,
+      maxPaymentAttempts = 5
     )
 
     def channelParams = Peer.makeChannelParams(

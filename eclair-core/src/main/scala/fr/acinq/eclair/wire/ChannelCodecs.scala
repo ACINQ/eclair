@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,9 @@
 
 package fr.acinq.eclair.wire
 
+import java.util.UUID
+
+import akka.actor.ActorRef
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
@@ -28,6 +31,11 @@ import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
+import scala.concurrent.duration._
+import scala.compat.Platform
+
+import scala.concurrent.duration._
+
 
 /**
   * Created by PM on 02/06/2017.
@@ -154,14 +162,23 @@ object ChannelCodecs extends Logging {
       ("sentAfterLocalCommitIndex" | uint64) ::
       ("reSignAsap" | bool)).as[WaitingForRevocation]
 
+  val localCodec: Codec[Local] = (
+    ("id" | uuid) ::
+      ("sender" | provide(Option.empty[ActorRef]))
+    ).as[Local]
+
   val relayedCodec: Codec[Relayed] = (
     ("originChannelId" | bytes32) ::
       ("originHtlcId" | int64) ::
       ("amountMsatIn" | uint64) ::
       ("amountMsatOut" | uint64)).as[Relayed]
 
+  // this is for backward compatibility to handle legacy payments that didn't have identifiers
+  val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
+
   val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
-    .typecase(0x01, provide(Local(None)))
+    .typecase(0x03, localCodec) // backward compatible
+    .typecase(0x01, provide(Local(UNKNOWN_UUID, None)))
     .typecase(0x02, relayedCodec)
 
   val originsListCodec: Codec[List[(Long, Origin)]] = listOfN(uint16, int64 ~ originCodec)
@@ -225,7 +242,7 @@ object ChannelCodecs extends Logging {
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::
       ("fundingTx" | provide[Option[Transaction]](None)) ::
-      ("waitingSince" | provide(compat.Platform.currentTime / 1000)) ::
+      ("waitingSince" | provide(Platform.currentTime.milliseconds.toSeconds)) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
 

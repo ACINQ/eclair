@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
+import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.transactions.Scripts
@@ -45,13 +46,14 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
 
   val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), compressed = true).publicKey
 
-  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
-  val (a, b, c, d, e, f) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey)
+  val seed = ByteVector32(ByteVector.fill(32)(2))
+  val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+
+  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f) = (testKeyManager.nodeKey.privateKey, randomKey, randomKey, randomKey, randomKey, randomKey)
+  val (a, b, c, d, e, f) = (testKeyManager.nodeId, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey)
 
   val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
   val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f) = (priv_funding_a.publicKey, priv_funding_b.publicKey, priv_funding_c.publicKey, priv_funding_d.publicKey, priv_funding_e.publicKey, priv_funding_f.publicKey)
-
-  //val DUMMY_SIG = hex"3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201"
 
   val ann_a = makeNodeAnnouncement(priv_a, "node-A", Color(15, 10, -70), Nil)
   val ann_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil)

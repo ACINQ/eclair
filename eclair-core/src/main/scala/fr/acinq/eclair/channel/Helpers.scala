@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar, ripemd160,
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.blockchain.EclairWallet
+import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.payment.{Local, Origin}
@@ -31,8 +32,9 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, ShortChannelId, addressToPublicKeyScript}
 import scodec.bits.ByteVector
 
+import scala.compat.Platform
 import scala.concurrent.Await
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -150,6 +152,22 @@ object Helpers {
 
     val reserveToFundingRatio = accept.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
+  }
+
+  /**
+    * Compute the delay until we need to refresh the channel_update for our channel not to be considered stale by
+    * other nodes.
+    *
+    * If current update more than [[Channel.REFRESH_CHANNEL_UPDATE_INTERVAL]] old then the delay will be zero.
+    *
+    * @param currentUpdateTimestamp
+    * @return the delay until the next update
+    */
+  def nextChannelUpdateRefresh(currentUpdateTimestamp: Long)(implicit log: LoggingAdapter): FiniteDuration = {
+    val age = Platform.currentTime.milliseconds - currentUpdateTimestamp.seconds
+    val delay = 0.days.max(REFRESH_CHANNEL_UPDATE_INTERVAL - age)
+    log.info("current channel_update was created {} days ago, will refresh it in {} days", age.toDays, delay.toDays)
+    delay
   }
 
   /**
@@ -337,6 +355,15 @@ object Helpers {
 
   object Closing {
 
+    // @formatter:off
+    sealed trait ClosingType
+    case object MutualClose extends ClosingType
+    case object LocalClose extends ClosingType
+    case object RemoteClose extends ClosingType
+    case object RecoveryClose extends ClosingType
+    case object RevokedClose extends ClosingType
+    // @formatter:on
+
     /**
       * Indicates whether local has anything at stake in this channel
       *
@@ -349,6 +376,30 @@ object Helpers {
         data.commitments.remoteCommit.index == 0 &&
         data.commitments.remoteCommit.spec.toRemoteMsat == 0 &&
         data.commitments.remoteNextCommitInfo.isRight
+
+    /**
+      * Checks if a channel is closed (i.e. its closing tx has been confirmed)
+      *
+      * @param data channel state data
+      * @param additionalConfirmedTx_opt additional confirmed transaction; we need this for the mutual close scenario
+      *                                  because we don't store the closing tx in the channel state
+      * @return the channel closing type, if applicable
+      */
+    def isClosed(data: HasCommitments, additionalConfirmedTx_opt: Option[Transaction]): Option[ClosingType] = data match {
+      case closing: DATA_CLOSING if additionalConfirmedTx_opt.exists(closing.mutualClosePublished.contains) =>
+        Some(MutualClose)
+      case closing: DATA_CLOSING if closing.localCommitPublished.exists(Closing.isLocalCommitDone) =>
+        Some(LocalClose)
+      case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
+        Some(RemoteClose)
+      case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
+        Some(RemoteClose)
+      case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
+        Some(RecoveryClose)
+      case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(Closing.isRevokedCommitDone) =>
+        Some(RevokedClose)
+      case _ => None
+    }
 
     // used only to compute tx weights and estimate fees
     lazy val dummyPublicKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), true).publicKey
@@ -811,7 +862,7 @@ object Helpers {
       * @return
       */
     def isSentByLocal(htlcId: Long, originChannels: Map[Long, Origin]) = originChannels.get(htlcId) match {
-      case Some(Local(_)) => true
+      case Some(Local(_, _)) => true
       case _ => false
     }
 

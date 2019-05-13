@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,40 +16,67 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.Connection
-
+import java.sql.{Connection, Statement}
+import java.util.UUID
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.MilliSatoshi
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, NetworkFeePaid}
+import fr.acinq.eclair.channel.{AvailableBalanceChanged, Channel, ChannelErrorOccured, NetworkFeePaid}
 import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent, NetworkFee, Stats}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
-
+import fr.acinq.eclair.wire.ChannelCodecs
+import grizzled.slf4j.Logging
 import scala.collection.immutable.Queue
 import scala.compat.Platform
+import concurrent.duration._
 
-class SqliteAuditDb(sqlite: Connection) extends AuditDb {
+class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
 
   import SqliteUtils._
   import ExtendedResultSet._
 
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 1
+  val CURRENT_VERSION = 3
 
   using(sqlite.createStatement()) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS balance_updated (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, amount_msat INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, reserve_sat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (amount_in_msat INTEGER NOT NULL, amount_out_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event STRING NOT NULL, timestamp INTEGER NOT NULL)")
 
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS balance_updated_idx ON balance_updated(timestamp)")
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_timestamp_idx ON sent(timestamp)")
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_timestamp_idx ON received(timestamp)")
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_timestamp_idx ON relayed(timestamp)")
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS network_fees_timestamp_idx ON network_fees(timestamp)")
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_events_timestamp_idx ON channel_events(timestamp)")
+    def migration12(statement: Statement) = {
+      statement.executeUpdate(s"ALTER TABLE sent ADD id BLOB DEFAULT '${ChannelCodecs.UNKNOWN_UUID.toString}' NOT NULL")
+    }
+
+    def migration23(statement: Statement) = {
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name STRING NOT NULL, error_message STRING NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_errors_timestamp_idx ON channel_errors(timestamp)")
+    }
+
+    getVersion(statement, DB_NAME, CURRENT_VERSION) match {
+      case 1 => // previous version let's migrate
+        logger.warn(s"migrating db $DB_NAME, found version=1 current=$CURRENT_VERSION")
+        migration12(statement)
+        migration23(statement)
+        setVersion(statement, DB_NAME, CURRENT_VERSION)
+      case 2 =>
+        logger.warn(s"migrating db $DB_NAME, found version=2 current=$CURRENT_VERSION")
+        migration23(statement)
+        setVersion(statement, DB_NAME, CURRENT_VERSION)
+      case CURRENT_VERSION =>
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS balance_updated (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, amount_msat INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, reserve_sat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL, id BLOB NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (amount_in_msat INTEGER NOT NULL, amount_out_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event STRING NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name STRING NOT NULL, error_message STRING NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS balance_updated_idx ON balance_updated(timestamp)")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_timestamp_idx ON sent(timestamp)")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_timestamp_idx ON received(timestamp)")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_timestamp_idx ON relayed(timestamp)")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS network_fees_timestamp_idx ON network_fees(timestamp)")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_events_timestamp_idx ON channel_events(timestamp)")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_errors_timestamp_idx ON channel_errors(timestamp)")
+
+      case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
+    }
   }
 
   override def add(e: AvailableBalanceChanged): Unit =
@@ -76,13 +103,15 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
     }
 
   override def add(e: PaymentSent): Unit =
-    using(sqlite.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setLong(1, e.amount.toLong)
       statement.setLong(2, e.feesPaid.toLong)
       statement.setBytes(3, e.paymentHash.toArray)
       statement.setBytes(4, e.paymentPreimage.toArray)
       statement.setBytes(5, e.toChannelId.toArray)
       statement.setLong(6, e.timestamp)
+      statement.setBytes(7, e.id.toString.getBytes)
+
       statement.executeUpdate()
     }
 
@@ -117,14 +146,30 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
       statement.executeUpdate()
     }
 
+  override def add(e: ChannelErrorOccured): Unit =
+    using(sqlite.prepareStatement("INSERT INTO channel_errors VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+      val (errorName, errorMessage) = e.error match {
+        case Channel.LocalError(t) => (t.getClass.getSimpleName, t.getMessage)
+        case Channel.RemoteError(error) => ("remote", error.toAscii)
+      }
+      statement.setBytes(1, e.channelId.toArray)
+      statement.setBytes(2, e.remoteNodeId.toBin.toArray)
+      statement.setString(3, errorName)
+      statement.setString(4, errorMessage)
+      statement.setBoolean(5, e.isFatal)
+      statement.setLong(6, Platform.currentTime)
+      statement.executeUpdate()
+    }
+
   override def listSent(from: Long, to: Long): Seq[PaymentSent] =
     using(sqlite.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
+      statement.setLong(1, from.seconds.toMillis)
+      statement.setLong(2, to.seconds.toMillis)
       val rs = statement.executeQuery()
       var q: Queue[PaymentSent] = Queue()
       while (rs.next()) {
         q = q :+ PaymentSent(
+          id = UUID.fromString(rs.getString("id")),
           amount = MilliSatoshi(rs.getLong("amount_msat")),
           feesPaid = MilliSatoshi(rs.getLong("fees_msat")),
           paymentHash = rs.getByteVector32("payment_hash"),
@@ -137,8 +182,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
 
   override def listReceived(from: Long, to: Long): Seq[PaymentReceived] =
     using(sqlite.prepareStatement("SELECT * FROM received WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
+      statement.setLong(1, from.seconds.toMillis)
+      statement.setLong(2, to.seconds.toMillis)
       val rs = statement.executeQuery()
       var q: Queue[PaymentReceived] = Queue()
       while (rs.next()) {
@@ -153,8 +198,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
 
   override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] =
     using(sqlite.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
+      statement.setLong(1, from.seconds.toMillis)
+      statement.setLong(2, to.seconds.toMillis)
       val rs = statement.executeQuery()
       var q: Queue[PaymentRelayed] = Queue()
       while (rs.next()) {
@@ -171,8 +216,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb {
 
   override def listNetworkFees(from: Long, to: Long): Seq[NetworkFee] =
     using(sqlite.prepareStatement("SELECT * FROM network_fees WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
+      statement.setLong(1, from.seconds.toMillis)
+      statement.setLong(2, to.seconds.toMillis)
       val rs = statement.executeQuery()
       var q: Queue[NetworkFee] = Queue()
       while (rs.next()) {

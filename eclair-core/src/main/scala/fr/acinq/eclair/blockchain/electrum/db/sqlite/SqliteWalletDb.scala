@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -211,7 +211,7 @@ object SqliteWalletDb {
       ("history" | historyCodec) ::
       ("proofs" | proofsCodec) ::
       ("pendingTransactions" | listOfN(uint16, txCodec)) ::
-      ("locks" | setCodec(txCodec))).as[PersistentData]
+      ("locks" | provide(Set.empty[Transaction]))).as[PersistentData]
 
   def serialize(data: PersistentData): Array[Byte] = persistentDataCodec.encode(data).require.toByteArray
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,14 +63,14 @@ class PaymentRequestSpec extends FunSuite {
     assert(string2Bits("pz") === bin"0000100010")
   }
 
-  test("minimal length long") {
+  test("minimal length long, left-padded to be multiple of 5") {
     import scodec.bits._
     assert(long2bits(0) == bin"")
-    assert(long2bits(1) == bin"1")
-    assert(long2bits(42) == bin"101010")
-    assert(long2bits(255) == bin"11111111")
-    assert(long2bits(256) == bin"100000000")
-    assert(long2bits(3600) == bin"111000010000")
+    assert(long2bits(1) == bin"00001")
+    assert(long2bits(42) == bin"0000101010")
+    assert(long2bits(255) == bin"0011111111")
+    assert(long2bits(256) == bin"0100000000")
+    assert(long2bits(3600) == bin"000111000010000")
   }
 
   test("verify that padding is zero") {
@@ -218,13 +218,24 @@ class PaymentRequestSpec extends FunSuite {
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
-  test("expiry is a variable-length unsigned value") {
-    val pr = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(MilliSatoshi(100000L)), ByteVector32(hex"0001020304050607080900010203040506070809000102030405060708090102"),
-      priv, "test", fallbackAddress = None, expirySeconds = Some(21600), timestamp = System.currentTimeMillis() / 1000L)
+  test("correctly serialize/deserialize variable-length tagged fields") {
+    val number = 123456
 
-    val serialized = PaymentRequest write pr
-    val pr1 = PaymentRequest read serialized
-    assert(pr.expiry === Some(21600))
+    val codec = PaymentRequest.Codecs.dataCodec(scodec.codecs.bits).as[PaymentRequest.Expiry]
+    val field = PaymentRequest.Expiry(number)
+
+    assert(field.toLong == number)
+
+    val serializedExpiry = codec.encode(field).require
+    val field1 = codec.decodeValue(serializedExpiry).require
+    assert(field1 == field)
+
+    // Now with a payment request
+    val pr = PaymentRequest(chainHash = Block.LivenetGenesisBlock.hash, amount = Some(MilliSatoshi(123)), paymentHash = ByteVector32(ByteVector.fill(32)(1)), privateKey = priv, description = "Some invoice", expirySeconds = Some(123456), timestamp = 12345)
+
+    val serialized = PaymentRequest.write(pr)
+    val pr1 = PaymentRequest.read(serialized)
+    assert(pr == pr1)
   }
 
   test("ignore unknown tags") {
