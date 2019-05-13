@@ -242,7 +242,7 @@ class RouterSpec extends BaseRouterSpec {
 
     val sender = TestProbe()
     val preComputedRoute = Seq(a, b, c, d)
-    sender.send(router, PartialRouteRequest(preComputedRoute))
+    sender.send(router, FinalizeRoute(preComputedRoute))
 
     val response = sender.expectMsgType[RouteResponse]
     // the route hasn't changed (nodes are the same)

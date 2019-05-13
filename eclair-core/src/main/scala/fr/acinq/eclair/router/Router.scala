@@ -67,7 +67,7 @@ case class RouteRequest(source: PublicKey,
                         ignoreChannels: Set[ChannelDesc] = Set.empty,
                         routeParams: Option[RouteParams] = None)
 
-case class PartialRouteRequest(hops:Seq[PublicKey])
+case class FinalizeRoute(hops:Seq[PublicKey])
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
   require(hops.size > 0, "route cannot be empty")
 }
@@ -411,7 +411,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       sender ! d
       stay
 
-    case Event(PartialRouteRequest(partialHops), d) =>
+    case Event(FinalizeRoute(partialHops), d) =>
       // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pair, then select the largest edge between them
       val edges = partialHops.sliding(2).map { case List(v1, v2) => d.graph.getEdgesBetween(v1, v2).maxBy(_.update.htlcMaximumMsat) }
       val hops = edges.map(d => Hop(d.desc.a, d.desc.b, d.update)).toSeq
