@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,10 @@ class NodeURISpec extends FunSuite {
   val IPV6_NO_BRACKETS = "2001:db8:a0b:12f0::1"
   val IPV6_PREFIX = "[2001:db8:a0b:12f0::1/64]"
   val IPV6_ZONE_IDENTIFIER = "[2001:db8:a0b:12f0::1%eth0]"
+
+  test("default port") {
+    assert(NodeURI.DEFAULT_PORT == 9735)
+  }
 
   // ---------- IPV4
 
@@ -118,6 +122,13 @@ class NodeURISpec extends FunSuite {
     intercept[IllegalArgumentException](NodeURI.parse(s"$NOT_HEXA_PUB_KEY@$IPV4_ENDURANCE"))
   }
 
+  // ---------- fail if host:port is not valid
+
+  test("parsing should fail if host:port is not valid") {
+    intercept[IllegalArgumentException](NodeURI.parse(s"$SHORT_PUB_KEY@1.2.3.4:abcd"))
+    intercept[IllegalArgumentException](NodeURI.parse(s"$SHORT_PUB_KEY@1.2.3.4:999999999999999999999"))
+  }
+
   test("parsing should fail if the uri is malformed") {
     intercept[IllegalArgumentException](NodeURI.parse("03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134@"))
     intercept[IllegalArgumentException](NodeURI.parse("03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134@123.45@654321"))
@@ -129,6 +140,7 @@ class NodeURISpec extends FunSuite {
     intercept[IllegalArgumentException](NodeURI.parse("@"))
     intercept[IllegalArgumentException](NodeURI.parse(":"))
   }
+
 }
 
 

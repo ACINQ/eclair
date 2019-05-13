@@ -1,3 +1,19 @@
+/*
+ * Copyright 2019 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair
 
 import akka.actor.ActorSystem
@@ -10,12 +26,14 @@ import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import org.scalatest.{Outcome, fixture}
+import fr.acinq.eclair.payment.PaymentLifecycle.{SendPayment}
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import org.scalatest.{Outcome, fixture}
 import scodec.bits._
 import TestConstants._
 import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register}
 import fr.acinq.eclair.payment.LocalPaymentHandler
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
-
 import scala.util.{Failure, Success}
 import scala.concurrent.duration._
 

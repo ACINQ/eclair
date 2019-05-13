@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -395,8 +395,11 @@ object Commitments {
     // we will reply to this sig with our old revocation hash preimage (at index) and our next revocation hash (at index + 1)
     // and will increment our index
 
-    if (!remoteHasChanges(commitments))
-      throw CannotSignWithoutChanges(commitments.channelId)
+    // lnd sometimes sends a new signature without any changes, which is a (harmless) spec violation
+    if (!remoteHasChanges(commitments)) {
+      //  throw CannotSignWithoutChanges(commitments.channelId)
+      log.warning("received a commit sig with no changes (probably coming from lnd)")
+    }
 
     // check that their signature is valid
     // signatures are now optional in the commit message, and will be sent only if the other party is actually

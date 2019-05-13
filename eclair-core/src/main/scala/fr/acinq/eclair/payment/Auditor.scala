@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import akka.actor.{Actor, ActorLogging, Props}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.Channel.{LocalError, RemoteError}
+import fr.acinq.eclair.channel.Helpers.Closing.{LocalClose, MutualClose, RecoveryClose, RemoteClose, RevokedClose}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent}
 
@@ -61,7 +62,14 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
       }
 
     case e: ChannelClosed =>
-      db.add(ChannelLifecycleEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount.toLong, e.commitments.localParams.isFunder, !e.commitments.announceChannel, e.closeType))
+      val event = e.closingType match {
+        case MutualClose => "mutual"
+        case LocalClose => "local"
+        case RemoteClose => "remote"
+        case RecoveryClose => "recovery"
+        case RevokedClose => "revoked"
+      }
+      db.add(ChannelLifecycleEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount.toLong, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
 
   }
 

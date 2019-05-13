@@ -1,6 +1,7 @@
 ![Eclair Logo](.readme/logo.png)
 
 [![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=master)](https://travis-ci.org/ACINQ/eclair)
+[![codecov](https://codecov.io/gh/acinq/eclair/branch/master/graph/badge.svg)](https://codecov.io/gh/acinq/eclair)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Gitter chat](https://img.shields.io/badge/chat-on%20gitter-red.svg)](https://gitter.im/ACINQ/eclair)
 
@@ -12,10 +13,9 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
  
  :construction: Both the BOLTs and Eclair itself are still a work in progress. Expect things to break/change!
  
- :rotating_light: If you intend to run Eclair on mainnet:
+ :rotating_light: If you run Eclair on mainnet (which is the default setting):
  - Keep in mind that it is beta-quality software and **don't put too much money** in it
  - Eclair's JSON API should **NOT** be accessible from the outside world (similarly to Bitcoin Core API)
- - Specific [configuration instructions for mainnet](#mainnet-usage) are provided below (by default Eclair runs on testnet)
  
 ---
 
@@ -42,17 +42,16 @@ For more information please visit the [API documentation website](https://acinq.
 
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node. 
 Eclair will use any BTC it finds in the Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet.
+You can configure your Bitcoin Node to use either `p2sh-segwit` addresses or `bech32` addresses, Eclair is compatible with both modes.
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 ```
-testnet=1
 server=1
 rpcuser=foo
 rpcpassword=bar
 txindex=1
 zmqpubrawblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
-addresstype=p2sh-segwit
 ```
 
 ### Installing Eclair
@@ -82,7 +81,6 @@ Eclair reads its configuration file, and write its logs, to `~/.eclair` by defau
 To change your node's configuration, create a file named `eclair.conf` in `~/.eclair`. Here's an example configuration file:
 
 ```
-eclair.chain=testnet
 eclair.node-alias=eclair
 eclair.node-color=49daaa
 ```
@@ -91,7 +89,7 @@ Here are some of the most common options:
 
 name                         | description                                                                           | default value
 -----------------------------|---------------------------------------------------------------------------------------|--------------
- eclair.chain                | Which blockchain to use: *regtest*, *testnet* or *mainnet*                            | testnet
+ eclair.chain                | Which blockchain to use: *regtest*, *testnet* or *mainnet*                            | mainnet
  eclair.server.port          | Lightning TCP port                                                                    | 9735
  eclair.api.enabled          | Enable/disable the API                                                                | false. By default the API is disabled. If you want to enable it, you must set a password.
  eclair.api.port             | API HTTP port                                                                         | 8080
@@ -178,35 +176,22 @@ Here is how to run Eclair with plugins:
 java -jar eclair-node-<version>-<commit_id>.jar <plugin1.jar> <plugin2.jar> <...>
 ```
 
-## Mainnet usage
+## Testnet usage
 
-Following are the minimum configuration files you need to use for Bitcoin Core and Eclair.
-
-### Bitcoin Core configuration
+Eclair is configured to run on mainnet by default, but you can still run it on testnet (or regtest): start your Bitcoin Node in
+ testnet mode (add `testnet=1` in `bitcoin.conf` or start with `-testnet`), and change Eclair's chain parameter and Bitcoin RPC port:
 
 ```
-testnet=0
-server=1
-rpcuser=<your-rpc-user-here>
-rpcpassword=<your-rpc-password-here>
-txindex=1
-zmqpubrawblock=tcp://127.0.0.1:29000
-zmqpubrawtx=tcp://127.0.0.1:29000
-addresstype=p2sh-segwit
+eclair.chain=testnet
+eclair.bitcoind.rpcport=18332
 ```
 
-:warning: If you are using Bitcoin Core 0.17.0 you need to add following line to your `bitcoin.conf`:
-```
-deprecatedrpc=signrawtransaction
-```
-
-You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network specific, so you can easily run your bitcoin node on both mainnet and testnet. For example you could use:
+You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network specific, 
+so you can easily run your bitcoin node on both mainnet and testnet. For example you could use:
 
 ```
 server=1
 txindex=1
-addresstype=p2sh-segwit
-deprecatedrpc=signrawtransaction
 [main]
 rpcuser=<your-mainnet-rpc-user-here>
 rpcpassword=<your-mainnet-rpc-password-here>
@@ -217,15 +202,6 @@ rpcuser=<your-testnet-rpc-user-here>
 rpcpassword=<your-testnet-rpc-password-here>
 zmqpubrawblock=tcp://127.0.0.1:29001
 zmqpubrawtx=tcp://127.0.0.1:29001
-```
-
-### Eclair configuration
-
-```
-eclair.chain=mainnet
-eclair.bitcoind.rpcport=8332
-eclair.bitcoind.rpcuser=<your-mainnet-rpc-user-here>
-eclair.bitcoind.rpcpassword=<your-mainnet-rpc-password-here>
 ```
 
 ## Resources

@@ -1,0 +1,11 @@
+coverage:
+  status:
+    project: off
+    patch: off
+
+comment:
+  layout: "diff, files"
+
+ignore:
+  - "eclair-node/**/*"
+  - "eclair-node-gui/**/*"
