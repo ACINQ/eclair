@@ -27,7 +27,7 @@ import fr.acinq.eclair.payment.PaymentLifecycle.{GenericSendPayment, SendPayment
 class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: ActorRef) extends Actor with ActorLogging {
 
   override def receive: Receive = {
-    case c:GenericSendPayment =>
+    case c: GenericSendPayment =>
       val paymentId = UUID.randomUUID()
       val payFsm = context.actorOf(PaymentLifecycle.props(nodeParams, paymentId, router, register))
       payFsm.forward(c)
