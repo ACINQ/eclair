@@ -39,7 +39,6 @@ import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress, NodeAnnouncement}
 import org.json4s.jackson.Serialization
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
-
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
@@ -331,6 +330,28 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(status == NotFound)
         val resp = entityAs[ErrorResponse](JsonSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
         assert(resp == ErrorResponse("Not found"))
+      }
+  }
+
+  test("'updaterelayfee' should use named parameters") {
+
+    val mockService = new MockService(new EclairMock {
+      override def updateRelayFee(channelIdentifier: Either[ByteVector32, ShortChannelId], feeBaseMsat: Long, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[String] = Future.successful(
+        s"$channelIdentifier:::$feeBaseMsat:::$feeProportionalMillionths"
+      )
+    })
+
+
+    Post("/updaterelayfee", FormData("channelId" -> ByteVector32.Zeroes.toHex, "feeBaseMsat" -> "123", "feeProportionalMillionths" -> "456").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val Array(channelId, feeBase, feeProportional) = entityAs[String].drop(1).dropRight(1).split(":::")
+        assert(channelId == Left(ByteVector32.Zeroes.toHex).toString)
+        assert(feeBase == "123")
+        assert(feeProportional == "456")
       }
   }
 
