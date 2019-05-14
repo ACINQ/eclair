@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair
 
+import java.io.File
+
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
@@ -28,8 +30,9 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import org.scalatest.{Outcome, fixture}
 import scodec.bits._
 import TestConstants._
-import fr.acinq.eclair.channel.{CMD_CLOSE, CMD_FORCECLOSE, Register}
-import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db._
+import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
 
 import scala.util.{Failure, Success}
@@ -180,6 +183,48 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123L), Some(456), Some("wassa wassa")))
   }
 
+  test("networkFees should use a default to/from filter expressed in seconds") { f =>
+    import f._
 
+    val filters = new collection.mutable.TreeSet[(Long, Long)]()
+
+    val mockAuditDb = new {} with AuditDb {
+      override def add(availableBalanceChanged: AvailableBalanceChanged): Unit = ???
+      override def add(channelLifecycle: ChannelLifecycleEvent): Unit = ???
+      override def add(paymentSent: PaymentSent): Unit = ???
+      override def add(paymentReceived: PaymentReceived): Unit = ???
+      override def add(paymentRelayed: PaymentRelayed): Unit = ???
+      override def add(networkFeePaid: NetworkFeePaid): Unit = ???
+      override def add(channelErrorOccured: ChannelErrorOccured): Unit = ???
+      override def listSent(from: Long, to: Long): Seq[PaymentSent] = ???
+      override def listReceived(from: Long, to: Long): Seq[PaymentReceived] = ???
+      override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] = ???
+      override def stats: Seq[Stats] = ???
+      override def close: Unit = ???
+      override def listNetworkFees(from: Long, to: Long): Seq[NetworkFee] = {
+        filters.add(from, to) // save the query param for later assertion in the test
+        Seq.empty
+      }
+    }
+
+    val mockDatabases = new {} with Databases {
+      override val network: NetworkDb = kit.nodeParams.db.network
+      override val audit: AuditDb = mockAuditDb
+      override val channels: ChannelsDb = kit.nodeParams.db.channels
+      override val peers: PeersDb = kit.nodeParams.db.peers
+      override val payments: PaymentsDb = kit.nodeParams.db.payments
+      override val pendingRelay: PendingRelayDb = kit.nodeParams.db.pendingRelay
+      override def backup(file: File): Unit = ()
+    }
+
+    val kitWithMockAudit = kit.copy(nodeParams = kit.nodeParams.copy(db = mockDatabases))
+    val eclair = new EclairImpl(kitWithMockAudit)
+
+    val fResponse = eclair.networkFees(None, None)
+
+    awaitCond({
+      fResponse.isCompleted && filters.head == (0, MaxEpochSeconds) // the default filters must be expressed in seconds
+    }, 10 seconds)
+  }
 
 }
