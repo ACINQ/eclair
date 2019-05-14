@@ -200,7 +200,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     val fResponse = eclair.networkFees(None, None)
 
     awaitCond({ fResponse.isCompleted }, 10 seconds)
-    auditDb.listNetworkFees(eqTo(0), eqTo(MaxEpochSeconds)).wasCalled(once) // assert the call was made only once and with the specified params
+    auditDb.listNetworkFees(0, MaxEpochSeconds).wasCalled(once) // assert the call was made only once and with the specified params
   }
 
 }
