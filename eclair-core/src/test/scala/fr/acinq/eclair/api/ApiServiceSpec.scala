@@ -281,13 +281,15 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
   test("'send' method should return the UUID of the outgoing payment") {
 
-    val id = UUID.randomUUID()
     val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
+    val idsAndAmounts = new collection.mutable.HashMap[UUID, Long]()
 
     val mockService = new MockService(new EclairMock {
-      override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long], maxAttempts: Option[Int] = None)(implicit timeout: Timeout): Future[UUID] = Future.successful(
+      override def send(recipientNodeId: Crypto.PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry: Option[Long], maxAttempts: Option[Int] = None)(implicit timeout: Timeout): Future[UUID] = Future.successful {
+        val id = UUID.randomUUID()
+        idsAndAmounts.put(id, amountMsat)
         id
-      )
+      }
     })
 
     Post("/payinvoice", FormData("invoice" -> invoice).toEntity) ~>
@@ -296,8 +298,23 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
       check {
         assert(handled)
         assert(status == OK)
-        assert(entityAs[String] == "\""+id.toString+"\"")
+        val rawId = entityAs[String].drop(1).dropRight(1) // remove trailing double-quotes
+        val id = UUID.fromString(rawId)
+        idsAndAmounts(id) === 12580
       }
+
+
+    Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "123").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val rawId = entityAs[String].drop(1).dropRight(1) // remove trailing double-quotes
+        val id = UUID.fromString(rawId)
+        idsAndAmounts(id) === 123
+      }
+
   }
 
   test("'receivedinfo' method should respond HTTP 404 with a JSON encoded response if the element is not found") {
@@ -316,7 +333,6 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(resp == ErrorResponse("Not found"))
       }
   }
-
 
   test("the websocket should return typed objects") {
 
