@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db
 
 import java.io.File
-import java.nio.file.{Files, StandardCopyOption}
+import java.nio.file.{Files, Path, Paths, StandardCopyOption}
 
 import akka.actor.{Actor, ActorLogging, Props}
 import akka.dispatch.{BoundedMessageQueueSemantics, RequiresMessageQueue}
@@ -58,7 +58,8 @@ class BackupHandler private(databases: Databases, backupFile: File, backupScript
       databases.backup(tmpFile)
       // this will throw an exception if it fails, which is possible if the backup file is not on the same filesystem
       // as the temporary file
-      Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+      // README: On Android we simply use renameTo because most Path methods are not available at our API level
+      tmpFile.renameTo(backupFile)
       val end = System.currentTimeMillis()
 
       // publish a notification that we have updated our backup
