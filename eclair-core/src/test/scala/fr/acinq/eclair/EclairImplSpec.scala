@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import org.scalatest.{Outcome, fixture}
 import scodec.bits._
 import TestConstants._
-import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register}
+import fr.acinq.eclair.channel.{CMD_CLOSE, CMD_FORCECLOSE, Register}
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
 
@@ -136,14 +136,14 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
 
     awaitCond({
       fResp.value match {
-        // check if the response must contains updates only for 'b'
+        // check if the response contains updates only for 'b'
         case Some(Success(res)) => res.forall { u => updates.exists(entry => entry._2.shortChannelId == u.shortChannelId && entry._1.a == b || entry._1.b == b) }
         case _ => false
       }
     })
   }
 
-  test("forceclose should work both with channelId and shortChannelId") { f =>
+  test("close and forceclose should work both with channelId and shortChannelId") { f =>
     import f._
 
     val eclair = new EclairImpl(kit)
@@ -153,6 +153,15 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
 
     eclair.forceClose(Right(ShortChannelId("568749x2597x0")))
     register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_FORCECLOSE))
+
+    eclair.close(Left(ByteVector32.Zeroes), None)
+    register.expectMsg(Register.Forward(ByteVector32.Zeroes, CMD_CLOSE(None)))
+
+    eclair.close(Right(ShortChannelId("568749x2597x0")), None)
+    register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_CLOSE(None)))
+
+    eclair.close(Right(ShortChannelId("568749x2597x0")), Some(ByteVector.empty))
+    register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_CLOSE(Some(ByteVector.empty))))
   }
 
   test("receive should have an optional fallback address and use millisatoshi") { f =>
