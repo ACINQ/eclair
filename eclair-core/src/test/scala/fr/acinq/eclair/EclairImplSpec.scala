@@ -33,14 +33,11 @@ import TestConstants._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
-import org.mockito.Mockito
-import org.mockito.scalatest.MockitoSugar
 import org.mockito.scalatest.IdiomaticMockito
-
 import scala.util.{Failure, Success}
 import scala.concurrent.duration._
 
-class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSuiteLike with IdiomaticMockito with Matchers {
+class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSuiteLike with IdiomaticMockito {
 
   implicit val timeout = Timeout(30 seconds)
 
