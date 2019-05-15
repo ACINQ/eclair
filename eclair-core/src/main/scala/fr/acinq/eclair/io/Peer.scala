@@ -23,6 +23,7 @@ import java.nio.ByteOrder
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import akka.util.Timeout
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
@@ -59,8 +60,17 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   when(DISCONNECTED) {
-    case Event(Peer.Connect(NodeURI(_, hostAndPort)), d: DisconnectedData) =>
-      val address = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
+    case Event(Peer.Connect(_, address_opt), d: DisconnectedData) =>
+      val address = address_opt match {                                                                        // The connect command has an optional address that is specified by the user,
+        case Some(hostAndPort) => new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)              // if present we use it otherwise we use the address from the node_announcement
+        case None => nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption) match {       //
+          case Some(announcementAddress) => announcementAddress.socketAddress                                  //
+          case None =>
+            log.warning(s"Unable to connect to $remoteNodeId no address found")
+            stopPeer()                                                                                         // if there is no address from the node_announcement we stop
+            throw new IllegalArgumentException(s"Unable to connect to $remoteNodeId no address found")
+        }
+      }
       if (d.address_opt.contains(address)) {
         // we already know this address, we'll reconnect automatically
         sender ! "reconnection in progress"
@@ -73,8 +83,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(Reconnect, d: DisconnectedData) =>
       d.address_opt match {
-        case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
         case _ if d.channels.isEmpty => stay // no-op (no more channels with this peer)
+        case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           // exponential backoff retry with a finite max
@@ -549,7 +559,14 @@ object Peer {
   case object CONNECTED extends State
 
   case class Init(previousKnownAddress: Option[InetSocketAddress], storedChannels: Set[HasCommitments])
-  case class Connect(uri: NodeURI)
+  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort]) {
+    def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
+  }
+
+  object Connect {
+    def apply(uri: NodeURI): Connect = new Connect(uri.nodeId, Some(uri.address))
+  }
+
   case object Reconnect
   case object Disconnect
   case object ResumeAnnouncements

@@ -81,12 +81,12 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
   def receive: Receive = {
 
-    case Peer.Connect(NodeURI(publicKey, _)) if publicKey == nodeParams.nodeId =>
+    case Peer.Connect(publicKey, _) if publicKey == nodeParams.nodeId =>
       sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
     case c: Peer.Connect =>
       // we create a peer if it doesn't exist
-      val peer = createOrGetPeer(c.uri.nodeId, previousKnownAddress = None, offlineChannels = Set.empty)
+      val peer = createOrGetPeer(c.nodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward c
 
     case o: Peer.OpenChannel =>

@@ -159,9 +159,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   def connect(node1: Kit, node2: Kit, fundingSatoshis: Long, pushMsat: Long) = {
     val sender = TestProbe()
     val address = node2.nodeParams.publicAddresses.head
-    sender.send(node1.switchboard, Peer.Connect(NodeURI(
+    sender.send(node1.switchboard, Peer.Connect(
       nodeId = node2.nodeParams.nodeId,
-      address = HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort))))
+      address_opt = Some(HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort))
+    ))
     sender.expectMsgAnyOf(10 seconds, "connected", "already connected")
     sender.send(node1.switchboard, Peer.OpenChannel(
       remoteNodeId = node2.nodeParams.nodeId,
