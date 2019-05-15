@@ -96,6 +96,7 @@ class SphinxSpec extends FunSuite {
     val Success(Sphinx.ParsedPacket(payload3, nextPacket3, sharedSecret3)) = Sphinx.parsePacket(privKeys(3), associatedData, nextPacket2.serialize)
     val Success(Sphinx.ParsedPacket(payload4, nextPacket4, sharedSecret4)) = Sphinx.parsePacket(privKeys(4), associatedData, nextPacket3.serialize)
     assert(Seq(payload0, payload1, payload2, payload3, payload4) == singleFramePayloads)
+    assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
 
     val packets = Seq(nextPacket0, nextPacket1, nextPacket2, nextPacket3, nextPacket4)
     assert(packets(0).hmac == ByteVector32(hex"9b122c79c8aee73ea2cdbc22eca15bbcc9409a4cdd73d2b3fcd4fe26a492d376"))
@@ -164,15 +165,15 @@ class SphinxSpec extends FunSuite {
 
       // each node parses and forwards the packet
       // node #0
-      val Success(ParsedPacket(payload0, packet1, sharedSecret0)) = parsePacket(privKeys(0), associatedData, packet.serialize)
+      val Success(ParsedPacket(_, packet1, sharedSecret0)) = parsePacket(privKeys(0), associatedData, packet.serialize)
       // node #1
-      val Success(ParsedPacket(payload1, packet2, sharedSecret1)) = parsePacket(privKeys(1), associatedData, packet1.serialize)
+      val Success(ParsedPacket(_, packet2, sharedSecret1)) = parsePacket(privKeys(1), associatedData, packet1.serialize)
       // node #2
-      val Success(ParsedPacket(payload2, packet3, sharedSecret2)) = parsePacket(privKeys(2), associatedData, packet2.serialize)
+      val Success(ParsedPacket(_, packet3, sharedSecret2)) = parsePacket(privKeys(2), associatedData, packet2.serialize)
       // node #3
-      val Success(ParsedPacket(payload3, packet4, sharedSecret3)) = parsePacket(privKeys(3), associatedData, packet3.serialize)
+      val Success(ParsedPacket(_, packet4, sharedSecret3)) = parsePacket(privKeys(3), associatedData, packet3.serialize)
       // node #4
-      val Success(ParsedPacket(payload4, packet5, sharedSecret4)) = parsePacket(privKeys(4), associatedData, packet4.serialize)
+      val Success(ParsedPacket(_, packet5, sharedSecret4)) = parsePacket(privKeys(4), associatedData, packet4.serialize)
       assert(packet5.isLastPacket)
 
       // node #4 want to reply with an error message
@@ -212,11 +213,11 @@ class SphinxSpec extends FunSuite {
 
       // each node parses and forwards the packet
       // node #0
-      val Success(ParsedPacket(payload0, packet1, sharedSecret0)) = parsePacket(privKeys(0), associatedData, packet.serialize)
+      val Success(ParsedPacket(_, packet1, sharedSecret0)) = parsePacket(privKeys(0), associatedData, packet.serialize)
       // node #1
-      val Success(ParsedPacket(payload1, packet2, sharedSecret1)) = parsePacket(privKeys(1), associatedData, packet1.serialize)
+      val Success(ParsedPacket(_, packet2, sharedSecret1)) = parsePacket(privKeys(1), associatedData, packet1.serialize)
       // node #2
-      val Success(ParsedPacket(payload2, packet3, sharedSecret2)) = parsePacket(privKeys(2), associatedData, packet2.serialize)
+      val Success(ParsedPacket(_, _, sharedSecret2)) = parsePacket(privKeys(2), associatedData, packet2.serialize)
 
       // node #2 want to reply with an error message
       val error = createErrorPacket(sharedSecret2, InvalidRealm)
@@ -259,7 +260,8 @@ object SphinxSpec {
     hex"000101010101010101000000000000000100000001000000000000000000000000",
     hex"000202020202020202000000000000000200000002000000000000000000000000",
     hex"000303030303030303000000000000000300000003000000000000000000000000",
-    hex"000404040404040404000000000000000400000004000000000000000000000000")
+    hex"000404040404040404000000000000000400000004000000000000000000000000"
+  )
 
   // This test vector uses multi-frame payloads intertwined with single-frame payloads.
   // The number of frames (-1) is encoded in the first 5 bits of the first byte.
@@ -269,7 +271,8 @@ object SphinxSpec {
     hex"000101010101010101000000000000000100000001000000000000000000000000",
     hex"0922222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",
     hex"013333333333333333333333333333333333333333333333333333333333333333",
-    hex"000404040404040404000000000000000400000004000000000000000000000000")
+    hex"000404040404040404000000000000000400000004000000000000000000000000"
+  )
 
   // This test vector uses multi-frame payloads.
   // It fills all the frames available in an onion packet.
@@ -280,7 +283,8 @@ object SphinxSpec {
     hex"2111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
     hex"192222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",
     hex"11333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333",
-    hex"11444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444")
+    hex"11444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444"
+  )
 
   // This test vector uses a payload containing a single hop filling all the available frames.
   // origin -> recipient (20 frames)
