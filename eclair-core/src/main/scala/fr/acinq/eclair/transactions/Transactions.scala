@@ -21,7 +21,7 @@ import java.nio.ByteOrder
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, ripemd160}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion._
-import fr.acinq.bitcoin.{ByteVector32, Crypto, LexicographicalOrdering, MilliSatoshi, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptFlags, ScriptWitness, Transaction, TxIn, TxOut, millisatoshi2satoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, MilliSatoshi, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptFlags, ScriptWitness, Transaction, TxIn, TxOut, millisatoshi2satoshi}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import scodec.bits.ByteVector
@@ -275,7 +275,7 @@ object Transactions {
       txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
       lockTime = 0)
 
-    val weight = Transactions.addSigs(ClaimHtlcSuccessTx(input, tx), ByteVector.fill(73)(0), ByteVector32.Zeroes).tx.weight()
+    val weight = addSigs(ClaimHtlcSuccessTx(input, tx), PlaceHolderSig, ByteVector32.Zeroes).tx.weight()
     val fee = weight2fee(feeratePerKw, weight)
     val amount = input.txOut.amount - fee
     if (amount < localDustLimit) {
@@ -299,7 +299,7 @@ object Transactions {
       txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
       lockTime = htlc.cltvExpiry)
 
-    val weight = Transactions.addSigs(ClaimHtlcTimeoutTx(input, tx), ByteVector.fill(73)(0)).tx.weight()
+    val weight = addSigs(ClaimHtlcTimeoutTx(input, tx), PlaceHolderSig).tx.weight()
     val fee = weight2fee(feeratePerKw, weight)
 
     val amount = input.txOut.amount - fee
@@ -325,7 +325,7 @@ object Transactions {
       lockTime = 0)
 
     // compute weight with a dummy 73 bytes signature (the largest you can get) and a dummy 33 bytes pubkey
-    val weight = Transactions.addSigs(ClaimP2WPKHOutputTx(input, tx), ByteVector.fill(33)(0), ByteVector.fill(73)(0)).tx.weight()
+    val weight = addSigs(ClaimP2WPKHOutputTx(input, tx), PlaceHolderPubKey, PlaceHolderSig).tx.weight()
     val fee = weight2fee(feeratePerKw, weight)
 
     val amount = input.txOut.amount - fee
@@ -351,7 +351,7 @@ object Transactions {
       lockTime = 0)
 
     // compute weight with a dummy 73 bytes signature (the largest you can get)
-    val weight = Transactions.addSigs(ClaimDelayedOutputTx(input, tx), ByteVector.fill(73)(0)).tx.weight()
+    val weight = addSigs(ClaimDelayedOutputTx(input, tx), PlaceHolderSig).tx.weight()
     val fee = weight2fee(feeratePerKw, weight)
 
     val amount = input.txOut.amount - fee
@@ -377,7 +377,7 @@ object Transactions {
       lockTime = 0)
 
     // compute weight with a dummy 73 bytes signature (the largest you can get)
-    val weight = Transactions.addSigs(ClaimDelayedOutputPenaltyTx(input, tx), ByteVector.fill(73)(0)).tx.weight()
+    val weight = addSigs(ClaimDelayedOutputPenaltyTx(input, tx), PlaceHolderSig).tx.weight()
     val fee = weight2fee(feeratePerKw, weight)
 
     val amount = input.txOut.amount - fee
@@ -403,7 +403,7 @@ object Transactions {
       lockTime = 0)
 
     // compute weight with a dummy 73 bytes signature (the largest you can get)
-    val weight = Transactions.addSigs(MainPenaltyTx(input, tx), ByteVector.fill(73)(0)).tx.weight()
+    val weight = addSigs(MainPenaltyTx(input, tx), PlaceHolderSig).tx.weight()
     val fee = weight2fee(feeratePerKw, weight)
 
     val amount = input.txOut.amount - fee
@@ -431,7 +431,7 @@ object Transactions {
       lockTime = 0)
 
     // compute weight with a dummy 73 bytes signature (the largest you can get)
-    val weight = Transactions.addSigs(MainPenaltyTx(input, tx), ByteVector.fill(73)(0)).tx.weight()
+    val weight = addSigs(MainPenaltyTx(input, tx), PlaceHolderSig).tx.weight()
     val fee = weight2fee(feeratePerKw, weight)
 
     val amount = input.txOut.amount - fee
@@ -474,67 +474,79 @@ object Transactions {
     }
   }
 
+  /**
+    * Default public key used for fee estimation
+    */
+  val PlaceHolderPubKey = PrivateKey(ByteVector32.One, compressed = true).publicKey
 
-  def sign(tx: Transaction, inputIndex: Int, redeemScript: ByteVector, amount: Satoshi, key: PrivateKey): ByteVector = {
-    Transaction.signInput(tx, inputIndex, redeemScript, SIGHASH_ALL, amount, SIGVERSION_WITNESS_V0, key)
+  /**
+    * This default sig takes 73B when encoded in DER (incl. 1B for the trailing sig hash), it is used for fee estimation
+    */
+  val PlaceHolderSig = ByteVector64(ByteVector.fill(64)(0xaa))
+  assert(der(PlaceHolderSig).size == 73)
+
+  def sign(tx: Transaction, inputIndex: Int, redeemScript: ByteVector, amount: Satoshi, key: PrivateKey): ByteVector64 = {
+    val sigDER = Transaction.signInput(tx, inputIndex, redeemScript, SIGHASH_ALL, amount, SIGVERSION_WITNESS_V0, key)
+    val sig64 = Crypto.encodeSignatureTo64(Crypto.decodeSignatureFromDER(sigDER))
+    sig64
   }
 
-  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey): ByteVector = {
+  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey): ByteVector64 = {
     require(txinfo.tx.txIn.lengthCompare(1) == 0, "only one input allowed")
     sign(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, txinfo.input.txOut.amount, key)
   }
 
-  def addSigs(commitTx: CommitTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector, remoteSig: ByteVector): CommitTx = {
+  def addSigs(commitTx: CommitTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector64, remoteSig: ByteVector64): CommitTx = {
     val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
     commitTx.copy(tx = commitTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(mainPenaltyTx: MainPenaltyTx, revocationSig: ByteVector): MainPenaltyTx = {
+  def addSigs(mainPenaltyTx: MainPenaltyTx, revocationSig: ByteVector64): MainPenaltyTx = {
     val witness = Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, mainPenaltyTx.input.redeemScript)
     mainPenaltyTx.copy(tx = mainPenaltyTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(htlcPenaltyTx: HtlcPenaltyTx, revocationSig: ByteVector, revocationPubkey: PublicKey): HtlcPenaltyTx = {
+  def addSigs(htlcPenaltyTx: HtlcPenaltyTx, revocationSig: ByteVector64, revocationPubkey: PublicKey): HtlcPenaltyTx = {
     val witness = Scripts.witnessHtlcWithRevocationSig(revocationSig, revocationPubkey, htlcPenaltyTx.input.redeemScript)
     htlcPenaltyTx.copy(tx = htlcPenaltyTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(htlcSuccessTx: HtlcSuccessTx, localSig: ByteVector, remoteSig: ByteVector, paymentPreimage: ByteVector32): HtlcSuccessTx = {
+  def addSigs(htlcSuccessTx: HtlcSuccessTx, localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32): HtlcSuccessTx = {
     val witness = witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, htlcSuccessTx.input.redeemScript)
     htlcSuccessTx.copy(tx = htlcSuccessTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(htlcTimeoutTx: HtlcTimeoutTx, localSig: ByteVector, remoteSig: ByteVector): HtlcTimeoutTx = {
+  def addSigs(htlcTimeoutTx: HtlcTimeoutTx, localSig: ByteVector64, remoteSig: ByteVector64): HtlcTimeoutTx = {
     val witness = witnessHtlcTimeout(localSig, remoteSig, htlcTimeoutTx.input.redeemScript)
     htlcTimeoutTx.copy(tx = htlcTimeoutTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(claimHtlcSuccessTx: ClaimHtlcSuccessTx, localSig: ByteVector, paymentPreimage: ByteVector32): ClaimHtlcSuccessTx = {
+  def addSigs(claimHtlcSuccessTx: ClaimHtlcSuccessTx, localSig: ByteVector64, paymentPreimage: ByteVector32): ClaimHtlcSuccessTx = {
     val witness = witnessClaimHtlcSuccessFromCommitTx(localSig, paymentPreimage, claimHtlcSuccessTx.input.redeemScript)
     claimHtlcSuccessTx.copy(tx = claimHtlcSuccessTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(claimHtlcTimeoutTx: ClaimHtlcTimeoutTx, localSig: ByteVector): ClaimHtlcTimeoutTx = {
+  def addSigs(claimHtlcTimeoutTx: ClaimHtlcTimeoutTx, localSig: ByteVector64): ClaimHtlcTimeoutTx = {
     val witness = witnessClaimHtlcTimeoutFromCommitTx(localSig, claimHtlcTimeoutTx.input.redeemScript)
     claimHtlcTimeoutTx.copy(tx = claimHtlcTimeoutTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(claimP2WPKHOutputTx: ClaimP2WPKHOutputTx, localPaymentPubkey: ByteVector, localSig: ByteVector): ClaimP2WPKHOutputTx = {
-    val witness = ScriptWitness(Seq(localSig, localPaymentPubkey))
+  def addSigs(claimP2WPKHOutputTx: ClaimP2WPKHOutputTx, localPaymentPubkey: PublicKey, localSig: ByteVector64): ClaimP2WPKHOutputTx = {
+    val witness = ScriptWitness(Seq(der(localSig), localPaymentPubkey.toBin))
     claimP2WPKHOutputTx.copy(tx = claimP2WPKHOutputTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(claimHtlcDelayed: ClaimDelayedOutputTx, localSig: ByteVector): ClaimDelayedOutputTx = {
+  def addSigs(claimHtlcDelayed: ClaimDelayedOutputTx, localSig: ByteVector64): ClaimDelayedOutputTx = {
     val witness = witnessToLocalDelayedAfterDelay(localSig, claimHtlcDelayed.input.redeemScript)
     claimHtlcDelayed.copy(tx = claimHtlcDelayed.tx.updateWitness(0, witness))
   }
 
-  def addSigs(claimHtlcDelayedPenalty: ClaimDelayedOutputPenaltyTx, revocationSig: ByteVector): ClaimDelayedOutputPenaltyTx = {
+  def addSigs(claimHtlcDelayedPenalty: ClaimDelayedOutputPenaltyTx, revocationSig: ByteVector64): ClaimDelayedOutputPenaltyTx = {
     val witness = Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, claimHtlcDelayedPenalty.input.redeemScript)
     claimHtlcDelayedPenalty.copy(tx = claimHtlcDelayedPenalty.tx.updateWitness(0, witness))
   }
 
-  def addSigs(closingTx: ClosingTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector, remoteSig: ByteVector): ClosingTx = {
+  def addSigs(closingTx: ClosingTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector64, remoteSig: ByteVector64): ClosingTx = {
     val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
     closingTx.copy(tx = closingTx.tx.updateWitness(0, witness))
   }
@@ -542,7 +554,7 @@ object Transactions {
   def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] =
     Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.tx.txIn.head.outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
-  def checkSig(txinfo: TransactionWithInputInfo, sig: ByteVector, pubKey: PublicKey): Boolean = {
+  def checkSig(txinfo: TransactionWithInputInfo, sig: ByteVector64, pubKey: PublicKey): Boolean = {
     val data = Transaction.hashForSigning(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, SIGHASH_ALL, txinfo.input.txOut.amount, SIGVERSION_WITNESS_V0)
     Crypto.verifySignature(data, sig, pubKey)
   }

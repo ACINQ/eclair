@@ -30,7 +30,6 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelReestablish, _}
-import scodec.bits.ByteVector
 
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
@@ -213,7 +212,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // we rebuild a new channel_update with values from the configuration because they may have changed while eclair was down
           val candidateChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, normal.channelUpdate.shortChannelId, nodeParams.expiryDeltaBlocks,
             normal.commitments.remoteParams.htlcMinimumMsat, normal.channelUpdate.feeBaseMsat, normal.channelUpdate.feeProportionalMillionths, normal.commitments.localCommit.spec.totalFunds, enable = Announcements.isEnabled(normal.channelUpdate.channelFlags))
-          val channelUpdate1 = if (candidateChannelUpdate.copy(signature = ByteVector.empty, timestamp = 0) == normal.channelUpdate.copy(signature = ByteVector.empty, timestamp = 0)) {
+          val channelUpdate1 = if (Announcements.areSame(candidateChannelUpdate, normal.channelUpdate)) {
             // if there was no configuration change we keep the existing channel update
             normal.channelUpdate
           } else {
@@ -909,7 +908,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val age = Platform.currentTime.milliseconds - d.channelUpdate.timestamp.seconds
       val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
       reason match {
-        case Reconnected if channelUpdate1.copy(signature = ByteVector.empty, timestamp = 0) == d.channelUpdate.copy(signature = ByteVector.empty, timestamp = 0) && age < REFRESH_CHANNEL_UPDATE_INTERVAL =>
+        case Reconnected if Announcements.areSame(channelUpdate1, d.channelUpdate) && age < REFRESH_CHANNEL_UPDATE_INTERVAL =>
           // we already sent an identical channel_update not long ago (flapping protection in case we keep being disconnected/reconnected)
           log.info(s"not sending a new identical channel_update, current one was created {} days ago", age.toDays)
           stay

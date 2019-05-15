@@ -16,13 +16,12 @@
 
 package fr.acinq.eclair.wire
 
-import java.math.BigInteger
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import com.google.common.cache.{CacheBuilder, CacheLoader}
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{ByteVector32, Crypto}
-import fr.acinq.eclair.crypto.{Generators, Sphinx}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.FixedSizeStrictCodec.bytesStrict
 import fr.acinq.eclair.{ShortChannelId, UInt64, wire}
 import org.apache.commons.codec.binary.Base32
@@ -51,9 +50,11 @@ object LightningMessageCodecs {
 
   def bytes32: Codec[ByteVector32] = limitedSizeBytes(32, bytesStrict(32).xmap(d => ByteVector32(d), d => d.bytes))
 
+  def bytes64: Codec[ByteVector64] = limitedSizeBytes(64, bytesStrict(64).xmap(d => ByteVector64(d), d => d.bytes))
+
   def varsizebinarydata: Codec[ByteVector] = variableSizeBytes(uint16, bytes)
 
-  def listofsignatures: Codec[List[ByteVector]] = listOfN(uint16, signature)
+  def listofsignatures: Codec[List[ByteVector64]] = listOfN(uint16, bytes64)
 
   def ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))
 
@@ -75,11 +76,6 @@ object LightningMessageCodecs {
 
   def shortchannelid: Codec[ShortChannelId] = int64.xmap(l => ShortChannelId(l), s => s.toLong)
 
-  def signature: Codec[ByteVector] = Codec[ByteVector](
-    (der: ByteVector) => bytes(64).encode(der2wire(der)),
-    (wire: BitVector) => bytes(64).decode(wire).map(_.map(b => wire2der(b)))
-  )
-
   def scalar: Codec[Scalar] = Codec[Scalar](
     (value: Scalar) => bytes(32).encode(ByteVector(value.toBin.toArray)),
     (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => Scalar(b)))
@@ -100,32 +96,9 @@ object LightningMessageCodecs {
     (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => PublicKey(b)))
   )
 
-  def optionalSignature: Codec[Option[ByteVector]] = Codec[Option[ByteVector]](
-    (der: Option[ByteVector]) => der match {
-      case Some(sig) => bytes(64).encode(der2wire(sig))
-      case None => bytes(64).encode(ByteVector.fill[Byte](64)(0))
-    },
-    (wire: BitVector) => bytes(64).decode(wire).map(_.map(b => {
-      if (b.toArray.exists(_ != 0)) Some(wire2der(b)) else None
-    }))
-  )
-
   def rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
 
   def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(32, utf8).xmap(s => s.takeWhile(_ != '\u0000'), s => s)
-
-  def der2wire(signature: ByteVector): ByteVector = {
-    require(Crypto.isDERSignature(signature), s"invalid DER signature $signature")
-    val (r, s) = Crypto.decodeSignature(signature)
-    Generators.fixSize(ByteVector.view(r.toByteArray.dropWhile(_ == 0))) ++ Generators.fixSize(ByteVector.view(s.toByteArray.dropWhile(_ == 0)))
-  }
-
-  def wire2der(sig: ByteVector): ByteVector = {
-    require(sig.length == 64, "wire signature length must be 64")
-    val r = new BigInteger(1, sig.take(32).toArray)
-    val s = new BigInteger(1, sig.takeRight(32).toArray)
-    Crypto.encodeSignature(r, s) :+ fr.acinq.bitcoin.SIGHASH_ALL.toByte // wtf ??
-  }
 
   val initCodec: Codec[Init] = (
     ("globalFeatures" | varsizebinarydata) ::
@@ -189,11 +162,11 @@ object LightningMessageCodecs {
     ("temporaryChannelId" | bytes32) ::
       ("fundingTxid" | bytes32) ::
       ("fundingOutputIndex" | uint16) ::
-      ("signature" | signature)).as[FundingCreated]
+      ("signature" | bytes64)).as[FundingCreated]
 
   val fundingSignedCodec: Codec[FundingSigned] = (
     ("channelId" | bytes32) ::
-      ("signature" | signature)).as[FundingSigned]
+      ("signature" | bytes64)).as[FundingSigned]
 
   val fundingLockedCodec: Codec[FundingLocked] = (
     ("channelId" | bytes32) ::
@@ -206,7 +179,7 @@ object LightningMessageCodecs {
   val closingSignedCodec: Codec[ClosingSigned] = (
     ("channelId" | bytes32) ::
       ("feeSatoshis" | uint64) ::
-      ("signature" | signature)).as[ClosingSigned]
+      ("signature" | bytes64)).as[ClosingSigned]
 
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
@@ -234,7 +207,7 @@ object LightningMessageCodecs {
 
   val commitSigCodec: Codec[CommitSig] = (
     ("channelId" | bytes32) ::
-      ("signature" | signature) ::
+      ("signature" | bytes64) ::
       ("htlcSignatures" | listofsignatures)).as[CommitSig]
 
   val revokeAndAckCodec: Codec[RevokeAndAck] = (
@@ -250,8 +223,8 @@ object LightningMessageCodecs {
   val announcementSignaturesCodec: Codec[AnnouncementSignatures] = (
     ("channelId" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
-      ("nodeSignature" | signature) ::
-      ("bitcoinSignature" | signature)).as[AnnouncementSignatures]
+      ("nodeSignature" | bytes64) ::
+      ("bitcoinSignature" | bytes64)).as[AnnouncementSignatures]
 
   val channelAnnouncementWitnessCodec = (
     ("features" | varsizebinarydata) ::
@@ -263,10 +236,10 @@ object LightningMessageCodecs {
       ("bitcoinKey2" | publicKey))
 
   val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
-    ("nodeSignature1" | signature) ::
-      ("nodeSignature2" | signature) ::
-      ("bitcoinSignature1" | signature) ::
-      ("bitcoinSignature2" | signature) ::
+    ("nodeSignature1" | bytes64) ::
+      ("nodeSignature2" | bytes64) ::
+      ("bitcoinSignature1" | bytes64) ::
+      ("bitcoinSignature2" | bytes64) ::
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
   val nodeAnnouncementWitnessCodec = (
@@ -278,7 +251,7 @@ object LightningMessageCodecs {
       ("addresses" | listofnodeaddresses))
 
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
-    ("signature" | signature) ::
+    ("signature" | bytes64) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
   val channelUpdateWitnessCodec =
@@ -295,7 +268,7 @@ object LightningMessageCodecs {
       })
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (
-    ("signature" | signature) ::
+    ("signature" | bytes64) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = (

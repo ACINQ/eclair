@@ -22,10 +22,10 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.transactions.Scripts.{htlcOffered, htlcReceived, toLocalDelayed}
 import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
 import fr.acinq.eclair.wire.UpdateAddHtlc
-import fr.acinq.eclair.{randomBytes, randomBytes32}
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
@@ -93,7 +93,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(20000), pubKeyScript) :: Nil, lockTime = 0)
       val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx, localDustLimit, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(claimP2WPKHOutputTx, localPaymentPriv.publicKey, randomBytes(73)).tx)
+      val weight = Transaction.weight(addSigs(claimP2WPKHOutputTx, localPaymentPriv.publicKey, PlaceHolderSig).tx)
       assert(claimP2WPKHOutputWeight == weight)
       assert(claimP2WPKHOutputTx.fee >= claimP2WPKHOutputTx.minRelayFee)
     }
@@ -105,7 +105,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val htlcSuccessOrTimeoutTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(20000), pubKeyScript) :: Nil, lockTime = 0)
       val claimHtlcDelayedTx = makeClaimDelayedOutputTx(htlcSuccessOrTimeoutTx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(claimHtlcDelayedTx, randomBytes(73)).tx)
+      val weight = Transaction.weight(addSigs(claimHtlcDelayedTx, PlaceHolderSig).tx)
       assert(claimHtlcDelayedWeight == weight)
       assert(claimHtlcDelayedTx.fee >= claimHtlcDelayedTx.minRelayFee)
     }
@@ -117,7 +117,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(20000), pubKeyScript) :: Nil, lockTime = 0)
       val mainPenaltyTx = makeMainPenaltyTx(commitTx, localDustLimit, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localPaymentPriv.publicKey, feeratePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(mainPenaltyTx, randomBytes(73)).tx)
+      val weight = Transaction.weight(addSigs(mainPenaltyTx, PlaceHolderSig).tx)
       assert(mainPenaltyWeight == weight)
       assert(mainPenaltyTx.fee >= mainPenaltyTx.minRelayFee)
     }
@@ -132,7 +132,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pubKeyScript) :: Nil, lockTime = 0)
       val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx, outputsAlreadyUsed = Set.empty, Script.write(redeemScript), localDustLimit, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(htlcPenaltyTx, randomBytes(73), localRevocationPriv.publicKey).tx)
+      val weight = Transaction.weight(addSigs(htlcPenaltyTx, PlaceHolderSig, localRevocationPriv.publicKey).tx)
       assert(htlcPenaltyWeight == weight)
       assert(htlcPenaltyTx.fee >= htlcPenaltyTx.minRelayFee)
     }
@@ -146,7 +146,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pubKeyScript) :: Nil, lockTime = 0)
       val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(claimHtlcSuccessTx, randomBytes(73), paymentPreimage).tx)
+      val weight = Transaction.weight(addSigs(claimHtlcSuccessTx, PlaceHolderSig, paymentPreimage).tx)
       assert(claimHtlcSuccessWeight == weight)
       assert(claimHtlcSuccessTx.fee >= claimHtlcSuccessTx.minRelayFee)
     }
@@ -160,7 +160,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pubKeyScript) :: Nil, lockTime = 0)
       val claimClaimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(claimClaimHtlcTimeoutTx, randomBytes(73)).tx)
+      val weight = Transaction.weight(addSigs(claimClaimHtlcTimeoutTx, PlaceHolderSig).tx)
       assert(claimHtlcTimeoutWeight == weight)
       assert(claimClaimHtlcTimeoutTx.fee >= claimClaimHtlcTimeoutTx.minRelayFee)
     }

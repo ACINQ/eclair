@@ -20,7 +20,7 @@ import java.util.UUID
 
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.{Local, Origin, Relayed}
@@ -31,9 +31,8 @@ import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
-import scala.concurrent.duration._
-import scala.compat.Platform
 
+import scala.compat.Platform
 import scala.concurrent.duration._
 
 
@@ -124,10 +123,19 @@ object ChannelCodecs extends Logging {
     .typecase(0x09, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcPenaltyTx])
     .typecase(0x10, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClosingTx])
 
+  // this is a backward compatible codec (we used to store the sig as DER encoded), now we store it as 64-bytes
+  val sig64OrDERCodec: Codec[ByteVector64] = Codec[ByteVector64](
+    (value: ByteVector64) => bytes(64).encode(value),
+    (wire: BitVector) => bytes.decode(wire).map(_.map {
+       case bin64 if bin64.size == 64 => ByteVector64(bin64)
+       case der => Crypto.encodeSignatureTo64(Crypto.decodeSignatureFromDER(der))
+    })
+  )
+
   val htlcTxAndSigsCodec: Codec[HtlcTxAndSigs] = (
     ("txinfo" | txWithInputInfoCodec) ::
-      ("localSig" | varsizebinarydata) ::
-      ("remoteSig" | varsizebinarydata)).as[HtlcTxAndSigs]
+      ("localSig" | variableSizeBytes(uint16, sig64OrDERCodec)) :: // we store as variable length for historical purposes (we used to store as DER encoded)
+      ("remoteSig" | variableSizeBytes(uint16, sig64OrDERCodec))).as[HtlcTxAndSigs]
 
   val publishableTxsCodec: Codec[PublishableTxs] = (
     ("commitTx" | (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx]) ::

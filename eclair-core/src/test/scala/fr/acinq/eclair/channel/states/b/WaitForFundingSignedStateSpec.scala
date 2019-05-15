@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
@@ -69,7 +69,7 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelp
   test("recv FundingSigned with invalid signature") { f =>
     import f._
     // sending an invalid sig
-    alice ! FundingSigned(ByteVector32.Zeroes, ByteVector.fill(64)(0))
+    alice ! FundingSigned(ByteVector32.Zeroes, ByteVector64.Zeroes)
     awaitCond(alice.stateName == CLOSED)
     alice2bob.expectMsgType[Error]
   }

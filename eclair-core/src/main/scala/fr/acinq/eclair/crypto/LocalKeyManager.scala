@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.DeterministicWallet.{derivePrivateKey, _}
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions
@@ -101,7 +101,7 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     * @return a signature generated with the private key that matches the input
     *         extended public key
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey): ByteVector = {
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey): ByteVector64 = {
     val privateKey = privateKeys.get(publicKey.path)
     Transactions.sign(tx, privateKey.privateKey)
   }
@@ -115,7 +115,7 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote point.
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: Point): ByteVector = {
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: Point): ByteVector64 = {
     val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
     Transactions.sign(tx, currentKey)
@@ -130,20 +130,20 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote secret.
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar): ByteVector = {
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar): ByteVector64 = {
     val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.revocationPrivKey(privateKey.privateKey, remoteSecret)
     Transactions.sign(tx, currentKey)
   }
 
-  override def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector, ByteVector) = {
+  override def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector64, ByteVector64) = {
     val witness = if (Announcements.isNode1(nodeId, remoteNodeId)) {
       Announcements.channelAnnouncementWitnessEncode(chainHash, shortChannelId, nodeId, remoteNodeId, fundingPublicKey(channelKeyPath).publicKey, remoteFundingKey, features)
     } else {
       Announcements.channelAnnouncementWitnessEncode(chainHash, shortChannelId, remoteNodeId, nodeId, remoteFundingKey, fundingPublicKey(channelKeyPath).publicKey, features)
     }
-    val nodeSig = Crypto.encodeSignature(Crypto.sign(witness, nodeKey.privateKey)) :+ 1.toByte
-    val bitcoinSig = Crypto.encodeSignature(Crypto.sign(witness, fundingPrivateKey(channelKeyPath).privateKey)) :+ 1.toByte
+    val nodeSig = Crypto.sign(witness, nodeKey.privateKey)
+    val bitcoinSig = Crypto.sign(witness, fundingPrivateKey(channelKeyPath).privateKey)
     (nodeSig, bitcoinSig)
   }
 }

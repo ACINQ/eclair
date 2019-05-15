@@ -17,11 +17,12 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
-import fr.acinq.bitcoin.{ByteVector32, Crypto, LexicographicalOrdering}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, serializationResult}
 import scodec.bits.{BitVector, ByteVector}
 import shapeless.HNil
+
 import scala.concurrent.duration._
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -40,18 +41,18 @@ object Announcements {
   def channelUpdateWitnessEncode(chainHash: ByteVector32, shortChannelId: ShortChannelId, timestamp: Long, messageFlags: Byte, channelFlags: Byte, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Option[Long]): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.channelUpdateWitnessCodec.encode(chainHash :: shortChannelId :: timestamp :: messageFlags :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: HNil))))
 
-  def signChannelAnnouncement(chainHash: ByteVector32, shortChannelId: ShortChannelId, localNodeSecret: PrivateKey, remoteNodeId: PublicKey, localFundingPrivKey: PrivateKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector, ByteVector) = {
+  def signChannelAnnouncement(chainHash: ByteVector32, shortChannelId: ShortChannelId, localNodeSecret: PrivateKey, remoteNodeId: PublicKey, localFundingPrivKey: PrivateKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector64, ByteVector64) = {
     val witness = if (isNode1(localNodeSecret.publicKey, remoteNodeId)) {
       channelAnnouncementWitnessEncode(chainHash, shortChannelId, localNodeSecret.publicKey, remoteNodeId, localFundingPrivKey.publicKey, remoteFundingKey, features)
     } else {
       channelAnnouncementWitnessEncode(chainHash, shortChannelId, remoteNodeId, localNodeSecret.publicKey, remoteFundingKey, localFundingPrivKey.publicKey, features)
     }
-    val nodeSig = Crypto.encodeSignature(Crypto.sign(witness, localNodeSecret)) :+ 1.toByte
-    val bitcoinSig = Crypto.encodeSignature(Crypto.sign(witness, localFundingPrivKey)) :+ 1.toByte
+    val nodeSig = Crypto.sign(witness, localNodeSecret)
+    val bitcoinSig = Crypto.sign(witness, localFundingPrivKey)
     (nodeSig, bitcoinSig)
   }
 
-  def makeChannelAnnouncement(chainHash: ByteVector32, shortChannelId: ShortChannelId, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey, remoteFundingKey: PublicKey, localNodeSignature: ByteVector, remoteNodeSignature: ByteVector, localBitcoinSignature: ByteVector, remoteBitcoinSignature: ByteVector): ChannelAnnouncement = {
+  def makeChannelAnnouncement(chainHash: ByteVector32, shortChannelId: ShortChannelId, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey, remoteFundingKey: PublicKey, localNodeSignature: ByteVector64, remoteNodeSignature: ByteVector64, localBitcoinSignature: ByteVector64, remoteBitcoinSignature: ByteVector64): ChannelAnnouncement = {
     val (nodeId1, nodeId2, bitcoinKey1, bitcoinKey2, nodeSignature1, nodeSignature2, bitcoinSignature1, bitcoinSignature2) =
       if (isNode1(localNodeId, remoteNodeId)) {
         (localNodeId, remoteNodeId, localFundingKey, remoteFundingKey, localNodeSignature, remoteNodeSignature, localBitcoinSignature, remoteBitcoinSignature)
@@ -76,7 +77,7 @@ object Announcements {
   def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], timestamp: Long = Platform.currentTime.milliseconds.toSeconds): NodeAnnouncement = {
     require(alias.size <= 32)
     val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, ByteVector.empty, nodeAddresses)
-    val sig = Crypto.encodeSignature(Crypto.sign(witness, nodeSecret)) :+ 1.toByte
+    val sig = Crypto.sign(witness, nodeSecret)
     NodeAnnouncement(
       signature = sig,
       timestamp = timestamp,
@@ -115,6 +116,16 @@ object Announcements {
     */
   def isEnabled(channelFlags: Byte): Boolean = (channelFlags & 2) == 0
 
+  /**
+    * This method compares channel updates, ignoring fields that don't matter, like signature or timestamp
+    *
+    * @param u1
+    * @param u2
+    * @return true if channel updates are "equal"
+    */
+  def areSame(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
+    u1.copy(signature = ByteVector64.Zeroes, timestamp = 0) == u2.copy(signature = ByteVector64.Zeroes, timestamp = 0)
+
   def makeMessageFlags(hasOptionChannelHtlcMax: Boolean): Byte = BitVector.bits(hasOptionChannelHtlcMax :: Nil).padLeft(8).toByte()
 
   def makeChannelFlags(isNode1: Boolean, enable: Boolean): Byte = BitVector.bits(!enable :: !isNode1 :: Nil).padLeft(8).toByte()
@@ -125,7 +136,7 @@ object Announcements {
     val htlcMaximumMsatOpt = Some(htlcMaximumMsat)
 
     val witness = channelUpdateWitnessEncode(chainHash, shortChannelId, timestamp, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsatOpt)
-    val sig = Crypto.encodeSignature(Crypto.sign(witness, nodeSecret)) :+ 1.toByte
+    val sig = Crypto.sign(witness, nodeSecret)
     ChannelUpdate(
       signature = sig,
       chainHash = chainHash,

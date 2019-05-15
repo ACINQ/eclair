@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.actor.Status.Failure
 import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
@@ -135,7 +135,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
     val sender = TestProbe()
     val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
-    sender.send(bob, aliceCloseSig.copy(signature = ByteVector.fill(64)(0)))
+    sender.send(bob, aliceCloseSig.copy(signature = ByteVector64.Zeroes))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid close signature"))
     bob2blockchain.expectMsg(PublishAsap(tx))
