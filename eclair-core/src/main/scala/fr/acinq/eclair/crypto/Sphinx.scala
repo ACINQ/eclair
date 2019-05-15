@@ -65,9 +65,9 @@ object Sphinx extends Logging {
   // last packet (all zeroes except for the version byte)
   val LAST_PACKET = Packet(Version, ByteVector.fill(33)(0), ByteVector32.Zeroes, ByteVector.fill(RoutingInfoLength)(0))
 
-  // The 4 MSB of the first frame of the payload contains the number of frames used.
+  // The 5 MSB of the first frame of the payload contains the number of frames used.
   def payloadFrameCount(payload: ByteVector): Int = {
-    (payload.head >> 4) + 1
+    ((payload.head >> 3) & 0x1F) + 1
   }
 
   def hmac256(key: ByteVector, message: ByteVector): ByteVector32 = {
