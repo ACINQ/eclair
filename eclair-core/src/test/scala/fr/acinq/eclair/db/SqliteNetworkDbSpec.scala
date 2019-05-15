@@ -47,6 +47,7 @@ class SqliteNetworkDbSpec extends FunSuite {
     assert(db.listNodes().toSet === Set.empty)
     db.addNode(node_1)
     db.addNode(node_1) // duplicate is ignored
+    assert(db.getNode(node_1.nodeId) == Some(node_1))
     assert(db.listNodes().size === 1)
     db.addNode(node_2)
     db.addNode(node_3)

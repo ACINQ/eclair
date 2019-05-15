@@ -27,6 +27,8 @@ trait NetworkDb {
 
   def updateNode(n: NodeAnnouncement)
 
+  def getNode(nodeId: PublicKey): Option[NodeAnnouncement]
+
   def removeNode(nodeId: PublicKey)
 
   def listNodes(): Seq[NodeAnnouncement]
