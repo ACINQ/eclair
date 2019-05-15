@@ -43,12 +43,18 @@ class FeaturesSpec extends FunSuite {
     assert(areSupported(features) && hasFeature(features, OPTION_DATA_LOSS_PROTECT_OPTIONAL) && hasFeature(features, INITIAL_ROUTING_SYNC_BIT_OPTIONAL))
   }
 
+  test("'multi_frame_onion' feature") {
+    assert(hasFeature(hex"01", Features.OPTION_MULTI_FRAME_ONION_MANDATORY))
+    assert(hasFeature(hex"02", Features.OPTION_MULTI_FRAME_ONION_OPTIONAL))
+  }
+
   test("features compatibility") {
     assert(areSupported(Protocol.writeUInt64(1l << INITIAL_ROUTING_SYNC_BIT_OPTIONAL, ByteOrder.BIG_ENDIAN)))
     assert(areSupported(Protocol.writeUInt64(1L << OPTION_DATA_LOSS_PROTECT_MANDATORY, ByteOrder.BIG_ENDIAN)))
     assert(areSupported(Protocol.writeUInt64(1l << OPTION_DATA_LOSS_PROTECT_OPTIONAL, ByteOrder.BIG_ENDIAN)))
-    assert(areSupported(hex"14") == false)
-    assert(areSupported(hex"0141") == false)
+    assert(areSupported(Protocol.writeUInt64(1l << OPTION_MULTI_FRAME_ONION_OPTIONAL, ByteOrder.BIG_ENDIAN)))
+    assert(!areSupported(hex"14"))
+    assert(!areSupported(hex"0141"))
   }
 
 }

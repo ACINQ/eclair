@@ -21,7 +21,6 @@ import java.util.BitSet
 
 import scodec.bits.ByteVector
 
-
 /**
   * Created by PM on 13/02/2017.
   */
@@ -36,11 +35,12 @@ object Features {
   val CHANNEL_RANGE_QUERIES_BIT_MANDATORY = 6
   val CHANNEL_RANGE_QUERIES_BIT_OPTIONAL = 7
 
+  val OPTION_MULTI_FRAME_ONION_MANDATORY = 0
+  val OPTION_MULTI_FRAME_ONION_OPTIONAL = 1
 
   def hasFeature(features: BitSet, bit: Int): Boolean = features.get(bit)
 
   def hasFeature(features: ByteVector, bit: Int): Boolean = hasFeature(BitSet.valueOf(features.reverse.toArray), bit)
-
 
   /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that
@@ -51,7 +51,8 @@ object Features {
     for (i <- 0 until bitset.length() by 2) {
       if (bitset.get(i) && !supportedMandatoryFeatures.contains(i)) return false
     }
-    return true
+
+    true
   }
 
   /**
