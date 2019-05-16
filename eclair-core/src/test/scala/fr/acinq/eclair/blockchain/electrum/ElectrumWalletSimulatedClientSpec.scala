@@ -88,6 +88,18 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     loop(Vector(makeHeader(previousHeader)))
   }
 
+  def reconnect: WalletReady = {
+    sender.send(wallet, ElectrumClient.ElectrumReady(wallet.stateData.blockchain.bestchain.last.height, wallet.stateData.blockchain.bestchain.last.header, InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
+    awaitCond(wallet.stateName == ElectrumWallet.WAITING_FOR_TIP)
+    while (listener.msgAvailable) {
+      listener.receiveOne(100 milliseconds)
+    }
+    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(wallet.stateData.blockchain.bestchain.last.height, wallet.stateData.blockchain.bestchain.last.header))
+    awaitCond(wallet.stateName == ElectrumWallet.RUNNING)
+    val ready = listener.expectMsgType[WalletReady]
+    ready
+  }
+
   test("wait until wallet is ready") {
     sender.send(wallet, ElectrumClient.ElectrumReady(2016, headers(2015), InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(2016, headers(2015)))
@@ -158,10 +170,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     watcher.expectTerminated(probe.ref)
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
 
-    sender.send(wallet, ElectrumClient.ElectrumReady(last.height, last.header, InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
-    awaitCond(wallet.stateName == ElectrumWallet.WAITING_FOR_TIP)
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height, last.header))
-    awaitCond(wallet.stateName == ElectrumWallet.RUNNING)
+    reconnect
   }
 
 
@@ -206,14 +215,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     watcher.expectTerminated(probe.ref)
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
 
-    sender.send(wallet, ElectrumClient.ElectrumReady(wallet.stateData.blockchain.bestchain.last.height, wallet.stateData.blockchain.bestchain.last.header, InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
-    awaitCond(wallet.stateName == ElectrumWallet.WAITING_FOR_TIP)
-    while (listener.msgAvailable) {
-      listener.receiveOne(100 milliseconds)
-    }
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(wallet.stateData.blockchain.bestchain.last.height, wallet.stateData.blockchain.bestchain.last.header))
-    awaitCond(wallet.stateName == ElectrumWallet.RUNNING)
-    val ready = listener.expectMsgType[WalletReady]
+    val ready = reconnect
     assert(ready.unconfirmedBalance == Satoshi(0))
   }
 
@@ -228,7 +230,21 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
       var template = makeHeader(chunk.last)
       template
     }
-    wallet ! HeaderSubscriptionResponse(wallet.stateData.blockchain.tip.height + 1, bad)
+    val probe = TestProbe()
+    val watcher = TestProbe()
+    watcher.watch(probe.ref)
+    watcher.setAutoPilot(new TestActor.AutoPilot {
+      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
+        case Terminated(actor) if actor == probe.ref =>
+          wallet ! ElectrumClient.ElectrumDisconnected
+          TestActor.KeepRunning
+      }
+    })
+    probe.send(wallet, HeaderSubscriptionResponse(wallet.stateData.blockchain.tip.height + 1, bad))
+    watcher.expectTerminated(probe.ref)
+    awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
+
+    reconnect
   }
 
   test("clear status when we have pending history requests") {
@@ -245,5 +261,31 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     wallet ! ElectrumDisconnected
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
     assert(wallet.stateData.status.get(scriptHash).isEmpty)
+
+    reconnect
+  }
+
+  test("handle pending teransaction requests") {
+    while (client.msgAvailable) {
+      client.receiveOne(100 milliseconds)
+    }
+    val key = wallet.stateData.accountKeys(1)
+    val scriptHash = computeScriptHashFromPublicKey(key.publicKey)
+    wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(2)).toHex)
+    client.expectMsg(GetScriptHashHistory(scriptHash))
+
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(100000), ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
+    wallet ! GetScriptHashHistoryResponse(scriptHash, TransactionHistoryItem(2, tx.txid) :: Nil)
+
+    // wallet will generate a new address and the corresponding subscription
+    client.expectMsgType[ScriptHashSubscription]
+
+    while (listener.msgAvailable) {
+      listener.receiveOne(100 milliseconds)
+    }
+
+    client.expectMsg(GetTransaction(tx.txid))
+    assert(wallet.stateData.pendingTransactionRequests == Set(tx.txid))
+
   }
 }
