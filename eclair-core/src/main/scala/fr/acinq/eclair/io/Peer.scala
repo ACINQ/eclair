@@ -61,24 +61,23 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
   when(DISCONNECTED) {
     case Event(Peer.Connect(_, address_opt), d: DisconnectedData) =>
-      val address = address_opt match {                                                                        // The connect command has an optional address that is specified by the user,
-        case Some(hostAndPort) => new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)              // if present we use it otherwise we use the address from the node_announcement
-        case None => nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption) match {       //
-          case Some(announcementAddress) => announcementAddress.socketAddress                                  //
-          case None =>
-            log.warning(s"Unable to connect to $remoteNodeId no address found")
-            stopPeer()                                                                                         // if there is no address from the node_announcement we stop
-            throw new IllegalArgumentException(s"Unable to connect to $remoteNodeId no address found")
-        }
-      }
-      if (d.address_opt.contains(address)) {
-        // we already know this address, we'll reconnect automatically
-        sender ! "reconnection in progress"
-        stay
-      } else {
-        // we immediately process explicit connection requests to new addresses
-        context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender())))
-        stay
+      address_opt.map(hAndp => new InetSocketAddress(hAndp.getHost, hAndp.getPort)).orElse {
+        nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption.map(_.socketAddress))
+      } match {
+        case None =>
+          log.warning(s"Unable to connect to $remoteNodeId no address found")
+          sender() ! s"Unable to connect to $remoteNodeId no address found"
+          stopPeer()
+        case Some(address) =>
+          if (d.address_opt.contains(address)) {
+            // we already know this address, we'll reconnect automatically
+            sender ! "reconnection in progress"
+            stay
+          } else {
+            // we immediately process explicit connection requests to new addresses
+            context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender())))
+            stay
+          }
       }
 
     case Event(Reconnect, d: DisconnectedData) =>

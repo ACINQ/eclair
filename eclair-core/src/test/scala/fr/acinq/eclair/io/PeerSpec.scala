@@ -18,7 +18,8 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.ActorRef
+import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
+import akka.actor.{ActorRef, Terminated}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
@@ -27,6 +28,7 @@ import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.ChannelStateSpec
 import fr.acinq.eclair.io.Peer._
+import fr.acinq.eclair.payment.PaymentLifecycle.{WAITING_FOR_REQUEST, WAITING_FOR_ROUTE}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
 import fr.acinq.eclair.wire.{Error, Ping, Pong}
@@ -78,6 +80,22 @@ class PeerSpec extends TestkitBaseClass {
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelStateSpec.normal))
     probe.send(peer, Peer.GetPeerInfo)
     probe.expectMsg(PeerInfo(remoteNodeId, "CONNECTED", Some(new InetSocketAddress("1.2.3.4", 42000)), 1))
+  }
+
+  test("use address from node_announcement if none was provided during connection") { f =>
+    import f._
+
+    val probe = TestProbe()
+    val monitor = TestProbe()
+
+    peer ! SubscribeTransitionCallBack(monitor.ref)
+
+    probe.send(peer, Peer.Init(None, Set.empty))
+    val CurrentState(_,INSTANTIATING) = monitor.expectMsgType[CurrentState[_]]
+    val Transition(_, INSTANTIATING, DISCONNECTED) =  monitor.expectMsgType[Transition[_]]
+    probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None))
+    probe.expectMsg(s"Unable to connect to $remoteNodeId no address found")
+    monitor.expectMsgType[Transition[_]]
   }
 
   test("ignore connect to same address") { f =>
