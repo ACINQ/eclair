@@ -65,7 +65,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
     override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = ???
 
-    override def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String])(implicit timeout: Timeout): Future[PaymentRequest] = ???
+    override def receive(description: String, amountMsat: Option[Long], expire: Option[Long], fallbackAddress: Option[String], paymentPreimage: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest] = ???
 
     override def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]] = ???
 
