@@ -167,7 +167,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     val fResp = eclair.receive(description = "some desc", amountMsat = None, expire = None, fallbackAddress = None, paymentPreimage = Some(paymentPreimage))
     awaitCond({
       fResp.value match {
-        case Some(Success(pr)) => pr.paymentHash == Crypto.sha256(preimage)
+        case Some(Success(pr)) => pr.paymentHash == Crypto.sha256(paymentPreimage)
         case _ => false
       }
     })
