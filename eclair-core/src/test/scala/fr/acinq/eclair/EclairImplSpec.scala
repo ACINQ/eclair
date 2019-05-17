@@ -21,15 +21,22 @@ import java.io.File
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
+import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.io.Peer.OpenChannel
+import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import org.scalatest.{Outcome, fixture}
+import fr.acinq.eclair.payment.PaymentLifecycle.{SendPayment}
 import fr.acinq.eclair.payment.PaymentLifecycle.{ReceivePayment, SendPayment}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import org.scalatest.{Matchers, Outcome, fixture}
 import scodec.bits._
 import TestConstants._
+import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register}
+import fr.acinq.eclair.payment.LocalPaymentHandler
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.PaymentRequest
@@ -174,7 +181,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
 
     val fallBackAddressRaw = "muhtvdmsnbQEPFuEmxcChX58fGvXaaUoVt"
     val eclair = new EclairImpl(kit)
-    eclair.receive("some desc", Some(123L), Some(456), Some(fallBackAddressRaw))
+    eclair.receive("some desc", Some(123L), Some(456), Some(fallBackAddressRaw), None)
     val receive = paymentHandler.expectMsgType[ReceivePayment]
 
     assert(receive.amountMsat_opt == Some(MilliSatoshi(123L)))
@@ -182,7 +189,24 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     assert(receive.fallbackAddress == Some(fallBackAddressRaw))
 
     // try with wrong address format
-    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123L), Some(456), Some("wassa wassa")))
+    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123L), Some(456), Some("wassa wassa"), None))
+  }
+
+  test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { fixture =>
+
+    val paymentHandler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
+    val kitWithPaymentHandler = fixture.kit.copy(paymentHandler = paymentHandler)
+    val eclair = new EclairImpl(kitWithPaymentHandler)
+    val paymentPreimage = randomBytes32
+
+    val fResp = eclair.receive(description = "some desc", amountMsat = None, expire = None, fallbackAddress = None, paymentPreimage = Some(paymentPreimage))
+    awaitCond({
+      fResp.value match {
+        case Some(Success(pr)) => pr.paymentHash == Crypto.sha256(paymentPreimage)
+        case _ => false
+      }
+    })
+
   }
 
   test("networkFees/audit/allinvoices should use a default to/from filter expressed in seconds") { f =>
