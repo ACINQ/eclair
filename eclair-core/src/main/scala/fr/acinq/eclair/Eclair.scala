@@ -34,10 +34,20 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
+import TimestampQueryFilters._
 
 case class GetInfoResponse(nodeId: PublicKey, alias: String, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
-
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
+case class TimestampQueryFilters(from: Long, to: Long)
+object TimestampQueryFilters {
+  def getDefaultTimestampFilters(from_opt: Option[Long], to_opt: Option[Long]) = {
+    val from = from_opt.getOrElse(0L)
+    val to = to_opt.getOrElse(MaxEpochSeconds)
+
+    TimestampQueryFilters(from, to)
+  }
+}
+
 
 trait Eclair {
 
@@ -215,13 +225,6 @@ class EclairImpl(appKit: Kit) extends Eclair {
     appKit.nodeParams.db.payments.getPaymentRequest(paymentHash)
   }
 
-  def getDefaultTimestampFilters(from_opt: Option[Long], to_opt: Option[Long]) = {
-    val from = from_opt.getOrElse(0L)
-    val to = to_opt.getOrElse(MaxEpochSeconds)
-
-    TimestampQueryFilters(from, to)
-  }
-
   /**
     * Sends a request to a channel and expects a response
     *
@@ -241,7 +244,5 @@ class EclairImpl(appKit: Kit) extends Eclair {
       blockHeight = Globals.blockCount.intValue(),
       publicAddresses = appKit.nodeParams.publicAddresses)
   )
-
-  case class TimestampQueryFilters(from: Long, to: Long)
 
 }
