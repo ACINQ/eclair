@@ -157,14 +157,14 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_FORCECLOSE))
   }
 
-  test("passing a preimage to /createinvoice should result in an invoice with payment_hash=H(preimage)") { fixture =>
+  test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { fixture =>
 
     val paymentHandler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
     val kitWithPaymentHandler = fixture.kit.copy(paymentHandler = paymentHandler)
     val eclair = new EclairImpl(kitWithPaymentHandler)
-    val preimage = randomBytes32
+    val paymentPreimage = randomBytes32
 
-    val fResp = eclair.receive(description = "some desc", amountMsat = None, expire = None, fallbackAddress = None, preimage = Some(preimage))
+    val fResp = eclair.receive(description = "some desc", amountMsat = None, expire = None, fallbackAddress = None, paymentPreimage = Some(paymentPreimage))
     awaitCond({
       fResp.value match {
         case Some(Success(pr)) => pr.paymentHash == Crypto.sha256(preimage)
