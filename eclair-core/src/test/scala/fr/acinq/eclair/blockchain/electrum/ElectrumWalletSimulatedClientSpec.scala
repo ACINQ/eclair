@@ -218,35 +218,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     val ready = reconnect
     assert(ready.unconfirmedBalance == Satoshi(0))
   }
-
-  test("disconnect if server sent a block with an invalid difficulty target") {
-    val last = wallet.stateData.blockchain.bestchain.last
-    val chunk = makeHeaders(last.header, 2015 - (last.height % 2016))
-    for (i <- 0 until chunk.length) {
-      wallet ! HeaderSubscriptionResponse(last.height + i + 1, chunk(i))
-    }
-    awaitCond(wallet.stateData.blockchain.tip.header == chunk.last)
-    val bad = {
-      var template = makeHeader(chunk.last)
-      template
-    }
-    val probe = TestProbe()
-    val watcher = TestProbe()
-    watcher.watch(probe.ref)
-    watcher.setAutoPilot(new TestActor.AutoPilot {
-      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case Terminated(actor) if actor == probe.ref =>
-          wallet ! ElectrumClient.ElectrumDisconnected
-          TestActor.KeepRunning
-      }
-    })
-    probe.send(wallet, HeaderSubscriptionResponse(wallet.stateData.blockchain.tip.height + 1, bad))
-    watcher.expectTerminated(probe.ref)
-    awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
-
-    reconnect
-  }
-
+  
   test("clear status when we have pending history requests") {
     while (client.msgAvailable) {
       client.receiveOne(100 milliseconds)
