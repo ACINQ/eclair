@@ -412,7 +412,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       stay
 
     case Event(FinalizeRoute(partialHops), d) =>
-      // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pair, then select the largest edge between them
+      // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs, then select the largest edge between them
       val edges = partialHops.sliding(2).map { case List(v1, v2) => d.graph.getEdgesBetween(v1, v2).maxBy(_.update.htlcMaximumMsat) }
       val hops = edges.map(d => Hop(d.desc.a, d.desc.b, d.update)).toSeq
       sender ! RouteResponse(hops, Set.empty, Set.empty)
