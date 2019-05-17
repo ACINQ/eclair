@@ -69,14 +69,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           sender() ! s"Unable to connect to $remoteNodeId no address found"
           stopPeer()
         case Some(address) =>
-          if (d.address_opt.contains(address)) {
+          if (d.address_opt.contains(address)) { // TODO check if we received a Connect for the same peer but with a different address
             // we already know this address, we'll reconnect automatically
             sender ! "reconnection in progress"
             stay
           } else {
             // we immediately process explicit connection requests to new addresses
             context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender())))
-            stay
+            stay using d.copy(address_opt = Some(address))
           }
       }
 

@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import java.net.InetSocketAddress
+import java.net.{Inet4Address, InetAddress, InetSocketAddress}
 
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.{ActorRef, Terminated}
@@ -28,17 +28,23 @@ import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.ChannelStateSpec
 import fr.acinq.eclair.io.Peer._
-import fr.acinq.eclair.payment.PaymentLifecycle.{WAITING_FOR_REQUEST, WAITING_FOR_ROUTE}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
-import fr.acinq.eclair.wire.{Error, Ping, Pong}
-import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, randomBytes, wire}
-import org.scalatest.Outcome
+import fr.acinq.eclair.wire.LightningMessageCodecsSpec.randomSignature
+import fr.acinq.eclair.wire.{Color, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong}
+import fr.acinq.eclair._
+import org.scalatest.{Outcome, Tag}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
 
 class PeerSpec extends TestkitBaseClass {
+
+  def ipv4FromInet4(address: InetSocketAddress) = IPv4.apply(address.getAddress.asInstanceOf[Inet4Address], address.getPort)
+
+  val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
+  //val fakeInetAddress = fakeIPAddress.socketAddress
   val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(100)
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
   val channels = fakeRoutingInfo.map(_._1).toList
@@ -48,6 +54,15 @@ class PeerSpec extends TestkitBaseClass {
   case class FixtureParam(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: TestFSMRef[Peer.State, Peer.Data, Peer])
 
   override protected def withFixture(test: OneArgTest): Outcome = {
+    val aParams = Alice.nodeParams
+    val aliceParams = test.tags.contains("with_node_announcements") match {
+      case true =>
+        val aliceAnnouncement = NodeAnnouncement(randomSignature, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+        aParams.db.network.addNode(aliceAnnouncement)
+        aParams
+      case false => aParams
+    }
+
     val authenticator = TestProbe()
     val watcher = TestProbe()
     val router = TestProbe()
@@ -56,7 +71,7 @@ class PeerSpec extends TestkitBaseClass {
     val transport = TestProbe()
     val wallet: EclairWallet = null // unused
     val remoteNodeId = Bob.nodeParams.nodeId
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(Alice.nodeParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
     withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)))
   }
 
@@ -64,7 +79,7 @@ class PeerSpec extends TestkitBaseClass {
     // let's simulate a connection
     val probe = TestProbe()
     probe.send(peer, Peer.Init(None, channels))
-    authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, new InetSocketAddress("1.2.3.4", 42000), outgoing = true, None))
+    authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, None))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
     transport.send(peer, wire.Init(Bob.nodeParams.globalFeatures, Bob.nodeParams.localFeatures))
@@ -79,10 +94,10 @@ class PeerSpec extends TestkitBaseClass {
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelStateSpec.normal))
     probe.send(peer, Peer.GetPeerInfo)
-    probe.expectMsg(PeerInfo(remoteNodeId, "CONNECTED", Some(new InetSocketAddress("1.2.3.4", 42000)), 1))
+    probe.expectMsg(PeerInfo(remoteNodeId, "CONNECTED", Some(fakeIPAddress.socketAddress), 1))
   }
 
-  test("use address from node_announcement if none was provided during connection") { f =>
+  test("fail if no address was specified during connection and no address was found in node_announcement") { f =>
     import f._
 
     val probe = TestProbe()
@@ -91,11 +106,27 @@ class PeerSpec extends TestkitBaseClass {
     peer ! SubscribeTransitionCallBack(monitor.ref)
 
     probe.send(peer, Peer.Init(None, Set.empty))
-    val CurrentState(_,INSTANTIATING) = monitor.expectMsgType[CurrentState[_]]
-    val Transition(_, INSTANTIATING, DISCONNECTED) =  monitor.expectMsgType[Transition[_]]
+    val CurrentState(_, INSTANTIATING) = monitor.expectMsgType[CurrentState[_]]
+    val Transition(_, INSTANTIATING, DISCONNECTED) = monitor.expectMsgType[Transition[_]]
     probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None))
     probe.expectMsg(s"Unable to connect to $remoteNodeId no address found")
-    monitor.expectMsgType[Transition[_]]
+    //monitor.expectMsgType[Transition[_]]
+  }
+
+  test("if no address was specified during connection use the one from node_announcement", Tag("with_node_announcements")) { f =>
+    import f._
+
+    val probe = TestProbe()
+    val monitor = TestProbe()
+
+    peer ! SubscribeTransitionCallBack(monitor.ref)
+
+    probe.send(peer, Peer.Init(None, Set.empty))
+    val CurrentState(_, INSTANTIATING) = monitor.expectMsgType[CurrentState[_]]
+    val Transition(_, INSTANTIATING, DISCONNECTED) = monitor.expectMsgType[Transition[_]]
+
+    probe.send(peer, Peer.Connect(remoteNodeId, None))
+    awaitCond(peer.stateData.address_opt == Some(fakeIPAddress.socketAddress))
   }
 
   test("ignore connect to same address") { f =>
@@ -137,7 +168,7 @@ class PeerSpec extends TestkitBaseClass {
     awaitCond(peer.stateData.asInstanceOf[DisconnectedData].attempts == 3)
   }
 
-  test("disconnect if incompatible features") {f =>
+  test("disconnect if incompatible features") { f =>
     import f._
     val probe = TestProbe()
     probe.watch(transport.ref)
