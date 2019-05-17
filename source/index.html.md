@@ -255,6 +255,7 @@ Updates the fee policy for the specified _channelId_, a new update for this chan
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
 channelId | The channelId of the channel you want to update | No | 32bytes-HexString (String)
+shortChannelId | The shortChannelId of the channel you want to update | Yes | ShortChannelId (String)
 feeBaseMsat | The new base fee to use  | No | Millisatoshi (Integer)
 feeProportionalMillionths | The new proportional fee to use | No | Integer
 
@@ -761,6 +762,7 @@ description | A description for the invoice | No | String
 amountMsat | Amount in millisatoshi for this invoice | Yes | Millisatoshi (integer)
 expireIn | Number of seconds that the invoice will be valid | Yes | Seconds (integer)
 fallbackAddress | An on-chain fallback address to receive the payment | Yes | Bitcoin address (String)
+paymentPreimage | A user defined input for the generation of the paymentHash | Yes | 32bytes-HexString (String)
 
 ## ParseInvoice
 
