@@ -661,6 +661,12 @@ eclair-cli updaterelayfee <span class="se">\</span>
 <td>32bytes-HexString (String)</td>
 </tr>
 <tr>
+<td>shortChannelId</td>
+<td>The shortChannelId of the channel you want to update</td>
+<td>Yes</td>
+<td>ShortChannelId (String)</td>
+</tr>
+<tr>
 <td>feeBaseMsat</td>
 <td>The new base fee to use</td>
 <td>No</td>
@@ -1170,6 +1176,12 @@ eclair-cli createinvoice --description<span class="o">=</span>&lt;some_descripti
 <td>An on-chain fallback address to receive the payment</td>
 <td>Yes</td>
 <td>Bitcoin address (String)</td>
+</tr>
+<tr>
+<td>paymentPreimage</td>
+<td>A user defined input for the generation of the paymentHash</td>
+<td>Yes</td>
+<td>32bytes-HexString (String)</td>
 </tr>
 </tbody></table>
 <h2 id='parseinvoice'>ParseInvoice</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/parseinvoice"</span>
