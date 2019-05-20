@@ -1331,7 +1331,7 @@ eclair-cli sendtoroute --route<span class="o">=</span>node1,node2 --amountMsat<s
 <p>Sends money to a node forcing the payment to go through the given route, the API works in a fire-and-forget fashion where 
 the unique identifier for this payment attempt is immediately returned to the caller. The route parameter is a simple list of
 nodeIds that the payment will traverse, it can be a json-encoded array (same as <a href="#findroute">findroute</a> output) or a comma 
-separated list of nodeIds.</p>
+separated list of nodeIds. Note that the channels between the nodes in the route must be public.</p>
 <h3 id='http-request-16'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtoroute</code></p>
 <h3 id='parameters-14'>Parameters</h3>
