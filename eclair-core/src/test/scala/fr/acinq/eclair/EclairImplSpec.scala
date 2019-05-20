@@ -16,8 +16,11 @@
 
 package fr.acinq.eclair
 
+import java.io.File
+
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -27,21 +30,28 @@ import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import org.scalatest.{Outcome, fixture}
 import fr.acinq.eclair.payment.PaymentLifecycle.{SendPayment}
+import fr.acinq.eclair.payment.PaymentLifecycle.{ReceivePayment, SendPayment}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import org.scalatest.{Outcome, fixture}
+import org.scalatest.{Matchers, Outcome, fixture}
 import scodec.bits._
 import TestConstants._
 import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register}
 import fr.acinq.eclair.payment.LocalPaymentHandler
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db._
+import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
+import org.mockito.scalatest.IdiomaticMockito
+
+import scala.concurrent.Await
 import scala.util.{Failure, Success}
 import scala.concurrent.duration._
 
-class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSuiteLike {
+class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSuiteLike with IdiomaticMockito {
 
   implicit val timeout = Timeout(30 seconds)
 
-  case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, kit: Kit)
+  case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, paymentHandler: TestProbe, kit: Kit)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val watcher = TestProbe()
@@ -66,7 +76,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
       new TestWallet()
     )
 
-    withFixture(test.toNoArgTest(FixtureParam(register, router, paymentInitiator, switchboard, kit)))
+    withFixture(test.toNoArgTest(FixtureParam(register, router, paymentInitiator, switchboard, paymentHandler, kit)))
   }
 
   test("convert fee rate properly") { f =>
@@ -138,14 +148,14 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
 
     awaitCond({
       fResp.value match {
-        // check if the response must contains updates only for 'b'
+        // check if the response contains updates only for 'b'
         case Some(Success(res)) => res.forall { u => updates.exists(entry => entry._2.shortChannelId == u.shortChannelId && entry._1.a == b || entry._1.b == b) }
         case _ => false
       }
     })
   }
 
-  test("forceclose should work both with channelId and shortChannelId") { f =>
+  test("close and forceclose should work both with channelId and shortChannelId") { f =>
     import f._
 
     val eclair = new EclairImpl(kit)
@@ -155,6 +165,31 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
 
     eclair.forceClose(Right(ShortChannelId("568749x2597x0")))
     register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_FORCECLOSE))
+
+    eclair.close(Left(ByteVector32.Zeroes), None)
+    register.expectMsg(Register.Forward(ByteVector32.Zeroes, CMD_CLOSE(None)))
+
+    eclair.close(Right(ShortChannelId("568749x2597x0")), None)
+    register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_CLOSE(None)))
+
+    eclair.close(Right(ShortChannelId("568749x2597x0")), Some(ByteVector.empty))
+    register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_CLOSE(Some(ByteVector.empty))))
+  }
+
+  test("receive should have an optional fallback address and use millisatoshi") { f =>
+    import f._
+
+    val fallBackAddressRaw = "muhtvdmsnbQEPFuEmxcChX58fGvXaaUoVt"
+    val eclair = new EclairImpl(kit)
+    eclair.receive("some desc", Some(123L), Some(456), Some(fallBackAddressRaw), None)
+    val receive = paymentHandler.expectMsgType[ReceivePayment]
+
+    assert(receive.amountMsat_opt == Some(MilliSatoshi(123L)))
+    assert(receive.expirySeconds_opt == Some(456))
+    assert(receive.fallbackAddress == Some(fallBackAddressRaw))
+
+    // try with wrong address format
+    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123L), Some(456), Some("wassa wassa"), None))
   }
 
   test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { fixture =>
@@ -174,4 +209,34 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
 
   }
 
+  test("networkFees/audit/allinvoices should use a default to/from filter expressed in seconds") { f =>
+    import f._
+
+    val auditDb = mock[AuditDb]
+    val paymentDb = mock[PaymentsDb]
+
+    auditDb.listNetworkFees(anyLong, anyLong) returns Seq.empty
+    auditDb.listSent(anyLong, anyLong) returns Seq.empty
+    auditDb.listReceived(anyLong, anyLong) returns Seq.empty
+    auditDb.listRelayed(anyLong, anyLong) returns Seq.empty
+    paymentDb.listPaymentRequests(anyLong, anyLong) returns Seq.empty
+
+    val databases = mock[Databases]
+    databases.audit returns auditDb
+    databases.payments returns paymentDb
+
+    val kitWithMockAudit = kit.copy(nodeParams = kit.nodeParams.copy(db = databases))
+    val eclair = new EclairImpl(kitWithMockAudit)
+
+    Await.result(eclair.networkFees(None, None), 10 seconds)
+    auditDb.listNetworkFees(0, MaxEpochSeconds).wasCalled(once) // assert the call was made only once and with the specified params
+
+    Await.result(eclair.audit(None, None), 10 seconds)
+    auditDb.listRelayed(0, MaxEpochSeconds).wasCalled(once)
+    auditDb.listReceived(0, MaxEpochSeconds).wasCalled(once)
+    auditDb.listSent(0, MaxEpochSeconds).wasCalled(once)
+
+    Await.result(eclair.allInvoices(None, None), 10 seconds)
+    paymentDb.listPaymentRequests(0, MaxEpochSeconds).wasCalled(once) // assert the call was made only once and with the specified params
+  }
 }
