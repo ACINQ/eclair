@@ -26,6 +26,7 @@ import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe}
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
@@ -39,7 +40,7 @@ import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress, NodeAnnouncement}
 import org.json4s.jackson.Serialization
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
-
+import scodec.bits._
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
@@ -318,6 +319,40 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
         assert(resp == ErrorResponse("Not found"))
       }
   }
+
+  test("'sendtoroute' method should accept a both a json-encoded AND comma separaterd list of pubkeys") {
+
+    val rawUUID = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
+    val paymentUUID = UUID.fromString(rawUUID)
+    val csvNodes = "0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9, 0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3, 026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28"
+    val jsonNodes = serialization.write(csvNodes.split(",").map(_.trim).toList)
+
+    val mockService = new MockService(new EclairMock {
+      override def sendToRoute(route: Seq[Crypto.PublicKey], amountMsat: Long, paymentHash: ByteVector32, finalCltv: Long)(implicit timeout: Timeout): Future[UUID] = Future.successful(paymentUUID)
+    })
+
+    Post("/sendtoroute", FormData("route" -> jsonNodes, "amountMsat" -> "1234", "paymentHash" -> "56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e", "finalCltvExpiry" -> "190").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(entityAs[String] == "\""+rawUUID+"\"")
+        assert(status == OK)
+      }
+
+    // this test uses CSV encoded route
+    Post("/sendtoroute", FormData("route" -> csvNodes, "amountMsat" -> "1234", "paymentHash" -> "56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e", "finalCltvExpiry" -> "190").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(entityAs[String] == "\""+rawUUID+"\"")
+        assert(status == OK)
+      }
+  }
+
 
 
   test("the websocket should return typed objects") {
