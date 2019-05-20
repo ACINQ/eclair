@@ -237,7 +237,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash) == Some(status) =>
       val missing = data.missingTransactions(scriptHash)
-      missing.foreach(txid =>client ! GetTransaction(txid))
+      missing.foreach(txid => client ! GetTransaction(txid))
       stay using persistAndNotify(data.copy(pendingHistoryRequests = data.pendingTransactionRequests ++ missing))
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if !data.accountKeyMap.contains(scriptHash) && !data.changeKeyMap.contains(scriptHash) =>
