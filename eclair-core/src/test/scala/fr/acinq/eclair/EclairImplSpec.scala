@@ -26,11 +26,9 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.io.Peer.OpenChannel
-import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
-import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.PaymentLifecycle.{ReceivePayment, SendPayment, SendPaymentToRoute}
 import org.scalatest.{Outcome, fixture}
-import fr.acinq.eclair.payment.PaymentLifecycle.{SendPayment}
-import fr.acinq.eclair.payment.PaymentLifecycle.{ReceivePayment, SendPayment}
+import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import org.scalatest.{Matchers, Outcome, fixture}
 import scodec.bits._
@@ -238,5 +236,20 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
 
     Await.result(eclair.allInvoices(None, None), 10 seconds)
     paymentDb.listPaymentRequests(0, MaxEpochSeconds).wasCalled(once) // assert the call was made only once and with the specified params
+  }
+
+  test("sendtoroute should pass the parameters correctly") { f =>
+    import f._
+
+    val route = Seq(PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
+    val eclair = new EclairImpl(kit)
+    eclair.sendToRoute(route, 1234, ByteVector32.One, 123)
+
+    val send = paymentInitiator.expectMsgType[SendPaymentToRoute]
+
+    assert(send.hops == route)
+    assert(send.amountMsat == 1234)
+    assert(send.finalCltvExpiry == 123)
+    assert(send.paymentHash == ByteVector32.One)
   }
 }

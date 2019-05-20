@@ -221,6 +221,11 @@ trait Service extends ExtraDirectives with Logging {
                           complete(eclairApi.send(nodeId, amountMsat, paymentHash, maxAttempts = maxAttempts))
                         }
                       } ~
+                      path("sendtoroute") {
+                        formFields(amountMsatFormParam, paymentHashFormParam, "finalCltvExpiry".as[Long], "route".as[List[PublicKey]](pubkeyListUnmarshaller)) { (amountMsat, paymentHash, finalCltvExpiry, route) =>
+                          complete(eclairApi.sendToRoute(route, amountMsat, paymentHash, finalCltvExpiry))
+                        }
+                      } ~
                       path("getsentinfo") {
                         formFields("id".as[UUID]) { id =>
                           complete(eclairApi.sentInfo(Left(id)))
