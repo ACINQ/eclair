@@ -38,8 +38,11 @@ import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, No
 import TimestampQueryFilters._
 
 case class GetInfoResponse(nodeId: PublicKey, alias: String, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
+
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
+
 case class TimestampQueryFilters(from: Long, to: Long)
+
 object TimestampQueryFilters {
   def getDefaultTimestampFilters(from_opt: Option[Long], to_opt: Option[Long]) = {
     val from = from_opt.getOrElse(0L)
