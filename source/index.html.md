@@ -133,7 +133,7 @@ port | The port of the node (default: 9735) | Yes | Integer
 curl -X POST -F nodeId=<node_id> -F fundingSatoshis=<funding_satoshis> \
 	"http://localhost:8080/open" -u :<eclair_api_password>
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_satoshis>
 ```
 
@@ -168,7 +168,7 @@ openTimeoutSeconds | Timeout for the operation to complete | Yes | Seconds (Inte
 ```shell
 curl -u :<eclair_api_password> -X POST -F channelId=<channel> "http://localhost:8080/close"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli close --channelId=<channel>
 ```
 
@@ -198,7 +198,7 @@ scriptPubKey | A serialized scriptPubKey that you want to use to close the chann
 ```shell
 curl -u :<eclair_api_password> -X POST -F channelId=<channel> "http://localhost:8080/forceclose"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli forceclose --channelId=<channel>
 ```
 
@@ -266,7 +266,7 @@ feeProportionalMillionths | The new proportional fee to use | No | Integer
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/peers"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli peers
 ```
 
@@ -301,7 +301,7 @@ Returns the list of currently known peers, both connected and disconnected.
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/channels"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli channels
 ```
 
@@ -448,7 +448,7 @@ nodeId | The remote node id to be used as filter for the channels | Yes | 32byte
 ```shell
 curl -u :<eclair_api_password> -X POST -F channelId=<channel>  "http://localhost:8080/channel"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli channel --channelId=<channel>
 ```
 
@@ -598,7 +598,7 @@ A set of API to query the network view of eclair.
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/allnodes"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli allnodes
 ```
 
@@ -639,7 +639,7 @@ Returns information about all public nodes on the lightning network, this inform
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/allchannels"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli allchannels
 ```
 
@@ -667,7 +667,7 @@ Returns non detailed information about all public channels in the network.
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/allupdates"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli allupdates
 ```
 
@@ -730,7 +730,7 @@ Interfaces for sending and receiving payments through eclair.
 curl -u :<eclair_api_password> -X POST -F description=<some_description> \
      -F amountMsat=<some_amount> "http://localhost:8080/createinvoice"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli createinvoice --description=<some_description> --amountMsat=<some_amount>
 ```
 
@@ -769,7 +769,7 @@ paymentPreimage | A user defined input for the generation of the paymentHash | Y
 ```shell
 curl -u :<eclair_api_password> -X POST -F invoice=<some_bolt11invoice> "http://localhost:8080/parseinvoice"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli parseinvoice --invoice=<some_bolt11invoice>
 ```
 > The above command returns:
@@ -803,7 +803,7 @@ invoice | The invoice you want to decode | No | String
 ```shell
 curl -u :<eclair_api_password> -X POST -F invoice=<some_invoice> "http://localhost:8080/payinvoice"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli payinvoice --invoice=<some_invoice>
 ```
 > The above command returns:
@@ -834,7 +834,7 @@ maxAttempts | Max number of retries | Yes | Integer
 curl -u :<eclair_api_password> -X POST -F nodeId=<some_node> \
 	-F amountMsat=<amount> -F paymentHash=<some_hash> "http://localhost:8080/sendtonode"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli sendtonode --nodeId=<some_node> --amountMsat=<amount> --paymentHash=<some_hash>
 ```
 > The above command returns:
@@ -860,12 +860,45 @@ amountMsat | Amount in to pay | No | Millisatoshi (integer)
 paymentHash | The payment hash for this payment | No | 32bytes-HexString (String)
 maxAttempts | Max number of retries | Yes | Integer
 
+## SendToRoute
+
+```shell
+curl -u :<eclair_api_password> -X POST -F route=node1,node2 \
+	-F amountMsat=<amount> -F paymentHash=<some_hash> -F finalCltvExpiry=<some_value> "http://localhost:8080/sendtoroute"
+
+# with eclair-cli
+eclair-cli sendtoroute --route=node1,node2 --amountMsat=<amount> --paymentHash=<some_hash> --finalCltvExpiry=<some_value>
+```
+> The above command returns:
+
+```
+"e4227601-38b3-404e-9aa0-75a829e9bec0"
+```
+
+Sends money to a node forcing the payment to go through the given route, the API works in a fire-and-forget fashion where 
+the unique identifier for this payment attempt is immediately returned to the caller. The route parameter is a simple list of
+nodeIds that the payment will traverse, it can be a json-encoded array (same as [findroute](#findroute) output) or a comma 
+separated list of nodeIds.
+
+### HTTP Request
+
+`POST http://localhost:8080/sendtoroute`
+
+### Parameters
+
+Parameter | Description | Optional | Type
+--------- | ----------- | --------- | ---------
+route | A list of nodeIds from source to destination of the payment | No | List of nodeIds
+amountMsat | Amount in to pay | No | Millisatoshi (integer)
+paymentHash | The payment hash for this payment | No | 32bytes-HexString (String)
+finalCltvExpiry | The total CLTV expiry value for this payment | No | Integer
+
 ## GetSentInfo
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F paymentHash=<some_hash> "http://localhost:8080/getsentinfo"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli getsentinfo --paymentHash=<some_hash>
 ```
 > The above command returns:
@@ -911,7 +944,7 @@ id | The unique id of the payment attempt | Yes | Java's UUID (String)
 ```shell
 curl -u :<eclair_api_password> -X POST -F paymentHash=<some_hash> "http://localhost:8080/getreceivedinfo"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli getreceivedinfo --paymentHash=<some_hash>
 ```
 > The above command returns:
@@ -943,7 +976,7 @@ invoice | The invoice containing the payment hash | Yes | String
 ```shell
 curl -u :<eclair_api_password> -X POST -F paymentHash=<some_hash> "http://localhost:8080/getinvoice"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli getinvoice --description=<some_description> --paymentHash=<some_hash>
 ```
 
@@ -978,7 +1011,7 @@ paymentHash | The payment hash of the invoice you want to retrieve | No | 32byte
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/listinvoices"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli listinvoices
 ```
 
@@ -1024,7 +1057,7 @@ to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestam
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/listpendinginvoices"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli listpendinginvoices
 ```
 
@@ -1073,7 +1106,7 @@ to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestam
 ```shell
 curl -u :<eclair_api_password> -X POST -F invoice=<some_bolt11invoice> "http://localhost:8080/findroute"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli findroute --invoice=<some_bolt11invoice>
 ```
 > The above command returns:
@@ -1107,7 +1140,7 @@ amountMsat | The amount that should go through the route | Yes | Millisatoshi (I
 curl -u :<eclair_api_password> -X POST -F nodeId=<some_node> \
      -F amountMsat=<some_amount> "http://localhost:8080/findroutetonode"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli --nodeId=<some_node> --amountMsat=<some_amount>
 ```
 > The above command returns:
@@ -1140,7 +1173,7 @@ amountMsat | The amount that should go through the route | No | Millisatoshi (In
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/audit"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli audit
 ```
 > The above command returns:
@@ -1196,7 +1229,7 @@ to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestam
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/networkfees"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli networkfees
 ```
 > The above command returns:
@@ -1232,7 +1265,7 @@ to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestam
 ```shell
 curl -u :<eclair_api_password> -X POST "http://localhost:8080/channelstats"
 
-#with eclair-cli
+# with eclair-cli
 eclair-cli channelstats
 ```
 > The above command returns:
