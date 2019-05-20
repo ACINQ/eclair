@@ -257,7 +257,8 @@ object Relayer {
   def handleRelay(relayPayload: RelayPayload, channelUpdates: Map[ShortChannelId, OutgoingChannel], node2channels: mutable.Map[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId], previousFailures: Seq[AddHtlcFailed])(implicit log: LoggingAdapter): Either[CMD_FAIL_HTLC, (ShortChannelId, CMD_ADD_HTLC)] = {
     import relayPayload._
     log.info(s"relaying htlc #${add.id} paymentHash={} from channelId={} to requestedShortChannelId={} previousAttempts={}", add.paymentHash, add.channelId, relayPayload.payload.shortChannelId, previousFailures.size)
-    selectPreferredChannel(relayPayload, channelUpdates, node2channels, previousFailures)
+    val alreadyTried = previousFailures.flatMap(_.channelUpdate).map(_.shortChannelId)
+    selectPreferredChannel(relayPayload, channelUpdates, node2channels, alreadyTried)
       .flatMap(selectedShortChannelId => channelUpdates.get(selectedShortChannelId).map(_.channelUpdate)) match {
       case None if previousFailures.nonEmpty =>
         // no more channels to try
@@ -278,10 +279,10 @@ object Relayer {
     *
     * If no suitable channel is found we default to the originally requested channel.
     */
-  def selectPreferredChannel(relayPayload: RelayPayload, channelUpdates: Map[ShortChannelId, OutgoingChannel], node2channels: mutable.Map[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId], previousFailures: Seq[AddHtlcFailed])(implicit log: LoggingAdapter): Option[ShortChannelId] = {
+  def selectPreferredChannel(relayPayload: RelayPayload, channelUpdates: Map[ShortChannelId, OutgoingChannel], node2channels: mutable.Map[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId], alreadyTried: Seq[ShortChannelId])(implicit log: LoggingAdapter): Option[ShortChannelId] = {
     import relayPayload.add
     val requestedShortChannelId = relayPayload.payload.shortChannelId
-    log.debug(s"selecting next channel for htlc #${add.id} paymentHash={} from channelId={} to requestedShortChannelId={} previousAttempts={}", add.paymentHash, add.channelId, requestedShortChannelId, previousFailures.size)
+    log.debug(s"selecting next channel for htlc #${add.id} paymentHash={} from channelId={} to requestedShortChannelId={} previousAttempts={}", add.paymentHash, add.channelId, requestedShortChannelId, alreadyTried.size)
     // first we find out what is the next node
     channelUpdates.get(requestedShortChannelId) match {
       case Some(OutgoingChannel(nextNodeId, _, _)) =>
@@ -289,7 +290,7 @@ object Relayer {
         // then we retrieve all known channels to this node
         val allChannels = node2channels.getOrElse(nextNodeId, Set.empty[ShortChannelId])
         // we then filter out channels that we have already tried
-        val candidateChannels = allChannels -- previousFailures.flatMap(_.channelUpdate).map(_.shortChannelId)
+        val candidateChannels = allChannels -- alreadyTried
         // and we filter keep the ones that are compatible with this payment (mainly fees, expiry delta)
         candidateChannels
           .map { shortChannelId =>
@@ -310,9 +311,12 @@ object Relayer {
           case Some(_) =>
             // the requested short_channel_id is already our preferred channel
             Some(requestedShortChannelId)
-          case None =>
+          case None if !alreadyTried.contains(requestedShortChannelId) =>
             // no channel seem to work for this payment, we keep the requested channel id
             Some(requestedShortChannelId)
+          case None =>
+            // no channel seem to work for this payment and we have already tried the requested channel id: we give up
+            None
         }
       case _ => Some(requestedShortChannelId) // we don't have a channel_update for this short_channel_id
     }
