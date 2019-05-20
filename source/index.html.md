@@ -878,7 +878,7 @@ eclair-cli sendtoroute --route=node1,node2 --amountMsat=<amount> --paymentHash=<
 Sends money to a node forcing the payment to go through the given route, the API works in a fire-and-forget fashion where 
 the unique identifier for this payment attempt is immediately returned to the caller. The route parameter is a simple list of
 nodeIds that the payment will traverse, it can be a json-encoded array (same as [findroute](#findroute) output) or a comma 
-separated list of nodeIds.
+separated list of nodeIds. Note that the channels between the nodes in the route must be public.
 
 ### HTTP Request
 
