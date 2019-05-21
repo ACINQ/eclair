@@ -17,7 +17,6 @@
 package fr.acinq.eclair.db
 
 import java.io.File
-import java.nio.file.{Files, Path, Paths, StandardCopyOption}
 
 import akka.actor.{Actor, ActorLogging, Props}
 import akka.dispatch.{BoundedMessageQueueSemantics, RequiresMessageQueue}
