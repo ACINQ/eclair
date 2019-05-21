@@ -584,9 +584,13 @@ object Peer {
 
   // @formatter:on
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, fundingInput: TxIn): LocalParams = {
+  def makeChannelKeyPathFromOutpoint(fundingInput: TxIn): KeyPath = {
     val inputEntropy = Crypto.sha256(fundingInput.outPoint.hash).take(4).toLong(signed = false)
-    val channelKeyPath = KeyPath(Seq(47, 2, inputEntropy, 0))
+    KeyPath(Seq(47, 2, inputEntropy, 0))
+  }
+
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, fundingInput: TxIn): LocalParams = {
+    val channelKeyPath = makeChannelKeyPathFromOutpoint(fundingInput)
     makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelKeyPath)
   }
 
