@@ -30,7 +30,7 @@ trait EclairWallet {
 
   def getFinalAddress: Future[String]
 
-  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse]
+  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long, lockUnspent: Boolean = true): Future[MakeFundingTxResponse]
 
   /**
     * Committing *must* include publishing the transaction on the network.

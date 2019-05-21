@@ -89,7 +89,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     }
   }
 
-  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = {
+  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long, lockUnspent: Boolean = true): Future[MakeFundingTxResponse] = {
     // partial funding tx
     val partialFundingTx = Transaction(
       version = 2,
@@ -98,7 +98,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
       lockTime = 0)
     for {
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
-      FundTransactionResponse(unsignedFundingTx, _, fee) <- fundTransaction(partialFundingTx, lockUnspents = true, feeRatePerKw)
+      FundTransactionResponse(unsignedFundingTx, _, fee) <- fundTransaction(partialFundingTx, lockUnspents = lockUnspent, feeRatePerKw)
       // now let's sign the funding tx
       SignTransactionResponse(fundingTx, true) <- signTransactionOrUnlock(unsignedFundingTx)
       // there will probably be a change output, so we need to find which output is ours

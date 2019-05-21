@@ -19,6 +19,7 @@ package fr.acinq.eclair
 import java.sql.{Connection, DriverManager}
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.crypto.LocalKeyManager
@@ -28,6 +29,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
+
 import scala.concurrent.duration._
 
 /**
@@ -103,7 +105,9 @@ object TestConstants {
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32, compressed = true).publicKey)),
       isFunder = true,
-      fundingSatoshis).copy(
+      fundingSatoshis,
+      KeyPath(Seq(1, 2, 3, 4L))
+    ).copy(
       channelReserveSatoshis = 10000 // Bob will need to keep that much satoshis as direct payment
     )
   }
@@ -167,7 +171,9 @@ object TestConstants {
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32, compressed = true).publicKey)),
       isFunder = false,
-      fundingSatoshis).copy(
+      fundingSatoshis,
+      KeyPath(Seq(1, 2, 3, 4L))
+    ).copy(
       channelReserveSatoshis = 20000 // Alice will need to keep that much satoshis as direct payment
     )
   }

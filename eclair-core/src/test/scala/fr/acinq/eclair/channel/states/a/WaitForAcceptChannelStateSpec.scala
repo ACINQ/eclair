@@ -41,7 +41,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
 
   override def withFixture(test: OneArgTest): Outcome = {
     val noopWallet = new TestWallet {
-      override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse].future  // will never be completed
+      override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long, lockUnspent: Boolean = true): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse].future  // will never be completed
     }
     val setup = if (test.tags.contains("mainnet")) {
       init(TestConstants.Alice.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), TestConstants.Bob.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), wallet = noopWallet)

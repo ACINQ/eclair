@@ -24,7 +24,8 @@ import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, 
 import akka.event.Logging.MDC
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
+import fr.acinq.bitcoin.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.{ByteVector32, Crypto, DeterministicWallet, MilliSatoshi, Protocol, Satoshi, TxIn}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
@@ -36,6 +37,7 @@ import scodec.Attempt
 import scodec.bits.ByteVector
 
 import scala.compat.Platform
+import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -45,6 +47,8 @@ import scala.util.Random
 class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
+
+  implicit val ec = context.system.dispatcher
 
   startWith(INSTANTIATING, Nothing())
 
@@ -484,7 +488,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
   def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingSatoshis: Long, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
     val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
-    val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, funder, fundingSatoshis)
+    val fundingInput = Await.result(wallet.makeFundingTx(defaultFinalScriptPubKey, Satoshi(fundingSatoshis), Globals.feeratesPerKw.get().blocks_6, lockUnspent = false).map { fundingResponse =>
+      fundingResponse.fundingTx.txIn.head
+    }, 60 seconds)
+    val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, funder, fundingSatoshis, fundingInput)
     val channel = spawnChannel(nodeParams, origin_opt)
     (channel, localParams)
   }
@@ -577,11 +584,9 @@ object Peer {
 
   // @formatter:on
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
-    val entropy = new Array[Byte](16)
-    secureRandom.nextBytes(entropy)
-    val bis = new ByteArrayInputStream(entropy)
-    val channelKeyPath = DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)))
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, fundingInput: TxIn): LocalParams = {
+    val inputEntropy = Crypto.sha256(fundingInput.outPoint.hash).take(4).toLong(signed = false)
+    val channelKeyPath = KeyPath(Seq(47, 2, inputEntropy, 0))
     makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelKeyPath)
   }
 
