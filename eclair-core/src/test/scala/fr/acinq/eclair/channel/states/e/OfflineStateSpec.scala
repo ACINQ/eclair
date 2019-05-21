@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,9 @@
  */
 
 package fr.acinq.eclair.channel.states.e
+
+import akka.actor.Status
+import java.util.UUID
 
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.Scalar
@@ -58,7 +61,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000, ByteVector32.Zeroes, 400144))
+    sender.send(alice, CMD_ADD_HTLC(1000000, ByteVector32.Zeroes, 400144, upstream = Left(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob)
@@ -135,7 +138,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000, randomBytes32, 400144))
+    sender.send(alice, CMD_ADD_HTLC(1000000, randomBytes32, 400144, upstream = Left(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob, ab_add_0)
@@ -335,9 +338,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == OFFLINE)
     awaitCond(bob.stateName == OFFLINE)
 
-    // alice and bob announce that their channel is OFFLINE
-    assert(Announcements.isEnabled(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags) == false)
-    assert(Announcements.isEnabled(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags) == false)
+    // alice and bob will not announce that their channel is OFFLINE
+    channelUpdateListener.expectNoMsg(300 millis)
 
     // we make alice update here relay fee
     sender.send(alice, CMD_UPDATE_RELAY_FEE(4200, 123456))
@@ -356,8 +358,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // note that we don't forward the channel_reestablish so that only alice reaches NORMAL state, it facilitates the test below
     bob2alice.forward(alice)
 
-    // then alice reaches NORMAL state, and during the transition she broadcasts the channel_update
-    val channelUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate](10 seconds).channelUpdate
+    // then alice reaches NORMAL state, and after a delay she broadcasts the channel_update
+    val channelUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate](20 seconds).channelUpdate
     assert(channelUpdate.feeBaseMsat === 4200)
     assert(channelUpdate.feeProportionalMillionths === 123456)
     assert(Announcements.isEnabled(channelUpdate.channelFlags) == true)
@@ -366,7 +368,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     channelUpdateListener.expectNoMsg(300 millis)
   }
 
-  test("bump timestamp in case of quick reconnection") { f =>
+  test("broadcast disabled channel_update while offline") { f =>
     import f._
     val sender = TestProbe()
 
@@ -376,32 +378,17 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == OFFLINE)
     awaitCond(bob.stateName == OFFLINE)
 
-    // alice and bob announce that their channel is OFFLINE
-    val channelUpdate_alice_disabled = channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate
-    val channelUpdate_bob_disabled = channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate
-    assert(Announcements.isEnabled(channelUpdate_alice_disabled.channelFlags) == false)
-    assert(Announcements.isEnabled(channelUpdate_bob_disabled.channelFlags) == false)
+    // alice and bob will not announce that their channel is OFFLINE
+    channelUpdateListener.expectNoMsg(300 millis)
 
-    // we immediately reconnect them
-    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
-    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+    // we attempt to send a payment
+    sender.send(alice, CMD_ADD_HTLC(4200, randomBytes32, 123456, upstream = Left(UUID.randomUUID())))
+    val failure = sender.expectMsgType[Status.Failure]
+    val AddHtlcFailed(_, _, ChannelUnavailable(_), _, _, _) = failure.cause
 
-    // peers exchange channel_reestablish messages
-    alice2bob.expectMsgType[ChannelReestablish]
-    bob2alice.expectMsgType[ChannelReestablish]
-    alice2bob.forward(bob)
-    bob2alice.forward(alice)
-
-    // both nodes reach NORMAL state, and broadcast a new channel_update
-    val channelUpdate_alice_enabled = channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate
-    val channelUpdate_bob_enabled = channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate
-    assert(Announcements.isEnabled(channelUpdate_alice_enabled.channelFlags) == true)
-    assert(Announcements.isEnabled(channelUpdate_bob_enabled.channelFlags) == true)
-
-    // let's check that the two successive channel_update have a different timestamp
-    assert(channelUpdate_alice_enabled.timestamp > channelUpdate_alice_disabled.timestamp)
-    assert(channelUpdate_bob_enabled.timestamp > channelUpdate_bob_disabled.timestamp)
-
+    // alice will broadcast a new disabled channel_update
+    val update = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(Announcements.isEnabled(update.channelUpdate.channelFlags) == false)
   }
 
 }

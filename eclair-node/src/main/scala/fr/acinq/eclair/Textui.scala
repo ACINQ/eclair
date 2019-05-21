@@ -147,7 +147,7 @@ class Textui(kit: Kit) extends Logging {
               .showDialog(gui)
             try {
               val paymentRequest = PaymentRequest.read(input)
-              kit.paymentInitiator ! SendPayment(paymentRequest.amount.getOrElse(MilliSatoshi(1000000)).amount, paymentRequest.paymentHash, paymentRequest.nodeId)
+              kit.paymentInitiator ! SendPayment(paymentRequest.amount.getOrElse(MilliSatoshi(1000000)).amount, paymentRequest.paymentHash, paymentRequest.nodeId, maxAttempts = 3)
             } catch {
               case t: Throwable => logger.error("", t)
             }

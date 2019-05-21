@@ -1,5 +1,7 @@
 package fr.acinq.eclair
 
+import java.util.UUID
+
 import akka.actor.ActorRef
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey}
@@ -52,7 +54,9 @@ object JsonSerializers {
   implicit val remoteCommitsReadWriter: ReadWriter[RemoteCommit] = macroRW
   implicit val commitSgReadWriter: ReadWriter[CommitSig] = macroRW
   implicit val waitingForRevocationReadWriter: ReadWriter[WaitingForRevocation] = macroRW
-  implicit val paymentOriginReadWriter: ReadWriter[Origin] = readwriter[String].bimap[Origin](_.toString, _ => fr.acinq.eclair.payment.Local(None))
+  implicit val localOriginReadWriter: ReadWriter[fr.acinq.eclair.payment.Local] = macroRW
+  implicit val relayedOriginReadWriter: ReadWriter[fr.acinq.eclair.payment.Relayed] = macroRW
+  implicit val paymentOriginReadWriter: ReadWriter[Origin] = ReadWriter.merge(localOriginReadWriter, relayedOriginReadWriter)
   implicit val remoteChangesReadWriter: ReadWriter[RemoteChanges] = macroRW
 
   case class ShaChain2(knownHashes: Map[Long, ByteVector32], lastIndex: Option[Long] = None) {

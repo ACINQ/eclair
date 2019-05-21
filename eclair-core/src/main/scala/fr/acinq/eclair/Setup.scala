@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum._
@@ -35,7 +36,7 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
-import fr.acinq.eclair.db.Databases
+import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
@@ -68,11 +69,12 @@ class Setup(datadir: File,
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
+  val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
 
   val database = db match {
     case Some(d) => d
-    case None => Databases.sqliteJDBC(new File(datadir, chain))
+    case None => Databases.sqliteJDBC(chaindir)
   }
 
   val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database)
@@ -97,7 +99,7 @@ class Setup(datadir: File,
       _ <- Future.successful(true)
       feeratesRetrieved = Promise[Done]()
 
-      bitcoin = nodeParams.watcherType match {
+      bitcoin: Bitcoin = nodeParams.watcherType match {
         case ELECTRUM =>
           val addresses = config.hasPath("electrum") match {
             case true =>
@@ -137,7 +139,10 @@ class Setup(datadir: File,
       smoothFeerateWindow = config.getInt("smooth-feerate-window")
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
-        case _ => new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+        case (_, Bitcoind(bitcoinClient)) =>
+          new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+        case _ =>
+          new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
       }
       _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
         case feerates: FeeratesPerKB =>
@@ -159,8 +164,6 @@ class Setup(datadir: File,
 
       wallet = bitcoin match {
         case Electrum(electrumClient) =>
-          // TODO: DRY
-          val chaindir = new File(datadir, chain)
           val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
           val walletDb = new SqliteWalletDb(sqlite)
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
@@ -171,7 +174,14 @@ class Setup(datadir: File,
       _ = wallet.getFinalAddress.map {
         case address => logger.info(s"initial wallet address=$address")
       }
+      // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 
+      backupHandler = system.actorOf(SimpleSupervisor.props(
+        BackupHandler.props(
+          nodeParams.db,
+          new File(chaindir, "eclair.sqlite.bak"),
+          if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
+        ),"backuphandler", SupervisorStrategy.Resume))
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
         case "local" => LocalPaymentHandler.props(nodeParams)
@@ -181,7 +191,7 @@ class Setup(datadir: File,
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
-      paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator", SupervisorStrategy.Restart))
+      paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, register), "payment-initiator", SupervisorStrategy.Restart))
 
       kit = Kit(
         nodeParams = nodeParams,
@@ -200,6 +210,7 @@ class Setup(datadir: File,
 
 // @formatter:off
 sealed trait Bitcoin
+case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient) extends Bitcoin
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
 // @formatter:on
 

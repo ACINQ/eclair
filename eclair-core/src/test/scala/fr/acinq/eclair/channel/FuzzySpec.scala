@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel
 
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
@@ -92,7 +93,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       // allow overpaying (no more than 2 times the required amount)
       val amount = requiredAmount + Random.nextInt(requiredAmount)
       val expiry = Globals.blockCount.get().toInt + Channel.MIN_CLTV_EXPIRY + 1
-      PaymentLifecycle.buildCommand(amount, expiry, paymentHash, Hop(null, dest, null) :: Nil)._1
+      PaymentLifecycle.buildCommand(UUID.randomUUID(), amount, expiry, paymentHash, Hop(null, dest, null) :: Nil)._1
     }
 
     def initiatePayment(stopping: Boolean) =

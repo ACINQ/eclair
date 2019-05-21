@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -391,7 +391,9 @@ object ElectrumClient {
   }
 
   case class GetHeaders(start_height: Int, count: Int, cp_height: Int = 0) extends Request
-  case class GetHeadersResponse(start_height: Int, headers: Seq[BlockHeader], max: Int) extends Response
+  case class GetHeadersResponse(start_height: Int, headers: Seq[BlockHeader], max: Int) extends Response {
+    override def toString = s"GetHeadersResponse($start_height, ${headers.length}, ${headers.headOption}, ${headers.lastOption}, $max)"
+  }
 
   case class GetMerkle(txid: ByteVector32, height: Int) extends Request
   case class GetMerkleResponse(txid: ByteVector32, merkle: List[ByteVector32], block_height: Int, pos: Int) extends Response {

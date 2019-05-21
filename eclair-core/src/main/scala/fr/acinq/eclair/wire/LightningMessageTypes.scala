@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire
 
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
+import java.nio.charset.StandardCharsets
 
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.ByteVector32
@@ -47,7 +48,9 @@ case class Init(globalFeatures: ByteVector,
                 localFeatures: ByteVector) extends SetupMessage
 
 case class Error(channelId: ByteVector32,
-                 data: ByteVector) extends SetupMessage with HasChannelId
+                 data: ByteVector) extends SetupMessage with HasChannelId {
+  def toAscii: String = if (fr.acinq.eclair.isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
+}
 
 object Error {
   def apply(channelId: ByteVector32, msg: String): Error = Error(channelId, ByteVector.view(msg.getBytes(Charsets.US_ASCII)))

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -172,8 +172,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
       } else {
         client ! ElectrumClient.GetHeaders(data.blockchain.tip.height + 1, RETARGETING_PERIOD)
         log.info(s"syncing headers from ${data.blockchain.height} to ${height}, ready=${data.isReady(params.swipeRange)}")
-        // tell everyone we're ready while we catch up
-        goto(SYNCING) using persistAndNotify(data)
+        goto(SYNCING) using data
       }
   }
 
