@@ -919,7 +919,7 @@ object Router {
     // should be able to route the payment, so we'll compute an htlcMaximumMsat accordingly.
     // We could also get the channel capacity from the blockchain (since we have the shortChannelId) but that's more expensive.
     // We also need to make sure the channel isn't excluded by our heuristics.
-    val lastChannelCapacity = amount.max(RoutingHeuristics.CAPACITY_CHANNEL_LOW)
+    val lastChannelCapacity = amount.max(RoutingHeuristics.CAPACITY_CHANNEL_LOW_MSAT)
     val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
     extraRoute.zip(nextNodeIds).reverse.foldLeft((lastChannelCapacity, Map.empty[ShortChannelId, AssistedChannel])) {
       case ((amount, acs), (extraHop: ExtraHop, nextNodeId)) =>
