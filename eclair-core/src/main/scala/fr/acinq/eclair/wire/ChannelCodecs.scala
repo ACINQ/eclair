@@ -128,7 +128,7 @@ object ChannelCodecs extends Logging {
     (value: ByteVector64) => bytes(64).encode(value),
     (wire: BitVector) => bytes.decode(wire).map(_.map {
        case bin64 if bin64.size == 64 => ByteVector64(bin64)
-       case der => Crypto.encodeSignatureTo64(Crypto.decodeSignatureFromDER(der))
+       case der => Crypto.der2compact(der)
     })
   )
 

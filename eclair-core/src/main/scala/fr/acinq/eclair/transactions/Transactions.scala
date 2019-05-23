@@ -100,12 +100,12 @@ object Transactions {
   /**
     * these values specific to us and used to estimate fees
     */
-  val claimP2WPKHOutputWeight = 439
-  val claimHtlcDelayedWeight = 484
-  val claimHtlcSuccessWeight = 572
-  val claimHtlcTimeoutWeight = 546
-  val mainPenaltyWeight = 485
-  val htlcPenaltyWeight = 579 // based on spending an HTLC-Success output (would be 571 with HTLC-Timeout)
+  val claimP2WPKHOutputWeight = 438
+  val claimHtlcDelayedWeight = 483
+  val claimHtlcSuccessWeight = 571
+  val claimHtlcTimeoutWeight = 545
+  val mainPenaltyWeight = 484
+  val htlcPenaltyWeight = 578 // based on spending an HTLC-Success output (would be 571 with HTLC-Timeout)
 
   def weight2fee(feeratePerKw: Long, weight: Int) = Satoshi((feeratePerKw * weight) / 1000)
 
@@ -480,14 +480,15 @@ object Transactions {
   val PlaceHolderPubKey = PrivateKey(ByteVector32.One, compressed = true).publicKey
 
   /**
-    * This default sig takes 73B when encoded in DER (incl. 1B for the trailing sig hash), it is used for fee estimation
+    * This default sig takes 72B when encoded in DER (incl. 1B for the trailing sig hash), it is used for fee estimation
+    * It is 72 bytes because our signatures are normalized (low-s) and will take up 72 bytes at most in DER format
     */
   val PlaceHolderSig = ByteVector64(ByteVector.fill(64)(0xaa))
-  assert(der(PlaceHolderSig).size == 73)
+  assert(der(PlaceHolderSig).size == 72)
 
   def sign(tx: Transaction, inputIndex: Int, redeemScript: ByteVector, amount: Satoshi, key: PrivateKey): ByteVector64 = {
     val sigDER = Transaction.signInput(tx, inputIndex, redeemScript, SIGHASH_ALL, amount, SIGVERSION_WITNESS_V0, key)
-    val sig64 = Crypto.encodeSignatureTo64(Crypto.decodeSignatureFromDER(sigDER))
+    val sig64 = Crypto.der2compact(sigDER)
     sig64
   }
 

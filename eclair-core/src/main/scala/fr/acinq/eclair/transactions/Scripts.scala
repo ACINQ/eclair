@@ -26,7 +26,7 @@ import scodec.bits.ByteVector
   */
 object Scripts {
 
-  def der(sig: ByteVector64): ByteVector = Crypto.encodeSignatureToDER(Crypto.decodeSignatureFrom64(sig)) :+ 1
+  def der(sig: ByteVector64): ByteVector = Crypto.compact2der(sig) :+ 1
 
   def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] = if (LexicographicalOrdering.isLessThan(pubkey1.toBin, pubkey2.toBin))
     Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))

@@ -55,16 +55,4 @@ object TestWallet {
       lockTime = 0)
     MakeFundingTxResponse(fundingTx, 0, Satoshi(420))
   }
-
-  def malleateTx(tx: Transaction): Transaction = {
-    val inputs1 = tx.txIn.map(input => Script.parse(input.signatureScript) match {
-      case OP_PUSHDATA(sig, _) :: OP_PUSHDATA(pub, _) :: Nil if pub.length == 33 && Try(Crypto.decodeSignatureFromDER(sig)).isSuccess =>
-        val (r, s) = Crypto.decodeSignatureFromDER(sig)
-        val s1 = Crypto.curve.getN.subtract(s)
-        val sig1 = Crypto.encodeSignatureToDER(r, s1) :+ 1
-        input.copy(signatureScript = Script.write(OP_PUSHDATA(sig1) :: OP_PUSHDATA(pub) :: Nil))
-    })
-    val tx1 = tx.copy(txIn = inputs1)
-    tx1
-  }
 }
