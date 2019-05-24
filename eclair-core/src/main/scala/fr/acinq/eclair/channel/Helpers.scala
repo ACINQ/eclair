@@ -359,7 +359,9 @@ object Helpers {
     sealed trait ClosingType
     case object MutualClose extends ClosingType
     case object LocalClose extends ClosingType
-    case object RemoteClose extends ClosingType
+    sealed trait RemoteClose extends ClosingType
+    case object CurrentRemoteClose extends RemoteClose
+    case object NextRemoteClose extends RemoteClose
     case object RecoveryClose extends ClosingType
     case object RevokedClose extends ClosingType
     // @formatter:on
@@ -391,9 +393,9 @@ object Helpers {
       case closing: DATA_CLOSING if closing.localCommitPublished.exists(lcp => lcp.irrevocablySpent.values.toSet.contains(lcp.commitTx.txid)) =>
         Some(LocalClose)
       case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
-        Some(RemoteClose)
+        Some(CurrentRemoteClose)
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
-        Some(RemoteClose)
+        Some(NextRemoteClose)
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
         Some(RecoveryClose)
       case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
@@ -415,9 +417,9 @@ object Helpers {
       case closing: DATA_CLOSING if closing.localCommitPublished.exists(Closing.isLocalCommitDone) =>
         Some(LocalClose)
       case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
-        Some(RemoteClose)
+        Some(CurrentRemoteClose)
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
-        Some(RemoteClose)
+        Some(NextRemoteClose)
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
         Some(RecoveryClose)
       case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(Closing.isRevokedCommitDone) =>

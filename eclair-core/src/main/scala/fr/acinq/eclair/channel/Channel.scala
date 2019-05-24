@@ -192,9 +192,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           closingType_opt match {
             case Some(Closing.LocalClose) =>
               closing.localCommitPublished.foreach(doPublish)
-            case Some(Closing.RemoteClose) =>
-              // here we don't have the granularity to tell between remote and next-remote
+            case Some(Closing.CurrentRemoteClose) =>
               closing.remoteCommitPublished.foreach(doPublish)
+            case Some(Closing.NextRemoteClose) =>
               closing.nextRemoteCommitPublished.foreach(doPublish)
             case Some(Closing.RecoveryClose) =>
               closing.futureRemoteCommitPublished.foreach(doPublish)
