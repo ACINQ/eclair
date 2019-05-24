@@ -89,7 +89,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     import f._
     alice ! BITCOIN_FUNDING_TIMEOUT
     alice2bob.expectMsgType[Error]
-    awaitCond(alice.stateName == ERR_FUNDING_TIMEOUT)
+    awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv BITCOIN_FUNDING_SPENT (remote commit)") { f =>
