@@ -277,7 +277,7 @@ object Relayer {
           .getOrElse(previousFailures.head)
         Left(CMD_FAIL_HTLC(add.id, Right(translateError(error)), commit = true))
       case channelUpdate_opt =>
-        relayOrFail(relayPayload, channelUpdate_opt)
+        relayOrFail(relayPayload, channelUpdate_opt, previousFailures)
     }
   }
 
@@ -300,7 +300,7 @@ object Relayer {
         // we then filter out channels that we have already tried
         val candidateChannels = allChannels -- alreadyTried
         // and we filter keep the ones that are compatible with this payment (mainly fees, expiry delta)
-        candidateChannels
+        val l1 =candidateChannels
           .map { shortChannelId =>
             val channelInfo_opt = channelUpdates.get(shortChannelId)
             val channelUpdate_opt = channelInfo_opt.map(_.channelUpdate)
@@ -308,10 +308,12 @@ object Relayer {
             log.debug(s"candidate channel for htlc #${add.id} paymentHash=${add.paymentHash}: shortChannelId={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo_opt.map(_.availableBalanceMsat).getOrElse(""), channelUpdate_opt.getOrElse(""), relayResult)
             (shortChannelId, channelInfo_opt, relayResult)
           }
-          .collect { case (shortChannelId, Some(channelInfo), Right(_)) => (shortChannelId, channelInfo.availableBalanceMsat) }
+
+          val l2 = l1.collect { case (shortChannelId, Some(channelInfo), Right(_)) => (shortChannelId, channelInfo.availableBalanceMsat) }
           .filter(_._2 > relayPayload.payload.amtToForward) // we only keep channels that have enough balance to handle this payment
           .toList // needed for ordering
-          .sortBy(_._2) // we want to use the channel with the lowest available balance that can process the payment
+
+          l2.sortBy(_._2) // we want to use the channel with the lowest available balance that can process the payment
           .headOption match {
           case Some((preferredShortChannelId, availableBalanceMsat)) if preferredShortChannelId != requestedShortChannelId =>
             log.info("replacing requestedShortChannelId={} by preferredShortChannelId={} with availableBalanceMsat={}", requestedShortChannelId, preferredShortChannelId, availableBalanceMsat)
@@ -330,7 +332,7 @@ object Relayer {
     }
   }
 
-  def relayOrFail(relayPayload: RelayPayload, channelUpdate_opt: Option[ChannelUpdate])(implicit log: LoggingAdapter): Either[CMD_FAIL_HTLC, (ShortChannelId, CMD_ADD_HTLC)] = {
+  def relayOrFail(relayPayload: RelayPayload, channelUpdate_opt: Option[ChannelUpdate], previousFailures: Seq[AddHtlcFailed] = Seq.empty)(implicit log: LoggingAdapter): Either[CMD_FAIL_HTLC, (ShortChannelId, CMD_ADD_HTLC)] = {
     import relayPayload._
     channelUpdate_opt match {
       case None =>
@@ -344,7 +346,7 @@ object Relayer {
       case Some(channelUpdate) if relayPayload.relayFeeMsat < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amtToForward) =>
         Left(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
-        Right((channelUpdate.shortChannelId, CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket.serialize, upstream = Right(add), commit = true)))
+        Right((channelUpdate.shortChannelId, CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket.serialize, upstream = Right(add), commit = true, previousFailures = previousFailures)))
     }
   }
 
