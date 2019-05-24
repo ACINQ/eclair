@@ -183,24 +183,35 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           goto(CLOSED) using closing
         case closing: DATA_CLOSING =>
           // we don't put back the WatchSpent if the commitment tx has already been published and the spending tx already reached mindepth
-          val commitTxOutpoint = closing.commitments.commitInput.outPoint
-          if (closing.localCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
-            closing.remoteCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
-            closing.nextRemoteCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
-            closing.revokedCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
-            closing.futureRemoteCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint))) {
-            log.info(s"funding tx has already been spent and spending tx reached mindepth, no need to put back the watch-spent")
-          } else {
-            // TODO: should we wait for an acknowledgment from the watcher?
-            blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
-            blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
+          val closingType_opt = Closing.isClosingTypeAlreadyKnown(closing)
+          log.info(s"channel is closing (closingType=${closingType_opt.getOrElse("UnknownYet")})")
+          // if the closing type is known:
+          // - there is no need to watch the funding tx because it has already been spent and the spending tx has
+          //   already reached mindepth
+          // - there is no need to attempt to publish transactions for other type of closes
+          closingType_opt match {
+            case Some(Closing.LocalClose) =>
+              closing.localCommitPublished.foreach(doPublish)
+            case Some(Closing.RemoteClose) =>
+              // here we don't have the granularity to tell between remote and next-remote
+              closing.remoteCommitPublished.foreach(doPublish)
+              closing.nextRemoteCommitPublished.foreach(doPublish)
+            case Some(Closing.RecoveryClose) =>
+              closing.futureRemoteCommitPublished.foreach(doPublish)
+            case Some(Closing.RevokedClose) =>
+              closing.revokedCommitPublished.foreach(doPublish)
+            case _ =>
+              // in all other cases we need to be ready for any type of closing
+              // TODO: should we wait for an acknowledgment from the watcher?
+              blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+              blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
+              closing.mutualClosePublished.foreach(doPublish)
+              closing.localCommitPublished.foreach(doPublish)
+              closing.remoteCommitPublished.foreach(doPublish)
+              closing.nextRemoteCommitPublished.foreach(doPublish)
+              closing.revokedCommitPublished.foreach(doPublish)
+              closing.futureRemoteCommitPublished.foreach(doPublish)
           }
-          closing.mutualClosePublished.map(doPublish(_))
-          closing.localCommitPublished.foreach(doPublish(_))
-          closing.remoteCommitPublished.foreach(doPublish(_))
-          closing.nextRemoteCommitPublished.foreach(doPublish(_))
-          closing.revokedCommitPublished.foreach(doPublish(_))
-          closing.futureRemoteCommitPublished.foreach(doPublish(_))
           // no need to go OFFLINE, we can directly switch to CLOSING
           goto(CLOSING) using closing
 

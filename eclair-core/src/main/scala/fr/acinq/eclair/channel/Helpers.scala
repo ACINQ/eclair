@@ -378,6 +378,30 @@ object Helpers {
         data.commitments.remoteNextCommitInfo.isRight
 
     /**
+      * As soon as a tx spending the funding tx has reached min_depth, we know what the closing type will be, before
+      * the whole closing process finishes(e.g. there may still be delayed or unconfirmed child transactions). It can
+      * save us from attempting to publish some transactions.
+      *
+      * Note that we can't tell for mutual close before it is already final, because only one tx needs to be confirmed.
+      *
+      * @param data channel state data
+      * @return the channel closing type, if applicable
+      */
+    def isClosingTypeAlreadyKnown(data: HasCommitments): Option[ClosingType] = data match {
+      case closing: DATA_CLOSING if closing.localCommitPublished.exists(lcp => lcp.irrevocablySpent.values.toSet.contains(lcp.commitTx.txid)) =>
+        Some(LocalClose)
+      case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
+        Some(RemoteClose)
+      case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
+        Some(RemoteClose)
+      case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
+        Some(RecoveryClose)
+      case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
+        Some(RevokedClose)
+      case _ => None // we don't know yet what the closing type will be
+    }
+
+    /**
       * Checks if a channel is closed (i.e. its closing tx has been confirmed)
       *
       * @param data channel state data
