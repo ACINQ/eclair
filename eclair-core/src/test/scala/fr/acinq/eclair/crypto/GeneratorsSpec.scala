@@ -22,7 +22,7 @@ import scodec.bits._
 
 
 class GeneratorsSpec extends FunSuite {
-  val base_secret: Scalar = hex"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+  val base_secret: Scalar = Scalar(hex"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
   val per_commitment_secret: Scalar = Scalar(hex"1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100")
   val base_point = Point(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")
   val per_commitment_point = Point(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")

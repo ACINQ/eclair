@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, InputStream, OutputStream}
 import java.nio.ByteOrder
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Protocol}
 import fr.acinq.eclair.wire.{FailureMessage, FailureMessageCodecs}
 import grizzled.slf4j.Logging
@@ -72,11 +72,11 @@ object Sphinx extends Logging {
 
   def generateStream(key: ByteVector, length: Int): ByteVector = ChaCha20.encrypt(zeroes(length), key, zeroes(12))
 
-  def computeSharedSecret(pub: PublicKey, secret: PrivateKey): ByteVector32 = Crypto.sha256(ByteVector.view(pub.multiply(secret).normalize().getEncoded(true)))
+  def computeSharedSecret(pub: PublicKey, secret: PrivateKey): ByteVector32 = Crypto.sha256(pub.multiply(secret).toBin(true))
 
   def computeblindingFactor(pub: PublicKey, secret: ByteVector): ByteVector32 = Crypto.sha256(pub.toBin ++ secret)
 
-  def blind(pub: PublicKey, blindingFactor: ByteVector32): PublicKey = PublicKey(pub.multiply(Scalar(blindingFactor)).normalize(), compressed = true)
+  def blind(pub: PublicKey, blindingFactor: ByteVector32): PublicKey = PublicKey(pub.multiply(Scalar(blindingFactor)), compressed = true)
 
   def blind(pub: PublicKey, blindingFactors: Seq[ByteVector32]): PublicKey = blindingFactors.foldLeft(pub)(blind)
 
@@ -88,7 +88,7 @@ object Sphinx extends Logging {
     * @return a tuple (ephemeral public keys, shared secrets)
     */
   def computeEphemeralPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: Seq[PublicKey]): (Seq[PublicKey], Seq[ByteVector32]) = {
-    val ephemeralPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value.toBin)
+    val ephemeralPublicKey0 = blind(PublicKey(Point(Crypto.curve.getG), compressed = true), sessionKey.value.toBin)
     val secret0 = computeSharedSecret(publicKeys.head, sessionKey)
     val blindingFactor0 = computeblindingFactor(ephemeralPublicKey0, secret0)
     computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys.tail, Seq(ephemeralPublicKey0), Seq(blindingFactor0), Seq(secret0))
