@@ -89,7 +89,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           stay
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
-          // exponential backoff retry with a finite max
+          // exponential backoff retry with a finite max, the minimum MUST be above the tcp connect timeout.
           setTimer(RECONNECT_TIMER, Reconnect, Math.min(20 + Math.pow(2, d.attempts), 90) seconds, repeat = false)
           stay using d.copy(attempts = d.attempts + 1)
       }
