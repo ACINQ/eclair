@@ -19,7 +19,7 @@ package fr.acinq.eclair.io
 import java.net.{Inet4Address, InetAddress, InetSocketAddress}
 
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
-import akka.actor.{ActorRef, Terminated}
+import akka.actor.{ActorRef, PoisonPill, Terminated}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
@@ -44,7 +44,6 @@ class PeerSpec extends TestkitBaseClass {
   def ipv4FromInet4(address: InetSocketAddress) = IPv4.apply(address.getAddress.asInstanceOf[Inet4Address], address.getPort)
 
   val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
-  //val fakeInetAddress = fakeIPAddress.socketAddress
   val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(100)
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
   val channels = fakeRoutingInfo.map(_._1).toList
@@ -153,6 +152,21 @@ class PeerSpec extends TestkitBaseClass {
     probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set.empty))
     probe.send(peer, Peer.Reconnect)
     probe.expectNoMsg()
+  }
+
+  test("reconnect using the address from node_announcement", Tag("with_node_announcements")) { f =>
+    import f._
+
+    val probe = TestProbe()
+    awaitCond({peer.stateName.toString == "INSTANTIATING"}, 10 seconds)
+    probe.send(peer, Peer.Init(None, Set(ChannelStateSpec.normal)))
+    awaitCond({peer.stateName.toString == "DISCONNECTED" && peer.stateData.address_opt.isEmpty}, 10 seconds)
+    probe.send(peer, Peer.Reconnect)
+    awaitCond({
+      peer.children.exists { actor =>
+        actor.path.name == s"client-${fakeIPAddress.socketAddress.getAddress.getHostAddress}:${fakeIPAddress.socketAddress.getPort}"
+      }
+    }, 10 seconds)
   }
 
   test("count reconnections") { f =>
