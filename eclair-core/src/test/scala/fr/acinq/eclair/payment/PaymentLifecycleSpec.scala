@@ -45,6 +45,34 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   val defaultAmountMsat = 142000000L
 
+  test("send to route") { fixture =>
+    import fixture._
+    val defaultPaymentHash = randomBytes32
+    val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
+    val paymentDb = nodeParams.db.payments
+    val id = UUID.randomUUID()
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, id, router, TestProbe().ref))
+    val monitor = TestProbe()
+    val sender = TestProbe()
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
+
+    paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
+    val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
+
+    // pre-computed route going from A to D
+    val request = SendPaymentToRoute(defaultAmountMsat, defaultPaymentHash, Seq(a,b,c,d))
+
+    sender.send(paymentFSM, request)
+    val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
+    sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash))
+
+    sender.expectMsgType[PaymentSucceeded]
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.SUCCEEDED))
+  }
+
   test("payment failed (route not found)") { fixture =>
     import fixture._
     val defaultPaymentHash = randomBytes32
