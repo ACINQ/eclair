@@ -29,13 +29,11 @@ import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, MilliSatoshi, Protoc
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.secureRandom
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{wire, _}
+import fr.acinq.eclair.{secureRandom, wire, _}
 import scodec.Attempt
 import scodec.bits.ByteVector
-
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
@@ -89,7 +87,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           stay
         case Some(address) =>
           // InetAddress.getHostAddress returns the IP address as string
-          context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None), s"client-${address.getAddress.getHostAddress}:${address.getPort}")
+          context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None), s"${d.attempts}-client-${address.getAddress.getHostAddress}:${address.getPort}")
           // exponential backoff retry with a finite max
           setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 3600) seconds, repeat = false)
           stay using d.copy(attempts = d.attempts + 1)
@@ -425,6 +423,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       stay using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
 
     case Event(Disconnect, d: ConnectedData) =>
+      log.info(s"disconnecting")
       d.transport ! PoisonPill
       stay
 

@@ -16,13 +16,14 @@
 
 package fr.acinq.eclair.io
 
-import java.net.{Inet4Address, InetAddress, InetSocketAddress}
+import java.net.{Inet4Address, InetSocketAddress}
 
+import akka.actor.ActorRef
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
-import akka.actor.{ActorRef, PoisonPill, Terminated}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.crypto.TransportHandler
@@ -32,10 +33,8 @@ import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
 import fr.acinq.eclair.wire.LightningMessageCodecsSpec.randomSignature
 import fr.acinq.eclair.wire.{Color, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong}
-import fr.acinq.eclair._
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
-
 import scala.concurrent.duration._
 
 
@@ -164,7 +163,7 @@ class PeerSpec extends TestkitBaseClass {
     probe.send(peer, Peer.Reconnect)
     awaitCond({
       peer.children.exists { actor =>
-        actor.path.name == s"client-${fakeIPAddress.socketAddress.getAddress.getHostAddress}:${fakeIPAddress.socketAddress.getPort}"
+        actor.path.name == s"0-client-${fakeIPAddress.socketAddress.getAddress.getHostAddress}:${fakeIPAddress.socketAddress.getPort}"
       }
     }, 10 seconds)
   }
