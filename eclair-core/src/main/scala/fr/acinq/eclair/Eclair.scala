@@ -41,7 +41,7 @@ case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived],
 
 trait Eclair {
 
-  def connect(uri: String)(implicit timeout: Timeout): Future[String]
+  def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String]
 
   def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[String]
 
@@ -93,8 +93,9 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   implicit val ec = appKit.system.dispatcher
 
-  override def connect(uri: String)(implicit timeout: Timeout): Future[String] = {
-    (appKit.switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String]
+  override def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String] = target match {
+    case Left(uri) => (appKit.switchboard ? Peer.Connect(uri)).mapTo[String]
+    case Right(pubKey) => (appKit.switchboard ? Peer.Connect(pubKey, None)).mapTo[String]
   }
 
   override def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[String] = {

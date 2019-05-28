@@ -135,10 +135,12 @@ trait Service extends ExtraDirectives with Logging {
                       complete(eclairApi.getInfoResponse())
                     } ~
                       path("connect") {
-                        formFields("uri".as[String]) { uri =>
-                          complete(eclairApi.connect(uri))
+                        formFields("uri".as[NodeURI]) { uri =>
+                          complete(eclairApi.connect(Left(uri)))
                         } ~ formFields(nodeIdFormParam, "host".as[String], "port".as[Int].?) { (nodeId, host, port_opt) =>
-                          complete(eclairApi.connect(s"$nodeId@$host:${port_opt.getOrElse(NodeURI.DEFAULT_PORT)}"))
+                          complete(eclairApi.connect(Left(NodeURI.parse(s"$nodeId@$host:${port_opt.getOrElse(NodeURI.DEFAULT_PORT)}"))))
+                        } ~ formFields(nodeIdFormParam) { nodeId =>
+                          complete(eclairApi.connect(Right(nodeId)))
                         }
                       } ~
                       path("open") {

@@ -31,6 +31,7 @@ import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.RES_GETINFO
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
+import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment._
@@ -49,7 +50,7 @@ import scala.util.Try
 class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
 
   trait EclairMock extends Eclair {
-    override def connect(uri: String)(implicit timeout: Timeout): Future[String] = ???
+    override def connect(target: Either[NodeURI, Crypto.PublicKey])(implicit timeout: Timeout): Future[String] = ???
 
     override def open(nodeId: Crypto.PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], timeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[String] = ???
 
@@ -257,7 +258,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest {
     val remoteUri = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735"
 
     val mockService = new MockService(new EclairMock {
-      override def connect(uri: String)(implicit timeout: Timeout): Future[String] = Future.successful("connected")
+      override def connect(target: Either[NodeURI, Crypto.PublicKey])(implicit timeout: Timeout): Future[String] = Future.successful("connected")
     })
 
     Post("/connect", FormData("nodeId" -> remoteNodeId, "host" -> remoteHost).toEntity) ~>
