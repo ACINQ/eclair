@@ -62,7 +62,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   when(DISCONNECTED) {
     case Event(Peer.Connect(_, address_opt), d: DisconnectedData) =>
       address_opt.map(hAndp => new InetSocketAddress(hAndp.getHost, hAndp.getPort)).orElse {
-        nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption.map(_.socketAddress))
+        getPeerAddressFromNodeAnnouncement()
       } match {
         case None =>
           log.warning(s"Unable to connect to $remoteNodeId no address found")
@@ -81,13 +81,16 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
 
     case Event(Reconnect, d: DisconnectedData) =>
-      d.address_opt match {
-        case _ if d.channels.isEmpty => stay // no-op (no more channels with this peer)
-        case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
+      if(d.channels.isEmpty) stay
+
+      d.address_opt.orElse(getPeerAddressFromNodeAnnouncement()) match {
+        case None =>
+          log.warning(s"Unable to reconnect to peer, no address known")
+          stay
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           // exponential backoff retry with a finite max
-          setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 60) seconds, repeat = false)
+          setTimer(RECONNECT_TIMER, Reconnect, Math.min(20 + Math.pow(2, d.attempts), 90) seconds, repeat = false)
           stay using d.copy(attempts = d.attempts + 1)
       }
 
@@ -487,7 +490,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
   onTransition {
     case INSTANTIATING -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => self ! Reconnect // we reconnect right away if we just started the peer
-    case _ -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
+    case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
     case DISCONNECTED -> _ if nodeParams.autoReconnect && stateData.address_opt.isDefined => cancelTimer(RECONNECT_TIMER)
   }
 
@@ -508,6 +511,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     log.info("removing peer from db")
     nodeParams.db.peers.removePeer(remoteNodeId)
     stop(FSM.Normal)
+  }
+
+  // TODO gets the first of the list, improve selection?
+  def getPeerAddressFromNodeAnnouncement(): Option[InetSocketAddress] = {
+    nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption.map(_.socketAddress))
   }
 
   // a failing channel won't be restarted, it should handle its states
