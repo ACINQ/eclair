@@ -81,7 +81,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
 
     case Event(Reconnect, d: DisconnectedData) =>
-      if(d.channels.isEmpty) stay
+      if (d.channels.isEmpty) stay
 
       d.address_opt.orElse(getPeerAddressFromNodeAnnouncement()) match {
         case None =>
