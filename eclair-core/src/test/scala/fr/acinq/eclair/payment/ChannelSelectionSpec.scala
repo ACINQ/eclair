@@ -42,7 +42,7 @@ class ChannelSelectionSpec extends FunSuite {
     val relayPayload = RelayPayload(
       add = UpdateAddHtlc(randomBytes32, 42, 1000000, randomBytes32, 70, ByteVector.empty),
       payload = PerHopPayload(ShortChannelId(12345), amtToForward = 998900, outgoingCltvValue = 60),
-      nextPacket = Sphinx.LAST_PACKET // just a placeholder
+      nextPacket = Sphinx.EMPTY_PACKET // just a placeholder
     )
 
     val channelUpdate = dummyUpdate(ShortChannelId(12345), 10, 100, 1000, 100, 10000000, true)
@@ -75,7 +75,7 @@ class ChannelSelectionSpec extends FunSuite {
     val relayPayload = RelayPayload(
       add = UpdateAddHtlc(randomBytes32, 42, 1000000, randomBytes32, 70, ByteVector.empty),
       payload = PerHopPayload(ShortChannelId(12345), amtToForward = 998900, outgoingCltvValue = 60),
-      nextPacket = Sphinx.LAST_PACKET // just a placeholder
+      nextPacket = Sphinx.EMPTY_PACKET // just a placeholder
     )
 
     val (a, b) = (randomKey.publicKey, randomKey.publicKey)

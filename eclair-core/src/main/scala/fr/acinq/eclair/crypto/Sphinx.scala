@@ -21,7 +21,7 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Protocol}
-import fr.acinq.eclair.wire.{FailureMessage, FailureMessageCodecs}
+import fr.acinq.eclair.wire.{FailureMessage, FailureMessageCodecs, CommonCodecs}
 import grizzled.slf4j.Logging
 import org.spongycastle.crypto.digests.SHA256Digest
 import org.spongycastle.crypto.macs.HMac
@@ -38,37 +38,25 @@ import scala.util.{Failure, Success, Try}
 object Sphinx extends Logging {
   val Version = 0.toByte
 
+  // length of a public key
+  val PubKeyLength = 33
+
   // length of a MAC
   val MacLength = 32
 
-  // max number of hops
-  val MaxHops = 20
+  // The 1.0 BOLT spec used 20 fixed-size 65-bytes frames inside the onion payload.
+  // The first byte of the frame (called `realm`) was set to 0x00, followed by 32 bytes of hop data and a 32-bytes mac.
+  // The 1.1 BOLT spec changed that format to use variable-length per-hop length.
+  val LegacyFrameSize = 65
 
-  // A frame is the smallest unit of memory that can be used by a hop to store its payload.
-  // Each hop may use multiple frames.
-  // Parts of the frame are fixed:
-  //  - The first byte of the first frame contains the number of frames used by the payload and the realm, which indicates how the payload should be parsed.
-  //  - The last 32 bytes of the last frame contain the HMAC that should be passed to the next hop, or 0 for the last hop.
-  //  - All other bytes can be used to store the hop's payload.
-  val FrameSize = 65
-
-  // The maximum size a payload for a single hop can be. This is the worst case scenario of a single hop, consuming all 20 frames.
-  // We need to know this in order to generate a sufficiently long stream of pseudo-random bytes when encrypting/decrypting the payload.
-  val MaxPayloadLength = MaxHops * FrameSize
-
-  // length of the obfuscated onion data
-  val RoutingInfoLength = MaxHops * FrameSize
+  // length of the obfuscated onion payload
+  val OnionPayloadLength = 1300
 
   // onion packet length
-  val PacketLength = 1 + 33 + MacLength + RoutingInfoLength
+  val PacketLength = 1 + PubKeyLength + MacLength + OnionPayloadLength
 
-  // last packet (all zeroes except for the version byte)
-  val LAST_PACKET = Packet(Version, ByteVector.fill(33)(0), ByteVector32.Zeroes, ByteVector.fill(RoutingInfoLength)(0))
-
-  // The 5 MSB of the first frame of the payload contains the number of frames used.
-  def payloadFrameCount(payload: ByteVector): Int = {
-    ((payload.head >> 3) & 0x1F) + 1
-  }
+  // packet construction starts with an empty packet (all zeroes except for the version byte)
+  val EMPTY_PACKET = Packet(Version, ByteVector.fill(PubKeyLength)(0), ByteVector32.Zeroes, ByteVector.fill(OnionPayloadLength)(0))
 
   def hmac256(key: ByteVector, message: ByteVector): ByteVector32 = {
     val mac = new HMac(new SHA256Digest())
@@ -123,23 +111,42 @@ object Sphinx extends Logging {
     }
   }
 
+  /**
+    * Return the amount of bytes that should be read to extract the per-hop payload (data and mac).
+    */
+  def currentHopLength(payload: ByteVector): Int = {
+    payload.head match {
+      case 0 => LegacyFrameSize
+      case _ =>
+        // For non-legacy packets the first bytes are a varint encoding the length of the payload data (not including mac).
+        // Since the onion packet is only 1300-bytes long, the varint will either be 1 or 3 bytes long.
+        val dataLength = CommonCodecs.varlong.decode(BitVector(payload.take(3))).require.value.toInt
+        val varintLength = dataLength match {
+          case i if i < 253 => 1
+          case _ => 3
+        }
+        varintLength + dataLength + MacLength
+    }
+  }
+
   def generateFiller(keyType: String, sharedSecrets: Seq[ByteVector32], payloads: Seq[ByteVector]): ByteVector = {
     require(sharedSecrets.length == payloads.length, "the number of secrets should equal the number of payloads")
 
     (sharedSecrets zip payloads).foldLeft(ByteVector.empty)((padding, secretAndPayload) => {
       val (secret, payload) = secretAndPayload
-      val payloadLength = FrameSize*payloadFrameCount(payload)
+      val payloadLength = currentHopLength(payload)
+      require(payloadLength == payload.length + MacLength, s"invalid payload: length isn't correctly encoded: $payload")
       val key = generateKey(keyType, secret)
       val padding1 = padding ++ ByteVector.fill(payloadLength)(0)
-      val stream = generateStream(key, RoutingInfoLength + payloadLength).takeRight(padding1.length)
+      val stream = generateStream(key, OnionPayloadLength + payloadLength).takeRight(padding1.length)
       padding1.xor(stream)
     })
   }
 
-  case class Packet(version: Int, publicKey: ByteVector, hmac: ByteVector32, routingInfo: ByteVector) {
-    require(publicKey.length == 33, "onion packet public key length should be 33")
+  case class Packet(version: Int, publicKey: ByteVector, hmac: ByteVector32, onionPayload: ByteVector) {
+    require(publicKey.length == PubKeyLength, s"onion packet public key length should be $PubKeyLength")
     require(hmac.length == MacLength, s"onion packet hmac length should be $MacLength")
-    require(routingInfo.length == RoutingInfoLength, s"onion packet routing info length should be $RoutingInfoLength")
+    require(onionPayload.length == OnionPayloadLength, s"onion packet payload length should be $OnionPayloadLength")
 
     def isLastPacket: Boolean = hmac == ByteVector32.Zeroes
 
@@ -149,13 +156,13 @@ object Sphinx extends Logging {
   object Packet {
     def read(in: InputStream): Packet = {
       val version = in.read
-      val publicKey = new Array[Byte](33)
+      val publicKey = new Array[Byte](PubKeyLength)
       in.read(publicKey)
-      val routingInfo = new Array[Byte](RoutingInfoLength)
-      in.read(routingInfo)
+      val onionPayload = new Array[Byte](OnionPayloadLength)
+      in.read(onionPayload)
       val hmac = new Array[Byte](MacLength)
       in.read(hmac)
-      Packet(version, ByteVector.view(publicKey), ByteVector32(ByteVector.view(hmac)), ByteVector.view(routingInfo))
+      Packet(version, ByteVector.view(publicKey), ByteVector32(ByteVector.view(hmac)), ByteVector.view(onionPayload))
     }
 
     def read(in: ByteVector): Packet = read(new ByteArrayInputStream(in.toArray))
@@ -163,7 +170,7 @@ object Sphinx extends Logging {
     def write(packet: Packet, out: OutputStream): OutputStream = {
       out.write(packet.version)
       out.write(packet.publicKey.toArray)
-      out.write(packet.routingInfo.toArray)
+      out.write(packet.onionPayload.toArray)
       out.write(packet.hmac.toArray)
       out
     }
@@ -201,23 +208,23 @@ object Sphinx extends Logging {
     val packet = Packet.read(rawPacket)
     val sharedSecret = computeSharedSecret(PublicKey(packet.publicKey), privateKey)
     val mu = generateKey("mu", sharedSecret)
-    val check = mac(mu, packet.routingInfo ++ associatedData)
+    val check = mac(mu, packet.onionPayload ++ associatedData)
     require(check == packet.hmac, "invalid header mac")
 
     val rho = generateKey("rho", sharedSecret)
     // Since we don't know the length of the hop payload (we will learn it once we decode the first byte),
     // we have to pessimistically generate a long cipher stream.
-    val stream = generateStream(rho, RoutingInfoLength + MaxPayloadLength)
-    val bin = (packet.routingInfo ++ ByteVector.fill(MaxPayloadLength)(0)) xor stream
+    val stream = generateStream(rho, 2 * OnionPayloadLength)
+    val bin = (packet.onionPayload ++ ByteVector.fill(OnionPayloadLength)(0)) xor stream
 
-    val payloadLength = payloadFrameCount(bin)*FrameSize
-    val payload = bin.take(payloadLength-MacLength)
+    val payloadLength = currentHopLength(bin)
+    val payload = bin.take(payloadLength - MacLength)
 
-    val hmac = ByteVector32(bin.slice(payloadLength-MacLength, payloadLength))
-    val nextRouteInfo = bin.drop(payloadLength).take(RoutingInfoLength)
+    val hmac = ByteVector32(bin.slice(payloadLength - MacLength, payloadLength))
+    val nextOnionPayload = bin.drop(payloadLength).take(OnionPayloadLength)
     val nextPubKey = blind(PublicKey(packet.publicKey), computeBlindingFactor(PublicKey(packet.publicKey), sharedSecret))
 
-    ParsedPacket(payload, Packet(Version, nextPubKey.value, hmac, nextRouteInfo), sharedSecret)
+    ParsedPacket(payload, Packet(Version, nextPubKey.value, hmac, nextOnionPayload), sharedSecret)
   }
 
   @tailrec
@@ -236,29 +243,27 @@ object Sphinx extends Logging {
     * - then you call makeNextPacket(...) until you've built the final onion packet that will be sent to the first node
     * in the route
     *
-    * @param payload             payload for this packet
-    * @param associatedData      associated data
+    * @param payload            payload for this packet
+    * @param associatedData     associated data
     * @param ephemeralPublicKey ephemeral key for this packet
-    * @param sharedSecret        shared secret
-    * @param packet              current packet (1 + all zeroes if this is the last packet)
-    * @param routingInfoFiller   optional routing info filler, needed only when you're constructing the last packet
+    * @param sharedSecret       shared secret
+    * @param packet             current packet (1 + all zeroes if this is the last packet)
+    * @param onionPayloadFiller  optional onion payload filler, needed only when you're constructing the last packet
     * @return the next packet
     */
-  private def makeNextPacket(payload: ByteVector, associatedData: ByteVector32, ephemeralPublicKey: ByteVector, sharedSecret: ByteVector32, packet: Packet, routingInfoFiller: ByteVector = ByteVector.empty): Packet = {
-    require(payload.length <= MaxPayloadLength-MacLength, s"packet payload cannot exceed ${MaxPayloadLength-MacLength} bytes")
-    require((payload.length+MacLength) % FrameSize == 0, "the payload and mac should use a discrete number of frames")
+  private def makeNextPacket(payload: ByteVector, associatedData: ByteVector32, ephemeralPublicKey: ByteVector, sharedSecret: ByteVector32, packet: Packet, onionPayloadFiller: ByteVector = ByteVector.empty): Packet = {
+    require(payload.length <= OnionPayloadLength - MacLength, s"packet payload cannot exceed ${OnionPayloadLength - MacLength} bytes")
 
-    val nextRoutingInfo = {
-      val routingInfo1 = payload ++ packet.hmac ++ packet.routingInfo.dropRight(payload.length + MacLength)
-      val routingInfo2 = routingInfo1 xor generateStream(generateKey("rho", sharedSecret), RoutingInfoLength)
-      routingInfo2.dropRight(routingInfoFiller.length) ++ routingInfoFiller
+    val nextOnionPayload = {
+      val onionPayload1 = payload ++ packet.hmac ++ packet.onionPayload.dropRight(payload.length + MacLength)
+      val onionPayload2 = onionPayload1 xor generateStream(generateKey("rho", sharedSecret), OnionPayloadLength)
+      onionPayload2.dropRight(onionPayloadFiller.length) ++ onionPayloadFiller
     }
 
-    val nextHmac = mac(generateKey("mu", sharedSecret), nextRoutingInfo ++ associatedData)
-    val nextPacket = Packet(Version, ephemeralPublicKey, nextHmac, nextRoutingInfo)
+    val nextHmac = mac(generateKey("mu", sharedSecret), nextOnionPayload ++ associatedData)
+    val nextPacket = Packet(Version, ephemeralPublicKey, nextHmac, nextOnionPayload)
     nextPacket
   }
-
 
   /**
     *
@@ -277,7 +282,7 @@ object Sphinx extends Logging {
   case class ErrorPacket(originNode: PublicKey, failureMessage: FailureMessage)
 
   /**
-    * Builds an encrypted onion packet that contains payloads and routing information for all nodes in the list
+    * Builds an encrypted onion packet that contains payloads for all nodes in the list
     *
     * @param sessionKey     session key
     * @param publicKeys     node public keys (one per node)
@@ -290,7 +295,7 @@ object Sphinx extends Logging {
     val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     val filler = generateFiller("rho", sharedsecrets.dropRight(1), payloads.dropRight(1))
 
-    val lastPacket = makeNextPacket(payloads.last, associatedData, ephemeralPublicKeys.last.value, sharedsecrets.last, LAST_PACKET, filler)
+    val lastPacket = makeNextPacket(payloads.last, associatedData, ephemeralPublicKeys.last.value, sharedsecrets.last, EMPTY_PACKET, filler)
 
     @tailrec
     def loop(hoppayloads: Seq[ByteVector], ephkeys: Seq[PublicKey], sharedSecrets: Seq[ByteVector32], packet: Packet): Packet = {
