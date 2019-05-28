@@ -97,7 +97,7 @@ class PeerSpec extends TestkitBaseClass {
     probe.expectMsg(PeerInfo(remoteNodeId, "CONNECTED", Some(fakeIPAddress.socketAddress), 1))
   }
 
-  test("fail if no address was specified during connection and no address was found in node_announcement") { f =>
+  test("fail to connect if no address provided or found") { f =>
     import f._
 
     val probe = TestProbe()
