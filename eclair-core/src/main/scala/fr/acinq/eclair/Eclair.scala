@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import java.util.UUID
+
 import akka.actor.ActorRef
 import akka.pattern._
 import akka.util.Timeout
@@ -26,13 +27,12 @@ import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-import fr.acinq.eclair.io.{NodeURI, Peer}
+import fr.acinq.eclair.io.{NodeURI, Peer, Switchboard}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
 import scodec.bits.ByteVector
 import scala.concurrent.Future
 import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import TimestampQueryFilters._
@@ -56,6 +56,8 @@ object TimestampQueryFilters {
 trait Eclair {
 
   def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String]
+
+  def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[Unit]
 
   def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[String]
 
@@ -234,6 +236,15 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[PaymentRequest]] = Future {
     appKit.nodeParams.db.payments.getPaymentRequest(paymentHash)
+  }
+
+  override def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[Unit] = {
+    (appKit.switchboard ? 'peers).mapTo[Iterable[ActorRef]].map { peers =>
+      peers.find(_.path.name == Switchboard.peerActorName(nodeId)) match {
+        case Some(peer) => peer ! Peer.Disconnect
+        case None => throw new IllegalArgumentException(s"Peer $nodeId not found")
+      }
+    }
   }
 
   /**

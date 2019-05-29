@@ -143,6 +143,11 @@ trait Service extends ExtraDirectives with Logging {
                           complete(eclairApi.connect(Right(nodeId)))
                         }
                       } ~
+                      path("disconnect") {
+                        formFields(nodeIdFormParam) { nodeId =>
+                          complete(eclairApi.disconnect(nodeId))
+                        }
+                      } ~
                       path("open") {
                         formFields(nodeIdFormParam, "fundingSatoshis".as[Long], "pushMsat".as[Long].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?, "openTimeoutSeconds".as[Timeout].?) {
                           (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, openTimeout_opt) =>

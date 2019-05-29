@@ -106,8 +106,6 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
   }
 
-  def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
-
   /**
     * Retrieves a peer based on its public key.
     *
@@ -148,6 +146,8 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 object Switchboard extends Logging {
 
   def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet))
+
+  def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
   /**
     * If we have stopped eclair while it was forwarding HTLCs, it is possible that we are in a state were an incoming HTLC
