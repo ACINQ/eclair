@@ -18,9 +18,10 @@ package fr.acinq.eclair.io
 
 import java.net.{Inet4Address, InetSocketAddress}
 
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, ActorSystem}
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
-import akka.testkit.{TestFSMRef, TestProbe}
+import akka.testkit.{EventFilter, TestFSMRef, TestKit, TestProbe}
+import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
@@ -36,7 +37,6 @@ import fr.acinq.eclair.wire.{Color, Error, IPv4, NodeAddress, NodeAnnouncement, 
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 import scala.concurrent.duration._
-
 
 class PeerSpec extends TestkitBaseClass {
 
@@ -160,12 +160,9 @@ class PeerSpec extends TestkitBaseClass {
     awaitCond({peer.stateName.toString == "INSTANTIATING"}, 10 seconds)
     probe.send(peer, Peer.Init(None, Set(ChannelStateSpec.normal)))
     awaitCond({peer.stateName.toString == "DISCONNECTED" && peer.stateData.address_opt.isEmpty}, 10 seconds)
-    probe.send(peer, Peer.Reconnect)
-    awaitCond({
-      peer.children.exists { actor =>
-        actor.path.name == s"0-client-${fakeIPAddress.socketAddress.getAddress.getHostAddress}:${fakeIPAddress.socketAddress.getPort}"
-      }
-    }, 10 seconds)
+    EventFilter.info(message = s"reconnecting to ${fakeIPAddress.socketAddress}", occurrences = 1) intercept {
+      probe.send(peer, Peer.Reconnect)
+    }
   }
 
   test("count reconnections") { f =>
@@ -265,7 +262,7 @@ class PeerSpec extends TestkitBaseClass {
     probe.send(peer, filter)
     probe.send(peer, rebroadcast)
     // peer doesn't filter channel announcements
-    channels.foreach(transport.expectMsg(_))
+    channels.foreach(transport.expectMsg(10 seconds, _))
     // but it will only send updates and node announcements matching the filter
     updates.filter(u => timestamps.contains(u.timestamp)).foreach(transport.expectMsg(_))
     nodes.filter(u => timestamps.contains(u.timestamp)).foreach(transport.expectMsg(_))

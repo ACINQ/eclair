@@ -18,6 +18,7 @@ package fr.acinq.eclair
 
 import akka.actor.{ActorNotFound, ActorSystem, PoisonPill}
 import akka.testkit.TestKit
+import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, fixture}
 
@@ -27,7 +28,7 @@ import scala.concurrent.Await
   * This base class kills all actor between each tests.
   * Created by PM on 06/09/2016.
   */
-abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterEach with BeforeAndAfterAll {
+abstract class TestkitBaseClass extends TestKit(ActorSystem("test", ConfigFactory.parseString("""akka.loggers = ["akka.testkit.TestEventListener"]"""))) with fixture.FunSuiteLike with BeforeAndAfterEach with BeforeAndAfterAll {
 
   override def beforeAll {
     Globals.blockCount.set(400000)

@@ -87,7 +87,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           stay
         case Some(address) =>
           // InetAddress.getHostAddress returns the IP address as string
-          context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None), s"${d.attempts}-client-${address.getAddress.getHostAddress}:${address.getPort}")
+          context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
+          log.info(s"reconnecting to $address")
           // exponential backoff retry with a finite max
           setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 3600) seconds, repeat = false)
           stay using d.copy(attempts = d.attempts + 1)
