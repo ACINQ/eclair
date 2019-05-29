@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
+import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
@@ -101,7 +102,7 @@ object TestConstants {
       maxPaymentAttempts = 5
     )
 
-    def channelParams = Peer.makeChannelParams(
+    def channelParams = Channel.makeChannelParams(
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32, compressed = true).publicKey)),
       isFunder = true,
@@ -167,7 +168,7 @@ object TestConstants {
       maxPaymentAttempts = 5
     )
 
-    def channelParams = Peer.makeChannelParams(
+    def channelParams = Channel.makeChannelParams(
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32, compressed = true).publicKey)),
       isFunder = false,

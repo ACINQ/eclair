@@ -548,6 +548,9 @@ object ElectrumWallet {
   case class IsDoubleSpent(tx: Transaction) extends Request
   case class IsDoubleSpentResponse(tx: Transaction, isDoubleSpent: Boolean) extends Response
 
+  case class SignTransaction(tx: Transaction) extends Request
+  case class SignTransactionResponse(tx: Transaction) extends Response
+
   sealed trait WalletEvent
   /**
     *

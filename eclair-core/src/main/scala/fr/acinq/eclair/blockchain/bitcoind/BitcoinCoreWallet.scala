@@ -61,6 +61,11 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   def signTransaction(tx: Transaction): Future[SignTransactionResponse] = signTransaction(Transaction.write(tx).toHex)
 
+  override def signTransactionComplete(tx: Transaction): Future[Transaction] = signTransaction(tx).map {
+    case SignTransactionResponse(signedTx, true) => signedTx
+    case _                                       => throw new IllegalStateException("Signed transaction is not complete")
+  }
+
   def getTransaction(txid: ByteVector32): Future[Transaction] = rpcClient.invoke("getrawtransaction", txid.toString()) collect { case JString(hex) => Transaction.read(hex) }
 
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = publishTransaction(Transaction.write(tx).toHex)

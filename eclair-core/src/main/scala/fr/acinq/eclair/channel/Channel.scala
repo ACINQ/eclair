@@ -20,11 +20,12 @@ import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorSt
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PublicKey, Scalar, sha256}
+import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
-import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
+import fr.acinq.eclair.crypto.{KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
@@ -33,7 +34,7 @@ import fr.acinq.eclair.wire.{ChannelReestablish, _}
 import scodec.bits.ByteVector
 
 import scala.compat.Platform
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
@@ -91,6 +92,54 @@ object Channel {
   case class RemoteError(e: Error) extends ChannelError
   // @formatter:on
 
+  def makeChannelKeyPathFromInput(fundingInput: TxIn): KeyPath = {
+    val inputEntropy = Crypto.sha256(fundingInput.outPoint.hash).take(4).toLong(signed = false)
+    KeyPath(Seq(47, 2, inputEntropy, 0))
+  }
+
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, fundingInput: TxIn): LocalParams = {
+    val channelKeyPath = makeChannelKeyPathFromInput(fundingInput)
+    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelKeyPath)
+  }
+
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: DeterministicWallet.KeyPath): LocalParams = {
+    LocalParams(
+      nodeParams.nodeId,
+      channelKeyPath,
+      dustLimitSatoshis = nodeParams.dustLimitSatoshis,
+      maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
+      channelReserveSatoshis = Math.max((nodeParams.reserveToFundingRatio * fundingSatoshis).toLong, nodeParams.dustLimitSatoshis), // BOLT #2: make sure that our reserve is above our dust limit
+      htlcMinimumMsat = nodeParams.htlcMinimumMsat,
+      toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
+      maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
+      defaultFinalScriptPubKey = defaultFinalScriptPubKey,
+      isFunder = isFunder,
+      globalFeatures = nodeParams.globalFeatures,
+      localFeatures = nodeParams.localFeatures)
+  }
+
+  // creates a funding transaction without signatures, this is used to lock an output and derive the channel keypath.
+  def createFundingWithNoSignatures(wallet: EclairWallet, keyManager: KeyManager, fundingSatoshis: Satoshi, fundingTxFeeratePerKw: Long): MakeFundingTxResponse = {
+    // this LOCKS the outpoints that we'll use in the funding transaction, the resulting TX is NOT signed
+    // later in the process we change the output scriptPubkey and ask the wallet to sign
+    val tempKeyPath = KeyPath(Seq(1, 2, 3, 4L))
+    val scriptPubKey = Script.write(Script.pay2wsh(Scripts.multiSig2of2(keyManager.fundingPublicKey(tempKeyPath).publicKey, keyManager.fundingPublicKey(tempKeyPath).publicKey)))
+    val funding = Await.result(
+      wallet.makeFundingTx(pubkeyScript = scriptPubKey, fundingSatoshis, fundingTxFeeratePerKw),
+      10 seconds // TODO change?
+    )
+
+    // remove our invalid sig
+    val fundingNoSignatures = funding.copy( fundingTx = funding.fundingTx.copy(
+      txIn = funding.fundingTx.txIn.map(_.copy(
+        signatureScript = ByteVector.empty,
+        witness = ScriptWitness.empty
+      ))
+    ))
+
+    fundingNoSignatures
+  }
+
 }
 
 class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
@@ -146,9 +195,17 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
-    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, _, localParams, remote, _, channelFlags), Nothing) =>
+    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, remote, _, channelFlags), Nothing) =>
       context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, true, temporaryChannelId))
       forwarder ! remote
+
+      // this LOCKS the outpoints that we'll use in the funding transaction, the resulting TX is NOT signed
+      // later in the process we change the output scriptPubkey and ask the wallet to sign
+      val funding = createFundingWithNoSignatures(wallet, keyManager, Satoshi(fundingSatoshis), fundingTxFeeratePerKw)
+      val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
+      val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder = false, fundingSatoshis, funding.fundingTx.txIn.head)
+      log.info(s"using localParams=$localParams")
+
       val open = OpenChannel(nodeParams.chainHash,
         temporaryChannelId = temporaryChannelId,
         fundingSatoshis = fundingSatoshis,
@@ -167,7 +224,20 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         htlcBasepoint = keyManager.htlcPoint(localParams.channelKeyPath).publicKey,
         firstPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, 0),
         channelFlags = channelFlags)
-      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open) sending open
+
+      val nextStateData = INPUT_INIT_FUNDER_WITH_PARAMS(
+        initFunder.temporaryChannelId,
+        initFunder.fundingSatoshis,
+        initFunder.pushMsat,
+        initFunder.initialFeeratePerKw,
+        initFunder.fundingTxFeeratePerKw,
+        localParams,
+        initFunder.remote,
+        initFunder.remoteInit,
+        initFunder.channelFlags
+      )
+
+      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(nextStateData, open, funding) sending open
 
     case Event(inputFundee@INPUT_INIT_FUNDEE(_, localParams, remote, _), Nothing) if !localParams.isFunder =>
       forwarder ! remote
@@ -317,7 +387,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
-    case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, localParams, _, remoteInit, _), open)) =>
+    case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER_WITH_PARAMS(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, _, localParams, _, remoteInit, _), open, funding)) =>
       log.info(s"received AcceptChannel=$accept")
       Try(Helpers.validateParamsFunder(nodeParams, open, accept)) match {
         case Failure(t) => handleLocalError(t, d, Some(accept))
@@ -339,9 +409,17 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             globalFeatures = remoteInit.globalFeatures,
             localFeatures = remoteInit.localFeatures)
           log.debug(s"remote params: $remoteParams")
+
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey)))
-          wallet.makeFundingTx(fundingPubkeyScript, Satoshi(fundingSatoshis), fundingTxFeeratePerKw).pipeTo(self)
+
+          // update the funding TX with the actual scriptPubkey
+          val finalFundingTx = funding.fundingTx.copy(
+            txOut = TxOut(Satoshi(fundingSatoshis), fundingPubkeyScript) :: Nil
+          )
+          // add our signature to the funding transaction
+          wallet.signTransactionComplete(finalFundingTx).map(SignFundingTxResponse(_, funding.fundingTxOutputIndex, funding.fee)).pipeTo(self)
+
           goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open)
       }
 
@@ -363,7 +441,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   })
 
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
-    case Event(MakeFundingTxResponse(fundingTx, fundingTxOutputIndex, fundingTxFee), DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, open)) =>
+    case Event(SignFundingTxResponse(fundingTx, fundingTxOutputIndex, fundingTxFee), DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, open)) =>
       // let's create the first commitment tx that spends the yet uncommitted funding tx
       val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(keyManager, temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint, nodeParams.maxFeerateMismatch)
       require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
@@ -1704,7 +1782,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   def handleCommandError(cause: Throwable, cmd: Command) = {
-    log.error(s"${cause.getMessage} while processing cmd=${cmd.getClass.getSimpleName} in state=$stateName", error)
+    log.error(s"${cause.getMessage} while processing cmd=${cmd.getClass.getSimpleName} in state=$stateName", cause)
     cause match {
       case _: ChannelException => ()
       case _ => log.error(cause, s"msg=$cmd stateData=$stateData ")

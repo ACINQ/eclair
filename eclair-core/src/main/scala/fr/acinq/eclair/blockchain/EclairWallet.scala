@@ -32,6 +32,8 @@ trait EclairWallet {
 
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long, lockUnspent: Boolean = true): Future[MakeFundingTxResponse]
 
+  def signTransactionComplete(tx: Transaction): Future[Transaction]
+
   /**
     * Committing *must* include publishing the transaction on the network.
     *
@@ -67,3 +69,4 @@ trait EclairWallet {
 }
 
 final case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int, fee: Satoshi)
+final case class SignFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int, fee: Satoshi)
