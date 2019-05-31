@@ -413,14 +413,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
           // update the funding TX with the new scriptPubkey
           val finalFundingTx = funding.fundingTx.copy (
-            txOut = funding.fundingTx.txOut.zipWithIndex.map {
-              case (_, index) if index == funding.fundingTxOutputIndex => TxOut(Satoshi(fundingSatoshis), fundingPubkeyScript)
-              case (out, _) => out
-            }
+            txOut = funding.fundingTx.txOut.updated(funding.fundingTxOutputIndex, TxOut(Satoshi(fundingSatoshis), fundingPubkeyScript))
           )
-
-          log.info(s"### PRE ### FINAL_FUNDING_TX=${finalFundingTx.bin.toHex}")
-
 
           // add our signature to the funding transaction
           wallet.signTransactionComplete(finalFundingTx).map(SignFundingTxResponse(_, funding.fundingTxOutputIndex, funding.fee)).pipeTo(self)
@@ -458,12 +452,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         fundingOutputIndex = fundingTxOutputIndex,
         signature = localSigOfRemoteTx
       )
-
-      log.info(s"LOCAL_COMMIT_INPUT=${localCommitTx.input}")
-      log.info(s"REMOTE_COMMIT_INPUT=${remoteCommitTx.input}")
-      log.info(s"LOCAL_COMMIT_TX=${localCommitTx.tx.bin.toHex}")
-      log.info(s"REMOTE_COMMIT_TX=${remoteCommitTx.tx.bin.toHex}")
-      log.info(s"LOCAL_SIG_OF_REMOTE=$localSigOfRemoteTx")
 
       val channelId = toLongId(fundingTx.hash, fundingTxOutputIndex)
       context.parent ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
