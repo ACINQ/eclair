@@ -50,6 +50,8 @@ case class Init(globalFeatures: ByteVector,
 case class Error(channelId: ByteVector32,
                  data: ByteVector) extends SetupMessage with HasChannelId {
   def toAscii: String = if (fr.acinq.eclair.isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
+
+  override def toString: String = toAscii
 }
 
 object Error {
