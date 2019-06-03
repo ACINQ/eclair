@@ -116,13 +116,22 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     assert(send1.paymentHash == ByteVector32.Zeroes)
     assert(send1.assistedRoutes == hints)
 
-    // with finalCltvExpiry and failures response
+    // with finalCltvExpiry
     eclair.send(recipientNodeId = nodeId, amountMsat = 123, paymentHash = ByteVector32.Zeroes, assistedRoutes = Seq.empty, minFinalCltvExpiry_opt = Some(96))
     val send2 = paymentInitiator.expectMsgType[SendPayment]
     assert(send2.targetNodeId == nodeId)
     assert(send2.amountMsat == 123)
     assert(send2.paymentHash == ByteVector32.Zeroes)
     assert(send2.finalCltvExpiry == 96)
+
+    // with custom route fees parameters
+    eclair.send(recipientNodeId = nodeId, amountMsat = 123, paymentHash = ByteVector32.Zeroes, assistedRoutes = Seq.empty, minFinalCltvExpiry_opt = None, feeThresholdSat_opt = Some(123), maxFeePct_opt = Some(4.20))
+    val send3 = paymentInitiator.expectMsgType[SendPayment]
+    assert(send3.targetNodeId == nodeId)
+    assert(send3.amountMsat == 123)
+    assert(send3.paymentHash == ByteVector32.Zeroes)
+    assert(send3.routeParams.get.maxFeeBaseMsat == 123 * 1000) // conversion sat -> msat
+    assert(send3.routeParams.get.maxFeePct == 4.20)
   }
 
   test("allupdates can filter by nodeId") { f =>
@@ -252,4 +261,6 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     assert(send.finalCltvExpiry == 123)
     assert(send.paymentHash == ByteVector32.One)
   }
+
+
 }
