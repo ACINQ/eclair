@@ -142,9 +142,8 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           }
       }
 
-    case forwardFulfill: ForwardFulfill =>
-      import forwardFulfill.{fulfill, htlc => add}
-      forwardFulfill.to match {
+    case ForwardFulfill(fulfill, to, add) =>
+      to match {
         case Local(id, None) =>
           val feesPaid = MilliSatoshi(0)
           context.system.eventStream.publish(PaymentSent(id, MilliSatoshi(add.amountMsat), feesPaid, add.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
@@ -160,9 +159,8 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), add.paymentHash, fromChannelId = originChannelId, toChannelId = fulfill.channelId))
       }
 
-    case forwardFail: ForwardFail =>
-      import forwardFail.{fail, htlc => add}
-      forwardFail.to match {
+    case ForwardFail(fail, to, add) =>
+      to match {
         case Local(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost
           // we publish the failure on the event stream and update the status in paymentDb
@@ -175,9 +173,8 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
       }
 
-    case forwardFailMalformed: ForwardFailMalformed =>
-      import forwardFailMalformed.{fail, htlc => add}
-      forwardFailMalformed.to match {
+    case ForwardFailMalformed(fail, to, add) =>
+      to match {
         case Local(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost
           // we publish the failure on the event stream and update the status in paymentDb
