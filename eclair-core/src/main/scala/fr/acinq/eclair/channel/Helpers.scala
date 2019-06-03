@@ -386,19 +386,19 @@ object Helpers {
       *
       * Note that we can't tell for mutual close before it is already final, because only one tx needs to be confirmed.
       *
-      * @param data channel state data
+      * @param closing channel state data
       * @return the channel closing type, if applicable
       */
-    def isClosingTypeAlreadyKnown(data: HasCommitments): Option[ClosingType] = data match {
-      case closing: DATA_CLOSING if closing.localCommitPublished.exists(lcp => lcp.irrevocablySpent.values.toSet.contains(lcp.commitTx.txid)) =>
+    def isClosingTypeAlreadyKnown(closing: DATA_CLOSING): Option[ClosingType] = closing match {
+      case _ if closing.localCommitPublished.exists(lcp => lcp.irrevocablySpent.values.toSet.contains(lcp.commitTx.txid)) =>
         Some(LocalClose)
-      case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
+      case _ if closing.remoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
         Some(CurrentRemoteClose)
-      case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
+      case _ if closing.nextRemoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
         Some(NextRemoteClose)
-      case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
+      case _ if closing.futureRemoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
         Some(RecoveryClose)
-      case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
+      case _ if closing.revokedCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
         Some(RevokedClose)
       case _ => None // we don't know yet what the closing type will be
     }
@@ -879,18 +879,6 @@ object Helpers {
           case _ => Set.empty
         }).toSet.flatten
       }
-
-    /**
-      * Tells if we were the origin of this outgoing htlc
-      *
-      * @param htlcId
-      * @param originChannels
-      * @return
-      */
-    def isSentByLocal(htlcId: Long, originChannels: Map[Long, Origin]) = originChannels.get(htlcId) match {
-      case Some(Local(_, _)) => true
-      case _ => false
-    }
 
     /**
       * As soon as a local or remote commitment reaches min_depth, we know which htlcs will be settled on-chain (whether
