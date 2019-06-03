@@ -127,14 +127,19 @@ class Setup(datadir: File,
         case _ => ???
       }
 
-      defaultFeerates = FeeratesPerKB(
-        block_1 = config.getLong("default-feerates.delay-blocks.1"),
-        blocks_2 = config.getLong("default-feerates.delay-blocks.2"),
-        blocks_6 = config.getLong("default-feerates.delay-blocks.6"),
-        blocks_12 = config.getLong("default-feerates.delay-blocks.12"),
-        blocks_36 = config.getLong("default-feerates.delay-blocks.36"),
-        blocks_72 = config.getLong("default-feerates.delay-blocks.72")
-      )
+      defaultFeerates = {
+        val confDefaultFeerates = FeeratesPerKB(
+          block_1 = config.getLong("default-feerates.delay-blocks.1"),
+          blocks_2 = config.getLong("default-feerates.delay-blocks.2"),
+          blocks_6 = config.getLong("default-feerates.delay-blocks.6"),
+          blocks_12 = config.getLong("default-feerates.delay-blocks.12"),
+          blocks_36 = config.getLong("default-feerates.delay-blocks.36"),
+          blocks_72 = config.getLong("default-feerates.delay-blocks.72")
+        )
+        Globals.feeratesPerKB.set(confDefaultFeerates)
+        Globals.feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
+        confDefaultFeerates
+      }
       minFeeratePerByte = config.getLong("min-feerate")
       smoothFeerateWindow = config.getInt("smooth-feerate-window")
       feeProvider = (nodeParams.chainHash, bitcoin) match {
