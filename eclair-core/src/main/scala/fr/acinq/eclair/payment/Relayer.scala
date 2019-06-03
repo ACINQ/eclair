@@ -300,7 +300,7 @@ object Relayer {
         // we then filter out channels that we have already tried
         val candidateChannels = allChannels -- alreadyTried
         // and we filter keep the ones that are compatible with this payment (mainly fees, expiry delta)
-        val l1 =candidateChannels
+        candidateChannels
           .map { shortChannelId =>
             val channelInfo_opt = channelUpdates.get(shortChannelId)
             val channelUpdate_opt = channelInfo_opt.map(_.channelUpdate)
@@ -308,12 +308,10 @@ object Relayer {
             log.debug(s"candidate channel for htlc #${add.id} paymentHash=${add.paymentHash}: shortChannelId={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo_opt.map(_.availableBalanceMsat).getOrElse(""), channelUpdate_opt.getOrElse(""), relayResult)
             (shortChannelId, channelInfo_opt, relayResult)
           }
-
-          val l2 = l1.collect { case (shortChannelId, Some(channelInfo), Right(_)) => (shortChannelId, channelInfo.availableBalanceMsat) }
+          .collect { case (shortChannelId, Some(channelInfo), Right(_)) => (shortChannelId, channelInfo.availableBalanceMsat) }
           .filter(_._2 > relayPayload.payload.amtToForward) // we only keep channels that have enough balance to handle this payment
           .toList // needed for ordering
-
-          l2.sortBy(_._2) // we want to use the channel with the lowest available balance that can process the payment
+          .sortBy(_._2) // we want to use the channel with the lowest available balance that can process the payment
           .headOption match {
           case Some((preferredShortChannelId, availableBalanceMsat)) if preferredShortChannelId != requestedShortChannelId =>
             log.info("replacing requestedShortChannelId={} by preferredShortChannelId={} with availableBalanceMsat={}", requestedShortChannelId, preferredShortChannelId, availableBalanceMsat)
