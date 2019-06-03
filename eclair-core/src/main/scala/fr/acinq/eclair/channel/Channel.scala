@@ -138,6 +138,13 @@ object Channel {
     ))
   }
 
+  def stripSignaturesFromTx(funding: MakeFundingTxResponse) = funding.copy(fundingTx = funding.fundingTx.copy(
+    txIn = funding.fundingTx.txIn.map(_.copy(
+      signatureScript = ByteVector.empty,
+      witness = ScriptWitness.empty
+    ))
+  ))
+
 }
 
 class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
@@ -193,49 +200,18 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
-    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, remote, _, channelFlags), Nothing) =>
+    case Event(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, remote, remoteInit, channelFlags), Nothing) =>
       context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, true, temporaryChannelId))
       forwarder ! remote
 
-      // this LOCKS the outpoints that we'll use in the funding transaction, the resulting TX is NOT signed
-      // later in the process we change the output scriptPubkey and ask the wallet to sign
-      val funding = createFundingWithNoSignatures(wallet, keyManager, Satoshi(fundingSatoshis), fundingTxFeeratePerKw)  // FIXME blocking call!
-      val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
-      val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder = true, fundingSatoshis, funding.fundingTx.txIn.head)
-      log.info(s"using localParams=$localParams")
+      // this LOCKS the outpoints that we'll use in the funding transaction, the resulting TX is NOT signed, later in the process we update the output scriptPubkey and ask the wallet to sign
+      val tempKeyPath = KeyPath(Seq(1, 2, 3, 4L))
+      val scriptPubKey = Script.write(Script.pay2wsh(Scripts.multiSig2of2(keyManager.fundingPublicKey(tempKeyPath).publicKey, keyManager.fundingPublicKey(tempKeyPath).publicKey)))
 
-      val open = OpenChannel(nodeParams.chainHash,
-        temporaryChannelId = temporaryChannelId,
-        fundingSatoshis = fundingSatoshis,
-        pushMsat = pushMsat,
-        dustLimitSatoshis = localParams.dustLimitSatoshis,
-        maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
-        channelReserveSatoshis = localParams.channelReserveSatoshis,
-        htlcMinimumMsat = localParams.htlcMinimumMsat,
-        feeratePerKw = initialFeeratePerKw,
-        toSelfDelay = localParams.toSelfDelay,
-        maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-        fundingPubkey = keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey,
-        revocationBasepoint = keyManager.revocationPoint(localParams.channelKeyPath).publicKey,
-        paymentBasepoint = keyManager.paymentPoint(localParams.channelKeyPath).publicKey,
-        delayedPaymentBasepoint = keyManager.delayedPaymentPoint(localParams.channelKeyPath).publicKey,
-        htlcBasepoint = keyManager.htlcPoint(localParams.channelKeyPath).publicKey,
-        firstPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, 0),
-        channelFlags = channelFlags)
+      // the resulting funding tx response will NOT have input script signature
+      wallet.makeFundingTx(pubkeyScript = scriptPubKey, Satoshi(fundingSatoshis), fundingTxFeeratePerKw).map(stripSignaturesFromTx).pipeTo(self)
 
-      val nextStateData = INPUT_INIT_FUNDER_WITH_PARAMS(
-        initFunder.temporaryChannelId,
-        initFunder.fundingSatoshis,
-        initFunder.pushMsat,
-        initFunder.initialFeeratePerKw,
-        initFunder.fundingTxFeeratePerKw,
-        localParams,
-        initFunder.remote,
-        initFunder.remoteInit,
-        initFunder.channelFlags
-      )
-
-      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(nextStateData, open, funding) sending open
+      goto(WAIT_FOR_FUNDING_INTERNAL_CREATED) using DATA_WAIT_FOR_FUNDING_INTERNAL_CREATED(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, remote, remoteInit, channelFlags)
 
     case Event(inputFundee@INPUT_INIT_FUNDEE(_, localParams, remote, _), Nothing) if !localParams.isFunder =>
       forwarder ! remote
@@ -384,6 +360,61 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
   })
 
+  when(WAIT_FOR_FUNDING_INTERNAL_CREATED)(handleExceptions{
+    case Event(funding:MakeFundingTxResponse, DATA_WAIT_FOR_FUNDING_INTERNAL_CREATED(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, remote, remoteInit, channelFlags)) =>
+
+      val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
+      val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder = true, fundingSatoshis, funding.fundingTx.txIn.head)
+      log.info(s"using localParams=$localParams")
+
+      val open = OpenChannel(nodeParams.chainHash,
+        temporaryChannelId = temporaryChannelId,
+        fundingSatoshis = fundingSatoshis,
+        pushMsat = pushMsat,
+        dustLimitSatoshis = localParams.dustLimitSatoshis,
+        maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
+        channelReserveSatoshis = localParams.channelReserveSatoshis,
+        htlcMinimumMsat = localParams.htlcMinimumMsat,
+        feeratePerKw = initialFeeratePerKw,
+        toSelfDelay = localParams.toSelfDelay,
+        maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
+        fundingPubkey = keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey,
+        revocationBasepoint = keyManager.revocationPoint(localParams.channelKeyPath).publicKey,
+        paymentBasepoint = keyManager.paymentPoint(localParams.channelKeyPath).publicKey,
+        delayedPaymentBasepoint = keyManager.delayedPaymentPoint(localParams.channelKeyPath).publicKey,
+        htlcBasepoint = keyManager.htlcPoint(localParams.channelKeyPath).publicKey,
+        firstPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, 0),
+        channelFlags = channelFlags)
+
+      val nextStateData = INPUT_INIT_FUNDER_WITH_PARAMS(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, localParams, remote, remoteInit, channelFlags)
+
+      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(nextStateData, open, funding) sending open
+
+    // TODO release outputs that were locked in the funding
+    case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_INTERNAL_CREATED) =>
+      log.error(t, s"wallet returned error: ")
+      replyToUser(Left(LocalError(t)))
+      handleLocalError(ChannelFundingError(d.temporaryChannelId), d, None) // we use a generic exception and don't send the internal error to the peer
+
+    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL_CREATED) =>
+      replyToUser(Left(RemoteError(e)))
+      handleRemoteError(e, d)
+
+    case Event(CMD_CLOSE(_), _) =>
+      replyToUser(Right("closed"))
+      goto(CLOSED) replying "ok"
+
+    case Event(INPUT_DISCONNECTED, _) =>
+      replyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      goto(CLOSED)
+
+    case Event(TickChannelOpenTimeout, _) =>
+      replyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+      goto(CLOSED)
+
+
+  })
+
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
     case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER_WITH_PARAMS(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, _, localParams, _, remoteInit, _), open, funding)) =>
       log.info(s"received AcceptChannel=$accept")
@@ -419,7 +450,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // add our signature to the funding transaction
           wallet.signTransactionComplete(finalFundingTx).map(SignFundingTxResponse(_, funding.fundingTxOutputIndex, funding.fee)).pipeTo(self)
 
-          goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open)
+          goto(WAIT_FOR_FUNDING_INTERNAL_SIGNED) using DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open)
       }
 
     case Event(CMD_CLOSE(_), _) =>
@@ -439,8 +470,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       goto(CLOSED)
   })
 
-  when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
-    case Event(SignFundingTxResponse(fundingTx, fundingTxOutputIndex, fundingTxFee), DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, open)) =>
+  when(WAIT_FOR_FUNDING_INTERNAL_SIGNED)(handleExceptions {
+    case Event(SignFundingTxResponse(fundingTx, fundingTxOutputIndex, fundingTxFee), DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, open)) =>
       // let's create the first commitment tx that spends the yet uncommitted funding tx
       val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(keyManager, temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint, nodeParams.maxFeerateMismatch)
       require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
@@ -459,7 +490,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // NB: we don't send a ChannelSignatureSent for the first commit
       goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(channelId, localParams, remoteParams, fundingTx, fundingTxFee, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint), open.channelFlags, fundingCreated) sending fundingCreated
 
-    case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+    case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED) =>
       log.error(t, s"wallet returned error: ")
       replyToUser(Left(LocalError(t)))
       handleLocalError(ChannelFundingError(d.temporaryChannelId), d, None) // we use a generic exception and don't send the internal error to the peer
@@ -468,7 +499,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       replyToUser(Right("closed"))
       goto(CLOSED) replying "ok"
 
-    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED) =>
       replyToUser(Left(RemoteError(e)))
       handleRemoteError(e, d)
 

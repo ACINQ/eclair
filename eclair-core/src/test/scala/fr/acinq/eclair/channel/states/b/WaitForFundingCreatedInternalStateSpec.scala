@@ -53,7 +53,7 @@ class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with State
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL_SIGNED)
       withFixture(test.toNoArgTest(FixtureParam(alice, alice2bob, bob2alice, alice2blockchain)))
     }
   }

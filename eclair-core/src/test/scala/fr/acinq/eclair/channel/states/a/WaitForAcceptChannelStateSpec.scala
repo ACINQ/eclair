@@ -22,7 +22,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL, _}
+import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL_SIGNED, _}
 import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.scalatest.{Outcome, Tag}
@@ -65,7 +65,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     import f._
     bob2alice.expectMsgType[AcceptChannel]
     bob2alice.forward(alice)
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL_SIGNED)
   }
 
   test("recv AcceptChannel (invalid max accepted htlcs)") { f =>
