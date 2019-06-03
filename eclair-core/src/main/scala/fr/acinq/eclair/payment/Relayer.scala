@@ -327,6 +327,11 @@ object Relayer {
     }
   }
 
+  /**
+    * This helper method will tell us if it is not even worth attempting to relay the payment to our local outgoing
+    * channel, because some parameters don't match with our settings for that channel. In that case we directly fail the
+    * htlc.
+    */
   def relayOrFail(relayPayload: RelayPayload, channelUpdate_opt: Option[ChannelUpdate], previousFailures: Seq[AddHtlcFailed] = Seq.empty)(implicit log: LoggingAdapter): Either[CMD_FAIL_HTLC, (ShortChannelId, CMD_ADD_HTLC)] = {
     import relayPayload._
     channelUpdate_opt match {
@@ -345,7 +350,11 @@ object Relayer {
     }
   }
 
-  def translateError(failure: AddHtlcFailed): FailureMessage = {
+  /**
+    * This helper method translates relaying errors (returned by the downstream outgoing channel) to BOLT 4 standard
+    * errors that we should return upstream.
+    */
+  private def translateError(failure: AddHtlcFailed): FailureMessage = {
     val error = failure.t
     val channelUpdate_opt = failure.channelUpdate
     (error, channelUpdate_opt) match {
