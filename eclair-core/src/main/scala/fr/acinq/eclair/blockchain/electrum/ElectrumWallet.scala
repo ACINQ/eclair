@@ -167,7 +167,6 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
         data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         advertiseTransactions(data)
-        // tell everyone we're ready
         goto(RUNNING) using persistAndNotify(data)
       } else {
         client ! ElectrumClient.GetHeaders(data.blockchain.tip.height + 1, RETARGETING_PERIOD)
@@ -237,7 +236,9 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
       }
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash) == Some(status) =>
-      stay using persistAndNotify(data) // we already have it
+      val missing = data.missingTransactions(scriptHash)
+      missing.foreach(txid => client ! GetTransaction(txid))
+      stay using persistAndNotify(data.copy(pendingHistoryRequests = data.pendingTransactionRequests ++ missing))
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if !data.accountKeyMap.contains(scriptHash) && !data.changeKeyMap.contains(scriptHash) =>
       log.warning(s"received status=$status for scriptHash=$scriptHash which does not match any of our keys")
@@ -379,9 +380,16 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
         case None =>
           // missing parents
           log.info(s"couldn't connect txid=${tx.txid}")
-          val data1 = data.copy(pendingTransactions = data.pendingTransactions :+ tx)
+          val data1 = data.copy(pendingTransactionRequests = data.pendingTransactionRequests - tx.txid, pendingTransactions = data.pendingTransactions :+ tx)
           stay using persistAndNotify(data1)
       }
+
+    case Event(ServerError(GetTransaction(txid), error), data) if data.pendingTransactionRequests.contains(txid) =>
+      // server tells us that txid belongs to our wallet history, but cannot provide tx ?
+      log.error(s"server cannot find history tx $txid: $error")
+      sender ! PoisonPill
+      goto(DISCONNECTED) using data
+
 
     case Event(response@GetMerkleResponse(txid, _, height, _), data) =>
       data.blockchain.getHeader(height).orElse(params.walletDb.getHeader(height)) match {
@@ -728,6 +736,16 @@ object ElectrumWallet {
     def readyMessage: WalletReady = {
       val (confirmed, unconfirmed) = balance
       WalletReady(confirmed, unconfirmed, blockchain.tip.height, blockchain.tip.header.time)
+    }
+
+    /**
+      * @scriptHash script hash
+      * @return the ids of transactions that belong to our wallet history for this script hash but that we don't have
+      *         and have no pending requests for.
+      */
+    def missingTransactions(scriptHash: ByteVector32): Set[ByteVector32] = {
+      val txids = history.getOrElse(scriptHash, List()).map(_.tx_hash).filterNot(txhash => transactions.contains(txhash)).toSet
+      txids -- pendingTransactionRequests
     }
 
     /**
