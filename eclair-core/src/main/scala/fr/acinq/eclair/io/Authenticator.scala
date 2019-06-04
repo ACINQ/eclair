@@ -20,7 +20,7 @@ import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
@@ -34,7 +34,7 @@ import fr.acinq.eclair.{Logs, NodeParams}
   *
   * All incoming/outgoing connections are processed here, before being sent to the switchboard
   */
-class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLogging {
+class Authenticator(nodeId: PublicKey, privateKey: PrivateKey) extends Actor with DiagnosticActorLogging {
 
   override def receive: Receive = {
     case switchboard: ActorRef => context become ready(switchboard, Map.empty)
@@ -44,7 +44,7 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
     case pending@PendingAuth(connection, remoteNodeId_opt, address, _) =>
       log.debug(s"authenticating connection to ${address.getHostString}:${address.getPort} (pending=${authenticating.size} handlers=${context.children.size})")
       val transport = context.actorOf(TransportHandler.props(
-        KeyPair(nodeParams.nodeId.toBin, nodeParams.privateKey.toBin),
+        KeyPair(nodeId.toBin, privateKey.toBin),
         remoteNodeId_opt.map(_.toBin),
         connection = connection,
         codec = LightningMessageCodecs.cachedLightningMessageCodec))
@@ -85,7 +85,10 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
 
 object Authenticator {
 
-  def props(nodeParams: NodeParams): Props = Props(new Authenticator(nodeParams))
+  // @formatter:off
+  def props(nodeId: PublicKey, privateKey: PrivateKey) = Props(new Authenticator(nodeId, privateKey))
+  def props(nodeParams: NodeParams): Props = Props(new Authenticator(nodeParams.nodeId, nodeParams.privateKey))
+  // @formatter:on
 
   // @formatter:off
   case class OutgoingConnection(remoteNodeId: PublicKey, address: InetSocketAddress)
