@@ -86,7 +86,7 @@ class Authenticator(nodeId: PublicKey, privateKey: PrivateKey) extends Actor wit
 object Authenticator {
 
   // @formatter:off
-  def props(nodeId: PublicKey, privateKey: PrivateKey) = Props(new Authenticator(nodeId, privateKey))
+  def props(nodeId: PublicKey, privateKey: PrivateKey): Props = Props(new Authenticator(nodeId, privateKey))
   def props(nodeParams: NodeParams): Props = Props(new Authenticator(nodeParams.nodeId, nodeParams.privateKey))
   // @formatter:on
 
