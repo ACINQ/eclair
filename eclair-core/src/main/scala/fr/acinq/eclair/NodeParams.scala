@@ -19,7 +19,6 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Files
-import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
 import com.typesafe.config.{Config, ConfigFactory}
@@ -29,7 +28,6 @@ import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, NodeAddress}
