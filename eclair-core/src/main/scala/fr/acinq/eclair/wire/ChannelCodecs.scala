@@ -319,9 +319,10 @@ object ChannelCodecs extends Logging {
   val COMMITMENTv0_VERSION_BYTE = 0x00.toByte
   val COMMITMENTv1_VERSION_BYTE = 0x01.toByte
 
+  // Order matters!
   val stateDataCodec = discriminated[HasCommitments].by(uint8)
-    .\(COMMITMENTv0_VERSION_BYTE) { case c => c }(stateDataCodecVersioned(CommitmentV0))
     .\(COMMITMENTv1_VERSION_BYTE) { case c => c }(stateDataCodecVersioned(CommitmentV1))
+    .\(COMMITMENTv0_VERSION_BYTE) { case c => c }(stateDataCodecVersioned(CommitmentV0))
 
   private def stateDataCodecVersioned(commitmentVersion: CommitmentVersion): Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
     .typecase(0x08, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitmentVersion))
@@ -335,9 +336,7 @@ object ChannelCodecs extends Logging {
 
 
   sealed trait CommitmentVersion
-
   case object CommitmentV0 extends CommitmentVersion
-
   case object CommitmentV1 extends CommitmentVersion
 
 }

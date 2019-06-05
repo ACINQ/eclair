@@ -203,8 +203,8 @@ class ChannelCodecsSpec extends FunSuite {
     assert(Platform.currentTime.milliseconds.toSeconds - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince < 3600) // we just set this timestamp to current time
     // and re-encode it with the new codec
     val bin_new = ByteVector(stateDataCodec.encode(data_new).require.toByteVector.toArray)
-    // data should now be encoded under the new format, with version=0 and type=8
-    assert(bin_new.startsWith(hex"000008"))
+    // data should now be encoded under the new format, with version=1 and type=8
+    assert(bin_new.startsWith(hex"010008"))
     // now let's decode it again
     val data_new2 = stateDataCodec.decode(bin_new.toBitVector).require.value
     // data should match perfectly
