@@ -20,6 +20,7 @@ import java.util.UUID
 
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey}
+import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.MakeFundingTxResponse
 import fr.acinq.eclair.crypto.Sphinx
@@ -194,7 +195,7 @@ final case class DATA_CLOSING(commitments: Commitments,
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
 final case class LocalParams(nodeId: PublicKey,
-                             channelKeyPath: DeterministicWallet.KeyPath,
+                             channelKeyPath: Either[DeterministicWallet.KeyPath, KeyPathFundee],
                              dustLimitSatoshis: Long,
                              maxHtlcValueInFlightMsat: UInt64,
                              channelReserveSatoshis: Long,
@@ -204,7 +205,12 @@ final case class LocalParams(nodeId: PublicKey,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
                              globalFeatures: ByteVector,
-                             localFeatures: ByteVector)
+                             localFeatures: ByteVector) {
+
+  require(isFunder && channelKeyPath.isLeft || !isFunder && channelKeyPath.isRight, s"Wrong keyPath derivation for isFunder=$isFunder")
+}
+
+case class KeyPathFundee(publicKeyPath: KeyPath, pointsKeyPath: KeyPath)
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimitSatoshis: Long,

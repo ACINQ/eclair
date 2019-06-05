@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
-import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.channel.{Channel, KeyPathFundee}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
@@ -107,7 +107,7 @@ object TestConstants {
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32, compressed = true).publicKey)),
       isFunder = true,
       fundingSatoshis,
-      KeyPath(Seq(1, 2, 3, 4L))
+      Left(KeyPath(Seq(1, 2, 3, 4L)))
     ).copy(
       channelReserveSatoshis = 10000 // Bob will need to keep that much satoshis as direct payment
     )
@@ -173,7 +173,7 @@ object TestConstants {
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32, compressed = true).publicKey)),
       isFunder = false,
       fundingSatoshis,
-      KeyPath(Seq(1, 2, 3, 4L))
+      Right(KeyPathFundee(KeyPath(Seq(1, 2, 3, 4L)), KeyPath(Seq(1, 2, 3, 4L))))
     ).copy(
       channelReserveSatoshis = 20000 // Alice will need to keep that much satoshis as direct payment
     )

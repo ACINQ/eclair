@@ -20,7 +20,7 @@ import java.util.UUID
 
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{DeterministicWallet, OutPoint}
+import fr.acinq.bitcoin.{Crypto, DeterministicWallet, OutPoint}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.{Local, Relayed}
@@ -58,7 +58,7 @@ class ChannelCodecsSpec extends FunSuite {
   test("encode/decode localparams") {
     val o = LocalParams(
       nodeId = randomKey.publicKey,
-      channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
+      channelKeyPath = Left(DeterministicWallet.KeyPath(Seq(42L))),
       dustLimitSatoshis = Random.nextInt(Int.MaxValue),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserveSatoshis = Random.nextInt(Int.MaxValue),
@@ -66,7 +66,7 @@ class ChannelCodecsSpec extends FunSuite {
       toSelfDelay = Random.nextInt(Short.MaxValue),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
-      isFunder = Random.nextBoolean(),
+      isFunder = true,
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))
     val encoded = localParamsCodec.encode(o).require

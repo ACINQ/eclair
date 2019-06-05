@@ -93,16 +93,19 @@ object Channel {
   // @formatter:on
 
   def makeChannelKeyPathFromInput(fundingInput: TxIn): KeyPath = {
-    val inputEntropy = Crypto.sha256(fundingInput.outPoint.hash).take(4).toLong(signed = false)
-    KeyPath(Seq(47, 2, inputEntropy, 0))
+    // split the SHA into 8 groups of 4 bytes and convert to uint32
+    val List(h0, h1, h2, h3, h4, h5, h6, h7) = Crypto.sha256(fundingInput.outPoint.hash).toArray.grouped(4).map(ByteVector(_).toLong(signed = false)).toList
+    KeyPath(Seq(47, 2, h0, h1, h2, h3, h4, h5, h6, h7, 0))
   }
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, fundingInput: TxIn): LocalParams = {
+  def makeFunderChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, fundingInput: TxIn): LocalParams = {
+    require(isFunder, s"Wrong params for isFunder=$isFunder")
+
     val channelKeyPath = makeChannelKeyPathFromInput(fundingInput)
-    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelKeyPath)
+    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, Left(channelKeyPath))
   }
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: DeterministicWallet.KeyPath): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: Either[DeterministicWallet.KeyPath, KeyPathFundee]): LocalParams = {
     LocalParams(
       nodeParams.nodeId,
       channelKeyPath,
@@ -116,26 +119,6 @@ object Channel {
       isFunder = isFunder,
       globalFeatures = nodeParams.globalFeatures,
       localFeatures = nodeParams.localFeatures)
-  }
-
-  // creates a funding transaction without signatures, this is used to lock an output and derive the channel keypath.
-  def createFundingWithNoSignatures(wallet: EclairWallet, keyManager: KeyManager, fundingSatoshis: Satoshi, fundingTxFeeratePerKw: Long): MakeFundingTxResponse = {
-    // this LOCKS the outpoints that we'll use in the funding transaction, the resulting TX is NOT signed
-    // later in the process we change the output scriptPubkey and ask the wallet to sign
-    val tempKeyPath = KeyPath(Seq(1, 2, 3, 4L))
-    val scriptPubKey = Script.write(Script.pay2wsh(Scripts.multiSig2of2(keyManager.fundingPublicKey(tempKeyPath).publicKey, keyManager.fundingPublicKey(tempKeyPath).publicKey)))
-    val funding = Await.result(
-      wallet.makeFundingTx(pubkeyScript = scriptPubKey, fundingSatoshis, fundingTxFeeratePerKw),
-      10 seconds // TODO change?
-    )
-
-    // remove our invalid sig
-    funding.copy(fundingTx = funding.fundingTx.copy(
-      txIn = funding.fundingTx.txIn.map(_.copy(
-        signatureScript = ByteVector.empty,
-        witness = ScriptWitness.empty
-      ))
-    ))
   }
 
   def stripSignaturesFromTx(funding: MakeFundingTxResponse) = funding.copy(fundingTx = funding.fundingTx.copy(
@@ -318,6 +301,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Failure(t) => handleLocalError(t, d, Some(open))
         case Success(_) =>
           context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, false, open.temporaryChannelId))
+
+
+
+
+
           // TODO: maybe also check uniqueness of temporary channel id
           val minimumDepth = nodeParams.minDepthBlocks
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
@@ -328,12 +316,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             htlcMinimumMsat = localParams.htlcMinimumMsat,
             toSelfDelay = localParams.toSelfDelay,
             maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-            fundingPubkey = keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey,
-            revocationBasepoint = keyManager.revocationPoint(localParams.channelKeyPath).publicKey,
-            paymentBasepoint = keyManager.paymentPoint(localParams.channelKeyPath).publicKey,
-            delayedPaymentBasepoint = keyManager.delayedPaymentPoint(localParams.channelKeyPath).publicKey,
-            htlcBasepoint = keyManager.htlcPoint(localParams.channelKeyPath).publicKey,
-            firstPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, 0))
+            fundingPubkey = keyManager.deterministicFundingPublicKey(localParams).publicKey,
+            revocationBasepoint = keyManager.deterministicRevocationPoint(localParams).publicKey,
+            paymentBasepoint = keyManager.deterministicPaymentPoint(localParams).publicKey,
+            delayedPaymentBasepoint = keyManager.deterministicDelayedPaymentPoint(localParams).publicKey,
+            htlcBasepoint = keyManager.deterministicHtlcPoint(localParams).publicKey,
+            firstPerCommitmentPoint = keyManager.deterministicCommitmentPoint(localParams, 0))
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
             dustLimitSatoshis = open.dustLimitSatoshis,
@@ -364,7 +352,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(funding:MakeFundingTxResponse, DATA_WAIT_FOR_FUNDING_INTERNAL_CREATED(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, remote, remoteInit, channelFlags)) =>
 
       val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
-      val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder = true, fundingSatoshis, funding.fundingTx.txIn.head)
+      val localParams = makeFunderChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder = true, fundingSatoshis, funding.fundingTx.txIn.head)
       log.info(s"using localParams=$localParams")
 
       val open = OpenChannel(nodeParams.chainHash,
@@ -378,12 +366,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         feeratePerKw = initialFeeratePerKw,
         toSelfDelay = localParams.toSelfDelay,
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-        fundingPubkey = keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey,
-        revocationBasepoint = keyManager.revocationPoint(localParams.channelKeyPath).publicKey,
-        paymentBasepoint = keyManager.paymentPoint(localParams.channelKeyPath).publicKey,
-        delayedPaymentBasepoint = keyManager.delayedPaymentPoint(localParams.channelKeyPath).publicKey,
-        htlcBasepoint = keyManager.htlcPoint(localParams.channelKeyPath).publicKey,
-        firstPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, 0),
+        fundingPubkey = keyManager.deterministicFundingPublicKey(localParams).publicKey,
+        revocationBasepoint = keyManager.deterministicRevocationPoint(localParams).publicKey,
+        paymentBasepoint = keyManager.deterministicPaymentPoint(localParams).publicKey,
+        delayedPaymentBasepoint = keyManager.deterministicDelayedPaymentPoint(localParams).publicKey,
+        htlcBasepoint = keyManager.deterministicHtlcPoint(localParams).publicKey,
+        firstPerCommitmentPoint = keyManager.deterministicCommitmentPoint(localParams, 0),
         channelFlags = channelFlags)
 
       val nextStateData = INPUT_INIT_FUNDER_WITH_PARAMS(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, localParams, remote, remoteInit, channelFlags)
@@ -439,7 +427,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             localFeatures = remoteInit.localFeatures)
           log.debug(s"remote params: $remoteParams")
 
-          val localFundingPubkey = keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey
+          val localFundingPubkey = keyManager.deterministicFundingPublicKey(localParams).publicKey
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey)))
 
           // update the funding TX with the new scriptPubkey
@@ -475,7 +463,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // let's create the first commitment tx that spends the yet uncommitted funding tx
       val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(keyManager, temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint, nodeParams.maxFeerateMismatch)
       require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
-      val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath))
+      val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, keyManager.deterministicFundingPublicKey(localParams))
       // signature of their initial commitment tx that pays remote pushMsat
       val fundingCreated = FundingCreated(
         temporaryChannelId = temporaryChannelId,
@@ -518,12 +506,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(keyManager, temporaryChannelId, localParams, remoteParams, fundingSatoshis: Long, pushMsat, initialFeeratePerKw, fundingTxHash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint, nodeParams.maxFeerateMismatch)
 
       // check remote signature validity
-      val localSigOfLocalTx = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath))
-      val signedLocalCommitTx = Transactions.addSigs(localCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
+      val localSigOfLocalTx = keyManager.sign(localCommitTx, keyManager.deterministicFundingPublicKey(localParams))
+      val signedLocalCommitTx = Transactions.addSigs(localCommitTx, keyManager.deterministicFundingPublicKey(localParams).publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, signedLocalCommitTx.tx), d, None)
         case Success(_) =>
-          val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath))
+          val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, keyManager.deterministicFundingPublicKey(localParams))
           val channelId = toLongId(fundingTxHash, fundingTxOutputIndex)
           // watch the funding tx transaction
           val commitInput = localCommitTx.input
@@ -560,8 +548,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   when(WAIT_FOR_FUNDING_SIGNED)(handleExceptions {
     case Event(msg@FundingSigned(_, remoteSig), d@DATA_WAIT_FOR_FUNDING_SIGNED(channelId, localParams, remoteParams, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, channelFlags, fundingCreated)) =>
       // we make sure that their sig checks out and that our first commit tx is spendable
-      val localSigOfLocalTx = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath))
-      val signedLocalCommitTx = Transactions.addSigs(localCommitTx, keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
+      val localSigOfLocalTx = keyManager.sign(localCommitTx, keyManager.deterministicFundingPublicKey(localParams))
+      val signedLocalCommitTx = Transactions.addSigs(localCommitTx, keyManager.deterministicFundingPublicKey(localParams).publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
           // we rollback the funding tx, it will never be published
@@ -633,7 +621,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, blockHeight, txIndex), DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, _, _, deferred, _)) =>
       log.info(s"channelId=${commitments.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
       blockchain ! WatchLost(self, commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
-      val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.localParams.channelKeyPath, 1)
+      val nextPerCommitmentPoint = keyManager.deterministicCommitmentPoint(commitments.localParams, 1)
       val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint)
       deferred.map(self ! _)
       // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
@@ -988,7 +976,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             require(d.shortChannelId == remoteAnnSigs.shortChannelId, s"shortChannelId mismatch: local=${d.shortChannelId} remote=${remoteAnnSigs.shortChannelId}")
             log.info(s"announcing channelId=${d.channelId} on the network with shortId=${d.shortChannelId}")
             import d.commitments.{localParams, remoteParams}
-            val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, nodeParams.nodeId, remoteParams.nodeId, keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
+            val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, nodeParams.nodeId, remoteParams.nodeId, keyManager.deterministicFundingPublicKey(localParams).publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
             // we use GOTO instead of stay because we want to fire transitions
             goto(NORMAL) using store(d.copy(channelAnnouncement = Some(channelAnn)))
           case Some(_) =>
@@ -1488,7 +1476,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       forwarder ! r
 
       val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).getOrElse(ByteVector32.Zeroes)
-      val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(d.commitments.localParams.channelKeyPath, d.commitments.localCommit.index)
+      val myCurrentPerCommitmentPoint = keyManager.deterministicCommitmentPoint(d.commitments.localParams, d.commitments.localCommit.index)
 
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
@@ -1544,7 +1532,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_LOCKED) =>
       log.debug(s"re-sending fundingLocked")
-      val nextPerCommitmentPoint = keyManager.commitmentPoint(d.commitments.localParams.channelKeyPath, 1)
+      val nextPerCommitmentPoint = keyManager.deterministicCommitmentPoint(d.commitments.localParams, 1)
       val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
       goto(WAIT_FOR_FUNDING_LOCKED) sending fundingLocked
 
@@ -1553,7 +1541,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case ChannelReestablish(_, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), _) if !Helpers.checkLocalCommit(d, nextRemoteRevocationNumber) =>
           // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
           // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
-          if (keyManager.commitmentSecret(d.commitments.localParams.channelKeyPath, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
+          if (keyManager.deterministicCommitmentSecret(d.commitments.localParams, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
             log.warning(s"counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${d.commitments.localCommit.index} theirCommitmentNumber=${nextRemoteRevocationNumber}")
             // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
             // would punish us by taking all the funds in the channel
@@ -1578,7 +1566,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
             // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
             log.debug(s"re-sending fundingLocked")
-            val nextPerCommitmentPoint = keyManager.commitmentPoint(d.commitments.localParams.channelKeyPath, 1)
+            val nextPerCommitmentPoint = keyManager.deterministicCommitmentPoint(d.commitments.localParams, 1)
             val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
             forwarder ! fundingLocked
           }
@@ -2143,8 +2131,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       } else if (commitments1.localCommit.index == channelReestablish.nextRemoteRevocationNumber + 1) {
         // our last revocation got lost, let's resend it
         log.debug(s"re-sending last revocation")
-        val localPerCommitmentSecret = keyManager.commitmentSecret(commitments1.localParams.channelKeyPath, d.commitments.localCommit.index - 1)
-        val localNextPerCommitmentPoint = keyManager.commitmentPoint(commitments1.localParams.channelKeyPath, d.commitments.localCommit.index + 1)
+        val localPerCommitmentSecret = keyManager.deterministicCommitmentSecret(commitments1.localParams, d.commitments.localCommit.index - 1)
+        val localNextPerCommitmentPoint = keyManager.deterministicCommitmentPoint(commitments1.localParams, d.commitments.localCommit.index + 1)
         val revocation = RevokeAndAck(
           channelId = commitments1.channelId,
           perCommitmentSecret = localPerCommitmentSecret,

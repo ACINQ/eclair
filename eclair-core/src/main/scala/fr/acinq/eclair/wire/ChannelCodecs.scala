@@ -43,6 +43,12 @@ import scala.concurrent.duration._
 object ChannelCodecs extends Logging {
 
   val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
+  val keyPathFundee: Codec[KeyPathFundee] = (
+    ("publicKeyPath" | keyPathCodec) ::
+    ("pointsKeyPath" | keyPathCodec)
+  ).as[KeyPathFundee]
+
+  val newKeyPathCodec = either(bool, keyPathCodec, keyPathFundee)
 
   val extendedPrivateKeyCodec: Codec[ExtendedPrivateKey] = (
     ("secretkeybytes" | bytes32) ::
@@ -53,7 +59,7 @@ object ChannelCodecs extends Logging {
 
   val localParamsCodec: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
-      ("channelPath" | keyPathCodec) ::
+      ("channelPath" | newKeyPathCodec) ::
       ("dustLimitSatoshis" | uint64) ::
       ("maxHtlcValueInFlightMsat" | uint64ex) ::
       ("channelReserveSatoshis" | uint64) ::
@@ -314,5 +320,27 @@ object ChannelCodecs extends Logging {
     .typecase(0x05, DATA_NEGOTIATING_Codec)
     .typecase(0x06, DATA_CLOSING_Codec)
     .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
+
+
+//  private def stateDataCodec(commitmentVersion: CommitmentVersion): Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
+//    .typecase(0x08, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitmentVersion))
+//    .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec(commitmentVersion))
+//    .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec(commitmentVersion))
+//    .typecase(0x03, DATA_NORMAL_Codec(commitmentVersion))
+//    .typecase(0x04, DATA_SHUTDOWN_Codec(commitmentVersion))
+//    .typecase(0x05, DATA_NEGOTIATING_Codec(commitmentVersion))
+//    .typecase(0x06, DATA_CLOSING_Codec(commitmentVersion))
+//    .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitmentVersion))
+//
+//  val COMMITMENTv0_VERSION_BYTE = 0x00.toByte
+//  val COMMITMENTv1_VERSION_BYTE = 0x01.toByte
+//
+//  val genericStateDataCodec = discriminated[HasCommitments].by(uint8)
+//    .\ (COMMITMENTv1_VERSION_BYTE) { case c if c.commitments.version == CommitmentV0 => c } (stateDataCodec(CommitmentV0))
+//    .\ (COMMITMENTv0_VERSION_BYTE) { case c if c.commitments.version == CommitmentV1 => c } (stateDataCodec(CommitmentV1))
+//
+//  sealed trait CommitmentVersion
+//  case object CommitmentV0 extends CommitmentVersion
+//  case object CommitmentV1 extends CommitmentVersion
 
 }

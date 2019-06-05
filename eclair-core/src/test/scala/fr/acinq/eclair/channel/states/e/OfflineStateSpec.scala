@@ -80,8 +80,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
 
-    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(bobCommitments.localParams.channelKeyPath, bobCommitments.localCommit.index)
-    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(aliceCommitments.localParams.channelKeyPath, aliceCommitments.localCommit.index)
+    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.deterministicCommitmentPoint(bobCommitments.localParams, bobCommitments.localCommit.index)
+    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.deterministicCommitmentPoint(aliceCommitments.localParams, aliceCommitments.localCommit.index)
 
 
     // a didn't receive any update or sig
@@ -164,8 +164,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
 
-    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(bobCommitments.localParams.channelKeyPath, bobCommitments.localCommit.index)
-    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(aliceCommitments.localParams.channelKeyPath, aliceCommitments.localCommit.index)
+    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.deterministicCommitmentPoint(bobCommitments.localParams, bobCommitments.localCommit.index)
+    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.deterministicCommitmentPoint(aliceCommitments.localParams, aliceCommitments.localCommit.index)
 
     // a didn't receive the sig
     val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(Scalar(ByteVector32.Zeroes)), Some(aliceCurrentPerCommitmentPoint)))

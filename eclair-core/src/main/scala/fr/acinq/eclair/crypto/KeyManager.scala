@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 import scodec.bits.ByteVector
 
@@ -41,6 +42,25 @@ trait KeyManager {
   def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.Scalar
 
   def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.Point
+
+  /**
+    * DETERMINISTIC
+    *
+    */
+
+  def deterministicFundingPublicKey(localParams: LocalParams): ExtendedPublicKey
+
+  def deterministicRevocationPoint(localParams: LocalParams): ExtendedPublicKey
+
+  def deterministicPaymentPoint(localParams: LocalParams): ExtendedPublicKey
+
+  def deterministicDelayedPaymentPoint(localParams: LocalParams): ExtendedPublicKey
+
+  def deterministicHtlcPoint(localParams: LocalParams): ExtendedPublicKey
+
+  def deterministicCommitmentSecret(localParams: LocalParams, index: Long): Crypto.Scalar
+
+  def deterministicCommitmentPoint(localParams: LocalParams, index: Long): Crypto.Point
 
   /**
     *
@@ -74,4 +94,7 @@ trait KeyManager {
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar): ByteVector
 
   def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector, ByteVector)
+
+  def deterministicSignChannelAnnouncement(localParams: LocalParams, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector, ByteVector)
+
 }
