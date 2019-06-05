@@ -116,6 +116,15 @@ class EclairImpl(appKit: Kit) extends Eclair {
     case Right(pubKey) => (appKit.switchboard ? Peer.Connect(pubKey, None)).mapTo[String]
   }
 
+  override def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[Unit] = {
+    (appKit.switchboard ? 'peers).mapTo[Iterable[ActorRef]].map { peers =>
+      peers.find(_.path.name == Switchboard.peerActorName(nodeId)) match {
+        case Some(peer) => peer ! Peer.Disconnect
+        case None => throw new IllegalArgumentException(s"Peer $nodeId not found")
+      }
+    }
+  }
+
   override def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[String] = {
     // we want the open timeout to expire *before* the default ask timeout, otherwise user won't get a generic response
     val openTimeout = openTimeout_opt.getOrElse(Timeout(10 seconds))
@@ -236,15 +245,6 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[PaymentRequest]] = Future {
     appKit.nodeParams.db.payments.getPaymentRequest(paymentHash)
-  }
-
-  override def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[Unit] = {
-    (appKit.switchboard ? 'peers).mapTo[Iterable[ActorRef]].map { peers =>
-      peers.find(_.path.name == Switchboard.peerActorName(nodeId)) match {
-        case Some(peer) => peer ! Peer.Disconnect
-        case None => throw new IllegalArgumentException(s"Peer $nodeId not found")
-      }
-    }
   }
 
   /**
