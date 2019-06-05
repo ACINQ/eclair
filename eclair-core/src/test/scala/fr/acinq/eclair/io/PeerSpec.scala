@@ -38,7 +38,7 @@ import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 import scala.concurrent.duration._
 
-class PeerSpec extends TestkitBaseClass {
+class PeerSpec extends LoggingTestkitBaseClass {
 
   def ipv4FromInet4(address: InetSocketAddress) = IPv4.apply(address.getAddress.asInstanceOf[Inet4Address], address.getPort)
 
