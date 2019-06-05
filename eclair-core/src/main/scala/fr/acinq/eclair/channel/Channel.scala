@@ -92,18 +92,36 @@ object Channel {
   case class RemoteError(e: Error) extends ChannelError
   // @formatter:on
 
-  def makeChannelKeyPathFromInput(fundingInput: TxIn): KeyPath = {
+  def fourByteGroupsFromSha(input: ByteVector): List[Long] = {
     // split the SHA into 8 groups of 4 bytes and convert to uint32
-    val List(h0, h1, h2, h3, h4, h5, h6, h7) = Crypto.sha256(fundingInput.outPoint.hash).toArray.grouped(4).map(ByteVector(_).toLong(signed = false)).toList
-    KeyPath(Seq(47, 2, h0, h1, h2, h3, h4, h5, h6, h7, 0))
+    Crypto.sha256(input).toArray.grouped(4).map(ByteVector(_).toLong(signed = false)).toList
   }
 
   def makeFunderChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, fundingInput: TxIn): LocalParams = {
     require(isFunder, s"Wrong params for isFunder=$isFunder")
 
-    val channelKeyPath = makeChannelKeyPathFromInput(fundingInput)
+    val List(h0, h1, h2, h3, h4, h5, h6, h7) = fourByteGroupsFromSha(fundingInput.outPoint.hash)
+    val channelKeyPath = KeyPath(Seq(47, 2, h0, h1, h2, h3, h4, h5, h6, h7, 0))
+
     makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, Left(channelKeyPath))
   }
+
+  def makeFundeeChannelParams(nodeParams: NodeParams, open: OpenChannel, defaultFinalScriptPubKey: ByteVector, fundingSatoshis: Long): LocalParams = {
+
+    val List(h0, h1, h2, h3, h4, h5, h6, h7) = fourByteGroupsFromSha(ByteVector.view(s"${Globals.blockCount} || 0".getBytes))
+    val publicKeyPath = KeyPath(Seq(47, 2, h0, h1, h2, h3, h4, h5, h6, h7, 2))
+
+    val localFundingPubkey = nodeParams.keyManager.fundingPublicKey(publicKeyPath).publicKey
+    val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, open.fundingPubkey)))
+
+    val List(s0, s1, s2, s3, s4, s5, s6, s7) = fourByteGroupsFromSha(fundingPubkeyScript)
+    val pointsKeyPath = KeyPath(Seq(47, 2, s0, s1, s2, s3, s4, s5, s6, s7, 1))
+
+    val channelKeyPaths = KeyPathFundee(publicKeyPath, pointsKeyPath)
+
+    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder = false, fundingSatoshis, Right(channelKeyPaths))
+  }
+
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: Either[DeterministicWallet.KeyPath, KeyPathFundee]): LocalParams = {
     LocalParams(
