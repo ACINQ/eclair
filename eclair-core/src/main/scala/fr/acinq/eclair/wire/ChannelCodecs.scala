@@ -31,9 +31,8 @@ import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
-import scala.concurrent.duration._
-import scala.compat.Platform
 
+import scala.compat.Platform
 import scala.concurrent.duration._
 
 
@@ -45,10 +44,10 @@ object ChannelCodecs extends Logging {
   val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
   val keyPathFundee: Codec[KeyPathFundee] = (
     ("publicKeyPath" | keyPathCodec) ::
-    ("pointsKeyPath" | keyPathCodec)
-  ).as[KeyPathFundee]
+      ("pointsKeyPath" | keyPathCodec)
+    ).as[KeyPathFundee]
 
-  val newKeyPathCodec = either(bool, keyPathCodec, keyPathFundee)
+  val channelKeyPathCodec = either(bool, keyPathCodec, keyPathFundee)
 
   val extendedPrivateKeyCodec: Codec[ExtendedPrivateKey] = (
     ("secretkeybytes" | bytes32) ::
@@ -57,9 +56,15 @@ object ChannelCodecs extends Logging {
       ("path" | keyPathCodec) ::
       ("parent" | int64)).as[ExtendedPrivateKey]
 
-  val localParamsCodec: Codec[LocalParams] = (
+  def localParamsCodec(version: CommitmentVersion): Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
-      ("channelPath" | newKeyPathCodec) ::
+      (version match {
+        case CommitmentV0 => ("channelPath" | keyPathCodec.xmap[Either[KeyPath, KeyPathFundee]](Left(_), {
+          case Left(kp) => kp
+          case Right(_) => throw new IllegalArgumentException(s"Found unexpected value for version=$version")
+        }))
+        case CommitmentV1 => ("channelPath" | channelKeyPathCodec)
+      }) ::
       ("dustLimitSatoshis" | uint64) ::
       ("maxHtlcValueInFlightMsat" | uint64ex) ::
       ("channelReserveSatoshis" | uint64) ::
@@ -201,8 +206,8 @@ object ChannelCodecs extends Logging {
     (wire: BitVector) => spentListCodec.decode(wire).map(_.map(_.toMap))
   )
 
-  val commitmentsCodec: Codec[Commitments] = (
-    ("localParams" | localParamsCodec) ::
+  def commitmentsCodec(version: CommitmentVersion): Codec[Commitments] = (
+    ("localParams" | localParamsCodec(version)) ::
       ("remoteParams" | remoteParamsCodec) ::
       ("channelFlags" | byte) ::
       ("localCommit" | localCommitCodec) ::
@@ -245,27 +250,27 @@ object ChannelCodecs extends Logging {
       ("spent" | spentMapCodec)).as[RevokedCommitPublished]
 
   // this is a decode-only codec compatible with versions 997acee and below, with placeholders for new fields
-  val DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec(version: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
+    ("commitments" | commitmentsCodec(version)) ::
       ("fundingTx" | provide[Option[Transaction]](None)) ::
       ("waitingSince" | provide(Platform.currentTime.milliseconds.toSeconds)) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
 
-  val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(version: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
+    ("commitments" | commitmentsCodec(version)) ::
       ("fundingTx" | optional(bool, txCodec)) ::
       ("waitingSince" | int64) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
 
-  val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_WAIT_FOR_FUNDING_LOCKED_Codec(version: CommitmentVersion): Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
+    ("commitments" | commitmentsCodec(version)) ::
       ("shortChannelId" | shortchannelid) ::
       ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
-  val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_NORMAL_Codec(version: CommitmentVersion): Codec[DATA_NORMAL] = (
+    ("commitments" | commitmentsCodec(version)) ::
       ("shortChannelId" | shortchannelid) ::
       ("buried" | bool) ::
       ("channelAnnouncement" | optional(bool, channelAnnouncementCodec)) ::
@@ -273,20 +278,20 @@ object ChannelCodecs extends Logging {
       ("localShutdown" | optional(bool, shutdownCodec)) ::
       ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL]
 
-  val DATA_SHUTDOWN_Codec: Codec[DATA_SHUTDOWN] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_SHUTDOWN_Codec(version: CommitmentVersion): Codec[DATA_SHUTDOWN] = (
+    ("commitments" | commitmentsCodec(version)) ::
       ("localShutdown" | shutdownCodec) ::
       ("remoteShutdown" | shutdownCodec)).as[DATA_SHUTDOWN]
 
-  val DATA_NEGOTIATING_Codec: Codec[DATA_NEGOTIATING] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_NEGOTIATING_Codec(version: CommitmentVersion): Codec[DATA_NEGOTIATING] = (
+    ("commitments" | commitmentsCodec(version)) ::
       ("localShutdown" | shutdownCodec) ::
       ("remoteShutdown" | shutdownCodec) ::
       ("closingTxProposed" | listOfN(uint16, listOfN(uint16, closingTxProposedCodec))) ::
       ("bestUnpublishedClosingTx_opt" | optional(bool, txCodec))).as[DATA_NEGOTIATING]
 
-  val DATA_CLOSING_Codec: Codec[DATA_CLOSING] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_CLOSING_Codec(version: CommitmentVersion): Codec[DATA_CLOSING] = (
+    ("commitments" | commitmentsCodec(version)) ::
       ("mutualCloseProposed" | listOfN(uint16, txCodec)) ::
       ("mutualClosePublished" | listOfN(uint16, txCodec)) ::
       ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::
@@ -295,8 +300,8 @@ object ChannelCodecs extends Logging {
       ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
 
-  val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
-    ("commitments" | commitmentsCodec) ::
+  def DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(version: CommitmentVersion): Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
+    ("commitments" | commitmentsCodec(version)) ::
       ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
 
 
@@ -311,36 +316,28 @@ object ChannelCodecs extends Logging {
     *
     * More info here: https://github.com/scodec/scodec/issues/122
     */
-  val stateDataCodec: Codec[HasCommitments] = ("version" | constant(0x00)) ~> discriminated[HasCommitments].by(uint16)
-    .typecase(0x08, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-    .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec)
-    .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-    .typecase(0x03, DATA_NORMAL_Codec)
-    .typecase(0x04, DATA_SHUTDOWN_Codec)
-    .typecase(0x05, DATA_NEGOTIATING_Codec)
-    .typecase(0x06, DATA_CLOSING_Codec)
-    .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
+  val COMMITMENTv0_VERSION_BYTE = 0x00.toByte
+  val COMMITMENTv1_VERSION_BYTE = 0x01.toByte
+
+  val stateDataCodec = discriminated[HasCommitments].by(uint8)
+    .\(COMMITMENTv0_VERSION_BYTE) { case c => c }(stateDataCodecVersioned(CommitmentV0))
+    .\(COMMITMENTv1_VERSION_BYTE) { case c => c }(stateDataCodecVersioned(CommitmentV1))
+
+  private def stateDataCodecVersioned(commitmentVersion: CommitmentVersion): Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
+    .typecase(0x08, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitmentVersion))
+    .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec(commitmentVersion))
+    .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec(commitmentVersion))
+    .typecase(0x03, DATA_NORMAL_Codec(commitmentVersion))
+    .typecase(0x04, DATA_SHUTDOWN_Codec(commitmentVersion))
+    .typecase(0x05, DATA_NEGOTIATING_Codec(commitmentVersion))
+    .typecase(0x06, DATA_CLOSING_Codec(commitmentVersion))
+    .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitmentVersion))
 
 
-//  private def stateDataCodec(commitmentVersion: CommitmentVersion): Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
-//    .typecase(0x08, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec(commitmentVersion))
-//    .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec(commitmentVersion))
-//    .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec(commitmentVersion))
-//    .typecase(0x03, DATA_NORMAL_Codec(commitmentVersion))
-//    .typecase(0x04, DATA_SHUTDOWN_Codec(commitmentVersion))
-//    .typecase(0x05, DATA_NEGOTIATING_Codec(commitmentVersion))
-//    .typecase(0x06, DATA_CLOSING_Codec(commitmentVersion))
-//    .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitmentVersion))
-//
-//  val COMMITMENTv0_VERSION_BYTE = 0x00.toByte
-//  val COMMITMENTv1_VERSION_BYTE = 0x01.toByte
-//
-//  val genericStateDataCodec = discriminated[HasCommitments].by(uint8)
-//    .\ (COMMITMENTv1_VERSION_BYTE) { case c if c.commitments.version == CommitmentV0 => c } (stateDataCodec(CommitmentV0))
-//    .\ (COMMITMENTv0_VERSION_BYTE) { case c if c.commitments.version == CommitmentV1 => c } (stateDataCodec(CommitmentV1))
-//
-//  sealed trait CommitmentVersion
-//  case object CommitmentV0 extends CommitmentVersion
-//  case object CommitmentV1 extends CommitmentVersion
+  sealed trait CommitmentVersion
+
+  case object CommitmentV0 extends CommitmentVersion
+
+  case object CommitmentV1 extends CommitmentVersion
 
 }

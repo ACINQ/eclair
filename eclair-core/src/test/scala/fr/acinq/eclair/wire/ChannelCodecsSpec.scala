@@ -56,9 +56,27 @@ class ChannelCodecsSpec extends FunSuite {
   }
 
   test("encode/decode localparams") {
-    val o = LocalParams(
+    val localParamFundee = LocalParams(
       nodeId = randomKey.publicKey,
-      channelKeyPath = Left(DeterministicWallet.KeyPath(Seq(42L))),
+      channelKeyPath = Right(KeyPathFundee(KeyPath(Seq(4, 3, 2, 1L)), KeyPath(Seq(1, 2, 3, 4L)))),
+      dustLimitSatoshis = Random.nextInt(Int.MaxValue),
+      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
+      channelReserveSatoshis = Random.nextInt(Int.MaxValue),
+      htlcMinimumMsat = Random.nextInt(Int.MaxValue),
+      toSelfDelay = Random.nextInt(Short.MaxValue),
+      maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
+      defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
+      isFunder = false,
+      globalFeatures = randomBytes(256),
+      localFeatures = randomBytes(256))
+
+    val encoded = localParamsCodec(CommitmentV1).encode(localParamFundee).require
+    val decoded = localParamsCodec(CommitmentV1).decode(encoded).require
+    assert(localParamFundee === decoded.value)
+
+    val localParamFunder = LocalParams(
+      nodeId = randomKey.publicKey,
+      channelKeyPath = Left(KeyPath(Seq(4, 3, 2, 1L))),
       dustLimitSatoshis = Random.nextInt(Int.MaxValue),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserveSatoshis = Random.nextInt(Int.MaxValue),
@@ -69,9 +87,10 @@ class ChannelCodecsSpec extends FunSuite {
       isFunder = true,
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))
-    val encoded = localParamsCodec.encode(o).require
-    val decoded = localParamsCodec.decode(encoded).require
-    assert(o === decoded.value)
+
+    val encoded1 = localParamsCodec(CommitmentV1).encode(localParamFunder).require
+    val decoded1 = localParamsCodec(CommitmentV1).decode(encoded1).require
+    assert(localParamFunder === decoded1.value)
   }
 
   test("encode/decode remoteparams") {

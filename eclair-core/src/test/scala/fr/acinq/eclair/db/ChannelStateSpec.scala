@@ -27,6 +27,7 @@ import fr.acinq.eclair.payment.{Local, Relayed}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.transactions._
+import fr.acinq.eclair.wire.ChannelCodecs.CommitmentV1
 import fr.acinq.eclair.wire.{ChannelCodecs, UpdateAddHtlc}
 import fr.acinq.eclair.{ShortChannelId, UInt64, randomKey}
 import org.scalatest.FunSuite
@@ -42,8 +43,8 @@ class ChannelStateSpec extends FunSuite {
 
   test("basic serialization test (NORMAL)") {
     val data = normal
-    val bin = ChannelCodecs.DATA_NORMAL_Codec.encode(data).require
-    val check = ChannelCodecs.DATA_NORMAL_Codec.decodeValue(bin).require
+    val bin = ChannelCodecs.DATA_NORMAL_Codec(CommitmentV1).encode(data).require
+    val check = ChannelCodecs.DATA_NORMAL_Codec(CommitmentV1).decodeValue(bin).require
     assert(data.commitments.localCommit.spec === check.commitments.localCommit.spec)
     assert(data === check)
   }
