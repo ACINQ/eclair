@@ -25,7 +25,7 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
-import fr.acinq.eclair.crypto.{KeyManager, ShaChain, Sphinx}
+import fr.acinq.eclair.crypto.{KeyManager, LocalKeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
@@ -92,36 +92,23 @@ object Channel {
   case class RemoteError(e: Error) extends ChannelError
   // @formatter:on
 
-  def fourByteGroupsFromSha(input: ByteVector): List[Long] = {
-    // split the SHA into 8 groups of 4 bytes and convert to uint32
-    Crypto.sha256(input).toArray.grouped(4).map(ByteVector(_).toLong(signed = false)).toList
-  }
-
-  def makeFunderChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, fundingInput: TxIn): LocalParams = {
-    require(isFunder, s"Wrong params for isFunder=$isFunder")
-
-    val List(h0, h1, h2, h3, h4, h5, h6, h7) = fourByteGroupsFromSha(fundingInput.outPoint.hash)
-    val channelKeyPath = KeyPath(Seq(47, 2, h0, h1, h2, h3, h4, h5, h6, h7, 0))
-
-    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, Left(channelKeyPath))
+  def makeFunderChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, fundingSatoshis: Long, fundingInput: TxIn): LocalParams = {
+    val channelKeyPath = LocalKeyManager.makeChannelKeyPathFunder(fundingInput.outPoint.hash)
+    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder = true, fundingSatoshis, Left(channelKeyPath))
   }
 
   def makeFundeeChannelParams(nodeParams: NodeParams, open: OpenChannel, defaultFinalScriptPubKey: ByteVector, fundingSatoshis: Long): LocalParams = {
 
-    val List(h0, h1, h2, h3, h4, h5, h6, h7) = fourByteGroupsFromSha(ByteVector.view(s"${Globals.blockCount} || 0".getBytes))
-    val publicKeyPath = KeyPath(Seq(47, 2, h0, h1, h2, h3, h4, h5, h6, h7, 2))
-
+    val publicKeyPath = LocalKeyManager.makeChannelKeyPathFundeePubkey(Globals.blockCount.get, 0)
     val localFundingPubkey = nodeParams.keyManager.fundingPublicKey(publicKeyPath).publicKey
+
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, open.fundingPubkey)))
+    val channelKeyPath = LocalKeyManager.makeChannelKeyPathFundee(fundingPubkeyScript)
 
-    val List(s0, s1, s2, s3, s4, s5, s6, s7) = fourByteGroupsFromSha(fundingPubkeyScript)
-    val pointsKeyPath = KeyPath(Seq(47, 2, s0, s1, s2, s3, s4, s5, s6, s7, 1))
-
-    val channelKeyPaths = KeyPathFundee(publicKeyPath, pointsKeyPath)
+    val channelKeyPaths = KeyPathFundee(publicKeyPath, channelKeyPath)
 
     makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder = false, fundingSatoshis, Right(channelKeyPaths))
   }
-
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: Either[DeterministicWallet.KeyPath, KeyPathFundee]): LocalParams = {
     LocalParams(
@@ -370,7 +357,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(funding:MakeFundingTxResponse, DATA_WAIT_FOR_FUNDING_INTERNAL_CREATED(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, remote, remoteInit, channelFlags)) =>
 
       val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
-      val localParams = makeFunderChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder = true, fundingSatoshis, funding.fundingTx.txIn.head)
+      val localParams = makeFunderChannelParams(nodeParams, defaultFinalScriptPubKey, fundingSatoshis, funding.fundingTx.txIn.head)
       log.info(s"using localParams=$localParams")
 
       val open = OpenChannel(nodeParams.chainHash,
