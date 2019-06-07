@@ -21,10 +21,14 @@ import java.sql.Connection
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.Command
 import fr.acinq.eclair.db.PendingRelayDb
-import fr.acinq.eclair.db.sqlite.SqliteUtils.{codecSequence, getVersion, using}
 import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
 
+import scala.collection.immutable.Queue
+
 class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
+
+  import SqliteUtils.ExtendedResultSet._
+  import SqliteUtils._
 
   val DB_NAME = "pending_relay"
   val CURRENT_VERSION = 1
@@ -57,6 +61,17 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
       statement.setBytes(1, channelId.toArray)
       val rs = statement.executeQuery()
       codecSequence(rs, cmdCodec)
+    }
+  }
+
+  override def listPendingRelay(): Set[(ByteVector32, Long)] = {
+    using(sqlite.prepareStatement("SELECT channel_id, htlc_id FROM pending_relay")) { statement =>
+      val rs = statement.executeQuery()
+      var q: Queue[(ByteVector32, Long)] = Queue()
+      while (rs.next()) {
+        q = q :+ (rs.getByteVector32("channel_id"), rs.getLong("htlc_id"))
+      }
+      q.toSet
     }
   }
 
