@@ -614,7 +614,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Success((commitments1, fulfill)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fulfill
-        case Failure(cause) => handleCommandError(cause, c)
+        case Failure(cause) =>
+          // we can clean up the command right away in case of failure
+          relayer ! CommandBuffer.CommandAck(d.channelId, c.id)
+          handleCommandError(cause, c)
       }
 
     case Event(fulfill: UpdateFulfillHtlc, d: DATA_NORMAL) =>
@@ -632,7 +635,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
-        case Failure(cause) => handleCommandError(cause, c)
+        case Failure(cause) =>
+          // we can clean up the command right away in case of failure
+          relayer ! CommandBuffer.CommandAck(d.channelId, c.id)
+          handleCommandError(cause, c)
       }
 
     case Event(c: CMD_FAIL_MALFORMED_HTLC, d: DATA_NORMAL) =>
@@ -640,7 +646,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
-        case Failure(cause) => handleCommandError(cause, c)
+        case Failure(cause) =>
+          // we can clean up the command right away in case of failure
+          relayer ! CommandBuffer.CommandAck(d.channelId, c.id)
+          handleCommandError(cause, c)
       }
 
     case Event(fail: UpdateFailHtlc, d: DATA_NORMAL) =>
@@ -964,7 +973,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Success((commitments1, fulfill)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fulfill
-        case Failure(cause) => handleCommandError(cause, c)
+        case Failure(cause) =>
+          // we can clean up the command right away in case of failure
+          relayer ! CommandBuffer.CommandAck(d.channelId, c.id)
+          handleCommandError(cause, c)
       }
 
     case Event(fulfill: UpdateFulfillHtlc, d: DATA_SHUTDOWN) =>
@@ -982,7 +994,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
-        case Failure(cause) => handleCommandError(cause, c)
+        case Failure(cause) =>
+          // we can clean up the command right away in case of failure
+          relayer ! CommandBuffer.CommandAck(d.channelId, c.id)
+          handleCommandError(cause, c)
       }
 
     case Event(c: CMD_FAIL_MALFORMED_HTLC, d: DATA_SHUTDOWN) =>
@@ -990,7 +1005,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
-        case Failure(cause) => handleCommandError(cause, c)
+        case Failure(cause) =>
+          // we can clean up the command right away in case of failure
+          relayer ! CommandBuffer.CommandAck(d.channelId, c.id)
+          handleCommandError(cause, c)
       }
 
     case Event(fail: UpdateFailHtlc, d: DATA_SHUTDOWN) =>
