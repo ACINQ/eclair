@@ -21,6 +21,11 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel._
 
+/**
+  * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
+  * in a database because we don't want to lose preimages, or to forget to fail
+  * incoming htlcs, which would lead to unwanted channel closings.
+  */
 class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor with ActorLogging {
 
   import CommandBuffer._
@@ -43,12 +48,12 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
 
     case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, d: HasCommitments) =>
       import d.channelId
-      // if channel is in a state where it can have pending htlcs, we send them the fulfills we know of
+      // if channel is in a state where it can have pending htlcs, we send them the fulfills/fails we know of
       pendingRelay.listPendingRelay(channelId) match {
         case Nil => ()
-        case msgs =>
-          log.info(s"re-sending ${msgs.size} unacked fulfills/fails to channel $channelId")
-          msgs.foreach(channel ! _) // they all have commit = false
+        case cmds =>
+          log.info(s"re-sending ${cmds.size} unacked fulfills/fails to channel $channelId")
+          cmds.foreach(channel ! _) // they all have commit = false
           // better to sign once instead of after each fulfill
           channel ! CMD_SIGN
       }
