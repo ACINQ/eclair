@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, DeterministicWallet}
 import fr.acinq.eclair.ShortChannelId
@@ -38,9 +38,9 @@ trait KeyManager {
 
   def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
-  def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.Scalar
+  def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PrivateKey
 
-  def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.Point
+  def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PublicKey
 
   /**
     *
@@ -60,7 +60,7 @@ trait KeyManager {
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote point.
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: Point): ByteVector64
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey): ByteVector64
 
   /**
     * Ths method is used to spend revoked transactions, with the corresponding revocation key
@@ -71,7 +71,7 @@ trait KeyManager {
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote secret.
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar): ByteVector64
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64
 
   def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector64, ByteVector64)
 }

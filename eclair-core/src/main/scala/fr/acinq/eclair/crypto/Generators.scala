@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import scodec.bits.ByteVector
 
@@ -30,31 +30,31 @@ object Generators {
     case length if length < 32 => ByteVector32(data.padLeft(32))
   }
 
-  def perCommitSecret(seed: ByteVector32, index: Long): Scalar = Scalar(ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFL - index))
+  def perCommitSecret(seed: ByteVector32, index: Long): PrivateKey = PrivateKey(ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFL - index), true)
 
-  def perCommitPoint(seed: ByteVector32, index: Long): Point = perCommitSecret(seed, index).toPoint
+  def perCommitPoint(seed: ByteVector32, index: Long): PublicKey = perCommitSecret(seed, index).publicKey
 
-  def derivePrivKey(secret: Scalar, perCommitPoint: Point): PrivateKey = {
+  def derivePrivKey(secret: PrivateKey, perCommitPoint: PublicKey): PrivateKey = {
     // secretkey = basepoint-secret + SHA256(per-commitment-point || basepoint)
-    PrivateKey(secret.add(Scalar(Crypto.sha256(perCommitPoint.toBin(true) ++ secret.toPoint.toBin(true)))), true)
+    secret.add(PrivateKey(Crypto.sha256(perCommitPoint.toBin ++ secret.publicKey.toBin)))
   }
 
-  def derivePubKey(basePoint: Point, perCommitPoint: Point): PublicKey = {
+  def derivePubKey(basePoint: PublicKey, perCommitPoint: PublicKey): PublicKey = {
     //pubkey = basepoint + SHA256(per-commitment-point || basepoint)*G
-    val a = Scalar(Crypto.sha256(perCommitPoint.toBin(true) ++ basePoint.toBin(true)))
-    PublicKey(basePoint.add(a.toPoint))
+    val a = PrivateKey(Crypto.sha256(perCommitPoint.toBin++ basePoint.toBin))
+    basePoint.add(a.publicKey)
   }
 
-  def revocationPubKey(basePoint: Point, perCommitPoint: Point): PublicKey = {
-    val a = Scalar(Crypto.sha256(basePoint.toBin(true) ++ perCommitPoint.toBin(true)))
-    val b = Scalar(Crypto.sha256(perCommitPoint.toBin(true) ++ basePoint.toBin(true)))
-    PublicKey(basePoint.multiply(a).add(perCommitPoint.multiply(b)))
+  def revocationPubKey(basePoint: PublicKey, perCommitPoint: PublicKey): PublicKey = {
+    val a = PrivateKey(Crypto.sha256(basePoint.toBin ++ perCommitPoint.toBin))
+    val b = PrivateKey(Crypto.sha256(perCommitPoint.toBin ++ basePoint.toBin))
+    basePoint.multiply(a).add(perCommitPoint.multiply(b))
   }
 
-  def revocationPrivKey(secret: Scalar, perCommitSecret: Scalar): PrivateKey = {
-    val a = Scalar(Crypto.sha256(secret.toPoint.toBin(true) ++ perCommitSecret.toPoint.toBin(true)))
-    val b = Scalar(Crypto.sha256(perCommitSecret.toPoint.toBin(true) ++ secret.toPoint.toBin(true)))
-    PrivateKey(secret.multiply(a).add(perCommitSecret.multiply(b)), true)
+  def revocationPrivKey(secret: PrivateKey, perCommitSecret: PrivateKey): PrivateKey = {
+    val a = PrivateKey(Crypto.sha256(secret.publicKey.toBin ++ perCommitSecret.publicKey.toBin))
+    val b = PrivateKey(Crypto.sha256(perCommitSecret.publicKey.toBin ++ secret.publicKey.toBin))
+    secret.multiply(a).add(perCommitSecret.multiply(b))
   }
 
 }

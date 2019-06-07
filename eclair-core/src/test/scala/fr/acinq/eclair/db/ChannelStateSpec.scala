@@ -18,7 +18,7 @@ package fr.acinq.eclair.db
 
 import java.util.UUID
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{PrivateKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, MilliSatoshi, Satoshi, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
@@ -105,10 +105,10 @@ object ChannelStateSpec {
     toSelfDelay = 144,
     maxAcceptedHtlcs = 50,
     fundingPubKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)) :+ 1.toByte).publicKey,
-    revocationBasepoint = Scalar(ByteVector.fill(32)(2)).toPoint,
-    paymentBasepoint = Scalar(ByteVector.fill(32)(3)).toPoint,
-    delayedPaymentBasepoint = Scalar(ByteVector.fill(32)(4)).toPoint,
-    htlcBasepoint = Scalar(ByteVector.fill(32)(6)).toPoint,
+    revocationBasepoint = PrivateKey(ByteVector.fill(32)(2)).publicKey,
+    paymentBasepoint = PrivateKey(ByteVector.fill(32)(3)).publicKey,
+    delayedPaymentBasepoint = PrivateKey(ByteVector.fill(32)(4)).publicKey,
+    htlcBasepoint = PrivateKey(ByteVector.fill(32)(6)).publicKey,
     globalFeatures = hex"dead",
     localFeatures = hex"beef")
 
@@ -133,7 +133,7 @@ object ChannelStateSpec {
   val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey)
 
   val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000, 70000000), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
-  val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, 50000, 700000), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), Scalar(ByteVector.fill(32)(4)).toPoint)
+  val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, 50000, 700000), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
   val commitments = Commitments(localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 32L,
     remoteNextHtlcId = 4L,

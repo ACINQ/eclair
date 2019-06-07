@@ -19,6 +19,7 @@ package fr.acinq.eclair.crypto
 import java.math.BigInteger
 import java.nio.ByteOrder
 
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Crypto, Protocol}
 import fr.acinq.eclair.randomBytes
 import grizzled.slf4j.Logging
@@ -54,7 +55,7 @@ object Noise {
 
     override def generateKeyPair(priv: ByteVector): KeyPair = {
       require(priv.length == 32)
-      KeyPair(Crypto.publicKeyFromPrivateKey(priv :+ 1.toByte), priv)
+      KeyPair(PrivateKey(priv, compressed = true).publicKey.toBin, priv)
     }
 
     /**

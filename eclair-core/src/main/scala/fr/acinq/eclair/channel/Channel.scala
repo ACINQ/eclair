@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
-import fr.acinq.bitcoin.Crypto.{PublicKey, Scalar, sha256}
+import fr.acinq.bitcoin.Crypto.{PublicKey, PrivateKey, sha256}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -1384,7 +1384,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         channelId = d.channelId,
         nextLocalCommitmentNumber = d.commitments.localCommit.index + 1,
         nextRemoteRevocationNumber = d.commitments.remoteCommit.index,
-        yourLastPerCommitmentSecret = Some(Scalar(yourLastPerCommitmentSecret)),
+        yourLastPerCommitmentSecret = Some(PrivateKey(yourLastPerCommitmentSecret)),
         myCurrentPerCommitmentPoint = Some(myCurrentPerCommitmentPoint)
       )
 

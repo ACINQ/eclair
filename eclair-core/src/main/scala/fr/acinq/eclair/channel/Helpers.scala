@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar, ripemd160, sha256}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.blockchain.EclairWallet
@@ -251,7 +251,7 @@ object Helpers {
       * @param remoteFirstPerCommitmentPoint
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
-    def makeFirstCommitTxs(keyManager: KeyManager, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
+    def makeFirstCommitTxs(keyManager: KeyManager, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
       val toLocalMsat = if (localParams.isFunder) fundingSatoshis * 1000 - pushMsat else pushMsat
       val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingSatoshis * 1000 - pushMsat
 
@@ -610,7 +610,7 @@ object Helpers {
       * @param tx                       the remote commitment transaction that has just been published
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: Point, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
+    def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: PublicKey, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(commitments.localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
 
       // no need to use a high fee rate for our main output (we are the only one who can spend it)
@@ -651,9 +651,9 @@ object Helpers {
       log.warning(s"a revoked commit has been published with txnumber=$txnumber")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
       remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txnumber)
-        .map(d => Scalar(d))
+        .map(d => PrivateKey(d))
         .map { remotePerCommitmentSecret =>
-          val remotePerCommitmentPoint = remotePerCommitmentSecret.toPoint
+          val remotePerCommitmentPoint = remotePerCommitmentSecret.publicKey
           val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
           val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
           val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
@@ -740,9 +740,9 @@ object Helpers {
         val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, keyManager.paymentPoint(localParams.channelKeyPath).publicKey)
         // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
         remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txnumber)
-          .map(d => Scalar(d))
+          .map(d => PrivateKey(d))
           .flatMap { remotePerCommitmentSecret =>
-            val remotePerCommitmentPoint = remotePerCommitmentSecret.toPoint
+            val remotePerCommitmentPoint = remotePerCommitmentSecret.publicKey
             val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
             val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
 

@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, InputStream, OutputStream}
 import java.nio.ByteOrder
 
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Protocol}
 import fr.acinq.eclair.wire.{FailureMessage, FailureMessageCodecs}
 import grizzled.slf4j.Logging
@@ -72,11 +72,11 @@ object Sphinx extends Logging {
 
   def generateStream(key: ByteVector, length: Int): ByteVector = ChaCha20.encrypt(zeroes(length), key, zeroes(12))
 
-  def computeSharedSecret(pub: PublicKey, secret: PrivateKey): ByteVector32 = Crypto.sha256(pub.multiply(secret).toBin(true))
+  def computeSharedSecret(pub: PublicKey, secret: PrivateKey): ByteVector32 = Crypto.sha256(pub.multiply(secret).toBin)
 
   def computeblindingFactor(pub: PublicKey, secret: ByteVector): ByteVector32 = Crypto.sha256(pub.toBin ++ secret)
 
-  def blind(pub: PublicKey, blindingFactor: ByteVector32): PublicKey = PublicKey(pub.multiply(Scalar(blindingFactor)), compressed = true)
+  def blind(pub: PublicKey, blindingFactor: ByteVector32): PublicKey = pub.multiply(PrivateKey(blindingFactor))
 
   def blind(pub: PublicKey, blindingFactors: Seq[ByteVector32]): PublicKey = blindingFactors.foldLeft(pub)(blind)
 
@@ -88,7 +88,7 @@ object Sphinx extends Logging {
     * @return a tuple (ephemeral public keys, shared secrets)
     */
   def computeEphemeralPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: Seq[PublicKey]): (Seq[PublicKey], Seq[ByteVector32]) = {
-    val ephemeralPublicKey0 = blind(PublicKey(Point(Crypto.curve.getG), compressed = true), sessionKey.value.toBin)
+    val ephemeralPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value)
     val secret0 = computeSharedSecret(publicKeys.head, sessionKey)
     val blindingFactor0 = computeblindingFactor(ephemeralPublicKey0, secret0)
     computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys.tail, Seq(ephemeralPublicKey0), Seq(blindingFactor0), Seq(secret0))
@@ -191,7 +191,7 @@ object Sphinx extends Logging {
 
     val nextPubKey = blind(PublicKey(packet.publicKey), computeblindingFactor(PublicKey(packet.publicKey), sharedSecret))
 
-    ParsedPacket(payload, Packet(Version, nextPubKey, hmac, nextRouteInfo), sharedSecret)
+    ParsedPacket(payload, Packet(Version, nextPubKey.toBin, hmac, nextRouteInfo), sharedSecret)
   }
 
   @tailrec
@@ -263,12 +263,12 @@ object Sphinx extends Logging {
     val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     val filler = generateFiller("rho", sharedsecrets.dropRight(1), PayloadLength + MacLength, MaxHops)
 
-    val lastPacket = makeNextPacket(payloads.last, associatedData, ephemeralPublicKeys.last, sharedsecrets.last, LAST_PACKET, filler)
+    val lastPacket = makeNextPacket(payloads.last, associatedData, ephemeralPublicKeys.last.toBin, sharedsecrets.last, LAST_PACKET, filler)
 
     @tailrec
     def loop(hoppayloads: Seq[ByteVector], ephkeys: Seq[PublicKey], sharedSecrets: Seq[ByteVector32], packet: Packet): Packet = {
       if (hoppayloads.isEmpty) packet else {
-        val nextPacket = makeNextPacket(hoppayloads.last, associatedData, ephkeys.last, sharedSecrets.last, packet)
+        val nextPacket = makeNextPacket(hoppayloads.last, associatedData, ephkeys.last.toBin, sharedSecrets.last, packet)
         loop(hoppayloads.dropRight(1), ephkeys.dropRight(1), sharedSecrets.dropRight(1), nextPacket)
       }
     }

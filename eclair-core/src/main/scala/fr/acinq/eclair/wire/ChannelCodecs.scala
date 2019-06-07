@@ -73,10 +73,10 @@ object ChannelCodecs extends Logging {
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubKey" | publicKey) ::
-      ("revocationBasepoint" | point) ::
-      ("paymentBasepoint" | point) ::
-      ("delayedPaymentBasepoint" | point) ::
-      ("htlcBasepoint" | point) ::
+      ("revocationBasepoint" | publicKey) ::
+      ("paymentBasepoint" | publicKey) ::
+      ("delayedPaymentBasepoint" | publicKey) ::
+      ("htlcBasepoint" | publicKey) ::
       ("globalFeatures" | varsizebinarydata) ::
       ("localFeatures" | varsizebinarydata)).as[RemoteParams]
 
@@ -150,7 +150,7 @@ object ChannelCodecs extends Logging {
     ("index" | uint64) ::
       ("spec" | commitmentSpecCodec) ::
       ("txid" | bytes32) ::
-      ("remotePerCommitmentPoint" | point)).as[RemoteCommit]
+      ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit]
 
   val updateMessageCodec: Codec[UpdateMessage] = lightningMessageCodec.narrow(f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g)
 
@@ -214,7 +214,7 @@ object ChannelCodecs extends Logging {
       ("localNextHtlcId" | uint64) ::
       ("remoteNextHtlcId" | uint64) ::
       ("originChannels" | originsMapCodec) ::
-      ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, point)) ::
+      ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, publicKey)) ::
       ("commitInput" | inputInfoCodec) ::
       ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
       ("channelId" | bytes32)).as[Commitments]

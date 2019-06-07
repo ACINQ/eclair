@@ -93,6 +93,9 @@ object Scripts {
     // @formatter:on
   }
 
+  def scriptPubKeyHtlcSend(ourkey: PublicKey, theirkey: PublicKey, abstimeout: Long, reltimeout: Long, rhash: ByteVector32, commit_revoke: ByteVector): Seq[ScriptElt]
+  = scriptPubKeyHtlcSend(ourkey.toBin, theirkey.toBin, abstimeout, reltimeout, rhash, commit_revoke)
+
   def scriptPubKeyHtlcReceive(ourkey: ByteVector, theirkey: ByteVector, abstimeout: Long, reltimeout: Long, rhash: ByteVector32, commit_revoke: ByteVector): Seq[ScriptElt] = {
     // values lesser than 16 should be encoded using OP_0..OP_16 instead of OP_PUSHDATA
     require(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
@@ -112,6 +115,9 @@ object Scripts {
     OP_CHECKSIG :: Nil
     // @formatter:on
   }
+
+  def scriptPubKeyHtlcReceive(ourkey: PublicKey, theirkey: PublicKey, abstimeout: Long, reltimeout: Long, rhash: ByteVector32, commit_revoke: ByteVector): Seq[ScriptElt]
+  = scriptPubKeyHtlcReceive(ourkey.toBin, theirkey.toBin, abstimeout, reltimeout, rhash, commit_revoke)
 
   def applyFees(amount_us: Satoshi, amount_them: Satoshi, fee: Satoshi) = {
     val (amount_us1: Satoshi, amount_them1: Satoshi) = (amount_us, amount_them) match {

@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import com.google.common.cache.{CacheBuilder, CacheLoader}
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.FixedSizeStrictCodec.bytesStrict
@@ -76,23 +76,13 @@ object LightningMessageCodecs {
 
   def shortchannelid: Codec[ShortChannelId] = int64.xmap(l => ShortChannelId(l), s => s.toLong)
 
-  def scalar: Codec[Scalar] = Codec[Scalar](
-    (value: Scalar) => bytes(32).encode(ByteVector(value.toBin.toArray)),
-    (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => Scalar(b)))
-  )
-
-  def point: Codec[Point] = Codec[Point](
-    (point: Point) => bytes(33).encode(point.toBin(compressed = true)),
-    (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => Point(b)))
-  )
-
   def privateKey: Codec[PrivateKey] = Codec[PrivateKey](
-    (priv: PrivateKey) => bytes(32).encode(priv.value.toBin),
+    (priv: PrivateKey) => bytes(32).encode(priv.value),
     (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => PrivateKey(b, compressed = true)))
   )
 
   def publicKey: Codec[PublicKey] = Codec[PublicKey](
-    (pub: PublicKey) => bytes(33).encode(pub.value.toBin(compressed = true)),
+    (pub: PublicKey) => bytes(33).encode(pub.value),
     (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => PublicKey(b)))
   )
 
@@ -119,8 +109,8 @@ object LightningMessageCodecs {
     ("channelId" | bytes32) ::
       ("nextLocalCommitmentNumber" | uint64) ::
       ("nextRemoteRevocationNumber" | uint64) ::
-      ("yourLastPerCommitmentSecret" | optional(bitsRemaining, scalar)) ::
-      ("myCurrentPerCommitmentPoint" | optional(bitsRemaining, point))).as[ChannelReestablish]
+      ("yourLastPerCommitmentSecret" | optional(bitsRemaining, privateKey)) ::
+      ("myCurrentPerCommitmentPoint" | optional(bitsRemaining, publicKey))).as[ChannelReestablish]
 
   val openChannelCodec: Codec[OpenChannel] = (
     ("chainHash" | bytes32) ::
@@ -135,11 +125,11 @@ object LightningMessageCodecs {
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubkey" | publicKey) ::
-      ("revocationBasepoint" | point) ::
-      ("paymentBasepoint" | point) ::
-      ("delayedPaymentBasepoint" | point) ::
-      ("htlcBasepoint" | point) ::
-      ("firstPerCommitmentPoint" | point) ::
+      ("revocationBasepoint" | publicKey) ::
+      ("paymentBasepoint" | publicKey) ::
+      ("delayedPaymentBasepoint" | publicKey) ::
+      ("htlcBasepoint" | publicKey) ::
+      ("firstPerCommitmentPoint" | publicKey) ::
       ("channelFlags" | byte)).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
@@ -152,11 +142,11 @@ object LightningMessageCodecs {
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubkey" | publicKey) ::
-      ("revocationBasepoint" | point) ::
-      ("paymentBasepoint" | point) ::
-      ("delayedPaymentBasepoint" | point) ::
-      ("htlcBasepoint" | point) ::
-      ("firstPerCommitmentPoint" | point)).as[AcceptChannel]
+      ("revocationBasepoint" | publicKey) ::
+      ("paymentBasepoint" | publicKey) ::
+      ("delayedPaymentBasepoint" | publicKey) ::
+      ("htlcBasepoint" | publicKey) ::
+      ("firstPerCommitmentPoint" | publicKey)).as[AcceptChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
     ("temporaryChannelId" | bytes32) ::
@@ -170,7 +160,7 @@ object LightningMessageCodecs {
 
   val fundingLockedCodec: Codec[FundingLocked] = (
     ("channelId" | bytes32) ::
-      ("nextPerCommitmentPoint" | point)).as[FundingLocked]
+      ("nextPerCommitmentPoint" | publicKey)).as[FundingLocked]
 
   val shutdownCodec: Codec[wire.Shutdown] = (
     ("channelId" | bytes32) ::
@@ -212,8 +202,8 @@ object LightningMessageCodecs {
 
   val revokeAndAckCodec: Codec[RevokeAndAck] = (
     ("channelId" | bytes32) ::
-      ("perCommitmentSecret" | scalar) ::
-      ("nextPerCommitmentPoint" | point)
+      ("perCommitmentSecret" | privateKey) ::
+      ("nextPerCommitmentPoint" | publicKey)
     ).as[RevokeAndAck]
 
   val updateFeeCodec: Codec[UpdateFee] = (

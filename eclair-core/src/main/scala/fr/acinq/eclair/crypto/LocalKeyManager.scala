@@ -17,7 +17,7 @@
 package fr.acinq.eclair.crypto
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
-import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{PublicKey, PrivateKey}
 import fr.acinq.bitcoin.DeterministicWallet.{derivePrivateKey, _}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
 import fr.acinq.eclair.ShortChannelId
@@ -115,7 +115,7 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote point.
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: Point): ByteVector64 = {
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey): ByteVector64 = {
     val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
     Transactions.sign(tx, currentKey)
@@ -130,7 +130,7 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote secret.
     */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar): ByteVector64 = {
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64 = {
     val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.revocationPrivKey(privateKey.privateKey, remoteSecret)
     Transactions.sign(tx, currentKey)

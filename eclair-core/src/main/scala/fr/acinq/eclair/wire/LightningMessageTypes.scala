@@ -21,7 +21,7 @@ import java.nio.charset.StandardCharsets
 
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
-import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{PublicKey, PrivateKey}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -63,8 +63,8 @@ case class Pong(data: ByteVector) extends SetupMessage
 case class ChannelReestablish(channelId: ByteVector32,
                               nextLocalCommitmentNumber: Long,
                               nextRemoteRevocationNumber: Long,
-                              yourLastPerCommitmentSecret: Option[Scalar] = None,
-                              myCurrentPerCommitmentPoint: Option[Point] = None) extends ChannelMessage with HasChannelId
+                              yourLastPerCommitmentSecret: Option[PrivateKey] = None,
+                              myCurrentPerCommitmentPoint: Option[PublicKey] = None) extends ChannelMessage with HasChannelId
 
 case class OpenChannel(chainHash: ByteVector32,
                        temporaryChannelId: ByteVector32,
@@ -78,11 +78,11 @@ case class OpenChannel(chainHash: ByteVector32,
                        toSelfDelay: Int,
                        maxAcceptedHtlcs: Int,
                        fundingPubkey: PublicKey,
-                       revocationBasepoint: Point,
-                       paymentBasepoint: Point,
-                       delayedPaymentBasepoint: Point,
-                       htlcBasepoint: Point,
-                       firstPerCommitmentPoint: Point,
+                       revocationBasepoint: PublicKey,
+                       paymentBasepoint: PublicKey,
+                       delayedPaymentBasepoint: PublicKey,
+                       htlcBasepoint: PublicKey,
+                       firstPerCommitmentPoint: PublicKey,
                        channelFlags: Byte) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
@@ -94,11 +94,11 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          toSelfDelay: Int,
                          maxAcceptedHtlcs: Int,
                          fundingPubkey: PublicKey,
-                         revocationBasepoint: Point,
-                         paymentBasepoint: Point,
-                         delayedPaymentBasepoint: Point,
-                         htlcBasepoint: Point,
-                         firstPerCommitmentPoint: Point) extends ChannelMessage with HasTemporaryChannelId
+                         revocationBasepoint: PublicKey,
+                         paymentBasepoint: PublicKey,
+                         delayedPaymentBasepoint: PublicKey,
+                         htlcBasepoint: PublicKey,
+                         firstPerCommitmentPoint: PublicKey) extends ChannelMessage with HasTemporaryChannelId
 
 case class FundingCreated(temporaryChannelId: ByteVector32,
                           fundingTxid: ByteVector32,
@@ -109,7 +109,7 @@ case class FundingSigned(channelId: ByteVector32,
                          signature: ByteVector64) extends ChannelMessage with HasChannelId
 
 case class FundingLocked(channelId: ByteVector32,
-                         nextPerCommitmentPoint: Point) extends ChannelMessage with HasChannelId
+                         nextPerCommitmentPoint: PublicKey) extends ChannelMessage with HasChannelId
 
 case class Shutdown(channelId: ByteVector32,
                     scriptPubKey: ByteVector) extends ChannelMessage with HasChannelId
@@ -143,8 +143,8 @@ case class CommitSig(channelId: ByteVector32,
                      htlcSignatures: List[ByteVector64]) extends HtlcMessage with HasChannelId
 
 case class RevokeAndAck(channelId: ByteVector32,
-                        perCommitmentSecret: Scalar,
-                        nextPerCommitmentPoint: Point) extends HtlcMessage with HasChannelId
+                        perCommitmentSecret: PrivateKey,
+                        nextPerCommitmentPoint: PublicKey) extends HtlcMessage with HasChannelId
 
 case class UpdateFee(channelId: ByteVector32,
                      feeratePerKw: Long) extends ChannelMessage with UpdateMessage with HasChannelId

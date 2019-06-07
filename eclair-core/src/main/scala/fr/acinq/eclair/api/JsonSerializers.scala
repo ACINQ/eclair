@@ -22,7 +22,7 @@ import java.util.UUID
 import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, MilliSatoshi, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
@@ -81,13 +81,6 @@ class PrivateKeySerializer extends CustomSerializer[PrivateKey](format => ({ nul
   case x: PrivateKey => JString("XXX")
 }))
 
-class PointSerializer extends CustomSerializer[Point](format => ({ null }, {
-  case x: Point => JString(x.toString())
-}))
-
-class ScalarSerializer extends CustomSerializer[Scalar](format => ({ null }, {
-  case x: Scalar => JString("XXX")
-}))
 
 class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ({ null }, {
   case x: Transaction => JString(x.toString())
@@ -191,8 +184,6 @@ object JsonSupport extends Json4sSupport {
     new ShaChainSerializer +
     new PublicKeySerializer +
     new PrivateKeySerializer +
-    new ScalarSerializer +
-    new PointSerializer +
     new TransactionSerializer +
     new TransactionWithInputInfoSerializer +
     new InetSocketAddressSerializer +

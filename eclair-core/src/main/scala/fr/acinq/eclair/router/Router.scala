@@ -162,7 +162,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     initChannels.values.foreach { c =>
       val txid = channels(c)._1
       val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
-      val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+      val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
       watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
     }
 
@@ -244,7 +244,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         case ValidateResult(c, Right((tx, UtxoStatus.Unspent))) =>
           val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
           // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
-          val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+          val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
           if (tx.txOut.size < outputIndex + 1 || fundingOutputScript != tx.txOut(outputIndex).publicKeyScript) {
             log.error(s"invalid script for shortChannelId={}: txid={} does not have script=$fundingOutputScript at outputIndex=$outputIndex ann={}", c.shortChannelId, tx.txid, c)
             d0.awaiting.get(c) match {

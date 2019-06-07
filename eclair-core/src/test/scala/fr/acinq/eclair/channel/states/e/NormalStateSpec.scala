@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.Scalar
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
@@ -906,7 +906,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test begins
     bob2alice.expectMsgType[RevokeAndAck]
-    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, Scalar(randomBytes32), Scalar(randomBytes32).toPoint))
+    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32), PrivateKey(randomBytes32).publicKey))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
@@ -921,7 +921,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
-    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, Scalar(randomBytes32), Scalar(randomBytes32).toPoint))
+    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32), PrivateKey(randomBytes32).publicKey))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down

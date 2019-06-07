@@ -97,7 +97,7 @@ object Announcements {
     *
     * @return true if localNodeId is node1
     */
-  def isNode1(localNodeId: PublicKey, remoteNodeId: PublicKey) = LexicographicalOrdering.isLessThan(localNodeId, remoteNodeId)
+  def isNode1(localNodeId: PublicKey, remoteNodeId: PublicKey) = LexicographicalOrdering.isLessThan(localNodeId.toBin, remoteNodeId.toBin)
 
   /**
     * BOLT 7:

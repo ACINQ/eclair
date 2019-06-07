@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
@@ -66,16 +66,16 @@ class TestVectorsSpec extends FunSuite with Logging {
     val commitTxNumber = 42
     val toSelfDelay = 144
     val dustLimit = Satoshi(546)
-    val payment_basepoint_secret = Scalar(hex"1111111111111111111111111111111111111111111111111111111111111111")
-    val payment_basepoint = payment_basepoint_secret.toPoint
-    val revocation_basepoint_secret = Scalar(hex"2222222222222222222222222222222222222222222222222222222222222222")
-    val revocation_basepoint = revocation_basepoint_secret.toPoint
-    val delayed_payment_basepoint_secret = Scalar(hex"3333333333333333333333333333333333333333333333333333333333333333")
-    val delayed_payment_basepoint = delayed_payment_basepoint_secret.toPoint
+    val payment_basepoint_secret = PrivateKey(hex"1111111111111111111111111111111111111111111111111111111111111111")
+    val payment_basepoint = payment_basepoint_secret.publicKey
+    val revocation_basepoint_secret = PrivateKey(hex"2222222222222222222222222222222222222222222222222222222222222222")
+    val revocation_basepoint = revocation_basepoint_secret.publicKey
+    val delayed_payment_basepoint_secret = PrivateKey(hex"3333333333333333333333333333333333333333333333333333333333333333")
+    val delayed_payment_basepoint = delayed_payment_basepoint_secret.publicKey
     val funding_privkey = PrivateKey(hex"30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901")
     val funding_pubkey = funding_privkey.publicKey
 
-    val per_commitment_point = Point(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
+    val per_commitment_point = PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
     val payment_privkey = Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
     val delayed_payment_privkey = Generators.derivePrivKey(delayed_payment_basepoint_secret, per_commitment_point)
     val revocation_pubkey = PublicKey(hex"0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19")
@@ -108,14 +108,14 @@ class TestVectorsSpec extends FunSuite with Logging {
     val commitTxNumber = 42
     val toSelfDelay = 144
     val dustLimit = Satoshi(546)
-    val payment_basepoint_secret = Scalar(hex"4444444444444444444444444444444444444444444444444444444444444444")
-    val payment_basepoint = payment_basepoint_secret.toPoint
-    val revocation_basepoint_secret = Scalar(hex"2222222222222222222222222222222222222222222222222222222222222222")
-    val revocation_basepoint = revocation_basepoint_secret.toPoint
+    val payment_basepoint_secret = PrivateKey(hex"4444444444444444444444444444444444444444444444444444444444444444")
+    val payment_basepoint = payment_basepoint_secret.publicKey
+    val revocation_basepoint_secret = PrivateKey(hex"2222222222222222222222222222222222222222222222222222222222222222")
+    val revocation_basepoint = revocation_basepoint_secret.publicKey
     val funding_privkey = PrivateKey(hex"1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301")
     val funding_pubkey = funding_privkey.publicKey
     val payment_privkey = Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
-    val per_commitment_point = Point(hex"022c76692fd70814a8d1ed9dedc833318afaaed8188db4d14727e2e99bc619d325")
+    val per_commitment_point = PublicKey(hex"022c76692fd70814a8d1ed9dedc833318afaaed8188db4d14727e2e99bc619d325")
   }
 
   val coinbaseTx = Transaction.read("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0100f2052a010000001976a9143ca33c2e4446f4a305f23c80df8ad1afdcf652f988ac00000000")

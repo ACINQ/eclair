@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import com.google.common.net.InetAddresses
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.Sphinx
@@ -38,9 +38,9 @@ class LightningMessageCodecsSpec extends FunSuite {
 
   def bin32(fill: Byte) = ByteVector32(bin(32, fill))
 
-  def scalar(fill: Byte) = Scalar(ByteVector.fill(32)(fill))
+  def scalar(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill), compressed = true)
 
-  def point(fill: Byte) = Scalar(ByteVector.fill(32)(fill)).toPoint
+  def point(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill), compressed = true).publicKey
 
   def publicKey(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill), compressed = true).publicKey
 
@@ -117,19 +117,11 @@ class LightningMessageCodecsSpec extends FunSuite {
     }
   }
 
-  test("encode/decode with scalar codec") {
-    val value = Scalar(randomBytes32)
-    val wire = LightningMessageCodecs.scalar.encode(value).require
+  test("encode/decode with private key codec") {
+    val value = PrivateKey(randomBytes32)
+    val wire = LightningMessageCodecs.privateKey.encode(value).require
     assert(wire.length == 256)
-    val value1 = LightningMessageCodecs.scalar.decode(wire).require.value
-    assert(value1 == value)
-  }
-
-  test("encode/decode with point codec") {
-    val value = Scalar(randomBytes32).toPoint
-    val wire = LightningMessageCodecs.point.encode(value).require
-    assert(wire.length == 33 * 8)
-    val value1 = LightningMessageCodecs.point.decode(wire).require.value
+    val value1 = LightningMessageCodecs.privateKey.decode(wire).require.value
     assert(value1 == value)
   }
 

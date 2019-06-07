@@ -20,7 +20,7 @@ import java.util.UUID
 
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.Scalar
+import fr.acinq.bitcoin.Crypto.{PrivateKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
@@ -420,7 +420,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
-    sender.send(bob, RevokeAndAck(ByteVector32.Zeroes, Scalar(randomBytes32), Scalar(randomBytes32).toPoint))
+    sender.send(bob, RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32), PrivateKey(randomBytes32).publicKey))
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
@@ -435,7 +435,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isRight)
-    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, Scalar(randomBytes32), Scalar(randomBytes32).toPoint))
+    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32), PrivateKey(randomBytes32).publicKey))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx

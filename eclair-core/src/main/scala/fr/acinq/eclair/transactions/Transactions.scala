@@ -18,7 +18,7 @@ package fr.acinq.eclair.transactions
 
 import java.nio.ByteOrder
 
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, ripemd160}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, MilliSatoshi, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptFlags, ScriptWitness, Transaction, TxIn, TxOut, millisatoshi2satoshi}
@@ -148,12 +148,12 @@ object Transactions {
     * @param remotePaymentBasePoint remote payment base point
     * @return the obscured tx number as defined in BOLT #3 (a 48 bits integer)
     */
-  def obscuredCommitTxNumber(commitTxNumber: Long, isFunder: Boolean, localPaymentBasePoint: Point, remotePaymentBasePoint: Point): Long = {
+  def obscuredCommitTxNumber(commitTxNumber: Long, isFunder: Boolean, localPaymentBasePoint: PublicKey, remotePaymentBasePoint: PublicKey): Long = {
     // from BOLT 3: SHA256(payment-basepoint from open_channel || payment-basepoint from accept_channel)
     val h = if (isFunder)
-      Crypto.sha256(localPaymentBasePoint.toBin(true) ++ remotePaymentBasePoint.toBin(true))
+      Crypto.sha256(localPaymentBasePoint.toBin ++ remotePaymentBasePoint.toBin)
     else
-      Crypto.sha256(remotePaymentBasePoint.toBin(true) ++ localPaymentBasePoint.toBin(true))
+      Crypto.sha256(remotePaymentBasePoint.toBin ++ localPaymentBasePoint.toBin)
 
     val blind = Protocol.uint64((h.takeRight(6).reverse ++ ByteVector.fromValidHex("0000")).toArray, ByteOrder.LITTLE_ENDIAN)
     commitTxNumber ^ blind
@@ -167,7 +167,7 @@ object Transactions {
     * @param remotePaymentBasePoint remote payment base point
     * @return the actual commit tx number that was blinded and stored in locktime and sequence fields
     */
-  def getCommitTxNumber(commitTx: Transaction, isFunder: Boolean, localPaymentBasePoint: Point, remotePaymentBasePoint: Point): Long = {
+  def getCommitTxNumber(commitTx: Transaction, isFunder: Boolean, localPaymentBasePoint: PublicKey, remotePaymentBasePoint: PublicKey): Long = {
     val blind = obscuredCommitTxNumber(0, isFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val obscured = decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
     obscured ^ blind
@@ -186,7 +186,7 @@ object Transactions {
 
   def decodeTxNumber(sequence: Long, locktime: Long): Long = ((sequence & 0xffffffL) << 24) + (locktime & 0xffffffL)
 
-  def makeCommitTx(commitTxInput: InputInfo, commitTxNumber: Long, localPaymentBasePoint: Point, remotePaymentBasePoint: Point, localIsFunder: Boolean, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, remotePaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec): CommitTx = {
+  def makeCommitTx(commitTxInput: InputInfo, commitTxNumber: Long, localPaymentBasePoint: PublicKey, remotePaymentBasePoint: PublicKey, localIsFunder: Boolean, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPaymentPubkey: PublicKey, remotePaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, spec: CommitmentSpec): CommitTx = {
     val commitFee = commitTxFee(localDustLimit, spec)
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
