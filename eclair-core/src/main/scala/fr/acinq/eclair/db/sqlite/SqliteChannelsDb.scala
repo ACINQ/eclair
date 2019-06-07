@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.{Connection, Statement}
+import java.sql.{Connection, SQLException, Statement}
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.HasCommitments
@@ -49,10 +49,39 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
-
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS block_key_counter (block_height INTEGER NOT NULL PRIMARY KEY, counter INTEGER NOT NULL)")
       case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
   }
+
+  override def getCounterFor(blockHeight: Long): Long = synchronized {
+    val counterOld = getCounter(blockHeight)
+    setCounter(blockHeight, counterOld + 1)
+    counterOld
+  }
+
+  private def getCounter(blockHeight: Long): Long = {
+    using(sqlite.prepareStatement("SELECT counter FROM block_key_counter WHERE block_height=?")) { statement =>
+      statement.setLong(1, blockHeight)
+      val rs = statement.executeQuery()
+      if(rs.next()) rs.getLong("counter") else 0
+    }
+  }
+
+  private def setCounter(blockHeight: Long, counter: Long) = {
+    using(sqlite.prepareStatement("UPDATE block_key_counter SET counter=? WHERE block_height=?")) { statement =>
+      statement.setLong(1, counter)
+      statement.setLong(2, blockHeight)
+      if(statement.executeUpdate() != 1){
+        using(sqlite.prepareStatement("INSERT INTO block_key_counter VALUES(?, ?)")) { insert =>
+          insert.setLong(1, blockHeight)
+          insert.setLong(2, counter)
+          insert.executeUpdate()
+        }
+      }
+    }
+  }
+
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = {
     val data = stateDataCodec.encode(state).require.toByteArray

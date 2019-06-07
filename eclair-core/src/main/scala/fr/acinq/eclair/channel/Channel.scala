@@ -99,7 +99,9 @@ object Channel {
 
   def makeFundeeChannelParams(nodeParams: NodeParams, open: OpenChannel, defaultFinalScriptPubKey: ByteVector, fundingSatoshis: Long): LocalParams = {
 
-    val publicKeyPath = LocalKeyManager.makeChannelKeyPathFundeePubkey(Globals.blockCount.get, 0)
+    val blockHeight = Globals.blockCount.get
+    val counter = nodeParams.db.channels.getCounterFor(blockHeight)
+    val publicKeyPath = LocalKeyManager.makeChannelKeyPathFundeePubkey(blockHeight, counter)
     val localFundingPubkey = nodeParams.keyManager.fundingPublicKey(publicKeyPath).publicKey
 
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, open.fundingPubkey)))

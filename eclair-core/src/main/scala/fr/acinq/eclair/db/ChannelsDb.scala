@@ -21,6 +21,8 @@ import fr.acinq.eclair.channel.HasCommitments
 
 trait ChannelsDb {
 
+  def getCounterFor(blockHeight: Long): Long
+
   def addOrUpdateChannel(state: HasCommitments)
 
   def removeChannel(channelId: ByteVector32)

@@ -49,9 +49,9 @@ object LocalKeyManager {
   def makeChannelKeyPathFundee(entropy: ByteVector) = KeyPath(fourByteGroupsFromSha(entropy) :+ 1L)
   def makeChannelKeyPathFundeePubkey(entropy: ByteVector) = KeyPath(fourByteGroupsFromSha(entropy) :+ 2L)
 
-  def makeChannelKeyPathFundeePubkey(blockHeight: Long, counter: Int): KeyPath = {
+  def makeChannelKeyPathFundeePubkey(blockHeight: Long, counter: Long): KeyPath = {
     val blockHeightBytes = ByteVector.fromLong(blockHeight, size = 4, ordering = ByteOrdering.LittleEndian)
-    val counterBytes = ByteVector.fromInt(counter, size = 4, ordering = ByteOrdering.LittleEndian)
+    val counterBytes = ByteVector.fromLong(counter, size = 4, ordering = ByteOrdering.LittleEndian)
 
     makeChannelKeyPathFundeePubkey(blockHeightBytes ++ counterBytes)
   }

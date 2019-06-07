@@ -93,4 +93,18 @@ class SqliteChannelsDbSpec extends FunSuite {
     }
     assert(db.listLocalChannels() === List(channel))
   }
+
+  test("channel keypath counter should get and increment") {
+
+    val sqlite = TestConstants.sqliteInMemory()
+    val channelDb = new SqliteChannelsDb(sqlite)
+
+    assert(channelDb.getCounterFor(123) == 0)
+    assert(channelDb.getCounterFor(123) == 1)
+    assert(channelDb.getCounterFor(123) == 2)
+    assert(channelDb.getCounterFor(124) == 0)
+    assert(channelDb.getCounterFor(125) == 0)
+    assert(channelDb.getCounterFor(124) == 1)
+  }
+
 }

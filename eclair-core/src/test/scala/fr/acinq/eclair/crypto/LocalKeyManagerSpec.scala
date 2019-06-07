@@ -48,13 +48,11 @@ class LocalKeyManagerSpec extends FunSuite {
     * MAINNET funder payment point from extended public key: 030a7898d98245666be451b55a63a5f1acd71ec1efec85fb8364f3fbe46327441b
     * TESTNET fundee funding public key from extended public key #34273 #0: 029278489277ce1abf6a05463ec913f5fe32ee194588a13c5b7899215d4ee477da
     * TESTNET fundee htlc public point from extended public key #34273 #0: 02563a8f3480b06f1e653c7a1a9a006236dfe503ec616ccef8656ab8e2cbe938d5
-    * TESTNET fundee htlc public point from extended public key #34273 #4: 028ba2414d6fcc9ed4c26175dea6c63caaa595101c7a66810ea0653547ba8e0a07
     * MAINNET fundee funding public key from extended public key #34273 #0: 03fe59b3ac6c2f08172d634f0346194fbf3e4e90fe01422a030546a913f0a4b21e
-    * MAINNET fundee htlc public point from extended public key #34273 #0: 03a1c04e6281f9b1dcebb261ca6bbc6a260521ff011cbb617804ceac6fc0dd38bc
-    * MAINNET fundee htlc public point from extended public key #34273 #4: 0359fd05aed2daa09798b2d5e1a705d76664fcce740db2f88cdb6259d2bf055fb0
+    * MAINNET fundee htlc public point from extended public key #34273 #0: 03056cef064df0a65812c7c05fedfbdee978de5a9b4d986dc8b389e4c0ac42d9f1
     */
 
-  test("test vectors derivation paths (funder scenario - TESTNET)") {
+  test("test vectors derivation paths (funder TESTNET)") {
 
     val inputOutpoint = hex"1d12dcab62f3d509db16b8dcb69782ea6358a7060b579675561c4fc2e3294f41"
     val seed = hex"0101010102020202AABBCCDD030303030404040405050505060606060707070701"
@@ -68,7 +66,7 @@ class LocalKeyManagerSpec extends FunSuite {
     assert(keyManager.paymentPoint(funderChannelKeyPath).publicKey.toBin === hex"02efa31ae79a7c29faf23a21f00d5ca62ce14539c2f431db5dade3e919d2ff9050")
   }
 
-  test("test vectors derivation paths (funder scenario - MAINNET)") {
+  test("test vectors derivation paths (funder MAINNET)") {
 
     val inputOutpoint = hex"1d12dcab62f3d509db16b8dcb69782ea6358a7060b579675561c4fc2e3294f41"
     val seed = hex"0101010102020202AABBCCDD030303030404040405050505060606060707070701"
@@ -114,9 +112,8 @@ class LocalKeyManagerSpec extends FunSuite {
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(keyManager.fundingPublicKey(fundeePubkeyKeyPath).publicKey, remoteNodePubkey)))
     val fundeeChannelKeyPath = LocalKeyManager.makeChannelKeyPathFundee(fundingPubkeyScript)
 
-    println(keyManager.htlcPoint(fundeeChannelKeyPath).path.toString())
     // MAINNET fundee htlc public point from extended public key
-    assert(keyManager.htlcPoint(fundeeChannelKeyPath).publicKey.toBin === hex"03a1c04e6281f9b1dcebb261ca6bbc6a260521ff011cbb617804ceac6fc0dd38bc")
+    assert(keyManager.htlcPoint(fundeeChannelKeyPath).publicKey.toBin === hex"03056cef064df0a65812c7c05fedfbdee978de5a9b4d986dc8b389e4c0ac42d9f1")
   }
 
 }
