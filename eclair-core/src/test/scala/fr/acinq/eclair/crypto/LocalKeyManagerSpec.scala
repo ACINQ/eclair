@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.{Block, Script}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.{Block, Script}
 import fr.acinq.eclair.transactions.Scripts
 import org.scalatest.FunSuite
 import scodec.bits._
@@ -136,7 +136,6 @@ class LocalKeyManagerSpec extends FunSuite {
     // MAINNET fundee htlc public point from extended public key
     assert(keyManager.htlcPoint(fundeeChannelKeyPath).publicKey.toBin === hex"03056cef064df0a65812c7c05fedfbdee978de5a9b4d986dc8b389e4c0ac42d9f1")
 
-
     // with different counter
     val fundeePubkeyKeyPath1 = LocalKeyManager.makeChannelKeyPathFundeePubkey(34273, 500)
     val fundingPubkeyScript1 = Script.write(Script.pay2wsh(Scripts.multiSig2of2(keyManager.fundingPublicKey(fundeePubkeyKeyPath1).publicKey, remoteNodePubkey)))
@@ -150,6 +149,8 @@ class LocalKeyManagerSpec extends FunSuite {
     assert(keyManager.delayedPaymentPoint(fundeeChannelKeyPath1).publicKey.toBin === hex"0256f501048527f6d67e155b4aa615490f675d57e99e879f0758114dfe8774f5fd")
     // MAINNET fundee htlc point
     assert(keyManager.htlcPoint(fundeeChannelKeyPath1).publicKey.toBin === hex"02d13757fd99c3e99985a263996d905d9a617fc2c17998630b3f5dd8cb79d88f79")
+    // MAINNED fundee shaSeed point
+    assert(keyManager.shaSeedPub(fundeeChannelKeyPath1).publicKey.toBin === hex"037bc0457999d9ba6609250146fc3176f5cf382cfe5216e007267fd7fe047b2bf4")
   }
 
 }
