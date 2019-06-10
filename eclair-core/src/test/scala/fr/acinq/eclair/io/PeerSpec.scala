@@ -107,8 +107,7 @@ class PeerSpec extends LoggingTestkitBaseClass {
     val CurrentState(_, INSTANTIATING) = monitor.expectMsgType[CurrentState[_]]
     val Transition(_, INSTANTIATING, DISCONNECTED) = monitor.expectMsgType[Transition[_]]
     probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None))
-    probe.expectMsg(s"Unable to connect to $remoteNodeId no address found")
-    //monitor.expectMsgType[Transition[_]]
+    probe.expectMsg(s"no address found")
   }
 
   test("if no address was specified during connection use the one from node_announcement", Tag("with_node_announcements")) { f =>
