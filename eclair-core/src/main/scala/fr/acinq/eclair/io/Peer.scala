@@ -64,7 +64,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       } match {
         case None =>
           sender ! "no address found"
-          stopPeer()
+          stay
         case Some(address) =>
           if (d.address_opt.contains(address)) {
             // we already know this address, we'll reconnect automatically
