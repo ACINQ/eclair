@@ -103,7 +103,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         case Some((gf, lf)) => wire.Init(globalFeatures = gf, localFeatures = lf)
         case None => wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
       }
-      log.debug(s"using globalFeatures={} and localFeatures={}", localInit.globalFeatures.toBin, localInit.localFeatures.toBin)
+      log.info(s"using globalFeatures=${localInit.globalFeatures.toBin} and localFeatures=${localInit.localFeatures.toBin}")
       transport ! localInit
 
       val address_opt = if (outgoing) {
