@@ -21,7 +21,6 @@ import java.net.{Inet4Address, InetSocketAddress}
 import akka.actor.{ActorRef, ActorSystem}
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.{EventFilter, TestFSMRef, TestKit, TestProbe}
-import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
@@ -38,7 +37,7 @@ import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 import scala.concurrent.duration._
 
-class PeerSpec extends LoggingTestkitBaseClass {
+class PeerSpec extends TestkitBaseClass {
 
   def ipv4FromInet4(address: InetSocketAddress) = IPv4.apply(address.getAddress.asInstanceOf[Inet4Address], address.getPort)
 
@@ -150,18 +149,6 @@ class PeerSpec extends LoggingTestkitBaseClass {
     probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set.empty))
     probe.send(peer, Peer.Reconnect)
     probe.expectNoMsg()
-  }
-
-  test("reconnect using the address from node_announcement", Tag("with_node_announcements")) { f =>
-    import f._
-
-    val probe = TestProbe()
-    awaitCond({peer.stateName.toString == "INSTANTIATING"}, 10 seconds)
-    probe.send(peer, Peer.Init(None, Set(ChannelStateSpec.normal)))
-    awaitCond({peer.stateName.toString == "DISCONNECTED" && peer.stateData.address_opt.isEmpty}, 10 seconds)
-    EventFilter.info(message = s"reconnecting to ${fakeIPAddress.socketAddress}", occurrences = 1) intercept {
-      probe.send(peer, Peer.Reconnect)
-    }
   }
 
   test("count reconnections") { f =>
