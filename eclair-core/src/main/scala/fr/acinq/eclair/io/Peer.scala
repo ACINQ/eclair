@@ -63,11 +63,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         getPeerAddressFromNodeAnnouncement()
       } match {
         case None =>
-          log.warning(s"Unable to connect to $remoteNodeId no address found")
-          sender() ! s"Unable to connect to $remoteNodeId no address found"
+          sender ! "no address found"
           stopPeer()
         case Some(address) =>
-          if (d.address_opt.contains(address)) { // TODO check if we received a Connect for the same peer but with a different address
+          if (d.address_opt.contains(address)) {
             // we already know this address, we'll reconnect automatically
             sender ! "reconnection in progress"
             stay
