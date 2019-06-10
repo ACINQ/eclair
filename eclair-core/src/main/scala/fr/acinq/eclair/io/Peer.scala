@@ -85,7 +85,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           log.warning(s"Unable to reconnect to peer, no address known")
           stay
         case Some(address) =>
-          // InetAddress.getHostAddress returns the IP address as string
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           log.info(s"reconnecting to $address")
           // exponential backoff retry with a finite max
