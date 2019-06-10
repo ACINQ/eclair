@@ -78,12 +78,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
 
     case Event(Reconnect, d: DisconnectedData) =>
-      if (d.channels.isEmpty) stay
-
       d.address_opt.orElse(getPeerAddressFromNodeAnnouncement()) match {
-        case None =>
-          log.warning(s"Unable to reconnect to peer, no address known")
-          stay
+        case _ if d.channels.isEmpty => stay // no-op, no more channels with this peer
+        case None                    => stay // no-op, we don't know any address to this peer and we won't try reconnecting again
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           log.info(s"reconnecting to $address")
@@ -498,7 +495,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   onTransition {
     case INSTANTIATING -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => self ! Reconnect // we reconnect right away if we just started the peer
     case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
-    case DISCONNECTED -> _ if nodeParams.autoReconnect && stateData.address_opt.isDefined => cancelTimer(RECONNECT_TIMER)
+    case DISCONNECTED -> _ if nodeParams.autoReconnect => cancelTimer(RECONNECT_TIMER)
   }
 
   def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingSatoshis: Long, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
@@ -576,11 +573,9 @@ object Peer {
   case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort]) {
     def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
   }
-
   object Connect {
     def apply(uri: NodeURI): Connect = new Connect(uri.nodeId, Some(uri.address))
   }
-
   case object Reconnect
   case class Disconnect(nodeId: PublicKey)
   case object ResumeAnnouncements
