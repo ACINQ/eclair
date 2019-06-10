@@ -89,6 +89,12 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
       val peer = createOrGetPeer(c.nodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward c
 
+    case d: Peer.Disconnect =>
+      getPeer(d.nodeId) match {
+        case Some(peer) => peer forward d
+        case None       => sender ! Status.Failure(new RuntimeException("peer not found"))
+      }
+
     case o: Peer.OpenChannel =>
       getPeer(o.remoteNodeId) match {
         case Some(peer) => peer forward o

@@ -57,7 +57,7 @@ trait Eclair {
 
   def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String]
 
-  def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[Unit]
+  def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String]
 
   def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[String]
 
@@ -116,13 +116,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
     case Right(pubKey) => (appKit.switchboard ? Peer.Connect(pubKey, None)).mapTo[String]
   }
 
-  override def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[Unit] = {
-    (appKit.switchboard ? 'peers).mapTo[Iterable[ActorRef]].map { peers =>
-      peers.find(_.path.name == Switchboard.peerActorName(nodeId)) match {
-        case Some(peer) => peer ! Peer.Disconnect
-        case None => throw new IllegalArgumentException(s"Peer $nodeId not found")
-      }
-    }
+  override def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String] = {
+    (appKit.switchboard ? Peer.Disconnect(nodeId)).mapTo[String]
   }
 
   override def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat: Option[Long], fundingFeerateSatByte: Option[Long], flags: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[String] = {

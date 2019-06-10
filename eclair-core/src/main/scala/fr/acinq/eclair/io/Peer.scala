@@ -189,6 +189,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       } else {
         stay using d.copy(channels = channels1)
       }
+
+    case Event(Disconnect(nodeId), d: ConnectedData) if nodeId == remoteNodeId =>
+      log.info("disconnecting")
+      sender ! "disconnecting"
+      d.transport ! PoisonPill
+      stay
+
   }
 
   when(CONNECTED) {
@@ -423,8 +430,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.info(s"resuming processing of network announcements for peer")
       stay using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
 
-    case Event(Disconnect, d: ConnectedData) =>
+    case Event(Disconnect(nodeId), d: ConnectedData) if nodeId == remoteNodeId =>
       log.info(s"disconnecting")
+      sender ! "disconnecting"
       d.transport ! PoisonPill
       stay
 
@@ -576,7 +584,7 @@ object Peer {
   }
 
   case object Reconnect
-  case object Disconnect
+  case class Disconnect(nodeId: PublicKey)
   case object ResumeAnnouncements
   case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) {
     require(fundingSatoshis.amount < Channel.MAX_FUNDING_SATOSHIS, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING_SATOSHIS}")
