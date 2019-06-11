@@ -30,6 +30,7 @@ import akka.http.scaladsl.server.directives.Credentials
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.Timeout
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.api.FormParamExtractors._
@@ -41,6 +42,7 @@ import fr.acinq.eclair.{Eclair, ShortChannelId}
 import grizzled.slf4j.Logging
 import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
+
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
@@ -135,10 +137,17 @@ trait Service extends ExtraDirectives with Logging {
                       complete(eclairApi.getInfoResponse())
                     } ~
                       path("connect") {
-                        formFields("uri".as[String]) { uri =>
-                          complete(eclairApi.connect(uri))
+                        formFields("uri".as[NodeURI]) { uri =>
+                          complete(eclairApi.connect(Left(uri)))
                         } ~ formFields(nodeIdFormParam, "host".as[String], "port".as[Int].?) { (nodeId, host, port_opt) =>
-                          complete(eclairApi.connect(s"$nodeId@$host:${port_opt.getOrElse(NodeURI.DEFAULT_PORT)}"))
+                          complete(eclairApi.connect(Left(NodeURI(nodeId, HostAndPort.fromParts(host, port_opt.getOrElse(NodeURI.DEFAULT_PORT))))))
+                        } ~ formFields(nodeIdFormParam) { nodeId =>
+                          complete(eclairApi.connect(Right(nodeId)))
+                        }
+                      } ~
+                      path("disconnect") {
+                        formFields(nodeIdFormParam) { nodeId =>
+                          complete(eclairApi.disconnect(nodeId))
                         }
                       } ~
                       path("open") {

@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-import fr.acinq.eclair.io.{NodeURI, Peer}
+import fr.acinq.eclair.io.{NodeURI, Peer, Switchboard}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
 import scodec.bits.ByteVector
@@ -55,7 +55,9 @@ object TimestampQueryFilters {
 
 trait Eclair {
 
-  def connect(uri: String)(implicit timeout: Timeout): Future[String]
+  def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String]
+
+  def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String]
 
   def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat_opt: Option[Long], fundingFeerateSatByte_opt: Option[Long], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[String]
 
@@ -109,8 +111,13 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   implicit val ec = appKit.system.dispatcher
 
-  override def connect(uri: String)(implicit timeout: Timeout): Future[String] = {
-    (appKit.switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String]
+  override def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String] = target match {
+    case Left(uri) => (appKit.switchboard ? Peer.Connect(uri)).mapTo[String]
+    case Right(pubKey) => (appKit.switchboard ? Peer.Connect(pubKey, None)).mapTo[String]
+  }
+
+  override def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String] = {
+    (appKit.switchboard ? Peer.Disconnect(nodeId)).mapTo[String]
   }
 
   override def open(nodeId: PublicKey, fundingSatoshis: Long, pushMsat_opt: Option[Long], fundingFeerateSatByte_opt: Option[Long], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[String] = {
