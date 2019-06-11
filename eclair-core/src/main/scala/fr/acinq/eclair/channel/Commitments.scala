@@ -40,6 +40,7 @@ case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs
 case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs)
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, remotePerCommitmentPoint: Point)
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
+case class UsableBalances(localMsat: Long, remoteMsat: Long, isPublic: Boolean)
 // @formatter:on
 
 /**
@@ -71,12 +72,14 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
-  def announceChannel: Boolean = (channelFlags & 0x01) != 0
+  val announceChannel: Boolean = (channelFlags & 0x01) != 0
 
-  def availableBalanceForSendMsat: Long = {
+  def usableBalances: UsableBalances = {
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-    val feesMsat = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced).amount * 1000 else 0
-    reduced.toRemoteMsat - remoteParams.channelReserveSatoshis * 1000 - feesMsat
+    val commitTxFee = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced).amount * 1000
+    val localBalance = reduced.toRemoteMsat - remoteParams.channelReserveSatoshis * 1000 - { if (localParams.isFunder) commitTxFee else 0 }
+    val remoteBalance = reduced.toLocalMsat - localParams.channelReserveSatoshis * 1000 - { if (localParams.isFunder) 0 else commitTxFee }
+    UsableBalances(localMsat = localBalance, remoteMsat = remoteBalance, isPublic = announceChannel)
   }
 }
 

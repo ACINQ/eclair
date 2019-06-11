@@ -58,9 +58,8 @@ class RelayerSpec extends TestkitBaseClass {
   val channelId_ab = randomBytes32
   val channelId_bc = randomBytes32
 
-  def makeCommitments(channelId: ByteVector32, availableBalanceMsat: Long = 50000000L) = new Commitments(null, null, 0.toByte, null, null,
-    null, null, 0, 0, Map.empty, null, null, null, channelId) {
-    override def availableBalanceForSendMsat: Long = availableBalanceMsat
+  def makeCommitments(channelId: ByteVector32, availableBalanceMsat: Long = 50000000L) = new Commitments(null, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId) {
+    override def usableBalances: UsableBalances = UsableBalances(availableBalanceMsat, 0, isPublic = true)
   }
 
   test("relay an htlc-add") { f =>
