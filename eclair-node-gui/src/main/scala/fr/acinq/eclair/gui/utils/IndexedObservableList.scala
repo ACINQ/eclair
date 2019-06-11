@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,6 +52,13 @@ class IndexedObservableList[K, V] {
       val index = map2index.get(key)
       map2index.remove(key)
       list.remove(index)
+      // now we need to decrement all higher indices by 1
+      import scala.collection.JavaConversions._
+      for (entry <- map2index.entrySet()) {
+        if (entry.getValue > index) {
+          map2index.put(entry.getKey, entry.getValue - 1)
+        }
+      }
     }
   }
 

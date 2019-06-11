@@ -28,10 +28,10 @@ where OPTIONS can be:
 
 and COMMAND is one of:
   getinfo, connect, open, close, forceclose, updaterelayfee,
-  peers, channels, channel, allnodes, allchannels, allupdates,
-  receive, parseinvoice, findroute, findroutetonode,
-  payinvoice, sendtonode, getreceivedinfo, audit, networkfees,
-  channelstats, getsentinfo, getinvoice, allinvoice, listpendinginvoices
+  peers, channels, channel, allnodes, allchannels, allupdates
+  findroute, findroutetonode, parseinvoice, payinvoice, sendtonode,
+  getsentinfo, createinvoice, getinvoice, listinvoices,
+  listpendinginvoices, getreceivedinfo, audit, networkfees, channelstats
 
 Examples
 --------

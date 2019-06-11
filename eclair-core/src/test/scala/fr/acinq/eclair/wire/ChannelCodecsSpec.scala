@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire
 
 import java.util.UUID
+
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{DeterministicWallet, OutPoint}
@@ -28,8 +29,11 @@ import fr.acinq.eclair.wire.ChannelCodecs._
 import fr.acinq.eclair.{UInt64, randomBytes, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits._
+
 import scala.compat.Platform
+import scala.concurrent.duration._
 import scala.util.Random
+import scala.concurrent.duration._
 
 /**
   * Created by PM on 31/05/2016.
@@ -177,7 +181,7 @@ class ChannelCodecsSpec extends FunSuite {
     // let's decode the old data (this will use the old codec that provides default values for new fields)
     val data_new = stateDataCodec.decode(bin_old.toBitVector).require.value
     assert(data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx === None)
-    assert(Platform.currentTime / 1000 - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince < 3600) // we just set this timestamp to current time
+    assert(Platform.currentTime.milliseconds.toSeconds - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince < 3600) // we just set this timestamp to current time
     // and re-encode it with the new codec
     val bin_new = ByteVector(stateDataCodec.encode(data_new).require.toByteVector.toArray)
     // data should now be encoded under the new format, with version=0 and type=8

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.eclair.channel.Helpers.Funding
 import org.scalatest.FunSuite
 
+import scala.compat.Platform
 import scala.concurrent.duration._
 
 class HelpersSpec extends FunSuite {
@@ -44,6 +45,16 @@ class HelpersSpec extends FunSuite {
       waitingSince = 1000,
       delay = 5 minutes,
       minDelay = 10 minutes) === (10 minutes))
+  }
+
+  test("compute refresh delay") {
+    import org.scalatest.Matchers._
+    implicit val log = akka.event.NoLogging
+    Helpers.nextChannelUpdateRefresh(1544400000).toSeconds should equal (0)
+    Helpers.nextChannelUpdateRefresh((Platform.currentTime.milliseconds - 9.days).toSeconds).toSeconds should equal (24 * 3600L +- 100)
+    Helpers.nextChannelUpdateRefresh((Platform.currentTime.milliseconds - 3.days).toSeconds).toSeconds should equal (7 * 24 * 3600L +- 100)
+    Helpers.nextChannelUpdateRefresh(Platform.currentTime.milliseconds.toSeconds).toSeconds should equal (10 * 24 * 3600L +- 100)
+
   }
 
 }

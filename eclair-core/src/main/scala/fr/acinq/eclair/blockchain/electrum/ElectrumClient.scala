@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -335,7 +335,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 }
 
 object ElectrumClient {
-  val CLIENT_NAME = "3.3.4" // client name that we will include in our "version" message
+  val CLIENT_NAME = "3.3.6" // client name that we will include in our "version" message
   val PROTOCOL_VERSION = "1.4" // version of the protocol that we require
 
   // this is expensive and shared with all clients

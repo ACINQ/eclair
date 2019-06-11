@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     checkBrokenHtlcsLink(channels, nodeParams.privateKey) match {
       case Nil => ()
       case brokenHtlcs =>
-        val brokenHtlcKiller = context.actorOf(Props[HtlcReaper], name = "htlc-reaper")
+        val brokenHtlcKiller = context.system.actorOf(Props[HtlcReaper], name = "htlc-reaper")
         brokenHtlcKiller ! brokenHtlcs
     }
 

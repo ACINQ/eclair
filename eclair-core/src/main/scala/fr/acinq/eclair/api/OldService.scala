@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,8 +41,8 @@ import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{AuditResponse, GetInfoResponse, Kit, ShortChannelId, feerateByte2Kw}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair._
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JBool, JInt, JString}
 import org.json4s.{JValue, jackson}
@@ -316,7 +316,7 @@ trait OldService extends Logging {
                         case "audit" =>
                           val (from, to) = req.params match {
                             case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
-                            case _ => (0L, Long.MaxValue)
+                            case _ => (0L, MaxEpochSeconds)
                           }
                           completeRpcFuture(req.id, Future(AuditResponse(
                             sent = nodeParams.db.audit.listSent(from, to),
@@ -327,7 +327,7 @@ trait OldService extends Logging {
                         case "networkfees" =>
                           val (from, to) = req.params match {
                             case JInt(from) :: JInt(to) :: Nil => (from.toLong, to.toLong)
-                            case _ => (0L, Long.MaxValue)
+                            case _ => (0L, MaxEpochSeconds)
                           }
                           completeRpcFuture(req.id, Future(nodeParams.db.audit.listNetworkFees(from, to)))
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,8 +47,9 @@ object Boot extends App with Logging {
   }
 
   def onError(t: Throwable): Unit = {
-    logger.error(s"fatal error:", t)
-    t.printStackTrace()
+    val errorMsg = if (t.getMessage != null) t.getMessage else t.getClass.getSimpleName
+    System.err.println(s"fatal error: $errorMsg")
+    logger.error(s"fatal error: $errorMsg", t)
     System.exit(1)
   }
 }

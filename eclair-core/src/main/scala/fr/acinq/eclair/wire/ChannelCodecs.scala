@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,11 @@ import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
+import scala.concurrent.duration._
+import scala.compat.Platform
+
+import scala.concurrent.duration._
+
 
 /**
   * Created by PM on 02/06/2017.
@@ -237,7 +242,7 @@ object ChannelCodecs extends Logging {
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::
       ("fundingTx" | provide[Option[Transaction]](None)) ::
-      ("waitingSince" | provide(compat.Platform.currentTime / 1000)) ::
+      ("waitingSince" | provide(Platform.currentTime.milliseconds.toSeconds)) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,7 @@
 
 package fr.acinq.eclair.payment
 
-import java.time.Instant
 import java.util.UUID
-
 import akka.actor.{ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
@@ -33,6 +31,8 @@ import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import scodec.Attempt
 import scodec.bits.ByteVector
+import concurrent.duration._
+import scala.compat.Platform
 import scala.util.{Failure, Success}
 
 /**
@@ -45,9 +45,15 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
   when(WAITING_FOR_REQUEST) {
+    case Event(c: SendPaymentToRoute, WaitingForRequest) =>
+      val send = SendPayment(c.amountMsat, c.paymentHash, c.hops.last, finalCltvExpiry = c.finalCltvExpiry, maxAttempts = 1)
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
+      router ! FinalizeRoute(c.hops)
+      goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
+
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
-      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Instant.now().getEpochSecond, None, OutgoingPaymentStatus.PENDING))
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 
@@ -191,14 +197,16 @@ object PaymentLifecycle {
   def props(nodeParams: NodeParams, id: UUID, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], nodeParams, id, router, register)
 
   // @formatter:off
-  case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil, fallbackAddress: Option[String] = None)
+  case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil, fallbackAddress: Option[String] = None, paymentPreimage: Option[ByteVector32] = None)
+  sealed trait GenericSendPayment
+  case class SendPaymentToRoute(amountMsat: Long, paymentHash: ByteVector32, hops: Seq[PublicKey], finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY) extends GenericSendPayment
   case class SendPayment(amountMsat: Long,
                          paymentHash: ByteVector32,
                          targetNodeId: PublicKey,
                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                          finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
                          maxAttempts: Int,
-                         routeParams: Option[RouteParams] = None) {
+                         routeParams: Option[RouteParams] = None) extends GenericSendPayment {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
 

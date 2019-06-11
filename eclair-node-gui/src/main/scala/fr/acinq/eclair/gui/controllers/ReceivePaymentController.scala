@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -73,8 +73,6 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
         Try(CoinUtils.convertStringAmountToMsat(amount.getText, unit.getValue)) match {
           case Success(amountMsat) if amountMsat.amount < 0 =>
             handleError("Amount must be greater than 0")
-          case Success(amountMsat) if amountMsat.amount >= PaymentRequest.MAX_AMOUNT.amount =>
-            handleError(s"Amount must be less than ${CoinUtils.formatAmountInUnit(PaymentRequest.MAX_AMOUNT, FxApp.getUnit, withUnit = true)}")
           case Failure(_) =>
             handleError("Amount is incorrect")
           case Success(amountMsat) => createPaymentRequest(Some(amountMsat))
