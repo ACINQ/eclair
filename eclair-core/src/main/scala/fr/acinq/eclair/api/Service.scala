@@ -217,8 +217,8 @@ trait Service extends ExtraDirectives with Logging {
                         }
                       } ~
                       path("sendtonode") {
-                        formFields(amountMsatFormParam, paymentHashFormParam, nodeIdFormParam, "maxAttempts".as[Int].?, "feeThresholdSat".as[Long].?, "maxFeePct".as[Double].?) { (amountMsat, paymentHash, nodeId, maxAttempts, feeThresholdSat_opt, maxFeePct_opt) =>
-                          complete(eclairApi.send(nodeId, amountMsat, paymentHash, maxAttempts = maxAttempts, feeThresholdSat = feeThresholdSat_opt, maxFeePct = maxFeePct_opt))
+                        formFields(amountMsatFormParam, paymentHashFormParam, nodeIdFormParam, "maxAttempts".as[Int].?, "feeThresholdSat".as[Long].?, "maxFeePct".as[Double].?) { (amountMsat, paymentHash, nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt) =>
+                          complete(eclairApi.send(nodeId, amountMsat, paymentHash, maxAttempts_opt = maxAttempts_opt, feeThresholdSat_opt = feeThresholdSat_opt, maxFeePct_opt = maxFeePct_opt))
                         }
                       } ~
                       path("sendtoroute") {
