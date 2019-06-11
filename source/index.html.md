@@ -827,6 +827,8 @@ Parameter | Description | Optional | Type
 invoice | The invoice you want to pay | No | String
 amountMsat | Amount in to pay if the invoice does not have one | Yes | Millisatoshi (integer)
 maxAttempts | Max number of retries | Yes | Integer
+feeThresholdSat | Fee threshold to be paid along the payment route | Yes | Satoshi (integer)
+maxFeePct | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`)| Yes | Integer
 
 ## SendToNode
 
@@ -859,6 +861,8 @@ nodeId | The recipient of this payment | No | 32bytes-HexString (String)
 amountMsat | Amount in to pay | No | Millisatoshi (integer)
 paymentHash | The payment hash for this payment | No | 32bytes-HexString (String)
 maxAttempts | Max number of retries | Yes | Integer
+feeThresholdSat | Fee threshold to be paid along the payment route | Yes | Satoshi (integer)
+maxFeePct | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`)| Yes | Integer
 
 ## SendToRoute
 
