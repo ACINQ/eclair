@@ -1561,8 +1561,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   when(ERR_INFORMATION_LEAK)(errorStateHandler)
 
-  when(ERR_FUNDING_TIMEOUT)(errorStateHandler)
-
   when(ERR_FUNDING_LOST)(errorStateHandler)
 
   whenUnhandled {
@@ -1728,7 +1726,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val exc = FundingTxTimedout(d.channelId)
     val error = Error(d.channelId, exc.getMessage)
     context.system.eventStream.publish(ChannelErrorOccured(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc), isFatal = true))
-    goto(ERR_FUNDING_TIMEOUT) sending error
+    goto(CLOSED) sending error
   }
 
   def handleRevocationTimeout(revocationTimeout: RevocationTimeout, d: HasCommitments) = {
