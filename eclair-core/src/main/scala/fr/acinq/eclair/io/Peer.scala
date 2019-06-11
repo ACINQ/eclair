@@ -185,7 +185,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         stay using d.copy(channels = channels1)
       }
 
-    case Event(Disconnect(nodeId), d: ConnectedData) if nodeId == remoteNodeId =>
+    case Event(Disconnect(nodeId), d: InitializingData) if nodeId == remoteNodeId =>
       log.info("disconnecting")
       sender ! "disconnecting"
       d.transport ! PoisonPill

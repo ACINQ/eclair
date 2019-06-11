@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import java.net.{Inet4Address, InetSocketAddress}
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.{EventFilter, TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -35,6 +35,7 @@ import fr.acinq.eclair.wire.LightningMessageCodecsSpec.randomSignature
 import fr.acinq.eclair.wire.{Color, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
+
 import scala.concurrent.duration._
 
 class PeerSpec extends TestkitBaseClass {
@@ -176,6 +177,33 @@ class PeerSpec extends TestkitBaseClass {
     transport.send(peer, wire.Init(Bob.nodeParams.globalFeatures, bin"01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00".toByteVector))
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
+  }
+
+  test("handle disconnect in status INITIALIZING") { f =>
+    import f._
+
+    val probe = TestProbe()
+    probe.send(peer, Peer.Init(None, Set(ChannelStateSpec.normal)))
+    authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, None))
+
+    probe.send(peer, Peer.GetPeerInfo)
+    assert(probe.expectMsgType[Peer.PeerInfo].state == "INITIALIZING")
+
+    probe.send(peer, Peer.Disconnect(f.remoteNodeId))
+    probe.expectMsg("disconnecting")
+  }
+
+  test("handle disconnect in status CONNECTED") { f =>
+    import f._
+
+    val probe = TestProbe()
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelStateSpec.normal))
+
+    probe.send(peer, Peer.GetPeerInfo)
+    assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
+
+    probe.send(peer, Peer.Disconnect(f.remoteNodeId))
+    probe.expectMsg("disconnecting")
   }
 
   test("reply to ping") { f =>
