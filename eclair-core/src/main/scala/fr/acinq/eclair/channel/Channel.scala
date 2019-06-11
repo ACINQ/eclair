@@ -32,7 +32,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelReestablish, _}
 import scodec.bits.ByteVector
-
+import scodec.bits._
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
@@ -135,6 +135,9 @@ object Channel {
     ))
   ))
 
+  // P2WSH of 2-2 multisig
+  val dummyMultisigScriptPubkey = hex"0020992b70c4600f066c3b63146c06e651cae903275761f1a2920d966bcb05a0c9ba"
+
 }
 
 class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
@@ -194,12 +197,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, true, temporaryChannelId))
       forwarder ! remote
 
-      // this LOCKS the outpoints that we'll use in the funding transaction, the resulting TX is NOT signed, later in the process we update the output scriptPubkey and ask the wallet to sign
-      val tempKeyPath = KeyPath(Seq(1, 2, 3, 4L))
-      val scriptPubKey = Script.write(Script.pay2wsh(Scripts.multiSig2of2(keyManager.fundingPublicKey(tempKeyPath).publicKey, keyManager.fundingPublicKey(tempKeyPath).publicKey)))
-
       // the resulting funding tx response will NOT have input script signature
-      wallet.makeFundingTx(pubkeyScript = scriptPubKey, Satoshi(fundingSatoshis), fundingTxFeeratePerKw).map(stripSignaturesFromTx).pipeTo(self)
+      wallet.makeFundingTx(pubkeyScript = dummyMultisigScriptPubkey, Satoshi(fundingSatoshis), fundingTxFeeratePerKw).map(stripSignaturesFromTx).pipeTo(self)
 
       goto(WAIT_FOR_FUNDING_INTERNAL_CREATED) using DATA_WAIT_FOR_FUNDING_INTERNAL_CREATED(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, remote, remoteInit, channelFlags)
 
@@ -308,10 +307,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Failure(t) => handleLocalError(t, d, Some(open))
         case Success(_) =>
           context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, false, open.temporaryChannelId))
-
-
-
-
 
           // TODO: maybe also check uniqueness of temporary channel id
           val minimumDepth = nodeParams.minDepthBlocks
