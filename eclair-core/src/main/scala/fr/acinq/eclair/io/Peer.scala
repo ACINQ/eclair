@@ -59,9 +59,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
   when(DISCONNECTED) {
     case Event(Peer.Connect(_, address_opt), d: DisconnectedData) =>
-      address_opt.map(hAndp => new InetSocketAddress(hAndp.getHost, hAndp.getPort)).orElse {
-        getPeerAddressFromNodeAnnouncement()
-      } match {
+      address_opt
+        .map(hostAndPort2InetSocketAddress)
+        .orElse(getPeerAddressFromNodeAnnouncement) match {
         case None =>
           sender ! "no address found"
           stay
@@ -78,7 +78,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
 
     case Event(Reconnect, d: DisconnectedData) =>
-      d.address_opt.orElse(getPeerAddressFromNodeAnnouncement()) match {
+      d.address_opt.orElse(getPeerAddressFromNodeAnnouncement) match {
         case _ if d.channels.isEmpty => stay // no-op, no more channels with this peer
         case None                    => stay // no-op, we don't know any address to this peer and we won't try reconnecting again
         case Some(address) =>
@@ -518,7 +518,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   // TODO gets the first of the list, improve selection?
-  def getPeerAddressFromNodeAnnouncement(): Option[InetSocketAddress] = {
+  def getPeerAddressFromNodeAnnouncement: Option[InetSocketAddress] = {
     nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption.map(_.socketAddress))
   }
 
@@ -643,4 +643,6 @@ object Peer {
       case _ => true // if there is a filter and message doesn't have a timestamp (e.g. channel_announcement), then we send it
     }
   }
+
+  def hostAndPort2InetSocketAddress(hostAndPort: HostAndPort): InetSocketAddress = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
 }
