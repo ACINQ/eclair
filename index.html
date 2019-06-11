@@ -1266,6 +1266,18 @@ the unique identifier for this payment attempt is immediately returned to the ca
 <td>Yes</td>
 <td>Integer</td>
 </tr>
+<tr>
+<td>feeThresholdSat</td>
+<td>Fee threshold to be paid along the payment route</td>
+<td>Yes</td>
+<td>Satoshi (integer)</td>
+</tr>
+<tr>
+<td>maxFeePct</td>
+<td>Max percentage to be paid in fees along the payment route (ignored if below <code>feeThresholdSat</code>)</td>
+<td>Yes</td>
+<td>Integer</td>
+</tr>
 </tbody></table>
 <h2 id='sendtonode'>SendToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
     -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount&gt; -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/sendtonode"</span>
@@ -1313,6 +1325,18 @@ the unique identifier for this payment attempt is immediately returned to the ca
 <tr>
 <td>maxAttempts</td>
 <td>Max number of retries</td>
+<td>Yes</td>
+<td>Integer</td>
+</tr>
+<tr>
+<td>feeThresholdSat</td>
+<td>Fee threshold to be paid along the payment route</td>
+<td>Yes</td>
+<td>Satoshi (integer)</td>
+</tr>
+<tr>
+<td>maxFeePct</td>
+<td>Max percentage to be paid in fees along the payment route (ignored if below <code>feeThresholdSat</code>)</td>
 <td>Yes</td>
 <td>Integer</td>
 </tr>
