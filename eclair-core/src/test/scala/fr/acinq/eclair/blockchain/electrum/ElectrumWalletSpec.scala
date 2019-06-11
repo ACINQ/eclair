@@ -24,23 +24,24 @@ import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import com.whisk.docker.DockerReadyChecker
 import fr.acinq.bitcoin.{Block, Btc, ByteVector32, DeterministicWallet, MnemonicCode, Satoshi, Transaction, TxOut}
-import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse}
+import fr.acinq.eclair.blockchain.MakeFundingTxResponse
+import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.FundTransactionResponse
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse, SSL}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
+import fr.acinq.eclair.channel.Channel
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JDecimal, JString, JValue}
+import org.json4s.JsonAST.{JArray, JDecimal, JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
+
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-
 class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
-
 
   val entropy = ByteVector32(ByteVector.fill(32)(1))
   val mnemonics = MnemonicCode.toMnemonics(entropy)
@@ -159,7 +160,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     val btcWallet = new BitcoinCoreWallet(bitcoinrpcclient)
     val future = for {
       FundTransactionResponse(tx1, pos, fee) <- btcWallet.fundTransaction(tx, false, 10000)
-      SignTransactionResponse(tx2, true) <- btcWallet.signTransaction(tx1)
+      BitcoinCoreWallet.SignTransactionResponse(tx2, true) <- btcWallet.signTransaction(tx1)
       txid <- btcWallet.publishTransaction(tx2)
     } yield txid
     val txid = Await.result(future, 10 seconds)
@@ -327,4 +328,80 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.send(wallet, IsDoubleSpent(tx2))
     probe.expectMsg(IsDoubleSpentResponse(tx2, true))
   }
+
+  test("fund, sign and broadcast a transaction") {
+    val probe = TestProbe()
+
+    val GetBalanceResponse(confirmed, unconfirmed) = getBalance(probe)
+    logger.info(s" balance: $confirmed $unconfirmed")
+
+    // send money to our wallet
+    val GetCurrentReceiveAddressResponse(address) = getCurrentAddress(probe)
+
+    logger.info(s"sending 1 btc to $address")
+    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
+    probe.expectMsgType[JValue]
+
+    awaitCond({
+      val GetBalanceResponse(_, unconfirmed1) = getBalance(probe)
+      unconfirmed1 == unconfirmed + Satoshi(100000000L)
+    }, max = 30 seconds, interval = 1 second)
+
+    // confirm our tx
+    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    probe.expectMsgType[JValue]
+
+    awaitCond({
+      val GetBalanceResponse(confirmed1, _) = getBalance(probe)
+      confirmed1 == confirmed + Satoshi(100000000L)
+    }, max = 30 seconds, interval = 1 second)
+
+    val amountToSend = Satoshi(50000000L) // 0.5 BTC
+
+    // create a tx that sends money to Bitcoin Core's address
+    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(destinationAddress) = probe.expectMsgType[JValue]
+
+    // raw transaction that sends the funds to a hardcoded address
+    val hardcodedOutput = TxOut(amountToSend, fr.acinq.eclair.addressToPublicKeyScript("2N2JczfZK7tDJ9yuH3eQ9S64fL3dMp5eNCr", Block.RegtestGenesisBlock.hash))
+    val tx = Transaction(version = 2, txIn = Nil, txOut = hardcodedOutput :: Nil, lockTime = 0L)
+
+    // this will ask the electrum wallet to attach an input (fund the tx)
+    probe.send(wallet, CompleteTransaction(tx, 20000))
+    val CompleteTransactionResponse(tx1, _, None) = probe.expectMsgType[CompleteTransactionResponse]
+
+    // we strip the signatures from the tx
+    val tx2 = Channel.stripSignaturesFromTx(MakeFundingTxResponse(tx1, 0, Satoshi(0))).fundingTx
+
+    // assert there are no signatures
+    assert(tx2.txIn.forall(_.signatureScript.isEmpty))
+    assert(tx2.txIn.forall(!_.hasWitness))
+
+    // update the transaction with the actual output we want
+    val tx3 = tx2.copy(txOut = tx2.txOut.updated(
+      tx2.txOut.indexOf(hardcodedOutput),
+      TxOut(amountToSend, fr.acinq.eclair.addressToPublicKeyScript(destinationAddress, Block.RegtestGenesisBlock.hash))
+    ))
+
+    // ask the electrum wallet to sign the transaction again
+    probe.send(wallet, SignTransaction(tx3))
+    val ElectrumWallet.SignTransactionResponse(tx4) = probe.expectMsgType[SignTransactionResponse]
+
+    // broadcast the transaction
+    logger.info(s"sending 0.5 btc to $address with tx ${tx4.txid}")
+    probe.send(wallet, BroadcastTransaction(tx4))
+    val BroadcastTransactionResponse(_, None) = probe.expectMsgType[BroadcastTransactionResponse]
+
+    // mine a block
+    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    val JArray(List(JString(blockHash))) = probe.expectMsgType[JValue]
+
+    // get the block
+    probe.send(bitcoincli, BitcoinReq("getblock", blockHash, 0))
+    val JString(serializedBlock) = probe.expectMsgType[JValue]
+
+    // assert the block contains our transaction
+    assert(Block.read(serializedBlock).tx.exists(_.txid == tx4.txid))
+  }
+
 }
