@@ -58,7 +58,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     checkBrokenHtlcsLink(channels, nodeParams.privateKey) match {
       case Nil => ()
       case brokenHtlcs =>
-        val brokenHtlcKiller = context.actorOf(Props[HtlcReaper], name = "htlc-reaper")
+        val brokenHtlcKiller = context.system.actorOf(Props[HtlcReaper], name = "htlc-reaper")
         brokenHtlcKiller ! brokenHtlcs
     }
 

@@ -237,6 +237,20 @@ class RouterSpec extends BaseRouterSpec {
     assert(state.updates.size == 8)
   }
 
+  test("given a pre-computed route add the proper channel updates") { fixture =>
+    import fixture._
+
+    val sender = TestProbe()
+    val preComputedRoute = Seq(a, b, c, d)
+    sender.send(router, FinalizeRoute(preComputedRoute))
+
+    val response = sender.expectMsgType[RouteResponse]
+    // the route hasn't changed (nodes are the same)
+    assert(response.hops.map(_.nodeId).toList == preComputedRoute.dropRight(1).toList)
+    assert(response.hops.last.nextNodeId == preComputedRoute.last)
+    assert(response.hops.map(_.lastUpdate).toList == List(channelUpdate_ab, channelUpdate_bc, channelUpdate_cd))
+  }
+
   test("ask for channels that we marked as stale for which we receive a new update") { fixture =>
     import fixture._
     val blockHeight = Globals.blockCount.get().toInt - 2020

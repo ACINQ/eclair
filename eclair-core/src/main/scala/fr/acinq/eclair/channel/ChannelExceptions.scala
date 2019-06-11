@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, Transaction}
-import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.{ShortChannelId, UInt64}
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.wire.{ChannelUpdate, UpdateAddHtlc}
 
