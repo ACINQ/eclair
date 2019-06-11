@@ -125,6 +125,62 @@ nodeId | The **nodeId** of the node you want to connect to | No | 32bytes-HexStr
 host | The IPv4 host address of the node | No | String
 port | The port of the node (default: 9735) | Yes | Integer
 
+## Connect via NodeId
+
+```shell
+curl -u :<eclair_api_password> -X POST -F nodeId=<nodeId>  "http://localhost:8080/connect"
+
+# with eclair-cli
+eclair-cli connect --nodeId=<nodeId>
+```
+
+> The above command returns:
+
+```
+connected
+```
+
+Connect to another lightning node, this will perform a connection but no channel will be opened. 
+This API does not require a target address, instead eclair will use one of the addresses published
+by the remote peer in his `node_announcement` messages.
+
+### HTTP Request
+
+`POST http://localhost:8080/connect`
+
+### Parameters
+
+Parameter | Description | Optional | Type
+--------- | ----------- | --------- | ---------
+nodeId | The **nodeId** of the node you want to connect to | No | 32bytes-HexString (String)
+
+## Disconnect
+
+```shell
+curl -u :<eclair_api_password> -X POST -F nodeId=<nodeId>  "http://localhost:8080/disconnect"
+
+# with eclair-cli
+eclair-cli disconnect --nodeId=<nodeId>
+```
+
+> The above command returns:
+
+```
+disconnecting
+```
+
+Disconnect from a peer.
+
+### HTTP Request
+
+`POST http://localhost:8080/disconnect`
+
+### Parameters
+
+Parameter | Description | Optional | Type
+--------- | ----------- | --------- | ---------
+nodeId | The **nodeId** of the node you want to disconnect from | No | 32bytes-HexString (String)
+
 # Open
 
 ## Open
