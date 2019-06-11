@@ -38,11 +38,11 @@ class LightningMessageCodecsSpec extends FunSuite {
 
   def bin32(fill: Byte) = ByteVector32(bin(32, fill))
 
-  def scalar(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill), compressed = true)
+  def scalar(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill))
 
-  def point(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill), compressed = true).publicKey
+  def point(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill)).publicKey
 
-  def publicKey(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill), compressed = true).publicKey
+  def publicKey(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill)).publicKey
 
   test("encode/decode with uint64 codec") {
     val expected = Map(
@@ -126,7 +126,7 @@ class LightningMessageCodecsSpec extends FunSuite {
   }
 
   test("encode/decode with public key codec") {
-    val value = PrivateKey(randomBytes32, true).publicKey
+    val value = PrivateKey(randomBytes32).publicKey
     val wire = LightningMessageCodecs.publicKey.encode(value).require
     assert(wire.length == 33 * 8)
     val value1 = LightningMessageCodecs.publicKey.decode(wire).require.value

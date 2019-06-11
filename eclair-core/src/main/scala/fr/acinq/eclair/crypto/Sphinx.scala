@@ -88,7 +88,7 @@ object Sphinx extends Logging {
     * @return a tuple (ephemeral public keys, shared secrets)
     */
   def computeEphemeralPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: Seq[PublicKey]): (Seq[PublicKey], Seq[ByteVector32]) = {
-    val ephemeralPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value)
+    val ephemeralPublicKey0 = blind(PublicKey(Crypto.curve.getG), sessionKey.value)
     val secret0 = computeSharedSecret(publicKeys.head, sessionKey)
     val blindingFactor0 = computeblindingFactor(ephemeralPublicKey0, secret0)
     computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys.tail, Seq(ephemeralPublicKey0), Seq(blindingFactor0), Seq(secret0))

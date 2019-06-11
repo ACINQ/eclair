@@ -75,13 +75,13 @@ class TransactionsSpec extends FunSuite with Logging {
   }
 
   test("check pre-computed transaction weights") {
-    val localRevocationPriv = PrivateKey(randomBytes32, compressed = true)
-    val localPaymentPriv = PrivateKey(randomBytes32, compressed = true)
-    val remotePaymentPriv = PrivateKey(randomBytes32, compressed = true)
-    val localHtlcPriv = PrivateKey(randomBytes32, compressed = true)
-    val remoteHtlcPriv = PrivateKey(randomBytes32, compressed = true)
-    val localFinalPriv = PrivateKey(randomBytes32, compressed = true)
-    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32, compressed = true).publicKey))
+    val localRevocationPriv = PrivateKey(randomBytes32)
+    val localPaymentPriv = PrivateKey(randomBytes32)
+    val remotePaymentPriv = PrivateKey(randomBytes32)
+    val localHtlcPriv = PrivateKey(randomBytes32)
+    val remoteHtlcPriv = PrivateKey(randomBytes32)
+    val localFinalPriv = PrivateKey(randomBytes32)
+    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey))
     val localDustLimit = Satoshi(546)
     val toLocalDelay = 144
     val feeratePerKw = fr.acinq.eclair.MinimumFeeratePerKw
@@ -175,7 +175,7 @@ class TransactionsSpec extends FunSuite with Logging {
     val remotePaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
     val localHtlcPriv = PrivateKey(randomBytes32 :+ 1.toByte)
     val remoteHtlcPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32, true).publicKey))
+    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey))
     val commitInput = Funding.makeFundingInputInfo(randomBytes32, 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
     val toLocalDelay = 144
     val localDustLimit = Satoshi(546)

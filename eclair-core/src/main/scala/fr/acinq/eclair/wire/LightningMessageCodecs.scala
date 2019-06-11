@@ -78,7 +78,7 @@ object LightningMessageCodecs {
 
   def privateKey: Codec[PrivateKey] = Codec[PrivateKey](
     (priv: PrivateKey) => bytes(32).encode(priv.value),
-    (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => PrivateKey(b, compressed = true)))
+    (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => PrivateKey(b)))
   )
 
   def publicKey: Codec[PublicKey] = Codec[PublicKey](

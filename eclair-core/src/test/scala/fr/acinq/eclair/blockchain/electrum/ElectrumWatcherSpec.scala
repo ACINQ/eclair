@@ -86,7 +86,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
     probe.send(bitcoincli, BitcoinReq("dumpprivkey", address))
     val JString(wif) = probe.expectMsgType[JValue]
-    val priv = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet)
+    val (priv, true) = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet)
 
     probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
     val JString(txid) = probe.expectMsgType[JValue](30 seconds)

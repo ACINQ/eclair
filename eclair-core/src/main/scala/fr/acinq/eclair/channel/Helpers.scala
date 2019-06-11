@@ -402,7 +402,7 @@ object Helpers {
     }
 
     // used only to compute tx weights and estimate fees
-    lazy val dummyPublicKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), true).publicKey
+    lazy val dummyPublicKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
 
     def isValidFinalScriptPubkey(scriptPubKey: ByteVector): Boolean = {
       Try(Script.parse(scriptPubKey)) match {

@@ -26,8 +26,8 @@ import scodec.bits.ByteVector
 class ClaimReceivedHtlcSpec extends FunSuite {
 
   object Alice {
-    val commitKey = PrivateKey.fromBase58("cVuzKWCszfvjkoJyUasvsrRdECriz8hSd1BDinRNzytwnXmX7m1g", Base58.Prefix.SecretKeyTestnet)
-    val finalKey = PrivateKey.fromBase58("cRUfvpbRtMSqCFD1ADdvgPn5HfRLYuHCFYAr2noWnaRDNger2AoA", Base58.Prefix.SecretKeyTestnet)
+    val (commitKey, true) = PrivateKey.fromBase58("cVuzKWCszfvjkoJyUasvsrRdECriz8hSd1BDinRNzytwnXmX7m1g", Base58.Prefix.SecretKeyTestnet)
+    val (finalKey, true) = PrivateKey.fromBase58("cRUfvpbRtMSqCFD1ADdvgPn5HfRLYuHCFYAr2noWnaRDNger2AoA", Base58.Prefix.SecretKeyTestnet)
     val commitPubKey = commitKey.publicKey
     val finalPubKey = finalKey.publicKey
     val R = Crypto.sha256(ByteVector.view("this is Alice's R".getBytes("UTF-8")))
@@ -38,8 +38,8 @@ class ClaimReceivedHtlcSpec extends FunSuite {
   }
 
   object Bob {
-    val commitKey = PrivateKey.fromBase58("cSupnaiBh6jgTcQf9QANCB5fZtXojxkJQczq5kwfSBeULjNd5Ypo", Base58.Prefix.SecretKeyTestnet)
-    val finalKey = PrivateKey.fromBase58("cQLk5fMydgVwJjygt9ta8GcUU4GXLumNiXJCQviibs2LE5vyMXey", Base58.Prefix.SecretKeyTestnet)
+    val (commitKey, true) = PrivateKey.fromBase58("cSupnaiBh6jgTcQf9QANCB5fZtXojxkJQczq5kwfSBeULjNd5Ypo", Base58.Prefix.SecretKeyTestnet)
+    val (finalKey, true) = PrivateKey.fromBase58("cQLk5fMydgVwJjygt9ta8GcUU4GXLumNiXJCQviibs2LE5vyMXey", Base58.Prefix.SecretKeyTestnet)
     val commitPubKey = commitKey.publicKey
     val finalPubKey = finalKey.publicKey
     val R = Crypto.sha256(ByteVector.view("this is Bob's R".getBytes("UTF-8")))
