@@ -59,6 +59,14 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
+  override def getNode(nodeId: Crypto.PublicKey): Option[NodeAnnouncement] = {
+    using(sqlite.prepareStatement("SELECT data FROM nodes WHERE node_id=?")) { statement =>
+      statement.setBytes(1, nodeId.toBin.toArray)
+      val rs = statement.executeQuery()
+      codecSequence(rs, nodeAnnouncementCodec).headOption
+    }
+  }
+
   override def removeNode(nodeId: Crypto.PublicKey): Unit = {
     using(sqlite.prepareStatement("DELETE FROM nodes WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeId.toBin.toArray)
