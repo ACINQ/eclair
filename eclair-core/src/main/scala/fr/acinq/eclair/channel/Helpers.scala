@@ -359,7 +359,9 @@ object Helpers {
     sealed trait ClosingType
     case object MutualClose extends ClosingType
     case object LocalClose extends ClosingType
-    case object RemoteClose extends ClosingType
+    sealed trait RemoteClose extends ClosingType
+    case object CurrentRemoteClose extends RemoteClose
+    case object NextRemoteClose extends RemoteClose
     case object RecoveryClose extends ClosingType
     case object RevokedClose extends ClosingType
     // @formatter:on
@@ -378,6 +380,30 @@ object Helpers {
         data.commitments.remoteNextCommitInfo.isRight
 
     /**
+      * As soon as a tx spending the funding tx has reached min_depth, we know what the closing type will be, before
+      * the whole closing process finishes(e.g. there may still be delayed or unconfirmed child transactions). It can
+      * save us from attempting to publish some transactions.
+      *
+      * Note that we can't tell for mutual close before it is already final, because only one tx needs to be confirmed.
+      *
+      * @param closing channel state data
+      * @return the channel closing type, if applicable
+      */
+    def isClosingTypeAlreadyKnown(closing: DATA_CLOSING): Option[ClosingType] = closing match {
+      case _ if closing.localCommitPublished.exists(lcp => lcp.irrevocablySpent.values.toSet.contains(lcp.commitTx.txid)) =>
+        Some(LocalClose)
+      case _ if closing.remoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
+        Some(CurrentRemoteClose)
+      case _ if closing.nextRemoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
+        Some(NextRemoteClose)
+      case _ if closing.futureRemoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
+        Some(RecoveryClose)
+      case _ if closing.revokedCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
+        Some(RevokedClose)
+      case _ => None // we don't know yet what the closing type will be
+    }
+
+    /**
       * Checks if a channel is closed (i.e. its closing tx has been confirmed)
       *
       * @param data channel state data
@@ -391,9 +417,9 @@ object Helpers {
       case closing: DATA_CLOSING if closing.localCommitPublished.exists(Closing.isLocalCommitDone) =>
         Some(LocalClose)
       case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
-        Some(RemoteClose)
+        Some(CurrentRemoteClose)
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
-        Some(RemoteClose)
+        Some(NextRemoteClose)
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
         Some(RecoveryClose)
       case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(Closing.isRevokedCommitDone) =>
@@ -853,18 +879,6 @@ object Helpers {
           case _ => Set.empty
         }).toSet.flatten
       }
-
-    /**
-      * Tells if we were the origin of this outgoing htlc
-      *
-      * @param htlcId
-      * @param originChannels
-      * @return
-      */
-    def isSentByLocal(htlcId: Long, originChannels: Map[Long, Origin]) = originChannels.get(htlcId) match {
-      case Some(Local(_, _)) => true
-      case _ => false
-    }
 
     /**
       * As soon as a local or remote commitment reaches min_depth, we know which htlcs will be settled on-chain (whether
