@@ -401,8 +401,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(TickChannelOpenTimeout, _) =>
       replyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
       goto(CLOSED)
-
-
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {

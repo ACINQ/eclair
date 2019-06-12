@@ -16,21 +16,17 @@
 
 package fr.acinq.eclair.channel.states.b
 
+import scala.concurrent.duration._
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
 import org.scalatest.Outcome
-import scala.concurrent.duration._
 
-/**
-  * Created by PM on 05/07/2016.
-  */
-
-class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class WaitForFundingSignedInternalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
@@ -42,11 +38,11 @@ class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with State
     within(30 seconds) {
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, alice2bob.ref, bobInit, ChannelFlags.Empty)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL_CREATED)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL_SIGNED)
       withFixture(test.toNoArgTest(FixtureParam(alice, alice2bob, bob2alice, alice2blockchain)))
     }
   }
@@ -59,7 +55,6 @@ class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with State
 
   test("recv CMD_CLOSE") { f =>
     import f._
-
     alice ! CMD_CLOSE(None)
     awaitCond(alice.stateName == CLOSED)
   }
