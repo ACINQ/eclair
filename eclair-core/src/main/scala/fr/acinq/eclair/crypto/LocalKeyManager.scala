@@ -142,7 +142,6 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     }
 
     paymentPoint(keyPath)
-
   }
 
   override def deterministicDelayedPaymentPoint(localParams: LocalParams): ExtendedPublicKey = {
@@ -152,7 +151,6 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     }
 
     delayedPaymentPoint(keyPath)
-
   }
 
   override def deterministicHtlcPoint(localParams: LocalParams): ExtendedPublicKey = {
@@ -162,7 +160,6 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     }
 
     htlcPoint(keyPath)
-
   }
 
   override def deterministicCommitmentSecret(localParams: LocalParams, index: Long): Scalar = {
@@ -226,7 +223,6 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
   }
 
   override def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector, ByteVector) = {
-
     val witness = if (Announcements.isNode1(nodeId, remoteNodeId)) {
       Announcements.channelAnnouncementWitnessEncode(chainHash, shortChannelId, nodeId, remoteNodeId, fundingPublicKey(channelKeyPath).publicKey, remoteFundingKey, features)
     } else {
@@ -238,7 +234,6 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
   }
 
   override def deterministicSignChannelAnnouncement(localParams: LocalParams, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector, ByteVector) = {
-
     val keyPath = localParams.channelKeyPath match {
       case Left(kp) => kp
       case Right(keyPathFundee) => keyPathFundee.publicKeyPath
