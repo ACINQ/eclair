@@ -55,7 +55,6 @@ object LocalKeyManager {
 
     makeChannelKeyPathFundeePubkey(blockHeightBytes ++ counterBytes)
   }
-
 }
 
 /**
