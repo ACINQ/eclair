@@ -577,30 +577,6 @@ object Peer {
 
   // @formatter:on
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
-    val entropy = new Array[Byte](16)
-    secureRandom.nextBytes(entropy)
-    val bis = new ByteArrayInputStream(entropy)
-    val channelKeyPath = DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)))
-    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelKeyPath)
-  }
-
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: DeterministicWallet.KeyPath): LocalParams = {
-    LocalParams(
-      nodeParams.nodeId,
-      Left(channelKeyPath),
-      dustLimitSatoshis = nodeParams.dustLimitSatoshis,
-      maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
-      channelReserveSatoshis = Math.max((nodeParams.reserveToFundingRatio * fundingSatoshis).toLong, nodeParams.dustLimitSatoshis), // BOLT #2: make sure that our reserve is above our dust limit
-      htlcMinimumMsat = nodeParams.htlcMinimumMsat,
-      toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
-      maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
-      defaultFinalScriptPubKey = defaultFinalScriptPubKey,
-      isFunder = isFunder,
-      globalFeatures = nodeParams.globalFeatures,
-      localFeatures = nodeParams.localFeatures)
-  }
-
   /**
     * Peer may want to filter announcements based on timestamp
     *
