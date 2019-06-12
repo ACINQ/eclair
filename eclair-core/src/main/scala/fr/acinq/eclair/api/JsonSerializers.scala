@@ -85,11 +85,17 @@ class ScalarSerializer extends CustomSerializer[Scalar](format => ({ null }, {
 }))
 
 class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ({ null }, {
-  case x: Transaction => JString(x.toString())
+  case x: Transaction => JObject(List(
+    JField("txid", JString(x.txid.toHex)),
+    JField("tx", JString(x.toString()))
+  ))
 }))
 
 class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ({ null }, {
-  case x: TransactionWithInputInfo => JString(x.tx.toString())
+  case x: TransactionWithInputInfo => JObject(List(
+    JField("txid", JString(x.tx.txid.toHex)),
+    JField("tx", JString(x.tx.toString()))
+  ))
 }))
 
 class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](format => ({ null }, {
