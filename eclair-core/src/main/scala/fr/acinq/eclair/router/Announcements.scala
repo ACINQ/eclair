@@ -75,7 +75,7 @@ object Announcements {
 
   def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], timestamp: Long = Platform.currentTime.milliseconds.toSeconds): NodeAnnouncement = {
     require(alias.length <= 32)
-    val features = ByteVector.fromByte((1 << Features.OPTION_MULTI_FRAME_ONION_OPTIONAL).byteValue)
+    val features = ByteVector.fromByte((1 << Features.OPTION_VARIABLE_LENGTH_ONION_OPTIONAL).byteValue)
     val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, features, nodeAddresses, unknownFields = ByteVector.empty)
     val sig = Crypto.sign(witness, nodeSecret)
     NodeAnnouncement(
