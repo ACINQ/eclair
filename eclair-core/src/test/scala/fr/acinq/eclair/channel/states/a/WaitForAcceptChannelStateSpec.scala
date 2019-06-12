@@ -145,19 +145,34 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
 
   test("recv Error") { f =>
     import f._
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].unsignedFundingTx.fundingTx
+    assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.isEmpty)
+
     alice ! Error(ByteVector32.Zeroes, "oops")
+
+    assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.contains(fundingTx))
     awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv CMD_CLOSE") { f =>
     import f._
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].unsignedFundingTx.fundingTx
+    assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.isEmpty)
+
     alice ! CMD_CLOSE(None)
+
+    assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.contains(fundingTx))
     awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv TickChannelOpenTimeout") { f =>
     import f._
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].unsignedFundingTx.fundingTx
+    assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.isEmpty)
+
     alice ! TickChannelOpenTimeout
+
+    assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.contains(fundingTx))
     awaitCond(alice.stateName == CLOSED)
   }
 

@@ -20,7 +20,6 @@ import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorSt
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PublicKey, Scalar, sha256}
-import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -98,17 +97,13 @@ object Channel {
   }
 
   def makeFundeeChannelParams(nodeParams: NodeParams, open: OpenChannel, defaultFinalScriptPubKey: ByteVector, fundingSatoshis: Long): LocalParams = {
-
     val blockHeight = Globals.blockCount.get
     val counter = nodeParams.db.channels.getCounterFor(blockHeight)
     val publicKeyPath = LocalKeyManager.makeChannelKeyPathFundeePubkey(blockHeight, counter)
     val localFundingPubkey = nodeParams.keyManager.fundingPublicKey(publicKeyPath).publicKey
-
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, open.fundingPubkey)))
     val channelKeyPath = LocalKeyManager.makeChannelKeyPathFundee(fundingPubkeyScript)
-
     val channelKeyPaths = KeyPathFundee(publicKeyPath, channelKeyPath)
-
     makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder = false, fundingSatoshis, Right(channelKeyPaths))
   }
 
@@ -441,20 +436,24 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           goto(WAIT_FOR_FUNDING_INTERNAL_SIGNED) using DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open)
       }
 
-    case Event(CMD_CLOSE(_), _) =>
+    case Event(CMD_CLOSE(_) | CMD_FORCECLOSE, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
       replyToUser(Right("closed"))
+      wallet.rollback(d.unsignedFundingTx.fundingTx)
       goto(CLOSED) replying "ok"
 
     case Event(e: Error, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
       replyToUser(Left(RemoteError(e)))
+      wallet.rollback(d.unsignedFundingTx.fundingTx)
       handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) =>
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
       replyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      wallet.rollback(d.unsignedFundingTx.fundingTx)
       goto(CLOSED)
 
-    case Event(TickChannelOpenTimeout, _) =>
+    case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
       replyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+      wallet.rollback(d.unsignedFundingTx.fundingTx)
       goto(CLOSED)
   })
 
