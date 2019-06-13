@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.crypto
 
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import org.scalatest.FunSuite
 import scodec.bits._
@@ -34,7 +35,7 @@ class GeneratorsSpec extends FunSuite {
 
   test("derivation of secret key from basepoint secret and per-commitment-secret") {
     val localprivkey = Generators.derivePrivKey(base_secret, per_commitment_point)
-    assert(localprivkey.value.bytes == hex"cbced912d3b21bf196a766651e436aff192362621ce317704ea2f75d87e7be0f")
+    assert(localprivkey.value == ByteVector32(hex"cbced912d3b21bf196a766651e436aff192362621ce317704ea2f75d87e7be0f"))
   }
 
   test("derivation of revocation key from basepoint and per-commitment-point") {
@@ -44,6 +45,6 @@ class GeneratorsSpec extends FunSuite {
 
   test("derivation of revocation secret from basepoint-secret and per-commitment-secret") {
     val revocationprivkey = Generators.revocationPrivKey(base_secret, per_commitment_secret)
-    assert(revocationprivkey.value.bytes == hex"d09ffff62ddb2297ab000cc85bcb4283fdeb6aa052affbc9dddcf33b61078110")
+    assert(revocationprivkey.value == ByteVector32(hex"d09ffff62ddb2297ab000cc85bcb4283fdeb6aa052affbc9dddcf33b61078110"))
   }
 }
