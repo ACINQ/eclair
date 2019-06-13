@@ -434,13 +434,13 @@ object PaymentRequest {
     val prefix: String = prefixes.values.find(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
     val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.size - 6)) // 6 == checksum size
     val bolt11Data = Codecs.bolt11DataCodec.decode(data).require.value
-    val signature = bolt11Data.signature
+    val signature = ByteVector64(bolt11Data.signature.take(64))
     val message: ByteVector = ByteVector.view(hrp.getBytes) ++ data.dropRight(520).toByteVector // we drop the sig bytes
-    val (pub1, pub2) = Crypto.recoverPublicKey(ByteVector64(signature.take(64)), Crypto.sha256(message))
-    val recid = signature.last
+    val (pub1, pub2) = Crypto.recoverPublicKey(signature, Crypto.sha256(message))
+    val recid = bolt11Data.signature.last
     val pub = if (recid % 2 != 0) pub2 else pub1
     val amount_opt = Amount.decode(hrp.drop(prefix.length))
-    val validSig = Crypto.verifySignature(Crypto.sha256(message), ByteVector64(signature.take(64)), pub)
+    val validSig = Crypto.verifySignature(Crypto.sha256(message), signature, pub)
     require(validSig, "invalid signature")
     PaymentRequest(
       prefix = prefix,
@@ -448,7 +448,7 @@ object PaymentRequest {
       timestamp = bolt11Data.timestamp,
       nodeId = pub,
       tags = bolt11Data.taggedFields,
-      signature = signature
+      signature = bolt11Data.signature
     )
   }
 
