@@ -1046,6 +1046,16 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(initialState == bob.stateData)
   }
 
+  test("recv CMD_FULFILL_HTLC (acknowledge in case of failure)") { f =>
+    import f._
+    val sender = TestProbe()
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+    sender.send(bob, CMD_FULFILL_HTLC(42, randomBytes32)) // this will fail
+    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
+  }
+
   test("recv UpdateFulfillHtlc") { f =>
     import f._
     val sender = TestProbe()
@@ -1148,6 +1158,17 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(initialState == bob.stateData)
   }
 
+  test("recv CMD_FAIL_HTLC (acknowledge in case of failure)") { f =>
+    import f._
+    val sender = TestProbe()
+    val r = randomBytes32
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+    sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure))) // this will fail
+    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
+  }
+
   test("recv CMD_FAIL_MALFORMED_HTLC") { f =>
     import f._
     val sender = TestProbe()
@@ -1168,18 +1189,29 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
     sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessageCodecs.BADONION))
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
   }
 
-  test("recv CMD_FAIL_HTLC (invalid failure_code)") { f =>
+  test("recv CMD_FAIL_MALFORMED_HTLC (invalid failure_code)") { f =>
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, 42))
     sender.expectMsg(Failure(InvalidFailureCode(channelId(bob))))
     assert(initialState == bob.stateData)
+  }
+
+  test("recv CMD_FAIL_MALFORMED_HTLC (acknowledge in case of failure)") { f =>
+    import f._
+    val sender = TestProbe()
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessageCodecs.BADONION)) // this will fail
+    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
   }
 
   test("recv UpdateFailHtlc") { f =>
