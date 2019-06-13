@@ -72,9 +72,9 @@ object Sphinx extends Logging {
 
   def generateStream(key: ByteVector, length: Int): ByteVector = ChaCha20.encrypt(zeroes(length), key, zeroes(12))
 
-  def computeSharedSecret(pub: PublicKey, secret: PrivateKey): ByteVector32 = Crypto.sha256(pub.multiply(secret).toBin)
+  def computeSharedSecret(pub: PublicKey, secret: PrivateKey): ByteVector32 = Crypto.sha256(pub.multiply(secret).value)
 
-  def computeblindingFactor(pub: PublicKey, secret: ByteVector): ByteVector32 = Crypto.sha256(pub.toBin ++ secret)
+  def computeblindingFactor(pub: PublicKey, secret: ByteVector): ByteVector32 = Crypto.sha256(pub.value ++ secret)
 
   def blind(pub: PublicKey, blindingFactor: ByteVector32): PublicKey = pub.multiply(PrivateKey(blindingFactor))
 
@@ -191,7 +191,7 @@ object Sphinx extends Logging {
 
     val nextPubKey = blind(PublicKey(packet.publicKey), computeblindingFactor(PublicKey(packet.publicKey), sharedSecret))
 
-    ParsedPacket(payload, Packet(Version, nextPubKey.toBin, hmac, nextRouteInfo), sharedSecret)
+    ParsedPacket(payload, Packet(Version, nextPubKey.value, hmac, nextRouteInfo), sharedSecret)
   }
 
   @tailrec
@@ -263,12 +263,12 @@ object Sphinx extends Logging {
     val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     val filler = generateFiller("rho", sharedsecrets.dropRight(1), PayloadLength + MacLength, MaxHops)
 
-    val lastPacket = makeNextPacket(payloads.last, associatedData, ephemeralPublicKeys.last.toBin, sharedsecrets.last, LAST_PACKET, filler)
+    val lastPacket = makeNextPacket(payloads.last, associatedData, ephemeralPublicKeys.last.value, sharedsecrets.last, LAST_PACKET, filler)
 
     @tailrec
     def loop(hoppayloads: Seq[ByteVector], ephkeys: Seq[PublicKey], sharedSecrets: Seq[ByteVector32], packet: Packet): Packet = {
       if (hoppayloads.isEmpty) packet else {
-        val nextPacket = makeNextPacket(hoppayloads.last, associatedData, ephkeys.last.toBin, sharedSecrets.last, packet)
+        val nextPacket = makeNextPacket(hoppayloads.last, associatedData, ephkeys.last.value, sharedSecrets.last, packet)
         loop(hoppayloads.dropRight(1), ephkeys.dropRight(1), sharedSecrets.dropRight(1), nextPacket)
       }
     }

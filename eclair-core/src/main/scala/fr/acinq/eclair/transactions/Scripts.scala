@@ -28,7 +28,7 @@ object Scripts {
 
   def der(sig: ByteVector64): ByteVector = Crypto.compact2der(sig) :+ 1
 
-  def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] = if (LexicographicalOrdering.isLessThan(pubkey1.toBin, pubkey2.toBin))
+  def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] = if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value))
     Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
   else
     Script.createMultiSigMofN(2, Seq(pubkey2, pubkey1))
@@ -42,7 +42,7 @@ object Scripts {
     * @return a script witness that matches the msig 2-of-2 pubkey script for pubkey1 and pubkey2
     */
   def witness2of2(sig1: ByteVector64, sig2: ByteVector64, pubkey1: PublicKey, pubkey2: PublicKey): ScriptWitness = {
-    if (LexicographicalOrdering.isLessThan(pubkey1.toBin, pubkey2.toBin))
+    if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value))
       ScriptWitness(Seq(ByteVector.empty, der(sig1), der(sig2), write(multiSig2of2(pubkey1, pubkey2))))
     else
       ScriptWitness(Seq(ByteVector.empty, der(sig2), der(sig1), write(multiSig2of2(pubkey1, pubkey2))))
@@ -94,7 +94,7 @@ object Scripts {
   }
 
   def scriptPubKeyHtlcSend(ourkey: PublicKey, theirkey: PublicKey, abstimeout: Long, reltimeout: Long, rhash: ByteVector32, commit_revoke: ByteVector): Seq[ScriptElt]
-  = scriptPubKeyHtlcSend(ourkey.toBin, theirkey.toBin, abstimeout, reltimeout, rhash, commit_revoke)
+  = scriptPubKeyHtlcSend(ourkey.value, theirkey.value, abstimeout, reltimeout, rhash, commit_revoke)
 
   def scriptPubKeyHtlcReceive(ourkey: ByteVector, theirkey: ByteVector, abstimeout: Long, reltimeout: Long, rhash: ByteVector32, commit_revoke: ByteVector): Seq[ScriptElt] = {
     // values lesser than 16 should be encoded using OP_0..OP_16 instead of OP_PUSHDATA
@@ -117,7 +117,7 @@ object Scripts {
   }
 
   def scriptPubKeyHtlcReceive(ourkey: PublicKey, theirkey: PublicKey, abstimeout: Long, reltimeout: Long, rhash: ByteVector32, commit_revoke: ByteVector): Seq[ScriptElt]
-  = scriptPubKeyHtlcReceive(ourkey.toBin, theirkey.toBin, abstimeout, reltimeout, rhash, commit_revoke)
+  = scriptPubKeyHtlcReceive(ourkey.value, theirkey.value, abstimeout, reltimeout, rhash, commit_revoke)
 
   def applyFees(amount_us: Satoshi, amount_them: Satoshi, fee: Satoshi) = {
     val (amount_us1: Satoshi, amount_them1: Satoshi) = (amount_us, amount_them) match {
@@ -263,6 +263,6 @@ object Scripts {
     * for having published a revoked transaction
     */
   def witnessHtlcWithRevocationSig(revocationSig: ByteVector64, revocationPubkey: PublicKey, htlcScript: ByteVector) =
-    ScriptWitness(der(revocationSig) :: revocationPubkey.toBin :: htlcScript :: Nil)
+    ScriptWitness(der(revocationSig) :: revocationPubkey.value :: htlcScript :: Nil)
 
 }

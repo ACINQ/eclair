@@ -29,21 +29,21 @@ class GeneratorsSpec extends FunSuite {
 
   test("derivation of key from basepoint and per-commitment-point") {
     val localKey = Generators.derivePubKey(base_point, per_commitment_point)
-    assert(localKey.toBin == hex"0235f2dbfaa89b57ec7b055afe29849ef7ddfeb1cefdb9ebdc43f5494984db29e5")
+    assert(localKey.value == hex"0235f2dbfaa89b57ec7b055afe29849ef7ddfeb1cefdb9ebdc43f5494984db29e5")
   }
 
   test("derivation of secret key from basepoint secret and per-commitment-secret") {
     val localprivkey = Generators.derivePrivKey(base_secret, per_commitment_point)
-    assert(localprivkey.toBin == hex"cbced912d3b21bf196a766651e436aff192362621ce317704ea2f75d87e7be0f01")
+    assert(localprivkey.value.bytes == hex"cbced912d3b21bf196a766651e436aff192362621ce317704ea2f75d87e7be0f")
   }
 
   test("derivation of revocation key from basepoint and per-commitment-point") {
     val revocationkey = Generators.revocationPubKey(base_point, per_commitment_point)
-    assert(revocationkey.toBin == hex"02916e326636d19c33f13e8c0c3a03dd157f332f3e99c317c141dd865eb01f8ff0")
+    assert(revocationkey.value == hex"02916e326636d19c33f13e8c0c3a03dd157f332f3e99c317c141dd865eb01f8ff0")
   }
 
   test("derivation of revocation secret from basepoint-secret and per-commitment-secret") {
     val revocationprivkey = Generators.revocationPrivKey(base_secret, per_commitment_secret)
-    assert(revocationprivkey.toBin == hex"d09ffff62ddb2297ab000cc85bcb4283fdeb6aa052affbc9dddcf33b6107811001")
+    assert(revocationprivkey.value.bytes == hex"d09ffff62ddb2297ab000cc85bcb4283fdeb6aa052affbc9dddcf33b61078110")
   }
 }

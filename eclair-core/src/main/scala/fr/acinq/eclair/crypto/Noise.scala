@@ -55,7 +55,7 @@ object Noise {
 
     override def generateKeyPair(priv: ByteVector): KeyPair = {
       require(priv.length == 32)
-      KeyPair(PrivateKey(priv).publicKey.toBin, priv)
+      KeyPair(PrivateKey(priv).publicKey.value, priv)
     }
 
     /**

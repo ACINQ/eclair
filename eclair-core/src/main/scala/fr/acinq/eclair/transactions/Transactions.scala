@@ -151,9 +151,9 @@ object Transactions {
   def obscuredCommitTxNumber(commitTxNumber: Long, isFunder: Boolean, localPaymentBasePoint: PublicKey, remotePaymentBasePoint: PublicKey): Long = {
     // from BOLT 3: SHA256(payment-basepoint from open_channel || payment-basepoint from accept_channel)
     val h = if (isFunder)
-      Crypto.sha256(localPaymentBasePoint.toBin ++ remotePaymentBasePoint.toBin)
+      Crypto.sha256(localPaymentBasePoint.value ++ remotePaymentBasePoint.value)
     else
-      Crypto.sha256(remotePaymentBasePoint.toBin ++ localPaymentBasePoint.toBin)
+      Crypto.sha256(remotePaymentBasePoint.value ++ localPaymentBasePoint.value)
 
     val blind = Protocol.uint64((h.takeRight(6).reverse ++ ByteVector.fromValidHex("0000")).toArray, ByteOrder.LITTLE_ENDIAN)
     commitTxNumber ^ blind
@@ -533,7 +533,7 @@ object Transactions {
   }
 
   def addSigs(claimP2WPKHOutputTx: ClaimP2WPKHOutputTx, localPaymentPubkey: PublicKey, localSig: ByteVector64): ClaimP2WPKHOutputTx = {
-    val witness = ScriptWitness(Seq(der(localSig), localPaymentPubkey.toBin))
+    val witness = ScriptWitness(Seq(der(localSig), localPaymentPubkey.value))
     claimP2WPKHOutputTx.copy(tx = claimP2WPKHOutputTx.tx.updateWitness(0, witness))
   }
 

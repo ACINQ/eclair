@@ -67,14 +67,14 @@ class ClaimSentHtlcSpec extends FunSuite {
   val tx1 = Transaction(
     version = 2,
     txIn = TxIn(OutPoint(tx, 0), ByteVector.empty, 0xffffffff) :: Nil,
-    txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.toBin)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+    txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.value)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
     lockTime = 0)
 
   test("Alice can spend this HTLC after a delay") {
     val tx2 = Transaction(
       version = 2,
       txIn = TxIn(OutPoint(tx, 0), ByteVector.empty, sequence = reltimeout + 1) :: Nil,
-      txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.toBin)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+      txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.value)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = abstimeout + 1)
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
@@ -88,7 +88,7 @@ class ClaimSentHtlcSpec extends FunSuite {
     val tx2 = Transaction(
       version = 2,
       txIn = TxIn(OutPoint(tx, 0), ByteVector.empty, sequence = reltimeout + 1) :: Nil,
-      txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.toBin)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+      txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.value)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = abstimeout - 1)
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
@@ -105,7 +105,7 @@ class ClaimSentHtlcSpec extends FunSuite {
     val tx2 = Transaction(
       version = 2,
       txIn = TxIn(OutPoint(tx, 0), ByteVector.empty, sequence = reltimeout - 1) :: Nil,
-      txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.toBin)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+      txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.value)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = abstimeout + 1)
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)

@@ -109,7 +109,7 @@ object NodeParams {
       case true => ByteVector(Files.readAllBytes(seedPath.toPath))
       case false =>
         datadir.mkdirs()
-        val seed = randomKey.toBin
+        val seed = randomBytes32
         Files.write(seedPath.toPath, seed.toArray)
         seed
     }
