@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.transactions.Scripts._
 import org.scalatest.FunSuite
@@ -49,6 +49,23 @@ class ClaimSentHtlcSpec extends FunSuite {
     val revokeCommit: ByteVector = Crypto.sha256(ByteVector.view("Bob revocation R".getBytes("UTF-8")))
     val revokeCommitRHash: ByteVector = Crypto.sha256(revokeCommit)
     val revokeCommitH: ByteVector = Crypto.sha256(revokeCommit)
+  }
+
+  def scriptPubKeyHtlcSend(ourkey: PublicKey, theirkey: PublicKey, abstimeout: Long, reltimeout: Long, rhash: ByteVector32, commit_revoke: ByteVector): Seq[ScriptElt] = {
+    // values lesser than 16 should be encoded using OP_0..OP_16 instead of OP_PUSHDATA
+    require(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
+    // @formatter:off
+    OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
+      OP_HASH160 :: OP_DUP ::
+      OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
+      OP_SWAP :: OP_PUSHDATA(ripemd160(commit_revoke)) :: OP_EQUAL :: OP_ADD ::
+      OP_IF ::
+      OP_PUSHDATA(theirkey) ::
+      OP_ELSE ::
+      encodeNumber(abstimeout) :: OP_CHECKLOCKTIMEVERIFY :: encodeNumber(reltimeout) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
+      OP_ENDIF ::
+      OP_CHECKSIG :: Nil
+    // @formatter:on
   }
 
   val abstimeout = 3000

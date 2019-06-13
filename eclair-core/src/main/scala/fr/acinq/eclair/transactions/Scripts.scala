@@ -64,61 +64,6 @@ object Scripts {
     case _ => OP_PUSHDATA(Script.encodeNumber(n))
   }
 
-  def redeemSecretOrDelay(delayedKey: ByteVector, reltimeout: Long, keyIfSecretKnown: ByteVector, hashOfSecret: ByteVector32): Seq[ScriptElt] = {
-    // @formatter:off
-    OP_HASH160 :: OP_PUSHDATA(ripemd160(hashOfSecret)) :: OP_EQUAL ::
-    OP_IF ::
-      OP_PUSHDATA(keyIfSecretKnown) ::
-    OP_ELSE ::
-      encodeNumber(reltimeout):: OP_CHECKSEQUENCEVERIFY :: OP_DROP :: OP_PUSHDATA(delayedKey) ::
-    OP_ENDIF ::
-    OP_CHECKSIG :: Nil
-    // @formatter:on
-  }
-
-  def scriptPubKeyHtlcSend(ourkey: ByteVector, theirkey: ByteVector, abstimeout: Long, reltimeout: Long, rhash: ByteVector32, commit_revoke: ByteVector): Seq[ScriptElt] = {
-    // values lesser than 16 should be encoded using OP_0..OP_16 instead of OP_PUSHDATA
-    require(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
-    // @formatter:off
-    OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
-    OP_HASH160 :: OP_DUP ::
-    OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
-    OP_SWAP :: OP_PUSHDATA(ripemd160(commit_revoke)) :: OP_EQUAL :: OP_ADD ::
-    OP_IF ::
-      OP_PUSHDATA(theirkey) ::
-    OP_ELSE ::
-      encodeNumber(abstimeout) :: OP_CHECKLOCKTIMEVERIFY :: encodeNumber(reltimeout) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
-    OP_ENDIF ::
-    OP_CHECKSIG :: Nil
-    // @formatter:on
-  }
-
-  def scriptPubKeyHtlcSend(ourkey: PublicKey, theirkey: PublicKey, abstimeout: Long, reltimeout: Long, rhash: ByteVector32, commit_revoke: ByteVector): Seq[ScriptElt]
-  = scriptPubKeyHtlcSend(ourkey.value, theirkey.value, abstimeout, reltimeout, rhash, commit_revoke)
-
-  def scriptPubKeyHtlcReceive(ourkey: ByteVector, theirkey: ByteVector, abstimeout: Long, reltimeout: Long, rhash: ByteVector32, commit_revoke: ByteVector): Seq[ScriptElt] = {
-    // values lesser than 16 should be encoded using OP_0..OP_16 instead of OP_PUSHDATA
-    require(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
-    // @formatter:off
-    OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
-    OP_HASH160 :: OP_DUP ::
-    OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
-    OP_IF ::
-      encodeNumber(reltimeout) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
-    OP_ELSE ::
-      OP_PUSHDATA(ripemd160(commit_revoke)) :: OP_EQUAL ::
-      OP_NOTIF ::
-        encodeNumber(abstimeout) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
-      OP_ENDIF ::
-      OP_PUSHDATA(theirkey) ::
-    OP_ENDIF ::
-    OP_CHECKSIG :: Nil
-    // @formatter:on
-  }
-
-  def scriptPubKeyHtlcReceive(ourkey: PublicKey, theirkey: PublicKey, abstimeout: Long, reltimeout: Long, rhash: ByteVector32, commit_revoke: ByteVector): Seq[ScriptElt]
-  = scriptPubKeyHtlcReceive(ourkey.value, theirkey.value, abstimeout, reltimeout, rhash, commit_revoke)
-
   def applyFees(amount_us: Satoshi, amount_them: Satoshi, fee: Satoshi) = {
     val (amount_us1: Satoshi, amount_them1: Satoshi) = (amount_us, amount_them) match {
       case (Satoshi(us), Satoshi(them)) if us >= fee.toLong / 2 && them >= fee.toLong / 2 => (Satoshi(us - fee.toLong / 2), Satoshi(them - fee.toLong / 2))
