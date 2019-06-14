@@ -262,6 +262,12 @@ class PaymentRequestSpec extends FunSuite {
     assert(PaymentRequest.write(PaymentRequest.read(input.toUpperCase())) == input)
   }
 
+  test("Pay 1 BTC without multiplier") {
+    val ref = "lnbc11pdkmqhupp5n2ees808r98m0rh4472yyth0c5fptzcxmexcjznrzmq8xald0cgqdqsf4ujqarfwqsxymmccqp2xvtsv5tc743wgctlza8k3zlpxucl7f3kvjnjptv7xz0nkaww307sdyrvgke2w8kmq7dgz4lkasfn0zvplc9aa4gp8fnhrwfjny0j59sq42x9gp"
+    val pr = PaymentRequest.read(ref)
+    assert(pr.amount.contains(MilliSatoshi(100000000000L)))
+  }
+
   test("nonreg") {
     val requests = List(
       "lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl",
