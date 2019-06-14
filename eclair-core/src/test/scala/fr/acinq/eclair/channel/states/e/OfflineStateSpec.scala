@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.e
 
 import akka.actor.Status
 import java.util.UUID
-
+import fr.acinq.eclair.channel.Channel._
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
@@ -80,8 +80,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
 
-    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.deterministicCommitmentPoint(bobCommitments.localParams, bobCommitments.localCommit.index)
-    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.deterministicCommitmentPoint(aliceCommitments.localParams, aliceCommitments.localCommit.index)
+    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(keyPath(bobCommitments.localParams), bobCommitments.localCommit.index)
+    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(keyPath(aliceCommitments.localParams), aliceCommitments.localCommit.index)
 
 
     // a didn't receive any update or sig
@@ -164,8 +164,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
 
-    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.deterministicCommitmentPoint(bobCommitments.localParams, bobCommitments.localCommit.index)
-    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.deterministicCommitmentPoint(aliceCommitments.localParams, aliceCommitments.localCommit.index)
+    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(keyPath(bobCommitments.localParams), bobCommitments.localCommit.index)
+    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(keyPath(aliceCommitments.localParams), aliceCommitments.localCommit.index)
 
     // a didn't receive the sig
     val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(Scalar(ByteVector32.Zeroes)), Some(aliceCurrentPerCommitmentPoint)))

@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.DeterministicWallet.{derivePrivateKey, _}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
@@ -113,73 +112,6 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
   override def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long) = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
 
   /**
-    * DETERMINISTIC
-    */
-
-  override def deterministicFundingPublicKey(localParams: LocalParams): ExtendedPublicKey = {
-    val keyPath = localParams.channelKeyPath match {
-      case Left(kp) => kp
-      case Right(keyPathFundee) => keyPathFundee.publicKeyPath
-    }
-
-    fundingPublicKey(keyPath)
-  }
-
-  override def deterministicRevocationPoint(localParams: LocalParams): ExtendedPublicKey = {
-    val keyPath = localParams.channelKeyPath match {
-      case Left(kp) => kp
-      case Right(keyPathFundee) => keyPathFundee.pointsKeyPath
-    }
-
-    revocationPoint(keyPath)
-  }
-
-  override def deterministicPaymentPoint(localParams: LocalParams): ExtendedPublicKey = {
-    val keyPath = localParams.channelKeyPath match {
-      case Left(kp) => kp
-      case Right(keyPathFundee) => keyPathFundee.pointsKeyPath
-    }
-
-    paymentPoint(keyPath)
-  }
-
-  override def deterministicDelayedPaymentPoint(localParams: LocalParams): ExtendedPublicKey = {
-    val keyPath = localParams.channelKeyPath match {
-      case Left(kp) => kp
-      case Right(keyPathFundee) => keyPathFundee.pointsKeyPath
-    }
-
-    delayedPaymentPoint(keyPath)
-  }
-
-  override def deterministicHtlcPoint(localParams: LocalParams): ExtendedPublicKey = {
-    val keyPath = localParams.channelKeyPath match {
-      case Left(kp) => kp
-      case Right(keyPathFundee) => keyPathFundee.pointsKeyPath
-    }
-
-    htlcPoint(keyPath)
-  }
-
-  override def deterministicCommitmentSecret(localParams: LocalParams, index: Long): Scalar = {
-    val keyPath = localParams.channelKeyPath match {
-      case Left(kp) => kp
-      case Right(keyPathFundee) => keyPathFundee.pointsKeyPath
-    }
-
-    commitmentSecret(keyPath, index)
-  }
-
-  override def deterministicCommitmentPoint(localParams: LocalParams, index: Long): Point = {
-    val keyPath = localParams.channelKeyPath match {
-      case Left(kp) => kp
-      case Right(keyPathFundee) => keyPathFundee.pointsKeyPath
-    }
-
-    commitmentPoint(keyPath, index)
-  }
-
-  /**
     *
     * @param tx        input transaction
     * @param publicKey extended public key
@@ -231,14 +163,4 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     val bitcoinSig = Crypto.encodeSignature(Crypto.sign(witness, fundingPrivateKey(channelKeyPath).privateKey)) :+ 1.toByte
     (nodeSig, bitcoinSig)
   }
-
-  override def deterministicSignChannelAnnouncement(localParams: LocalParams, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector, ByteVector) = {
-    val keyPath = localParams.channelKeyPath match {
-      case Left(kp) => kp
-      case Right(keyPathFundee) => keyPathFundee.publicKeyPath
-    }
-
-    signChannelAnnouncement(keyPath, chainHash, shortChannelId, remoteNodeId, remoteFundingKey, features)
-  }
-
 }

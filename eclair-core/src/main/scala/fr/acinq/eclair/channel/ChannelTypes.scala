@@ -210,7 +210,7 @@ final case class LocalParams(nodeId: PublicKey,
   require(isFunder && channelKeyPath.isLeft || !isFunder && channelKeyPath.isRight, s"Wrong keyPath derivation for isFunder=$isFunder")
 }
 
-case class KeyPathFundee(publicKeyPath: KeyPath, pointsKeyPath: KeyPath)
+case class KeyPathFundee(fundingKeyPath: KeyPath, pointsKeyPath: KeyPath)
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimitSatoshis: Long,

@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, Script}
 import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.channel.Channel.{fundingKeyPath, keyPath}
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.transactions.Scripts
 import org.scalatest.FunSuite
@@ -163,24 +164,24 @@ class LocalKeyManagerSpec extends FunSuite {
     val funderParams = TestConstants.Alice.channelParams
     val funderKeyPath = funderParams.channelKeyPath.left.get
 
-    assert(keyManager.deterministicFundingPublicKey(funderParams).publicKey == keyManager.fundingPublicKey(funderKeyPath).publicKey)
-    assert(keyManager.deterministicRevocationPoint(funderParams) == keyManager.revocationPoint(funderKeyPath))
-    assert(keyManager.deterministicPaymentPoint(funderParams).publicKey == keyManager.paymentPoint(funderKeyPath).publicKey)
-    assert(keyManager.deterministicDelayedPaymentPoint(funderParams).publicKey == keyManager.delayedPaymentPoint(funderKeyPath).publicKey)
-    assert(keyManager.deterministicHtlcPoint(funderParams).publicKey == keyManager.htlcPoint(funderKeyPath).publicKey)
-    assert(keyManager.deterministicCommitmentPoint(funderParams, 0) == keyManager.commitmentPoint(funderKeyPath, 0))
+    assert(keyManager.fundingPublicKey(fundingKeyPath(funderParams)).publicKey == keyManager.fundingPublicKey(funderKeyPath).publicKey)
+    assert(keyManager.revocationPoint(keyPath(funderParams)) == keyManager.revocationPoint(funderKeyPath))
+    assert(keyManager.paymentPoint(keyPath(funderParams)).publicKey == keyManager.paymentPoint(funderKeyPath).publicKey)
+    assert(keyManager.delayedPaymentPoint(keyPath(funderParams)).publicKey == keyManager.delayedPaymentPoint(funderKeyPath).publicKey)
+    assert(keyManager.htlcPoint(keyPath(funderParams)).publicKey == keyManager.htlcPoint(funderKeyPath).publicKey)
+    assert(keyManager.commitmentPoint(keyPath(funderParams), 0) == keyManager.commitmentPoint(funderKeyPath, 0))
 
     // FUNDEE
     val fundeeParams = TestConstants.Bob.channelParams
-    val fundeeFundingKeyPath = fundeeParams.channelKeyPath.right.get.publicKeyPath
+    val fundeeFundingKeyPath = fundeeParams.channelKeyPath.right.get.fundingKeyPath
     val fundeeKeyPath = fundeeParams.channelKeyPath.right.get.pointsKeyPath
 
-    assert(keyManager.deterministicFundingPublicKey(fundeeParams).publicKey == keyManager.fundingPublicKey(fundeeFundingKeyPath).publicKey)
-    assert(keyManager.deterministicRevocationPoint(fundeeParams) == keyManager.revocationPoint(fundeeKeyPath))
-    assert(keyManager.deterministicPaymentPoint(fundeeParams).publicKey == keyManager.paymentPoint(fundeeKeyPath).publicKey)
-    assert(keyManager.deterministicDelayedPaymentPoint(fundeeParams).publicKey == keyManager.delayedPaymentPoint(fundeeKeyPath).publicKey)
-    assert(keyManager.deterministicHtlcPoint(fundeeParams).publicKey == keyManager.htlcPoint(fundeeKeyPath).publicKey)
-    assert(keyManager.deterministicCommitmentPoint(fundeeParams, 0) == keyManager.commitmentPoint(fundeeKeyPath, 0))
+    assert(keyManager.fundingPublicKey(fundingKeyPath(fundeeParams)).publicKey == keyManager.fundingPublicKey(fundeeFundingKeyPath).publicKey)
+    assert(keyManager.revocationPoint(keyPath(fundeeParams)) == keyManager.revocationPoint(fundeeKeyPath))
+    assert(keyManager.paymentPoint(keyPath(fundeeParams)).publicKey == keyManager.paymentPoint(fundeeKeyPath).publicKey)
+    assert(keyManager.delayedPaymentPoint(keyPath(fundeeParams)).publicKey == keyManager.delayedPaymentPoint(fundeeKeyPath).publicKey)
+    assert(keyManager.htlcPoint(keyPath(fundeeParams)).publicKey == keyManager.htlcPoint(fundeeKeyPath).publicKey)
+    assert(keyManager.commitmentPoint(keyPath(fundeeParams), 0) == keyManager.commitmentPoint(fundeeKeyPath, 0))
   }
 
 }
