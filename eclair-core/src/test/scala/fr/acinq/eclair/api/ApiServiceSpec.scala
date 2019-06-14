@@ -30,6 +30,9 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel.RES_GETINFO
+import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
+import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment._
@@ -204,41 +207,41 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
 
   test("'connect' method should accept an URI and a triple with nodeId/host/port") {
 
-    val remoteNodeId = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"
-    val remoteHost = "93.137.102.239"
-    val remoteUri = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735"
+    val remoteNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+    val remoteUri = NodeURI.parse("030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735")
 
     val eclair = mock[Eclair]
-    eclair.connect(any[String])(any[Timeout]) returns Future.successful("connected")
+    eclair.connect(any[Either[NodeURI, PublicKey]])(any[Timeout]) returns Future.successful("connected")
     val mockService = new MockService(eclair)
 
-    Post("/connect", FormData("nodeId" -> remoteNodeId, "host" -> remoteHost).toEntity) ~>
+    Post("/connect", FormData("nodeId" -> remoteNodeId.toString()).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"connected\"")
-        eclair.connect(remoteUri)(any[Timeout]).wasCalled(once)
+        eclair.connect(Right(remoteNodeId))(any[Timeout]).wasCalled(once)
       }
 
-    Post("/connect", FormData("uri" -> remoteUri).toEntity) ~>
+    Post("/connect", FormData("uri" -> remoteUri.toString).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"connected\"")
-        eclair.connect(remoteUri)(any[Timeout]).wasCalled(twice) // must account for the previous, identical, invocation
+        eclair.connect(Left(remoteUri))(any[Timeout]).wasCalled(once) // must account for the previous, identical, invocation
       }
   }
+
 
   test("'send' method should correctly forward amount parameters to EclairImpl") {
 
     val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
 
     val eclair = mock[Eclair]
-    eclair.send(any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    eclair.send(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
     val mockService = new MockService(eclair)
 
     Post("/payinvoice", FormData("invoice" -> invoice).toEntity) ~>
@@ -247,17 +250,17 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       check {
         assert(handled)
         assert(status == OK)
-        eclair.send(any, 1258000, any, any, any, any)(any[Timeout]).wasCalled(once)
+        eclair.send(any, 1258000, any, any, any, any, any, any)(any[Timeout]).wasCalled(once)
       }
 
 
-    Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "123").toEntity) ~>
+    Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "123", "feeThresholdSat" -> "112233", "maxFeePct" -> "2.34").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
         assert(status == OK)
-        eclair.send(any, 123, any, any, any, any)(any[Timeout]).wasCalled(once)
+        eclair.send(any, 123, any, any, any, any, Some(112233), Some(2.34))(any[Timeout]).wasCalled(once)
       }
 
   }

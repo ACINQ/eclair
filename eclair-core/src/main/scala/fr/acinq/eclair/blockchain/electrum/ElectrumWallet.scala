@@ -930,7 +930,7 @@ object ElectrumWallet {
         // we use dummy signature here, because the result is only used to estimate fees
         val sig = ByteVector.fill(71)(1)
         val sigScript = Script.write(OP_PUSHDATA(Script.write(Script.pay2wpkh(utxo.key.publicKey))) :: Nil)
-        val witness = ScriptWitness(sig :: utxo.key.publicKey.toBin :: Nil)
+        val witness = ScriptWitness(sig :: utxo.key.publicKey.value :: Nil)
         TxIn(utxo.outPoint, signatureScript = sigScript, sequence = TxIn.SEQUENCE_FINAL, witness = witness)
       })
 
@@ -1014,7 +1014,7 @@ object ElectrumWallet {
         val key = utxo.key
         val sig = Transaction.signInput(tx, i, Script.pay2pkh(key.publicKey), SIGHASH_ALL, Satoshi(utxo.item.value), SigVersion.SIGVERSION_WITNESS_V0, key.privateKey)
         val sigScript = Script.write(OP_PUSHDATA(Script.write(Script.pay2wpkh(key.publicKey))) :: Nil)
-        val witness = ScriptWitness(sig :: key.publicKey.toBin :: Nil)
+        val witness = ScriptWitness(sig :: key.publicKey.value :: Nil)
         txIn.copy(signatureScript = sigScript, witness = witness)
       })
     }
