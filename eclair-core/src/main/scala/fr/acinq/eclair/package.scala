@@ -42,7 +42,9 @@ package object eclair {
 
   def randomBytes32: ByteVector32 = ByteVector32(randomBytes(32))
 
-  def randomKey: PrivateKey = PrivateKey(randomBytes32, compressed = true)
+  def randomBytes64: ByteVector64 = ByteVector64(randomBytes(64))
+
+  def randomKey: PrivateKey = PrivateKey(randomBytes32)
 
   def toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 = {
     require(fundingOutputIndex < 65536, "fundingOutputIndex must not be greater than FFFF")

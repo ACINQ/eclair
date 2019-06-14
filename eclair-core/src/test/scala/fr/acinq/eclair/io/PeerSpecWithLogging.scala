@@ -5,11 +5,12 @@ import akka.testkit.{EventFilter, TestFSMRef, TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.db.ChannelStateSpec
 import org.scalatest.{FunSuiteLike, Outcome, Tag}
+
 import scala.concurrent.duration._
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.EclairWallet
-import fr.acinq.eclair.wire.LightningMessageCodecsSpec.randomSignature
+import fr.acinq.eclair.randomBytes64
 import fr.acinq.eclair.wire.{Color, IPv4, NodeAddress, NodeAnnouncement}
 import scodec.bits.ByteVector
 
@@ -19,7 +20,7 @@ class PeerSpecWithLogging extends TestKit(ActorSystem("test", ConfigFactory.pars
 
   test("reconnect using the address from node_announcement") {
     val aliceParams = Alice.nodeParams
-    val aliceAnnouncement = NodeAnnouncement(randomSignature, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+    val aliceAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
     aliceParams.db.network.addNode(aliceAnnouncement)
     val authenticator = TestProbe()
     val watcher = TestProbe()
