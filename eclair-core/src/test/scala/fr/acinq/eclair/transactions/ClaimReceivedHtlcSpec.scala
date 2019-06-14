@@ -55,18 +55,18 @@ class ClaimReceivedHtlcSpec extends FunSuite {
     require(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
     // @formatter:off
     OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
-      OP_HASH160 :: OP_DUP ::
-      OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
-      OP_IF ::
+    OP_HASH160 :: OP_DUP ::
+    OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
+    OP_IF ::
       encodeNumber(reltimeout) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
-      OP_ELSE ::
+    OP_ELSE ::
       OP_PUSHDATA(ripemd160(commit_revoke)) :: OP_EQUAL ::
       OP_NOTIF ::
-      encodeNumber(abstimeout) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
+        encodeNumber(abstimeout) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
       OP_ENDIF ::
       OP_PUSHDATA(theirkey) ::
-      OP_ENDIF ::
-      OP_CHECKSIG :: Nil
+    OP_ENDIF ::
+    OP_CHECKSIG :: Nil
     // @formatter:on
   }
 
