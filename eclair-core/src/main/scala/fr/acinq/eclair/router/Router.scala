@@ -121,21 +121,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
   val SHORTID_WINDOW = 100
 
-  val defaultRouteParams = RouteParams(
-    randomize = nodeParams.routerConf.randomizeRouteSelection,
-    maxFeeBaseMsat = nodeParams.routerConf.searchMaxFeeBaseSat * 1000, // converting sat -> msat
-    maxFeePct = nodeParams.routerConf.searchMaxFeePct,
-    routeMaxLength = nodeParams.routerConf.searchMaxRouteLength,
-    routeMaxCltv = nodeParams.routerConf.searchMaxCltv,
-    ratios = nodeParams.routerConf.searchHeuristicsEnabled match {
-      case false => None
-      case true => Some(WeightRatios(
-        cltvDeltaFactor = nodeParams.routerConf.searchRatioCltv,
-        ageFactor = nodeParams.routerConf.searchRatioChannelAge,
-        capacityFactor = nodeParams.routerConf.searchRatioChannelCapacity
-      ))
-    }
-  )
+  val defaultRouteParams = getDefaultRouteParams(nodeParams.routerConf)
 
   val db = nodeParams.db.network
 
@@ -838,6 +824,22 @@ object Router {
 
   // The default amount of routes we'll search for when findRoute is called
   val DEFAULT_ROUTES_COUNT = 3
+
+  def getDefaultRouteParams(routerConf: RouterConf) = RouteParams(
+    randomize = routerConf.randomizeRouteSelection,
+    maxFeeBaseMsat = routerConf.searchMaxFeeBaseSat * 1000, // converting sat -> msat
+    maxFeePct = routerConf.searchMaxFeePct,
+    routeMaxLength = routerConf.searchMaxRouteLength,
+    routeMaxCltv = routerConf.searchMaxCltv,
+    ratios = routerConf.searchHeuristicsEnabled match {
+      case false => None
+      case true => Some(WeightRatios(
+        cltvDeltaFactor = routerConf.searchRatioCltv,
+        ageFactor = routerConf.searchRatioChannelAge,
+        capacityFactor = routerConf.searchRatioChannelCapacity
+      ))
+    }
+  )
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.

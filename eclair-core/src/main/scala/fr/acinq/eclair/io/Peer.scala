@@ -23,19 +23,18 @@ import java.nio.ByteOrder
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import akka.util.Timeout
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{ByteVector32, Crypto, DeterministicWallet, MilliSatoshi, Protocol, Satoshi, TxIn}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.secureRandom
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{wire, _}
+import fr.acinq.eclair.{secureRandom, wire, _}
 import scodec.Attempt
 import scodec.bits.ByteVector
-
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
@@ -62,26 +61,34 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   when(DISCONNECTED) {
-    case Event(Peer.Connect(NodeURI(_, hostAndPort)), d: DisconnectedData) =>
-      val address = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
-      if (d.address_opt.contains(address)) {
-        // we already know this address, we'll reconnect automatically
-        sender ! "reconnection in progress"
-        stay
-      } else {
-        // we immediately process explicit connection requests to new addresses
-        context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender())))
-        stay
+    case Event(Peer.Connect(_, address_opt), d: DisconnectedData) =>
+      address_opt
+        .map(hostAndPort2InetSocketAddress)
+        .orElse(getPeerAddressFromNodeAnnouncement) match {
+        case None =>
+          sender ! "no address found"
+          stay
+        case Some(address) =>
+          if (d.address_opt.contains(address)) {
+            // we already know this address, we'll reconnect automatically
+            sender ! "reconnection in progress"
+            stay
+          } else {
+            // we immediately process explicit connection requests to new addresses
+            context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender())))
+            stay using d.copy(address_opt = Some(address))
+          }
       }
 
     case Event(Reconnect, d: DisconnectedData) =>
-      d.address_opt match {
-        case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
-        case _ if d.channels.isEmpty => stay // no-op (no more channels with this peer)
+      d.address_opt.orElse(getPeerAddressFromNodeAnnouncement) match {
+        case _ if d.channels.isEmpty => stay // no-op, no more channels with this peer
+        case None                    => stay // no-op, we don't know any address to this peer and we won't try reconnecting again
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
+          log.info(s"reconnecting to $address")
           // exponential backoff retry with a finite max
-          setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 60) seconds, repeat = false)
+          setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 3600) seconds, repeat = false)
           stay using d.copy(attempts = d.attempts + 1)
       }
 
@@ -180,6 +187,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       } else {
         stay using d.copy(channels = channels1)
       }
+
+    case Event(Disconnect(nodeId), d: InitializingData) if nodeId == remoteNodeId =>
+      log.info("disconnecting")
+      sender ! "disconnecting"
+      d.transport ! PoisonPill
+      stay
+
   }
 
   when(CONNECTED) {
@@ -418,7 +432,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.info(s"resuming processing of network announcements for peer")
       stay using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
 
-    case Event(Disconnect, d: ConnectedData) =>
+    case Event(Disconnect(nodeId), d: ConnectedData) if nodeId == remoteNodeId =>
+      log.info(s"disconnecting")
+      sender ! "disconnecting"
       d.transport ! PoisonPill
       stay
 
@@ -485,8 +501,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
   onTransition {
     case INSTANTIATING -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => self ! Reconnect // we reconnect right away if we just started the peer
-    case _ -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
-    case DISCONNECTED -> _ if nodeParams.autoReconnect && stateData.address_opt.isDefined => cancelTimer(RECONNECT_TIMER)
+    case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
+    case DISCONNECTED -> _ if nodeParams.autoReconnect => cancelTimer(RECONNECT_TIMER)
   }
 
   def spawnChannel(nodeParams: NodeParams, origin_opt: Option[ActorRef]): ActorRef = {
@@ -499,6 +515,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     log.info("removing peer from db")
     nodeParams.db.peers.removePeer(remoteNodeId)
     stop(FSM.Normal)
+  }
+
+  // TODO gets the first of the list, improve selection?
+  def getPeerAddressFromNodeAnnouncement: Option[InetSocketAddress] = {
+    nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption.map(_.socketAddress))
   }
 
   // a failing channel won't be restarted, it should handle its states
@@ -549,9 +570,14 @@ object Peer {
   case object CONNECTED extends State
 
   case class Init(previousKnownAddress: Option[InetSocketAddress], storedChannels: Set[HasCommitments])
-  case class Connect(uri: NodeURI)
+  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort]) {
+    def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
+  }
+  object Connect {
+    def apply(uri: NodeURI): Connect = new Connect(uri.nodeId, Some(uri.address))
+  }
   case object Reconnect
-  case object Disconnect
+  case class Disconnect(nodeId: PublicKey)
   case object ResumeAnnouncements
   case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) {
     require(fundingSatoshis.amount < Channel.MAX_FUNDING_SATOSHIS, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING_SATOSHIS}")
@@ -593,4 +619,6 @@ object Peer {
       case _ => true // if there is a filter and message doesn't have a timestamp (e.g. channel_announcement), then we send it
     }
   }
+
+  def hostAndPort2InetSocketAddress(hostAndPort: HostAndPort): InetSocketAddress = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
 }

@@ -58,14 +58,18 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     checkBrokenHtlcsLink(channels, nodeParams.privateKey) match {
       case Nil => ()
       case brokenHtlcs =>
-        val brokenHtlcKiller = context.actorOf(Props[HtlcReaper], name = "htlc-reaper")
+        val brokenHtlcKiller = context.system.actorOf(Props[HtlcReaper], name = "htlc-reaper")
         brokenHtlcKiller ! brokenHtlcs
     }
 
     channels
       .groupBy(_.commitments.remoteParams.nodeId)
       .map {
-        case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
+        case (remoteNodeId, states) =>
+          val address_opt = peers.get(remoteNodeId).orElse {
+            nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption) // gets the first of the list! TODO improve selection?
+          }
+          (remoteNodeId, states, address_opt)
       }
       .foreach {
         case (remoteNodeId, states, nodeaddress_opt) =>
@@ -77,13 +81,19 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
   def receive: Receive = {
 
-    case Peer.Connect(NodeURI(publicKey, _)) if publicKey == nodeParams.nodeId =>
+    case Peer.Connect(publicKey, _) if publicKey == nodeParams.nodeId =>
       sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
     case c: Peer.Connect =>
       // we create a peer if it doesn't exist
-      val peer = createOrGetPeer(c.uri.nodeId, previousKnownAddress = None, offlineChannels = Set.empty)
+      val peer = createOrGetPeer(c.nodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward c
+
+    case d: Peer.Disconnect =>
+      getPeer(d.nodeId) match {
+        case Some(peer) => peer forward d
+        case None       => sender ! Status.Failure(new RuntimeException("peer not found"))
+      }
 
     case o: Peer.OpenChannel =>
       getPeer(o.remoteNodeId) match {
