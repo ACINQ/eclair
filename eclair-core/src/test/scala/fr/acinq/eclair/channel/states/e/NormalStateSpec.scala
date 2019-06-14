@@ -21,8 +21,8 @@ import java.util.UUID
 import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.Scalar
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
@@ -719,7 +719,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     // signature is invalid but it doesn't matter
-    sender.send(bob, CommitSig(ByteVector32.Zeroes, ByteVector.fill(64)(0), Nil))
+    sender.send(bob, CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("cannot sign when there are no changes"))
     awaitCond(bob.stateName == CLOSING)
@@ -737,7 +737,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
 
     // actual test begins
-    sender.send(bob, CommitSig(ByteVector32.Zeroes, ByteVector.fill(64)(0), Nil))
+    sender.send(bob, CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid commitment signature"))
     awaitCond(bob.stateName == CLOSING)
@@ -906,7 +906,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test begins
     bob2alice.expectMsgType[RevokeAndAck]
-    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, Scalar(randomBytes32), Scalar(randomBytes32).toPoint))
+    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32), PrivateKey(randomBytes32).publicKey))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
@@ -921,7 +921,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
-    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, Scalar(randomBytes32), Scalar(randomBytes32).toPoint))
+    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32), PrivateKey(randomBytes32).publicKey))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
@@ -1757,7 +1757,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       claimHtlcTx.txOut(0).amount
     }).sum
     // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
-    assert(amountClaimed == Satoshi(814840))
+    assert(amountClaimed == Satoshi(814880))
 
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxes(0))) // claim-main
@@ -1819,7 +1819,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       claimHtlcTx.txOut(0).amount
     }).sum
     // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
-    assert(amountClaimed == Satoshi(822280))
+    assert(amountClaimed == Satoshi(822310))
 
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxes(0))) // claim-main
@@ -1881,12 +1881,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     htlcPenaltyTxs.foreach(htlcPenaltyTx => Transaction.correctlySpends(htlcPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
     // two main outputs are 760 000 and 200 000
-    assert(mainTx.txOut(0).amount == Satoshi(741490))
-    assert(mainPenaltyTx.txOut(0).amount == Satoshi(195150))
-    assert(htlcPenaltyTxs(0).txOut(0).amount == Satoshi(4530))
-    assert(htlcPenaltyTxs(1).txOut(0).amount == Satoshi(4530))
-    assert(htlcPenaltyTxs(2).txOut(0).amount == Satoshi(4530))
-    assert(htlcPenaltyTxs(3).txOut(0).amount == Satoshi(4530))
+    assert(mainTx.txOut(0).amount == Satoshi(741500))
+    assert(mainPenaltyTx.txOut(0).amount == Satoshi(195160))
+    assert(htlcPenaltyTxs(0).txOut(0).amount == Satoshi(4540))
+    assert(htlcPenaltyTxs(1).txOut(0).amount == Satoshi(4540))
+    assert(htlcPenaltyTxs(2).txOut(0).amount == Satoshi(4540))
+    assert(htlcPenaltyTxs(3).txOut(0).amount == Satoshi(4540))
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)

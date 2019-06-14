@@ -79,7 +79,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
 
 
   test("compute addresses") {
-    val priv = PrivateKey.fromBase58("cRumXueoZHjhGXrZWeFoEBkeDHu2m8dW5qtFBCqSAt4LDR2Hnd8Q", Base58.Prefix.SecretKeyTestnet)
+    val priv = PrivateKey.fromBase58("cRumXueoZHjhGXrZWeFoEBkeDHu2m8dW5qtFBCqSAt4LDR2Hnd8Q", Base58.Prefix.SecretKeyTestnet)._1
     assert(Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, priv.publicKey.hash160) == "ms93boMGZZjvjciujPJgDAqeR86EKBf9MC")
     assert(segwitAddress(priv, Block.RegtestGenesisBlock.hash) == "2MscvqgGXMTYJNAY3owdUtgWJaxPUjH38Cx")
   }
@@ -98,7 +98,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     val state1 = addFunds(state, state.accountKeys.head, 1 btc)
     val (confirmed1, unconfirmed1) = state1.balance
 
-    val pub = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), compressed = true).publicKey
+    val pub = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(pub)) :: Nil, lockTime = 0)
     val (state2, tx1, fee1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
     val Some((_, _, Some(fee))) = state2.computeTransactionDelta(tx1)

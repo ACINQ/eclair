@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -149,7 +149,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     initChannels.values.foreach { c =>
       val txid = channels(c)._1
       val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
-      val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+      val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
       watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
     }
 
@@ -231,7 +231,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
         case ValidateResult(c, Right((tx, UtxoStatus.Unspent))) =>
           val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
           // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
-          val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+          val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
           if (tx.txOut.size < outputIndex + 1 || fundingOutputScript != tx.txOut(outputIndex).publicKeyScript) {
             log.error(s"invalid script for shortChannelId={}: txid={} does not have script=$fundingOutputScript at outputIndex=$outputIndex ann={}", c.shortChannelId, tx.txid, c)
             d0.awaiting.get(c) match {
@@ -415,7 +415,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       val params = params_opt.getOrElse(defaultRouteParams)
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
-      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
+      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.value).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
       findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, routeParams = params)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
@@ -732,7 +732,7 @@ object Router {
   def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
   // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
   // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
-    ChannelUpdate(signature = ByteVector.empty, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0L, extraHop.feeBaseMsat, extraHop.feeProportionalMillionths, None)
+    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0L, extraHop.feeBaseMsat, extraHop.feeProportionalMillionths, None)
 
   def toFakeUpdates(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Map[ChannelDesc, ChannelUpdate] = {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination

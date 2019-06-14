@@ -22,10 +22,10 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.transactions.Scripts.{htlcOffered, htlcReceived, toLocalDelayed}
 import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
 import fr.acinq.eclair.wire.UpdateAddHtlc
-import fr.acinq.eclair.{randomBytes, randomBytes32}
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
@@ -75,13 +75,13 @@ class TransactionsSpec extends FunSuite with Logging {
   }
 
   test("check pre-computed transaction weights") {
-    val localRevocationPriv = PrivateKey(randomBytes32, compressed = true)
-    val localPaymentPriv = PrivateKey(randomBytes32, compressed = true)
-    val remotePaymentPriv = PrivateKey(randomBytes32, compressed = true)
-    val localHtlcPriv = PrivateKey(randomBytes32, compressed = true)
-    val remoteHtlcPriv = PrivateKey(randomBytes32, compressed = true)
-    val localFinalPriv = PrivateKey(randomBytes32, compressed = true)
-    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32, compressed = true).publicKey))
+    val localRevocationPriv = PrivateKey(randomBytes32)
+    val localPaymentPriv = PrivateKey(randomBytes32)
+    val remotePaymentPriv = PrivateKey(randomBytes32)
+    val localHtlcPriv = PrivateKey(randomBytes32)
+    val remoteHtlcPriv = PrivateKey(randomBytes32)
+    val localFinalPriv = PrivateKey(randomBytes32)
+    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey))
     val localDustLimit = Satoshi(546)
     val toLocalDelay = 144
     val feeratePerKw = fr.acinq.eclair.MinimumFeeratePerKw
@@ -93,7 +93,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(20000), pubKeyScript) :: Nil, lockTime = 0)
       val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx, localDustLimit, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(claimP2WPKHOutputTx, localPaymentPriv.publicKey, randomBytes(73)).tx)
+      val weight = Transaction.weight(addSigs(claimP2WPKHOutputTx, localPaymentPriv.publicKey, PlaceHolderSig).tx)
       assert(claimP2WPKHOutputWeight == weight)
       assert(claimP2WPKHOutputTx.fee >= claimP2WPKHOutputTx.minRelayFee)
     }
@@ -105,7 +105,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val htlcSuccessOrTimeoutTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(20000), pubKeyScript) :: Nil, lockTime = 0)
       val claimHtlcDelayedTx = makeClaimDelayedOutputTx(htlcSuccessOrTimeoutTx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(claimHtlcDelayedTx, randomBytes(73)).tx)
+      val weight = Transaction.weight(addSigs(claimHtlcDelayedTx, PlaceHolderSig).tx)
       assert(claimHtlcDelayedWeight == weight)
       assert(claimHtlcDelayedTx.fee >= claimHtlcDelayedTx.minRelayFee)
     }
@@ -117,7 +117,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(20000), pubKeyScript) :: Nil, lockTime = 0)
       val mainPenaltyTx = makeMainPenaltyTx(commitTx, localDustLimit, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localPaymentPriv.publicKey, feeratePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(mainPenaltyTx, randomBytes(73)).tx)
+      val weight = Transaction.weight(addSigs(mainPenaltyTx, PlaceHolderSig).tx)
       assert(mainPenaltyWeight == weight)
       assert(mainPenaltyTx.fee >= mainPenaltyTx.minRelayFee)
     }
@@ -132,7 +132,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pubKeyScript) :: Nil, lockTime = 0)
       val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx, outputsAlreadyUsed = Set.empty, Script.write(redeemScript), localDustLimit, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(htlcPenaltyTx, randomBytes(73), localRevocationPriv.publicKey).tx)
+      val weight = Transaction.weight(addSigs(htlcPenaltyTx, PlaceHolderSig, localRevocationPriv.publicKey).tx)
       assert(htlcPenaltyWeight == weight)
       assert(htlcPenaltyTx.fee >= htlcPenaltyTx.minRelayFee)
     }
@@ -146,7 +146,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pubKeyScript) :: Nil, lockTime = 0)
       val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(claimHtlcSuccessTx, randomBytes(73), paymentPreimage).tx)
+      val weight = Transaction.weight(addSigs(claimHtlcSuccessTx, PlaceHolderSig, paymentPreimage).tx)
       assert(claimHtlcSuccessWeight == weight)
       assert(claimHtlcSuccessTx.fee >= claimHtlcSuccessTx.minRelayFee)
     }
@@ -160,7 +160,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pubKeyScript) :: Nil, lockTime = 0)
       val claimClaimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(claimClaimHtlcTimeoutTx, randomBytes(73)).tx)
+      val weight = Transaction.weight(addSigs(claimClaimHtlcTimeoutTx, PlaceHolderSig).tx)
       assert(claimHtlcTimeoutWeight == weight)
       assert(claimClaimHtlcTimeoutTx.fee >= claimClaimHtlcTimeoutTx.minRelayFee)
     }
@@ -175,7 +175,7 @@ class TransactionsSpec extends FunSuite with Logging {
     val remotePaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
     val localHtlcPriv = PrivateKey(randomBytes32 :+ 1.toByte)
     val remoteHtlcPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32, true).publicKey))
+    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey))
     val commitInput = Funding.makeFundingInputInfo(randomBytes32, 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
     val toLocalDelay = 144
     val localDustLimit = Satoshi(546)
@@ -205,7 +205,7 @@ class TransactionsSpec extends FunSuite with Logging {
 
     val commitTxNumber = 0x404142434445L
     val commitTx = {
-      val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
+      val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
       val localSig = Transactions.sign(txinfo, localPaymentPriv)
       val remoteSig = Transactions.sign(txinfo, remotePaymentPriv)
       Transactions.addSigs(txinfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
@@ -213,7 +213,7 @@ class TransactionsSpec extends FunSuite with Logging {
 
     {
       assert(getCommitTxNumber(commitTx.tx, true, localPaymentPriv.publicKey, remotePaymentPriv.publicKey) == commitTxNumber)
-      val hash = Crypto.sha256(localPaymentPriv.publicKey.toBin ++ remotePaymentPriv.publicKey.toBin)
+      val hash = Crypto.sha256(localPaymentPriv.publicKey.value ++ remotePaymentPriv.publicKey.value)
       val num = Protocol.uint64(hash.takeRight(8).toArray, ByteOrder.BIG_ENDIAN) & 0xffffffffffffL
       val check = ((commitTx.tx.txIn.head.sequence & 0xffffff) << 24) | (commitTx.tx.lockTime & 0xffffff)
       assert((check ^ num) == commitTxNumber)
