@@ -285,7 +285,31 @@ class LightningMessageCodecsSpec extends FunSuite {
       case ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS => JString("TIMESTAMPS_AND_CHECKSUMS")
     }))
 
-    implicit val formats = org.json4s.DefaultFormats.withTypeHintFieldName("type") + new EncodingTypeSerializer + new ExtendedQueryFlagsSerializer + new ByteVectorSerializer + new ByteVector32Serializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer +  new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer +new PaymentRequestSerializer +
+    implicit val formats = org.json4s.DefaultFormats.withTypeHintFieldName("type") +
+      new EncodingTypeSerializer +
+      new ExtendedQueryFlagsSerializer +
+      new ByteVectorSerializer +
+      new ByteVector32Serializer +
+      new UInt64Serializer +
+      new MilliSatoshiSerializer +
+      new ShortChannelIdSerializer +
+      new StateSerializer +
+      new ShaChainSerializer +
+      new PublicKeySerializer +
+      new PrivateKeySerializer +
+      new TransactionSerializer +
+      new TransactionWithInputInfoSerializer +
+      new InetSocketAddressSerializer +
+      new OutPointSerializer +
+      new OutPointKeySerializer +
+      new InputInfoSerializer +
+      new ColorSerializer +
+      new RouteResponseSerializer +
+      new ThrowableSerializer +
+      new FailureMessageSerializer +
+      new NodeAddressSerializer +
+      new DirectionSerializer +
+      new PaymentRequestSerializer +
       ShortTypeHints(List(
       classOf[QueryChannelRange],
       classOf[ReplyChannelRange],
