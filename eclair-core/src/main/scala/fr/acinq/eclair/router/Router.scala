@@ -19,14 +19,13 @@ package fr.acinq.eclair.router
 import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidAnnouncement, InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
@@ -122,21 +121,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
 
   val SHORTID_WINDOW = 100
 
-  val defaultRouteParams = RouteParams(
-    randomize = nodeParams.routerConf.randomizeRouteSelection,
-    maxFeeBaseMsat = nodeParams.routerConf.searchMaxFeeBaseSat * 1000, // converting sat -> msat
-    maxFeePct = nodeParams.routerConf.searchMaxFeePct,
-    routeMaxLength = nodeParams.routerConf.searchMaxRouteLength,
-    routeMaxCltv = nodeParams.routerConf.searchMaxCltv,
-    ratios = nodeParams.routerConf.searchHeuristicsEnabled match {
-      case false => None
-      case true => Some(WeightRatios(
-        cltvDeltaFactor = nodeParams.routerConf.searchRatioCltv,
-        ageFactor = nodeParams.routerConf.searchRatioChannelAge,
-        capacityFactor = nodeParams.routerConf.searchRatioChannelCapacity
-      ))
-    }
-  )
+  val defaultRouteParams = getDefaultRouteParams(nodeParams.routerConf)
 
   val db = nodeParams.db.network
 
@@ -313,7 +298,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
       val params = params_opt.getOrElse(defaultRouteParams)
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
-      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
+      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.value).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
       findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredUpdates.toSet, routeParams = params)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
@@ -740,7 +725,7 @@ object Router {
   def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
   // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
   // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
-    ChannelUpdate(signature = ByteVector.empty, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0L, extraHop.feeBaseMsat, extraHop.feeProportionalMillionths, None)
+    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0L, extraHop.feeBaseMsat, extraHop.feeProportionalMillionths, None)
 
   def toFakeUpdates(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Map[ChannelDesc, ChannelUpdate] = {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
@@ -853,6 +838,22 @@ object Router {
 
   // The default amount of routes we'll search for when findRoute is called
   val DEFAULT_ROUTES_COUNT = 3
+
+  def getDefaultRouteParams(routerConf: RouterConf) = RouteParams(
+    randomize = routerConf.randomizeRouteSelection,
+    maxFeeBaseMsat = routerConf.searchMaxFeeBaseSat * 1000, // converting sat -> msat
+    maxFeePct = routerConf.searchMaxFeePct,
+    routeMaxLength = routerConf.searchMaxRouteLength,
+    routeMaxCltv = routerConf.searchMaxCltv,
+    ratios = routerConf.searchHeuristicsEnabled match {
+      case false => None
+      case true => Some(WeightRatios(
+        cltvDeltaFactor = routerConf.searchRatioCltv,
+        ageFactor = routerConf.searchRatioChannelAge,
+        capacityFactor = routerConf.searchRatioChannelCapacity
+      ))
+    }
+  )
 
   /**
     * Find a route in the graph between localNodeId and targetNodeId, returns the route.

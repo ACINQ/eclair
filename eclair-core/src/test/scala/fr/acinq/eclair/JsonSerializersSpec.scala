@@ -71,10 +71,10 @@ class JsonSerializersSpec extends FunSuite with Logging {
       toSelfDelay = Random.nextInt(Short.MaxValue),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       fundingPubKey = randomKey.publicKey,
-      revocationBasepoint = randomKey.publicKey.value,
-      paymentBasepoint = randomKey.publicKey.value,
-      delayedPaymentBasepoint = randomKey.publicKey.value,
-      htlcBasepoint = randomKey.publicKey.value,
+      revocationBasepoint = randomKey.publicKey,
+      paymentBasepoint = randomKey.publicKey,
+      delayedPaymentBasepoint = randomKey.publicKey,
+      htlcBasepoint = randomKey.publicKey,
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))
 

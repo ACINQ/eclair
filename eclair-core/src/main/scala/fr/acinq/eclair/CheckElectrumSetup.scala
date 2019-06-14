@@ -52,7 +52,7 @@ class CheckElectrumSetup(datadir: File,
 
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val chain = config.getString("chain")
-  val keyManager = new LocalKeyManager(PrivateKey(randomBytes(32), compressed = true).toBin, NodeParams.makeChainHash(chain))
+  val keyManager = new LocalKeyManager(randomBytes(32), NodeParams.makeChainHash(chain))
   val database = db match {
     case Some(d) => d
     case None => Databases.sqliteJDBC(new File(datadir, chain))

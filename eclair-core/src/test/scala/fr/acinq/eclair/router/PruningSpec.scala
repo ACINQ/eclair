@@ -38,7 +38,7 @@ class PruningSpec extends TestkitBaseClass with BeforeAndAfterAll {
   import PruningSpec._
 
   val txid = ByteVector32.fromValidHex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-  val remoteNodeId = PrivateKey(ByteVector.fromValidHex("01" * 32), true).publicKey
+  val remoteNodeId = PrivateKey(ByteVector32.fromValidHex("01" * 32)).publicKey
 
   val startHeight = 400000 - 25 * 2016
   val shortChannelIds: immutable.SortedSet[ShortChannelId] = (for {

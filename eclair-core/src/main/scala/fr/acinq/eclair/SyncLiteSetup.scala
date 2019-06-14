@@ -50,7 +50,7 @@ class SyncLiteSetup(datadir: File,
 
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val chain = config.getString("chain")
-  val keyManager = new LocalKeyManager(PrivateKey(randomBytes(32), compressed = true).toBin, NodeParams.makeChainHash(chain))
+  val keyManager = new LocalKeyManager(randomBytes32, NodeParams.makeChainHash(chain))
   val database = db match {
     case Some(d) => d
     case None => Databases.sqliteJDBC(new File(datadir, chain))
@@ -91,7 +91,7 @@ class YesWatcher extends Actor with ActorLogging {
   override def receive: Receive = {
     case ValidateRequest(c) =>
       log.info(s"blindly validating channel={}", c)
-      val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+      val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
       val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
       val fakeFundingTx = Transaction(
         version = 2,

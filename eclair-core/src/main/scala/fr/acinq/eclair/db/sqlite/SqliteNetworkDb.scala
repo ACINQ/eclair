@@ -48,7 +48,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
 
   override def addNode(n: NodeAnnouncement): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO nodes VALUES (?, ?)")) { statement =>
-      statement.setBytes(1, n.nodeId.toBin.toArray)
+      statement.setBytes(1, n.nodeId.value.toArray)
       statement.setBytes(2, nodeAnnouncementCodec.encode(n).require.toByteArray)
       statement.executeUpdate()
     }
@@ -57,14 +57,22 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def updateNode(n: NodeAnnouncement): Unit = {
     using(sqlite.prepareStatement("UPDATE nodes SET data=? WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeAnnouncementCodec.encode(n).require.toByteArray)
-      statement.setBytes(2, n.nodeId.toBin.toArray)
+      statement.setBytes(2, n.nodeId.value.toArray)
       statement.executeUpdate()
+    }
+  }
+
+  override def getNode(nodeId: Crypto.PublicKey): Option[NodeAnnouncement] = {
+    using(sqlite.prepareStatement("SELECT data FROM nodes WHERE node_id=?")) { statement =>
+      statement.setBytes(1, nodeId.value.toArray)
+      val rs = statement.executeQuery()
+      codecSequence(rs, nodeAnnouncementCodec).headOption
     }
   }
 
   override def removeNode(nodeId: Crypto.PublicKey): Unit = {
     using(sqlite.prepareStatement("DELETE FROM nodes WHERE node_id=?")) { statement =>
-      statement.setBytes(1, nodeId.toBin.toArray)
+      statement.setBytes(1, nodeId.value.toArray)
       statement.executeUpdate()
     }
   }
@@ -79,8 +87,8 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO channels VALUES (?, ?, ?)")) { statement =>
       statement.setLong(1, c.shortChannelId.toLong)
-      statement.setBytes(2, c.nodeId1.toBin.toArray) // those will be 33-bytes compressed key
-      statement.setBytes(3, c.nodeId2.toBin.toArray)
+      statement.setBytes(2, c.nodeId1.value.toArray) // those will be 33-bytes compressed key
+      statement.setBytes(3, c.nodeId2.value.toArray)
       statement.executeUpdate()
     }
   }
@@ -116,8 +124,8 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
           features = null,
           chainHash = null,
           shortChannelId = ShortChannelId(rs.getLong("short_channel_id")),
-          nodeId1 = PublicKey.toCompressedUnsafe(rs.getBytes("node_id_1")), // this will read a compressed or uncompressed serialized key (for backward compatibility reasons) to a compressed public key
-          nodeId2 = PublicKey.toCompressedUnsafe(rs.getBytes("node_id_2")),
+          nodeId1 = PublicKey.fromBin(ByteVector.view(rs.getBytes("node_id_1")), checkValid = false), // this will read a compressed or uncompressed serialized key (for backward compatibility reasons) to a compressed public key
+          nodeId2 = PublicKey.fromBin(ByteVector.view(rs.getBytes("node_id_2")), checkValid = false),
           bitcoinKey1 = null,
           bitcoinKey2 = null) -> (emptyTxid, zeroCapacity))
       }

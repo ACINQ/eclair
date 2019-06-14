@@ -108,7 +108,7 @@ object NodeParams {
     seedPath.exists() match {
       case true => ByteVector(Files.toByteArray(seedPath))
       case false =>
-        val seed = randomKey.toBin
+        val seed = randomBytes32
         Files.write(seed.toArray, seedPath)
         seed
     }

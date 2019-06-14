@@ -4,8 +4,8 @@ import java.util.UUID
 
 import akka.actor.ActorRef
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.Crypto.{Point, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.Origin
@@ -21,10 +21,10 @@ object JsonSerializers {
   implicit val txReadWrite: ReadWriter[Transaction] = readwriter[String].bimap[Transaction](_.toString(), Transaction.read(_))
   implicit val outpointReadWrite: ReadWriter[OutPoint] = readwriter[String].bimap[OutPoint](op => s"${op.hash}:${op.index}", s => ???)
   implicit val publicKeyReadWriter: ReadWriter[PublicKey] = readwriter[String].bimap[PublicKey](_.toString(), s => PublicKey(ByteVector.fromValidHex(s)))
-  implicit val pointReadWriter: ReadWriter[Point] = readwriter[String].bimap[Point](_.toString(), s => Point(ByteVector.fromValidHex(s)))
   implicit val keyPathReadWriter: ReadWriter[DeterministicWallet.KeyPath] = readwriter[String].bimap[DeterministicWallet.KeyPath](_.toString(), _ => DeterministicWallet.KeyPath(0L :: Nil))
-  implicit val bytevector32ReadWriter: ReadWriter[ByteVector32] = readwriter[String].bimap[ByteVector32](_.bytes.toHex, s => ByteVector32.fromValidHex(s))
   implicit val bytevectorReadWriter: ReadWriter[ByteVector] = readwriter[String].bimap[ByteVector](_.toHex, s => ByteVector.fromValidHex(s))
+  implicit val bytevector32ReadWriter: ReadWriter[ByteVector32] = readwriter[String].bimap[ByteVector32](_.bytes.toHex, s => ByteVector32.fromValidHex(s))
+  implicit val bytevector64ReadWriter: ReadWriter[ByteVector64] = readwriter[String].bimap[ByteVector64](_.bytes.toHex, s => ByteVector64.fromValidHex(s))
   implicit val uint64ReadWriter: ReadWriter[UInt64] = readwriter[String].bimap[UInt64](_.toString, s => UInt64(s.toLong))
   implicit val localParamsReadWriter: ReadWriter[LocalParams] = macroRW
   implicit val remoteParamsReadWriter: ReadWriter[RemoteParams] = macroRW
@@ -120,7 +120,6 @@ object JsonSerializers {
     case "SYNCING" => SYNCING
     case "WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT" => WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT
     case "ERR_FUNDING_LOST" => ERR_FUNDING_LOST
-    case "ERR_FUNDING_TIMEOUT" => ERR_FUNDING_TIMEOUT
     case "ERR_INFORMATION_LEAK" => ERR_INFORMATION_LEAK
   })
   implicit val channelDataReadWriter: ReadWriter[fr.acinq.eclair.channel.Data] = ReadWriter.merge(
