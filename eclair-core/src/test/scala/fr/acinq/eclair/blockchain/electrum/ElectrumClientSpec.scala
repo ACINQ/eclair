@@ -28,7 +28,6 @@ import scodec.bits._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-
 class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with Logging with BeforeAndAfterAll {
 
   import ElectrumClient._
@@ -40,7 +39,20 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
   val scriptHash = Crypto.sha256(referenceTx.txOut(0).publicKeyScript).reverse
   val height = 500000
   val position = 2690
-  val merkleProof = List("b500cd85cd6c7e0e570b82728dd516646536a477b61cc82056505d84a5820dc3", "c98798c2e576566a92b23d2405f59d95c506966a6e26fecfb356d6447a199546", "930d95c428546812fd11f8242904a9a1ba05d2140cd3a83be0e2ed794821c9ec", "90c97965b12f4262fe9bf95bc37ff7d6362902745eaa822ecf0cf85801fa8b48", "23792d51fddd6e439ed4c92ad9f19a9b73fc9d5c52bdd69039be70ad6619a1aa", "4b73075f29a0abdcec2c83c2cfafc5f304d2c19dcacb50a88a023df725468760", "f80225a32a5ce4ef0703822c6aa29692431a816dec77d9b1baa5b09c3ba29bfb", "4858ac33f2022383d3b4dd674666a0880557d02a155073be93231a02ecbb81f4", "eb5b142030ed4e0b55a8ba5a7b5b783a0a24e0c2fd67c1cfa2f7b308db00c38a", "86858812c3837d209110f7ea79de485abdfd22039467a8aa15a8d85856ee7d30", "de20eb85f2e9ad525a6fb5c618682b6bdce2fa83df836a698f31575c4e5b3d38", "98bd1048e04ff1b0af5856d9890cd708d8d67ad6f3a01f777130fbc16810eeb3").map(ByteVector32.fromValidHex)
+  val merkleProof = List(
+    hex"b500cd85cd6c7e0e570b82728dd516646536a477b61cc82056505d84a5820dc3",
+    hex"c98798c2e576566a92b23d2405f59d95c506966a6e26fecfb356d6447a199546",
+    hex"930d95c428546812fd11f8242904a9a1ba05d2140cd3a83be0e2ed794821c9ec",
+    hex"90c97965b12f4262fe9bf95bc37ff7d6362902745eaa822ecf0cf85801fa8b48",
+    hex"23792d51fddd6e439ed4c92ad9f19a9b73fc9d5c52bdd69039be70ad6619a1aa",
+    hex"4b73075f29a0abdcec2c83c2cfafc5f304d2c19dcacb50a88a023df725468760",
+    hex"f80225a32a5ce4ef0703822c6aa29692431a816dec77d9b1baa5b09c3ba29bfb",
+    hex"4858ac33f2022383d3b4dd674666a0880557d02a155073be93231a02ecbb81f4",
+    hex"eb5b142030ed4e0b55a8ba5a7b5b783a0a24e0c2fd67c1cfa2f7b308db00c38a",
+    hex"86858812c3837d209110f7ea79de485abdfd22039467a8aa15a8d85856ee7d30",
+    hex"de20eb85f2e9ad525a6fb5c618682b6bdce2fa83df836a698f31575c4e5b3d38",
+    hex"98bd1048e04ff1b0af5856d9890cd708d8d67ad6f3a01f777130fbc16810eeb3")
+    .map(ByteVector32(_))
 
   override protected def beforeAll(): Unit = {
     client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("electrum.acinq.co", 50002), SSL.STRICT)), "electrum-client")

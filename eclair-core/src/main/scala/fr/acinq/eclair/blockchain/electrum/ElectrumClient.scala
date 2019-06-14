@@ -381,7 +381,7 @@ object ElectrumClient {
   case class BroadcastTransactionResponse(tx: Transaction, error: Option[Error]) extends Response
 
   case class GetTransactionIdFromPosition(height: Int, tx_pos: Int, merkle: Boolean = false) extends Request
-  case class GetTransactionIdFromPositionResponse(txid: ByteVector32, merkle: List[ByteVector32]) extends Response
+  case class GetTransactionIdFromPositionResponse(txid: ByteVector32, merkle: Seq[ByteVector32]) extends Response
 
   case class GetTransaction(txid: ByteVector32) extends Request
   case class GetTransactionResponse(tx: Transaction) extends Response
@@ -594,13 +594,13 @@ object ElectrumClient {
           })
           ScriptHashListUnspentResponse(scripthash, items)
         case GetTransactionIdFromPosition(_, _, false) =>
-          val JString(txid) = json.result
-          GetTransactionIdFromPositionResponse(ByteVector32.fromValidHex(txid), Nil)
+          val JString(tx_hash) = json.result
+          GetTransactionIdFromPositionResponse(ByteVector32.fromValidHex(tx_hash), Nil)
         case GetTransactionIdFromPosition(_, _, true) =>
-          val JString(txid) = json.result \ "tx_hash"
+          val JString(tx_hash) = json.result \ "tx_hash"
           val JArray(hashes) = json.result \ "merkle"
           val leaves = hashes collect { case JString(value) => ByteVector32.fromValidHex(value) }
-          GetTransactionIdFromPositionResponse(ByteVector32.fromValidHex(txid), leaves)
+          GetTransactionIdFromPositionResponse(ByteVector32.fromValidHex(tx_hash), leaves)
         case GetTransaction(_) =>
           val JString(hex) = json.result
           GetTransactionResponse(Transaction.read(hex))
