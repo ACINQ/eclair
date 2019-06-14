@@ -351,7 +351,7 @@ object LightningMessageCodecs {
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
   val genericTlvCodec: Codec[GenericTLV] = (
-    ("type" | byte) :: variableSizeBytesLong(varIntCodec, bytes)).as[GenericTLV]
+    ("type" | varIntCodec) :: variableSizeBytesLong(varIntCodec, bytes)).as[GenericTLV]
 
   def tlvFallbackCodec(codec: Codec[TLV]): Codec[TLV] = discriminatorFallback(genericTlvCodec, codec).xmap(_ match {
     case Left(l) => l

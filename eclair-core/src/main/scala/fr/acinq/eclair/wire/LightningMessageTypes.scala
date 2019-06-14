@@ -307,7 +307,7 @@ case class EncodedChecksums(checksums: List[Checksums]) extends TLV
   * @param `type` TLV type
   * @param value TLV value (length is implicit, and encoded as a varint)
   */
-case class GenericTLV(`type`: Byte, value: ByteVector) extends TLV
+case class GenericTLV(`type`: Long, value: ByteVector) extends TLV
 // @formatter:on
 
 
