@@ -20,8 +20,8 @@ import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 import java.nio.charset.StandardCharsets
 
 import com.google.common.base.Charsets
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import scodec.bits.ByteVector
@@ -64,8 +64,8 @@ case class Pong(data: ByteVector) extends SetupMessage
 case class ChannelReestablish(channelId: ByteVector32,
                               nextLocalCommitmentNumber: Long,
                               nextRemoteRevocationNumber: Long,
-                              yourLastPerCommitmentSecret: Option[Scalar] = None,
-                              myCurrentPerCommitmentPoint: Option[Point] = None) extends ChannelMessage with HasChannelId
+                              yourLastPerCommitmentSecret: Option[PrivateKey] = None,
+                              myCurrentPerCommitmentPoint: Option[PublicKey] = None) extends ChannelMessage with HasChannelId
 
 case class OpenChannel(chainHash: ByteVector32,
                        temporaryChannelId: ByteVector32,
@@ -79,11 +79,11 @@ case class OpenChannel(chainHash: ByteVector32,
                        toSelfDelay: Int,
                        maxAcceptedHtlcs: Int,
                        fundingPubkey: PublicKey,
-                       revocationBasepoint: Point,
-                       paymentBasepoint: Point,
-                       delayedPaymentBasepoint: Point,
-                       htlcBasepoint: Point,
-                       firstPerCommitmentPoint: Point,
+                       revocationBasepoint: PublicKey,
+                       paymentBasepoint: PublicKey,
+                       delayedPaymentBasepoint: PublicKey,
+                       htlcBasepoint: PublicKey,
+                       firstPerCommitmentPoint: PublicKey,
                        channelFlags: Byte) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
@@ -95,29 +95,29 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          toSelfDelay: Int,
                          maxAcceptedHtlcs: Int,
                          fundingPubkey: PublicKey,
-                         revocationBasepoint: Point,
-                         paymentBasepoint: Point,
-                         delayedPaymentBasepoint: Point,
-                         htlcBasepoint: Point,
-                         firstPerCommitmentPoint: Point) extends ChannelMessage with HasTemporaryChannelId
+                         revocationBasepoint: PublicKey,
+                         paymentBasepoint: PublicKey,
+                         delayedPaymentBasepoint: PublicKey,
+                         htlcBasepoint: PublicKey,
+                         firstPerCommitmentPoint: PublicKey) extends ChannelMessage with HasTemporaryChannelId
 
 case class FundingCreated(temporaryChannelId: ByteVector32,
                           fundingTxid: ByteVector32,
                           fundingOutputIndex: Int,
-                          signature: ByteVector) extends ChannelMessage with HasTemporaryChannelId
+                          signature: ByteVector64) extends ChannelMessage with HasTemporaryChannelId
 
 case class FundingSigned(channelId: ByteVector32,
-                         signature: ByteVector) extends ChannelMessage with HasChannelId
+                         signature: ByteVector64) extends ChannelMessage with HasChannelId
 
 case class FundingLocked(channelId: ByteVector32,
-                         nextPerCommitmentPoint: Point) extends ChannelMessage with HasChannelId
+                         nextPerCommitmentPoint: PublicKey) extends ChannelMessage with HasChannelId
 
 case class Shutdown(channelId: ByteVector32,
                     scriptPubKey: ByteVector) extends ChannelMessage with HasChannelId
 
 case class ClosingSigned(channelId: ByteVector32,
                          feeSatoshis: Long,
-                         signature: ByteVector) extends ChannelMessage with HasChannelId
+                         signature: ByteVector64) extends ChannelMessage with HasChannelId
 
 case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long,
@@ -140,25 +140,25 @@ case class UpdateFailMalformedHtlc(channelId: ByteVector32,
                                    failureCode: Int) extends HtlcMessage with UpdateMessage with HasChannelId
 
 case class CommitSig(channelId: ByteVector32,
-                     signature: ByteVector,
-                     htlcSignatures: List[ByteVector]) extends HtlcMessage with HasChannelId
+                     signature: ByteVector64,
+                     htlcSignatures: List[ByteVector64]) extends HtlcMessage with HasChannelId
 
 case class RevokeAndAck(channelId: ByteVector32,
-                        perCommitmentSecret: Scalar,
-                        nextPerCommitmentPoint: Point) extends HtlcMessage with HasChannelId
+                        perCommitmentSecret: PrivateKey,
+                        nextPerCommitmentPoint: PublicKey) extends HtlcMessage with HasChannelId
 
 case class UpdateFee(channelId: ByteVector32,
                      feeratePerKw: Long) extends ChannelMessage with UpdateMessage with HasChannelId
 
 case class AnnouncementSignatures(channelId: ByteVector32,
                                   shortChannelId: ShortChannelId,
-                                  nodeSignature: ByteVector,
-                                  bitcoinSignature: ByteVector) extends RoutingMessage with HasChannelId
+                                  nodeSignature: ByteVector64,
+                                  bitcoinSignature: ByteVector64) extends RoutingMessage with HasChannelId
 
-case class ChannelAnnouncement(nodeSignature1: ByteVector,
-                               nodeSignature2: ByteVector,
-                               bitcoinSignature1: ByteVector,
-                               bitcoinSignature2: ByteVector,
+case class ChannelAnnouncement(nodeSignature1: ByteVector64,
+                               nodeSignature2: ByteVector64,
+                               bitcoinSignature1: ByteVector64,
+                               bitcoinSignature2: ByteVector64,
                                features: ByteVector,
                                chainHash: ByteVector32,
                                shortChannelId: ShortChannelId,
@@ -205,7 +205,7 @@ case class Tor3(tor3: String, port: Int) extends OnionAddress { override def soc
 // @formatter:on
 
 
-case class NodeAnnouncement(signature: ByteVector,
+case class NodeAnnouncement(signature: ByteVector64,
                             features: ByteVector,
                             timestamp: Long,
                             nodeId: PublicKey,
@@ -213,7 +213,7 @@ case class NodeAnnouncement(signature: ByteVector,
                             alias: String,
                             addresses: List[NodeAddress]) extends RoutingMessage with HasTimestamp
 
-case class ChannelUpdate(signature: ByteVector,
+case class ChannelUpdate(signature: ByteVector64,
                          chainHash: ByteVector32,
                          shortChannelId: ShortChannelId,
                          timestamp: Long,

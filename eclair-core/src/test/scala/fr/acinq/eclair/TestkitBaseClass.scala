@@ -18,6 +18,7 @@ package fr.acinq.eclair
 
 import akka.actor.{ActorNotFound, ActorSystem, PoisonPill}
 import akka.testkit.TestKit
+import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, fixture}
 
