@@ -321,31 +321,6 @@ object LightningMessageCodecs {
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
 
-
-  /**
-    * A codec that caches serialized routing messages
-    */
-  val cachedLightningMessageCodec = new Codec[LightningMessage] {
-
-    override def sizeBound: SizeBound = lightningMessageCodec.sizeBound
-
-    val cache = CacheBuilder
-      .newBuilder
-      .weakKeys() // will cleanup values when keys are garbage collected
-      .build(new CacheLoader[LightningMessage, Attempt[BitVector]] {
-      override def load(key: LightningMessage): Attempt[BitVector] = lightningMessageCodec.encode(key)
-    })
-
-    override def encode(value: LightningMessage): Attempt[BitVector] = value match {
-      case _: ChannelAnnouncement => cache.get(value) // we only cache serialized routing messages
-      case _: NodeAnnouncement => cache.get(value) // we only cache serialized routing messages
-      case _: ChannelUpdate => cache.get(value) // we only cache serialized routing messages
-      case _ => lightningMessageCodec.encode(value)
-    }
-
-    override def decode(bits: BitVector): Attempt[DecodeResult[LightningMessage]] = lightningMessageCodec.decode(bits)
-  }
-
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::
       ("short_channel_id" | shortchannelid) ::
