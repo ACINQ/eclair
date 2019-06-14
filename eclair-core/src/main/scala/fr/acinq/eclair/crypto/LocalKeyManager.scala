@@ -41,7 +41,7 @@ object LocalKeyManager {
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(0) :: Nil
   }
 
-  // split the SHA into 8 groups of 4 bytes and convert to uint32
+  // split the SHA(input) into 8 groups of 4 bytes and convert to uint32
   def fourByteGroupsFromSha(input: ByteVector): List[Long] = Crypto.sha256(input).toArray.grouped(4).map(ByteVector(_).toLong(signed = false)).toList
 
   def makeChannelKeyPathFunder(entropy: ByteVector) = KeyPath(fourByteGroupsFromSha(entropy) :+ 0L)
@@ -95,6 +95,7 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
 
   private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath) = Crypto.sha256(privateKeys.get(internalKeyPath(channelKeyPath, 5)).privateKey.toBin)
 
+  // used only in test
   def shaSeedPub(channelKeyPath: DeterministicWallet.KeyPath) = publicKeys.get(internalKeyPath(channelKeyPath, 5))
 
   override def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath) = publicKeys.get(internalKeyPath(channelKeyPath, 0))

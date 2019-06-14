@@ -20,6 +20,7 @@ import scala.concurrent.duration._
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -49,13 +50,28 @@ class WaitForFundingSignedInternalStateSpec extends TestkitBaseClass with StateT
 
   test("recv Error") { f =>
     import f._
+
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED].unsignedFundingTx
+    assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.isEmpty)
+
     alice ! Error(ByteVector32.Zeroes, "oops")
+
     awaitCond(alice.stateName == CLOSED)
+    val rolledBackTx = alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.head
+    assert(rolledBackTx.txOut == fundingTx.txOut)
+    assert(rolledBackTx.txIn.map(_.outPoint) == fundingTx.txIn.map(_.outPoint))
   }
 
   test("recv CMD_CLOSE") { f =>
     import f._
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED].unsignedFundingTx
+    assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.isEmpty)
+
     alice ! CMD_CLOSE(None)
+
+    val rolledBackTx = alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.head
+    assert(rolledBackTx.txOut == fundingTx.txOut)
+    assert(rolledBackTx.txIn.map(_.outPoint) == fundingTx.txIn.map(_.outPoint))
     awaitCond(alice.stateName == CLOSED)
   }
 

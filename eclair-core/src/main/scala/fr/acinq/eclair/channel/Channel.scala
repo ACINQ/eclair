@@ -384,7 +384,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(nextStateData, open, funding) sending open
 
-    // TODO release outputs that were locked in the funding
     case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_INTERNAL_CREATED) =>
       log.error(t, s"wallet returned error: ")
       replyToUser(Left(LocalError(t)))
@@ -442,7 +441,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // add our signature to the funding transaction
           wallet.signTransactionComplete(finalFundingTx).map(SignFundingTxResponse(_, funding.fundingTxOutputIndex, funding.fee)).pipeTo(self)
 
-          goto(WAIT_FOR_FUNDING_INTERNAL_SIGNED) using DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open)
+          goto(WAIT_FOR_FUNDING_INTERNAL_SIGNED) using DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open, finalFundingTx)
       }
 
     case Event(CMD_CLOSE(_) | CMD_FORCECLOSE, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
@@ -467,7 +466,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   })
 
   when(WAIT_FOR_FUNDING_INTERNAL_SIGNED)(handleExceptions {
-    case Event(SignFundingTxResponse(fundingTx, fundingTxOutputIndex, fundingTxFee), DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, open)) =>
+    case Event(SignFundingTxResponse(fundingTx, fundingTxOutputIndex, fundingTxFee), DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, open, fundingTxResponse)) =>
       // let's create the first commitment tx that spends the yet uncommitted funding tx
       val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(keyManager, temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint, nodeParams.maxFeerateMismatch)
       require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
@@ -1460,6 +1459,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
       log.info("shutting down")
       stop(FSM.Normal)
+
+    // this may happen if connection is lost, or remote sends an error while we were waiting for the funding tx to be created by our wallet
+    // in that case we rollback the tx
+    case Event(SignFundingTxResponse(fundingTx, _, _), _) =>
+      wallet.rollback(fundingTx)
+      stay
 
     case Event(MakeFundingTxResponse(fundingTx, _, _), _) =>
       // this may happen if connection is lost, or remote sends an error while we were waiting for the funding tx to be created by our wallet
