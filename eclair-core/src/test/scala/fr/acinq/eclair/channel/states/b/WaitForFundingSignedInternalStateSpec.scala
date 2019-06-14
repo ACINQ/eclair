@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel.states.b
 
+import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import scala.concurrent.duration._
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
@@ -37,13 +38,18 @@ class WaitForFundingSignedInternalStateSpec extends TestkitBaseClass with StateT
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
+      val monitor = TestProbe()
+      alice ! SubscribeTransitionCallBack(monitor.ref)
+      val CurrentState(_, WAIT_FOR_INIT_INTERNAL) = monitor.expectMsgClass(classOf[CurrentState[_]])
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, alice2bob.ref, bobInit, ChannelFlags.Empty)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
+      val Transition(_, WAIT_FOR_INIT_INTERNAL, WAIT_FOR_FUNDING_INTERNAL_CREATED) = monitor.expectMsgClass(classOf[Transition[_]])
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL_SIGNED)
+      val Transition(_, WAIT_FOR_FUNDING_INTERNAL_CREATED, WAIT_FOR_ACCEPT_CHANNEL) = monitor.expectMsgClass(classOf[Transition[_]])
+      val Transition(_, WAIT_FOR_ACCEPT_CHANNEL, WAIT_FOR_FUNDING_INTERNAL_SIGNED) = monitor.expectMsgClass(classOf[Transition[_]])
       withFixture(test.toNoArgTest(FixtureParam(alice, alice2bob, bob2alice, alice2blockchain)))
     }
   }
