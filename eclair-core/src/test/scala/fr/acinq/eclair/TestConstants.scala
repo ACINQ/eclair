@@ -105,7 +105,6 @@ object TestConstants {
     def channelParams = Channel.makeChannelParams(
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32, compressed = true).publicKey)),
-      isFunder = true,
       fundingSatoshis,
       Left(KeyPath(Seq(1, 2, 3, 4L)))
     ).copy(
@@ -171,7 +170,6 @@ object TestConstants {
     def channelParams = Channel.makeChannelParams(
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32, compressed = true).publicKey)),
-      isFunder = false,
       fundingSatoshis,
       Right(KeyPathFundee(KeyPath(Seq(1, 2, 3, 4L)), KeyPath(Seq(1, 2, 3, 4L))))
     ).copy(

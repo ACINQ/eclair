@@ -202,12 +202,11 @@ final case class LocalParams(nodeId: PublicKey,
                              htlcMinimumMsat: Long,
                              toSelfDelay: Int,
                              maxAcceptedHtlcs: Int,
-                             isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
                              globalFeatures: ByteVector,
                              localFeatures: ByteVector) {
 
-  require(isFunder && channelKeyPath.isLeft || !isFunder && channelKeyPath.isRight, s"Wrong keyPath derivation for isFunder=$isFunder")
+  def isFunder = channelKeyPath.isLeft
 }
 
 case class KeyPathFundee(fundingKeyPath: KeyPath, pointsKeyPath: KeyPath)

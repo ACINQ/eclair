@@ -63,7 +63,6 @@ object ChannelStateSpec {
     toSelfDelay = 144,
     maxAcceptedHtlcs = 50,
     defaultFinalScriptPubKey = ByteVector.empty,
-    isFunder = true,
     globalFeatures = hex"dead",
     localFeatures = hex"beef")
 

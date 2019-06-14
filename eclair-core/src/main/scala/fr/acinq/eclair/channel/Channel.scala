@@ -93,7 +93,7 @@ object Channel {
 
   def makeFunderChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, fundingSatoshis: Long, fundingInput: TxIn): LocalParams = {
     val channelKeyPath = LocalKeyManager.makeChannelKeyPathFunder(fundingInput.outPoint.hash)
-    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder = true, fundingSatoshis, Left(channelKeyPath))
+    makeChannelParams(nodeParams, defaultFinalScriptPubKey, fundingSatoshis, Left(channelKeyPath))
   }
 
   def makeFundeeChannelParams(nodeParams: NodeParams, open: OpenChannel, defaultFinalScriptPubKey: ByteVector, fundingSatoshis: Long): LocalParams = {
@@ -104,10 +104,10 @@ object Channel {
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, open.fundingPubkey)))
     val channelKeyPath = LocalKeyManager.makeChannelKeyPathFundee(fundingPubkeyScript)
     val channelKeyPaths = KeyPathFundee(publicKeyPath, channelKeyPath)
-    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder = false, fundingSatoshis, Right(channelKeyPaths))
+    makeChannelParams(nodeParams, defaultFinalScriptPubKey, fundingSatoshis, Right(channelKeyPaths))
   }
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: Either[DeterministicWallet.KeyPath, KeyPathFundee]): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, fundingSatoshis: Long, channelKeyPath: Either[DeterministicWallet.KeyPath, KeyPathFundee]): LocalParams = {
     LocalParams(
       nodeParams.nodeId,
       channelKeyPath,
@@ -118,7 +118,6 @@ object Channel {
       toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
-      isFunder = isFunder,
       globalFeatures = nodeParams.globalFeatures,
       localFeatures = nodeParams.localFeatures)
   }

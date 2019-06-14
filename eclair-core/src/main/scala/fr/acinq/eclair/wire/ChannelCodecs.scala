@@ -19,8 +19,10 @@ package fr.acinq.eclair.wire
 import java.util.UUID
 
 import akka.actor.ActorRef
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.{Local, Origin, Relayed}
@@ -28,9 +30,10 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import grizzled.slf4j.Logging
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
+import shapeless.{HList, HNil}
 
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -42,12 +45,12 @@ import scala.concurrent.duration._
 object ChannelCodecs extends Logging {
 
   val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
-  val keyPathFundee: Codec[KeyPathFundee] = (
-    ("publicKeyPath" | keyPathCodec) ::
+  val keyPathFundeeCodec: Codec[KeyPathFundee] = (
+    ("fundingKeyPath" | keyPathCodec) ::
       ("pointsKeyPath" | keyPathCodec)
     ).as[KeyPathFundee]
 
-  val channelKeyPathCodec = either(bool, keyPathCodec, keyPathFundee)
+  val channelKeyPathCodec = either(bool, keyPathCodec, keyPathFundeeCodec)
 
   val extendedPrivateKeyCodec: Codec[ExtendedPrivateKey] = (
     ("secretkeybytes" | bytes32) ::
@@ -56,15 +59,10 @@ object ChannelCodecs extends Logging {
       ("path" | keyPathCodec) ::
       ("parent" | int64)).as[ExtendedPrivateKey]
 
-  def localParamsCodec(version: CommitmentVersion): Codec[LocalParams] = (
+  import shapeless._
+  val localParamsCodecV0: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
-      (version match {
-        case CommitmentV0 => ("channelPath" | keyPathCodec.xmap[Either[KeyPath, KeyPathFundee]](Left(_), {
-          case Left(kp) => kp
-          case Right(_) => throw new IllegalArgumentException(s"Found unexpected value for version=$version")
-        }))
-        case CommitmentV1 => ("channelPath" | channelKeyPathCodec)
-      }) ::
+      ("channelPath" | keyPathCodec) ::
       ("dustLimitSatoshis" | uint64) ::
       ("maxHtlcValueInFlightMsat" | uint64ex) ::
       ("channelReserveSatoshis" | uint64) ::
@@ -74,7 +72,64 @@ object ChannelCodecs extends Logging {
       ("isFunder" | bool) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
       ("globalFeatures" | varsizebinarydata) ::
+      ("localFeatures" | varsizebinarydata)).xmap({
+    case nodeId ::
+      keyPath ::
+      dustLimitSatoshis ::
+      maxHtlcValueInFlightMsat ::
+      channelReserveSatoshis ::
+      htlcMinimumMsat ::
+      toSelfDelay ::
+      maxAcceptedHtlcs ::
+      isFunder ::
+      defaultFinalScriptPubKey ::
+      globalFeatures :: localFeatures :: HNil =>
+
+      LocalParams(
+        nodeId = nodeId,
+        // old versions of "LocalParams" use a single keypath
+        channelKeyPath = if(isFunder) Left(keyPath) else Right(KeyPathFundee(keyPath, keyPath)),
+        dustLimitSatoshis = dustLimitSatoshis,
+        maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat,
+        channelReserveSatoshis = channelReserveSatoshis,
+        htlcMinimumMsat = htlcMinimumMsat,
+        toSelfDelay = toSelfDelay,
+        maxAcceptedHtlcs = maxAcceptedHtlcs,
+        defaultFinalScriptPubKey = defaultFinalScriptPubKey,
+        globalFeatures = globalFeatures,
+        localFeatures = localFeatures)
+  },{ localParams =>
+
+    localParams.nodeId ::
+      localParams.channelKeyPath.left.get ::
+      localParams.dustLimitSatoshis ::
+      localParams.maxHtlcValueInFlightMsat ::
+      localParams.channelReserveSatoshis ::
+      localParams.htlcMinimumMsat ::
+      localParams.toSelfDelay ::
+      localParams.maxAcceptedHtlcs ::
+      localParams.isFunder ::
+      localParams.defaultFinalScriptPubKey ::
+      localParams.globalFeatures :: localParams.localFeatures :: HNil
+  })
+
+  val localParamsCodecV1: Codec[LocalParams] = (
+    ("nodeId" | publicKey) ::
+      ("channelPath" | channelKeyPathCodec) ::
+      ("dustLimitSatoshis" | uint64) ::
+      ("maxHtlcValueInFlightMsat" | uint64ex) ::
+      ("channelReserveSatoshis" | uint64) ::
+      ("htlcMinimumMsat" | uint64) ::
+      ("toSelfDelay" | uint16) ::
+      ("maxAcceptedHtlcs" | uint16) ::
+      ("defaultFinalScriptPubKey" | varsizebinarydata) ::
+      ("globalFeatures" | varsizebinarydata) ::
       ("localFeatures" | varsizebinarydata)).as[LocalParams]
+
+  def localParamsCodec(version: CommitmentVersion): Codec[LocalParams] = version match {
+    case CommitmentV1 => localParamsCodecV1
+    case CommitmentV0 => localParamsCodecV0
+  }
 
   val remoteParamsCodec: Codec[RemoteParams] = (
     ("nodeId" | publicKey) ::
