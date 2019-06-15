@@ -41,10 +41,10 @@ import SqliteUtils.ExtendedResultSet._
     val data = LightningMessageCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
     using(sqlite.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
       update.setBytes(1, data)
-      update.setBytes(2, nodeId.toBin.toArray)
+      update.setBytes(2, nodeId.value.toArray)
       if (update.executeUpdate() == 0) {
         using(sqlite.prepareStatement("INSERT INTO peers VALUES (?, ?)")) { statement =>
-          statement.setBytes(1, nodeId.toBin.toArray)
+          statement.setBytes(1, nodeId.value.toArray)
           statement.setBytes(2, data)
           statement.executeUpdate()
         }
@@ -54,7 +54,7 @@ import SqliteUtils.ExtendedResultSet._
 
   override def removePeer(nodeId: Crypto.PublicKey): Unit = {
     using(sqlite.prepareStatement("DELETE FROM peers WHERE node_id=?")) { statement =>
-      statement.setBytes(1, nodeId.toBin.toArray)
+      statement.setBytes(1, nodeId.value.toArray)
       statement.executeUpdate()
     }
   }

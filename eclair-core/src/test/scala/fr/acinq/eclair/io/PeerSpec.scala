@@ -18,9 +18,9 @@ package fr.acinq.eclair.io
 
 import java.net.{Inet4Address, InetSocketAddress}
 
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
-import akka.testkit.{TestFSMRef, TestProbe}
+import akka.testkit.{EventFilter, TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
@@ -30,8 +30,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.ChannelStateSpec
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
-import fr.acinq.eclair.router.{Rebroadcast, RoutingSyncSpec}
-import fr.acinq.eclair.wire.LightningMessageCodecsSpec.randomSignature
+import fr.acinq.eclair.router.{ChannelRangeQueriesSpec, Rebroadcast, RoutingSyncSpec}
 import fr.acinq.eclair.wire.{Color, EncodedShortChannelIds, EncodingType, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -43,7 +42,7 @@ class PeerSpec extends TestkitBaseClass {
   def ipv4FromInet4(address: InetSocketAddress) = IPv4.apply(address.getAddress.asInstanceOf[Inet4Address], address.getPort)
 
   val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
-  val shortChannelIds = RoutingSyncSpec.shortChannelIds.take(100) // ChannelRangeQueriesSpec.shortChannelIds.take(100)
+  val shortChannelIds = RoutingSyncSpec.shortChannelIds.take(100)
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
   val channels = fakeRoutingInfo.map(_._1).toList
   val updates = (fakeRoutingInfo.map(_._2) ++ fakeRoutingInfo.map(_._3)).toList
@@ -55,7 +54,7 @@ class PeerSpec extends TestkitBaseClass {
     val aParams = Alice.nodeParams
     val aliceParams = test.tags.contains("with_node_announcements") match {
       case true =>
-        val aliceAnnouncement = NodeAnnouncement(randomSignature, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+        val aliceAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
         aParams.db.network.addNode(aliceAnnouncement)
         aParams
       case false => aParams

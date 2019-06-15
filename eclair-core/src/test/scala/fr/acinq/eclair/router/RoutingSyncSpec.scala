@@ -50,7 +50,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
   class YesWatcher extends Actor {
     override def receive: Receive = {
       case ValidateRequest(c) =>
-        val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+        val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
         val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
         val fakeFundingTx = Transaction(
           version = 2,
