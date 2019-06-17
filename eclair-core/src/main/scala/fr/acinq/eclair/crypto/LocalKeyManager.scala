@@ -44,9 +44,9 @@ object LocalKeyManager {
   // split the SHA(input) into 8 groups of 4 bytes and convert to uint32
   def fourByteGroupsFromSha(input: ByteVector): List[Long] = Crypto.sha256(input).toArray.grouped(4).map(ByteVector(_).toLong(signed = false)).toList
 
-  def makeChannelKeyPathFunder(entropy: ByteVector) = KeyPath(fourByteGroupsFromSha(entropy) :+ 0L)
-  def makeChannelKeyPathFundee(entropy: ByteVector) = KeyPath(fourByteGroupsFromSha(entropy) :+ 1L)
-  def makeChannelKeyPathFundeePubkey(entropy: ByteVector) = KeyPath(fourByteGroupsFromSha(entropy) :+ 2L)
+  def makeChannelKeyPathFunder(entropy: ByteVector) = KeyPath(fourByteGroupsFromSha(entropy) :+ hardened(0))
+  def makeChannelKeyPathFundee(entropy: ByteVector) = KeyPath(fourByteGroupsFromSha(entropy) :+ hardened(1))
+  def makeChannelKeyPathFundeePubkey(entropy: ByteVector) = KeyPath(fourByteGroupsFromSha(entropy) :+ hardened(2))
 
   def makeChannelKeyPathFundeePubkey(blockHeight: Long, counter: Long): KeyPath = {
     val blockHeightBytes = ByteVector.fromLong(blockHeight, size = 4, ordering = ByteOrdering.LittleEndian)
@@ -63,7 +63,6 @@ object LocalKeyManager {
   * @param seed seed from which keys will be derived
   */
 class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyManager {
-
   private val master = DeterministicWallet.generate(seed)
 
   override val nodeKey = DeterministicWallet.derivePrivateKey(master, LocalKeyManager.nodeKeyBasePath(chainHash))
