@@ -63,28 +63,28 @@ class LocalKeyManagerSpec extends FunSuite {
   }
 
   /**
-    * TESTNET funder funding public key from extended public key: 03c69365c8ae813a45b9fead1056331c41f38ab3ab7d5d383d62c4c70cfd91f9ea
-    * TESTNET funder payment point from extended public key: 02efa31ae79a7c29faf23a21f00d5ca62ce14539c2f431db5dade3e919d2ff9050
-    * TESTNET funder revocation point from extended public key: 03f5cfec0e593e3d8fe965eb4ca066fe810cf8e87f7f2c0c8ababbd1a004662777
-    * TESTNET funder payment point from extended public key: 02efa31ae79a7c29faf23a21f00d5ca62ce14539c2f431db5dade3e919d2ff9050
-    * TESTNET funder delayed payment point from extended public key: 029b6dd179c16ea0952b7ff59ca59377ccd257b9ae8f0a6a88bd5409a07013b443
-    * TESTNET funder htlc point from extended public key: 02e5afb68852863190c893d61f6244339ad368a14e0b761ab3cff5531c204e1efc
-    * TESTNET funder shachain point from extended public key: 02d46180dfd3a4bc388ac3dabe1240fc671d240e48c0f5652bce4363c22a878426
+    * TESTNET funder funding public key from extended private key: 025677d1885ec346adadfb788739c455fec6d789702fedd578744a580d49224e1c
+    * TESTNET funder payment point from extended private key: 035af8e011c0ca6fe95585802cbdb563211033434f14738e99f9196894fded8306
+    * TESTNET funder revocation point from extended private key: 029d6adad640a74826a9a683439cfdf76845dc52bb9bd418416bf486239f90ba4f
+    * TESTNET funder delayed payment point from extended private key: 02cf755cd01d7f48e0e373fbcd8d78eb8efe142ff2c2c108950bceaf88147945a6
+    * TESTNET funder htlc point from extended private key: 03648c46cde1e8bbfe73cec3890cfcbcc0bfd5a08011b1e7a9d940ee11ae49f2a6
+    * TESTNET funder shachain point from extended private key:
     *
-    * MAINNET funder funding public key from extended public key: 02dd88103f4690fa5484f0c6a13f917fb00f03b5f2be1375cd08c64b11b19d730e
-    * MAINNET funder payment point from extended public key: 030a7898d98245666be451b55a63a5f1acd71ec1efec85fb8364f3fbe46327441b
+    * MAINNET funder funding public key from extended private key: 029984abba4283bfc6f1b8fddf792fe8bf7592309cd01a5a99211cdaab61f6f701
+    * MAINNET funder payment point from extended private key: 039c668597b0c0b547aefd315abf8abb3e5eb6fc905b97b65653b0fb86a9755a3a
     *
-    * TESTNET fundee funding public key from extended public key #34273 #0: 029278489277ce1abf6a05463ec913f5fe32ee194588a13c5b7899215d4ee477da
-    * TESTNET fundee htlc public point from extended public key #34273 #0: 02563a8f3480b06f1e653c7a1a9a006236dfe503ec616ccef8656ab8e2cbe938d5
+    * TESTNET fundee funding public key from extended private key #34273 #0: 02e4c59d2e4736da12c5692ec7f540da33defb5709af7122e53e48ae27ce1be386
+    * TESTNET fundee htlc public point from extended private key #34273 #0: 0390a904e032ec3b1970acdd0f00565b08b9e062e61985468fc7d0718c2ec5699f
+    * TESTNET fundee payment point from extended private key #34273 #0: 024d46d97bbd563aaa9f834632864cc2ef0c418d62ec6d4169fdbb3cd10c6e379c
     *
-    * MAINNET fundee funding public key from extended public key #34273 #0: 03fe59b3ac6c2f08172d634f0346194fbf3e4e90fe01422a030546a913f0a4b21e
-    * MAINNET fundee htlc public point from extended public key #34273 #0: 03056cef064df0a65812c7c05fedfbdee978de5a9b4d986dc8b389e4c0ac42d9f1
+    * MAINNET fundee funding public key from extended private key #34273 #0: 034b39ac3dc425783453413875aaa9dc55f6d832867897f1e46727a07256766b92
+    * MAINNET fundee htlc public point from extended private key #34273 #0: 03dd09a0fb2907b2e107e73686edde8e59dabcdae763aaec37c2bf60a3b04380c3
     *
-    * MAINNET fundee revocation point from extended public key #34273 #500: 022a714b39b36557b43146c37502d3a94f64fa5f651651b7749894cae64e6f42f7
-    * MAINNET fundee payment point from extended public key #34273 #500: 022427779e5ea91e885a63413cae8e28c4d9bc451f4cdf7494fd9acc6a27828c1b
-    * MAINNET fundee delayed payment point from extended public key #34273 #500: 0256f501048527f6d67e155b4aa615490f675d57e99e879f0758114dfe8774f5fd
-    * MAINNET fundee htlc point from extended public key #34273 #500: 02d13757fd99c3e99985a263996d905d9a617fc2c17998630b3f5dd8cb79d88f79
-    * MAINNET fundee shachain public point from extended public key #34273 #500: 037bc0457999d9ba6609250146fc3176f5cf382cfe5216e007267fd7fe047b2bf4
+    * MAINNET fundee revocation point from extended private key #34273 #500: 028f8416ff67a17e9b3d21269027fc50c08df65e690a2eb2c455630f4a6542ea2d
+    * MAINNET fundee payment point from extended private key #34273 #500: 037c01af4e8af469f4810a70497f4e4f61ce31ff8a7bed2fb1d9a6cc90d4c57c3e
+    * MAINNET fundee delayed payment point from extended private key #34273 #500: 0368d295e7e74c7de9a0972c56272130e7dbb47b25d44b1f127b9c29636c0bf2a0
+    * MAINNET fundee htlc point from extended private key #34273 #500: 038c9ea3b9263f9ad85f751c5a2a1deb0864892327fe00133b55de21f7759a9c70
+    * MAINNET fundee shachain public point from extended private key #34273 #500: 03885c5995154134b5570aa8c71814c0c5c5401b413459fb684b83817e9499aba7
     *
     */
 
@@ -97,15 +97,15 @@ class LocalKeyManagerSpec extends FunSuite {
     val funderChannelKeyPath = LocalKeyManager.makeChannelKeyPathFunder(inputOutpoint)
 
     // TESTNET funder funding public key
-    assert(keyManager.fundingPublicKey(funderChannelKeyPath).publicKey.value === hex"03c69365c8ae813a45b9fead1056331c41f38ab3ab7d5d383d62c4c70cfd91f9ea")
+    assert(keyManager.fundingPublicKey(funderChannelKeyPath).publicKey.value === hex"025677d1885ec346adadfb788739c455fec6d789702fedd578744a580d49224e1c")
     // TESTNET funder payment point
-    assert(keyManager.paymentPoint(funderChannelKeyPath).publicKey.value === hex"02efa31ae79a7c29faf23a21f00d5ca62ce14539c2f431db5dade3e919d2ff9050")
+    assert(keyManager.paymentPoint(funderChannelKeyPath).publicKey.value === hex"035af8e011c0ca6fe95585802cbdb563211033434f14738e99f9196894fded8306")
     // TESTNET funder revocation point
-    assert(keyManager.revocationPoint(funderChannelKeyPath).publicKey.value === hex"03f5cfec0e593e3d8fe965eb4ca066fe810cf8e87f7f2c0c8ababbd1a004662777")
+    assert(keyManager.revocationPoint(funderChannelKeyPath).publicKey.value === hex"029d6adad640a74826a9a683439cfdf76845dc52bb9bd418416bf486239f90ba4f")
     // TESTNET funder delayed payment point
-    assert(keyManager.delayedPaymentPoint(funderChannelKeyPath).publicKey.value === hex"029b6dd179c16ea0952b7ff59ca59377ccd257b9ae8f0a6a88bd5409a07013b443")
+    assert(keyManager.delayedPaymentPoint(funderChannelKeyPath).publicKey.value === hex"02cf755cd01d7f48e0e373fbcd8d78eb8efe142ff2c2c108950bceaf88147945a6")
     // TESTNET funder htlc point
-    assert(keyManager.htlcPoint(funderChannelKeyPath).publicKey.value === hex"02e5afb68852863190c893d61f6244339ad368a14e0b761ab3cff5531c204e1efc")
+    assert(keyManager.htlcPoint(funderChannelKeyPath).publicKey.value === hex"03648c46cde1e8bbfe73cec3890cfcbcc0bfd5a08011b1e7a9d940ee11ae49f2a6")
   }
 
   test("test vectors derivation paths (funder MAINNET)") {
@@ -116,10 +116,10 @@ class LocalKeyManagerSpec extends FunSuite {
 
     val funderChannelKeyPath = LocalKeyManager.makeChannelKeyPathFunder(inputOutpoint)
 
-    // MAINNET funder funding public key from extended public key
-    assert(keyManager.fundingPublicKey(funderChannelKeyPath).publicKey.value === hex"02dd88103f4690fa5484f0c6a13f917fb00f03b5f2be1375cd08c64b11b19d730e")
-    // MAINNET funder payment point from extended public key
-    assert(keyManager.paymentPoint(funderChannelKeyPath).publicKey.value === hex"030a7898d98245666be451b55a63a5f1acd71ec1efec85fb8364f3fbe46327441b")
+    // MAINNET funder funding public key from extended private key
+    assert(keyManager.fundingPublicKey(funderChannelKeyPath).publicKey.value === hex"029984abba4283bfc6f1b8fddf792fe8bf7592309cd01a5a99211cdaab61f6f701")
+    // MAINNET funder payment point from extended private key
+    assert(keyManager.paymentPoint(funderChannelKeyPath).publicKey.value === hex"039c668597b0c0b547aefd315abf8abb3e5eb6fc905b97b65653b0fb86a9755a3a")
   }
 
   test("test vectors derivation paths (fundee TESTNET)") {
@@ -129,16 +129,16 @@ class LocalKeyManagerSpec extends FunSuite {
     val keyManager = new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
 
     val fundeePubkeyKeyPath = LocalKeyManager.makeChannelKeyPathFundeePubkey(34273, 0)
-    // TESTNET fundee funding public key from extended public key
-    assert(keyManager.fundingPublicKey(fundeePubkeyKeyPath).publicKey.value === hex"029278489277ce1abf6a05463ec913f5fe32ee194588a13c5b7899215d4ee477da")
+    // TESTNET fundee funding public key from extended private key
+    assert(keyManager.fundingPublicKey(fundeePubkeyKeyPath).publicKey.value === hex"02e4c59d2e4736da12c5692ec7f540da33defb5709af7122e53e48ae27ce1be386")
 
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(keyManager.fundingPublicKey(fundeePubkeyKeyPath).publicKey, remoteNodePubkey)))
     val fundeeChannelKeyPath = LocalKeyManager.makeChannelKeyPathFundee(fundingPubkeyScript)
 
-    // TESTNET fundee htlc public point from extended public key
-    assert(keyManager.htlcPoint(fundeeChannelKeyPath).publicKey.value === hex"02563a8f3480b06f1e653c7a1a9a006236dfe503ec616ccef8656ab8e2cbe938d5")
-    // TESTNET fundee htlc public point from extended public key
-    assert(keyManager.paymentPoint(fundeeChannelKeyPath).publicKey.value === hex"0321047df59f000ba15f674c2eb6180c00edb55e5eae6e8ea22e82554c4213cfa4")
+    // TESTNET fundee htlc public point from extended private key
+    assert(keyManager.htlcPoint(fundeeChannelKeyPath).publicKey.value === hex"0390a904e032ec3b1970acdd0f00565b08b9e062e61985468fc7d0718c2ec5699f")
+    // TESTNET fundee htlc public point from extended private key
+    assert(keyManager.paymentPoint(fundeeChannelKeyPath).publicKey.value === hex"024d46d97bbd563aaa9f834632864cc2ef0c418d62ec6d4169fdbb3cd10c6e379c")
   }
 
   test("test vectors derivation paths (fundee MAINNET)") {
@@ -148,14 +148,14 @@ class LocalKeyManagerSpec extends FunSuite {
     val keyManager = new LocalKeyManager(seed, Block.LivenetGenesisBlock.hash)
 
     val fundeePubkeyKeyPath = LocalKeyManager.makeChannelKeyPathFundeePubkey(34273, 0)
-    // MAINNET fundee funding public key from extended public key
-    assert(keyManager.fundingPublicKey(fundeePubkeyKeyPath).publicKey.value === hex"03fe59b3ac6c2f08172d634f0346194fbf3e4e90fe01422a030546a913f0a4b21e")
+    // MAINNET fundee funding public key from extended private key
+    assert(keyManager.fundingPublicKey(fundeePubkeyKeyPath).publicKey.value === hex"034b39ac3dc425783453413875aaa9dc55f6d832867897f1e46727a07256766b92")
 
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(keyManager.fundingPublicKey(fundeePubkeyKeyPath).publicKey, remoteNodePubkey)))
     val fundeeChannelKeyPath = LocalKeyManager.makeChannelKeyPathFundee(fundingPubkeyScript)
 
-    // MAINNET fundee htlc public point from extended public key
-    assert(keyManager.htlcPoint(fundeeChannelKeyPath).publicKey.value === hex"03056cef064df0a65812c7c05fedfbdee978de5a9b4d986dc8b389e4c0ac42d9f1")
+    // MAINNET fundee htlc public point from extended private key
+    assert(keyManager.htlcPoint(fundeeChannelKeyPath).publicKey.value === hex"03dd09a0fb2907b2e107e73686edde8e59dabcdae763aaec37c2bf60a3b04380c3")
 
     // with different counter
     val fundeePubkeyKeyPath1 = LocalKeyManager.makeChannelKeyPathFundeePubkey(34273, 500)
@@ -163,15 +163,15 @@ class LocalKeyManagerSpec extends FunSuite {
     val fundeeChannelKeyPath1 = LocalKeyManager.makeChannelKeyPathFundee(fundingPubkeyScript1)
 
     // MAINNET fundee revocation point
-    assert(keyManager.revocationPoint(fundeeChannelKeyPath1).publicKey.value === hex"022a714b39b36557b43146c37502d3a94f64fa5f651651b7749894cae64e6f42f7")
+    assert(keyManager.revocationPoint(fundeeChannelKeyPath1).publicKey.value === hex"028f8416ff67a17e9b3d21269027fc50c08df65e690a2eb2c455630f4a6542ea2d")
     // MAINNET fundee payment point
-    assert(keyManager.paymentPoint(fundeeChannelKeyPath1).publicKey.value === hex"022427779e5ea91e885a63413cae8e28c4d9bc451f4cdf7494fd9acc6a27828c1b")
+    assert(keyManager.paymentPoint(fundeeChannelKeyPath1).publicKey.value === hex"037c01af4e8af469f4810a70497f4e4f61ce31ff8a7bed2fb1d9a6cc90d4c57c3e")
     // MAINNET fundee delayed payment point
-    assert(keyManager.delayedPaymentPoint(fundeeChannelKeyPath1).publicKey.value === hex"0256f501048527f6d67e155b4aa615490f675d57e99e879f0758114dfe8774f5fd")
+    assert(keyManager.delayedPaymentPoint(fundeeChannelKeyPath1).publicKey.value === hex"0368d295e7e74c7de9a0972c56272130e7dbb47b25d44b1f127b9c29636c0bf2a0")
     // MAINNET fundee htlc point
-    assert(keyManager.htlcPoint(fundeeChannelKeyPath1).publicKey.value === hex"02d13757fd99c3e99985a263996d905d9a617fc2c17998630b3f5dd8cb79d88f79")
+    assert(keyManager.htlcPoint(fundeeChannelKeyPath1).publicKey.value === hex"038c9ea3b9263f9ad85f751c5a2a1deb0864892327fe00133b55de21f7759a9c70")
     // MAINNED fundee shaSeed point
-    assert(keyManager.shaSeedPub(fundeeChannelKeyPath1).publicKey.value === hex"037bc0457999d9ba6609250146fc3176f5cf382cfe5216e007267fd7fe047b2bf4")
+    assert(keyManager.shaSeedPub(fundeeChannelKeyPath1).publicKey.value === hex"03885c5995154134b5570aa8c71814c0c5c5401b413459fb684b83817e9499aba7")
   }
 
   test("use correct keypath to compute keys") {
