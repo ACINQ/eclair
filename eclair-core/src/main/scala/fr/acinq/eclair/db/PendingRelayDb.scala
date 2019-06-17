@@ -39,6 +39,8 @@ trait PendingRelayDb {
 
   def listPendingRelay(channelId: ByteVector32): Seq[Command]
 
+  def listPendingRelay(): Set[(ByteVector32, Long)]
+
   def close(): Unit
 
 }

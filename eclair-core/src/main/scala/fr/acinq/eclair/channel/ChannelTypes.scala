@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel
 import java.util.UUID
 
 import akka.actor.ActorRef
+import fr.acinq.bitcoin.Crypto.{PublicKey}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
@@ -154,8 +155,8 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER_WITH_PARAMS, lastSent: OpenChannel, unsignedFundingTx: MakeFundingTxResponse) extends Data
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL_CREATED(temporaryChannelId: ByteVector32, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxFeeratePerKw: Long, remote: ActorRef, remoteInit: Init, channelFlags: Byte) extends Data
-final case class DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, lastSent: OpenChannel, unsignedFundingTx: Transaction) extends Data
-final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, channelFlags: Byte, lastSent: AcceptChannel) extends Data
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: PublicKey, lastSent: OpenChannel, unsignedFundingTx: Transaction) extends Data
+final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: PublicKey, channelFlags: Byte, lastSent: AcceptChannel) extends Data
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, fundingTxFee: Satoshi, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte, lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  fundingTx: Option[Transaction],
@@ -218,10 +219,10 @@ final case class RemoteParams(nodeId: PublicKey,
                               toSelfDelay: Int,
                               maxAcceptedHtlcs: Int,
                               fundingPubKey: PublicKey,
-                              revocationBasepoint: Point,
-                              paymentBasepoint: Point,
-                              delayedPaymentBasepoint: Point,
-                              htlcBasepoint: Point,
+                              revocationBasepoint: PublicKey,
+                              paymentBasepoint: PublicKey,
+                              delayedPaymentBasepoint: PublicKey,
+                              htlcBasepoint: PublicKey,
                               globalFeatures: ByteVector,
                               localFeatures: ByteVector)
 
