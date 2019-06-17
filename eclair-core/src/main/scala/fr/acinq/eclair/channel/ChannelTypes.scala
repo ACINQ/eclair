@@ -19,8 +19,7 @@ package fr.acinq.eclair.channel
 import java.util.UUID
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.Crypto.{PublicKey}
-import fr.acinq.bitcoin.Crypto.{Point, PublicKey}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.MakeFundingTxResponse
