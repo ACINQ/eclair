@@ -34,6 +34,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{secureRandom, wire, _}
 import scodec.Attempt
 import scodec.bits.ByteVector
+
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
@@ -80,7 +81,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(Reconnect, d: DisconnectedData) =>
       d.address_opt.orElse(getPeerAddressFromNodeAnnouncement) match {
         case _ if d.channels.isEmpty => stay // no-op, no more channels with this peer
-        case None                    => stay // no-op, we don't know any address to this peer and we won't try reconnecting again
+        case None => stay // no-op, we don't know any address to this peer and we won't try reconnecting again
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           log.info(s"reconnecting to $address (next reconnection in ${d.nextReconnectionDelay.toSeconds} seconds)")
@@ -492,7 +493,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   onTransition {
-    case _ -> DISCONNECTED if nodeParams.autoReconnect => self ! Reconnect
+    case INSTANTIATING -> DISCONNECTED if nodeParams.autoReconnect => self ! Reconnect // we reconnect immediately on startup
+    case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, Random.nextInt(5000).millis, repeat = false) // we add some randomization to not have peers reconnect to each other exactly at the same time
     case DISCONNECTED -> _ if nodeParams.autoReconnect => cancelTimer(RECONNECT_TIMER)
   }
 
