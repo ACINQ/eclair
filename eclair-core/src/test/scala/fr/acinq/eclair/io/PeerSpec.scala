@@ -18,9 +18,9 @@ package fr.acinq.eclair.io
 
 import java.net.{Inet4Address, InetSocketAddress}
 
-import akka.actor.{ActorRef, ActorSystem, PoisonPill}
+import akka.actor.{ActorRef, PoisonPill, Terminated}
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
-import akka.testkit.{EventFilter, TestFSMRef, TestKit, TestProbe}
+import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
@@ -151,17 +151,26 @@ class PeerSpec extends TestkitBaseClass {
     probe.expectNoMsg()
   }
 
-  test("count reconnections") { f =>
+  test("only reconnect once after startup") { f =>
     import f._
     val probe = TestProbe()
     val previouslyKnownAddress = new InetSocketAddress("1.2.3.4", 9735)
     probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set(ChannelStateSpec.normal)))
     probe.send(peer, Peer.Reconnect)
-    awaitCond(peer.stateData.asInstanceOf[DisconnectedData].attempts == 1)
-    probe.send(peer, Peer.Reconnect)
-    awaitCond(peer.stateData.asInstanceOf[DisconnectedData].attempts == 2)
-    probe.send(peer, Peer.Reconnect)
-    awaitCond(peer.stateData.asInstanceOf[DisconnectedData].attempts == 3)
+    awaitCond(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === Peer.MAX_RECONNECT_INTERVAL)
+  }
+
+  test("reconnect with increasing delays") { f =>
+    import f._
+    val probe = TestProbe()
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelStateSpec.normal))
+    probe.send(transport.ref, PoisonPill)
+    awaitCond(peer.stateName === DISCONNECTED)
+    assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (10 seconds))
+    probe.send(peer, Reconnect)
+    assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (20 seconds))
+    probe.send(peer, Reconnect)
+    assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (40 seconds))
   }
 
   test("disconnect if incompatible features") { f =>

@@ -492,7 +492,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   onTransition {
-    case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
+    case _ -> DISCONNECTED if nodeParams.autoReconnect => self ! Reconnect
     case DISCONNECTED -> _ if nodeParams.autoReconnect => cancelTimer(RECONNECT_TIMER)
   }
 
@@ -649,5 +649,5 @@ object Peer {
   /**
     * Exponential backoff retry with a finite max
     */
-  def nextReconnectionDelay(currentDelay: FiniteDuration): FiniteDuration = (2 * currentDelay).max(MAX_RECONNECT_INTERVAL)
+  def nextReconnectionDelay(currentDelay: FiniteDuration): FiniteDuration = (2 * currentDelay).min(MAX_RECONNECT_INTERVAL)
 }

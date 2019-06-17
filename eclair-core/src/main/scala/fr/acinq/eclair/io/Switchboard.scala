@@ -69,11 +69,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     channels
       .groupBy(_.commitments.remoteParams.nodeId)
       .map {
-        case (remoteNodeId, states) =>
-          val address_opt = peers.get(remoteNodeId).orElse {
-            nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption) // gets the first of the list! TODO improve selection?
-          }
-          (remoteNodeId, states, address_opt)
+        case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
       }
       .foreach {
         case (remoteNodeId, states, nodeaddress_opt) =>
