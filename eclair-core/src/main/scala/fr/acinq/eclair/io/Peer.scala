@@ -492,8 +492,16 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(_: BadMessage, _) => stay // we got disconnected while syncing
   }
 
+  /**
+    * The transition INSTANTIATING -> DISCONNECTED happens in 2 scenarios
+    *   - Manual connection to a new peer: then when(DISCONNECTED) we expect a Peer.Connect from the switchboard
+    *   - Eclair restart: The switchboard creates the peers and sends Init and then Peer.Reconnect to trigger reconnection attempts
+    *
+    * So when we see this transition we NO-OP because we don't want to start a Reconnect timer but the peer will receive the trigger
+    * (Connect/Reconnect) messages from the switchboard.
+    */
   onTransition {
-    case INSTANTIATING -> DISCONNECTED if nodeParams.autoReconnect => self ! Reconnect // we reconnect immediately on startup
+    case INSTANTIATING -> DISCONNECTED => ()
     case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, Random.nextInt(5000).millis, repeat = false) // we add some randomization to not have peers reconnect to each other exactly at the same time
     case DISCONNECTED -> _ if nodeParams.autoReconnect => cancelTimer(RECONNECT_TIMER)
   }

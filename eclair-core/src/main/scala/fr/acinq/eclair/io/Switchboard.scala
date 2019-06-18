@@ -75,7 +75,8 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
         case (remoteNodeId, states, nodeaddress_opt) =>
           // we might not have an address if we didn't initiate the connection in the first place
           val address_opt = nodeaddress_opt.map(_.socketAddress)
-          createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
+          val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
+          peer ! Peer.Reconnect
       }
   }
 
