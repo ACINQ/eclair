@@ -36,6 +36,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
 
   private def migration12(statement: Statement) = {
     statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT 0")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS block_key_counter (block_height INTEGER NOT NULL PRIMARY KEY, counter INTEGER NOT NULL)")
   }
 
   using(sqlite.createStatement()) { statement =>
