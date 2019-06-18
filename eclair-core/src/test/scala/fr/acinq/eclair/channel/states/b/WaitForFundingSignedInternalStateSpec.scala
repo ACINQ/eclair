@@ -57,6 +57,7 @@ class WaitForFundingSignedInternalStateSpec extends TestkitBaseClass with StateT
   test("recv Error") { f =>
     import f._
 
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL_SIGNED)
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED].unsignedFundingTx
     assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.isEmpty)
 
@@ -71,6 +72,8 @@ class WaitForFundingSignedInternalStateSpec extends TestkitBaseClass with StateT
 
   test("recv CMD_CLOSE") { f =>
     import f._
+
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL_SIGNED)
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED].unsignedFundingTx
     assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.isEmpty)
 
