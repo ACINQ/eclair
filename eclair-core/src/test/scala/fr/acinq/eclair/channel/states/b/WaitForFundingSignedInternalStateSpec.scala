@@ -62,10 +62,11 @@ class WaitForFundingSignedInternalStateSpec extends TestkitBaseClass with StateT
 
     alice ! Error(ByteVector32.Zeroes, "oops")
 
+    awaitCond({
+      val rolledBackTx = alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.head
+      rolledBackTx.txOut == fundingTx.txOut && rolledBackTx.txIn.map(_.outPoint) == fundingTx.txIn.map(_.outPoint)
+    })
     awaitCond(alice.stateName == CLOSED)
-    val rolledBackTx = alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.head
-    assert(rolledBackTx.txOut == fundingTx.txOut)
-    assert(rolledBackTx.txIn.map(_.outPoint) == fundingTx.txIn.map(_.outPoint))
   }
 
   test("recv CMD_CLOSE") { f =>
@@ -75,9 +76,10 @@ class WaitForFundingSignedInternalStateSpec extends TestkitBaseClass with StateT
 
     alice ! CMD_CLOSE(None)
 
-    val rolledBackTx = alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.head
-    assert(rolledBackTx.txOut == fundingTx.txOut)
-    assert(rolledBackTx.txIn.map(_.outPoint) == fundingTx.txIn.map(_.outPoint))
+    awaitCond({
+      val rolledBackTx = alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.head
+      rolledBackTx.txOut == fundingTx.txOut && rolledBackTx.txIn.map(_.outPoint) == fundingTx.txIn.map(_.outPoint)
+    })
     awaitCond(alice.stateName == CLOSED)
   }
 

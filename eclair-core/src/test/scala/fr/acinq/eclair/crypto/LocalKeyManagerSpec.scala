@@ -116,7 +116,6 @@ class LocalKeyManagerSpec extends FunSuite {
     val funderChannelKeyPath = LocalKeyManager.makeChannelKeyPathFunder(inputOutpoint)
 
     // MAINNET funder funding public key from extended private key
-    println(s"keyManager.fundingPublicKey(funderChannelKeyPath) = ${keyManager.fundingPublicKey(funderChannelKeyPath).path}")
     assert(keyManager.fundingPublicKey(funderChannelKeyPath).publicKey.value === hex"0353b7dfdb0cbae349146795bd6406ff6ac5cd93bfb31bbdfc5df01b0d4da171b4")
     // MAINNET funder payment point from extended private key
     assert(keyManager.paymentPoint(funderChannelKeyPath).publicKey.value === hex"0254036505ad9aa8d8e03ed3727825eaa72ce49f5ff9f2fd286e6d20a2b88caa12")

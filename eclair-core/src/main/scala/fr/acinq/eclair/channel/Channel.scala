@@ -501,20 +501,24 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       replyToUser(Left(LocalError(t)))
       handleLocalError(ChannelFundingError(d.temporaryChannelId), d, None) // we use a generic exception and don't send the internal error to the peer
 
-    case Event(CMD_CLOSE(_), _) =>
+    case Event(CMD_CLOSE(_) | CMD_FORCECLOSE, d: DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED) =>
       replyToUser(Right("closed"))
+      wallet.rollback(d.unsignedFundingTx)
       goto(CLOSED) replying "ok"
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED) =>
       replyToUser(Left(RemoteError(e)))
+      wallet.rollback(d.unsignedFundingTx)
       handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) =>
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED) =>
       replyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      wallet.rollback(d.unsignedFundingTx)
       goto(CLOSED)
 
-    case Event(TickChannelOpenTimeout, _) =>
+    case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED) =>
       replyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+      wallet.rollback(d.unsignedFundingTx)
       goto(CLOSED)
   })
 
