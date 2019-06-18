@@ -17,9 +17,10 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
+
 import scala.concurrent.duration._
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, ByteVector32, Script}
+import fr.acinq.bitcoin.{Block, ByteVector32, Script, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
@@ -28,12 +29,19 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
 import org.scalatest.Outcome
 
+import scala.concurrent.{Await, ExecutionContext, Future, Promise}
+
 class WaitForFundingSignedInternalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+
+    val nonReturningWallet = new TestWallet {
+      override def signTransactionComplete(tx: Transaction): Future[Transaction] = Promise[Transaction]().future
+    }
+
+    val setup = init(wallet = nonReturningWallet)
     import setup._
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
@@ -57,7 +65,7 @@ class WaitForFundingSignedInternalStateSpec extends TestkitBaseClass with StateT
   test("recv Error") { f =>
     import f._
 
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL_SIGNED)
+    assert(alice.stateName == WAIT_FOR_FUNDING_INTERNAL_SIGNED)
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED].unsignedFundingTx
     assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.isEmpty)
 
@@ -73,7 +81,7 @@ class WaitForFundingSignedInternalStateSpec extends TestkitBaseClass with StateT
   test("recv CMD_CLOSE") { f =>
     import f._
 
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL_SIGNED)
+    assert(alice.stateName == WAIT_FOR_FUNDING_INTERNAL_SIGNED)
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL_SIGNED].unsignedFundingTx
     assert(alice.underlyingActor.wallet.asInstanceOf[TestWallet].rolledback.isEmpty)
 
