@@ -136,7 +136,7 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
 object SqliteWalletDb {
 
   import fr.acinq.eclair.wire.ChannelCodecs._
-  import fr.acinq.eclair.wire.LightningMessageCodecs._
+  import fr.acinq.eclair.wire.CommonCodecs._
   import scodec.Codec
   import scodec.bits.BitVector
   import scodec.codecs._

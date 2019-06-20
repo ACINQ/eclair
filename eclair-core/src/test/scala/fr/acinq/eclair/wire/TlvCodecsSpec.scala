@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.wire.LightningMessageCodecs.{publicKey, shortchannelid, uint64, varInt}
+import fr.acinq.eclair.wire.CommonCodecs.{publicKey, shortchannelid, uint64, varInt}
 import fr.acinq.eclair.wire.TlvCodecs._
 import org.scalatest.FunSuite
 import scodec.bits.HexStringSyntax

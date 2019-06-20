@@ -26,6 +26,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.{Local, Origin, Relayed}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
+import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
@@ -34,7 +35,6 @@ import scodec.{Attempt, Codec}
 
 import scala.compat.Platform
 import scala.concurrent.duration._
-
 
 /**
   * Created by PM on 02/06/2017.
@@ -100,11 +100,11 @@ object ChannelCodecs extends Logging {
       ("toLocalMsat" | uint64) ::
       ("toRemoteMsat" | uint64)).as[CommitmentSpec]
 
-  def outPointCodec: Codec[OutPoint] = variableSizeBytes(uint16, bytes.xmap(d => OutPoint.read(d.toArray), d => OutPoint.write(d)))
+  val outPointCodec: Codec[OutPoint] = variableSizeBytes(uint16, bytes.xmap(d => OutPoint.read(d.toArray), d => OutPoint.write(d)))
 
-  def txOutCodec: Codec[TxOut] = variableSizeBytes(uint16, bytes.xmap(d => TxOut.read(d.toArray), d => TxOut.write(d)))
+  val txOutCodec: Codec[TxOut] = variableSizeBytes(uint16, bytes.xmap(d => TxOut.read(d.toArray), d => TxOut.write(d)))
 
-  def txCodec: Codec[Transaction] = variableSizeBytes(uint16, bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
+  val txCodec: Codec[Transaction] = variableSizeBytes(uint16, bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
   val inputInfoCodec: Codec[InputInfo] = (
     ("outPoint" | outPointCodec) ::

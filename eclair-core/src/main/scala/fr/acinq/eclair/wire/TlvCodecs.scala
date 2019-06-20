@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.wire.LightningMessageCodecs._
+import fr.acinq.eclair.wire.CommonCodecs._
 import scodec.codecs._
 import scodec.Codec
 

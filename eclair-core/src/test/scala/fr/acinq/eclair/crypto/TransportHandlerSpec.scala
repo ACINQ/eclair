@@ -23,7 +23,7 @@ import akka.io.Tcp
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
 import fr.acinq.eclair.crypto.Noise.{Chacha20Poly1305CipherFunctions, CipherState}
 import fr.acinq.eclair.crypto.TransportHandler.{Encryptor, ExtendedCipherState, Listener}
-import fr.acinq.eclair.wire.LightningMessageCodecs
+import fr.acinq.eclair.wire.CommonCodecs
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.Codec
 import scodec.bits._
@@ -49,8 +49,8 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     val pipe = system.actorOf(Props[MyPipe])
     val probe1 = TestProbe()
     val probe2 = TestProbe()
-    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, LightningMessageCodecs.varsizebinarydata))
-    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, LightningMessageCodecs.varsizebinarydata))
+    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, CommonCodecs.varsizebinarydata))
+    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, CommonCodecs.varsizebinarydata))
     pipe ! (initiator, responder)
 
     awaitCond(initiator.stateName == TransportHandler.WaitingForListener)
@@ -111,8 +111,8 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     val pipe = system.actorOf(Props[MyPipeSplitter])
     val probe1 = TestProbe()
     val probe2 = TestProbe()
-    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, LightningMessageCodecs.varsizebinarydata))
-    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, LightningMessageCodecs.varsizebinarydata))
+    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, CommonCodecs.varsizebinarydata))
+    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, CommonCodecs.varsizebinarydata))
     pipe ! (initiator, responder)
 
     awaitCond(initiator.stateName == TransportHandler.WaitingForListener)
@@ -141,8 +141,8 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     val pipe = system.actorOf(Props[MyPipe])
     val probe1 = TestProbe()
     val supervisor = TestActorRef(Props(new MySupervisor()))
-    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Initiator.s.pub), pipe, LightningMessageCodecs.varsizebinarydata), supervisor, "ini")
-    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, LightningMessageCodecs.varsizebinarydata), supervisor, "res")
+    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Initiator.s.pub), pipe, CommonCodecs.varsizebinarydata), supervisor, "ini")
+    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, CommonCodecs.varsizebinarydata), supervisor, "res")
     probe1.watch(responder)
     pipe ! (initiator, responder)
 
