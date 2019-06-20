@@ -139,7 +139,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     {
       val alias = "IRATEMONK"
       val bin = c.encode(alias).require
-      assert(bin === BitVector(alias.getBytes("UTF-8") ++ Array.fill[Byte](32 - alias.size)(0)))
+      assert(bin === BitVector(alias.getBytes("UTF-8") ++ Array.fill[Byte](32 - alias.length)(0)))
       val alias2 = c.decode(bin).require.value
       assert(alias === alias2)
     }
@@ -147,7 +147,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     {
       val alias = "this-alias-is-exactly-32-B-long."
       val bin = c.encode(alias).require
-      assert(bin === BitVector(alias.getBytes("UTF-8") ++ Array.fill[Byte](32 - alias.size)(0)))
+      assert(bin === BitVector(alias.getBytes("UTF-8") ++ Array.fill[Byte](32 - alias.length)(0)))
       val alias2 = c.decode(bin).require.value
       assert(alias === alias2)
     }
@@ -222,7 +222,7 @@ class LightningMessageCodecsSpec extends FunSuite {
         channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures :: ping :: pong :: channel_reestablish :: Nil
 
     msgs.foreach {
-      case msg => {
+      msg => {
         val encoded = lightningMessageCodec.encode(msg).require
         val decoded = lightningMessageCodec.decode(encoded).require
         assert(msg === decoded.value)

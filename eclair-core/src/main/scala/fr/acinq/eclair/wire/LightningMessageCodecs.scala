@@ -18,7 +18,6 @@ package fr.acinq.eclair.wire
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
-import com.google.common.cache.{CacheBuilder, CacheLoader}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Sphinx
@@ -27,7 +26,7 @@ import fr.acinq.eclair.{ShortChannelId, UInt64, wire}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
+import scodec.{Attempt, Codec, Err}
 
 import scala.util.{Failure, Success, Try}
 
@@ -216,14 +215,13 @@ object LightningMessageCodecs {
       ("nodeSignature" | bytes64) ::
       ("bitcoinSignature" | bytes64)).as[AnnouncementSignatures]
 
-  val channelAnnouncementWitnessCodec = (
-    ("features" | varsizebinarydata) ::
-      ("chainHash" | bytes32) ::
-      ("shortChannelId" | shortchannelid) ::
-      ("nodeId1" | publicKey) ::
-      ("nodeId2" | publicKey) ::
-      ("bitcoinKey1" | publicKey) ::
-      ("bitcoinKey2" | publicKey))
+  val channelAnnouncementWitnessCodec = ("features" | varsizebinarydata) ::
+    ("chainHash" | bytes32) ::
+    ("shortChannelId" | shortchannelid) ::
+    ("nodeId1" | publicKey) ::
+    ("nodeId2" | publicKey) ::
+    ("bitcoinKey1" | publicKey) ::
+    ("bitcoinKey2" | publicKey)
 
   val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
     ("nodeSignature1" | bytes64) ::
@@ -232,13 +230,12 @@ object LightningMessageCodecs {
       ("bitcoinSignature2" | bytes64) ::
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
-  val nodeAnnouncementWitnessCodec = (
-    ("features" | varsizebinarydata) ::
-      ("timestamp" | uint32) ::
-      ("nodeId" | publicKey) ::
-      ("rgbColor" | rgb) ::
-      ("alias" | zeropaddedstring(32)) ::
-      ("addresses" | listofnodeaddresses))
+  val nodeAnnouncementWitnessCodec = ("features" | varsizebinarydata) ::
+    ("timestamp" | uint32) ::
+    ("nodeId" | publicKey) ::
+    ("rgbColor" | rgb) ::
+    ("alias" | zeropaddedstring(32)) ::
+    ("addresses" | listofnodeaddresses)
 
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
     ("signature" | bytes64) ::
