@@ -50,11 +50,59 @@ class LightningMessageCodecsSpec extends FunSuite {
       UInt64(42) -> hex"00 00 00 00 00 00 00 2a",
       UInt64(hex"ffffffffffffffff") -> hex"ff ff ff ff ff ff ff ff"
     ).mapValues(_.toBitVector)
+
     for ((uint, ref) <- expected) {
       val encoded = uint64ex.encode(uint).require
       assert(ref === encoded)
       val decoded = uint64ex.decode(encoded).require.value
       assert(uint === decoded)
+    }
+  }
+
+  test("encode/decode with uint64L codec") {
+    val expected = Map(
+      0L -> hex"00 00 00 00 00 00 00 00",
+      42L -> hex"2a 00 00 00 00 00 00 00",
+      6211610197754262546L -> hex"12 34 56 78 90 12 34 56"
+    ).mapValues(_.toBitVector)
+
+    for ((long, ref) <- expected) {
+      val encoded = uint64L.encode(long).require
+      assert(ref === encoded)
+      val decoded = uint64L.decode(encoded).require.value
+      assert(long === decoded)
+    }
+  }
+
+  test("encode/decode with varint codec") {
+    val expected = Map(
+      0L -> hex"00",
+      42L -> hex"2a",
+      550L -> hex"fd 26 02",
+      998000L -> hex"fe 70 3a 0f 00",
+      6211610197754262546L -> hex"ff 12 34 56 78 90 12 34 56"
+    ).mapValues(_.toBitVector)
+
+    for ((long, ref) <- expected) {
+      val encoded = varInt.encode(long).require
+      assert(ref === encoded)
+      val decoded = varInt.decode(encoded).require.value
+      assert(long === decoded)
+    }
+  }
+
+  test("decode invalid varint") {
+    val testCases = Seq(
+      hex"fd",
+      hex"fe 01",
+      hex"fe",
+      hex"fe 12 34",
+      hex"ff",
+      hex"ff 12 34 56 78"
+    ).map(_.toBitVector)
+
+    for (testCase <- testCases) {
+      assert(varInt.decode(testCase).isFailure)
     }
   }
 
@@ -189,7 +237,6 @@ class LightningMessageCodecsSpec extends FunSuite {
   }
 
   test("encode/decode all channel messages") {
-
     val open = OpenChannel(randomBytes32, randomBytes32, 3, 4, 5, UInt64(6), 7, 8, 9, 10, 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
     val accept = AcceptChannel(randomBytes32, 3, UInt64(4), 5, 6, 7, 8, 9, publicKey(1), point(2), point(3), point(4), point(5), point(6))
     val funding_created = FundingCreated(randomBytes32, bin32(0), 3, randomBytes64)

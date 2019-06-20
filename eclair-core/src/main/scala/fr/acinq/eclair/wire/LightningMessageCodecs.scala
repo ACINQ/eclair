@@ -45,7 +45,50 @@ object LightningMessageCodecs {
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
   val uint64: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
 
+  val uint64L: Codec[Long] = int64L.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
+
   val uint64ex: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
+
+  // Bitcoin-style varint codec (CompactSize)
+  val varInt = Codec[Long](
+    (n: Long) =>
+      n match {
+        case i if i < 0xfd =>
+          uint8L.encode(i.toInt)
+        case i if i < 0xffff =>
+          for {
+            a <- uint8L.encode(0xfd)
+            b <- uint16L.encode(i.toInt)
+          } yield a ++ b
+        case i if i < 0xffffffffL =>
+          for {
+            a <- uint8L.encode(0xfe)
+            b <- uint32L.encode(i)
+          } yield a ++ b
+        case i =>
+          for {
+            a <- uint8L.encode(0xff)
+            b <- uint64L.encode(i)
+          } yield a ++ b
+      },
+    (buf: BitVector) => {
+      uint8L.decode(buf) match {
+        case scodec.Attempt.Successful(b) =>
+          b.value match {
+            case 0xff =>
+              uint64L.decode(b.remainder)
+            case 0xfe =>
+              uint32L.decode(b.remainder)
+            case 0xfd =>
+              uint16L.decode(b.remainder)
+                .map(b => b.map(_.toLong))
+            case _ =>
+              scodec.Attempt.Successful(scodec.DecodeResult(b.value.toLong, b.remainder))
+          }
+        case scodec.Attempt.Failure(err) =>
+          scodec.Attempt.Failure(err)
+      }
+    })
 
   def bytes32: Codec[ByteVector32] = limitedSizeBytes(32, bytesStrict(32).xmap(d => ByteVector32(d), d => d.bytes))
 
