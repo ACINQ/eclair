@@ -21,7 +21,6 @@ import java.net.{Inet4Address, Inet6Address, InetAddress}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.wire.FixedSizeStrictCodec.bytesStrict
 import fr.acinq.eclair.{ShortChannelId, UInt64, wire}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
@@ -29,7 +28,6 @@ import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
 
 import scala.util.{Failure, Success, Try}
-
 
 /**
   * Created by PM on 15/11/2016.
