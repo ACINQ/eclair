@@ -65,6 +65,9 @@ class CommonCodecsSpec extends FunSuite {
     val expected = Map(
       0L -> hex"00",
       42L -> hex"2a",
+      253L -> hex"fd fd 00",
+      254L -> hex"fd fe 00",
+      255L -> hex"fd ff 00",
       550L -> hex"fd 26 02",
       998000L -> hex"fe 70 3a 0f 00",
       6211610197754262546L -> hex"ff 12 34 56 78 90 12 34 56"
@@ -72,24 +75,27 @@ class CommonCodecsSpec extends FunSuite {
 
     for ((long, ref) <- expected) {
       val encoded = varInt.encode(long).require
-      assert(ref === encoded)
+      assert(ref === encoded, ref)
       val decoded = varInt.decode(encoded).require.value
-      assert(long === decoded)
+      assert(long === decoded, long)
     }
   }
 
   test("decode invalid varint") {
     val testCases = Seq(
-      hex"fd",
-      hex"fe 01",
-      hex"fe",
-      hex"fe 12 34",
-      hex"ff",
-      hex"ff 12 34 56 78"
+      hex"fd", // truncated
+      hex"fe 01", // truncated
+      hex"fe", // truncated
+      hex"fe 12 34", // truncated
+      hex"ff", // truncated
+      hex"ff 12 34 56 78", // truncated
+      hex"fd fc 00", // not minimally-encoded
+      hex"fe ff ff 00 00", // not minimally-encoded
+      hex"ff ff ff ff ff 00 00 00 00" // not minimally-encoded
     ).map(_.toBitVector)
 
     for (testCase <- testCases) {
-      assert(varInt.decode(testCase).isFailure)
+      assert(varInt.decode(testCase).isFailure, testCase.toByteVector)
     }
   }
 

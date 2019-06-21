@@ -17,8 +17,11 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.eclair.wire.CommonCodecs._
+import scodec.{Attempt, Codec, DecodeResult, Decoder, Encoder}
+import scodec.bits.BitVector
 import scodec.codecs._
-import scodec.Codec
+
+import scala.collection.compat._
 
 /**
   * Created by t-bast on 20/06/2019.
@@ -35,5 +38,33 @@ object TlvCodecs {
     case g: GenericTlv => Left(g)
     case o => Right(o)
   })
+
+  /**
+    * A tlv stream codec relies on an underlying tlv codec.
+    * This allows tlv streams to have different namespaces, increasing the total number of tlv types available.
+    *
+    * @param codec codec used for the tlv records contained in the stream.
+    */
+  def tlvStream(codec: Codec[Tlv]): Codec[TlvStream] = {
+    Codec[TlvStream](
+      (s: TlvStream) => {
+        val recordTypes = s.records.map(_.`type`)
+        if (recordTypes.length != recordTypes.distinct.length) {
+          Attempt.Failure(scodec.Err("duplicate tlv records aren't allowed"))
+        } else {
+          Encoder.encodeSeq(codec)(s.records.sortBy(_.`type`).toList)
+        }
+      },
+      (buf: BitVector) => {
+        Decoder.decodeCollect[List, Tlv](codec, None)(buf).map(_.map(TlvStream(_))) match {
+          case Attempt.Failure(err) => Attempt.Failure(err)
+          case Attempt.Successful(res@DecodeResult(stream, _)) => stream.validate match {
+            case None => Attempt.Successful(res)
+            case Some(err) => Attempt.Failure(scodec.Err(err.message))
+          }
+        }
+      }
+    )
+  }
 
 }

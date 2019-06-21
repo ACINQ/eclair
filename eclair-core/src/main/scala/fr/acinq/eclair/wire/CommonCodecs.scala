@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.apache.commons.codec.binary.Base32
-import scodec.{Attempt, Codec, Err}
+import scodec.{Attempt, Codec, DecodeResult, Err}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 
@@ -46,6 +46,21 @@ object CommonCodecs {
   val uint64L: Codec[Long] = int64L.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
 
   val uint64ex: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
+
+  /**
+    * We impose a minimal encoding on varint values to ensure that signed hashes can be reproduced easily.
+    * If a value could be encoded with less bytes, it's considered invalid and results in a failed decoding attempt.
+    *
+    * @param min     the minimal value that should be encoded.
+    * @param attempt the decoding attempt.
+    */
+  def verifyMinimalEncoding(min: Long, attempt: Attempt[DecodeResult[Long]]): Attempt[DecodeResult[Long]] = {
+    attempt match {
+      case Attempt.Successful(res) if res.value < min => Attempt.Failure(scodec.Err("varint was not minimally encoded"))
+      case Attempt.Successful(res) => Attempt.Successful(res)
+      case Attempt.Failure(err) => Attempt.Failure(err)
+    }
+  }
 
   // Bitcoin-style varint codec (CompactSize)
   val varInt = Codec[Long](
@@ -71,20 +86,14 @@ object CommonCodecs {
       },
     (buf: BitVector) => {
       uint8L.decode(buf) match {
-        case scodec.Attempt.Successful(b) =>
+        case Attempt.Successful(b) =>
           b.value match {
-            case 0xff =>
-              uint64L.decode(b.remainder)
-            case 0xfe =>
-              uint32L.decode(b.remainder)
-            case 0xfd =>
-              uint16L.decode(b.remainder)
-                .map(b => b.map(_.toLong))
-            case _ =>
-              scodec.Attempt.Successful(scodec.DecodeResult(b.value.toLong, b.remainder))
+            case 0xff => verifyMinimalEncoding(0x100000000L, uint64L.decode(b.remainder))
+            case 0xfe => verifyMinimalEncoding(0x10000L, uint32L.decode(b.remainder))
+            case 0xfd => verifyMinimalEncoding(0xfdL, uint16L.decode(b.remainder).map(b => b.map(_.toLong)))
+            case _ => Attempt.Successful(DecodeResult(b.value.toLong, b.remainder))
           }
-        case scodec.Attempt.Failure(err) =>
-          scodec.Attempt.Failure(err)
+        case Attempt.Failure(err) => Attempt.Failure(err)
       }
     })
 
