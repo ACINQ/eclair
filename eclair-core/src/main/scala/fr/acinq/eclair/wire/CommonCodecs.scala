@@ -26,18 +26,13 @@ import scodec.{Attempt, Codec, DecodeResult, Err}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
 /**
   * Created by t-bast on 20/06/2019.
   */
 
 object CommonCodecs {
-
-  def attemptFromTry[T](f: => T): Attempt[T] = Try(f) match {
-    case Success(t) => Attempt.successful(t)
-    case Failure(t) => Attempt.failure(Err(s"deserialization error: ${t.getMessage}"))
-  }
 
   // this codec can be safely used for values < 2^63 and will fail otherwise
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
@@ -109,7 +104,7 @@ object CommonCodecs {
 
   val ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))
 
-  val ipv6address: Codec[Inet6Address] = bytes(16).exmap(b => attemptFromTry(Inet6Address.getByAddress(null, b.toArray, null)), a => attemptFromTry(ByteVector(a.getAddress)))
+  val ipv6address: Codec[Inet6Address] = bytes(16).exmap(b => Attempt.fromTry(Try(Inet6Address.getByAddress(null, b.toArray, null))), a => Attempt.fromTry(Try(ByteVector(a.getAddress))))
 
   def base32(size: Int): Codec[String] = bytes(size).xmap(b => new Base32().encodeAsString(b.toArray).toLowerCase, a => ByteVector(new Base32().decode(a.toUpperCase())))
 
