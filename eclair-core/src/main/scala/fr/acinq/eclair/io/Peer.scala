@@ -55,7 +55,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         channel ! INPUT_RESTORED(state)
         FinalChannelId(state.channelId) -> channel
       }.toMap
-      goto(DISCONNECTED) using DisconnectedData(previousKnownAddress, channels, MAX_RECONNECT_INTERVAL) // when we restart, we will attempt to reconnect right away, but then we'll wait
+      val firstReconnectionMillis = (MAX_RECONNECT_INTERVAL.toMillis / 2) + Random.nextInt((MAX_RECONNECT_INTERVAL.toMillis / 2).toInt) // between 50% and 100% of MAX_RECONNECT_INTERVAL
+      goto(DISCONNECTED) using DisconnectedData(previousKnownAddress, channels, firstReconnectionMillis.millisecond) // when we restart, we will attempt to reconnect right away, but then we'll wait
   }
 
   when(DISCONNECTED) {

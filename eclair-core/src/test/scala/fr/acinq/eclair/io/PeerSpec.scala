@@ -175,13 +175,14 @@ class PeerSpec extends TestkitBaseClass {
     }
   }
 
-  test("only reconnect once after startup") { f =>
+  test("only reconnect once with a randomized delay after startup") { f =>
     import f._
     val probe = TestProbe()
     val previouslyKnownAddress = new InetSocketAddress("1.2.3.4", 9735)
     probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set(ChannelStateSpec.normal)))
     probe.send(peer, Peer.Reconnect)
-    awaitCond(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === Peer.MAX_RECONNECT_INTERVAL)
+    val interval = (MAX_RECONNECT_INTERVAL.toMillis / 2) to (MAX_RECONNECT_INTERVAL.toMillis)
+    awaitCond(interval contains peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay.toMillis)
   }
 
   test("reconnect with increasing delays") { f =>
