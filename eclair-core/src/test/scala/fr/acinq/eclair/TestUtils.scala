@@ -18,6 +18,9 @@ package fr.acinq.eclair
 
 import java.io.File
 
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.channel.Commitments
+
 object TestUtils {
 
   /**
@@ -28,4 +31,9 @@ object TestUtils {
     .get("buildDirectory") // this is defined if we run from maven
     .getOrElse(new File(sys.props("user.dir"), "target").getAbsolutePath) // otherwise we probably are in intellij, so we build it manually assuming that user.dir == path to the module
 
+  def makeCommitments(channelId: ByteVector32, availableBalanceMsat: Long = 50000000L) =
+    new Commitments(null, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId) {
+      override def availableBalanceForSendMsat: Long = availableBalanceMsat
+      override def availableBalanceForReceiveMsat: Long = availableBalanceMsat
+    }
 }

@@ -16,11 +16,12 @@
 
 package fr.acinq.eclair.payment
 
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Relayer.{OutgoingChannel, RelayPayload}
+import fr.acinq.eclair.TestUtils.makeCommitments
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomKey}
@@ -81,11 +82,11 @@ class ChannelSelectionSpec extends FunSuite {
     val channelUpdate = dummyUpdate(ShortChannelId(12345), 10, 100, 1000, 100, 10000000, true)
 
     val channelUpdates = Map(
-      ShortChannelId(11111) -> OutgoingChannel(a, channelUpdate, 100000000),
-      ShortChannelId(12345) -> OutgoingChannel(a, channelUpdate, 20000000),
-      ShortChannelId(22222) -> OutgoingChannel(a, channelUpdate, 10000000),
-      ShortChannelId(33333) -> OutgoingChannel(a, channelUpdate, 100000),
-      ShortChannelId(44444) -> OutgoingChannel(b, channelUpdate, 1000000)
+      ShortChannelId(11111) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, 100000000)),
+      ShortChannelId(12345) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, 20000000)),
+      ShortChannelId(22222) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, 10000000)),
+      ShortChannelId(33333) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, 100000)),
+      ShortChannelId(44444) -> OutgoingChannel(b, channelUpdate, makeCommitments(ByteVector32.Zeroes, 1000000))
     )
 
     val node2channels = new mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]

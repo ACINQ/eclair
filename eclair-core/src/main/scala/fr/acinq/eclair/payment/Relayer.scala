@@ -69,35 +69,28 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
   private val commandBuffer = context.actorOf(Props(new CommandBuffer(nodeParams, register)))
 
-  override def receive: Receive = main(Map.empty, new mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId], Map.empty)
+  override def receive: Receive = main(Map.empty, new mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId])
 
-  def main(channelUpdates: Map[ShortChannelId, OutgoingChannel],
-           node2channels: mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId],
-           usableBalances: Map[ShortChannelId, UsableBalances]): Receive = {
+  def main(channelUpdates: Map[ShortChannelId, OutgoingChannel], node2channels: mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]): Receive = {
 
     case GetUsableBalances =>
-      sender ! usableBalances.values
+      sender ! channelUpdates.values.map(o => UsableBalances(o.commitments.availableBalanceForSendMsat, o.commitments.availableBalanceForReceiveMsat, o.commitments.announceChannel))
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
       log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
-      val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> OutgoingChannel(remoteNodeId, channelUpdate, commitments.availableBalanceForSendMsat))
-      val usableBalances1 = usableBalances + (channelUpdate.shortChannelId -> UsableBalances(commitments.availableBalanceForSendMsat, commitments.availableBalanceForReceiveMsat, commitments.announceChannel))
-      context become main(channelUpdates1, node2channels.addBinding(remoteNodeId, channelUpdate.shortChannelId), usableBalances1)
+      val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> OutgoingChannel(remoteNodeId, channelUpdate, commitments))
+      context become main(channelUpdates1, node2channels.addBinding(remoteNodeId, channelUpdate.shortChannelId))
 
     case LocalChannelDown(_, channelId, shortChannelId, remoteNodeId) =>
       log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId")
-      context become main(channelUpdates - shortChannelId, node2channels.removeBinding(remoteNodeId, shortChannelId), usableBalances - shortChannelId)
+      context become main(channelUpdates - shortChannelId, node2channels.removeBinding(remoteNodeId, shortChannelId))
 
     case AvailableBalanceChanged(_, _, shortChannelId, _, commitments) =>
       val channelUpdates1 = channelUpdates.get(shortChannelId) match {
-        case Some(c: OutgoingChannel) => channelUpdates + (shortChannelId -> c.copy(availableBalanceMsat = commitments.availableBalanceForSendMsat))
+        case Some(c: OutgoingChannel) => channelUpdates + (shortChannelId -> c.copy(commitments = commitments))
         case None => channelUpdates // we only consider the balance if we have the channel_update
       }
-      val usableBalances1 = usableBalances.get(shortChannelId) match {
-        case Some(u: UsableBalances) => usableBalances + (shortChannelId -> u.copy(canSendMsat = commitments.availableBalanceForSendMsat, canReceiveMsat = commitments.availableBalanceForReceiveMsat))
-        case None => usableBalances // we only consider the balance if we have the channel_update
-      }
-      context become main(channelUpdates1, node2channels, usableBalances1)
+      context become main(channelUpdates1, node2channels)
 
     case ForwardAdd(add, previousFailures) =>
       log.debug(s"received forwarding request for htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId}")
@@ -211,7 +204,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 object Relayer {
   def props(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorRef) = Props(classOf[Relayer], nodeParams, register, paymentHandler)
 
-  case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, availableBalanceMsat: Long)
+  case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, commitments: Commitments)
 
   // @formatter:off
   sealed trait NextPayload
@@ -316,10 +309,10 @@ object Relayer {
             val channelInfo_opt = channelUpdates.get(shortChannelId)
             val channelUpdate_opt = channelInfo_opt.map(_.channelUpdate)
             val relayResult = relayOrFail(relayPayload, channelUpdate_opt)
-            log.debug(s"candidate channel for htlc #${add.id} paymentHash=${add.paymentHash}: shortChannelId={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo_opt.map(_.availableBalanceMsat).getOrElse(""), channelUpdate_opt.getOrElse(""), relayResult)
+            log.debug(s"candidate channel for htlc #${add.id} paymentHash=${add.paymentHash}: shortChannelId={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo_opt.map(_.commitments.availableBalanceForSendMsat).getOrElse(""), channelUpdate_opt.getOrElse(""), relayResult)
             (shortChannelId, channelInfo_opt, relayResult)
           }
-          .collect { case (shortChannelId, Some(channelInfo), Right(_)) => (shortChannelId, channelInfo.availableBalanceMsat) }
+          .collect { case (shortChannelId, Some(channelInfo), Right(_)) => (shortChannelId, channelInfo.commitments.availableBalanceForSendMsat) }
           .filter(_._2 > relayPayload.payload.amtToForward) // we only keep channels that have enough balance to handle this payment
           .toList // needed for ordering
           .sortBy(_._2) // we want to use the channel with the lowest available balance that can process the payment

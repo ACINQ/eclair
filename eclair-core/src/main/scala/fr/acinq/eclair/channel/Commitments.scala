@@ -81,7 +81,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def availableBalanceForReceiveMsat: Long = {
     val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-    val feesMsat = if (localParams.isFunder) 0 else Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced).amount * 1000
+    val feesMsat = if (localParams.isFunder) 0 else Transactions.commitTxFee(Satoshi(localParams.dustLimitSatoshis), reduced).amount * 1000
     reduced.toRemoteMsat - localParams.channelReserveSatoshis * 1000 - feesMsat
   }
 }
