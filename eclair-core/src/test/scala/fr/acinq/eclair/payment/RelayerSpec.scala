@@ -421,7 +421,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     relayer ! AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, 0, makeCommitments(channelId_bc, 200000, 500000))
     sender.send(relayer, GetUsableBalances)
-    assert(sender.expectMsgType[Iterable[UsableBalances]].last.canReceiveMsat == 500000)
+    assert(sender.expectMsgType[Iterable[UsableBalances]].last.canReceiveMsat === 500000)
 
     relayer ! LocalChannelDown(null, channelId_bc, channelUpdate_bc.shortChannelId, c)
     sender.send(relayer, GetUsableBalances)
