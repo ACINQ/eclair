@@ -21,10 +21,10 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Relayer.{OutgoingChannel, RelayPayload}
-import fr.acinq.eclair.TestUtils.makeCommitments
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.payment.HtlcGenerationSpec.makeCommitments
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 

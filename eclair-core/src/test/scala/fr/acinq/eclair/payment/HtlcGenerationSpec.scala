@@ -19,8 +19,8 @@ package fr.acinq.eclair.payment
 import java.util.UUID
 
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.bitcoin.{Block, Crypto, DeterministicWallet}
-import fr.acinq.eclair.channel.Channel
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
+import fr.acinq.eclair.channel.{Channel, Commitments}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{PacketAndSecrets, ParsedPacket}
 import fr.acinq.eclair.payment.PaymentLifecycle._
@@ -150,6 +150,12 @@ class HtlcGenerationSpec extends FunSuite {
 }
 
 object HtlcGenerationSpec {
+
+  def makeCommitments(channelId: ByteVector32, availableBalanceForSend: Long = 50000000L, availableBalanceForReceive: Long = 50000000L) =
+    new Commitments(null, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId) {
+      override def availableBalanceForSendMsat: Long = availableBalanceForSend
+      override def availableBalanceForReceiveMsat: Long = availableBalanceForReceive
+    }
 
   def randomExtendedPrivateKey: ExtendedPrivateKey = DeterministicWallet.generate(randomBytes32)
 
