@@ -25,9 +25,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{ShortChannelId, TestConstants, TestkitBaseClass, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{ShortChannelId, TestConstants, TestkitBaseClass, UInt64, randomBytes32}
 import org.scalatest.Outcome
 import scodec.bits.ByteVector
 
@@ -59,7 +58,8 @@ class RelayerSpec extends TestkitBaseClass {
   val channelId_bc = randomBytes32
 
   def makeCommitments(channelId: ByteVector32, availableBalanceMsat: Long = 50000000L) = new Commitments(null, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId) {
-    override def usableBalances: UsableBalances = UsableBalances(availableBalanceMsat, 0, isPublic = true)
+    override def availableBalanceForSendMsat: Long = availableBalanceMsat
+    override def availableBalanceForReceiveMsat: Long = availableBalanceMsat
   }
 
   test("relay an htlc-add") { f =>
