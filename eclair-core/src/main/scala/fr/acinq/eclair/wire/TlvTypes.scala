@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.wire
 
+import fr.acinq.eclair.UInt64
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
@@ -26,7 +27,7 @@ import scala.annotation.tailrec
 
 // @formatter:off
 trait Tlv {
-  val `type`: Long
+  val `type`: UInt64
 }
 sealed trait OnionTlv extends Tlv
 // @formatter:on
@@ -37,7 +38,7 @@ sealed trait OnionTlv extends Tlv
   * @param `type` tlv type.
   * @param value  tlv value (length is implicit, and encoded as a varint).
   */
-case class GenericTlv(`type`: Long, value: ByteVector) extends Tlv
+case class GenericTlv(`type`: UInt64, value: ByteVector) extends Tlv
 
 /**
   * A tlv stream is a collection of tlv records.
@@ -57,17 +58,17 @@ case class TlvStream(records: Seq[Tlv]) {
 
   def validate: Option[Error] = {
     @tailrec
-    def loop(previous: Long, next: Seq[Tlv]): Option[Error] = {
+    def loop(previous: Option[UInt64], next: Seq[Tlv]): Option[Error] = {
       next.headOption match {
-        case Some(record) if record.`type` == previous => Some(DuplicateRecords)
-        case Some(record) if record.`type` < previous => Some(RecordsNotOrdered)
-        case Some(record) if (record.`type` % 2) == 0 && record.isInstanceOf[GenericTlv] => Some(UnknownEvenTlv)
-        case Some(record) => loop(record.`type`, next.tail)
+        case Some(record) if previous.contains(record.`type`) => Some(DuplicateRecords)
+        case Some(record) if previous.isDefined && record.`type` < previous.get => Some(RecordsNotOrdered)
+        case Some(record) if (record.`type`.toBigInt % 2) == 0 && record.isInstanceOf[GenericTlv] => Some(UnknownEvenTlv)
+        case Some(record) => loop(Some(record.`type`), next.tail)
         case None => None
       }
     }
 
-    loop(-1L, records)
+    loop(None, records)
   }
 
 }

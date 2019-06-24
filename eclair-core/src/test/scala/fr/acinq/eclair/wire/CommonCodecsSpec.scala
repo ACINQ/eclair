@@ -35,7 +35,8 @@ class CommonCodecsSpec extends FunSuite {
     val expected = Map(
       UInt64(0) -> hex"00 00 00 00 00 00 00 00",
       UInt64(42) -> hex"00 00 00 00 00 00 00 2a",
-      UInt64(hex"ffffffffffffffff") -> hex"ff ff ff ff ff ff ff ff"
+      UInt64(6211610197754262546L) -> hex"56 34 12 90 78 56 34 12",
+      UInt64(hex"ff ff ff ff ff ff ff ff") -> hex"ff ff ff ff ff ff ff ff"
     ).mapValues(_.toBitVector)
 
     for ((uint, ref) <- expected) {
@@ -48,36 +49,38 @@ class CommonCodecsSpec extends FunSuite {
 
   test("encode/decode with uint64L codec") {
     val expected = Map(
-      0L -> hex"00 00 00 00 00 00 00 00",
-      42L -> hex"2a 00 00 00 00 00 00 00",
-      6211610197754262546L -> hex"12 34 56 78 90 12 34 56"
+      UInt64(0) -> hex"00 00 00 00 00 00 00 00",
+      UInt64(42) -> hex"2a 00 00 00 00 00 00 00",
+      UInt64(6211610197754262546L) -> hex"12 34 56 78 90 12 34 56",
+      UInt64(hex"ff ff ff ff ff ff ff ff") -> hex"ff ff ff ff ff ff ff ff"
     ).mapValues(_.toBitVector)
 
-    for ((long, ref) <- expected) {
-      val encoded = uint64L.encode(long).require
+    for ((uint, ref) <- expected) {
+      val encoded = uint64L.encode(uint).require
       assert(ref === encoded)
       val decoded = uint64L.decode(encoded).require.value
-      assert(long === decoded)
+      assert(uint === decoded)
     }
   }
 
   test("encode/decode with varint codec") {
     val expected = Map(
-      0L -> hex"00",
-      42L -> hex"2a",
-      253L -> hex"fd fd 00",
-      254L -> hex"fd fe 00",
-      255L -> hex"fd ff 00",
-      550L -> hex"fd 26 02",
-      998000L -> hex"fe 70 3a 0f 00",
-      6211610197754262546L -> hex"ff 12 34 56 78 90 12 34 56"
+      UInt64(0L) -> hex"00",
+      UInt64(42L) -> hex"2a",
+      UInt64(253L) -> hex"fd fd 00",
+      UInt64(254L) -> hex"fd fe 00",
+      UInt64(255L) -> hex"fd ff 00",
+      UInt64(550L) -> hex"fd 26 02",
+      UInt64(998000L) -> hex"fe 70 3a 0f 00",
+      UInt64(6211610197754262546L) -> hex"ff 12 34 56 78 90 12 34 56",
+      UInt64.MaxValue -> hex"ff ff ff ff ff ff ff ff ff"
     ).mapValues(_.toBitVector)
 
-    for ((long, ref) <- expected) {
-      val encoded = varInt.encode(long).require
+    for ((uint, ref) <- expected) {
+      val encoded = varint.encode(uint).require
       assert(ref === encoded, ref)
-      val decoded = varInt.decode(encoded).require.value
-      assert(long === decoded, long)
+      val decoded = varint.decode(encoded).require.value
+      assert(uint === decoded, uint)
     }
   }
 
@@ -89,13 +92,49 @@ class CommonCodecsSpec extends FunSuite {
       hex"fe 12 34", // truncated
       hex"ff", // truncated
       hex"ff 12 34 56 78", // truncated
+      hex"fd 00 00", // not minimally-encoded
       hex"fd fc 00", // not minimally-encoded
+      hex"fe 00 00 00 00", // not minimally-encoded
       hex"fe ff ff 00 00", // not minimally-encoded
+      hex"ff 00 00 00 00 00 00 00 00", // not minimally-encoded
+      hex"ff ff ff ff 01 00 00 00 00", // not minimally-encoded
       hex"ff ff ff ff ff 00 00 00 00" // not minimally-encoded
     ).map(_.toBitVector)
 
     for (testCase <- testCases) {
-      assert(varInt.decode(testCase).isFailure, testCase.toByteVector)
+      assert(varint.decode(testCase).isFailure, testCase.toByteVector)
+    }
+  }
+
+  test("encode/decode with varlong codec") {
+    val expected = Map(
+      0L -> hex"00",
+      42L -> hex"2a",
+      253L -> hex"fd fd 00",
+      254L -> hex"fd fe 00",
+      255L -> hex"fd ff 00",
+      550L -> hex"fd 26 02",
+      998000L -> hex"fe 70 3a 0f 00",
+      6211610197754262546L -> hex"ff 12 34 56 78 90 12 34 56",
+      Long.MaxValue -> hex"ff ff ff ff ff ff ff ff 7f"
+    ).mapValues(_.toBitVector)
+
+    for ((long, ref) <- expected) {
+      val encoded = varlong.encode(long).require
+      assert(ref === encoded, ref)
+      val decoded = varlong.decode(encoded).require.value
+      assert(long === decoded, long)
+    }
+  }
+
+  test("decode invalid varlong") {
+    val testCases = Seq(
+      hex"ff 00 00 00 00 00 00 00 80",
+      hex"ff ff ff ff ff ff ff ff ff"
+    ).map(_.toBitVector)
+
+    for (testCase <- testCases) {
+      assert(varlong.decode(testCase).isFailure, testCase.toByteVector)
     }
   }
 

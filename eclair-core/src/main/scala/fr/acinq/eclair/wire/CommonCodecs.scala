@@ -38,9 +38,9 @@ object CommonCodecs {
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
   val uint64: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
 
-  val uint64L: Codec[Long] = int64L.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
-
   val uint64ex: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
+
+  val uint64L: Codec[UInt64] = bytes(8).xmap(b => UInt64(b.reverse), a => a.toByteVector.padLeft(8).reverse)
 
   /**
     * We impose a minimal encoding on varint values to ensure that signed hashes can be reproduced easily.
@@ -49,29 +49,30 @@ object CommonCodecs {
     * @param min     the minimal value that should be encoded.
     * @param attempt the decoding attempt.
     */
-  def verifyMinimalEncoding(min: Long, attempt: Attempt[DecodeResult[Long]]): Attempt[DecodeResult[Long]] = {
+  def verifyMinimalEncoding(min: Long, attempt: Attempt[DecodeResult[UInt64]]): Attempt[DecodeResult[UInt64]] = {
     attempt match {
-      case Attempt.Successful(res) if res.value < min => Attempt.Failure(scodec.Err("varint was not minimally encoded"))
+      case Attempt.Successful(res) if res.value < UInt64(min) => Attempt.Failure(scodec.Err("varint was not minimally encoded"))
       case Attempt.Successful(res) => Attempt.Successful(res)
       case Attempt.Failure(err) => Attempt.Failure(err)
     }
   }
 
-  // Bitcoin-style varint codec (CompactSize)
-  val varInt = Codec[Long](
-    (n: Long) =>
+  // Bitcoin-style varint codec (CompactSize).
+  // See https://bitcoin.org/en/developer-reference#compactsize-unsigned-integers for reference.
+  val varint = Codec[UInt64](
+    (n: UInt64) =>
       n match {
-        case i if i < 0xfd =>
-          uint8L.encode(i.toInt)
-        case i if i < 0xffff =>
+        case i if i < UInt64(0xfd) =>
+          uint8L.encode(i.toBigInt.toInt)
+        case i if i < UInt64(0xffff) =>
           for {
             a <- uint8L.encode(0xfd)
-            b <- uint16L.encode(i.toInt)
+            b <- uint16L.encode(i.toBigInt.toInt)
           } yield a ++ b
-        case i if i < 0xffffffffL =>
+        case i if i < UInt64(0xffffffffL) =>
           for {
             a <- uint8L.encode(0xfe)
-            b <- uint32L.encode(i)
+            b <- uint32L.encode(i.toBigInt.toLong)
           } yield a ++ b
         case i =>
           for {
@@ -84,13 +85,17 @@ object CommonCodecs {
         case Attempt.Successful(b) =>
           b.value match {
             case 0xff => verifyMinimalEncoding(0x100000000L, uint64L.decode(b.remainder))
-            case 0xfe => verifyMinimalEncoding(0x10000L, uint32L.decode(b.remainder))
-            case 0xfd => verifyMinimalEncoding(0xfdL, uint16L.decode(b.remainder).map(b => b.map(_.toLong)))
-            case _ => Attempt.Successful(DecodeResult(b.value.toLong, b.remainder))
+            case 0xfe => verifyMinimalEncoding(0x10000L, uint32L.decode(b.remainder).map(b => b.map(UInt64(_))))
+            case 0xfd => verifyMinimalEncoding(0xfdL, uint16L.decode(b.remainder).map(b => b.map(UInt64(_))))
+            case _ => Attempt.Successful(DecodeResult(UInt64(b.value), b.remainder))
           }
         case Attempt.Failure(err) => Attempt.Failure(err)
       }
     })
+
+  // This codec can be safely used for values < 2^63 and will fail otherwise.
+  // It is useful in combination with variableSizeBytesLong to encode/decode TLV lengths because those will always be < 2^63.
+  val varlong: Codec[Long] = varint.narrow(l => if (l <= UInt64(Long.MaxValue)) Attempt.successful(l.toBigInt.toLong) else Attempt.failure(Err(s"overflow for value $l")), l => UInt64(l))
 
   val bytes32: Codec[ByteVector32] = limitedSizeBytes(32, bytesStrict(32).xmap(d => ByteVector32(d), d => d.bytes))
 

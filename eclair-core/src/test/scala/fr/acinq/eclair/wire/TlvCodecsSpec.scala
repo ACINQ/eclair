@@ -17,8 +17,9 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.wire.CommonCodecs.{publicKey, shortchannelid, uint64, varInt}
+import fr.acinq.eclair.{ShortChannelId, UInt64}
+import fr.acinq.eclair.UInt64.Conversions._
+import fr.acinq.eclair.wire.CommonCodecs.{publicKey, shortchannelid, uint64, varint}
 import fr.acinq.eclair.wire.TlvCodecs._
 import org.scalatest.FunSuite
 import scodec.bits.HexStringSyntax
@@ -59,7 +60,8 @@ class TlvCodecsSpec extends FunSuite {
       hex"2a fe01010000", // not minimally encoded length
       hex"2a fd2602 0231", // value truncated
       hex"02 01 2a", // short channel id too short
-      hex"02 09 010101010101010101" // short channel id length too big
+      hex"02 09 010101010101010101", // short channel id length too big
+      hex"2a ff0000000000000080" // invalid length (too big to fit inside a long)
     )
 
     for (testCase <- testCases) {
@@ -128,16 +130,16 @@ object TlvCodecsSpec {
 
   // @formatter:off
   sealed trait TestTlv extends Tlv
-  case class TestType1(longValue: Long) extends TestTlv { override val `type` = 1L }
-  case class TestType2(shortChannelId: ShortChannelId) extends TestTlv { override val `type` = 2L }
-  case class TestType3(nodeId: PublicKey, value1: Long, value2: Long) extends TestTlv { override val `type` = 3L }
-  case class TestType13(intValue: Int) extends TestTlv { override val `type` = 13L }
+  case class TestType1(longValue: Long) extends TestTlv { override val `type` = UInt64(1) }
+  case class TestType2(shortChannelId: ShortChannelId) extends TestTlv { override val `type` = UInt64(2) }
+  case class TestType3(nodeId: PublicKey, value1: Long, value2: Long) extends TestTlv { override val `type` = UInt64(3) }
+  case class TestType13(intValue: Int) extends TestTlv { override val `type` = UInt64(13) }
 
   val testCodec1: Codec[TestType1] = (("length" | constant(hex"08")) :: ("value" | uint64)).as[TestType1]
   val testCodec2: Codec[TestType2] = (("length" | constant(hex"08")) :: ("short_channel_id" | shortchannelid)).as[TestType2]
   val testCodec3: Codec[TestType3] = (("length" | constant(hex"31")) :: ("node_id" | publicKey) :: ("value_1" | uint64) :: ("value_2" | uint64)).as[TestType3]
   val testCodec13: Codec[TestType13] = (("length" | constant(hex"02")) :: ("value" | uint16)).as[TestType13]
-  val testTlvCodec = tlvFallback(discriminated[Tlv].by(varInt)
+  val testTlvCodec = tlvFallback(discriminated[Tlv].by(varint)
     .typecase(1, testCodec1)
     .typecase(2, testCodec2)
     .typecase(3, testCodec3)
@@ -145,12 +147,12 @@ object TlvCodecsSpec {
   )
 
   sealed trait OtherTlv extends Tlv
-  case class OtherType1(longValue: Long) extends OtherTlv { override val `type` = 10L }
-  case class OtherType2(lessLongValue: Long) extends OtherTlv { override val `type` = 11L }
+  case class OtherType1(longValue: Long) extends OtherTlv { override val `type` = UInt64(10) }
+  case class OtherType2(lessLongValue: Long) extends OtherTlv { override val `type` = UInt64(11) }
 
   val otherCodec1: Codec[OtherType1] = (("length" | constant(hex"08")) :: ("value" | uint64)).as[OtherType1]
   val otherCodec2: Codec[OtherType2] = (("length" | constant(hex"04")) :: ("value" | uint32)).as[OtherType2]
-  val otherTlvCodec = tlvFallback(discriminated[Tlv].by(varInt)
+  val otherTlvCodec = tlvFallback(discriminated[Tlv].by(varint)
     .typecase(10, otherCodec1)
     .typecase(11, otherCodec2)
   )
