@@ -411,4 +411,11 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.channelId === origin.originChannelId)
     assert(fwd.message.id === origin.originHtlcId)
   }
+
+  test("a") { f =>
+    import f._
+    val sender = TestProbe()
+    sender.send(relayer, GetUsableBalances)
+    sender.expectMsgType[Iterable[UsableBalances]]
+  }
 }
