@@ -17,6 +17,7 @@
 package fr.acinq.eclair.db
 
 import java.util.UUID
+
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.bitcoin.{Block, ByteVector32, MilliSatoshi}
 import fr.acinq.eclair.TestConstants.Bob
@@ -26,8 +27,11 @@ import fr.acinq.eclair.payment.PaymentRequest
 import org.scalatest.FunSuite
 import scodec.bits._
 import fr.acinq.eclair.randomBytes32
+
 import scala.compat.Platform
 import OutgoingPaymentStatus._
+import fr.acinq.bitcoin.Crypto.PublicKey
+
 import concurrent.duration._
 
 class SqlitePaymentsDbSpec extends FunSuite {
@@ -71,7 +75,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(preMigrationDb.getIncomingPayment(oldReceivedPayment.paymentHash).isEmpty)
 
     // add a few rows
-    val ps1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING)
+    val ps1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
     val i1 = PaymentRequest.read("lnbc10u1pw2t4phpp5ezwm2gdccydhnphfyepklc0wjkxhz0r4tctg9paunh2lxgeqhcmsdqlxycrqvpqwdshgueqvfjhggr0dcsry7qcqzpgfa4ecv7447p9t5hkujy9qgrxvkkf396p9zar9p87rv2htmeuunkhydl40r64n5s2k0u7uelzc8twxmp37nkcch6m0wg5tvvx69yjz8qpk94qf3")
     val pr1 = IncomingPayment(i1.paymentHash, 12345678, 1513871928275L)
 
@@ -121,8 +125,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
 
-    val s1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING)
-    val s2 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), None, amountMsat = 12345, createdAt = 12345, None, PENDING)
+    val s1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
+    val s2 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
 
     assert(db.listOutgoingPayments().isEmpty)
     db.addOutgoingPayment(s1)

@@ -79,7 +79,10 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
           getNullableLong(rs, "completed_at"),
-          OutgoingPaymentStatus.withName(rs.getString("status"))
+          OutgoingPaymentStatus.withName(rs.getString("status")),
+          None,
+          None,
+          ???
         ))
       } else {
         None
@@ -100,7 +103,10 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
           getNullableLong(rs, "completed_at"),
-          OutgoingPaymentStatus.withName(rs.getString("status"))
+          OutgoingPaymentStatus.withName(rs.getString("status")),
+          None,
+          None,
+          ???
         )
       }
       q
@@ -119,7 +125,10 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
           getNullableLong(rs, "completed_at"),
-          OutgoingPaymentStatus.withName(rs.getString("status"))
+          OutgoingPaymentStatus.withName(rs.getString("status")),
+          None,
+          None,
+          ???
         )
       }
       q

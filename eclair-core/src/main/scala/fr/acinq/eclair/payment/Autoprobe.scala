@@ -23,7 +23,6 @@ import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentResult, R
 import fr.acinq.eclair.router.{Announcements, Data}
 import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails}
 import fr.acinq.eclair.{NodeParams, randomBytes32, secureRandom}
-
 import scala.concurrent.duration._
 
 /**
@@ -54,7 +53,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
         case Some(targetNodeId) =>
           val paymentHash = randomBytes32 // we don't even know the preimage (this needs to be a secure random!)
           log.info(s"sending payment probe to node=$targetNodeId payment_hash=$paymentHash")
-          paymentInitiator ! SendPayment(PAYMENT_AMOUNT_MSAT, paymentHash, targetNodeId, maxAttempts = 1)
+          paymentInitiator ! SendPayment(PAYMENT_AMOUNT_MSAT, paymentHash, targetNodeId, maxAttempts = 1, paymentRequest_opt = None, description_opt = None)
         case None =>
           log.info(s"could not find a destination, re-scheduling")
           scheduleProbe()

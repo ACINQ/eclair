@@ -17,7 +17,9 @@
 package fr.acinq.eclair.db
 
 import java.util.UUID
+
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.payment.PaymentRequest
 
 trait PaymentsDb {
@@ -65,18 +67,32 @@ trait PaymentsDb {
 case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, receivedAt: Long)
 
 /**
-  * Sent payment is every payment that is sent by this node, they may not be finalized and
+  * OutgoingPayment is every payment that is sent by this node, they may not be finalized and
   * when is final it can be failed or successful.
   *
-  * @param id          internal payment identifier
-  * @param paymentHash payment_hash
-  * @param preimage    the preimage of the payment_hash, known if the outgoing payment was successful
-  * @param amountMsat  amount of the payment, in milli-satoshis
-  * @param createdAt   absolute time in seconds since UNIX epoch when the payment was created.
-  * @param completedAt absolute time in seconds since UNIX epoch when the payment succeeded.
-  * @param status      current status of the payment.
+  * @param id                  internal payment identifier
+  * @param paymentHash         payment_hash
+  * @param preimage            the preimage of the payment_hash, known if the outgoing payment was successful
+  * @param amountMsat          amount of the payment, in milli-satoshis
+  * @param createdAt           absolute time in seconds since UNIX epoch when the payment was created.
+  * @param completedAt         absolute time in seconds since UNIX epoch when the payment succeeded.
+  * @param status              current status of the payment.
+  * @param paymentRequest_opt  the payment request that was associated with this payment
+  * @param description_opt     a custom description
+  * @param targetNodeId        the recipient of this payment
   */
-case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, preimage:Option[ByteVector32], amountMsat: Long, createdAt: Long, completedAt: Option[Long], status: OutgoingPaymentStatus.Value)
+case class OutgoingPayment(
+                            id: UUID,
+                            paymentHash: ByteVector32,
+                            preimage:Option[ByteVector32],
+                            amountMsat: Long,
+                            createdAt: Long,
+                            completedAt: Option[Long],
+                            status: OutgoingPaymentStatus.Value,
+                            paymentRequest_opt: Option[PaymentRequest] = None,
+                            description_opt: Option[String] = None,
+                            targetNodeId: PublicKey
+                          )
 
 object OutgoingPaymentStatus extends Enumeration {
   val PENDING = Value(1, "PENDING")
