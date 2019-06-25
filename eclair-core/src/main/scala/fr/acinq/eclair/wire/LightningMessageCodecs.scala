@@ -28,6 +28,7 @@ import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
+import shapeless.HNil
 
 import scala.util.{Failure, Success, Try}
 
@@ -216,14 +217,15 @@ object LightningMessageCodecs {
       ("nodeSignature" | bytes64) ::
       ("bitcoinSignature" | bytes64)).as[AnnouncementSignatures]
 
-  val channelAnnouncementWitnessCodec = (
+  val channelAnnouncementWitnessCodec =
     ("features" | varsizebinarydata) ::
       ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
       ("nodeId1" | publicKey) ::
       ("nodeId2" | publicKey) ::
       ("bitcoinKey1" | publicKey) ::
-      ("bitcoinKey2" | publicKey))
+      ("bitcoinKey2" | publicKey) ::
+      ("unknownFields" | bytes)
 
   val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
     ("nodeSignature1" | bytes64) ::
@@ -232,18 +234,43 @@ object LightningMessageCodecs {
       ("bitcoinSignature2" | bytes64) ::
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
-  val nodeAnnouncementWitnessCodec = (
+  val nodeAnnouncementWitnessCodec =
     ("features" | varsizebinarydata) ::
       ("timestamp" | uint32) ::
       ("nodeId" | publicKey) ::
       ("rgbColor" | rgb) ::
       ("alias" | zeropaddedstring(32)) ::
-      ("addresses" | listofnodeaddresses))
+      ("addresses" | listofnodeaddresses) ::
+      ("unknownFields" | bytes)
 
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
     ("signature" | bytes64) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
+
+  /**
+    * We used to ignore unknown trailing fields, which would make signature verification fail. We keep this for
+    * backward compatibility reasons.
+    */
+  val legacyChannelUpdateCodec: Codec[ChannelUpdate] = (
+    ("signature" | bytes64) ::
+      ("chainHash" | bytes32) ::
+      ("shortChannelId" | shortchannelid) ::
+      ("timestamp" | uint32) ::
+      (("messageFlags" | byte) >>:~ { messageFlags =>
+        ("channelFlags" | byte) ::
+          ("cltvExpiryDelta" | uint16) ::
+          ("htlcMinimumMsat" | uint64) ::
+          ("feeBaseMsat" | uint32) ::
+          ("feeProportionalMillionths" | uint32) ::
+          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64)) ::
+          ("unknownFields" | provide(ByteVector.empty))
+      })).as[ChannelUpdate]
+
+  /**
+    * NB: because this codec includes unknown trailing fields (as requested by BOLT 7), it must be enclosed inside a
+    * size-delimited codec at writing when followed by other messages.
+    */
   val channelUpdateWitnessCodec =
     ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
@@ -254,7 +281,8 @@ object LightningMessageCodecs {
           ("htlcMinimumMsat" | uint64) ::
           ("feeBaseMsat" | uint32) ::
           ("feeProportionalMillionths" | uint32) ::
-          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64))
+          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64)) ::
+          ("unknownFields" | bytes)
       })
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (

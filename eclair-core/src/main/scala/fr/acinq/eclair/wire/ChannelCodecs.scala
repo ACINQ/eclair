@@ -266,12 +266,22 @@ object ChannelCodecs extends Logging {
       ("shortChannelId" | shortchannelid) ::
       ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
+  // this is a decode-only codec compatible with versions de50cc4 and below
+  val DATA_NORMAL_COMPAT_03_Codec: Codec[DATA_NORMAL] = (
+    ("commitments" | commitmentsCodec) ::
+      ("shortChannelId" | shortchannelid) ::
+      ("buried" | bool) ::
+      ("channelAnnouncement" | optional(bool, channelAnnouncementCodec)) ::
+      ("channelUpdate" | legacyChannelUpdateCodec) :: // NB: this legacy codec didn't prefix channel_update data by its size
+      ("localShutdown" | optional(bool, shutdownCodec)) ::
+      ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL].decodeOnly
+
   val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
     ("commitments" | commitmentsCodec) ::
       ("shortChannelId" | shortchannelid) ::
       ("buried" | bool) ::
       ("channelAnnouncement" | optional(bool, channelAnnouncementCodec)) ::
-      ("channelUpdate" | channelUpdateCodec) ::
+      ("channelUpdate" | variableSizeBytes(uint16, channelUpdateCodec)) ::
       ("localShutdown" | optional(bool, shutdownCodec)) ::
       ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL]
 
@@ -314,10 +324,11 @@ object ChannelCodecs extends Logging {
     * More info here: https://github.com/scodec/scodec/issues/122
     */
   val stateDataCodec: Codec[HasCommitments] = ("version" | constant(0x00)) ~> discriminated[HasCommitments].by(uint16)
+    .typecase(0x09, DATA_NORMAL_Codec)
     .typecase(0x08, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
     .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec)
     .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-    .typecase(0x03, DATA_NORMAL_Codec)
+    .typecase(0x03, DATA_NORMAL_COMPAT_03_Codec)
     .typecase(0x04, DATA_SHUTDOWN_Codec)
     .typecase(0x05, DATA_NEGOTIATING_Codec)
     .typecase(0x06, DATA_CLOSING_Codec)
