@@ -43,7 +43,7 @@ class FeaturesSpec extends FunSuite {
     assert(areSupported(features) && hasFeature(features, OPTION_DATA_LOSS_PROTECT_OPTIONAL) && hasFeature(features, INITIAL_ROUTING_SYNC_BIT_OPTIONAL))
   }
 
-  test("'multi_frame_onion' feature") {
+  test("'variable_length_onion' feature") {
     assert(hasFeature(hex"01", Features.OPTION_VARIABLE_LENGTH_ONION_MANDATORY))
     assert(hasFeature(hex"02", Features.OPTION_VARIABLE_LENGTH_ONION_OPTIONAL))
   }
