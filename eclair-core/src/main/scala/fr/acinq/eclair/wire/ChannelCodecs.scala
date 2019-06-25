@@ -266,6 +266,9 @@ object ChannelCodecs extends Logging {
       ("shortChannelId" | shortchannelid) ::
       ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
+  // All channel_announcement's written prior to supporting unknown trailing fields had the same size
+  val noUnknownFieldsChannelAnnouncementSizeCodec: Codec[Int] = provide(430)
+
   // We used to ignore unknown trailing fields, and assume that channel_update size was known. This is not true anymore,
   // so we need to tell the codec where to stop, otherwise all the remaining part of the data will be decoded as unknown
   // fields. Fortunately, we can easily tell what size the channel_update will be.
@@ -281,7 +284,7 @@ object ChannelCodecs extends Logging {
     ("commitments" | commitmentsCodec) ::
       ("shortChannelId" | shortchannelid) ::
       ("buried" | bool) ::
-      ("channelAnnouncement" | optional(bool, channelAnnouncementCodec)) ::
+      ("channelAnnouncement" | optional(bool, variableSizeBytes(noUnknownFieldsChannelAnnouncementSizeCodec, channelAnnouncementCodec))) ::
       ("channelUpdate" | variableSizeBytes(noUnknownFieldsChannelUpdateSizeCodec, channelUpdateCodec)) ::
       ("localShutdown" | optional(bool, shutdownCodec)) ::
       ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL].decodeOnly
@@ -290,7 +293,7 @@ object ChannelCodecs extends Logging {
     ("commitments" | commitmentsCodec) ::
       ("shortChannelId" | shortchannelid) ::
       ("buried" | bool) ::
-      ("channelAnnouncement" | optional(bool, channelAnnouncementCodec)) ::
+      ("channelAnnouncement" | optional(bool, variableSizeBytes(uint16, channelAnnouncementCodec))) ::
       ("channelUpdate" | variableSizeBytes(uint16, channelUpdateCodec)) ::
       ("localShutdown" | optional(bool, shutdownCodec)) ::
       ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL]
