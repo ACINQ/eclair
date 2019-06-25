@@ -17,11 +17,9 @@
 package fr.acinq.eclair.db.sqlite
 
 import java.sql.{Connection, ResultSet, Statement}
-
 import fr.acinq.bitcoin.ByteVector32
 import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
-
 import scala.collection.immutable.Queue
 
 object SqliteUtils {
@@ -130,6 +128,11 @@ object SqliteUtils {
     def getByteVector32Nullable(columnLabel: String): Option[ByteVector32] = {
       val bytes = rs.getBytes(columnLabel)
       if(rs.wasNull()) None else Some(ByteVector32(ByteVector(bytes)))
+    }
+
+    def getStringNullable(columnLabel: String): Option[String] = {
+      val str = rs.getString(columnLabel)
+      if(rs.wasNull()) None else Some(str)
     }
   }
 

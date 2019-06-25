@@ -31,10 +31,13 @@ import fr.acinq.eclair.randomBytes32
 import scala.compat.Platform
 import OutgoingPaymentStatus._
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.wire.ChannelCodecs._
 
 import concurrent.duration._
 
 class SqlitePaymentsDbSpec extends FunSuite {
+
+  lazy val dummyPaymentRequest = PaymentRequest.read("lnbc5450n1pw2t4qdpp5vcrf6ylgpettyng4ac3vujsk0zpc25cj0q3zp7l7w44zvxmpzh8qdzz2pshjmt9de6zqen0wgsr2dp4ypcxj7r9d3ejqct5ypekzar0wd5xjuewwpkxzcm99cxqzjccqp2rzjqtspxelp67qc5l56p6999wkatsexzhs826xmupyhk6j8lxl038t27z9tsqqqgpgqqqqqqqlgqqqqqzsqpcz8z8hmy8g3ecunle4n3edn3zg2rly8g4klsk5md736vaqqy3ktxs30ht34rkfkqaffzxmjphvd0637dk2lp6skah2hq09z6lrjna3xqp3d4vyd")
 
   test("init sqlite 2 times in a row") {
     val sqlite = TestConstants.sqliteInMemory()
@@ -42,10 +45,11 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val db2 = new SqlitePaymentsDb(sqlite)
   }
 
-  test("handle version migration 1->2") {
+  test("handle version migration 1->3") {
 
     val connection = TestConstants.sqliteInMemory()
 
+    // payment DB version 1
     using(connection.createStatement()) { statement =>
       getVersion(statement, "payments", 1)
       statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
@@ -68,7 +72,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val preMigrationDb = new SqlitePaymentsDb(connection)
 
     using(connection.createStatement()) { statement =>
-      assert(getVersion(statement, "payments", 1) == 2) // version has changed from 1 to 2!
+      assert(getVersion(statement, "payments", 1) == 3) // version has changed from 1 to 3!
     }
 
     // the existing received payment can NOT be queried anymore
@@ -90,11 +94,74 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val postMigrationDb = new SqlitePaymentsDb(connection)
 
     using(connection.createStatement()) { statement =>
-      assert(getVersion(statement, "payments", 2) == 2) // version still to 2
+      assert(getVersion(statement, "payments", 3) == 3) // version still to 2
     }
 
     assert(postMigrationDb.listIncomingPayments() == Seq(pr1))
     assert(postMigrationDb.listOutgoingPayments() == Seq(ps1))
+    assert(preMigrationDb.listPaymentRequests(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) == Seq(i1))
+  }
+
+
+  test("handle version migration 2->3") {
+
+    val connection = TestConstants.sqliteInMemory()
+
+    // payment DB version 2
+    using(connection.createStatement()) { statement =>
+      getVersion(statement, "payments", 2)
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL)")
+      statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON sent_payments(payment_hash)")
+    }
+
+    using(connection.createStatement()) { statement =>
+      assert(getVersion(statement, "payments", 2) == 2) // version 2 is deployed now
+    }
+
+    // insert old type record
+    using(connection.prepareStatement("INSERT INTO sent_payments VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setString(1, UNKNOWN_UUID.toString)
+      statement.setBytes(2, ByteVector32.One.toArray)
+      statement.setBytes(3, ByteVector32.Zeroes.toArray)
+      statement.setLong(4, 123)
+      statement.setLong(5, 456)
+      statement.setLong(6, 789)
+      statement.setString(7, PENDING.toString)
+      statement.executeUpdate()
+    }
+
+    // migration
+    val preMigrationDb = new SqlitePaymentsDb(connection)
+
+    using(connection.createStatement()) { statement =>
+      assert(getVersion(statement, "payments", 2) == 3) // version has changed from 2 to 3!
+    }
+
+    // check the old record has been migrated
+    assert(preMigrationDb.getOutgoingPayment(UNKNOWN_UUID).get.targetNodeId == PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"))
+
+    // add a few rows
+    val ps1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
+    val i1 = PaymentRequest.read("lnbc10u1pw2t4phpp5ezwm2gdccydhnphfyepklc0wjkxhz0r4tctg9paunh2lxgeqhcmsdqlxycrqvpqwdshgueqvfjhggr0dcsry7qcqzpgfa4ecv7447p9t5hkujy9qgrxvkkf396p9zar9p87rv2htmeuunkhydl40r64n5s2k0u7uelzc8twxmp37nkcch6m0wg5tvvx69yjz8qpk94qf3")
+    val pr1 = IncomingPayment(i1.paymentHash, 12345678, 1513871928275L)
+
+    preMigrationDb.addPaymentRequest(i1, ByteVector32.Zeroes)
+    preMigrationDb.addIncomingPayment(pr1)
+    preMigrationDb.addOutgoingPayment(ps1)
+
+    assert(preMigrationDb.listIncomingPayments() == Seq(pr1))
+    assert(preMigrationDb.listOutgoingPayments().contains(ps1))
+    assert(preMigrationDb.listPaymentRequests(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) == Seq(i1))
+
+    val postMigrationDb = new SqlitePaymentsDb(connection)
+
+    using(connection.createStatement()) { statement =>
+      assert(getVersion(statement, "payments", 3) == 3) // version still to 3
+    }
+
+    assert(postMigrationDb.listIncomingPayments() == Seq(pr1))
+    assert(postMigrationDb.listOutgoingPayments().contains(ps1))
     assert(preMigrationDb.listPaymentRequests(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) == Seq(i1))
   }
 
@@ -125,8 +192,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
 
-    val s1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
-    val s2 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
+    val s1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, paymentRequest_opt = Some(dummyPaymentRequest), targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
+    val s2 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, description_opt = Some("custom description"), targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
 
     assert(db.listOutgoingPayments().isEmpty)
     db.addOutgoingPayment(s1)
@@ -135,6 +202,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.listOutgoingPayments().toList == Seq(s1, s2))
     assert(db.getOutgoingPayment(s1.id) === Some(s1))
     assert(db.getOutgoingPayment(s1.id).get.completedAt.isEmpty)
+    assert(db.getOutgoingPayment(s1.id).get.paymentRequest_opt === Some(dummyPaymentRequest))
+    assert(db.getOutgoingPayment(s2.id).get.description_opt === Some("custom description"))
     assert(db.getOutgoingPayment(UUID.randomUUID()) === None)
     assert(db.getOutgoingPayments(s2.paymentHash) === Seq(s2))
     assert(db.getOutgoingPayments(ByteVector32.Zeroes) === Seq.empty)

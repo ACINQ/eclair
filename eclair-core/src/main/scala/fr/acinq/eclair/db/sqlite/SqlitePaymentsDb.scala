@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.Connection
+import java.sql.{Connection, Statement}
 import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
@@ -25,6 +25,8 @@ import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 import scala.collection.immutable.Queue
 import OutgoingPaymentStatus._
+import fr.acinq.bitcoin.Crypto.PublicKey
+import scodec.bits.ByteVector
 import concurrent.duration._
 import scala.compat.Platform
 
@@ -33,25 +35,50 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   import SqliteUtils.ExtendedResultSet._
 
   val DB_NAME = "payments"
-  val CURRENT_VERSION = 2
+  val CURRENT_VERSION = 3
 
-  using(sqlite.createStatement()) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) <= CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // version 2 is "backward compatible" in the sense that it uses separate tables from version 1. There is no migration though
+  def migration12(statement: Statement) = {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON sent_payments(payment_hash)")
-    setVersion(statement, DB_NAME, CURRENT_VERSION)
+  }
+
+  def migration23(statement: Statement) = {
+    statement.executeUpdate("ALTER TABLE sent_payments ADD payment_request TEXT")
+    statement.executeUpdate("ALTER TABLE sent_payments ADD custom_description TEXT")
+    statement.executeUpdate(s"ALTER TABLE sent_payments ADD target_node_id BLOB DEFAULT '03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f' NOT NULL")
+  }
+
+  using(sqlite.createStatement()) { statement =>
+    getVersion(statement, DB_NAME, CURRENT_VERSION) match {
+      case 1 =>
+        logger.warn(s"migrating $DB_NAME from version 1 to $CURRENT_VERSION")
+        migration12(statement)
+        migration23(statement)
+        setVersion(statement, DB_NAME, CURRENT_VERSION)
+      case 2 =>
+        logger.warn(s"migrating $DB_NAME from version 2 to $CURRENT_VERSION")
+        migration23(statement)
+        setVersion(statement, DB_NAME, CURRENT_VERSION)
+      case CURRENT_VERSION =>
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL, payment_request TEXT, custom_description TEXT, target_node_id BLOB NOT NULL)")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON sent_payments(payment_hash)")
+        setVersion(statement, DB_NAME, CURRENT_VERSION)
+    }
   }
 
   override def addOutgoingPayment(sent: OutgoingPayment): Unit = {
-    using(sqlite.prepareStatement("INSERT INTO sent_payments (id, payment_hash, amount_msat, created_at, status) VALUES (?, ?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT INTO sent_payments (id, payment_hash, amount_msat, created_at, status, payment_request, custom_description, target_node_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setString(1, sent.id.toString)
       statement.setBytes(2, sent.paymentHash.toArray)
       statement.setLong(3, sent.amountMsat)
       statement.setLong(4, sent.createdAt)
       statement.setString(5, sent.status.toString)
-      val res = statement.executeUpdate()
-      logger.debug(s"inserted $res payment=${sent.paymentHash} into payment DB")
+      statement.setString(6, sent.paymentRequest_opt.map(PaymentRequest.write).orNull)
+      statement.setString(7, sent.description_opt.orNull)
+      statement.setBytes(8, sent.targetNodeId.value.toHex.getBytes)
+      statement.executeUpdate()
     }
   }
 
@@ -68,7 +95,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def getOutgoingPayment(id: UUID): Option[OutgoingPayment] = {
-    using(sqlite.prepareStatement("SELECT id, payment_hash, preimage, amount_msat, created_at, completed_at, status FROM sent_payments WHERE id = ?")) { statement =>
+    using(sqlite.prepareStatement("SELECT id, payment_hash, preimage, amount_msat, created_at, completed_at, status, payment_request, custom_description, target_node_id FROM sent_payments WHERE id = ?")) { statement =>
       statement.setString(1, id.toString)
       val rs = statement.executeQuery()
       if (rs.next()) {
@@ -80,9 +107,9 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           rs.getLong("created_at"),
           getNullableLong(rs, "completed_at"),
           OutgoingPaymentStatus.withName(rs.getString("status")),
-          None,
-          None,
-          ???
+          rs.getStringNullable("payment_request").map(PaymentRequest.read),
+          rs.getStringNullable("custom_description"),
+          PublicKey(ByteVector.fromValidHex(rs.getString("target_node_id")))
         ))
       } else {
         None
@@ -91,7 +118,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def getOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment] = {
-    using(sqlite.prepareStatement("SELECT id, payment_hash, preimage, amount_msat, created_at, completed_at, status FROM sent_payments WHERE payment_hash = ?")) { statement =>
+    using(sqlite.prepareStatement("SELECT id, payment_hash, preimage, amount_msat, created_at, completed_at, status, payment_request, custom_description, target_node_id FROM sent_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       var q: Queue[OutgoingPayment] = Queue()
@@ -104,9 +131,9 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           rs.getLong("created_at"),
           getNullableLong(rs, "completed_at"),
           OutgoingPaymentStatus.withName(rs.getString("status")),
-          None,
-          None,
-          ???
+          rs.getStringNullable("payment_request").map(PaymentRequest.read),
+          rs.getStringNullable("custom_description"),
+          PublicKey(ByteVector.fromValidHex(rs.getString("target_node_id")))
         )
       }
       q
@@ -115,7 +142,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def listOutgoingPayments(): Seq[OutgoingPayment] = {
     using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT id, payment_hash, preimage, amount_msat, created_at, completed_at, status FROM sent_payments")
+      val rs = statement.executeQuery("SELECT id, payment_hash, preimage, amount_msat, created_at, completed_at, status, payment_request, custom_description, target_node_id FROM sent_payments")
       var q: Queue[OutgoingPayment] = Queue()
       while (rs.next()) {
         q = q :+ OutgoingPayment(
@@ -126,9 +153,9 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           rs.getLong("created_at"),
           getNullableLong(rs, "completed_at"),
           OutgoingPaymentStatus.withName(rs.getString("status")),
-          None,
-          None,
-          ???
+          rs.getStringNullable("payment_request").map(PaymentRequest.read),
+          rs.getStringNullable("custom_description"),
+          PublicKey(ByteVector.fromValidHex(rs.getString("target_node_id")))
         )
       }
       q
