@@ -747,7 +747,7 @@ object ElectrumWallet {
     }
 
     /**
-      * @scriptHash script hash
+      * 
       * @return the ids of transactions that belong to our wallet history for this script hash but that we don't have
       *         and have no pending requests for.
       */

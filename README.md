@@ -32,8 +32,6 @@ Eclair offers a feature rich HTTP API that enables application developers to eas
 
 For more information please visit the [API documentation website](https://acinq.github.io/eclair).
 
-:warning: You can still use the old API by setting the `eclair.api.use-old-api=true` parameter, but it is now deprecated and will soon be removed. The old documentation is still available [here](OLD-API-DOCS.md).
-
 ## Installation
 
 ### Configuring Bitcoin Core
