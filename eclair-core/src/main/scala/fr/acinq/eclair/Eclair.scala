@@ -189,6 +189,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry_opt: Option[Long], maxAttempts_opt: Option[Int], feeThresholdSat_opt: Option[Long], maxFeePct_opt: Option[Double], paymentRequest_opt: Option[PaymentRequest], customDescription_opt: Option[String])(implicit timeout: Timeout): Future[UUID] = {
+    require(paymentRequest_opt.map(PaymentRequest.write(_).getBytes).forall(_.length <= 65536))
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
 
     val defaultRouteParams = Router.getDefaultRouteParams(appKit.nodeParams.routerConf)
