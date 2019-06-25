@@ -18,7 +18,6 @@ package fr.acinq.eclair.wire
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
-import com.google.common.cache.{CacheBuilder, CacheLoader}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Sphinx
@@ -27,8 +26,7 @@ import fr.acinq.eclair.{ShortChannelId, UInt64, wire}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
-import shapeless.HNil
+import scodec.{Attempt, Codec, Err}
 
 import scala.util.{Failure, Success, Try}
 
@@ -246,26 +244,6 @@ object LightningMessageCodecs {
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
     ("signature" | bytes64) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
-
-
-  /**
-    * We used to ignore unknown trailing fields, which would make signature verification fail. We keep this for
-    * backward compatibility reasons.
-    */
-  val legacyChannelUpdateCodec: Codec[ChannelUpdate] = (
-    ("signature" | bytes64) ::
-      ("chainHash" | bytes32) ::
-      ("shortChannelId" | shortchannelid) ::
-      ("timestamp" | uint32) ::
-      (("messageFlags" | byte) >>:~ { messageFlags =>
-        ("channelFlags" | byte) ::
-          ("cltvExpiryDelta" | uint16) ::
-          ("htlcMinimumMsat" | uint64) ::
-          ("feeBaseMsat" | uint32) ::
-          ("feeProportionalMillionths" | uint32) ::
-          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64)) ::
-          ("unknownFields" | provide(ByteVector.empty))
-      })).as[ChannelUpdate]
 
   /**
     * NB: because this codec includes unknown trailing fields (as requested by BOLT 7), it must be enclosed inside a
