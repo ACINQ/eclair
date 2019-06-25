@@ -130,6 +130,10 @@
 			<!-- needed to compile Scala code on JDK9+ -->
                         <arg>-nobootcp</arg>
                     </args>
+                    <jvmArgs>
+                        <jvmArg>-Xmx1024m</jvmArg>
+                        <jvmArg>-Xms1024m</jvmArg>
+                    </jvmArgs>
                     <scalaCompatVersion>${scala.version.short}</scalaCompatVersion>
                 </configuration>
                 <executions>
