@@ -78,7 +78,7 @@ case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, received
   * @param completedAt         absolute time in seconds since UNIX epoch when the payment succeeded.
   * @param status              current status of the payment.
   * @param paymentRequest_opt  the payment request that was associated with this payment
-  * @param description_opt     a custom description
+  * @param customDescription_opt     a custom description
   * @param targetNodeId        the recipient of this payment
   */
 case class OutgoingPayment(
@@ -90,7 +90,7 @@ case class OutgoingPayment(
                             completedAt: Option[Long],
                             status: OutgoingPaymentStatus.Value,
                             paymentRequest_opt: Option[PaymentRequest] = None,
-                            description_opt: Option[String] = None,
+                            customDescription_opt: Option[String] = None,
                             targetNodeId: PublicKey
                           )
 

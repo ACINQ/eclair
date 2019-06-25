@@ -76,7 +76,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setLong(4, sent.createdAt)
       statement.setString(5, sent.status.toString)
       statement.setString(6, sent.paymentRequest_opt.map(PaymentRequest.write).orNull)
-      statement.setString(7, sent.description_opt.orNull)
+      statement.setString(7, sent.customDescription_opt.orNull)
       statement.setBytes(8, sent.targetNodeId.value.toHex.getBytes)
       statement.executeUpdate()
     }
