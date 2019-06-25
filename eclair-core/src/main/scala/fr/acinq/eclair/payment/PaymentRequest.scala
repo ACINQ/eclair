@@ -41,7 +41,7 @@ import scala.util.Try
   */
 case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.TaggedField], signature: ByteVector) {
 
-  amount.map(a => require(a.amount > 0 && a.amount <= PaymentRequest.MAX_AMOUNT.amount, s"amount is not valid"))
+  amount.map(a => require(a.amount > 0, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHash => {} }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => {} }.size == 1, "there must be exactly one description tag or one description hash tag")
 
@@ -96,18 +96,15 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     * @return a signed payment request
     */
   def sign(priv: PrivateKey): PaymentRequest = {
-    val (r, s) = Crypto.sign(hash, priv)
-    val (pub1, pub2) = Crypto.recoverPublicKey((r, s), hash)
+    val sig64 = Crypto.sign(hash, priv)
+    val (pub1, _) = Crypto.recoverPublicKey(sig64, hash)
     val recid = if (nodeId == pub1) 0.toByte else 1.toByte
-    val signature = Crypto.fixSize(ByteVector.view(r.toByteArray.dropWhile(_ == 0.toByte))) ++ Crypto.fixSize(ByteVector.view(s.toByteArray.dropWhile(_ == 0.toByte))) :+ recid
+    val signature = sig64 :+ recid
     this.copy(signature = signature)
   }
 }
 
 object PaymentRequest {
-
-  // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#adding-an-htlc-update_add_htlc
-  val MAX_AMOUNT = MilliSatoshi(4294967296L)
 
   val prefixes = Map(
     Block.RegtestGenesisBlock.hash -> "lnbcrt",
@@ -402,6 +399,7 @@ object PaymentRequest {
         case a if a.last == 'n' => Some(MilliSatoshi(a.dropRight(1).toLong * 100L))
         case a if a.last == 'u' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000L))
         case a if a.last == 'm' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000000L))
+        case a => Some(MilliSatoshi(a.toLong * 100000000000L))
       }
 
     def encode(amount: Option[MilliSatoshi]): String = {
@@ -437,15 +435,13 @@ object PaymentRequest {
     val prefix: String = prefixes.values.find(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
     val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.size - 6)) // 6 == checksum size
     val bolt11Data = Codecs.bolt11DataCodec.decode(data).require.value
-    val signature = bolt11Data.signature
-    val r = new BigInteger(1, signature.take(32).toArray)
-    val s = new BigInteger(1, signature.drop(32).take(32).toArray)
+    val signature = ByteVector64(bolt11Data.signature.take(64))
     val message: ByteVector = ByteVector.view(hrp.getBytes) ++ data.dropRight(520).toByteVector // we drop the sig bytes
-    val (pub1, pub2) = Crypto.recoverPublicKey((r, s), Crypto.sha256(message))
-    val recid = signature.last
+    val (pub1, pub2) = Crypto.recoverPublicKey(signature, Crypto.sha256(message))
+    val recid = bolt11Data.signature.last
     val pub = if (recid % 2 != 0) pub2 else pub1
     val amount_opt = Amount.decode(hrp.drop(prefix.length))
-    val validSig = Crypto.verifySignature(Crypto.sha256(message), (r, s), pub)
+    val validSig = Crypto.verifySignature(Crypto.sha256(message), signature, pub)
     require(validSig, "invalid signature")
     PaymentRequest(
       prefix = prefix,
@@ -453,7 +449,7 @@ object PaymentRequest {
       timestamp = bolt11Data.timestamp,
       nodeId = pub,
       tags = bolt11Data.taggedFields,
-      signature = signature
+      signature = bolt11Data.signature
     )
   }
 

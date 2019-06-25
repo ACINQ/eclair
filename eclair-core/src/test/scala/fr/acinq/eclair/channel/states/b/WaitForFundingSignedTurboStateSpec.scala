@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -25,7 +25,6 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.scalatest.Outcome
-import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -74,7 +73,7 @@ class WaitForFundingSignedTurboStateSpec extends TestkitBaseClass with StateTest
   test("recv FundingSigned with invalid signature") { f =>
     import f._
     // sending an invalid sig
-    alice ! FundingSigned(ByteVector32.fromValidHex("00" * 32), ByteVector.fromValidHex("00" * 64))
+    alice ! FundingSigned(ByteVector32.fromValidHex("00" * 32), ByteVector64.fromValidHex("00" * 64))
     awaitCond(alice.stateName == CLOSED)
     alice2bob.expectMsgType[Error]
   }

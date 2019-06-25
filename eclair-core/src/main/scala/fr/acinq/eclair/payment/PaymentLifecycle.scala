@@ -17,9 +17,10 @@
 package fr.acinq.eclair.payment
 
 import java.util.UUID
+
 import akka.actor.{ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, MilliSatoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Channel, Register}
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
@@ -31,6 +32,7 @@ import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import scodec.Attempt
 import scodec.bits.ByteVector
+
 import concurrent.duration._
 import scala.compat.Platform
 import scala.util.{Failure, Success}
@@ -45,6 +47,12 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
   when(WAITING_FOR_REQUEST) {
+    case Event(c: SendPaymentToRoute, WaitingForRequest) =>
+      val send = SendPayment(c.amountMsat, c.paymentHash, c.hops.last, finalCltvExpiry = c.finalCltvExpiry, maxAttempts = 1)
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
+      router ! FinalizeRoute(c.hops)
+      goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
+
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
       paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
@@ -118,7 +126,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
               case Some(u) if u.shortChannelId != failureMessage.update.shortChannelId =>
                 // it is possible that nodes in the route prefer using a different channel (to the same N+1 node) than the one we requested, that's fine
                 log.info(s"received an update for a different channel than the one we asked: requested=${u.shortChannelId} actual=${failureMessage.update.shortChannelId} update=${failureMessage.update}")
-              case Some(u) if areSame(u, failureMessage.update) =>
+              case Some(u) if Announcements.areSame(u, failureMessage.update) =>
                 // node returned the exact same update we used, this can happen e.g. if the channel is imbalanced
                 // in that case, let's temporarily exclude the channel from future routes, giving it time to recover
                 log.info(s"received exact same update from nodeId=$nodeId, excluding the channel from futures routes")
@@ -191,14 +199,16 @@ object PaymentLifecycle {
   def props(nodeParams: NodeParams, id: UUID, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], nodeParams, id, router, register)
 
   // @formatter:off
-  case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil, fallbackAddress: Option[String] = None)
+  case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil, fallbackAddress: Option[String] = None, paymentPreimage: Option[ByteVector32] = None)
+  sealed trait GenericSendPayment
+  case class SendPaymentToRoute(amountMsat: Long, paymentHash: ByteVector32, hops: Seq[PublicKey], finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY) extends GenericSendPayment
   case class SendPayment(amountMsat: Long,
                          paymentHash: ByteVector32,
                          targetNodeId: PublicKey,
                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                          finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
                          maxAttempts: Int,
-                         routeParams: Option[RouteParams] = None) {
+                         routeParams: Option[RouteParams] = None) extends GenericSendPayment {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
 
@@ -291,16 +301,6 @@ object PaymentLifecycle {
     * @return the channel update if found
     */
   def getChannelUpdateForNode(nodeId: PublicKey, hops: Seq[Hop]): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.lastUpdate)
-
-  /**
-    * This method compares channel updates, ignoring fields that don't matter, like signature or timestamp
-    *
-    * @param u1
-    * @param u2
-    * @return true if channel updates are "equal"
-    */
-  def areSame(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
-    u1.copy(signature = ByteVector.empty, timestamp = 0) == u2.copy(signature = ByteVector.empty, timestamp = 0)
 
   /**
     * This allows us to detect if a bad node always answers with a new update (e.g. with a slightly different expiry or fee)

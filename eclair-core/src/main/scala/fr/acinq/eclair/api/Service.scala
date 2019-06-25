@@ -30,6 +30,7 @@ import akka.http.scaladsl.server.directives.Credentials
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.Timeout
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.api.FormParamExtractors._
@@ -42,6 +43,7 @@ import fr.acinq.eclair.{Eclair, ShortChannelId}
 import grizzled.slf4j.Logging
 import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
+
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
@@ -148,10 +150,17 @@ trait Service extends ExtraDirectives with Logging {
                       complete(eclairApi.getInfoResponse())
                     } ~
                       path("connect") {
-                        formFields("uri".as[String]) { uri =>
-                          complete(eclairApi.connect(uri))
+                        formFields("uri".as[NodeURI]) { uri =>
+                          complete(eclairApi.connect(Left(uri)))
                         } ~ formFields(nodeIdFormParam, "host".as[String], "port".as[Int].?) { (nodeId, host, port_opt) =>
-                          complete(eclairApi.connect(s"$nodeId@$host:${port_opt.getOrElse(NodeURI.DEFAULT_PORT)}"))
+                          complete(eclairApi.connect(Left(NodeURI(nodeId, HostAndPort.fromParts(host, port_opt.getOrElse(NodeURI.DEFAULT_PORT))))))
+                        } ~ formFields(nodeIdFormParam) { nodeId =>
+                          complete(eclairApi.connect(Right(nodeId)))
+                        }
+                      } ~
+                      path("disconnect") {
+                        formFields(nodeIdFormParam) { nodeId =>
+                          complete(eclairApi.disconnect(nodeId))
                         }
                       } ~
                       path("open") {
@@ -221,17 +230,22 @@ trait Service extends ExtraDirectives with Logging {
                         }
                       } ~
                       path("payinvoice") {
-                        formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?) {
-                          case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts) =>
-                            complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts))
-                          case (invoice, Some(overrideAmount), maxAttempts) =>
-                            complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts))
+                        formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?, "feeThresholdSat".as[Long].?, "maxFeePct".as[Double].?) {
+                          case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts, feeThresholdSat_opt, maxFeePct_opt) =>
+                            complete(eclairApi.send(nodeId, amount.toLong, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
+                          case (invoice, Some(overrideAmount), maxAttempts, feeThresholdSat_opt, maxFeePct_opt) =>
+                            complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
                           case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
                         }
                       } ~
                       path("sendtonode") {
-                        formFields(amountMsatFormParam, paymentHashFormParam, nodeIdFormParam, "maxAttempts".as[Int].?) { (amountMsat, paymentHash, nodeId, maxAttempts) =>
-                          complete(eclairApi.send(nodeId, amountMsat, paymentHash, maxAttempts = maxAttempts))
+                        formFields(amountMsatFormParam, paymentHashFormParam, nodeIdFormParam, "maxAttempts".as[Int].?, "feeThresholdSat".as[Long].?, "maxFeePct".as[Double].?) { (amountMsat, paymentHash, nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt) =>
+                          complete(eclairApi.send(nodeId, amountMsat, paymentHash, maxAttempts_opt = maxAttempts_opt, feeThresholdSat_opt = feeThresholdSat_opt, maxFeePct_opt = maxFeePct_opt))
+                        }
+                      } ~
+                      path("sendtoroute") {
+                        formFields(amountMsatFormParam, paymentHashFormParam, "finalCltvExpiry".as[Long], "route".as[List[PublicKey]](pubkeyListUnmarshaller)) { (amountMsat, paymentHash, finalCltvExpiry, route) =>
+                          complete(eclairApi.sendToRoute(route, amountMsat, paymentHash, finalCltvExpiry))
                         }
                       } ~
                       path("getsentinfo") {
@@ -242,8 +256,8 @@ trait Service extends ExtraDirectives with Logging {
                         }
                       } ~
                       path("createinvoice") {
-                        formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?) { (desc, amountMsat, expire, fallBackAddress) =>
-                          complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress))
+                        formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?) { (desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt) =>
+                          complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt))
                         }
                       } ~
                       path("getinvoice") {

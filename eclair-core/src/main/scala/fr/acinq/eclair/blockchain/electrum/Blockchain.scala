@@ -336,7 +336,7 @@ object Blockchain extends Logging {
     */
   def getDifficulty(blockchain: Blockchain, height: Int, headerDb: HeaderDb): Option[Long] = {
     blockchain.chainHash match {
-      case Block.LivenetGenesisBlock.hash | Block.RegtestGenesisBlock.hash =>
+      case Block.LivenetGenesisBlock.hash =>
         (height % RETARGETING_PERIOD) match {
           case 0 =>
             for {

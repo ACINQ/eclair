@@ -26,7 +26,7 @@ import org.json4s.jackson.JsonMethods
 /**
   *
   * @param hash block hash
-  * @param target difficulty target for the next block
+  * @param nextBits difficulty target for the next block
   */
 case class CheckPoint(hash: ByteVector32, nextBits: Long)
 
