@@ -1,18 +1,16 @@
 package fr.acinq.eclair.io
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.ActorSystem
 import akka.testkit.{EventFilter, TestFSMRef, TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.eclair.db.ChannelStateSpec
-import org.scalatest.{FunSuiteLike, Outcome, Tag}
-
-import scala.concurrent.duration._
-import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.randomBytes64
-import fr.acinq.eclair.wire.{Color, IPv4, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement}
+import org.scalatest.FunSuiteLike
 import scodec.bits.ByteVector
+
+import scala.concurrent.duration._
 
 class PeerSpecWithLogging extends TestKit(ActorSystem("test", ConfigFactory.parseString("""akka.loggers = ["akka.testkit.TestEventListener"]"""))) with FunSuiteLike {
 
@@ -33,7 +31,7 @@ class PeerSpecWithLogging extends TestKit(ActorSystem("test", ConfigFactory.pars
 
     val probe = TestProbe()
     awaitCond({peer.stateName.toString == "INSTANTIATING"}, 10 seconds)
-    probe.send(peer, Peer.Init(None, Set(ChannelStateSpec.normal)))
+    probe.send(peer, Peer.Init(None, Set(ChannelCodecsSpec.normal)))
     awaitCond({peer.stateName.toString == "DISCONNECTED" && peer.stateData.address_opt.isEmpty}, 10 seconds)
     EventFilter.info(message = s"reconnecting to ${fakeIPAddress.socketAddress}", occurrences = 1) intercept {
       probe.send(peer, Peer.Reconnect)

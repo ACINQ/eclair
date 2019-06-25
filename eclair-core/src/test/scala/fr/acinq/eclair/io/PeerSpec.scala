@@ -18,20 +18,19 @@ package fr.acinq.eclair.io
 
 import java.net.{Inet4Address, InetSocketAddress}
 
-import akka.actor.{ActorRef, ActorSystem, PoisonPill}
+import akka.actor.ActorRef
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
-import akka.testkit.{EventFilter, TestFSMRef, TestKit, TestProbe}
+import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.db.ChannelStateSpec
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
-import fr.acinq.eclair.wire.{Color, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
@@ -89,7 +88,7 @@ class PeerSpec extends TestkitBaseClass {
   test("restore existing channels") { f =>
     import f._
     val probe = TestProbe()
-    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelStateSpec.normal))
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelCodecsSpec.normal))
     probe.send(peer, Peer.GetPeerInfo)
     probe.expectMsg(PeerInfo(remoteNodeId, "CONNECTED", Some(fakeIPAddress.socketAddress), 1))
   }
@@ -137,7 +136,7 @@ class PeerSpec extends TestkitBaseClass {
   test("ignore reconnect (no known address)") { f =>
     import f._
     val probe = TestProbe()
-    probe.send(peer, Peer.Init(None, Set(ChannelStateSpec.normal)))
+    probe.send(peer, Peer.Init(None, Set(ChannelCodecsSpec.normal)))
     probe.send(peer, Peer.Reconnect)
     probe.expectNoMsg()
   }
@@ -155,7 +154,7 @@ class PeerSpec extends TestkitBaseClass {
     import f._
     val probe = TestProbe()
     val previouslyKnownAddress = new InetSocketAddress("1.2.3.4", 9735)
-    probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set(ChannelStateSpec.normal)))
+    probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set(ChannelCodecsSpec.normal)))
     probe.send(peer, Peer.Reconnect)
     awaitCond(peer.stateData.asInstanceOf[DisconnectedData].attempts == 1)
     probe.send(peer, Peer.Reconnect)
@@ -182,7 +181,7 @@ class PeerSpec extends TestkitBaseClass {
     import f._
 
     val probe = TestProbe()
-    probe.send(peer, Peer.Init(None, Set(ChannelStateSpec.normal)))
+    probe.send(peer, Peer.Init(None, Set(ChannelCodecsSpec.normal)))
     authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, None))
 
     probe.send(peer, Peer.GetPeerInfo)
@@ -196,7 +195,7 @@ class PeerSpec extends TestkitBaseClass {
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelStateSpec.normal))
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelCodecsSpec.normal))
 
     probe.send(peer, Peer.GetPeerInfo)
     assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
