@@ -143,7 +143,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     assert(send4.routeParams.get.maxFeeBaseMsat == 123 * 1000) // conversion sat -> msat
     assert(send4.routeParams.get.maxFeePct == 4.20)
     assert(send4.paymentRequest_opt == Some(pr))
-    assert(send4.description_opt == Some("hey hey heyy"))
+    assert(send4.customDescription_opt == Some("hey hey heyy"))
   }
 
   test("allupdates can filter by nodeId") { f =>

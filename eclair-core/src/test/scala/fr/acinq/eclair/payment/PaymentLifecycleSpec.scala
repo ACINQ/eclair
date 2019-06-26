@@ -384,7 +384,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
 
-    val request = SendPayment(defaultAmountMsat, defaultPaymentHash, d, paymentRequest_opt = Some(paymentRequest), description_opt = Some("yolo"), maxAttempts = 5)
+    val request = SendPayment(defaultAmountMsat, defaultPaymentHash, d, paymentRequest_opt = Some(paymentRequest), customDescription_opt = Some("yolo"), maxAttempts = 5)
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])

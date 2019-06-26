@@ -200,7 +200,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
     val sendPayment = minFinalCltvExpiry_opt match {
       case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv, maxAttempts = maxAttempts, routeParams = Some(routeParams), paymentRequest_opt, customDescription_opt)
-      case None => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, maxAttempts = maxAttempts, routeParams = Some(routeParams), paymentRequest_opt = paymentRequest_opt, description_opt = customDescription_opt)
+      case None => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, maxAttempts = maxAttempts, routeParams = Some(routeParams), paymentRequest_opt = paymentRequest_opt, customDescription_opt = customDescription_opt)
     }
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
