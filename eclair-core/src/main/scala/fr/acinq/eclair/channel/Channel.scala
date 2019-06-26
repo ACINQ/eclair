@@ -1761,7 +1761,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     d.commitments.remoteNextCommitInfo match {
       case Left(waitingForRevocation) if revocationTimeout.remoteCommitNumber + 1 == waitingForRevocation.nextRemoteCommit.index =>
         log.warning(s"waited for too long for a revocation to remoteCommitNumber=${revocationTimeout.remoteCommitNumber}, disconnecting")
-        revocationTimeout.peer ! Peer.Disconnect
+        revocationTimeout.peer ! Peer.Disconnect(remoteNodeId)
       case _ => ()
     }
     stay
