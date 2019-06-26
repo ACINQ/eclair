@@ -864,7 +864,7 @@ eclair-cli payinvoice --invoice=<some_invoice>
 ```
 > The above command returns:
 
-```
+```json
 "e4227601-38b3-404e-9aa0-75a829e9bec0"
 ```
 
@@ -897,7 +897,7 @@ eclair-cli sendtonode --nodeId=<some_node> --amountMsat=<amount> --paymentHash=<
 ```
 > The above command returns:
 
-```
+```json
 "e4227601-38b3-404e-9aa0-75a829e9bec0"
 ```
 
@@ -931,7 +931,7 @@ eclair-cli sendtoroute --route=node1,node2 --amountMsat=<amount> --paymentHash=<
 ```
 > The above command returns:
 
-```
+```json
 "e4227601-38b3-404e-9aa0-75a829e9bec0"
 ```
 
@@ -963,7 +963,7 @@ eclair-cli getsentinfo --paymentHash=<some_hash>
 ```
 > The above command returns:
 
-```
+```json
 [
   {
     "id": "89922845-e6a7-4038-8a74-d3e4fcd625b8",
@@ -1348,6 +1348,33 @@ statistics about the routing activity of the channels.
 ### HTTP Request
 
 `POST http://localhost:8080/channelstats`
+
+## UsableBalances
+
+```shell
+curl -u :<eclair_api_password> -X POST "http://localhost:8080/usablebalances"
+
+# with eclair-cli
+eclair-cli usablebalances
+```
+> The above command returns:
+
+```json
+[
+  {
+    "canSendMsat": 131219000,
+    "canReceiveMsat": 466000,
+    "isPublic": true
+  }
+]
+```
+
+Retrieves information about the available balance of local channels.
+
+### HTTP Request
+
+`POST http://localhost:8080/usablebalances`
+
 
 # Websocket
 
