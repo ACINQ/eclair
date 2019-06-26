@@ -82,7 +82,7 @@ class ThroughputSpec extends FunSuite {
     }), "listener")
     system.eventStream.subscribe(listener, classOf[ChannelEvent])
 
-    pipe ! (alice, bob)
+    pipe ! ((alice, bob))
     latch.await()
 
     var i = new AtomicLong(0)
@@ -95,10 +95,10 @@ class ThroughputSpec extends FunSuite {
 
     import scala.concurrent.ExecutionContext.Implicits.global
     system.scheduler.schedule(0 seconds, 50 milliseconds, new Runnable() {
-      override def run(): Unit = paymentHandler ! (msg, alice)
+      override def run(): Unit = paymentHandler ! ((msg, alice))
     })
     system.scheduler.schedule(5 seconds, 70 milliseconds, new Runnable() {
-      override def run(): Unit = paymentHandler ! (msg, bob)
+      override def run(): Unit = paymentHandler ! ((msg, bob))
     })
 
     Thread.sleep(Long.MaxValue)

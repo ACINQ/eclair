@@ -53,17 +53,17 @@ class FxApp extends Application with Logging {
   def onError(t: Throwable): Unit = t match {
     case e@TCPBindException(port) =>
       notifyPreloader(new ErrorNotification("Setup", s"Could not bind to port $port", e))
-    case e@BitcoinRPCConnectionException =>
+    case e: BitcoinRPCConnectionException.type =>
       notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using JSON-RPC.", e))
       notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and RPC parameters are correct."))
-    case e@BitcoinZMQConnectionTimeoutException =>
+    case e: BitcoinZMQConnectionTimeoutException.type =>
       notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using ZMQ.", e))
       notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and ZMQ parameters are correct."))
-    case e@IncompatibleDBException =>
+    case e: IncompatibleDBException.type =>
       notifyPreloader(new ErrorNotification("Setup", "Breaking changes!", e))
       notifyPreloader(new AppNotification(InfoAppNotification, "Eclair is still in alpha, and under heavy development. Last update was not backward compatible."))
       notifyPreloader(new AppNotification(InfoAppNotification, "Please reset your datadir."))
-    case e@IncompatibleNetworkDBException =>
+    case e: IncompatibleNetworkDBException.type =>
       notifyPreloader(new ErrorNotification("Setup", "Unreadable network database!", e))
       notifyPreloader(new AppNotification(InfoAppNotification, "Could not read the network database. Please remove the file and restart."))
     case t: Throwable =>

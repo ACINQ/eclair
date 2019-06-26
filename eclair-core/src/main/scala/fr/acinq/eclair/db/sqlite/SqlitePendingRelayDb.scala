@@ -69,7 +69,7 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
       val rs = statement.executeQuery()
       var q: Queue[(ByteVector32, Long)] = Queue()
       while (rs.next()) {
-        q = q :+ (rs.getByteVector32("channel_id"), rs.getLong("htlc_id"))
+        q = q :+ ((rs.getByteVector32("channel_id"), rs.getLong("htlc_id")))
       }
       q.toSet
     }

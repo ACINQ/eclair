@@ -161,7 +161,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       if (rs.next()) {
         val preimage = rs.getByteVector32("preimage")
         val pr = PaymentRequest.read(rs.getString("payment_request"))
-        Some(preimage, pr)
+        Some((preimage, pr))
       } else {
         None
       }

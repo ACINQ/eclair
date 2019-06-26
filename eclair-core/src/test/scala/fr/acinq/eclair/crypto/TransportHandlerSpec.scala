@@ -51,7 +51,7 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     val probe2 = TestProbe()
     val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, LightningMessageCodecs.varsizebinarydata))
     val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, LightningMessageCodecs.varsizebinarydata))
-    pipe ! (initiator, responder)
+    pipe ! ((initiator, responder))
 
     awaitCond(initiator.stateName == TransportHandler.WaitingForListener)
     awaitCond(responder.stateName == TransportHandler.WaitingForListener)
@@ -83,7 +83,7 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     val probe2 = TestProbe()
     val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, mycodec))
     val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, mycodec))
-    pipe ! (initiator, responder)
+    pipe ! ((initiator, responder))
 
     awaitCond(initiator.stateName == TransportHandler.WaitingForListener)
     awaitCond(responder.stateName == TransportHandler.WaitingForListener)
@@ -113,7 +113,7 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     val probe2 = TestProbe()
     val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, LightningMessageCodecs.varsizebinarydata))
     val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, LightningMessageCodecs.varsizebinarydata))
-    pipe ! (initiator, responder)
+    pipe ! ((initiator, responder))
 
     awaitCond(initiator.stateName == TransportHandler.WaitingForListener)
     awaitCond(responder.stateName == TransportHandler.WaitingForListener)
@@ -144,7 +144,7 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Initiator.s.pub), pipe, LightningMessageCodecs.varsizebinarydata), supervisor, "ini")
     val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, LightningMessageCodecs.varsizebinarydata), supervisor, "res")
     probe1.watch(responder)
-    pipe ! (initiator, responder)
+    pipe ! ((initiator, responder))
 
     probe1.expectTerminated(responder, 3 seconds)
   }

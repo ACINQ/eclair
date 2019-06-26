@@ -119,7 +119,7 @@ object NoiseDemo extends App {
   val fooHandler = system.actorOf(Props(new NoiseHandler(Initiator.s, Some(Responder.s.pub), pipe, true, foo)), "foohandler")
   val bar = system.actorOf(Props[MyActor], "bar")
   val barHandler = system.actorOf(Props(new NoiseHandler(Responder.s, None, pipe, false, bar)), "barhandler")
-  pipe ! (fooHandler, barHandler)
+  pipe ! ((fooHandler, barHandler))
 
   bar.tell(ByteVector("hello".getBytes()), foo)
 }

@@ -692,7 +692,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
 
-    case Event(c@CMD_SIGN, d: DATA_NORMAL) =>
+    case Event(c: CMD_SIGN.type , d: DATA_NORMAL) =>
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
@@ -1051,7 +1051,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
 
-    case Event(c@CMD_SIGN, d: DATA_SHUTDOWN) =>
+    case Event(c: CMD_SIGN.type, d: DATA_SHUTDOWN) =>
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
@@ -1617,7 +1617,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CMD_CLOSE, d) => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "close", stateName), c)
 
-    case Event(c@CMD_FORCECLOSE, d) =>
+    case Event(c: CMD_FORCECLOSE.type, d) =>
       d match {
         case data: HasCommitments => handleLocalError(ForcedLocalCommit(data.channelId), data, Some(c)) replying "ok"
         case _ => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "forceclose", stateName), c)
@@ -2056,7 +2056,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     log.debug(s"localNextHtlcId=${d.commitments.localNextHtlcId}->${commitments1.localNextHtlcId}")
     log.debug(s"remoteNextHtlcId=${d.commitments.remoteNextHtlcId}->${commitments1.remoteNextHtlcId}")
 
-    def resendRevocation = {
+    def resendRevocation() = {
       // let's see the state of remote sigs
       if (commitments1.localCommit.index == channelReestablish.nextRemoteRevocationNumber) {
         // nothing to do

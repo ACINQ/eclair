@@ -110,7 +110,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
       val rs = statement.executeQuery
       var q: Queue[(ByteVector32, Long)] = Queue()
       while (rs.next()) {
-        q = q :+ (ByteVector32(rs.getByteVector32("payment_hash")), rs.getLong("cltv_expiry"))
+        q = q :+ ((ByteVector32(rs.getByteVector32("payment_hash")), rs.getLong("cltv_expiry")))
       }
       q
     }

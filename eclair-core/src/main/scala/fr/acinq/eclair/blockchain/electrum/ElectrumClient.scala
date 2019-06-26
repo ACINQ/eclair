@@ -308,7 +308,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
           context watch actor
         case _ => ()
       }
-      context become connected(ctx, height, tip, requests + (curReqId -> (request, sender())))
+      context become connected(ctx, height, tip, requests + (curReqId -> ((request, sender()))))
 
     case Right(json: JsonRPCResponse) =>
       requests.get(json.id) match {
@@ -317,7 +317,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
           log.debug("server={} sent response for reqId={} request={} response={}", serverAddress, json.id, request, response)
           requestor ! response
         case None =>
-          log.warning("server={} could not find requestor for reqId=${} response={}", serverAddress, json.id, json)
+          log.warning("server={} could not find requestor for reqId={} response={}", serverAddress, json.id, json)
       }
       context become connected(ctx, height, tip, requests - json.id)
 

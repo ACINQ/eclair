@@ -113,7 +113,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
       var m: Map[ChannelAnnouncement, (ByteVector32, Satoshi)] = Map()
       while (rs.next()) {
         m += (channelAnnouncementCodec.decode(BitVector(rs.getBytes("data"))).require.value ->
-          (ByteVector32.fromValidHex(rs.getString("txid")), Satoshi(rs.getLong("capacity_sat"))))
+          ((ByteVector32.fromValidHex(rs.getString("txid")), Satoshi(rs.getLong("capacity_sat")))))
       }
       m
     }

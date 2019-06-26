@@ -41,7 +41,7 @@ class SplashController(hostServices: HostServices) extends Logging {
   /**
     * Start an animation when the splash window is initialized
     */
-  @FXML def initialize = {
+  @FXML def initialize() = {
     val timeline = new Timeline(
       new KeyFrame(Duration.ZERO,
         new KeyValue(img.opacityProperty, double2Double(0), Interpolator.EASE_IN),
@@ -52,9 +52,9 @@ class SplashController(hostServices: HostServices) extends Logging {
     timeline.play()
   }
 
-  @FXML def closeAndKill = System.exit(0)
+  @FXML def closeAndKill() = System.exit(0)
 
-  @FXML def openGithubPage = hostServices.showDocument("https://github.com/ACINQ/eclair/blob/master/README.md")
+  @FXML def openGithubPage() = hostServices.showDocument("https://github.com/ACINQ/eclair/blob/master/README.md")
 
   def addLog(message: String) = {
     val l = new Label
@@ -74,7 +74,7 @@ class SplashController(hostServices: HostServices) extends Logging {
   /**
     * Shows the error Box with a fade+translate transition.
     */
-  def showErrorBox = {
+  def showErrorBox() = {
     val fadeTransition = new FadeTransition(Duration.millis(400))
     fadeTransition.setFromValue(0)
     fadeTransition.setToValue(1)

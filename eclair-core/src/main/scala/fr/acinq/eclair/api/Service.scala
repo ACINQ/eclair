@@ -73,7 +73,7 @@ trait Service extends ExtraDirectives with Logging {
   val apiExceptionHandler = ExceptionHandler {
     case t: Throwable =>
       logger.error(s"API call failed with cause=${t.getMessage}", t)
-      complete(StatusCodes.InternalServerError, ErrorResponse(t.getMessage))
+      complete((StatusCodes.InternalServerError, ErrorResponse(t.getMessage)))
   }
 
   // map all the rejections to a JSON error object ErrorResponse

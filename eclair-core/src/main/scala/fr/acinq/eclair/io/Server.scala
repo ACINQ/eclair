@@ -36,7 +36,7 @@ class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
 
   IO(Tcp) ! Bind(self, address, options = KeepAlive(true) :: Nil, pullMode = true)
 
-  def receive() = {
+  def receive = {
     case Bound(localAddress) =>
       bound.map(_.success(Done))
       log.info(s"bound on $localAddress")

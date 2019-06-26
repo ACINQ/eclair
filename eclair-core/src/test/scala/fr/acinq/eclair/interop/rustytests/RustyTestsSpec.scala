@@ -61,7 +61,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     Globals.feeratesPerKw.set(FeeratesPerKw.single(10000))
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, 2000000, 1000000000, Globals.feeratesPerKw.get.blocks_2, Globals.feeratesPerKw.get.blocks_6, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit)
-    pipe ! (alice, bob)
+    pipe ! ((alice, bob))
     within(30 seconds) {
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]

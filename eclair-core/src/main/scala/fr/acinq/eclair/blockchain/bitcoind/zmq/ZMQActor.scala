@@ -50,18 +50,18 @@ class ZMQActor(address: String, connected: Option[Promise[Done]] = None) extends
 
   // we check messages in a non-blocking manner with an interval, making sure to retrieve all messages before waiting again
   @tailrec
-  final def checkEvent: Unit = Option(Event.recv(monitor, ZMQ.DONTWAIT)) match {
+  final def checkEvent(): Unit = Option(Event.recv(monitor, ZMQ.DONTWAIT)) match {
     case Some(event) =>
       self ! event
-      checkEvent
+      checkEvent()
     case None => ()
   }
 
   @tailrec
-  final def checkMsg: Unit = Option(ZMsg.recvMsg(subscriber, ZMQ.DONTWAIT)) match {
+  final def checkMsg(): Unit = Option(ZMsg.recvMsg(subscriber, ZMQ.DONTWAIT)) match {
     case Some(msg) =>
       self ! msg
-      checkMsg
+      checkMsg()
     case None => ()
   }
 

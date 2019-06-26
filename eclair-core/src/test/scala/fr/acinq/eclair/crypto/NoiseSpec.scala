@@ -30,7 +30,7 @@ class NoiseSpec extends FunSuite {
   test("hash tests") {
     // see https://tools.ietf.org/html/rfc4231
     assert(SHA256HashFunctions.hmacHash(hex"0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", hex"4869205468657265") == hex"b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")
-    assert(SHA256HashFunctions.hkdf(hex"4e6f6973655f4e4e5f32353531395f436861436861506f6c795f534841323536", hex"37e0e7daacbd6bfbf669a846196fd44d1c8745d33f2be42e31d4674199ad005e") == (hex"f6f78327c10316fdad06633fb965e03182e9a8b1f755d613f7980fbb85ebf46d", hex"4ee4220f31dbd3c9e2367e66a87f1e98a2433e4b9fbecfd986d156dcf027b937"))
+    assert(SHA256HashFunctions.hkdf(hex"4e6f6973655f4e4e5f32353531395f436861436861506f6c795f534841323536", hex"37e0e7daacbd6bfbf669a846196fd44d1c8745d33f2be42e31d4674199ad005e") == ((hex"f6f78327c10316fdad06633fb965e03182e9a8b1f755d613f7980fbb85ebf46d", hex"4ee4220f31dbd3c9e2367e66a87f1e98a2433e4b9fbecfd986d156dcf027b937")))
   }
 
   test("25519 DH test") {

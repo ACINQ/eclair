@@ -143,7 +143,7 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
         log.info("selecting master {} at {}", remoteAddress, tip)
         statusListeners.foreach(_ ! ElectrumClient.ElectrumReady(height, tip, remoteAddress))
         context.system.eventStream.publish(ElectrumClient.ElectrumReady(height, tip, remoteAddress))
-        goto(Connected) using ConnectedData(connection, Map(connection -> (height, tip)))
+        goto(Connected) using ConnectedData(connection, Map(connection -> ((height, tip))))
       case Some(d) if connection != d.master && height >= d.blockHeight + 2L =>
         // we only switch to a new master if there is a significant difference with our current master, because
         // we don't want to switch to a new master every time a new block arrives (some servers will be notified before others)
@@ -157,10 +157,10 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
         context.system.eventStream.publish(ElectrumClient.ElectrumDisconnected)
         statusListeners.foreach(_ ! ElectrumClient.ElectrumReady(height, tip, remoteAddress))
         context.system.eventStream.publish(ElectrumClient.ElectrumReady(height, tip, remoteAddress))
-        goto(Connected) using d.copy(master = connection, tips = d.tips + (connection -> (height, tip)))
+        goto(Connected) using d.copy(master = connection, tips = d.tips + (connection -> ((height, tip))))
       case Some(d) =>
         log.debug("received tip {} from {} at {}", tip, remoteAddress, height)
-        stay using d.copy(tips = d.tips + (connection -> (height, tip)))
+        stay using d.copy(tips = d.tips + (connection -> ((height, tip))))
     }
   }
 

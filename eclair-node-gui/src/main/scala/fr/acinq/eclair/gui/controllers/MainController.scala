@@ -544,7 +544,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     t.play()
   }
 
-  def hideBlockerModal = {
+  def hideBlockerModal() = {
     val ftCover = new FadeTransition(Duration.millis(400))
     ftCover.setFromValue(1)
     ftCover.setToValue(0)

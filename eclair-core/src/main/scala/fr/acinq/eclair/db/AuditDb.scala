@@ -47,7 +47,7 @@ trait AuditDb {
 
   def stats: Seq[Stats]
 
-  def close: Unit
+  def close(): Unit
 
 }
 

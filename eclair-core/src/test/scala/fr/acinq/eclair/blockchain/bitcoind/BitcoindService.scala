@@ -63,9 +63,12 @@ trait BitcoindService extends Logging {
     bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 28332)
     bitcoincli = system.actorOf(Props(new Actor {
       override def receive: Receive = {
-        case BitcoinReq(method) => bitcoinrpcclient.invoke(method) pipeTo sender
-        case BitcoinReq(method, params) => bitcoinrpcclient.invoke(method, params) pipeTo sender
-        case BitcoinReq(method, param1, param2) => bitcoinrpcclient.invoke(method, param1, param2) pipeTo sender
+        case b: BitcoinReq => b.params.toList match {
+          case Nil => bitcoinrpcclient.invoke(b.method) pipeTo sender
+          case param1 :: Nil => bitcoinrpcclient.invoke(b.method, param1) pipeTo sender
+          case param1 :: param2 :: Nil => bitcoinrpcclient.invoke(b.method, param1, param2) pipeTo sender
+          case _ => throw new IllegalArgumentException("Too many params")
+        }
       }
     }))
   }

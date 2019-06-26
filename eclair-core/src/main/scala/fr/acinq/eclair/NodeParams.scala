@@ -156,7 +156,7 @@ object NodeParams {
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
       val gf = ByteVector.fromValidHex(e.getString("global-features"))
       val lf = ByteVector.fromValidHex(e.getString("local-features"))
-      (p -> (gf, lf))
+      p -> ((gf, lf))
     }.toMap
 
     val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {

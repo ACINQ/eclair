@@ -1128,7 +1128,7 @@ object Helpers {
             d.revokedCommitPublished.flatMap(_.htlcPenaltyTxs).map(_ -> "revoked-htlc-penalty") ++
             d.revokedCommitPublished.flatMap(_.claimHtlcDelayedPenaltyTxs).map(_ -> "revoked-htlc-penalty-delayed")
           )
-          .map { case (tx, desc) => tx.txid -> (tx, desc) } // will allow easy lookup of parent transaction
+          .map { case (tx, desc) => tx.txid -> ((tx, desc)) } // will allow easy lookup of parent transaction
           .toMap
 
         def fee(child: Transaction): Option[Satoshi] = {

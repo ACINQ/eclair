@@ -146,7 +146,7 @@ object Commitments {
       return Left(InsufficientFunds(commitments.channelId, amountMsat = cmd.amountMsat, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.remoteParams.channelReserveSatoshis, feesSatoshis = fees))
     }
 
-    Right(commitments1, add)
+    Right((commitments1, add))
   }
 
   def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Commitments = {

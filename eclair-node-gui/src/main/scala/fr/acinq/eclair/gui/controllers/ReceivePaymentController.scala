@@ -50,7 +50,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
   @FXML var paymentRequestTextArea: TextArea = _
   @FXML var paymentRequestQRCode: ImageView = _
 
-  @FXML def initialize = {
+  @FXML def initialize() = {
     unit.setItems(Constants.FX_UNITS_ARRAY)
     unit.setValue(FxApp.getUnit.label)
     resultBox.managedProperty().bind(resultBox.visibleProperty())
