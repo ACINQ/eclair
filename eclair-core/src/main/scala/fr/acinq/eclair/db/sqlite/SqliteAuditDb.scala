@@ -82,7 +82,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   override def add(e: AvailableBalanceChanged): Unit =
     using(sqlite.prepareStatement("INSERT INTO balance_updated VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.channelId.toArray)
-      statement.setBytes(2, e.commitments.remoteParams.nodeId.toBin.toArray)
+      statement.setBytes(2, e.commitments.remoteParams.nodeId.value.toArray)
       statement.setLong(3, e.localBalanceMsat)
       statement.setLong(4, e.commitments.commitInput.txOut.amount.toLong)
       statement.setLong(5, e.commitments.remoteParams.channelReserveSatoshis) // remote decides what our reserve should be
@@ -93,7 +93,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   override def add(e: ChannelLifecycleEvent): Unit =
     using(sqlite.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.channelId.toArray)
-      statement.setBytes(2, e.remoteNodeId.toBin.toArray)
+      statement.setBytes(2, e.remoteNodeId.value.toArray)
       statement.setLong(3, e.capacitySat)
       statement.setBoolean(4, e.isFunder)
       statement.setBoolean(5, e.isPrivate)
@@ -138,7 +138,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   override def add(e: NetworkFeePaid): Unit =
     using(sqlite.prepareStatement("INSERT INTO network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.channelId.toArray)
-      statement.setBytes(2, e.remoteNodeId.toBin.toArray)
+      statement.setBytes(2, e.remoteNodeId.value.toArray)
       statement.setBytes(3, e.tx.txid.toArray)
       statement.setLong(4, e.fee.toLong)
       statement.setString(5, e.txType)
@@ -153,7 +153,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         case Channel.RemoteError(error) => ("remote", error.toAscii)
       }
       statement.setBytes(1, e.channelId.toArray)
-      statement.setBytes(2, e.remoteNodeId.toBin.toArray)
+      statement.setBytes(2, e.remoteNodeId.value.toArray)
       statement.setString(3, errorName)
       statement.setString(4, errorMessage)
       statement.setBoolean(5, e.isFatal)

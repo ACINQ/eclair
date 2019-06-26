@@ -86,7 +86,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
     probe.send(bitcoincli, BitcoinReq("dumpprivkey", address))
     val JString(wif) = probe.expectMsgType[JValue]
-    val priv = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet)
+    val (priv, true) = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet)
 
     probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
     val JString(txid) = probe.expectMsgType[JValue](30 seconds)
@@ -104,7 +104,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
         txOut = TxOut(tx.txOut(pos).amount - Satoshi(1000), publicKeyScript = Script.pay2wpkh(priv.publicKey)) :: Nil,
         lockTime = 0)
       val sig = Transaction.signInput(tmp, 0, Script.pay2pkh(priv.publicKey), SIGHASH_ALL, tx.txOut(pos).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
-      val signedTx = tmp.updateWitness(0, ScriptWitness(sig :: priv.publicKey.toBin :: Nil))
+      val signedTx = tmp.updateWitness(0, ScriptWitness(sig :: priv.publicKey.value :: Nil))
       Transaction.correctlySpends(signedTx, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       signedTx
     }

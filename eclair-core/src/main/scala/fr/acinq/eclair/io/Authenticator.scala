@@ -44,12 +44,12 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
     case pending@PendingAuth(connection, remoteNodeId_opt, address, _) =>
       log.debug(s"authenticating connection to ${address.getHostString}:${address.getPort} (pending=${authenticating.size} handlers=${context.children.size})")
       val transport = context.actorOf(TransportHandler.props(
-        KeyPair(nodeParams.nodeId.toBin, nodeParams.privateKey.toBin),
-        remoteNodeId_opt.map(_.toBin),
+        KeyPair(nodeParams.nodeId.value, nodeParams.privateKey.value),
+        remoteNodeId_opt.map(_.value),
         connection = connection,
-        codec = LightningMessageCodecs.cachedLightningMessageCodec))
+        codec = LightningMessageCodecs.lightningMessageCodec))
       context watch transport
-      context become (ready(switchboard, authenticating + (transport -> pending)))
+      context become ready(switchboard, authenticating + (transport -> pending))
 
     case HandshakeCompleted(connection, transport, remoteNodeId) if authenticating.contains(transport) =>
       val pendingAuth = authenticating(transport)

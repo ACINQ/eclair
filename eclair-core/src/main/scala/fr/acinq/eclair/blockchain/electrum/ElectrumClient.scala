@@ -91,7 +91,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
   val channelOpenFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
 
-  def errorHandler(t: Throwable) = {
+  def errorHandler(t: Throwable): Unit = {
     log.info("server={} connection error (reason={})", serverAddress, t.getMessage)
     self ! Close
   }
@@ -169,6 +169,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       val json = ("method" -> request.method) ~ ("params" -> request.params.map {
         case s: String => new JString(s)
         case b: ByteVector32 => new JString(b.toHex)
+        case b: Boolean => new JBool(b)
         case t: Int => new JInt(t)
         case t: Long => new JLong(t)
         case t: Double => new JDouble(t)
@@ -182,8 +183,6 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
   /**
     * Forwards incoming messages to the underlying actor
-    *
-    * @param actor
     */
   class ActorHandler(actor: ActorRef) extends ChannelInboundHandlerAdapter {
 
@@ -220,7 +219,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       case PingResponse => ()
 
       case Close =>
-        statusListeners.map(_ ! ElectrumDisconnected)
+        statusListeners.foreach(_ ! ElectrumDisconnected)
         context.stop(self)
 
       case _ => log.warning("server={} unhandled message {}", serverAddress, message)
@@ -282,7 +281,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
     case Right(json: JsonRPCResponse) =>
       val (height, header) = parseBlockHeader(json.result)
       log.debug("connected to server={}, tip={} height={}", serverAddress, header.hash, height)
-      statusListeners.map(_ ! ElectrumReady(height, header, serverAddress))
+      statusListeners.foreach(_ ! ElectrumReady(height, header, serverAddress))
       context become connected(ctx, height, header, Map())
 
     case AddStatusListener(actor) => statusListeners += actor
@@ -322,11 +321,11 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       }
       context become connected(ctx, height, tip, requests - json.id)
 
-    case Left(response: HeaderSubscriptionResponse) => headerSubscriptions.map(_ ! response)
+    case Left(response: HeaderSubscriptionResponse) => headerSubscriptions.foreach(_ ! response)
 
-    case Left(response: AddressSubscriptionResponse) => addressSubscriptions.get(response.address).map(listeners => listeners.map(_ ! response))
+    case Left(response: AddressSubscriptionResponse) => addressSubscriptions.get(response.address).foreach(listeners => listeners.foreach(_ ! response))
 
-    case Left(response: ScriptHashSubscriptionResponse) => scriptHashSubscriptions.get(response.scriptHash).map(listeners => listeners.map(_ ! response))
+    case Left(response: ScriptHashSubscriptionResponse) => scriptHashSubscriptions.get(response.scriptHash).foreach(listeners => listeners.foreach(_ ! response))
 
     case HeaderSubscriptionResponse(height, newtip) =>
       log.info("server={} new tip={}", serverAddress, newtip)
@@ -335,7 +334,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 }
 
 object ElectrumClient {
-  val CLIENT_NAME = "3.3.4" // client name that we will include in our "version" message
+  val CLIENT_NAME = "3.3.6" // client name that we will include in our "version" message
   val PROTOCOL_VERSION = "1.4" // version of the protocol that we require
 
   // this is expensive and shared with all clients
@@ -380,6 +379,9 @@ object ElectrumClient {
 
   case class BroadcastTransaction(tx: Transaction) extends Request
   case class BroadcastTransactionResponse(tx: Transaction, error: Option[Error]) extends Response
+
+  case class GetTransactionIdFromPosition(height: Int, tx_pos: Int, merkle: Boolean = false) extends Request
+  case class GetTransactionIdFromPositionResponse(txid: ByteVector32, height: Int, tx_pos: Int, merkle: Seq[ByteVector32]) extends Response
 
   case class GetTransaction(txid: ByteVector32) extends Request
   case class GetTransactionResponse(tx: Transaction) extends Response
@@ -533,10 +535,11 @@ object ElectrumClient {
     case AddressSubscription(address, _) => JsonRPCRequest(id = reqId, method = "blockchain.address.subscribe", params = address :: Nil)
     case ScriptHashSubscription(scriptHash, _) => JsonRPCRequest(id = reqId, method = "blockchain.scripthash.subscribe", params = scriptHash.toString() :: Nil)
     case BroadcastTransaction(tx) => JsonRPCRequest(id = reqId, method = "blockchain.transaction.broadcast", params = Transaction.write(tx).toHex :: Nil)
+    case GetTransactionIdFromPosition(height, tx_pos, merkle) => JsonRPCRequest(id = reqId, method = "blockchain.transaction.id_from_pos", params = height :: tx_pos :: merkle :: Nil)
     case GetTransaction(txid) => JsonRPCRequest(id = reqId, method = "blockchain.transaction.get", params = txid :: Nil)
     case HeaderSubscription(_) => JsonRPCRequest(id = reqId, method = "blockchain.headers.subscribe", params = Nil)
     case GetHeader(height) => JsonRPCRequest(id = reqId, method = "blockchain.block.header", params = height :: Nil)
-    case GetHeaders(start_height, count, cp_height) => JsonRPCRequest(id = reqId, method = "blockchain.block.headers", params = start_height :: count :: Nil)
+    case GetHeaders(start_height, count, _) => JsonRPCRequest(id = reqId, method = "blockchain.block.headers", params = start_height :: count :: Nil)
     case GetMerkle(txid, height) => JsonRPCRequest(id = reqId, method = "blockchain.transaction.get_merkle", params = txid :: height :: Nil)
   }
 
@@ -548,7 +551,7 @@ object ElectrumClient {
         case _ => ServerError(request, error)
       }
       case None => (request: @unchecked) match {
-        case s: ServerVersion =>
+        case _: ServerVersion =>
           val JArray(jitems) = json.result
           val JString(clientName) = jitems(0)
           val JString(protocolVersion) = jitems(1)
@@ -590,6 +593,14 @@ object ElectrumClient {
             UnspentItem(ByteVector32.fromValidHex(tx_hash), tx_pos, value, height)
           })
           ScriptHashListUnspentResponse(scripthash, items)
+        case GetTransactionIdFromPosition(height, tx_pos, false) =>
+          val JString(tx_hash) = json.result
+          GetTransactionIdFromPositionResponse(ByteVector32.fromValidHex(tx_hash), height, tx_pos, Nil)
+        case GetTransactionIdFromPosition(height, tx_pos, true) =>
+          val JString(tx_hash) = json.result \ "tx_hash"
+          val JArray(hashes) = json.result \ "merkle"
+          val leaves = hashes collect { case JString(value) => ByteVector32.fromValidHex(value) }
+          GetTransactionIdFromPositionResponse(ByteVector32.fromValidHex(tx_hash), height, tx_pos, leaves)
         case GetTransaction(_) =>
           val JString(hex) = json.result
           GetTransactionResponse(Transaction.read(hex))
@@ -614,16 +625,15 @@ object ElectrumClient {
         case GetHeader(height) =>
           val JString(hex) = json.result
           GetHeaderResponse(height, BlockHeader.read(hex))
-        case GetHeaders(start_height, count, cp_height) =>
-          val count = intField(json.result, "count")
+        case GetHeaders(start_height, _, _) =>
           val max = intField(json.result, "max")
           val JString(hex) = json.result \ "hex"
           val bin = ByteVector.fromValidHex(hex).toArray
           val blockHeaders = bin.grouped(80).map(BlockHeader.read).toList
           GetHeadersResponse(start_height, blockHeaders, max)
-        case GetMerkle(txid, height) =>
+        case GetMerkle(txid, _) =>
           val JArray(hashes) = json.result \ "merkle"
-          val leaves = hashes collect { case JString(value) => ByteVector32.fromValidHex((value)) }
+          val leaves = hashes collect { case JString(value) => ByteVector32.fromValidHex(value) }
           val blockHeight = intField(json.result, "block_height")
           val JInt(pos) = json.result \ "pos"
           GetMerkleResponse(txid, leaves, blockHeight, pos.toInt)

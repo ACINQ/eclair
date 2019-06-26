@@ -65,7 +65,7 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
       val event = e.closingType match {
         case MutualClose => "mutual"
         case LocalClose => "local"
-        case RemoteClose => "remote"
+        case _: RemoteClose => "remote" // can be current or next
         case RecoveryClose => "recovery"
         case RevokedClose => "revoked"
       }

@@ -25,9 +25,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{ShortChannelId, TestConstants, TestkitBaseClass, UInt64, randomBytes32}
 import org.scalatest.Outcome
 import scodec.bits.ByteVector
 
@@ -58,12 +57,6 @@ class RelayerSpec extends TestkitBaseClass {
   val channelId_ab = randomBytes32
   val channelId_bc = randomBytes32
 
-  def makeCommitments(channelId: ByteVector32) = new Commitments(null, null, 0.toByte, null,
-    RemoteCommit(42, CommitmentSpec(Set.empty, 20000, 5000000, 100000000), ByteVector32.Zeroes, randomKey.toPoint),
-    null, null, 0, 0, Map.empty, null, null, null, channelId) {
-    override def availableBalanceForSendMsat: Long = remoteCommit.spec.toRemoteMsat // approximation
-  }
-
   test("relay an htlc-add") { f =>
     import f._
     val sender = TestProbe()
@@ -79,6 +72,51 @@ class RelayerSpec extends TestkitBaseClass {
     val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
     assert(fwd.message.upstream === Right(add_ab))
+
+    sender.expectNoMsg(100 millis)
+    paymentHandler.expectNoMsg(100 millis)
+  }
+
+  test("relay an htlc-add with retries") { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we use this to build a valid onion
+    val (cmd, _) = buildCommand(UUID.randomUUID(), finalAmountMsat, finalExpiry, paymentHash, hops)
+    // and then manually build an htlc
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
+
+    // we tell the relayer about channel B-C
+    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
+
+    // this is another channel B-C, with less balance (it will be preferred)
+    val (channelId_bc_1, channelUpdate_bc_1) = (randomBytes32, channelUpdate_bc.copy(shortChannelId = ShortChannelId("500000x1x1")))
+    relayer ! LocalChannelUpdate(null, channelId_bc_1, channelUpdate_bc_1.shortChannelId, c, None, channelUpdate_bc_1, makeCommitments(channelId_bc_1, 49000000L))
+
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    // first try
+    val fwd1 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
+    assert(fwd1.shortChannelId === channelUpdate_bc_1.shortChannelId)
+    assert(fwd1.message.upstream === Right(add_ab))
+
+    // channel returns an error
+    val origin = Relayed(channelId_ab, originHtlcId = 42, amountMsatIn = 1100000, amountMsatOut = 1000000)
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc_1, paymentHash, HtlcValueTooHighInFlight(channelId_bc_1, UInt64(1000000000L), UInt64(1516977616L)), origin, Some(channelUpdate_bc_1), originalCommand = Some(fwd1.message))))
+
+    // second try
+    val fwd2 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
+    assert(fwd2.shortChannelId === channelUpdate_bc.shortChannelId)
+    assert(fwd2.message.upstream === Right(add_ab))
+
+    // failure again
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcValueTooHighInFlight(channelId_bc, UInt64(1000000000L), UInt64(1516977616L)), origin, Some(channelUpdate_bc), originalCommand = Some(fwd2.message))))
+
+    // the relayer should give up
+    val fwdFail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
+    assert(fwdFail.channelId === add_ab.channelId)
+    assert(fwdFail.message.id === add_ab.id)
+    assert(fwdFail.message.reason === Right(TemporaryNodeFailure))
 
     sender.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)
@@ -371,5 +409,23 @@ class RelayerSpec extends TestkitBaseClass {
     val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd.channelId === origin.originChannelId)
     assert(fwd.message.id === origin.originHtlcId)
+  }
+
+  test("get usable balances") { f =>
+    import f._
+    val sender = TestProbe()
+    relayer ! LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a , None, channelUpdate_ab, makeCommitments(channelId_ab, 100000, 200000))
+    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc, 300000, 400000))
+    sender.send(relayer, GetUsableBalances)
+    assert(sender.expectMsgType[Iterable[UsableBalances]].size === 2)
+
+    relayer ! AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, 0, makeCommitments(channelId_bc, 200000, 500000))
+    sender.send(relayer, GetUsableBalances)
+    assert(sender.expectMsgType[Iterable[UsableBalances]].last.canReceiveMsat === 500000)
+
+    relayer ! LocalChannelDown(null, channelId_bc, channelUpdate_bc.shortChannelId, c)
+    sender.send(relayer, GetUsableBalances)
+    val usableBalances = sender.expectMsgType[Iterable[UsableBalances]]
+    assert(usableBalances.size === 1 && usableBalances.head.canSendMsat === 100000)
   }
 }

@@ -45,7 +45,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
 
   override def addNode(n: NodeAnnouncement): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO nodes VALUES (?, ?)")) { statement =>
-      statement.setBytes(1, n.nodeId.toBin.toArray)
+      statement.setBytes(1, n.nodeId.value.toArray)
       statement.setBytes(2, nodeAnnouncementCodec.encode(n).require.toByteArray)
       statement.executeUpdate()
     }
@@ -54,14 +54,22 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def updateNode(n: NodeAnnouncement): Unit = {
     using(sqlite.prepareStatement("UPDATE nodes SET data=? WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeAnnouncementCodec.encode(n).require.toByteArray)
-      statement.setBytes(2, n.nodeId.toBin.toArray)
+      statement.setBytes(2, n.nodeId.value.toArray)
       statement.executeUpdate()
+    }
+  }
+
+  override def getNode(nodeId: Crypto.PublicKey): Option[NodeAnnouncement] = {
+    using(sqlite.prepareStatement("SELECT data FROM nodes WHERE node_id=?")) { statement =>
+      statement.setBytes(1, nodeId.value.toArray)
+      val rs = statement.executeQuery()
+      codecSequence(rs, nodeAnnouncementCodec).headOption
     }
   }
 
   override def removeNode(nodeId: Crypto.PublicKey): Unit = {
     using(sqlite.prepareStatement("DELETE FROM nodes WHERE node_id=?")) { statement =>
-      statement.setBytes(1, nodeId.toBin.toArray)
+      statement.setBytes(1, nodeId.value.toArray)
       statement.executeUpdate()
     }
   }
