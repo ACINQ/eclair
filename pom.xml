@@ -129,6 +129,7 @@
                         <arg>140</arg>
 			<!-- needed to compile Scala code on JDK9+ -->
                         <arg>-nobootcp</arg>
+                        <arg>-Xlint</arg>
                     </args>
                     <scalaCompatVersion>${scala.version.short}</scalaCompatVersion>
                 </configuration>
