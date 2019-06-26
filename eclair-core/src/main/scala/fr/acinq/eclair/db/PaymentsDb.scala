@@ -70,16 +70,16 @@ case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, received
   * OutgoingPayment is every payment that is sent by this node, they may not be finalized and
   * when is final it can be failed or successful.
   *
-  * @param id                  internal payment identifier
-  * @param paymentHash         payment_hash
-  * @param preimage            the preimage of the payment_hash, known if the outgoing payment was successful
-  * @param amountMsat          amount of the payment, in milli-satoshis
-  * @param createdAt           absolute time in seconds since UNIX epoch when the payment was created.
-  * @param completedAt         absolute time in seconds since UNIX epoch when the payment succeeded.
-  * @param status              current status of the payment.
-  * @param paymentRequest_opt  the payment request that was associated with this payment
+  * @param id                        internal payment identifier
+  * @param paymentHash               payment_hash
+  * @param preimage                  the preimage of the payment_hash, known if the outgoing payment was successful
+  * @param amountMsat                amount of the payment, in milli-satoshis
+  * @param createdAt                 absolute time in seconds since UNIX epoch when the payment was created.
+  * @param completedAt               absolute time in seconds since UNIX epoch when the payment succeeded.
+  * @param status                    current status of the payment.
+  * @param paymentRequest_opt        the payment request that was associated with this payment
   * @param customDescription_opt     a custom description
-  * @param targetNodeId        the recipient of this payment
+  * @param targetNodeId              the recipient of this payment
   */
 case class OutgoingPayment(
                             id: UUID,
