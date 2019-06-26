@@ -214,7 +214,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
     eclair.connect(any[Either[NodeURI, PublicKey]])(any[Timeout]) returns Future.successful("connected")
     val mockService = new MockService(eclair)
 
-    Post("/connect", FormData("nodeId" -> remoteNodeId.toHex).toEntity) ~>
+    Post("/connect", FormData("nodeId" -> remoteNodeId.toString()).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       Route.seal(mockService.route) ~>
       check {

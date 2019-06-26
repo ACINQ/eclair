@@ -31,7 +31,6 @@ import fr.acinq.eclair.db.ChannelStateSpec
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
-import fr.acinq.eclair.wire.LightningMessageCodecsSpec.randomSignature
 import fr.acinq.eclair.wire.{Color, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -55,7 +54,7 @@ class PeerSpec extends TestkitBaseClass {
     val aParams = Alice.nodeParams
     val aliceParams = test.tags.contains("with_node_announcements") match {
       case true =>
-        val aliceAnnouncement = NodeAnnouncement(randomSignature, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+        val aliceAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
         aParams.db.network.addNode(aliceAnnouncement)
         aParams
       case false => aParams

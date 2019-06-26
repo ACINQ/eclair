@@ -49,7 +49,6 @@ case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc:
 
 case object GetUsableBalances
 case class UsableBalances(canSendMsat: Long, canReceiveMsat: Long, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, isPublic: Boolean)
-
 // @formatter:on
 
 

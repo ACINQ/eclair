@@ -44,7 +44,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
 
   case class FixtureParam(router: ActorRef, watcher: TestProbe)
 
-  val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), compressed = true).publicKey
+  val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
 
   val seed = ByteVector32(ByteVector.fill(32)(2))
   val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
