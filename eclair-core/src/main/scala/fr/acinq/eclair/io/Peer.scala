@@ -341,7 +341,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(DelayedRebroadcast(rebroadcast), d: ConnectedData) =>
 
-      /**
+      /*
         * Send and count in a single iteration
         */
       def sendAndCount(msgs: Map[_ <: RoutingMessage, Set[ActorRef]]): Int = msgs.foldLeft(0) {

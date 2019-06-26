@@ -288,7 +288,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
       val pendingHeadersRequests1 = collection.mutable.HashSet.empty[GetHeaders]
       pendingHeadersRequests1 ++= data.pendingHeadersRequests
 
-      /**
+      /*
         * If we don't already have a header at this height, or a pending request to download the header chunk it's in,
         * download this header chunk.
         * We don't have this header because it's most likely older than our current checkpoint, downloading the whole header
