@@ -414,18 +414,23 @@ class RelayerSpec extends TestkitBaseClass {
   test("get usable balances") { f =>
     import f._
     val sender = TestProbe()
-    relayer ! LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a , None, channelUpdate_ab, makeCommitments(channelId_ab, 100000, 200000))
-    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc, 300000, 400000))
+    relayer ! LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a , None, channelUpdate_ab, makeCommitments(channelId_ab, -2000, 300000))
+    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc, 400000, -5000))
     sender.send(relayer, GetUsableBalances)
-    assert(sender.expectMsgType[Iterable[UsableBalances]].size === 2)
+    val usableBalances1 = sender.expectMsgType[Iterable[UsableBalances]]
+    assert(usableBalances1.size === 2)
+    assert(usableBalances1.head.canSendMsat === 0 && usableBalances1.head.canReceiveMsat === 300000 && usableBalances1.head.shortChannelId == channelUpdate_ab.shortChannelId)
+    assert(usableBalances1.last.canReceiveMsat === 0 && usableBalances1.last.canSendMsat === 400000 && usableBalances1.last.shortChannelId == channelUpdate_bc.shortChannelId)
 
     relayer ! AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, 0, makeCommitments(channelId_bc, 200000, 500000))
     sender.send(relayer, GetUsableBalances)
-    assert(sender.expectMsgType[Iterable[UsableBalances]].last.canReceiveMsat === 500000)
+    val usableBalances2 = sender.expectMsgType[Iterable[UsableBalances]]
+    assert(usableBalances2.last.canReceiveMsat === 500000 && usableBalances2.last.canSendMsat === 200000)
 
+    relayer ! AvailableBalanceChanged(null, channelId_ab, channelUpdate_ab.shortChannelId, 0, makeCommitments(channelId_ab, 100000, 200000))
     relayer ! LocalChannelDown(null, channelId_bc, channelUpdate_bc.shortChannelId, c)
     sender.send(relayer, GetUsableBalances)
-    val usableBalances = sender.expectMsgType[Iterable[UsableBalances]]
-    assert(usableBalances.size === 1 && usableBalances.head.canSendMsat === 100000)
+    val usableBalances3 = sender.expectMsgType[Iterable[UsableBalances]]
+    assert(usableBalances3.size === 1 && usableBalances3.head.canSendMsat === 100000)
   }
 }
