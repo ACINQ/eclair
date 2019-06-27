@@ -48,14 +48,15 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
 
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPaymentToRoute, WaitingForRequest) =>
-      val send = SendPayment(c.amountMsat, c.paymentHash, c.hops.last, finalCltvExpiry = c.finalCltvExpiry, maxAttempts = 1, assistedRoutes = Seq.empty, routeParams = None, paymentRequest_opt = None, customDescription_opt = None)
+      val send = SendPayment(c.amountMsat, c.paymentHash, c.hops.last, finalCltvExpiry = c.finalCltvExpiry, maxAttempts = 1, assistedRoutes = Seq.empty, routeParams = None, paymentRequest_opt = None)
       paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING, None, None, c.hops.last))
       router ! FinalizeRoute(c.hops)
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
 
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
-      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING, c.paymentRequest_opt, c.customDescription_opt, c.targetNodeId))
+//      val desc: Option[String] = c.paymentRequest_opt.map(_.description.fold(_ => _, _.toHex))
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING, c.paymentRequest_opt, c.paymentRequest_opt.map(_.description.fold(s => s, _.toHex)), c.targetNodeId))
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 
@@ -209,8 +210,7 @@ object PaymentLifecycle {
                          finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
                          maxAttempts: Int,
                          routeParams: Option[RouteParams] = None,
-                         paymentRequest_opt: Option[PaymentRequest] = None,
-                         customDescription_opt: Option[String] =  None) extends GenericSendPayment {
+                         paymentRequest_opt: Option[PaymentRequest] = None) extends GenericSendPayment {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
 

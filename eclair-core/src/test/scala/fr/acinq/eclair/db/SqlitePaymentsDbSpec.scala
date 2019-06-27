@@ -192,8 +192,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
 
-    val s1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, paymentRequest_opt = Some(dummyPaymentRequest), targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
-    val s2 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, customDescription_opt = Some("custom description"), targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
+    val s1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, paymentRequest_opt = Some(dummyPaymentRequest), description_opt = Some("custom description"), targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
+    val s2 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
 
     assert(db.listOutgoingPayments().isEmpty)
     db.addOutgoingPayment(s1)
@@ -203,7 +203,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.getOutgoingPayment(s1.id) === Some(s1))
     assert(db.getOutgoingPayment(s1.id).get.completedAt.isEmpty)
     assert(db.getOutgoingPayment(s1.id).get.paymentRequest_opt === Some(dummyPaymentRequest))
-    assert(db.getOutgoingPayment(s2.id).get.customDescription_opt === Some("custom description"))
+    assert(db.getOutgoingPayment(s1.id).get.description_opt === Some("custom description"))
     assert(db.getOutgoingPayment(UUID.randomUUID()) === None)
     assert(db.getOutgoingPayments(s2.paymentHash) === Seq(s2))
     assert(db.getOutgoingPayments(ByteVector32.Zeroes) === Seq.empty)

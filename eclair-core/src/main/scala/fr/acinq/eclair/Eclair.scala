@@ -77,7 +77,7 @@ trait Eclair {
 
   def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
-  def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry_opt: Option[Long] = None, maxAttempts_opt: Option[Int] = None, feeThresholdSat_opt: Option[Long] = None, maxFeePct_opt: Option[Double] = None, paymentRequest_opt: Option[PaymentRequest] = None, customDescription_opt: Option[String] = None)(implicit timeout: Timeout): Future[UUID]
+  def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry_opt: Option[Long] = None, maxAttempts_opt: Option[Int] = None, feeThresholdSat_opt: Option[Long] = None, maxFeePct_opt: Option[Double] = None, paymentRequest_opt: Option[PaymentRequest] = None)(implicit timeout: Timeout): Future[UUID]
 
   def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
 
@@ -188,7 +188,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentInitiator ? SendPaymentToRoute(amountMsat, paymentHash, route, finalCltvExpiry)).mapTo[UUID]
   }
 
-  override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry_opt: Option[Long], maxAttempts_opt: Option[Int], feeThresholdSat_opt: Option[Long], maxFeePct_opt: Option[Double], paymentRequest_opt: Option[PaymentRequest], customDescription_opt: Option[String])(implicit timeout: Timeout): Future[UUID] = {
+  override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]], minFinalCltvExpiry_opt: Option[Long], maxAttempts_opt: Option[Int], feeThresholdSat_opt: Option[Long], maxFeePct_opt: Option[Double], paymentRequest_opt: Option[PaymentRequest])(implicit timeout: Timeout): Future[UUID] = {
     require(paymentRequest_opt.map(PaymentRequest.write(_).getBytes).forall(_.length <= 65536))
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
 
@@ -199,8 +199,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
     )
 
     val sendPayment = minFinalCltvExpiry_opt match {
-      case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv, maxAttempts = maxAttempts, routeParams = Some(routeParams), paymentRequest_opt, customDescription_opt)
-      case None => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, maxAttempts = maxAttempts, routeParams = Some(routeParams), paymentRequest_opt = paymentRequest_opt, customDescription_opt = customDescription_opt)
+      case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv, maxAttempts = maxAttempts, routeParams = Some(routeParams), paymentRequest_opt)
+      case None => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, maxAttempts = maxAttempts, routeParams = Some(routeParams), paymentRequest_opt = paymentRequest_opt)
     }
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }

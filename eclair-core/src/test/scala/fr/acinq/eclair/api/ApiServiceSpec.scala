@@ -241,7 +241,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
     val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
 
     val eclair = mock[Eclair]
-    eclair.send(any, any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    eclair.send(any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
     val mockService = new MockService(eclair)
 
     Post("/payinvoice", FormData("invoice" -> invoice).toEntity) ~>
@@ -250,7 +250,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       check {
         assert(handled)
         assert(status == OK)
-        eclair.send(any, 1258000, any, any, any, any, any, any, None, None)(any[Timeout]).wasCalled(once)
+        eclair.send(any, 1258000, any, any, any, any, any, any, None)(any[Timeout]).wasCalled(once)
       }
 
 
@@ -260,7 +260,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       check {
         assert(handled)
         assert(status == OK)
-        eclair.send(any, 123, any, any, any, any, Some(112233), Some(2.34), None, None)(any[Timeout]).wasCalled(once)
+        eclair.send(any, 123, any, any, any, any, Some(112233), Some(2.34), None)(any[Timeout]).wasCalled(once)
       }
 
   }

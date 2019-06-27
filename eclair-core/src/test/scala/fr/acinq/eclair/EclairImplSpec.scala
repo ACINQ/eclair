@@ -133,9 +133,9 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     assert(send3.routeParams.get.maxFeeBaseMsat == 123 * 1000) // conversion sat -> msat
     assert(send3.routeParams.get.maxFeePct == 4.20)
 
-    // with paymentRequest and custom description
+    // with paymentRequest
     val pr = PaymentRequest.read("lnbc10u1pw2t4phpp5ezwm2gdccydhnphfyepklc0wjkxhz0r4tctg9paunh2lxgeqhcmsdqlxycrqvpqwdshgueqvfjhggr0dcsry7qcqzpgfa4ecv7447p9t5hkujy9qgrxvkkf396p9zar9p87rv2htmeuunkhydl40r64n5s2k0u7uelzc8twxmp37nkcch6m0wg5tvvx69yjz8qpk94qf3")
-    eclair.send(recipientNodeId = nodeId, amountMsat = 123, paymentHash = ByteVector32.Zeroes, assistedRoutes = Seq.empty, minFinalCltvExpiry_opt = None, feeThresholdSat_opt = Some(123), maxFeePct_opt = Some(4.20), paymentRequest_opt = Some(pr), customDescription_opt = Some("hey hey heyy"))
+    eclair.send(recipientNodeId = nodeId, amountMsat = 123, paymentHash = ByteVector32.Zeroes, assistedRoutes = Seq.empty, minFinalCltvExpiry_opt = None, feeThresholdSat_opt = Some(123), maxFeePct_opt = Some(4.20), paymentRequest_opt = Some(pr))
     val send4 = paymentInitiator.expectMsgType[SendPayment]
     assert(send4.targetNodeId == nodeId)
     assert(send4.amountMsat == 123)
@@ -143,7 +143,6 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     assert(send4.routeParams.get.maxFeeBaseMsat == 123 * 1000) // conversion sat -> msat
     assert(send4.routeParams.get.maxFeePct == 4.20)
     assert(send4.paymentRequest_opt == Some(pr))
-    assert(send4.customDescription_opt == Some("hey hey heyy"))
   }
 
   test("allupdates can filter by nodeId") { f =>
