@@ -120,9 +120,9 @@ class CommonCodecsSpec extends FunSuite {
     ).mapValues(_.toBitVector)
 
     for ((long, ref) <- expected) {
-      val encoded = varlong.encode(long).require
+      val encoded = varintoverflow.encode(long).require
       assert(ref === encoded, ref)
-      val decoded = varlong.decode(encoded).require.value
+      val decoded = varintoverflow.decode(encoded).require.value
       assert(long === decoded, long)
     }
   }
@@ -134,7 +134,7 @@ class CommonCodecsSpec extends FunSuite {
     ).map(_.toBitVector)
 
     for (testCase <- testCases) {
-      assert(varlong.decode(testCase).isFailure, testCase.toByteVector)
+      assert(varintoverflow.decode(testCase).isFailure, testCase.toByteVector)
     }
   }
 

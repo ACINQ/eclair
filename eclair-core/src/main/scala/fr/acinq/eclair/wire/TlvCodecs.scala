@@ -29,7 +29,7 @@ import scala.collection.compat._
 
 object TlvCodecs {
 
-  val genericTlv: Codec[GenericTlv] = (("type" | varint) :: variableSizeBytesLong(varlong, bytes)).as[GenericTlv]
+  val genericTlv: Codec[GenericTlv] = (("type" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv]
 
   def tlvFallback(codec: Codec[Tlv]): Codec[Tlv] = discriminatorFallback(genericTlv, codec).xmap(_ match {
     case Left(l) => l

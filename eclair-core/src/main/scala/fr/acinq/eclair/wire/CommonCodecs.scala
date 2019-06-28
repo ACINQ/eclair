@@ -95,7 +95,7 @@ object CommonCodecs {
 
   // This codec can be safely used for values < 2^63 and will fail otherwise.
   // It is useful in combination with variableSizeBytesLong to encode/decode TLV lengths because those will always be < 2^63.
-  val varlong: Codec[Long] = varint.narrow(l => if (l <= UInt64(Long.MaxValue)) Attempt.successful(l.toBigInt.toLong) else Attempt.failure(Err(s"overflow for value $l")), l => UInt64(l))
+  val varintoverflow: Codec[Long] = varint.narrow(l => if (l <= UInt64(Long.MaxValue)) Attempt.successful(l.toBigInt.toLong) else Attempt.failure(Err(s"overflow for value $l")), l => UInt64(l))
 
   val bytes32: Codec[ByteVector32] = limitedSizeBytes(32, bytesStrict(32).xmap(d => ByteVector32(d), d => d.bytes))
 
