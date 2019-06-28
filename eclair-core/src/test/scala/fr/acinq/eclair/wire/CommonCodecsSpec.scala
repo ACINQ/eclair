@@ -40,9 +40,9 @@ class CommonCodecsSpec extends FunSuite {
     ).mapValues(_.toBitVector)
 
     for ((uint, ref) <- expected) {
-      val encoded = uint64ex.encode(uint).require
+      val encoded = uint64.encode(uint).require
       assert(ref === encoded)
-      val decoded = uint64ex.decode(encoded).require.value
+      val decoded = uint64.decode(encoded).require.value
       assert(uint === decoded)
     }
   }
@@ -239,7 +239,7 @@ class CommonCodecsSpec extends FunSuite {
   }
 
   test("encode/decode UInt64") {
-    val codec = uint64ex
+    val codec = uint64
     Seq(
       UInt64(hex"ffffffffffffffff"),
       UInt64(hex"fffffffffffffffe"),

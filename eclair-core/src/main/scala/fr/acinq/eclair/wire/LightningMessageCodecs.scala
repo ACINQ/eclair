@@ -45,20 +45,20 @@ object LightningMessageCodecs {
 
   val channelReestablishCodec: Codec[ChannelReestablish] = (
     ("channelId" | bytes32) ::
-      ("nextLocalCommitmentNumber" | uint64) ::
-      ("nextRemoteRevocationNumber" | uint64) ::
+      ("nextLocalCommitmentNumber" | uint64overflow) ::
+      ("nextRemoteRevocationNumber" | uint64overflow) ::
       ("yourLastPerCommitmentSecret" | optional(bitsRemaining, privateKey)) ::
       ("myCurrentPerCommitmentPoint" | optional(bitsRemaining, publicKey))).as[ChannelReestablish]
 
   val openChannelCodec: Codec[OpenChannel] = (
     ("chainHash" | bytes32) ::
       ("temporaryChannelId" | bytes32) ::
-      ("fundingSatoshis" | uint64) ::
-      ("pushMsat" | uint64) ::
-      ("dustLimitSatoshis" | uint64) ::
-      ("maxHtlcValueInFlightMsat" | uint64ex) ::
-      ("channelReserveSatoshis" | uint64) ::
-      ("htlcMinimumMsat" | uint64) ::
+      ("fundingSatoshis" | uint64overflow) ::
+      ("pushMsat" | uint64overflow) ::
+      ("dustLimitSatoshis" | uint64overflow) ::
+      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("channelReserveSatoshis" | uint64overflow) ::
+      ("htlcMinimumMsat" | uint64overflow) ::
       ("feeratePerKw" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
@@ -72,10 +72,10 @@ object LightningMessageCodecs {
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | bytes32) ::
-      ("dustLimitSatoshis" | uint64) ::
-      ("maxHtlcValueInFlightMsat" | uint64ex) ::
-      ("channelReserveSatoshis" | uint64) ::
-      ("htlcMinimumMsat" | uint64) ::
+      ("dustLimitSatoshis" | uint64overflow) ::
+      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("channelReserveSatoshis" | uint64overflow) ::
+      ("htlcMinimumMsat" | uint64overflow) ::
       ("minimumDepth" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
@@ -106,30 +106,30 @@ object LightningMessageCodecs {
 
   val closingSignedCodec: Codec[ClosingSigned] = (
     ("channelId" | bytes32) ::
-      ("feeSatoshis" | uint64) ::
+      ("feeSatoshis" | uint64overflow) ::
       ("signature" | bytes64)).as[ClosingSigned]
 
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
-      ("id" | uint64) ::
-      ("amountMsat" | uint64) ::
+      ("id" | uint64overflow) ::
+      ("amountMsat" | uint64overflow) ::
       ("paymentHash" | bytes32) ::
       ("expiry" | uint32) ::
       ("onionRoutingPacket" | bytes(Sphinx.PacketLength))).as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
     ("channelId" | bytes32) ::
-      ("id" | uint64) ::
+      ("id" | uint64overflow) ::
       ("paymentPreimage" | bytes32)).as[UpdateFulfillHtlc]
 
   val updateFailHtlcCodec: Codec[UpdateFailHtlc] = (
     ("channelId" | bytes32) ::
-      ("id" | uint64) ::
+      ("id" | uint64overflow) ::
       ("reason" | varsizebinarydata)).as[UpdateFailHtlc]
 
   val updateFailMalformedHtlcCodec: Codec[UpdateFailMalformedHtlc] = (
     ("channelId" | bytes32) ::
-      ("id" | uint64) ::
+      ("id" | uint64overflow) ::
       ("onionHash" | bytes32) ::
       ("failureCode" | uint16)).as[UpdateFailMalformedHtlc]
 
@@ -187,10 +187,10 @@ object LightningMessageCodecs {
       (("messageFlags" | byte) >>:~ { messageFlags =>
         ("channelFlags" | byte) ::
           ("cltvExpiryDelta" | uint16) ::
-          ("htlcMinimumMsat" | uint64) ::
+          ("htlcMinimumMsat" | uint64overflow) ::
           ("feeBaseMsat" | uint32) ::
           ("feeProportionalMillionths" | uint32) ::
-          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64))
+          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64overflow))
       })
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (
@@ -260,7 +260,7 @@ object LightningMessageCodecs {
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::
       ("short_channel_id" | shortchannelid) ::
-      ("amt_to_forward" | uint64) ::
+      ("amt_to_forward" | uint64overflow) ::
       ("outgoing_cltv_value" | uint32) ::
       ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[PerHopPayload]
 

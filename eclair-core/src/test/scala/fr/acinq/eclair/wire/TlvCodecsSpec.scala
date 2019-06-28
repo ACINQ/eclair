@@ -130,9 +130,9 @@ object TlvCodecsSpec {
 
   // @formatter:off
   sealed trait TestTlv extends Tlv
-  case class TestType1(longValue: Long) extends TestTlv { override val `type` = UInt64(1) }
+  case class TestType1(uintValue: UInt64) extends TestTlv { override val `type` = UInt64(1) }
   case class TestType2(shortChannelId: ShortChannelId) extends TestTlv { override val `type` = UInt64(2) }
-  case class TestType3(nodeId: PublicKey, value1: Long, value2: Long) extends TestTlv { override val `type` = UInt64(3) }
+  case class TestType3(nodeId: PublicKey, value1: UInt64, value2: UInt64) extends TestTlv { override val `type` = UInt64(3) }
   case class TestType13(intValue: Int) extends TestTlv { override val `type` = UInt64(13) }
 
   val testCodec1: Codec[TestType1] = (("length" | constant(hex"08")) :: ("value" | uint64)).as[TestType1]
@@ -147,8 +147,8 @@ object TlvCodecsSpec {
   )
 
   sealed trait OtherTlv extends Tlv
-  case class OtherType1(longValue: Long) extends OtherTlv { override val `type` = UInt64(10) }
-  case class OtherType2(lessLongValue: Long) extends OtherTlv { override val `type` = UInt64(11) }
+  case class OtherType1(uintValue: UInt64) extends OtherTlv { override val `type` = UInt64(10) }
+  case class OtherType2(smallValue: Long) extends OtherTlv { override val `type` = UInt64(11) }
 
   val otherCodec1: Codec[OtherType1] = (("length" | constant(hex"08")) :: ("value" | uint64)).as[OtherType1]
   val otherCodec2: Codec[OtherType2] = (("length" | constant(hex"04")) :: ("value" | uint32)).as[OtherType2]
