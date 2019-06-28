@@ -131,7 +131,7 @@ class ChannelCodecsSpec extends FunSuite {
       amountMsat = Random.nextInt(Int.MaxValue),
       cltvExpiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes32,
-      onionRoutingPacket = randomBytes(Sphinx.PacketLength))
+      onionRoutingPacket = randomBytes(Sphinx.PaymentPacket.PacketLength))
     val htlc1 = DirectedHtlc(direction = IN, add = add)
     val htlc2 = DirectedHtlc(direction = OUT, add = add)
     assert(htlcCodec.decodeValue(htlcCodec.encode(htlc1).require).require === htlc1)
@@ -145,14 +145,14 @@ class ChannelCodecsSpec extends FunSuite {
       amountMsat = Random.nextInt(Int.MaxValue),
       cltvExpiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes32,
-      onionRoutingPacket = randomBytes(Sphinx.PacketLength))
+      onionRoutingPacket = randomBytes(Sphinx.PaymentPacket.PacketLength))
     val add2 = UpdateAddHtlc(
       channelId = randomBytes32,
       id = Random.nextInt(Int.MaxValue),
       amountMsat = Random.nextInt(Int.MaxValue),
       cltvExpiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes32,
-      onionRoutingPacket = randomBytes(Sphinx.PacketLength))
+      onionRoutingPacket = randomBytes(Sphinx.PaymentPacket.PacketLength))
     val htlc1 = DirectedHtlc(direction = IN, add = add1)
     val htlc2 = DirectedHtlc(direction = OUT, add = add2)
     val htlcs = Set(htlc1, htlc2)

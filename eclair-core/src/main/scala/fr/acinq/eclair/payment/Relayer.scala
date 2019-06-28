@@ -231,6 +231,7 @@ object Relayer {
     */
   def tryParsePacket(add: UpdateAddHtlc, privateKey: PrivateKey): Try[NextPayload] =
     Sphinx
+      .PaymentPacket
       .parsePacket(privateKey, add.paymentHash, add.onionRoutingPacket)
       .flatMap {
         case Sphinx.ParsedPacket(payload, nextPacket, _) =>

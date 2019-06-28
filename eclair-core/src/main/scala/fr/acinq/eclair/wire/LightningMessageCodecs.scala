@@ -123,7 +123,7 @@ object LightningMessageCodecs {
       ("amountMsat" | uint64overflow) ::
       ("paymentHash" | bytes32) ::
       ("expiry" | uint32) ::
-      ("onionRoutingPacket" | bytes(Sphinx.PacketLength))).as[UpdateAddHtlc]
+      ("onionRoutingPacket" | bytes(Sphinx.PaymentPacket.PacketLength))).as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
     ("channelId" | bytes32) ::

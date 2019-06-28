@@ -235,11 +235,11 @@ object Commitments {
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(htlc) =>
         // we need the shared secret to build the error packet
-        Sphinx.parsePacket(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket).map(_.sharedSecret) match {
+        Sphinx.PaymentPacket.parsePacket(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket).map(_.sharedSecret) match {
           case Success(sharedSecret) =>
             val reason = cmd.reason match {
-              case Left(forwarded) => Sphinx.forwardErrorPacket(forwarded, sharedSecret)
-              case Right(failure) => Sphinx.createErrorPacket(sharedSecret, failure)
+              case Left(forwarded) => Sphinx.ErrorPacket.forwardPacket(forwarded, sharedSecret)
+              case Right(failure) => Sphinx.ErrorPacket.createPacket(sharedSecret, failure)
             }
             val fail = UpdateFailHtlc(commitments.channelId, cmd.id, reason)
             val commitments1 = addLocalProposal(commitments, fail)

@@ -18,7 +18,6 @@ package fr.acinq.eclair.channel.states
 
 import java.util.UUID
 
-import akka.actor.Actor
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -37,7 +36,7 @@ import scodec.bits.ByteVector
   */
 trait StateTestsHelperMethods extends TestKitBase {
 
-  def defaultOnion: ByteVector = ByteVector.fill(Sphinx.PacketLength)(0)
+  def defaultOnion: ByteVector = ByteVector.fill(Sphinx.PaymentPacket.PacketLength)(0)
 
   case class SetupFixture(alice: TestFSMRef[State, Data, Channel],
                    bob: TestFSMRef[State, Data, Channel],
