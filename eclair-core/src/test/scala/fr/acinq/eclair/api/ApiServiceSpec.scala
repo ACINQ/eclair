@@ -144,6 +144,27 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       }
   }
 
+  test("'usabelnbalances' asks router for current usable balances") {
+
+    val eclair = mock[Eclair]
+    val mockService = new MockService(eclair)
+    eclair.usableBalances()(any[Timeout]) returns Future.successful(List(
+      UsableBalances(canSendMsat = 100000000, canReceiveMsat = 20000000, shortChannelId = ShortChannelId(1), remoteNodeId = TestConstants.Alice.keyManager.nodeKey.publicKey, isPublic = true),
+      UsableBalances(canSendMsat = 400000000, canReceiveMsat = 30000000, shortChannelId = ShortChannelId(2), remoteNodeId = TestConstants.Alice.keyManager.nodeKey.publicKey, isPublic = false)
+    ))
+
+    Post("/usablebalances") ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val response = entityAs[String]
+        eclair.usableBalances()(any[Timeout]).wasCalled(once)
+        matchTestJson("usablebalances", response)
+      }
+  }
+
   test("'getinfo' response should include this node ID") {
 
     val eclair = mock[Eclair]
