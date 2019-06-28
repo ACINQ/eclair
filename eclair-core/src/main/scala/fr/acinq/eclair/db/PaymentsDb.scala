@@ -78,7 +78,7 @@ case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, received
   * @param createdAt                 absolute time in seconds since UNIX epoch when the payment was created.
   * @param completedAt               absolute time in seconds since UNIX epoch when the payment succeeded.
   * @param status                    current status of the payment.
-  * @param paymentRequest_opt        the payment request that was associated with this payment
+  * @param paymentRequest_opt        the payment request (serialized) that was associated with this payment
   * @param description_opt           a custom description
   */
 case class OutgoingPayment(
@@ -90,7 +90,7 @@ case class OutgoingPayment(
                             createdAt: Long,
                             completedAt: Option[Long],
                             status: OutgoingPaymentStatus.Value,
-                            paymentRequest_opt: Option[PaymentRequest] = None,
+                            paymentRequest_opt: Option[String] = None,
                             description_opt: Option[String] = None)
 
 object OutgoingPaymentStatus extends Enumeration {

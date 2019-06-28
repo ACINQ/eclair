@@ -391,7 +391,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentDb.getOutgoingPayment(id).exists { payment =>
       payment.status == OutgoingPaymentStatus.PENDING &&
       payment.targetNodeId == Some(d) &&
-      payment.paymentRequest_opt == Some(paymentRequest) &&
+      payment.paymentRequest_opt == Some("lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp") &&
       payment.description_opt == Some("1 cup coffee")
     })
     sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash))

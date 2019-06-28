@@ -55,7 +55,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
 
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
-      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, Some(c.targetNodeId), c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING, c.paymentRequest_opt, c.paymentRequest_opt.map(_.description.fold(s => s, _.toHex))))
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, Some(c.targetNodeId), c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING, c.paymentRequest_opt.map(PaymentRequest.write), c.paymentRequest_opt.map(_.description.fold(s => s, _.toHex))))
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 

@@ -74,7 +74,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setLong(3, sent.amountMsat)
       statement.setLong(4, sent.createdAt)
       statement.setString(5, sent.status.toString)
-      statement.setString(6, sent.paymentRequest_opt.map(PaymentRequest.write).orNull)
+      statement.setString(6, sent.paymentRequest_opt.orNull)
       statement.setBytes(7, sent.description_opt.map(_.getBytes).orNull)
       statement.setBytes(8, sent.targetNodeId.map(_.value.toArray).orNull)
       statement.executeUpdate()
@@ -107,7 +107,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           rs.getLong("created_at"),
           rs.getNullableLong("completed_at"),
           OutgoingPaymentStatus.withName(rs.getString("status")),
-          rs.getStringNullable("payment_request").map(PaymentRequest.read),
+          rs.getStringNullable("payment_request"),
           rs.getByteVectorNullable("description").map(bytes => new String(bytes.toArray))
         ))
       } else {
@@ -131,7 +131,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           rs.getLong("created_at"),
           rs.getNullableLong("completed_at"),
           OutgoingPaymentStatus.withName(rs.getString("status")),
-          rs.getStringNullable("payment_request").map(PaymentRequest.read),
+          rs.getStringNullable("payment_request"),
           rs.getByteVectorNullable("description").map(bytes => new String(bytes.toArray))
         )
       }
@@ -153,7 +153,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           rs.getLong("created_at"),
           rs.getNullableLong("completed_at"),
           OutgoingPaymentStatus.withName(rs.getString("status")),
-          rs.getStringNullable("payment_request").map(PaymentRequest.read),
+          rs.getStringNullable("payment_request"),
           rs.getByteVectorNullable("description").map(bytes => new String(bytes.toArray))
         )
       }
