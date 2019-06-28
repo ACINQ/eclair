@@ -414,7 +414,7 @@ class RelayerSpec extends TestkitBaseClass {
   test("get usable balances") { f =>
     import f._
     val sender = TestProbe()
-    relayer ! LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a , None, channelUpdate_ab, makeCommitments(channelId_ab, -2000, 300000))
+    relayer ! LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab, makeCommitments(channelId_ab, -2000, 300000))
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc, 400000, -5000))
     sender.send(relayer, GetUsableBalances)
     val usableBalances1 = sender.expectMsgType[Iterable[UsableBalances]]
@@ -432,5 +432,15 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, GetUsableBalances)
     val usableBalances3 = sender.expectMsgType[Iterable[UsableBalances]]
     assert(usableBalances3.size === 1 && usableBalances3.head.canSendMsat === 100000)
+
+    relayer ! LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab.copy(channelFlags = 2), makeCommitments(channelId_ab, 100000, 200000))
+    sender.send(relayer, GetUsableBalances)
+    val usableBalances4 = sender.expectMsgType[Iterable[UsableBalances]]
+    assert(usableBalances4.isEmpty)
+
+    relayer ! LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab, makeCommitments(channelId_ab, 100000, 200000))
+    sender.send(relayer, GetUsableBalances)
+    val usableBalances5 = sender.expectMsgType[Iterable[UsableBalances]]
+    assert(usableBalances5.size === 1)
   }
 }
