@@ -26,7 +26,6 @@ import grizzled.slf4j.Logging
 import scala.collection.immutable.Queue
 import OutgoingPaymentStatus._
 import fr.acinq.bitcoin.Crypto.PublicKey
-import scodec.bits.ByteVector
 import concurrent.duration._
 import scala.compat.Platform
 
@@ -46,7 +45,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   def migration23(statement: Statement) = {
     statement.executeUpdate("ALTER TABLE sent_payments ADD payment_request TEXT")
     statement.executeUpdate("ALTER TABLE sent_payments ADD description BLOB")
-    statement.executeUpdate(s"ALTER TABLE sent_payments ADD target_node_id BLOB DEFAULT '03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f' NOT NULL")
+    statement.executeUpdate(s"ALTER TABLE sent_payments ADD target_node_id BLOB")
   }
 
   using(sqlite.createStatement()) { statement =>
@@ -62,7 +61,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL, payment_request TEXT, description BLOB, target_node_id BLOB NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL, payment_request TEXT, description BLOB, target_node_id BLOB)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON sent_payments(payment_hash)")
         setVersion(statement, DB_NAME, CURRENT_VERSION)
     }
@@ -77,7 +76,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setString(5, sent.status.toString)
       statement.setString(6, sent.paymentRequest_opt.map(PaymentRequest.write).orNull)
       statement.setBytes(7, sent.description_opt.map(_.getBytes).orNull)
-      statement.setBytes(8, sent.targetNodeId.value.toHex.getBytes)
+      statement.setBytes(8, sent.targetNodeId.map(_.value.toArray).orNull)
       statement.executeUpdate()
     }
   }
@@ -103,13 +102,13 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           UUID.fromString(rs.getString("id")),
           rs.getByteVector32("payment_hash"),
           rs.getByteVector32Nullable("preimage"),
+          rs.getByteVectorNullable("target_node_id").map(PublicKey(_)),
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
           rs.getNullableLong("completed_at"),
           OutgoingPaymentStatus.withName(rs.getString("status")),
           rs.getStringNullable("payment_request").map(PaymentRequest.read),
-          rs.getByteVectorNullable("description").map(bytes => new String(bytes.toArray)),
-          PublicKey(ByteVector.fromValidHex(rs.getString("target_node_id")))
+          rs.getByteVectorNullable("description").map(bytes => new String(bytes.toArray))
         ))
       } else {
         None
@@ -127,13 +126,13 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           UUID.fromString(rs.getString("id")),
           rs.getByteVector32("payment_hash"),
           rs.getByteVector32Nullable("preimage"),
+          rs.getByteVectorNullable("target_node_id").map(PublicKey(_)),
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
           rs.getNullableLong("completed_at"),
           OutgoingPaymentStatus.withName(rs.getString("status")),
           rs.getStringNullable("payment_request").map(PaymentRequest.read),
-          rs.getByteVectorNullable("description").map(bytes => new String(bytes.toArray)),
-          PublicKey(ByteVector.fromValidHex(rs.getString("target_node_id")))
+          rs.getByteVectorNullable("description").map(bytes => new String(bytes.toArray))
         )
       }
       q
@@ -149,13 +148,13 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           UUID.fromString(rs.getString("id")),
           rs.getByteVector32("payment_hash"),
           rs.getByteVector32Nullable("preimage"),
+          rs.getByteVectorNullable("target_node_id").map(PublicKey(_)),
           rs.getLong("amount_msat"),
           rs.getLong("created_at"),
           rs.getNullableLong("completed_at"),
           OutgoingPaymentStatus.withName(rs.getString("status")),
           rs.getStringNullable("payment_request").map(PaymentRequest.read),
-          rs.getByteVectorNullable("description").map(bytes => new String(bytes.toArray)),
-          PublicKey(ByteVector.fromValidHex(rs.getString("target_node_id")))
+          rs.getByteVectorNullable("description").map(bytes => new String(bytes.toArray))
         )
       }
       q

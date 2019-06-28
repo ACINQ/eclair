@@ -73,25 +73,25 @@ case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, received
   * @param id                        internal payment identifier
   * @param paymentHash               payment_hash
   * @param preimage                  the preimage of the payment_hash, known if the outgoing payment was successful
+  * @param targetNodeId              the recipient of this payment
   * @param amountMsat                amount of the payment, in milli-satoshis
   * @param createdAt                 absolute time in seconds since UNIX epoch when the payment was created.
   * @param completedAt               absolute time in seconds since UNIX epoch when the payment succeeded.
   * @param status                    current status of the payment.
   * @param paymentRequest_opt        the payment request that was associated with this payment
   * @param description_opt           a custom description
-  * @param targetNodeId              the recipient of this payment
   */
 case class OutgoingPayment(
                             id: UUID,
                             paymentHash: ByteVector32,
                             preimage:Option[ByteVector32],
+                            targetNodeId: Option[PublicKey],
                             amountMsat: Long,
                             createdAt: Long,
                             completedAt: Option[Long],
                             status: OutgoingPaymentStatus.Value,
                             paymentRequest_opt: Option[PaymentRequest] = None,
-                            description_opt: Option[String] = None,
-                            targetNodeId: PublicKey)
+                            description_opt: Option[String] = None)
 
 object OutgoingPaymentStatus extends Enumeration {
   val PENDING = Value(1, "PENDING")

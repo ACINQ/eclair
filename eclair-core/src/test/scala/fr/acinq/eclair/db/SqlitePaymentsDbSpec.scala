@@ -79,7 +79,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(preMigrationDb.getIncomingPayment(oldReceivedPayment.paymentHash).isEmpty)
 
     // add a few rows
-    val ps1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
+    val ps1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, targetNodeId = Some(PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")), amountMsat = 12345, createdAt = 12345, None, PENDING)
     val i1 = PaymentRequest.read("lnbc10u1pw2t4phpp5ezwm2gdccydhnphfyepklc0wjkxhz0r4tctg9paunh2lxgeqhcmsdqlxycrqvpqwdshgueqvfjhggr0dcsry7qcqzpgfa4ecv7447p9t5hkujy9qgrxvkkf396p9zar9p87rv2htmeuunkhydl40r64n5s2k0u7uelzc8twxmp37nkcch6m0wg5tvvx69yjz8qpk94qf3")
     val pr1 = IncomingPayment(i1.paymentHash, 12345678, 1513871928275L)
 
@@ -139,10 +139,10 @@ class SqlitePaymentsDbSpec extends FunSuite {
     }
 
     // check the old record has been migrated
-    assert(preMigrationDb.getOutgoingPayment(UNKNOWN_UUID).get.targetNodeId == PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"))
+    assert(preMigrationDb.getOutgoingPayment(UNKNOWN_UUID).get.targetNodeId.isEmpty)
 
     // add a few rows
-    val ps1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
+    val ps1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, targetNodeId = Some(PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")), amountMsat = 12345, createdAt = 12345, None, PENDING)
     val i1 = PaymentRequest.read("lnbc10u1pw2t4phpp5ezwm2gdccydhnphfyepklc0wjkxhz0r4tctg9paunh2lxgeqhcmsdqlxycrqvpqwdshgueqvfjhggr0dcsry7qcqzpgfa4ecv7447p9t5hkujy9qgrxvkkf396p9zar9p87rv2htmeuunkhydl40r64n5s2k0u7uelzc8twxmp37nkcch6m0wg5tvvx69yjz8qpk94qf3")
     val pr1 = IncomingPayment(i1.paymentHash, 12345678, 1513871928275L)
 
@@ -192,8 +192,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
 
-    val s1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, paymentRequest_opt = Some(dummyPaymentRequest), description_opt = Some("custom description"), targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
-    val s2 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, targetNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
+    val s1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, targetNodeId = Some(PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")), amountMsat = 12345, createdAt = 12345, None, PENDING, paymentRequest_opt = Some(dummyPaymentRequest), description_opt = Some("custom description"))
+    val s2 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), None, targetNodeId = Some(PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")), amountMsat = 12345, createdAt = 12345, None, PENDING)
 
     assert(db.listOutgoingPayments().isEmpty)
     db.addOutgoingPayment(s1)
@@ -204,6 +204,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.getOutgoingPayment(s1.id).get.completedAt.isEmpty)
     assert(db.getOutgoingPayment(s1.id).get.paymentRequest_opt === Some(dummyPaymentRequest))
     assert(db.getOutgoingPayment(s1.id).get.description_opt === Some("custom description"))
+    assert(db.getOutgoingPayment(s1.id).get.targetNodeId === Some(PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")))
     assert(db.getOutgoingPayment(UUID.randomUUID()) === None)
     assert(db.getOutgoingPayments(s2.paymentHash) === Seq(s2))
     assert(db.getOutgoingPayments(ByteVector32.Zeroes) === Seq.empty)

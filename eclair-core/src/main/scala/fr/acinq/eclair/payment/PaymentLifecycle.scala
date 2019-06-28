@@ -49,13 +49,13 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPaymentToRoute, WaitingForRequest) =>
       val send = SendPayment(c.amountMsat, c.paymentHash, c.hops.last, finalCltvExpiry = c.finalCltvExpiry, maxAttempts = 1, assistedRoutes = Seq.empty, routeParams = None, paymentRequest_opt = None)
-      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING, None, None, c.hops.last))
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, Some(c.hops.last), c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING, None, None))
       router ! FinalizeRoute(c.hops)
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
 
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
-      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING, c.paymentRequest_opt, c.paymentRequest_opt.map(_.description.fold(s => s, _.toHex)), c.targetNodeId))
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, Some(c.targetNodeId), c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING, c.paymentRequest_opt, c.paymentRequest_opt.map(_.description.fold(s => s, _.toHex))))
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 

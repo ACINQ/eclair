@@ -67,7 +67,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
-    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.targetNodeId == d))
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.targetNodeId == Some(d)))
     sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash))
 
     sender.expectMsgType[PaymentSucceeded]
@@ -390,7 +390,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
     awaitCond(paymentDb.getOutgoingPayment(id).exists { payment =>
       payment.status == OutgoingPaymentStatus.PENDING &&
-      payment.targetNodeId == d &&
+      payment.targetNodeId == Some(d) &&
       payment.paymentRequest_opt == Some(paymentRequest) &&
       payment.description_opt == Some("1 cup coffee")
     })
