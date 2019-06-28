@@ -91,8 +91,7 @@ case class OutgoingPayment(
                             status: OutgoingPaymentStatus.Value,
                             paymentRequest_opt: Option[PaymentRequest] = None,
                             description_opt: Option[String] = None,
-                            targetNodeId: PublicKey
-                          )
+                            targetNodeId: PublicKey)
 
 object OutgoingPaymentStatus extends Enumeration {
   val PENDING = Value(1, "PENDING")

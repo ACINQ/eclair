@@ -91,19 +91,6 @@ object SqliteUtils {
   }
 
   /**
-    * This helper retrieves the value from a nullable integer column and interprets it as an option. This is needed
-    * because `rs.getLong` would return `0` for a null value.
-    * It is used on Android only
-    *
-    * @param label
-    * @return
-    */
-  def getNullableLong(rs: ResultSet, label: String) : Option[Long] = {
-    val result = rs.getLong(label)
-    if (rs.wasNull()) None else Some(result)
-  }
-
-  /**
     * Obtain an exclusive lock on a sqlite database. This is useful when we want to make sure that only one process
     * accesses the database file (see https://www.sqlite.org/pragma.html).
     *
@@ -135,6 +122,11 @@ object SqliteUtils {
     def getStringNullable(columnLabel: String): Option[String] = {
       val str = rs.getString(columnLabel)
       if(rs.wasNull()) None else Some(str)
+    }
+
+    def getNullableLong(label: String) : Option[Long] = {
+      val result = rs.getLong(label)
+      if (rs.wasNull()) None else Some(result)
     }
   }
 

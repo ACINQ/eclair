@@ -55,7 +55,6 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
 
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
-//      val desc: Option[String] = c.paymentRequest_opt.map(_.description.fold(_ => _, _.toHex))
       paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING, c.paymentRequest_opt, c.paymentRequest_opt.map(_.description.fold(s => s, _.toHex)), c.targetNodeId))
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
@@ -206,11 +205,11 @@ object PaymentLifecycle {
   case class SendPayment(amountMsat: Long,
                          paymentHash: ByteVector32,
                          targetNodeId: PublicKey,
+                         paymentRequest_opt: Option[PaymentRequest] = None,
                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                          finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
                          maxAttempts: Int,
-                         routeParams: Option[RouteParams] = None,
-                         paymentRequest_opt: Option[PaymentRequest] = None) extends GenericSendPayment {
+                         routeParams: Option[RouteParams] = None) extends GenericSendPayment {
     require(amountMsat > 0, s"amountMsat must be > 0")
   }
 
