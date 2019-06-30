@@ -72,7 +72,6 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
   override def receive: Receive = main(Map.empty, new mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId])
 
   def main(channelUpdates: Map[ShortChannelId, OutgoingChannel], node2channels: mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]): Receive = {
-// UsableBalances(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSendMsat: Long, canReceiveMsat: Long, isPublic: Boolean)
     case GetUsableBalances =>
       sender ! channelUpdates.values
           .filter(o => Announcements.isEnabled(o.channelUpdate.channelFlags))
