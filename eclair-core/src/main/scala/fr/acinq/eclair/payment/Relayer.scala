@@ -48,7 +48,7 @@ case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) ex
 case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
 
 case object GetUsableBalances
-case class UsableBalances(canSendMsat: Long, canReceiveMsat: Long, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, isPublic: Boolean)
+case class UsableBalances(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSendMsat: Long, canReceiveMsat: Long, isPublic: Boolean)
 
 // @formatter:on
 
@@ -72,15 +72,15 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
   override def receive: Receive = main(Map.empty, new mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId])
 
   def main(channelUpdates: Map[ShortChannelId, OutgoingChannel], node2channels: mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]): Receive = {
-
+// UsableBalances(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSendMsat: Long, canReceiveMsat: Long, isPublic: Boolean)
     case GetUsableBalances =>
       sender ! channelUpdates.values
           .filter(o => Announcements.isEnabled(o.channelUpdate.channelFlags))
           .map(o => UsableBalances(
-            canSendMsat = if (o.commitments.availableBalanceForSendMsat < 0) 0 else o.commitments.availableBalanceForSendMsat,
-            canReceiveMsat = if (o.commitments.availableBalanceForReceiveMsat < 0) 0 else o.commitments.availableBalanceForReceiveMsat,
-            shortChannelId = o.channelUpdate.shortChannelId,
             remoteNodeId = o.nextNodeId,
+            shortChannelId = o.channelUpdate.shortChannelId,
+            canSendMsat = o.commitments.availableBalanceForSendMsat max 0,
+            canReceiveMsat = o.commitments.availableBalanceForReceiveMsat max 0,
             isPublic = o.commitments.announceChannel))
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments) =>

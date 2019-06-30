@@ -27,16 +27,14 @@ import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.RES_GETINFO
-import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire.NodeAddress
 import org.json4s.jackson.Serialization
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.{FunSuite, Matchers}
@@ -144,7 +142,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       }
   }
 
-  test("'usabelnbalances' asks router for current usable balances") {
+  test("'usablebalances' asks router for current usable balances") {
 
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
