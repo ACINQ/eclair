@@ -145,7 +145,8 @@ object SqliteWalletDb {
     ("txid" | bytes32) ::
       ("merkle" | listOfN(uint16, bytes32)) ::
       ("block_height" | uint24) ::
-      ("pos" | uint24)).as[GetMerkleResponse]
+      ("pos" | uint24) ::
+      ("context_opt" | provide(Option.empty[Any]))).as[GetMerkleResponse]
 
   def serializeMerkleProof(proof: GetMerkleResponse): Array[Byte] = proofCodec.encode(proof).require.toByteArray
 

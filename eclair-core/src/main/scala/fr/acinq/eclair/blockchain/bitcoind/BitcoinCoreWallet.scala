@@ -69,8 +69,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("lockunspent", true, outPoints.toList.map(outPoint => Utxo(outPoint.txid.toString, outPoint.index))) collect { case JBool(result) => result }
 
-  def isTransactionOutputSpendable(txId: String, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("gettxout", txId, outputIndex, true) collect { case j => j != JNull }
-
+  def isTransactionOutputSpendable(txId: String, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("gettxout", txId, outputIndex, includeMempool) collect { case j => j != JNull }
 
   override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDecimal(balance) => Satoshi(balance.bigDecimal.scaleByPowerOfTen(8).longValue()) }
 
@@ -121,13 +120,15 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
   for {
     exists <- getTransaction(tx.txid).map(_ => true).recover { case _ => false }
     doublespent <- if (exists) {
-      // if the tx is in the blockchain, it can't have been doublespent
+      // if the tx is in the blockchain, it can't have been double-spent
       Future.successful(false)
     } else {
-      // if the tx wasn't in the blockchain and one of it's input has been spent, it is doublespent
-      Future.sequence(tx.txIn.map(txIn => isTransactionOutputSpendable(txIn.outPoint.txid.toHex, txIn.outPoint.index.toInt))).map(_.exists(_ == false))
+      // if the tx wasn't in the blockchain and one of it's input has been spent, it is double-spent
+      // NB: we don't look in the mempool, so it means that we will only consider that the tx has been double-spent if
+      // the overriding transaction has been confirmed at least once
+      Future.sequence(tx.txIn.map(txIn => isTransactionOutputSpendable(txIn.outPoint.txid.toHex, txIn.outPoint.index.toInt, includeMempool = false))).map(_.exists(_ == false))
     }
-  } yield doublespent // TODO: should we check confirmations of the overriding tx?
+  } yield doublespent
 
 }
 

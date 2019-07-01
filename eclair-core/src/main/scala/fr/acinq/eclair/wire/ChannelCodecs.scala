@@ -287,8 +287,23 @@ object ChannelCodecs extends Logging {
       ("closingTxProposed" | listOfN(uint16, listOfN(uint16, closingTxProposedCodec))) ::
       ("bestUnpublishedClosingTx_opt" | optional(bool, txCodec))).as[DATA_NEGOTIATING]
 
+  // this is a decode-only codec compatible with versions 818199e and below, with placeholders for new fields
+  val DATA_CLOSING_COMPAT_06_Codec: Codec[DATA_CLOSING] = (
+      ("commitments" | commitmentsCodec) ::
+      ("fundingTx" | provide[Option[Transaction]](None)) ::
+      ("waitingSince" | provide(Platform.currentTime.milliseconds.toSeconds)) ::
+      ("mutualCloseProposed" | listOfN(uint16, txCodec)) ::
+      ("mutualClosePublished" | listOfN(uint16, txCodec)) ::
+      ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::
+      ("remoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
+      ("nextRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
+      ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
+      ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING].decodeOnly
+
   val DATA_CLOSING_Codec: Codec[DATA_CLOSING] = (
-    ("commitments" | commitmentsCodec) ::
+      ("commitments" | commitmentsCodec) ::
+      ("fundingTx" | optional(bool, txCodec)) ::
+      ("waitingSince" | int64) ::
       ("mutualCloseProposed" | listOfN(uint16, txCodec)) ::
       ("mutualClosePublished" | listOfN(uint16, txCodec)) ::
       ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::
@@ -314,13 +329,14 @@ object ChannelCodecs extends Logging {
     * More info here: https://github.com/scodec/scodec/issues/122
     */
   val stateDataCodec: Codec[HasCommitments] = ("version" | constant(0x00)) ~> discriminated[HasCommitments].by(uint16)
+    .typecase(0x09, DATA_CLOSING_Codec)
     .typecase(0x08, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
     .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec)
     .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
     .typecase(0x03, DATA_NORMAL_Codec)
     .typecase(0x04, DATA_SHUTDOWN_Codec)
     .typecase(0x05, DATA_NEGOTIATING_Codec)
-    .typecase(0x06, DATA_CLOSING_Codec)
+    .typecase(0x06, DATA_CLOSING_COMPAT_06_Codec)
     .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
 
 }

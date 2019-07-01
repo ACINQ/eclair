@@ -79,7 +79,7 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   test("get transaction") {
     probe.send(client, GetTransaction(referenceTx.txid))
-    val GetTransactionResponse(tx) = probe.expectMsgType[GetTransactionResponse]
+    val GetTransactionResponse(tx, _) = probe.expectMsgType[GetTransactionResponse]
     assert(tx == referenceTx)
   }
 

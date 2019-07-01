@@ -367,14 +367,14 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
           goto(DISCONNECTED) using data
       }
 
-    case Event(GetTransactionResponse(tx), data) =>
+    case Event(GetTransactionResponse(tx, context_opt), data) =>
       log.debug(s"received transaction ${tx.txid}")
       data.computeTransactionDelta(tx) match {
         case Some((received, sent, fee_opt)) =>
           log.info(s"successfully connected txid=${tx.txid}")
           context.system.eventStream.publish(TransactionReceived(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt, data.computeTimestamp(tx.txid, params.walletDb)))
           // when we have successfully processed a new tx, we retry all pending txes to see if they can be added now
-          data.pendingTransactions.foreach(self ! GetTransactionResponse(_))
+          data.pendingTransactions.foreach(self ! GetTransactionResponse(_, context_opt))
           val data1 = data.copy(transactions = data.transactions + (tx.txid -> tx), pendingTransactionRequests = data.pendingTransactionRequests - tx.txid, pendingTransactions = Nil)
           stay using persistAndNotify(data1)
         case None =>
@@ -384,14 +384,14 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
           stay using persistAndNotify(data1)
       }
 
-    case Event(ServerError(GetTransaction(txid), error), data) if data.pendingTransactionRequests.contains(txid) =>
+    case Event(ServerError(GetTransaction(txid, _), error), data) if data.pendingTransactionRequests.contains(txid) =>
       // server tells us that txid belongs to our wallet history, but cannot provide tx ?
       log.error(s"server cannot find history tx $txid: $error")
       sender ! PoisonPill
       goto(DISCONNECTED) using data
 
 
-    case Event(response@GetMerkleResponse(txid, _, height, _), data) =>
+    case Event(response@GetMerkleResponse(txid, _, height, _, _), data) =>
       data.blockchain.getHeader(height).orElse(params.walletDb.getHeader(height)) match {
         case Some(header) if header.hashMerkleRoot == response.root =>
           log.info(s"transaction $txid has been verified")
