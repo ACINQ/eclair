@@ -71,7 +71,7 @@ class TlvCodecsSpec extends FunSuite {
 
   test("decode invalid tlv stream") {
     val testCases = Seq(
-      hex"0108000000000000002a 01", // valid tlv record followed by invalid tlv record (only type, length and value are missing)
+      hex"0108000000000000002a 02", // valid tlv record followed by invalid tlv record (only type, length and value are missing)
       hex"02080000000000000226 0108000000000000002a", // valid tlv records but invalid ordering
       hex"02080000000000000231 02080000000000000451", // duplicate tlv type
       hex"0108000000000000002a 2a0101", // unknown even type
@@ -83,15 +83,11 @@ class TlvCodecsSpec extends FunSuite {
     }
   }
 
-  test("encode invalid tlv stream") {
-    val testCases = Seq(
-      TlvStream(Seq(TestType1(561), TestType2(ShortChannelId(1105)), OtherType1(42))),
-      TlvStream(Seq(TestType1(561), TestType1(1105)))
-    )
-
-    for (testCase <- testCases) {
-      assert(tlvStream(testTlvCodec).encode(testCase).isFailure, testCase)
-    }
+  test("create invalid tlv stream") {
+    assertThrows[IllegalArgumentException](TlvStream(Seq(GenericTlv(42, hex"2a")))) // unknown even type
+    assertThrows[IllegalArgumentException](TlvStream(Seq(TestType1(561), TestType2(ShortChannelId(1105)), GenericTlv(42, hex"2a")))) // unknown even type
+    assertThrows[IllegalArgumentException](TlvStream(Seq(TestType1(561), TestType1(1105)))) // duplicate type
+    assertThrows[IllegalArgumentException](TlvStream(Seq(TestType2(ShortChannelId(1105)), TestType1(561)))) // invalid ordering
   }
 
   test("encode/decode tlv stream") {
@@ -105,7 +101,7 @@ class TlvCodecsSpec extends FunSuite {
     val decoded = tlvStream(testTlvCodec).decode(bin.toBitVector).require.value
     assert(decoded === TlvStream(expected))
 
-    val encoded = tlvStream(testTlvCodec).encode(TlvStream(expected.reverse)).require.toByteVector
+    val encoded = tlvStream(testTlvCodec).encode(TlvStream(expected)).require.toByteVector
     assert(encoded === bin)
   }
 
@@ -120,7 +116,7 @@ class TlvCodecsSpec extends FunSuite {
     val decoded = tlvStream(testTlvCodec).decode(bin.toBitVector).require.value
     assert(decoded === TlvStream(expected))
 
-    val encoded = tlvStream(testTlvCodec).encode(TlvStream(expected.reverse)).require.toByteVector
+    val encoded = tlvStream(testTlvCodec).encode(TlvStream(expected)).require.toByteVector
     assert(encoded === bin)
   }
 

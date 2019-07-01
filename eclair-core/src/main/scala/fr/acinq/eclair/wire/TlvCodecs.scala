@@ -17,11 +17,10 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.eclair.wire.CommonCodecs._
-import scodec.{Attempt, Codec, DecodeResult, Decoder, Encoder}
-import scodec.bits.BitVector
+import scodec.{Attempt, Codec}
 import scodec.codecs._
 
-import scala.collection.compat._
+import scala.util.Try
 
 /**
   * Created by t-bast on 20/06/2019.
@@ -45,26 +44,9 @@ object TlvCodecs {
     *
     * @param codec codec used for the tlv records contained in the stream.
     */
-  def tlvStream(codec: Codec[Tlv]): Codec[TlvStream] = {
-    Codec[TlvStream](
-      (s: TlvStream) => {
-        val recordTypes = s.records.map(_.`type`)
-        if (recordTypes.length != recordTypes.distinct.length) {
-          Attempt.Failure(scodec.Err("duplicate tlv records aren't allowed"))
-        } else {
-          Encoder.encodeSeq(codec)(s.records.sortBy(_.`type`).toList)
-        }
-      },
-      (buf: BitVector) => {
-        Decoder.decodeCollect[List, Tlv](codec, None)(buf).map(_.map(TlvStream(_))) match {
-          case Attempt.Failure(err) => Attempt.Failure(err)
-          case Attempt.Successful(res@DecodeResult(stream, _)) => stream.validate match {
-            case None => Attempt.Successful(res)
-            case Some(err) => Attempt.Failure(scodec.Err(err.message))
-          }
-        }
-      }
-    )
-  }
+  def tlvStream(codec: Codec[Tlv]): Codec[TlvStream] = list(codec).exmap(
+    records => Attempt.fromTry(Try(TlvStream(records))),
+    stream => Attempt.successful(stream.records.toList)
+  )
 
 }

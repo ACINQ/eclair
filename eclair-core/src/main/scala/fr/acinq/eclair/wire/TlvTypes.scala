@@ -49,32 +49,15 @@ case class GenericTlv(`type`: UInt64, value: ByteVector) extends Tlv
   */
 case class TlvStream(records: Seq[Tlv]) {
 
-  import TlvStream._
-
-  def validate: Option[TlvStream.Error] = {
-    @tailrec
-    def loop(previous: Option[UInt64], next: Seq[Tlv]): Option[TlvStream.Error] = {
-      next.headOption match {
-        case Some(record) if previous.contains(record.`type`) => Some(DuplicateRecords)
-        case Some(record) if previous.isDefined && record.`type` < previous.get => Some(RecordsNotOrdered)
-        case Some(record) if (record.`type`.toBigInt % 2) == 0 && record.isInstanceOf[GenericTlv] => Some(UnknownEvenTlv)
-        case Some(record) => loop(Some(record.`type`), next.tail)
-        case None => None
-      }
-    }
-
-    loop(None, records)
+  records.foldLeft(Option.empty[Tlv]) {
+    case (None, record) =>
+      require(!record.isInstanceOf[GenericTlv] || record.`type`.toBigInt % 2 != 0, "tlv streams must not contain unknown even tlv types")
+      Some(record)
+    case (Some(previousRecord), record) =>
+      require(record.`type` != previousRecord.`type`, "tlv streams must not contain duplicate records")
+      require(record.`type` > previousRecord.`type`, "tlv records must be ordered by monotonically-increasing types")
+      require(!record.isInstanceOf[GenericTlv] || record.`type`.toBigInt % 2 != 0, "tlv streams must not contain unknown even tlv types")
+      Some(record)
   }
-
-}
-
-object TlvStream {
-
-  // @formatter:off
-  sealed trait Error { val message: String }
-  case object RecordsNotOrdered extends Error { override val message = "tlv records must be ordered by monotonically-increasing types" }
-  case object DuplicateRecords extends Error { override val message = "tlv streams must not contain duplicate records" }
-  case object UnknownEvenTlv extends Error { override val message = "tlv streams must not contain unknown even tlv types" }
-  // @formatter:on
 
 }
