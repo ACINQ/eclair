@@ -108,7 +108,7 @@ object Sphinx extends Logging {
       case _ =>
         // For non-legacy packets the first bytes are a varint encoding the length of the payload data (not including mac).
         // Since messages are always smaller than 65535 bytes, the varint will either be 1 or 3 bytes long.
-        val dataLength = CommonCodecs.varlong.decode(BitVector(payload.take(3))).require.value.toInt
+        val dataLength = CommonCodecs.varintoverflow.decode(BitVector(payload.take(3))).require.value.toInt
         val varintLength = dataLength match {
           case i if i < 253 => 1
           case _ => 3
