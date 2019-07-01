@@ -78,8 +78,8 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           .map(o => UsableBalances(
             remoteNodeId = o.nextNodeId,
             shortChannelId = o.channelUpdate.shortChannelId,
-            canSendMsat = o.commitments.availableBalanceForSendMsat.max(0),
-            canReceiveMsat = o.commitments.availableBalanceForReceiveMsat.max(0),
+            canSendMsat = o.commitments.availableBalanceForSendMsat,
+            canReceiveMsat = o.commitments.availableBalanceForReceiveMsat,
             isPublic = o.commitments.announceChannel))
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
