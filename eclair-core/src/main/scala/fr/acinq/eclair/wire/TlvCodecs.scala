@@ -30,10 +30,10 @@ object TlvCodecs {
 
   val genericTlv: Codec[GenericTlv] = (("type" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv]
 
-  def tlvFallback(codec: Codec[Tlv]): Codec[Tlv] = discriminatorFallback(genericTlv, codec).xmap(_ match {
+  def tlvFallback(codec: Codec[Tlv]): Codec[Tlv] = discriminatorFallback(genericTlv, codec).xmap({
     case Left(l) => l
     case Right(r) => r
-  }, _ match {
+  }, {
     case g: GenericTlv => Left(g)
     case o => Right(o)
   })
