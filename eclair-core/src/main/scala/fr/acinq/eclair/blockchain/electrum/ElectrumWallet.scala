@@ -468,9 +468,9 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
           // list the tx utxos
           val utxos = tx.txIn.map(_.outPoint).toSet
 
-          // check if one of our transactions spends the same inputs as our tx, if this is the case, then the tx
-          // has been double spent
-          utxos.exists(utxo => ourSpentUtxos.contains(utxo))
+          // check if one of our transactions spends the same inputs as our tx and has a different txid; if this is the
+          // case, then the tx has been double spent
+          utxos.exists(utxo => ourSpentUtxos.contains(utxo) && !data.transactions.contains(tx.txid))
       }
       stay() replying IsDoubleSpentResponse(tx, isDoubleSpent)
 
