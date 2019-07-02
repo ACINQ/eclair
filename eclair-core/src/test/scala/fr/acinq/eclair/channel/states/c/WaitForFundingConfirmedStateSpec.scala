@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -89,7 +89,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     import f._
     alice ! BITCOIN_FUNDING_TIMEOUT
     alice2bob.expectMsgType[Error]
-    awaitCond(alice.stateName == ERR_FUNDING_TIMEOUT)
+    awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv BITCOIN_FUNDING_SPENT (remote commit)") { f =>

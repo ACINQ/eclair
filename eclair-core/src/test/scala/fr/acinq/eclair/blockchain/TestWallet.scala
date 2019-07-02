@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,17 +54,5 @@ object TestWallet {
       txOut = TxOut(amount, pubkeyScript) :: Nil,
       lockTime = 0)
     MakeFundingTxResponse(fundingTx, 0, Satoshi(420))
-  }
-
-  def malleateTx(tx: Transaction): Transaction = {
-    val inputs1 = tx.txIn.map(input => Script.parse(input.signatureScript) match {
-      case OP_PUSHDATA(sig, _) :: OP_PUSHDATA(pub, _) :: Nil if pub.length == 33 && Try(Crypto.decodeSignature(sig)).isSuccess =>
-        val (r, s) = Crypto.decodeSignature(sig)
-        val s1 = Crypto.curve.getN.subtract(s)
-        val sig1 = Crypto.encodeSignature(r, s1)
-        input.copy(signatureScript = Script.write(OP_PUSHDATA(sig1) :: OP_PUSHDATA(pub) :: Nil))
-    })
-    val tx1 = tx.copy(txIn = inputs1)
-    tx1
   }
 }

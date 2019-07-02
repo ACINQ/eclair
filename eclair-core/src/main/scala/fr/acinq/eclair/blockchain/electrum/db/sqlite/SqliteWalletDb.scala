@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -136,7 +136,7 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
 object SqliteWalletDb {
 
   import fr.acinq.eclair.wire.ChannelCodecs._
-  import fr.acinq.eclair.wire.LightningMessageCodecs._
+  import fr.acinq.eclair.wire.CommonCodecs._
   import scodec.Codec
   import scodec.bits.BitVector
   import scodec.codecs._

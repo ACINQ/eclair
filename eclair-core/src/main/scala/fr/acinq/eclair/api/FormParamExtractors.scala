@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,17 @@ package fr.acinq.eclair.api
 
 import java.util.UUID
 
+import JsonSupport._
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.util.Timeout
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.PaymentRequest
 import scodec.bits.ByteVector
 import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 
 object FormParamExtractors {
 
@@ -55,6 +58,21 @@ object FormParamExtractors {
 
   implicit val timeoutSecondsUnmarshaller: Unmarshaller[String, Timeout] = Unmarshaller.strict { str =>
     Timeout(str.toInt.seconds)
+  }
+
+  implicit val nodeURIUnmarshaller: Unmarshaller[String, NodeURI] = Unmarshaller.strict { str =>
+    NodeURI.parse(str)
+  }
+
+  implicit val pubkeyListUnmarshaller: Unmarshaller[String, List[PublicKey]] = Unmarshaller.strict { str =>
+    Try(serialization.read[List[String]](str).map { el =>
+      PublicKey(ByteVector.fromValidHex(el), checkValid = false)
+    }).recoverWith {
+      case error => Try(str.split(",").toList.map(pk => PublicKey(ByteVector.fromValidHex(pk))))
+    } match {
+      case Success(list) => list
+      case Failure(_) => throw new IllegalArgumentException(s"PublicKey list must be either json-encoded or comma separated list")
+    }
   }
 
 }

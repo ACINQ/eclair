@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -109,7 +109,7 @@ object NodeParams {
       case true => ByteVector(Files.readAllBytes(seedPath.toPath))
       case false =>
         datadir.mkdirs()
-        val seed = randomKey.toBin
+        val seed = randomBytes32
         Files.write(seedPath.toPath, seed.toArray)
         seed
     }

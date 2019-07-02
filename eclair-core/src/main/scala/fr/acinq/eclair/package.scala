@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +42,9 @@ package object eclair {
 
   def randomBytes32: ByteVector32 = ByteVector32(randomBytes(32))
 
-  def randomKey: PrivateKey = PrivateKey(randomBytes32, compressed = true)
+  def randomBytes64: ByteVector64 = ByteVector64(randomBytes(64))
+
+  def randomKey: PrivateKey = PrivateKey(randomBytes32)
 
   def toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 = {
     require(fundingOutputIndex < 65536, "fundingOutputIndex must not be greater than FFFF")

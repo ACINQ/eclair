@@ -13,7 +13,7 @@ before_install:
  - export M2_HOME=$PWD/apache-maven-3.6.0
  - export PATH=$M2_HOME/bin:$PATH
 script:
- - mvn install
+ - mvn scoverage:report
 cache:
  directories:
   - .autoconf
@@ -23,3 +23,5 @@ jdk:
 notifications:
  email:
   - ops@acinq.fr
+after_success:
+ - bash <(curl -s https://codecov.io/bash)

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -167,7 +167,6 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
         data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         advertiseTransactions(data)
-        // tell everyone we're ready
         goto(RUNNING) using persistAndNotify(data)
       } else {
         client ! ElectrumClient.GetHeaders(data.blockchain.tip.height + 1, RETARGETING_PERIOD)
@@ -237,7 +236,9 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
       }
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash) == Some(status) =>
-      stay using persistAndNotify(data) // we already have it
+      val missing = data.missingTransactions(scriptHash)
+      missing.foreach(txid => client ! GetTransaction(txid))
+      stay using persistAndNotify(data.copy(pendingHistoryRequests = data.pendingTransactionRequests ++ missing))
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if !data.accountKeyMap.contains(scriptHash) && !data.changeKeyMap.contains(scriptHash) =>
       log.warning(s"received status=$status for scriptHash=$scriptHash which does not match any of our keys")
@@ -379,9 +380,16 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
         case None =>
           // missing parents
           log.info(s"couldn't connect txid=${tx.txid}")
-          val data1 = data.copy(pendingTransactions = data.pendingTransactions :+ tx)
+          val data1 = data.copy(pendingTransactionRequests = data.pendingTransactionRequests - tx.txid, pendingTransactions = data.pendingTransactions :+ tx)
           stay using persistAndNotify(data1)
       }
+
+    case Event(ServerError(GetTransaction(txid), error), data) if data.pendingTransactionRequests.contains(txid) =>
+      // server tells us that txid belongs to our wallet history, but cannot provide tx ?
+      log.error(s"server cannot find history tx $txid: $error")
+      sender ! PoisonPill
+      goto(DISCONNECTED) using data
+
 
     case Event(response@GetMerkleResponse(txid, _, height, _), data) =>
       data.blockchain.getHeader(height).orElse(params.walletDb.getHeader(height)) match {
@@ -731,6 +739,16 @@ object ElectrumWallet {
     }
 
     /**
+      * 
+      * @return the ids of transactions that belong to our wallet history for this script hash but that we don't have
+      *         and have no pending requests for.
+      */
+    def missingTransactions(scriptHash: ByteVector32): Set[ByteVector32] = {
+      val txids = history.getOrElse(scriptHash, List()).map(_.tx_hash).filterNot(txhash => transactions.contains(txhash)).toSet
+      txids -- pendingTransactionRequests
+    }
+
+    /**
       *
       * @return the current receive key. In most cases it will be a key that has not
       *         been used yet but it may be possible that we are still looking for
@@ -912,7 +930,7 @@ object ElectrumWallet {
         // we use dummy signature here, because the result is only used to estimate fees
         val sig = ByteVector.fill(71)(1)
         val sigScript = Script.write(OP_PUSHDATA(Script.write(Script.pay2wpkh(utxo.key.publicKey))) :: Nil)
-        val witness = ScriptWitness(sig :: utxo.key.publicKey.toBin :: Nil)
+        val witness = ScriptWitness(sig :: utxo.key.publicKey.value :: Nil)
         TxIn(utxo.outPoint, signatureScript = sigScript, sequence = TxIn.SEQUENCE_FINAL, witness = witness)
       })
 
@@ -996,7 +1014,7 @@ object ElectrumWallet {
         val key = utxo.key
         val sig = Transaction.signInput(tx, i, Script.pay2pkh(key.publicKey), SIGHASH_ALL, Satoshi(utxo.item.value), SigVersion.SIGVERSION_WITNESS_V0, key.privateKey)
         val sigScript = Script.write(OP_PUSHDATA(Script.write(Script.pay2wpkh(key.publicKey))) :: Nil)
-        val witness = ScriptWitness(sig :: key.publicKey.toBin :: Nil)
+        val witness = ScriptWitness(sig :: key.publicKey.value :: Nil)
         txIn.copy(signatureScript = sigScript, witness = witness)
       })
     }

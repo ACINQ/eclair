@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -84,10 +84,10 @@ class ChannelCodecsSpec extends FunSuite {
       toSelfDelay = Random.nextInt(Short.MaxValue),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       fundingPubKey = randomKey.publicKey,
-      revocationBasepoint = randomKey.publicKey.value,
-      paymentBasepoint = randomKey.publicKey.value,
-      delayedPaymentBasepoint = randomKey.publicKey.value,
-      htlcBasepoint = randomKey.publicKey.value,
+      revocationBasepoint = randomKey.publicKey,
+      paymentBasepoint = randomKey.publicKey,
+      delayedPaymentBasepoint = randomKey.publicKey,
+      htlcBasepoint = randomKey.publicKey,
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))
     val encoded = remoteParamsCodec.encode(o).require

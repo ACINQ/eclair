@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -159,9 +159,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   def connect(node1: Kit, node2: Kit, fundingSatoshis: Long, pushMsat: Long) = {
     val sender = TestProbe()
     val address = node2.nodeParams.publicAddresses.head
-    sender.send(node1.switchboard, Peer.Connect(NodeURI(
+    sender.send(node1.switchboard, Peer.Connect(
       nodeId = node2.nodeParams.nodeId,
-      address = HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort))))
+      address_opt = Some(HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort))
+    ))
     sender.expectMsgAnyOf(10 seconds, "connected", "already connected")
     sender.send(node1.switchboard, Peer.OpenChannel(
       remoteNodeId = node2.nodeParams.nodeId,
@@ -342,7 +343,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(failed.id == paymentId)
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, UnknownPaymentHash))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000L)))
   }
 
   test("send an HTLC A->D with a lower amount than requested") {
@@ -362,7 +363,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(failed.id == paymentId)
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectPaymentAmount))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000L)))
   }
 
   test("send an HTLC A->D with too much overpayment") {
@@ -382,7 +383,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentId == failed.id)
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectPaymentAmount))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(600000000L)))
   }
 
   test("send an HTLC A->D with a reasonable overpayment") {
@@ -485,7 +486,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(nodes("F1").switchboard, 'peers)
     val peers = sender.expectMsgType[Iterable[ActorRef]]
     // F's only node is C
-    peers.head ! Disconnect
+    peers.head ! Peer.Disconnect(nodes("C").nodeParams.nodeId)
     // we then wait for F to be in disconnected state
     awaitCond({
       sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_GETSTATE))
@@ -566,7 +567,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(nodes("F2").switchboard, 'peers)
     val peers = sender.expectMsgType[Iterable[ActorRef]]
     // F's only node is C
-    peers.head ! Disconnect
+    peers.head ! Disconnect(nodes("C").nodeParams.nodeId)
     // we then wait for F to be in disconnected state
     awaitCond({
       sender.send(nodes("F2").register, Forward(htlc.channelId, CMD_GETSTATE))
@@ -878,7 +879,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.expectMsgType[JValue](10 seconds)
     logger.info(s"simulated ${channels.size} channels")
 
-    val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), true).publicKey
+    val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
 
     // then we make the announcements
     val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))

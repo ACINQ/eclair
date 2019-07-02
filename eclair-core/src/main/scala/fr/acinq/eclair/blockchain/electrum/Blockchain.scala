@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -336,7 +336,7 @@ object Blockchain extends Logging {
     */
   def getDifficulty(blockchain: Blockchain, height: Int, headerDb: HeaderDb): Option[Long] = {
     blockchain.chainHash match {
-      case Block.LivenetGenesisBlock.hash | Block.RegtestGenesisBlock.hash =>
+      case Block.LivenetGenesisBlock.hash =>
         (height % RETARGETING_PERIOD) match {
           case 0 =>
             for {

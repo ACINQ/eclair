@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -179,20 +179,25 @@ class Setup(datadir: File,
       tcpBound = Promise[Done]()
       routerInitialized = Promise[Done]()
 
-      defaultFeerates = FeeratesPerKB(
-        block_1 = config.getLong("default-feerates.delay-blocks.1"),
-        blocks_2 = config.getLong("default-feerates.delay-blocks.2"),
-        blocks_6 = config.getLong("default-feerates.delay-blocks.6"),
-        blocks_12 = config.getLong("default-feerates.delay-blocks.12"),
-        blocks_36 = config.getLong("default-feerates.delay-blocks.36"),
-        blocks_72 = config.getLong("default-feerates.delay-blocks.72")
-      )
+      defaultFeerates = {
+        val confDefaultFeerates = FeeratesPerKB(
+          block_1 = config.getLong("default-feerates.delay-blocks.1"),
+          blocks_2 = config.getLong("default-feerates.delay-blocks.2"),
+          blocks_6 = config.getLong("default-feerates.delay-blocks.6"),
+          blocks_12 = config.getLong("default-feerates.delay-blocks.12"),
+          blocks_36 = config.getLong("default-feerates.delay-blocks.36"),
+          blocks_72 = config.getLong("default-feerates.delay-blocks.72")
+        )
+        Globals.feeratesPerKB.set(confDefaultFeerates)
+        Globals.feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
+        confDefaultFeerates
+      }
       minFeeratePerByte = config.getLong("min-feerate")
       smoothFeerateWindow = config.getInt("smooth-feerate-window")
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case (_, Bitcoind(bitcoinClient)) =>
-          new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+          new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
         case _ =>
           new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
       }
@@ -286,22 +291,12 @@ class Setup(datadir: File,
           case "" => throw EmptyAPIPasswordException
           case valid => valid
         }
-        val apiRoute = if (!config.getBoolean("api.use-old-api")) {
-          new Service {
-            override val actorSystem = kit.system
-            override val mat = materializer
-            override val password = apiPassword
-            override val eclairApi: Eclair = new EclairImpl(kit)
-          }.route
-        } else {
-          new OldService {
-            override val scheduler = system.scheduler
-            override val password = apiPassword
-            override val getInfoResponse: Future[GetInfoResponse] = Future.successful(getInfo)
-            override val appKit: Kit = kit
-            override val socketHandler = makeSocketHandler(system)(materializer)
-          }.route
-        }
+        val apiRoute = new Service {
+          override val actorSystem = kit.system
+          override val mat = materializer
+          override val password = apiPassword
+          override val eclairApi: Eclair = new EclairImpl(kit)
+        }.route
         val httpBound = Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
           case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
         }

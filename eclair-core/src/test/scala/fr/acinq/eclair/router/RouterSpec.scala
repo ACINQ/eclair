@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -235,6 +235,20 @@ class RouterSpec extends BaseRouterSpec {
     assert(state.channels.size == 4)
     assert(state.nodes.size == 6)
     assert(state.updates.size == 8)
+  }
+
+  test("given a pre-computed route add the proper channel updates") { fixture =>
+    import fixture._
+
+    val sender = TestProbe()
+    val preComputedRoute = Seq(a, b, c, d)
+    sender.send(router, FinalizeRoute(preComputedRoute))
+
+    val response = sender.expectMsgType[RouteResponse]
+    // the route hasn't changed (nodes are the same)
+    assert(response.hops.map(_.nodeId).toList == preComputedRoute.dropRight(1).toList)
+    assert(response.hops.last.nextNodeId == preComputedRoute.last)
+    assert(response.hops.map(_.lastUpdate).toList == List(channelUpdate_ab, channelUpdate_bc, channelUpdate_cd))
   }
 
   test("ask for channels that we marked as stale for which we receive a new update") { fixture =>
