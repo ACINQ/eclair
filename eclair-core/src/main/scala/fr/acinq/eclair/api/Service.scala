@@ -281,6 +281,9 @@ trait Service extends ExtraDirectives with Logging {
                       } ~
                       path("channelstats") {
                         complete(eclairApi.channelStats())
+                      } ~
+                      path("usablebalances") {
+                        complete(eclairApi.usableBalances())
                       }
                   } ~ get {
                     path("ws") {

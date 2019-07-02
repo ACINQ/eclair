@@ -32,8 +32,6 @@ Eclair offers a feature rich HTTP API that enables application developers to eas
 
 For more information please visit the [API documentation website](https://acinq.github.io/eclair).
 
-:warning: You can still use the old API by setting the `eclair.api.use-old-api=true` parameter, but it is now deprecated and will soon be removed. The old documentation is still available [here](OLD-API-DOCS.md).
-
 ## Installation
 
 ### Configuring Bitcoin Core
@@ -60,7 +58,7 @@ Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful function
 * eclair-node, which is a headless application that you can run on servers and desktops, and control from the command line
 * eclair-node-gui, which also includes a JavaFX GUI
 
-To run Eclair, you first need to install Java, we recommend that you use [OpenJDK 11](https://jdk.java.net/11/). Eclair will also run on Oracle JDK 1.8, Oracle JDK 11, and other versions of OpenJDK but we don't recommend using them.
+To run Eclair, you first need to install Java, we recommend that you use [OpenJDK 11](https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot). Eclair will also run on Oracle JDK 1.8, Oracle JDK 11, and other versions of OpenJDK but we don't recommend using them.
 
 Then download our latest [release](https://github.com/ACINQ/eclair/releases) and depending on whether or not you want a GUI run the following command:
 * with GUI:
