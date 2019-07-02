@@ -55,6 +55,11 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         channel ! INPUT_RESTORED(state)
         FinalChannelId(state.channelId) -> channel
       }.toMap
+      // When restarting, we will immediately reconnect, but then:
+      // - we don't want all the subsequent reconnection attempts to be synchronized (herd effect)
+      // - we don't want to go through the exponential backoff delay, because we were offline, not them, so there is no
+      // reason to eagerly retry
+      // That's why we set the next reconnection delay to a random value between MAX_RECONNECT_INTERVAL/2 and MAX_RECONNECT_INTERVAL.
       val firstNextReconnectionDelay = MAX_RECONNECT_INTERVAL.minus(Random.nextInt(MAX_RECONNECT_INTERVAL.toSeconds.toInt / 2).seconds)
       goto(DISCONNECTED) using DisconnectedData(previousKnownAddress, channels, firstNextReconnectionDelay) // when we restart, we will attempt to reconnect right away, but then we'll wait
   }
@@ -547,13 +552,13 @@ object Peer {
 
   val RECONNECT_TIMER = "reconnect"
 
+  val MAX_RECONNECT_INTERVAL = 1 hour
+
   val MAX_FUNDING_TX_ALREADY_SPENT = 10
 
   val MAX_FUNDING_TX_NOT_FOUND = 10
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
-
-  val MAX_RECONNECT_INTERVAL = 1 hour
 
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet))
 
