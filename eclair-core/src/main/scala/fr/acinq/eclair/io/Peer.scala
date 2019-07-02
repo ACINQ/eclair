@@ -60,7 +60,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       // - we don't want to go through the exponential backoff delay, because we were offline, not them, so there is no
       // reason to eagerly retry
       // That's why we set the next reconnection delay to a random value between MAX_RECONNECT_INTERVAL/2 and MAX_RECONNECT_INTERVAL.
-      val firstNextReconnectionDelay = MAX_RECONNECT_INTERVAL.minus(Random.nextInt(MAX_RECONNECT_INTERVAL.toSeconds.toInt / 2).seconds)
+      val firstNextReconnectionDelay = nodeParams.maxReconnectInterval.minus(Random.nextInt(nodeParams.maxReconnectInterval.toSeconds.toInt / 2).seconds)
       goto(DISCONNECTED) using DisconnectedData(previousKnownAddress, channels, firstNextReconnectionDelay) // when we restart, we will attempt to reconnect right away, but then we'll wait
   }
 
@@ -92,7 +92,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           log.info(s"reconnecting to $address (next reconnection in ${d.nextReconnectionDelay.toSeconds} seconds)")
           setTimer(RECONNECT_TIMER, Reconnect, d.nextReconnectionDelay, repeat = false)
-          stay using d.copy(nextReconnectionDelay = nextReconnectionDelay(d.nextReconnectionDelay))
+          stay using d.copy(nextReconnectionDelay = nextReconnectionDelay(d.nextReconnectionDelay, nodeParams.maxReconnectInterval))
       }
 
     case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, address, outgoing, origin_opt), d: DisconnectedData) =>
@@ -508,7 +508,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     */
   onTransition {
     case INSTANTIATING -> DISCONNECTED => ()
-    case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, Random.nextInt(5000).millis, repeat = false) // we add some randomization to not have peers reconnect to each other exactly at the same time
+    case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, Random.nextInt(nodeParams.initialRandomReconnectDelay.toMillis.toInt).millis, repeat = false) // we add some randomization to not have peers reconnect to each other exactly at the same time
     case DISCONNECTED -> _ if nodeParams.autoReconnect => cancelTimer(RECONNECT_TIMER)
   }
 
@@ -551,8 +551,6 @@ object Peer {
   val UNKNOWN_CHANNEL_MESSAGE = ByteVector.view("unknown channel".getBytes())
 
   val RECONNECT_TIMER = "reconnect"
-
-  val MAX_RECONNECT_INTERVAL = 1 hour
 
   val MAX_FUNDING_TX_ALREADY_SPENT = 10
 
@@ -665,5 +663,5 @@ object Peer {
   /**
     * Exponential backoff retry with a finite max
     */
-  def nextReconnectionDelay(currentDelay: FiniteDuration): FiniteDuration = (2 * currentDelay).min(MAX_RECONNECT_INTERVAL)
+  def nextReconnectionDelay(currentDelay: FiniteDuration, maxReconnectInterval: FiniteDuration): FiniteDuration = (2 * currentDelay).min(maxReconnectInterval)
 }
