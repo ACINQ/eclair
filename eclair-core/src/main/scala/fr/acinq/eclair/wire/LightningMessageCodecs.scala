@@ -16,79 +16,17 @@
 
 package fr.acinq.eclair.wire
 
-import java.net.{Inet4Address, Inet6Address, InetAddress}
-
-import com.google.common.cache.{CacheBuilder, CacheLoader}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.wire.FixedSizeStrictCodec.bytesStrict
-import fr.acinq.eclair.{ShortChannelId, UInt64, wire}
-import org.apache.commons.codec.binary.Base32
-import scodec.bits.{BitVector, ByteVector}
+import fr.acinq.eclair.wire
+import fr.acinq.eclair.wire.CommonCodecs._
+import scodec.bits.ByteVector
 import scodec.codecs._
-import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
-
-import scala.util.{Failure, Success, Try}
-
+import scodec.Codec
 
 /**
   * Created by PM on 15/11/2016.
   */
 object LightningMessageCodecs {
-
-  def attemptFromTry[T](f: => T): Attempt[T] = Try(f) match {
-    case Success(t) => Attempt.successful(t)
-    case Failure(t) => Attempt.failure(Err(s"deserialization error: ${t.getMessage}"))
-  }
-
-  // this codec can be safely used for values < 2^63 and will fail otherwise
-  // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
-  val uint64: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
-
-  val uint64ex: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
-
-  def bytes32: Codec[ByteVector32] = limitedSizeBytes(32, bytesStrict(32).xmap(d => ByteVector32(d), d => d.bytes))
-
-  def bytes64: Codec[ByteVector64] = limitedSizeBytes(64, bytesStrict(64).xmap(d => ByteVector64(d), d => d.bytes))
-
-  def varsizebinarydata: Codec[ByteVector] = variableSizeBytes(uint16, bytes)
-
-  def listofsignatures: Codec[List[ByteVector64]] = listOfN(uint16, bytes64)
-
-  def ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))
-
-  def ipv6address: Codec[Inet6Address] = bytes(16).exmap(b => attemptFromTry(Inet6Address.getByAddress(null, b.toArray, null)), a => attemptFromTry(ByteVector(a.getAddress)))
-
-  def base32(size: Int): Codec[String] = bytes(size).xmap(b => new Base32().encodeAsString(b.toArray).toLowerCase, a => ByteVector(new Base32().decode(a.toUpperCase())))
-
-  def nodeaddress: Codec[NodeAddress] =
-    discriminated[NodeAddress].by(uint8)
-      .typecase(1, (ipv4address :: uint16).as[IPv4])
-      .typecase(2, (ipv6address :: uint16).as[IPv6])
-      .typecase(3, (base32(10) :: uint16).as[Tor2])
-      .typecase(4, (base32(35) :: uint16).as[Tor3])
-
-  // this one is a bit different from most other codecs: the first 'len' element is *not* the number of items
-  // in the list but rather the  number of bytes of the encoded list. The rationale is once we've read this
-  // number of bytes we can just skip to the next field
-  def listofnodeaddresses: Codec[List[NodeAddress]] = variableSizeBytes(uint16, list(nodeaddress))
-
-  def shortchannelid: Codec[ShortChannelId] = int64.xmap(l => ShortChannelId(l), s => s.toLong)
-
-  def privateKey: Codec[PrivateKey] = Codec[PrivateKey](
-    (priv: PrivateKey) => bytes(32).encode(priv.value),
-    (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => PrivateKey(b)))
-  )
-
-  def publicKey: Codec[PublicKey] = Codec[PublicKey](
-    (pub: PublicKey) => bytes(33).encode(pub.value),
-    (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => PublicKey(b)))
-  )
-
-  def rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
-
-  def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(32, utf8).xmap(s => s.takeWhile(_ != '\u0000'), s => s)
 
   val initCodec: Codec[Init] = (
     ("globalFeatures" | varsizebinarydata) ::
@@ -107,20 +45,20 @@ object LightningMessageCodecs {
 
   val channelReestablishCodec: Codec[ChannelReestablish] = (
     ("channelId" | bytes32) ::
-      ("nextLocalCommitmentNumber" | uint64) ::
-      ("nextRemoteRevocationNumber" | uint64) ::
+      ("nextLocalCommitmentNumber" | uint64overflow) ::
+      ("nextRemoteRevocationNumber" | uint64overflow) ::
       ("yourLastPerCommitmentSecret" | optional(bitsRemaining, privateKey)) ::
       ("myCurrentPerCommitmentPoint" | optional(bitsRemaining, publicKey))).as[ChannelReestablish]
 
   val openChannelCodec: Codec[OpenChannel] = (
     ("chainHash" | bytes32) ::
       ("temporaryChannelId" | bytes32) ::
-      ("fundingSatoshis" | uint64) ::
-      ("pushMsat" | uint64) ::
-      ("dustLimitSatoshis" | uint64) ::
-      ("maxHtlcValueInFlightMsat" | uint64ex) ::
-      ("channelReserveSatoshis" | uint64) ::
-      ("htlcMinimumMsat" | uint64) ::
+      ("fundingSatoshis" | uint64overflow) ::
+      ("pushMsat" | uint64overflow) ::
+      ("dustLimitSatoshis" | uint64overflow) ::
+      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("channelReserveSatoshis" | uint64overflow) ::
+      ("htlcMinimumMsat" | uint64overflow) ::
       ("feeratePerKw" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
@@ -134,10 +72,10 @@ object LightningMessageCodecs {
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | bytes32) ::
-      ("dustLimitSatoshis" | uint64) ::
-      ("maxHtlcValueInFlightMsat" | uint64ex) ::
-      ("channelReserveSatoshis" | uint64) ::
-      ("htlcMinimumMsat" | uint64) ::
+      ("dustLimitSatoshis" | uint64overflow) ::
+      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("channelReserveSatoshis" | uint64overflow) ::
+      ("htlcMinimumMsat" | uint64overflow) ::
       ("minimumDepth" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
@@ -168,30 +106,30 @@ object LightningMessageCodecs {
 
   val closingSignedCodec: Codec[ClosingSigned] = (
     ("channelId" | bytes32) ::
-      ("feeSatoshis" | uint64) ::
+      ("feeSatoshis" | uint64overflow) ::
       ("signature" | bytes64)).as[ClosingSigned]
 
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
-      ("id" | uint64) ::
-      ("amountMsat" | uint64) ::
+      ("id" | uint64overflow) ::
+      ("amountMsat" | uint64overflow) ::
       ("paymentHash" | bytes32) ::
       ("expiry" | uint32) ::
       ("onionRoutingPacket" | bytes(Sphinx.PacketLength))).as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
     ("channelId" | bytes32) ::
-      ("id" | uint64) ::
+      ("id" | uint64overflow) ::
       ("paymentPreimage" | bytes32)).as[UpdateFulfillHtlc]
 
   val updateFailHtlcCodec: Codec[UpdateFailHtlc] = (
     ("channelId" | bytes32) ::
-      ("id" | uint64) ::
+      ("id" | uint64overflow) ::
       ("reason" | varsizebinarydata)).as[UpdateFailHtlc]
 
   val updateFailMalformedHtlcCodec: Codec[UpdateFailMalformedHtlc] = (
     ("channelId" | bytes32) ::
-      ("id" | uint64) ::
+      ("id" | uint64overflow) ::
       ("onionHash" | bytes32) ::
       ("failureCode" | uint16)).as[UpdateFailMalformedHtlc]
 
@@ -216,14 +154,13 @@ object LightningMessageCodecs {
       ("nodeSignature" | bytes64) ::
       ("bitcoinSignature" | bytes64)).as[AnnouncementSignatures]
 
-  val channelAnnouncementWitnessCodec = (
-    ("features" | varsizebinarydata) ::
-      ("chainHash" | bytes32) ::
-      ("shortChannelId" | shortchannelid) ::
-      ("nodeId1" | publicKey) ::
-      ("nodeId2" | publicKey) ::
-      ("bitcoinKey1" | publicKey) ::
-      ("bitcoinKey2" | publicKey))
+  val channelAnnouncementWitnessCodec = ("features" | varsizebinarydata) ::
+    ("chainHash" | bytes32) ::
+    ("shortChannelId" | shortchannelid) ::
+    ("nodeId1" | publicKey) ::
+    ("nodeId2" | publicKey) ::
+    ("bitcoinKey1" | publicKey) ::
+    ("bitcoinKey2" | publicKey)
 
   val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
     ("nodeSignature1" | bytes64) ::
@@ -232,13 +169,12 @@ object LightningMessageCodecs {
       ("bitcoinSignature2" | bytes64) ::
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
-  val nodeAnnouncementWitnessCodec = (
-    ("features" | varsizebinarydata) ::
-      ("timestamp" | uint32) ::
-      ("nodeId" | publicKey) ::
-      ("rgbColor" | rgb) ::
-      ("alias" | zeropaddedstring(32)) ::
-      ("addresses" | listofnodeaddresses))
+  val nodeAnnouncementWitnessCodec = ("features" | varsizebinarydata) ::
+    ("timestamp" | uint32) ::
+    ("nodeId" | publicKey) ::
+    ("rgbColor" | rgb) ::
+    ("alias" | zeropaddedstring(32)) ::
+    ("addresses" | listofnodeaddresses)
 
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
     ("signature" | bytes64) ::
@@ -251,10 +187,10 @@ object LightningMessageCodecs {
       (("messageFlags" | byte) >>:~ { messageFlags =>
         ("channelFlags" | byte) ::
           ("cltvExpiryDelta" | uint16) ::
-          ("htlcMinimumMsat" | uint64) ::
+          ("htlcMinimumMsat" | uint64overflow) ::
           ("feeBaseMsat" | uint32) ::
           ("feeProportionalMillionths" | uint32) ::
-          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64))
+          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64overflow))
       })
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (
@@ -284,31 +220,6 @@ object LightningMessageCodecs {
       ("complete" | byte) ::
       ("data" | varsizebinarydata)
     ).as[ReplyChannelRange]
-
-  val queryShortChannelIdsExCodec: Codec[QueryShortChannelIdsEx] = (
-    ("chainHash" | bytes32) ::
-      ("flag" | byte) ::
-      ("data" | varsizebinarydata)
-    ).as[QueryShortChannelIdsEx]
-
-  val replyShortChanelIdsEndExCodec: Codec[ReplyShortChannelIdsEndEx] = (
-    ("chainHash" | bytes32) ::
-      ("complete" | byte)
-    ).as[ReplyShortChannelIdsEndEx]
-
-  val queryChannelRangeExCodec: Codec[QueryChannelRangeEx] = (
-    ("chainHash" | bytes32) ::
-      ("firstBlockNum" | uint32) ::
-      ("numberOfBlocks" | uint32)
-    ).as[QueryChannelRangeEx]
-
-  val replyChannelRangeExCodec: Codec[ReplyChannelRangeEx] = (
-    ("chainHash" | bytes32) ::
-      ("firstBlockNum" | uint32) ::
-      ("numberOfBlocks" | uint32) ::
-      ("complete" | byte) ::
-      ("data" | varsizebinarydata)
-    ).as[ReplyChannelRangeEx]
 
   val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
     ("chainHash" | bytes32) ::
@@ -345,40 +256,11 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
-    .typecase(1001, queryShortChannelIdsExCodec)
-    .typecase(1002, replyShortChanelIdsEndExCodec)
-    .typecase(1003, queryChannelRangeExCodec)
-    .typecase(1004, replyChannelRangeExCodec)
-
-
-  /**
-    * A codec that caches serialized routing messages
-    */
-  val cachedLightningMessageCodec = new Codec[LightningMessage] {
-
-    override def sizeBound: SizeBound = lightningMessageCodec.sizeBound
-
-    val cache = CacheBuilder
-      .newBuilder
-      .weakKeys() // will cleanup values when keys are garbage collected
-      .build(new CacheLoader[LightningMessage, Attempt[BitVector]] {
-      override def load(key: LightningMessage): Attempt[BitVector] = lightningMessageCodec.encode(key)
-    })
-
-    override def encode(value: LightningMessage): Attempt[BitVector] = value match {
-      case _: ChannelAnnouncement => cache.get(value) // we only cache serialized routing messages
-      case _: NodeAnnouncement => cache.get(value) // we only cache serialized routing messages
-      case _: ChannelUpdate => cache.get(value) // we only cache serialized routing messages
-      case _ => lightningMessageCodec.encode(value)
-    }
-
-    override def decode(bits: BitVector): Attempt[DecodeResult[LightningMessage]] = lightningMessageCodec.decode(bits)
-  }
 
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::
       ("short_channel_id" | shortchannelid) ::
-      ("amt_to_forward" | uint64) ::
+      ("amt_to_forward" | uint64overflow) ::
       ("outgoing_cltv_value" | uint32) ::
       ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[PerHopPayload]
 

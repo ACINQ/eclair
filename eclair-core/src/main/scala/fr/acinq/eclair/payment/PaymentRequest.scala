@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.payment
 
-import java.math.BigInteger
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{MilliSatoshi, _}
 import fr.acinq.eclair.ShortChannelId
@@ -303,7 +301,7 @@ object PaymentRequest {
 
   object Codecs {
 
-    import fr.acinq.eclair.wire.LightningMessageCodecs._
+    import fr.acinq.eclair.wire.CommonCodecs._
     import scodec.bits.BitVector
     import scodec.codecs._
     import scodec.{Attempt, Codec, DecodeResult}
@@ -399,6 +397,7 @@ object PaymentRequest {
         case a if a.last == 'n' => Some(MilliSatoshi(a.dropRight(1).toLong * 100L))
         case a if a.last == 'u' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000L))
         case a if a.last == 'm' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000000L))
+        case a => Some(MilliSatoshi(a.toLong * 100000000000L))
       }
 
     def encode(amount: Option[MilliSatoshi]): String = {

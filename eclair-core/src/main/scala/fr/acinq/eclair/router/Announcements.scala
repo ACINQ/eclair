@@ -124,6 +124,7 @@ object Announcements {
     * @return true if channel updates are "equal"
     */
   def areSame(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
+    // NB: On Android, we don't compare chain_hash and signature, because they are stripped
     u1.copy(chainHash = ByteVector32.Zeroes, signature = ByteVector64.Zeroes, timestamp = 0) == u2.copy(chainHash = ByteVector32.Zeroes, signature = ByteVector64.Zeroes, timestamp = 0) // README: on Android we discard chainHash too
 
   def makeMessageFlags(hasOptionChannelHtlcMax: Boolean): Byte = BitVector.bits(hasOptionChannelHtlcMax :: Nil).padLeft(8).toByte()

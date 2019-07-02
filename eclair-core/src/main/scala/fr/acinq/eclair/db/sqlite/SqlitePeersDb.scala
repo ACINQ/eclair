@@ -38,7 +38,7 @@ import SqliteUtils.ExtendedResultSet._
   }
 
   override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeaddress: NodeAddress): Unit = {
-    val data = LightningMessageCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
+    val data = CommonCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
     using(sqlite.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
       update.setBytes(1, data)
       update.setBytes(2, nodeId.value.toArray)
@@ -65,7 +65,7 @@ import SqliteUtils.ExtendedResultSet._
       var m: Map[PublicKey, NodeAddress] = Map()
       while (rs.next()) {
         val nodeid = PublicKey(rs.getByteVector("node_id"))
-        val nodeaddress = LightningMessageCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
+        val nodeaddress = CommonCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
         m += (nodeid -> nodeaddress)
       }
       m

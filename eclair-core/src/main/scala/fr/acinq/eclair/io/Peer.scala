@@ -29,13 +29,11 @@ import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, MilliSatoshi, Protoc
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.secureRandom
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{wire, _}
+import fr.acinq.eclair.{secureRandom, wire, _}
 import scodec.Attempt
 import scodec.bits.ByteVector
-
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
@@ -88,7 +86,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           log.info(s"reconnecting to $address")
           // exponential backoff retry with a finite max
-          setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 20) seconds, repeat = false)
+          setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 3600) seconds, repeat = false)
           stay using d.copy(attempts = d.attempts + 1)
       }
 
@@ -207,6 +205,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       d.transport ! PoisonPill
       stay
 
+    case Event(unhandledMsg: LightningMessage, d: InitializingData) =>
+      // we ack unhandled messages because we don't want to block further reads on the connection
+      d.transport ! TransportHandler.ReadAck(unhandledMsg)
+      log.warning(s"acking unhandled message $unhandledMsg")
+      stay
   }
 
   when(CONNECTED) {
@@ -474,6 +477,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
       self ! h
       goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+
+    case Event(unhandledMsg: LightningMessage, d: ConnectedData) =>
+      // we ack unhandled messages because we don't want to block further reads on the connection
+      d.transport ! TransportHandler.ReadAck(unhandledMsg)
+      log.warning(s"acking unhandled message $unhandledMsg")
+      stay
   }
 
   whenUnhandled {

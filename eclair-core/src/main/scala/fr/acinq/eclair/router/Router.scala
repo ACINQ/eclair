@@ -20,6 +20,7 @@ import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -139,6 +140,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Prom
     }.toMap
     // this will be used to calculate routes
     val graph = DirectedGraph.makeGraph(initChannelUpdates)
+
+    // On Android we don't watch the funding tx outputs of public channels
 
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))

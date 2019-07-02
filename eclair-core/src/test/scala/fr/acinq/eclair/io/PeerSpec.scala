@@ -109,7 +109,7 @@ class PeerSpec extends TestkitBaseClass {
     probe.expectMsg(s"no address found")
   }
 
-  // on Andoird we don't store node announcements
+  // On Android we don't store node announcements
   ignore("if no address was specified during connection use the one from node_announcement", Tag("with_node_announcements")) { f =>
     import f._
 
