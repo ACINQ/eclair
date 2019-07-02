@@ -27,6 +27,7 @@ import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
 
+import scala.compat.Platform
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
@@ -54,7 +55,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
       val JBool(complete) = json \ "complete"
       if (!complete) {
         val message = (json \ "errors" \\ classOf[JString]).mkString(",")
-        throw new JsonRPCError(Error(-1, message))
+        throw JsonRPCError(Error(-1, message))
       }
       SignTransactionResponse(Transaction.read(hex), complete)
     })
@@ -118,7 +119,15 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   override def doubleSpent(tx: Transaction): Future[Boolean] =
   for {
-    exists <- getTransaction(tx.txid).map(_ => true).recover { case _ => false }
+    exists <- getTransaction(tx.txid)
+      .map(_ => true) // we have found the transaction
+      .recover {
+      case JsonRPCError(Error(_, message)) if message.contains("indexing") =>
+        sys.error("Fatal error: bitcoind is indexing!!")
+        System.exit(1) // bitcoind is indexing, that's a fatal error!!
+        false // won't be reached
+      case _ => false
+    }
     doublespent <- if (exists) {
       // if the tx is in the blockchain, it can't have been double-spent
       Future.successful(false)
