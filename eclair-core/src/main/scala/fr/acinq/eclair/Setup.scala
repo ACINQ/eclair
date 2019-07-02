@@ -291,22 +291,12 @@ class Setup(datadir: File,
           case "" => throw EmptyAPIPasswordException
           case valid => valid
         }
-        val apiRoute = if (!config.getBoolean("api.use-old-api")) {
-          new Service {
-            override val actorSystem = kit.system
-            override val mat = materializer
-            override val password = apiPassword
-            override val eclairApi: Eclair = new EclairImpl(kit)
-          }.route
-        } else {
-          new OldService {
-            override val scheduler = system.scheduler
-            override val password = apiPassword
-            override val getInfoResponse: Future[GetInfoResponse] = Future.successful(getInfo)
-            override val appKit: Kit = kit
-            override val socketHandler = makeSocketHandler(system)(materializer)
-          }.route
-        }
+        val apiRoute = new Service {
+          override val actorSystem = kit.system
+          override val mat = materializer
+          override val password = apiPassword
+          override val eclairApi: Eclair = new EclairImpl(kit)
+        }.route
         val httpBound = Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
           case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
         }

@@ -193,6 +193,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       d.transport ! PoisonPill
       stay
 
+    case Event(unhandledMsg: LightningMessage, d: InitializingData) =>
+      // we ack unhandled messages because we don't want to block further reads on the connection
+      d.transport ! TransportHandler.ReadAck(unhandledMsg)
+      log.warning(s"acking unhandled message $unhandledMsg")
+      stay
   }
 
   when(CONNECTED) {
@@ -460,6 +465,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
       self ! h
       goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+
+    case Event(unhandledMsg: LightningMessage, d: ConnectedData) =>
+      // we ack unhandled messages because we don't want to block further reads on the connection
+      d.transport ! TransportHandler.ReadAck(unhandledMsg)
+      log.warning(s"acking unhandled message $unhandledMsg")
+      stay
   }
 
   whenUnhandled {

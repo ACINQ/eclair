@@ -69,16 +69,12 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   test("get transaction id from position") {
     probe.send(client, GetTransactionIdFromPosition(height, position))
-    val GetTransactionIdFromPositionResponse(txid, merkle) = probe.expectMsgType[GetTransactionIdFromPositionResponse]
-    assert(txid === referenceTx.txid)
-    assert(merkle === Nil)
+    probe.expectMsg(GetTransactionIdFromPositionResponse(referenceTx.txid, height, position, Nil))
   }
 
   test("get transaction id from position with merkle proof") {
     probe.send(client, GetTransactionIdFromPosition(height, position, merkle = true))
-    val GetTransactionIdFromPositionResponse(txid, merkle) = probe.expectMsgType[GetTransactionIdFromPositionResponse]
-    assert(txid === referenceTx.txid)
-    assert(merkle === merkleProof)
+    probe.expectMsg(GetTransactionIdFromPositionResponse(referenceTx.txid, height, position, merkleProof))
   }
 
   test("get transaction") {

@@ -181,10 +181,6 @@ object NodeAddress {
     *
     * We don't attempt to resolve onion addresses (it will be done by the tor proxy), so we just recognize them based on
     * the .onion TLD and rely on their length to separate v2/v3.
-    *
-    * @param host
-    * @param port
-    * @return
     */
   def fromParts(host: String, port: Int): Try[NodeAddress] = Try {
     host match {
@@ -231,14 +227,14 @@ case class PerHopPayload(shortChannelId: ShortChannelId,
                          outgoingCltvValue: Long)
 
 
-sealed trait TLV
-
 /**
   * Optional TLV-based query message that can be appended to QueryShortChannelIds
   * @param encoding 0 means uncompressed, 1 means compressed with zlib
   * @param array array of query flags, each flags specifies the info we want for a given channel
   */
-case class EncodedQueryFlags(encoding: EncodingType, array: List[Byte]) extends TLV
+case class EncodedQueryFlags(encoding: EncodingType, array: List[Byte]) extends Tlv {
+  override val `type` = UInt64(1)
+}
 
 case object QueryFlagType {
   val INCLUDE_CHANNEL_ANNOUNCEMENT: Byte = 1
@@ -257,7 +253,9 @@ case object QueryFlagType {
   * Optional query flag that is appended to QueryChannelRange
   * @param flag bit 1 set means I want timestamps, bit 2 set means I want checksums
   */
-case class QueryChannelRangeExtension(flag: Byte) extends TLV {
+case class QueryChannelRangeExtension(flag: Byte) extends Tlv {
+  override val `type` = UInt64(1)
+
   val wantTimestamps = QueryChannelRangeExtension.wantTimestamps(flag)
 
   val wantChecksums = QueryChannelRangeExtension.wantChecksums(flag)
@@ -286,7 +284,9 @@ case class Timestamps(timestamp1: Long, timestamp2: Long)
   * @param encoding same convention as for short channel ids
   * @param timestamps
   */
-case class EncodedTimestamps(encoding: EncodingType, timestamps: List[Timestamps]) extends TLV
+case class EncodedTimestamps(encoding: EncodingType, timestamps: List[Timestamps]) extends Tlv {
+  override val `type` = UInt64(1)
+}
 
 /**
   *
@@ -300,17 +300,11 @@ case class Checksums(checksum1: Long, checksum2: Long)
   * There is no leading encoding byte, as compression would ne be very effective
   * @param checksums
   */
-case class EncodedChecksums(checksums: List[Checksums]) extends TLV
+case class EncodedChecksums(checksums: List[Checksums]) extends Tlv {
+  override val `type` = UInt64(3)
+}
 
-/**
-  * Generic TLV type we fallback to if we don't understand the TLV's type
-  * @param `type` TLV type
-  * @param value TLV value (length is implicit, and encoded as a varint)
-  */
-case class GenericTLV(`type`: Long, value: ByteVector) extends TLV
 // @formatter:on
-
-
 sealed trait EncodingType
 object EncodingType {
   case object UNCOMPRESSED extends EncodingType
@@ -325,7 +319,7 @@ case class EncodedShortChannelIds(encoding: EncodingType,
 
 case class QueryShortChannelIds(chainHash: ByteVector32,
                                 shortChannelIds: EncodedShortChannelIds,
-                                extensions: List[TLV]) extends RoutingMessage with HasChainHash {
+                                extensions: List[Tlv]) extends RoutingMessage with HasChainHash {
   val queryFlags: Option[EncodedQueryFlags] = extensions collectFirst { case flags: EncodedQueryFlags => flags }
 }
 
@@ -344,7 +338,7 @@ case class ReplyShortChannelIdsEnd(chainHash: ByteVector32,
 case class QueryChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
-                             extensions: List[TLV]) extends RoutingMessage {
+                             extensions: List[Tlv]) extends RoutingMessage {
   val queryExtension: Option[QueryChannelRangeExtension] = extensions collectFirst { case q: QueryChannelRangeExtension => q }
 }
 
@@ -359,7 +353,7 @@ case class ReplyChannelRange(chainHash: ByteVector32,
                              numberOfBlocks: Long,
                              complete: Byte,
                              shortChannelIds: EncodedShortChannelIds,
-                             extensions: List[TLV]) extends RoutingMessage {
+                             extensions: List[Tlv]) extends RoutingMessage {
   val timestamps: Option[EncodedTimestamps] = extensions collectFirst { case ts: EncodedTimestamps => ts }
 
   val checksums: Option[EncodedChecksums] = extensions collectFirst { case cs: EncodedChecksums => cs }

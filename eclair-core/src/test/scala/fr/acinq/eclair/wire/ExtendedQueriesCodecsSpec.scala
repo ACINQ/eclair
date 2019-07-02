@@ -1,7 +1,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.Block
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{ShortChannelId, UInt64}
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
@@ -35,7 +35,7 @@ class ExtendedQueriesCodecsSpec extends FunSuite {
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
       List(
         EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1.toByte, 2.toByte, 3.toByte, 4.toByte, 5.toByte)),
-        GenericTLV(43.toByte, ByteVector.fromValidHex("deadbeef"))))
+        GenericTlv(UInt64(43), ByteVector.fromValidHex("deadbeef"))))
 
     val encoded = queryShortChannelIdsCodec.encode(query_short_channel_id).require
     val decoded = queryShortChannelIdsCodec.decode(encoded).require.value
@@ -78,7 +78,7 @@ class ExtendedQueriesCodecsSpec extends FunSuite {
       List(
         EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1, 1), Timestamps(2, 2), Timestamps(3, 3))),
         EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3))),
-        GenericTLV(7.toByte, ByteVector.fromValidHex("deadbeef"))
+        GenericTlv(UInt64(7), ByteVector.fromValidHex("deadbeef"))
       )
     )
 

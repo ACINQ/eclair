@@ -1,0 +1,1 @@
+[{"remoteNodeId":"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0","shortChannelId":"0x0x1","canSendMsat":100000000,"canReceiveMsat":20000000,"isPublic":true},{"remoteNodeId":"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0","shortChannelId":"0x0x2","canSendMsat":400000000,"canReceiveMsat":30000000,"isPublic":false}]
