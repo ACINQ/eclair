@@ -50,6 +50,14 @@ object ChannelCodecs extends Logging {
       ("path" | keyPathCodec) ::
       ("parent" | int64)).as[ExtendedPrivateKey]
 
+  val channelVersionCodec: Codec[ChannelVersion] = discriminatorWithDefault[ChannelVersion](
+    discriminator = discriminated[ChannelVersion].by(byte)
+      .typecase(0x01, provide(ChannelVersion.STANDARD))
+      // NB: 0x02 and 0x03 are *reserved* for backward compatibility reasons
+      ,
+    fallback = provide(ChannelVersion.STANDARD)
+  )
+
   val localParamsCodec: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
       ("channelPath" | keyPathCodec) ::
@@ -127,8 +135,8 @@ object ChannelCodecs extends Logging {
   val sig64OrDERCodec: Codec[ByteVector64] = Codec[ByteVector64](
     (value: ByteVector64) => bytes(64).encode(value),
     (wire: BitVector) => bytes.decode(wire).map(_.map {
-       case bin64 if bin64.size == 64 => ByteVector64(bin64)
-       case der => Crypto.der2compact(der)
+      case bin64 if bin64.size == 64 => ByteVector64(bin64)
+      case der => Crypto.der2compact(der)
     })
   )
 
@@ -204,7 +212,8 @@ object ChannelCodecs extends Logging {
   )
 
   val commitmentsCodec: Codec[Commitments] = (
-    ("localParams" | localParamsCodec) ::
+      ("channelVersion" | channelVersionCodec) ::
+      ("localParams" | localParamsCodec) ::
       ("remoteParams" | remoteParamsCodec) ::
       ("channelFlags" | byte) ::
       ("localCommit" | localCommitCodec) ::

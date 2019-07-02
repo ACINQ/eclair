@@ -28,10 +28,10 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
 import fr.acinq.eclair.{UInt64, randomBytes, randomBytes32, randomKey}
 import org.scalatest.FunSuite
+import scodec.{Attempt, DecodeResult}
 import scodec.bits._
 
 import scala.compat.Platform
-import scala.concurrent.duration._
 import scala.util.Random
 import scala.concurrent.duration._
 
@@ -53,6 +53,21 @@ class ChannelCodecsSpec extends FunSuite {
     val encoded = keyPathCodec.encode(keyPath).require
     val decoded = keyPathCodec.decode(encoded).require
     assert(keyPath === decoded.value)
+  }
+
+  test("encode/decode channel version in a backward compatible way") {
+    // before we had commitment version, public keys were stored first (they started with 0x02 and 0x03)
+    val legacy02 = hex"02a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
+    val legacy03 = hex"03d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
+    val current02 = hex"0102a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
+    val current03 = hex"0103d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
+
+    assert(channelVersionCodec.decode(legacy02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, legacy02.bits)))
+    assert(channelVersionCodec.decode(legacy03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, legacy03.bits)))
+    assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(1).bits)))
+    assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(1).bits)))
+
+    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"01".bits))
   }
 
   test("encode/decode localparams") {
