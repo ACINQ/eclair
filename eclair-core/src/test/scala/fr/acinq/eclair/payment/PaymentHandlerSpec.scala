@@ -149,4 +149,24 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee without routing info"))
     assert(sender.expectMsgType[PaymentRequest].routingInfo === Nil)
   }
+
+  test("LocalPaymentHandler should reject incoming payments if the payment request is expired") {
+    val nodeParams = Alice.nodeParams
+    val handler = TestActorRef[LocalPaymentHandler](LocalPaymentHandler.props(nodeParams))
+    val sender = TestProbe()
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
+
+    val amountMsat = MilliSatoshi(42000)
+    val expiry = Globals.blockCount.get() + 12
+
+    sender.send(handler, ReceivePayment(Some(amountMsat), "some desc", expirySeconds_opt = Some(0)))
+    val pr = sender.expectMsgType[PaymentRequest]
+
+    val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
+    sender.send(handler, add)
+
+    sender.expectMsgType[CMD_FAIL_HTLC]
+    assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
+  }
 }
