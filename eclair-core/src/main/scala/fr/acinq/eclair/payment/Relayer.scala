@@ -48,7 +48,7 @@ case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) ex
 case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
 
 case object GetUsableBalances
-case class UsableBalances(canSendMsat: Long, canReceiveMsat: Long, isPublic: Boolean)
+case class UsableBalances(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSendMsat: Long, canReceiveMsat: Long, isPublic: Boolean)
 
 // @formatter:on
 
@@ -72,9 +72,15 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
   override def receive: Receive = main(Map.empty, new mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId])
 
   def main(channelUpdates: Map[ShortChannelId, OutgoingChannel], node2channels: mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]): Receive = {
-
     case GetUsableBalances =>
-      sender ! channelUpdates.values.map(o => UsableBalances(o.commitments.availableBalanceForSendMsat, o.commitments.availableBalanceForReceiveMsat, o.commitments.announceChannel))
+      sender ! channelUpdates.values
+          .filter(o => Announcements.isEnabled(o.channelUpdate.channelFlags))
+          .map(o => UsableBalances(
+            remoteNodeId = o.nextNodeId,
+            shortChannelId = o.channelUpdate.shortChannelId,
+            canSendMsat = o.commitments.availableBalanceForSendMsat,
+            canReceiveMsat = o.commitments.availableBalanceForReceiveMsat,
+            isPublic = o.commitments.announceChannel))
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
       log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
