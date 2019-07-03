@@ -162,7 +162,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val i1 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = Some(MilliSatoshi(123)), paymentHash = paymentHash1, privateKey = bob.nodeKey.privateKey, description = "Some invoice1", expirySeconds = None, timestamp = someTimestamp)
     val i2 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = None, paymentHash = paymentHash2, privateKey = bob.nodeKey.privateKey, description = "Some invoice2", expirySeconds = Some(123456), timestamp = Platform.currentTime.milliseconds.toSeconds)
-    val i3 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = Some(MilliSatoshi(123)), paymentHash = paymentHash3, privateKey = bob.nodeKey.privateKey, description = "Some invoice3", expirySeconds = Some(0), timestamp = someTimestamp - 500)
+    val i3 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = Some(MilliSatoshi(123)), paymentHash = paymentHash3, privateKey = bob.nodeKey.privateKey, description = "Some invoice3", expirySeconds = Some(0), timestamp = Platform.currentTime.milliseconds.toSeconds - 1)
 
     // i1 doesn't expire
     assert(i1.expiry.isEmpty && i2.expiry.isDefined)
@@ -172,8 +172,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
     db.addPaymentRequest(i2, ByteVector32.One)
     db.addPaymentRequest(i3, ByteVector32.One)
 
-    // order matters, i2 has a more recent timestamp than i1
-    assert(db.listPaymentRequests(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) == Seq(i2, i1, i3))
+    // order matters, i2 and i3 have a more recent timestamp than i1
+    assert(db.listPaymentRequests(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) == Seq(i2, i3, i1))
     assert(db.getPaymentRequest(i1.paymentHash) == Some(i1))
     assert(db.getPaymentRequest(i2.paymentHash) == Some(i2))
     assert(db.getPaymentRequest(i3.paymentHash) == Some(i3))
