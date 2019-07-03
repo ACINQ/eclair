@@ -52,6 +52,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val pr = sender.expectMsgType[PaymentRequest]
       assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
       assert(nodeParams.db.payments.getPendingPaymentRequestAndPreimage(pr.paymentHash).isDefined)
+      assert(!nodeParams.db.payments.getPendingPaymentRequestAndPreimage(pr.paymentHash).get._2.isExpired)
 
       val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat.amount, pr.paymentHash, expiry, ByteVector.empty)
       sender.send(handler, add)
