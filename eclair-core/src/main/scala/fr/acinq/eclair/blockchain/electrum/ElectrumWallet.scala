@@ -455,23 +455,10 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 
     case Event(IsDoubleSpent(tx), data) =>
       // detect if one of our transaction (i.e a transaction that spends from our wallet) has been double-spent
-      val isDoubleSpent = data.heights.get(tx.txid) match {
-        case Some(_) =>
-          // this tx is either in the mempool or has been confirmed, which means that it hasn't been confirmed
-          false
-        case None =>
-          // tx has not been published and is not in the mempool
-
-          // list all our utxos that have been used
-          val ourSpentUtxos = data.transactions.values.flatMap(_.txIn).map(_.outPoint).toSet
-
-          // list the tx utxos
-          val utxos = tx.txIn.map(_.outPoint).toSet
-
-          // check if one of our transactions spends the same inputs as our tx and has a different txid; if this is the
-          // case, then the tx has been double spent
-          utxos.exists(utxo => ourSpentUtxos.contains(utxo) && !data.transactions.contains(tx.txid))
-      }
+      val isDoubleSpent = data.heights
+        .filter { case (_, height) => data.blockchain.height - height > 0 } // we only consider tx that have been confirmed (NB: > 1 means 2 confirmations)
+        .flatMap { case (txid, _) => data.transactions.get(txid) } // we get the full tx
+        .exists(spendingTx => spendingTx.txIn.map(_.outPoint).toSet.intersect(tx.txIn.map(_.outPoint).toSet).nonEmpty && spendingTx.txid != tx.txid) // look for a tx that spend the same utxos and has a different txid
       stay() replying IsDoubleSpentResponse(tx, isDoubleSpent)
 
     case Event(ElectrumClient.ElectrumDisconnected, data) =>
@@ -739,7 +726,7 @@ object ElectrumWallet {
     }
 
     /**
-      * 
+      *
       * @return the ids of transactions that belong to our wallet history for this script hash but that we don't have
       *         and have no pending requests for.
       */

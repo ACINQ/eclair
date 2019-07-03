@@ -313,16 +313,16 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     // publish and confirm tx1
     probe.send(wallet, BroadcastTransaction(tx1))
     probe.expectMsg(BroadcastTransactionResponse(tx1, None))
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    probe.send(bitcoincli, BitcoinReq("generate", 2))
     probe.expectMsgType[JValue]
 
     awaitCond({
-      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
-      logger.info(s"current balance is $confirmed $unconfirmed")
-      confirmed1 < confirmed - Btc(1)
+      probe.send(wallet, GetData)
+      val data = probe.expectMsgType[GetDataResponse].state
+      data.heights.exists { case (txid, height) => txid == tx1.txid && data.transactions.contains(txid) && data.blockchain.height - height > 0 }
     }, max = 30 seconds, interval = 1 second)
 
-    // tx2 is double spent
+    // tx2 is double-spent
     probe.send(wallet, IsDoubleSpent(tx1))
     probe.expectMsg(IsDoubleSpentResponse(tx1, false))
     probe.send(wallet, IsDoubleSpent(tx2))
