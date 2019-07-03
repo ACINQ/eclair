@@ -196,7 +196,7 @@ eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_satoshis>
 > The above command returns the channelId of the newly created channel:
 
 ```
-e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
+created channel e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
 ```
 
 Open a channel to another lightning node, you must specify the target nodeId and the funding satoshis for the new channel. Optionally
@@ -261,7 +261,7 @@ eclair-cli forceclose --channelId=<channel>
 > The above command returns:
 
 ```
-e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
+ok
 ```
 
 Initiates an unilateral close for a give channel that belongs to this eclair node, once the commitment has been broadcasted the API returns its
@@ -1271,7 +1271,8 @@ eclair-cli audit
 }
 ```
 
-Retrieves information about payments handled by this node such as: sent, received and relayed payments.
+Retrieves information about payments handled by this node such as: sent, received and relayed payments. All monetary
+values are expressed in millisatoshi.
 
 ### HTTP Request
 
@@ -1442,7 +1443,7 @@ Retrieves information about the available balance of local channels.
 ```
 
 This is a simple [websocket](https://tools.ietf.org/html/rfc6455) that will output payment related events, it supports
-several types covering all the possible outcomes.
+several types covering all the possible outcomes. All monetary values are expressed in millisatoshi.
 
 ### Response types
 
