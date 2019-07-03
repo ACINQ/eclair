@@ -310,16 +310,29 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.send(wallet, IsDoubleSpent(tx2))
     probe.expectMsg(IsDoubleSpentResponse(tx2, false))
 
-    // publish and confirm tx1
+    // publish tx1
     probe.send(wallet, BroadcastTransaction(tx1))
     probe.expectMsg(BroadcastTransactionResponse(tx1, None))
+
+    awaitCond({
+      probe.send(wallet, GetData)
+      val data = probe.expectMsgType[GetDataResponse].state
+      data.heights.contains(tx1.txid) && data.transactions.contains(tx1.txid)
+    }, max = 30 seconds, interval = 1 second)
+
+    // as long as tx1 is unconfirmed tx2 won't be considered double-spent
+    probe.send(wallet, IsDoubleSpent(tx1))
+    probe.expectMsg(IsDoubleSpentResponse(tx1, false))
+    probe.send(wallet, IsDoubleSpent(tx2))
+    probe.expectMsg(IsDoubleSpentResponse(tx2, false))
+
     probe.send(bitcoincli, BitcoinReq("generate", 2))
     probe.expectMsgType[JValue]
 
     awaitCond({
       probe.send(wallet, GetData)
       val data = probe.expectMsgType[GetDataResponse].state
-      data.heights.exists { case (txid, height) => txid == tx1.txid && data.transactions.contains(txid) && data.blockchain.height - height > 0 }
+      data.heights.exists { case (txid, height) => txid == tx1.txid && data.transactions.contains(txid) && ElectrumWallet.computeDepth(data.blockchain.height, height) > 1 }
     }, max = 30 seconds, interval = 1 second)
 
     // tx2 is double-spent

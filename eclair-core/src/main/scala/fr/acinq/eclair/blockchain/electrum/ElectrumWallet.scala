@@ -456,7 +456,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
     case Event(IsDoubleSpent(tx), data) =>
       // detect if one of our transaction (i.e a transaction that spends from our wallet) has been double-spent
       val isDoubleSpent = data.heights
-        .filter { case (_, height) => data.blockchain.height - height > 0 } // we only consider tx that have been confirmed (NB: > 1 means 2 confirmations)
+        .filter { case (_, height) => computeDepth(data.blockchain.height, height) >= 2 } // we only consider tx that have been confirmed
         .flatMap { case (txid, _) => data.transactions.get(txid) } // we get the full tx
         .exists(spendingTx => spendingTx.txIn.map(_.outPoint).toSet.intersect(tx.txIn.map(_.outPoint).toSet).nonEmpty && spendingTx.txid != tx.txid) // look for a tx that spend the same utxos and has a different txid
       stay() replying IsDoubleSpentResponse(tx, isDoubleSpent)
@@ -659,7 +659,13 @@ object ElectrumWallet {
     } getOrElse None
   }
 
-  def computeDepth(currentHeight: Long, txHeight: Long): Long = currentHeight - txHeight + 1
+  def computeDepth(currentHeight: Long, txHeight: Long): Long =
+    if (txHeight <= 0) {
+      // txHeight is 0 if tx in unconfirmed, and -1 if one of its inputs is unconfirmed
+      0
+    } else {
+      currentHeight - txHeight + 1
+    }
 
   case class Utxo(key: ExtendedPrivateKey, item: ElectrumClient.UnspentItem) {
     def outPoint: OutPoint = item.outPoint
