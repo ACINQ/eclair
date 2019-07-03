@@ -1363,6 +1363,8 @@ eclair-cli usablebalances
 ```json
 [
   {
+    "remoteNodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
+    "shortChannelId": "562890x809x0",
     "canSendMsat": 131219000,
     "canReceiveMsat": 466000,
     "isPublic": true
