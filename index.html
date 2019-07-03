@@ -569,7 +569,7 @@ eclair-cli open --nodeId<span class="o">=</span>&lt;node_id&gt; --fundingSatoshi
 <blockquote>
 <p>The above command returns the channelId of the newly created channel:</p>
 </blockquote>
-<pre class="highlight plaintext"><code>e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
+<pre class="highlight plaintext"><code>created channel e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
 </code></pre>
 <p>Open a channel to another lightning node, you must specify the target nodeId and the funding satoshis for the new channel. Optionally
 you can send to the remote a <em>pushMsat</em> value and you can specify wether this should be a public or private channel (default is set in the config).</p>
@@ -671,7 +671,7 @@ eclair-cli forceclose --channelId<span class="o">=</span>&lt;channel&gt;
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight plaintext"><code>e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
+<pre class="highlight plaintext"><code>ok
 </code></pre>
 <p>Initiates an unilateral close for a give channel that belongs to this eclair node, once the commitment has been broadcasted the API returns its
 transaction id. Note that you must specify at least a <em>channelId</em> <strong>or</strong> <em>shortChannelId</em>.</p>
@@ -1818,7 +1818,8 @@ eclair-cli audit
    </span><span class="p">]</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Retrieves information about payments handled by this node such as: sent, received and relayed payments.</p>
+<p>Retrieves information about payments handled by this node such as: sent, received and relayed payments. All monetary
+values are expressed in millisatoshi.</p>
 <h3 id='http-request-26'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/audit</code></p>
 <h3 id='parameters-24'>Parameters</h3>
@@ -1986,7 +1987,7 @@ eclair-cli usablebalances
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>This is a simple <a href="https://tools.ietf.org/html/rfc6455">websocket</a> that will output payment related events, it supports
-several types covering all the possible outcomes.</p>
+several types covering all the possible outcomes. All monetary values are expressed in millisatoshi.</p>
 <h3 id='response-types'>Response types</h3>
 <table><thead>
 <tr>
