@@ -39,6 +39,7 @@ trait PaymentsDb {
 
   def getPaymentRequest(paymentHash: ByteVector32): Option[PaymentRequest]
 
+  // returns non paid payment request
   def getPendingPaymentRequestAndPreimage(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)]
 
   def listPaymentRequests(from: Long, to: Long): Seq[PaymentRequest]
