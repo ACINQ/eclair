@@ -68,17 +68,14 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     channels
       .groupBy(_.commitments.remoteParams.nodeId)
       .map {
-        case (remoteNodeId, states) =>
-          val address_opt = peers.get(remoteNodeId).orElse {
-            nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption) // gets the first of the list! TODO improve selection?
-          }
-          (remoteNodeId, states, address_opt)
+        case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
       }
       .foreach {
         case (remoteNodeId, states, nodeaddress_opt) =>
           // we might not have an address if we didn't initiate the connection in the first place
           val address_opt = nodeaddress_opt.map(_.socketAddress)
-          createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
+          val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
+          peer ! Peer.Reconnect
       }
   }
 
@@ -112,8 +109,6 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     case 'peers => sender ! context.children
 
   }
-
-  def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
   /**
     * Retrieves a peer based on its public key.
@@ -155,6 +150,8 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 object Switchboard extends Logging {
 
   def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet))
+
+  def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
   /**
     * If we have stopped eclair while it was forwarding HTLCs, it is possible that we are in a state were an incoming HTLC

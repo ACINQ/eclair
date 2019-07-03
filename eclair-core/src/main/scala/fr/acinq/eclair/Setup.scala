@@ -25,8 +25,8 @@ import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.{Block, ByteVector32}
-import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
+import fr.acinq.bitcoin.Block
+import fr.acinq.eclair.NodeParams.ELECTRUM
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
@@ -37,7 +37,7 @@ import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.{BackupHandler, Databases}
-import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
+import fr.acinq.eclair.io.{Authenticator, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
@@ -59,6 +59,9 @@ class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
             seed_opt: Option[ByteVector] = None,
             db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
+
+  implicit val ec = ExecutionContext.Implicits.global
+  implicit val sttpBackend = OkHttpFutureBackend()
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
@@ -90,9 +93,6 @@ class Setup(datadir: File,
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
-
-  implicit val ec = ExecutionContext.Implicits.global
-  implicit val sttpBackend = OkHttpFutureBackend()
 
   def bootstrap: Future[Kit] =
     for {

@@ -34,6 +34,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{secureRandom, wire, _}
 import scodec.Attempt
 import scodec.bits.ByteVector
+
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
@@ -41,7 +42,7 @@ import scala.util.Random
 /**
   * Created by PM on 26/08/2016.
   */
-class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -54,8 +55,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         channel ! INPUT_RESTORED(state)
         FinalChannelId(state.channelId) -> channel
       }.toMap
-      setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
-      goto(DISCONNECTED) using DisconnectedData(previousKnownAddress, channels)
+      // When restarting, we will immediately reconnect, but then:
+      // - we don't want all the subsequent reconnection attempts to be synchronized (herd effect)
+      // - we don't want to go through the exponential backoff delay, because we were offline, not them, so there is no
+      // reason to eagerly retry
+      // That's why we set the next reconnection delay to a random value between MAX_RECONNECT_INTERVAL/2 and MAX_RECONNECT_INTERVAL.
+      val firstNextReconnectionDelay = nodeParams.maxReconnectInterval.minus(Random.nextInt(nodeParams.maxReconnectInterval.toSeconds.toInt / 2).seconds)
+      goto(DISCONNECTED) using DisconnectedData(previousKnownAddress, channels, firstNextReconnectionDelay) // when we restart, we will attempt to reconnect right away, but then we'll wait
   }
 
   when(DISCONNECTED) {
@@ -81,13 +87,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(Reconnect, d: DisconnectedData) =>
       d.address_opt.orElse(getPeerAddressFromNodeAnnouncement) match {
         case _ if d.channels.isEmpty => stay // no-op, no more channels with this peer
-        case None                    => stay // no-op, we don't know any address to this peer and we won't try reconnecting again
+        case None => stay // no-op, we don't know any address to this peer and we won't try reconnecting again
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
-          log.info(s"reconnecting to $address")
-          // exponential backoff retry with a finite max
-          setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 3600) seconds, repeat = false)
-          stay using d.copy(attempts = d.attempts + 1)
+          log.info(s"reconnecting to $address (next reconnection in ${d.nextReconnectionDelay.toSeconds} seconds)")
+          setTimer(RECONNECT_TIMER, Reconnect, d.nextReconnectionDelay, repeat = false)
+          stay using d.copy(nextReconnectionDelay = nextReconnectionDelay(d.nextReconnectionDelay, nodeParams.maxReconnectInterval))
       }
 
     case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, address, outgoing, origin_opt), d: DisconnectedData) =>
@@ -517,9 +522,17 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(_: BadMessage, _) => stay // we got disconnected while syncing
   }
 
+  /**
+    * The transition INSTANTIATING -> DISCONNECTED happens in 2 scenarios
+    *   - Manual connection to a new peer: then when(DISCONNECTED) we expect a Peer.Connect from the switchboard
+    *   - Eclair restart: The switchboard creates the peers and sends Init and then Peer.Reconnect to trigger reconnection attempts
+    *
+    * So when we see this transition we NO-OP because we don't want to start a Reconnect timer but the peer will receive the trigger
+    * (Connect/Reconnect) messages from the switchboard.
+    */
   onTransition {
-    case INSTANTIATING -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => self ! Reconnect // we reconnect right away if we just started the peer
-    case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
+    case INSTANTIATING -> DISCONNECTED => ()
+    case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, Random.nextInt(nodeParams.initialRandomReconnectDelay.toMillis.toInt).millis, repeat = false) // we add some randomization to not have peers reconnect to each other exactly at the same time
     case DISCONNECTED -> _ if nodeParams.autoReconnect => cancelTimer(RECONNECT_TIMER)
   }
 
@@ -544,8 +557,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
   // TODO gets the first of the list, improve selection?
   def getPeerAddressFromNodeAnnouncement: Option[InetSocketAddress] = {
-    // On Android we don't store node announcemenets
-    None
+    nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption.map(_.socketAddress))
   }
 
   // a failing channel won't be restarted, it should handle its states
@@ -583,7 +595,7 @@ object Peer {
     def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
   }
   case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
-  case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
+  case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], nextReconnectionDelay: FiniteDuration = 10 seconds) extends Data
   case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef], localInit: wire.Init) extends Data
   case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
   case class ExpectedPong(ping: Ping, timestamp: Long = Platform.currentTime)
@@ -671,4 +683,9 @@ object Peer {
   }
 
   def hostAndPort2InetSocketAddress(hostAndPort: HostAndPort): InetSocketAddress = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
+
+  /**
+    * Exponential backoff retry with a finite max
+    */
+  def nextReconnectionDelay(currentDelay: FiniteDuration, maxReconnectInterval: FiniteDuration): FiniteDuration = (2 * currentDelay).min(maxReconnectInterval)
 }

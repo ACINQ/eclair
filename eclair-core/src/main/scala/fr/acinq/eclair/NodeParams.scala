@@ -29,7 +29,6 @@ import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, NodeAddress}
@@ -69,6 +68,8 @@ case class NodeParams(keyManager: KeyManager,
                       maxFeerateMismatch: Double,
                       updateFeeMinDiffRatio: Double,
                       autoReconnect: Boolean,
+                      initialRandomReconnectDelay: FiniteDuration,
+                      maxReconnectInterval: FiniteDuration,
                       chainHash: ByteVector32,
                       channelFlags: Byte,
                       watcherType: WatcherType,
@@ -205,6 +206,8 @@ object NodeParams {
       maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
       updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
       autoReconnect = config.getBoolean("auto-reconnect"),
+      initialRandomReconnectDelay = FiniteDuration(config.getDuration("initial-random-reconnect-delay", TimeUnit.SECONDS), TimeUnit.SECONDS),
+      maxReconnectInterval = FiniteDuration(config.getDuration("max-reconnect-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
       chainHash = chainHash,
       channelFlags = config.getInt("channel-flags").toByte,
       watcherType = watcherType,
