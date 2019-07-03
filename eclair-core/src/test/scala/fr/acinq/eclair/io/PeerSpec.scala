@@ -16,10 +16,10 @@
 
 package fr.acinq.eclair.io
 
-import java.net.{Inet4Address, InetSocketAddress}
+import java.net.{Inet4Address, InetAddress, InetSocketAddress, ServerSocket}
 
-import akka.actor.ActorRef
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
+import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
@@ -54,8 +54,8 @@ class PeerSpec extends TestkitBaseClass {
     val aParams = Alice.nodeParams
     val aliceParams = test.tags.contains("with_node_announcements") match {
       case true =>
-        val aliceAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
-        aParams.db.network.addNode(aliceAnnouncement)
+        val bobAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+        aParams.db.network.addNode(bobAnnouncement)
         aParams
       case false => aParams
     }
@@ -151,17 +151,50 @@ class PeerSpec extends TestkitBaseClass {
     probe.expectNoMsg()
   }
 
-  test("count reconnections") { f =>
+  test("reconnect using the address from node_announcement") { f =>
+    import f._
+
+    // we create a dummy tcp server and update bob's announcement to point to it
+    val mockServer = new ServerSocket(0, 1, InetAddress.getLocalHost) // port will be assigned automatically
+    val mockAddress = NodeAddress.fromParts(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort).get
+    val bobAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
+    peer.underlyingActor.nodeParams.db.network.addNode(bobAnnouncement)
+
+    val probe = TestProbe()
+    awaitCond(peer.stateName == INSTANTIATING)
+    probe.send(peer, Peer.Init(None, Set(ChannelStateSpec.normal)))
+    awaitCond(peer.stateName == DISCONNECTED)
+
+    // we have auto-reconnect=false so we need to manually tell the peer to reconnect
+    probe.send(peer, Reconnect)
+
+    // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
+    within(30 seconds) {
+      mockServer.accept()
+    }
+  }
+
+  test("only reconnect once with a randomized delay after startup") { f =>
     import f._
     val probe = TestProbe()
     val previouslyKnownAddress = new InetSocketAddress("1.2.3.4", 9735)
     probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set(ChannelStateSpec.normal)))
     probe.send(peer, Peer.Reconnect)
-    awaitCond(peer.stateData.asInstanceOf[DisconnectedData].attempts == 1)
-    probe.send(peer, Peer.Reconnect)
-    awaitCond(peer.stateData.asInstanceOf[DisconnectedData].attempts == 2)
-    probe.send(peer, Peer.Reconnect)
-    awaitCond(peer.stateData.asInstanceOf[DisconnectedData].attempts == 3)
+    val interval = (peer.underlyingActor.nodeParams.maxReconnectInterval.toSeconds / 2) to peer.underlyingActor.nodeParams.maxReconnectInterval.toSeconds
+    awaitCond(interval contains peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay.toSeconds)
+  }
+
+  test("reconnect with increasing delays") { f =>
+    import f._
+    val probe = TestProbe()
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelStateSpec.normal))
+    probe.send(transport.ref, PoisonPill)
+    awaitCond(peer.stateName === DISCONNECTED)
+    assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (10 seconds))
+    probe.send(peer, Reconnect)
+    assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (20 seconds))
+    probe.send(peer, Reconnect)
+    assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (40 seconds))
   }
 
   test("disconnect if incompatible features") { f =>

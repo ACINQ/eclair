@@ -17,8 +17,8 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC, Command}
+import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.FailureMessageCodecs.failureMessageCodec
-import fr.acinq.eclair.wire.LightningMessageCodecs._
 import scodec.Codec
 import scodec.codecs._
 
