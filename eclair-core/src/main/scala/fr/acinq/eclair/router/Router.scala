@@ -36,7 +36,7 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import scodec.bits.ByteVector
+
 import shapeless.HNil
 
 import scala.collection.immutable.SortedMap

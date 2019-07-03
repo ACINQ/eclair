@@ -17,37 +17,14 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Transaction
-import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose, MutualClose, NextRemoteClose, RecoveryClose, RevokedClose}
-import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
+import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.channel.Helpers.Closing._
 import org.scalatest.FunSuite
 
 import scala.compat.Platform
 import scala.concurrent.duration._
 
 class HelpersSpec extends FunSuite {
-
-  test("compute funding timeout") {
-    // we are supposed to wait 2 hours, and have already been waiting 1 hour, we have one more hour to wait
-    assert(Funding.computeFundingTimeout(
-      now = 7200,
-      waitingSince = 3600,
-      delay = 2 hours,
-      minDelay = 10 minutes) === (1 hour))
-
-    // we are supposed to wait 2 hours, and have already been waiting 9 hours, we'll wait the minimum of 10 minutes
-    assert(Funding.computeFundingTimeout(
-      now = 36000,
-      waitingSince = 3600,
-      delay = 2 hours,
-      minDelay = 10 minutes) === (10 minutes))
-
-    // we are supposed to wait 5 minutes, and have already been waiting 4 minutes, we'll wait the minimum of 10 minutes
-    assert(Funding.computeFundingTimeout(
-      now = 1240,
-      waitingSince = 1000,
-      delay = 5 minutes,
-      minDelay = 10 minutes) === (10 minutes))
-  }
 
   test("compute refresh delay") {
     import org.scalatest.Matchers._
@@ -70,6 +47,8 @@ class HelpersSpec extends FunSuite {
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = null,
+        fundingTx = None,
+        waitingSince = 0,
         mutualCloseProposed = tx1 :: tx2 :: tx3 :: Nil,
         mutualClosePublished = tx2 :: tx3 :: Nil,
         localCommitPublished = None,
@@ -83,6 +62,8 @@ class HelpersSpec extends FunSuite {
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = null,
+        fundingTx = None,
+        waitingSince = 0,
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -103,6 +84,8 @@ class HelpersSpec extends FunSuite {
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = null,
+        fundingTx = None,
+        waitingSince = 0,
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -125,6 +108,8 @@ class HelpersSpec extends FunSuite {
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = null,
+        fundingTx = None,
+        waitingSince = 0,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -151,6 +136,8 @@ class HelpersSpec extends FunSuite {
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = null,
+        fundingTx = None,
+        waitingSince = 0,
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -179,6 +166,8 @@ class HelpersSpec extends FunSuite {
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = null,
+        fundingTx = None,
+        waitingSince = 0,
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -213,6 +202,8 @@ class HelpersSpec extends FunSuite {
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = null,
+        fundingTx = None,
+        waitingSince = 0,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = None,
@@ -232,6 +223,8 @@ class HelpersSpec extends FunSuite {
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = null,
+        fundingTx = None,
+        waitingSince = 0,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = None,
@@ -253,6 +246,8 @@ class HelpersSpec extends FunSuite {
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = null,
+        fundingTx = None,
+        waitingSince = 0,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -298,6 +293,8 @@ class HelpersSpec extends FunSuite {
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = null,
+        fundingTx = None,
+        waitingSince = 0,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(

@@ -17,9 +17,10 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.wire.LightningMessageCodecs.{bytes32, channelUpdateCodec, uint64}
+import fr.acinq.eclair.wire.CommonCodecs.{sha256, uint64overflow}
+import fr.acinq.eclair.wire.LightningMessageCodecs.channelUpdateCodec
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.Attempt
 
 /**
   * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
@@ -63,8 +64,6 @@ object FailureMessageCodecs {
   val NODE = 0x2000
   val UPDATE = 0x1000
 
-  val sha256Codec: Codec[ByteVector32] = ("sha256Codec" | bytes32)
-
   val channelUpdateCodecWithType = LightningMessageCodecs.lightningMessageCodec.narrow[ChannelUpdate](f => Attempt.successful(f.asInstanceOf[ChannelUpdate]), g => g)
 
   // NB: for historical reasons some implementations were including/ommitting the message type (258 for ChannelUpdate)
@@ -76,22 +75,22 @@ object FailureMessageCodecs {
     .typecase(NODE | 2, provide(TemporaryNodeFailure))
     .typecase(PERM | 2, provide(PermanentNodeFailure))
     .typecase(PERM | NODE | 3, provide(RequiredNodeFeatureMissing))
-    .typecase(BADONION | PERM | 4, sha256Codec.as[InvalidOnionVersion])
-    .typecase(BADONION | PERM | 5, sha256Codec.as[InvalidOnionHmac])
-    .typecase(BADONION | PERM | 6, sha256Codec.as[InvalidOnionKey])
-    .typecase(UPDATE | 7, (("channelUpdate" | channelUpdateWithLengthCodec)).as[TemporaryChannelFailure])
+    .typecase(BADONION | PERM | 4, sha256.as[InvalidOnionVersion])
+    .typecase(BADONION | PERM | 5, sha256.as[InvalidOnionHmac])
+    .typecase(BADONION | PERM | 6, sha256.as[InvalidOnionKey])
+    .typecase(UPDATE | 7, ("channelUpdate" | channelUpdateWithLengthCodec).as[TemporaryChannelFailure])
     .typecase(PERM | 8, provide(PermanentChannelFailure))
     .typecase(PERM | 9, provide(RequiredChannelFeatureMissing))
     .typecase(PERM | 10, provide(UnknownNextPeer))
-    .typecase(UPDATE | 11, (("amountMsat" | uint64) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[AmountBelowMinimum])
-    .typecase(UPDATE | 12, (("amountMsat" | uint64) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[FeeInsufficient])
+    .typecase(UPDATE | 11, (("amountMsat" | uint64overflow) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[AmountBelowMinimum])
+    .typecase(UPDATE | 12, (("amountMsat" | uint64overflow) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[FeeInsufficient])
     .typecase(UPDATE | 13, (("expiry" | uint32) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[IncorrectCltvExpiry])
-    .typecase(UPDATE | 14, (("channelUpdate" | channelUpdateWithLengthCodec)).as[ExpiryTooSoon])
+    .typecase(UPDATE | 14, ("channelUpdate" | channelUpdateWithLengthCodec).as[ExpiryTooSoon])
     .typecase(UPDATE | 20, (("messageFlags" | byte) :: ("channelFlags" | byte) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
-    .typecase(PERM | 15, (("amountMsat" | withDefaultValue(optional(bitsRemaining, uint64), 0L))).as[IncorrectOrUnknownPaymentDetails])
+    .typecase(PERM | 15, ("amountMsat" | withDefaultValue(optional(bitsRemaining, uint64overflow), 0L)).as[IncorrectOrUnknownPaymentDetails])
     .typecase(PERM | 16, provide(IncorrectPaymentAmount))
     .typecase(17, provide(FinalExpiryTooSoon))
-    .typecase(18, (("expiry" | uint32)).as[FinalIncorrectCltvExpiry])
-    .typecase(19, (("amountMsat" | uint64)).as[FinalIncorrectHtlcAmount])
+    .typecase(18, ("expiry" | uint32).as[FinalIncorrectCltvExpiry])
+    .typecase(19, ("amountMsat" | uint64overflow).as[FinalIncorrectHtlcAmount])
     .typecase(21, provide(ExpiryTooFar))
 }

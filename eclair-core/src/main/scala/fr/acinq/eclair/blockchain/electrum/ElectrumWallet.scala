@@ -367,14 +367,14 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
           goto(DISCONNECTED) using data
       }
 
-    case Event(GetTransactionResponse(tx), data) =>
+    case Event(GetTransactionResponse(tx, context_opt), data) =>
       log.debug(s"received transaction ${tx.txid}")
       data.computeTransactionDelta(tx) match {
         case Some((received, sent, fee_opt)) =>
           log.info(s"successfully connected txid=${tx.txid}")
           context.system.eventStream.publish(TransactionReceived(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt, data.computeTimestamp(tx.txid, params.walletDb)))
           // when we have successfully processed a new tx, we retry all pending txes to see if they can be added now
-          data.pendingTransactions.foreach(self ! GetTransactionResponse(_))
+          data.pendingTransactions.foreach(self ! GetTransactionResponse(_, context_opt))
           val data1 = data.copy(transactions = data.transactions + (tx.txid -> tx), pendingTransactionRequests = data.pendingTransactionRequests - tx.txid, pendingTransactions = Nil)
           stay using persistAndNotify(data1)
         case None =>
@@ -384,14 +384,14 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
           stay using persistAndNotify(data1)
       }
 
-    case Event(ServerError(GetTransaction(txid), error), data) if data.pendingTransactionRequests.contains(txid) =>
+    case Event(ServerError(GetTransaction(txid, _), error), data) if data.pendingTransactionRequests.contains(txid) =>
       // server tells us that txid belongs to our wallet history, but cannot provide tx ?
       log.error(s"server cannot find history tx $txid: $error")
       sender ! PoisonPill
       goto(DISCONNECTED) using data
 
 
-    case Event(response@GetMerkleResponse(txid, _, height, _), data) =>
+    case Event(response@GetMerkleResponse(txid, _, height, _, _), data) =>
       data.blockchain.getHeader(height).orElse(params.walletDb.getHeader(height)) match {
         case Some(header) if header.hashMerkleRoot == response.root =>
           log.info(s"transaction $txid has been verified")
@@ -455,23 +455,10 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 
     case Event(IsDoubleSpent(tx), data) =>
       // detect if one of our transaction (i.e a transaction that spends from our wallet) has been double-spent
-      val isDoubleSpent = data.heights.get(tx.txid) match {
-        case Some(_) =>
-          // this tx is either in the mempool or has been confirmed, which means that it hasn't been confirmed
-          false
-        case None =>
-          // tx has not been published and is not in the mempool
-
-          // list all our utxos that have been used
-          val ourSpentUtxos = data.transactions.values.flatMap(_.txIn).map(_.outPoint).toSet
-
-          // list the tx utxos
-          val utxos = tx.txIn.map(_.outPoint).toSet
-
-          // check if one of our transactions spends the same inputs as our tx, if this is the case, then the tx
-          // has been double spent
-          utxos.exists(utxo => ourSpentUtxos.contains(utxo))
-      }
+      val isDoubleSpent = data.heights
+        .filter { case (_, height) => computeDepth(data.blockchain.height, height) >= 2 } // we only consider tx that have been confirmed
+        .flatMap { case (txid, _) => data.transactions.get(txid) } // we get the full tx
+        .exists(spendingTx => spendingTx.txIn.map(_.outPoint).toSet.intersect(tx.txIn.map(_.outPoint).toSet).nonEmpty && spendingTx.txid != tx.txid) // look for a tx that spend the same utxos and has a different txid
       stay() replying IsDoubleSpentResponse(tx, isDoubleSpent)
 
     case Event(ElectrumClient.ElectrumDisconnected, data) =>
@@ -672,7 +659,13 @@ object ElectrumWallet {
     } getOrElse None
   }
 
-  def computeDepth(currentHeight: Long, txHeight: Long): Long = currentHeight - txHeight + 1
+  def computeDepth(currentHeight: Long, txHeight: Long): Long =
+    if (txHeight <= 0) {
+      // txHeight is 0 if tx in unconfirmed, and -1 if one of its inputs is unconfirmed
+      0
+    } else {
+      currentHeight - txHeight + 1
+    }
 
   case class Utxo(key: ExtendedPrivateKey, item: ElectrumClient.UnspentItem) {
     def outPoint: OutPoint = item.outPoint
@@ -739,7 +732,7 @@ object ElectrumWallet {
     }
 
     /**
-      * @scriptHash script hash
+      *
       * @return the ids of transactions that belong to our wallet history for this script hash but that we don't have
       *         and have no pending requests for.
       */
