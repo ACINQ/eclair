@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.{Block, ByteVector64}
 import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomBytes64}
 import org.scalatest.FunSuite
 import scodec.bits._
+import scodec.codecs.uint16
 
 /**
   * Created by PM on 31/05/2016.
@@ -42,16 +43,33 @@ class FailureMessageCodecsSpec extends FunSuite {
   test("encode/decode all channel messages") {
     val msgs: List[FailureMessage] =
       InvalidRealm :: TemporaryNodeFailure :: PermanentNodeFailure :: RequiredNodeFeatureMissing ::
-        InvalidOnionVersion(randomBytes32) :: InvalidOnionHmac(randomBytes32) :: InvalidOnionKey(randomBytes32) ::
+        InvalidOnionVersion(randomBytes32) :: InvalidOnionHmac(randomBytes32) :: InvalidOnionKey(randomBytes32) :: InvalidOnionUnknown(randomBytes32) ::
         TemporaryChannelFailure(channelUpdate) :: PermanentChannelFailure :: RequiredChannelFeatureMissing :: UnknownNextPeer ::
         AmountBelowMinimum(123456, channelUpdate) :: FeeInsufficient(546463, channelUpdate) :: IncorrectCltvExpiry(1211, channelUpdate) :: ExpiryTooSoon(channelUpdate) ::
         IncorrectOrUnknownPaymentDetails(123456L) :: IncorrectPaymentAmount :: FinalExpiryTooSoon :: FinalIncorrectCltvExpiry(1234) :: ChannelDisabled(0, 1, channelUpdate) :: ExpiryTooFar :: Nil
 
     msgs.foreach {
-      case msg => {
+      msg => {
         val encoded = FailureMessageCodecs.failureMessageCodec.encode(msg).require
         val decoded = FailureMessageCodecs.failureMessageCodec.decode(encoded).require
         assert(msg === decoded.value)
+      }
+    }
+  }
+
+  test("bad onion failure code") {
+    val msgs = Seq(
+      InvalidOnionVersion(randomBytes32),
+      InvalidOnionHmac(randomBytes32),
+      InvalidOnionKey(randomBytes32),
+      InvalidOnionUnknown(randomBytes32)
+    )
+
+    msgs.foreach {
+      msg => {
+        val encoded = FailureMessageCodecs.failureMessageCodec.encode(msg).require.toByteVector
+        val failureCode = uint16.decode(encoded.take(2).toBitVector).require.value
+        assert(failureCode === msg.failureCode)
       }
     }
   }

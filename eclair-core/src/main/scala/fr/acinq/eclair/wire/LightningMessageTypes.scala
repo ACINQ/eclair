@@ -123,7 +123,7 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          amountMsat: Long,
                          paymentHash: ByteVector32,
                          cltvExpiry: Long,
-                         onionRoutingPacket: ByteVector) extends HtlcMessage with UpdateMessage with HasChannelId
+                         onionRoutingPacket: OnionPacket) extends HtlcMessage with UpdateMessage with HasChannelId
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,
                              id: Long,
@@ -224,6 +224,11 @@ case class ChannelUpdate(signature: ByteVector64,
                          unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with HasTimestamp with HasChainHash {
   require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
 }
+
+case class OnionPacket(version: Int,
+                       publicKey: ByteVector,
+                       payload: ByteVector,
+                       hmac: ByteVector32)
 
 case class PerHopPayload(shortChannelId: ShortChannelId,
                          amtToForward: Long,

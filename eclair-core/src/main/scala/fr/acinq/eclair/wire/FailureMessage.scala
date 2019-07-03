@@ -29,7 +29,8 @@ import scodec.Attempt
 
 // @formatter:off
 sealed trait FailureMessage { def message: String }
-sealed trait BadOnion extends FailureMessage { def onionHash: ByteVector32 }
+sealed trait FailureCode { def failureCode: Int }
+sealed trait BadOnion extends FailureMessage with FailureCode { def onionHash: ByteVector32 }
 sealed trait Perm extends FailureMessage
 sealed trait Node extends FailureMessage
 sealed trait Update extends FailureMessage { def update: ChannelUpdate }
@@ -38,9 +39,22 @@ case object InvalidRealm extends Perm { def message = "realm was not understood 
 case object TemporaryNodeFailure extends Node { def message = "general temporary failure of the processing node" }
 case object PermanentNodeFailure extends Perm with Node { def message = "general permanent failure of the processing node" }
 case object RequiredNodeFeatureMissing extends Perm with Node { def message = "processing node requires features that are missing from this onion" }
-case class InvalidOnionVersion(onionHash: ByteVector32) extends BadOnion with Perm { def message = "onion version was not understood by the processing node" }
-case class InvalidOnionHmac(onionHash: ByteVector32) extends BadOnion with Perm { def message = "onion HMAC was incorrect when it reached the processing node" }
-case class InvalidOnionKey(onionHash: ByteVector32) extends BadOnion with Perm { def message = "ephemeral key was unparsable by the processing node" }
+case class InvalidOnionVersion(onionHash: ByteVector32) extends BadOnion with Perm {
+  def failureCode = FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 4
+  def message = "onion version was not understood by the processing node"
+}
+case class InvalidOnionHmac(onionHash: ByteVector32) extends BadOnion with Perm {
+  def failureCode = FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 5
+  def message = "onion HMAC was incorrect when it reached the processing node"
+}
+case class InvalidOnionKey(onionHash: ByteVector32) extends BadOnion with Perm {
+  def failureCode = FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 6
+  def message = "ephemeral key was unparsable by the processing node"
+}
+case class InvalidOnionUnknown(onionHash: ByteVector32) extends BadOnion with Perm {
+  def failureCode = FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM
+  def message = "onion per-hop payload unknown error"
+}
 case class TemporaryChannelFailure(update: ChannelUpdate) extends Update { def message = s"channel ${update.shortChannelId} is currently unavailable" }
 case object PermanentChannelFailure extends Perm { def message = "channel is permanently unavailable" }
 case object RequiredChannelFeatureMissing extends Perm { def message = "channel requires features not present in the onion" }
@@ -66,7 +80,7 @@ object FailureMessageCodecs {
 
   val channelUpdateCodecWithType = LightningMessageCodecs.lightningMessageCodec.narrow[ChannelUpdate](f => Attempt.successful(f.asInstanceOf[ChannelUpdate]), g => g)
 
-  // NB: for historical reasons some implementations were including/ommitting the message type (258 for ChannelUpdate)
+  // NB: for historical reasons some implementations were including/omitting the message type (258 for ChannelUpdate)
   // this codec supports both versions for decoding, and will encode with the message type
   val channelUpdateWithLengthCodec = variableSizeBytes(uint16, choice(channelUpdateCodecWithType, channelUpdateCodec))
 
@@ -75,6 +89,7 @@ object FailureMessageCodecs {
     .typecase(NODE | 2, provide(TemporaryNodeFailure))
     .typecase(PERM | 2, provide(PermanentNodeFailure))
     .typecase(PERM | NODE | 3, provide(RequiredNodeFeatureMissing))
+    .typecase(BADONION | PERM, sha256.as[InvalidOnionUnknown])
     .typecase(BADONION | PERM | 4, sha256.as[InvalidOnionVersion])
     .typecase(BADONION | PERM | 5, sha256.as[InvalidOnionHmac])
     .typecase(BADONION | PERM | 6, sha256.as[InvalidOnionKey])

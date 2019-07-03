@@ -85,7 +85,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
       stop(FSM.Normal)
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
-      Sphinx.ErrorPacket.parsePacket(fail.reason, sharedSecrets) match {
+      Sphinx.ErrorPacket.decrypt(fail.reason, sharedSecrets) match {
         case Success(e@Sphinx.ErrorPacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
           // if destination node returns an error, we fail the payment immediately
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
@@ -241,7 +241,7 @@ object PaymentLifecycle {
         case Attempt.Successful(bitVector) => bitVector.toByteVector
         case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
       }
-    Sphinx.PaymentPacket.makePacket(sessionKey, nodes, payloadsbin, associatedData)
+    Sphinx.PaymentPacket.create(sessionKey, nodes, payloadsbin, associatedData)
   }
 
   /**
@@ -266,7 +266,7 @@ object PaymentLifecycle {
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
     val onion = buildOnion(nodes, payloads, paymentHash)
-    CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, onion.packet.serialize, upstream = Left(id), commit = true) -> onion.sharedSecrets
+    CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, onion.packet, upstream = Left(id), commit = true) -> onion.sharedSecrets
   }
 
   /**

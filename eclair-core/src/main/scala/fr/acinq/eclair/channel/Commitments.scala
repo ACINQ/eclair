@@ -26,8 +26,6 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, UInt64}
 
-import scala.util.{Failure, Success}
-
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
   def all: List[UpdateMessage] = proposed ++ signed ++ acked
@@ -235,16 +233,16 @@ object Commitments {
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(htlc) =>
         // we need the shared secret to build the error packet
-        Sphinx.PaymentPacket.parsePacket(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket).map(_.sharedSecret) match {
-          case Success(sharedSecret) =>
+        Sphinx.PaymentPacket.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket) match {
+          case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
             val reason = cmd.reason match {
-              case Left(forwarded) => Sphinx.ErrorPacket.forwardPacket(forwarded, sharedSecret)
-              case Right(failure) => Sphinx.ErrorPacket.createPacket(sharedSecret, failure)
+              case Left(forwarded) => Sphinx.ErrorPacket.wrap(forwarded, sharedSecret)
+              case Right(failure) => Sphinx.ErrorPacket.create(sharedSecret, failure)
             }
             val fail = UpdateFailHtlc(commitments.channelId, cmd.id, reason)
             val commitments1 = addLocalProposal(commitments, fail)
             (commitments1, fail)
-          case Failure(_) => throw new CannotExtractSharedSecret(commitments.channelId, htlc)
+          case Left(_) => throw CannotExtractSharedSecret(commitments.channelId, htlc)
         }
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
     }
@@ -263,7 +261,7 @@ object Commitments {
       } =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
-      case Some(htlc) =>
+      case Some(_) =>
         val fail = UpdateFailMalformedHtlc(commitments.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
         val commitments1 = addLocalProposal(commitments, fail)
         (commitments1, fail)

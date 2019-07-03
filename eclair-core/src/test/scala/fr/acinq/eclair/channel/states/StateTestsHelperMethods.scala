@@ -24,19 +24,15 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, TestConstants, randomBytes32}
-import scodec.bits.ByteVector
 
 /**
   * Created by PM on 23/08/2016.
   */
 trait StateTestsHelperMethods extends TestKitBase {
-
-  def defaultOnion: ByteVector = ByteVector.fill(Sphinx.PaymentPacket.PacketLength)(0)
 
   case class SetupFixture(alice: TestFSMRef[State, Data, Channel],
                    bob: TestFSMRef[State, Data, Channel],

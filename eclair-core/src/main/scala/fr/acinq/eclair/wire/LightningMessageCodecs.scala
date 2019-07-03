@@ -36,6 +36,14 @@ import scodec.Codec
   */
 object LightningMessageCodecs {
 
+  def onionPacketCodec(payloadLength: Int): Codec[OnionPacket] = (
+    ("version" | uint8) ::
+      ("publicKey" | bytes(33)) ::
+      ("onionPayload" | bytes(payloadLength)) ::
+      ("hmac" | bytes32)).as[OnionPacket]
+
+  val paymentOnionPacketCodec: Codec[OnionPacket] = onionPacketCodec(Sphinx.PaymentPacket.PayloadLength)
+
   val initCodec: Codec[Init] = (
     ("globalFeatures" | varsizebinarydata) ::
       ("localFeatures" | varsizebinarydata)).as[Init]
@@ -123,7 +131,7 @@ object LightningMessageCodecs {
       ("amountMsat" | uint64overflow) ::
       ("paymentHash" | bytes32) ::
       ("expiry" | uint32) ::
-      ("onionRoutingPacket" | bytes(Sphinx.PaymentPacket.PacketLength))).as[UpdateAddHtlc]
+      ("onionRoutingPacket" | paymentOnionPacketCodec)).as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
     ("channelId" | bytes32) ::
