@@ -114,10 +114,10 @@ object ChannelCodecs extends Logging {
   val localParamsCodecV1: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
       ("channelPath" | channelKeyPathCodec) ::
-      ("dustLimitSatoshis" | uint64) ::
-      ("maxHtlcValueInFlightMsat" | uint64ex) ::
-      ("channelReserveSatoshis" | uint64) ::
-      ("htlcMinimumMsat" | uint64) ::
+      ("dustLimitSatoshis" | uint64overflow) ::
+      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("channelReserveSatoshis" | uint64overflow) ::
+      ("htlcMinimumMsat" | uint64overflow) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
@@ -409,7 +409,7 @@ object ChannelCodecs extends Logging {
     .typecase(0x03, DATA_NORMAL_Codec(commitmentVersion))
     .typecase(0x04, DATA_SHUTDOWN_Codec(commitmentVersion))
     .typecase(0x05, DATA_NEGOTIATING_Codec(commitmentVersion))
-    .typecase(0x06, DATA_CLOSING_Codec(commitmentVersion))
+    .typecase(0x06, DATA_CLOSING_COMPAT_06_Codec(commitmentVersion))
     .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec(commitmentVersion))
 
 
