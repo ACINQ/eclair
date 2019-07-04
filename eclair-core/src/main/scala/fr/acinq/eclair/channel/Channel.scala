@@ -198,7 +198,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
     case Event(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, remote, remoteInit, channelFlags), Nothing) =>
-      context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, true, temporaryChannelId))
       forwarder ! remote
 
       // the resulting funding tx response will NOT have input script signature
@@ -354,6 +353,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   when(WAIT_FOR_FUNDING_INTERNAL_CREATED)(handleExceptions{
     case Event(funding:MakeFundingTxResponse, DATA_WAIT_FOR_FUNDING_INTERNAL_CREATED(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, remote, remoteInit, channelFlags)) =>
+      context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, true, temporaryChannelId))
 
       val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
       val localParams = makeFunderChannelParams(nodeParams, defaultFinalScriptPubKey, fundingSatoshis, funding.fundingTx.txIn.head)
