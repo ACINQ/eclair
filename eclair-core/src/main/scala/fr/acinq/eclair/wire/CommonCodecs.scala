@@ -20,6 +20,7 @@ import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
+import fr.acinq.eclair.crypto.Mac
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
@@ -124,5 +125,24 @@ object CommonCodecs {
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
 
   def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(32, utf8).xmap(s => s.takeWhile(_ != '\u0000'), s => s)
+
+  /**
+    * When encoding, prepend a valid mac to the output of the given codec.
+    * When decoding, verify that a valid mac is prepended.
+    */
+  def prependmac[A](codec: Codec[A], mac: Mac) = Codec[A](
+    (a: A) => codec.encode(a) match {
+      case Attempt.Successful(bits) => Attempt.Successful(mac.mac(bits.toByteVector).toBitVector ++ bits)
+      case Attempt.Failure(err) => Attempt.Failure(err)
+    },
+    (bits: BitVector) => ("mac" | bytes32).decode(bits) match {
+      case Attempt.Successful(DecodeResult(msgMac, remainder)) =>
+        if (mac.verify(msgMac, remainder.toByteVector))
+          codec.decode(remainder)
+        else
+          Attempt.Failure(scodec.Err("invalid mac"))
+      case Attempt.Failure(err) => Attempt.Failure(err)
+    }
+  )
 
 }

@@ -236,8 +236,8 @@ object Commitments {
         Sphinx.PaymentPacket.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket) match {
           case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
             val reason = cmd.reason match {
-              case Left(forwarded) => Sphinx.ErrorPacket.wrap(forwarded, sharedSecret)
-              case Right(failure) => Sphinx.ErrorPacket.create(sharedSecret, failure)
+              case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
+              case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
             }
             val fail = UpdateFailHtlc(commitments.channelId, cmd.id, reason)
             val commitments1 = addLocalProposal(commitments, fail)

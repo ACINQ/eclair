@@ -16,16 +16,12 @@
 
 package fr.acinq.eclair.crypto
 
-import java.nio.ByteOrder
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Protocol}
+import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.wire
 import fr.acinq.eclair.wire.{CommonCodecs, FailureMessage, FailureMessageCodecs}
 import grizzled.slf4j.Logging
-import org.spongycastle.crypto.digests.SHA256Digest
-import org.spongycastle.crypto.macs.HMac
-import org.spongycastle.crypto.params.KeyParameter
+import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
 import scala.annotation.tailrec
@@ -40,18 +36,9 @@ object Sphinx extends Logging {
   // We use HMAC-SHA256 which returns 32-bytes message authentication codes.
   val MacLength = 32
 
-  def hmac256(key: ByteVector, message: ByteVector): ByteVector32 = {
-    val mac = new HMac(new SHA256Digest())
-    mac.init(new KeyParameter(key.toArray))
-    mac.update(message.toArray, 0, message.length.toInt)
-    val output = new Array[Byte](32)
-    mac.doFinal(output, 0)
-    ByteVector32(ByteVector.view(output))
-  }
+  def mac(key: ByteVector, message: ByteVector): ByteVector32 = Mac.hmac256(key, message)
 
-  def mac(key: ByteVector, message: ByteVector): ByteVector32 = hmac256(key, message)
-
-  def generateKey(keyType: ByteVector, secret: ByteVector32): ByteVector32 = hmac256(keyType, secret)
+  def generateKey(keyType: ByteVector, secret: ByteVector32): ByteVector32 = Mac.hmac256(keyType, secret)
 
   def generateKey(keyType: String, secret: ByteVector32): ByteVector32 = generateKey(ByteVector.view(keyType.getBytes("UTF-8")), secret)
 
@@ -120,7 +107,7 @@ object Sphinx extends Logging {
     *
     * @param payload      decrypted payload for this node.
     * @param nextPacket   packet for the next node.
-    * @param sharedSecret shared secret for the sending node, which we will need to return error messages.
+    * @param sharedSecret shared secret for the sending node, which we will need to return failure messages.
     */
   case class DecryptedPacket(payload: ByteVector, nextPacket: wire.OnionPacket, sharedSecret: ByteVector32) {
 
@@ -266,7 +253,7 @@ object Sphinx extends Logging {
       * @param payloads       payloads (one per node).
       * @param associatedData associated data.
       * @return An onion packet with all shared secrets. The onion packet can be sent to the first node in the list, and
-      *         the shared secrets (one per node) can be used to parse returned error messages if needed.
+      *         the shared secrets (one per node) can be used to parse returned failure messages if needed.
       */
     def create(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector], associatedData: ByteVector32): PacketAndSecrets = {
       val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
@@ -303,69 +290,43 @@ object Sphinx extends Logging {
 
   }
 
-  // TODO:
-  //  * Use scodec for error package (and clean-up existing stuff / verify spec conformance)
-
   /**
-    * A properly decoded error from a node in the route.
-    * It has the following format:
-    * +----------------+----------------------------------+-----------------+----------------------+-----+
-    * | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
-    * +----------------+----------------------------------+-----------------+----------------------+-----+
-    * with failure message length + pad length = 256
+    * A properly decrypted failure from a node in the route.
     *
     * @param originNode     public key of the node that generated the failure.
-    * @param failureMessage friendly error message.
+    * @param failureMessage friendly failure message.
     */
-  case class ErrorPacket(originNode: PublicKey, failureMessage: FailureMessage)
+  case class DecryptedFailurePacket(originNode: PublicKey, failureMessage: FailureMessage)
 
-  object ErrorPacket {
+  object FailurePacket {
 
     val MaxPayloadLength = 256
     val PacketLength = MacLength + MaxPayloadLength + 2 + 2
 
     /**
-      * Create an error packet that will be returned to the sender.
+      * Create a failure packet that will be returned to the sender.
       * Each intermediate hop will add a layer of encryption and forward to the previous hop.
       * Note that malicious intermediate hops may drop the packet or alter it (which breaks the mac).
       *
       * @param sharedSecret destination node's shared secret that was computed when the original onion for the HTLC
-      *                     was created or forwarded: see makePacket() and makeNextPacket().
+      *                     was created or forwarded: see OnionPacket.create() and OnionPacket.wrap().
       * @param failure      failure message.
-      * @return an error packet that can be sent to the destination node.
+      * @return a failure packet that can be sent to the destination node.
       */
     def create(sharedSecret: ByteVector32, failure: FailureMessage): ByteVector = {
-      val message: ByteVector = FailureMessageCodecs.failureMessageCodec.encode(failure).require.toByteVector
-      require(message.length <= MaxPayloadLength, s"error message length is ${message.length}, it must be less than $MaxPayloadLength")
       val um = generateKey("um", sharedSecret)
-      val padLength = MaxPayloadLength - message.length
-      val payload = Protocol.writeUInt16(message.length.toInt, ByteOrder.BIG_ENDIAN) ++ message ++ Protocol.writeUInt16(padLength.toInt, ByteOrder.BIG_ENDIAN) ++ ByteVector.fill(padLength.toInt)(0)
+      val packet = FailureMessageCodecs.failureOnionCodec(Hmac256(um)).encode(failure).require.toByteVector
       logger.debug(s"um key: $um")
-      logger.debug(s"error payload: ${payload.toHex}")
-      logger.debug(s"raw error packet: ${(mac(um, payload) ++ payload).toHex}")
-      wrap(mac(um, payload) ++ payload, sharedSecret)
-    }
-
-    /**
-      * Extract the failure message from an error packet.
-      *
-      * @param packet error packet.
-      * @return the failure message that is embedded in the error packet.
-      */
-    private def extractFailureMessage(packet: ByteVector): FailureMessage = {
-      require(packet.length == PacketLength, s"invalid error packet length ${packet.length}, must be $PacketLength")
-      val (_, payload) = packet.splitAt(MacLength)
-      val len = Protocol.uint16(payload.toArray, ByteOrder.BIG_ENDIAN)
-      require((len >= 0) && (len <= MaxPayloadLength), s"message length must be less than $MaxPayloadLength")
-      FailureMessageCodecs.failureMessageCodec.decode(BitVector(payload.drop(2).take(len))).require.value
+      logger.debug(s"raw error packet: ${packet.toHex}")
+      wrap(packet, sharedSecret)
     }
 
     /**
       * Wrap the given packet in an additional layer of onion encryption for the previous hop.
       *
-      * @param packet       error packet.
+      * @param packet       failure packet.
       * @param sharedSecret destination node's shared secret.
-      * @return an encrypted error packet that can be sent to the destination node.
+      * @return an encrypted failure packet that can be sent to the destination node.
       */
     def wrap(packet: ByteVector, sharedSecret: ByteVector32): ByteVector = {
       require(packet.length == PacketLength, s"invalid error packet length ${packet.length}, must be $PacketLength")
@@ -377,38 +338,28 @@ object Sphinx extends Logging {
     }
 
     /**
-      * Check the mac of an error packet.
-      * Note that malicious nodes in the route may have altered the packet, thus breaking the mac.
-      *
-      * @param sharedSecret this node's shared secret.
-      * @param packet       error packet.
-      * @return true if the packet's mac is valid, which means that it has been properly decrypted.
-      */
-    private def checkMac(sharedSecret: ByteVector32, packet: ByteVector): Boolean = {
-      val (packetMac, payload) = packet.splitAt(MacLength)
-      val um = generateKey("um", sharedSecret)
-      ByteVector32(packetMac) == mac(um, payload)
-    }
-
-    /**
-      * Decrypt an error packet. Node shared secrets are applied until the packet's MAC becomes valid, which means that
+      * Decrypt a failure packet. Node shared secrets are applied until the packet's MAC becomes valid, which means that
       * it was sent by the corresponding node.
       * Note that malicious nodes in the route may have altered the packet, triggering a decryption failure.
       *
-      * @param packet        error packet.
+      * @param packet        failure packet.
       * @param sharedSecrets nodes shared secrets.
       * @return Success(secret, failure message) if the origin of the packet could be identified and the packet
       *         decrypted, Failure otherwise.
       */
-    def decrypt(packet: ByteVector, sharedSecrets: Seq[(ByteVector32, PublicKey)]): Try[ErrorPacket] = Try {
+    def decrypt(packet: ByteVector, sharedSecrets: Seq[(ByteVector32, PublicKey)]): Try[DecryptedFailurePacket] = Try {
       require(packet.length == PacketLength, s"invalid error packet length ${packet.length}, must be $PacketLength")
 
       @tailrec
-      def loop(packet: ByteVector, sharedSecrets: Seq[(ByteVector32, PublicKey)]): ErrorPacket = sharedSecrets match {
+      def loop(packet: ByteVector, sharedSecrets: Seq[(ByteVector32, PublicKey)]): DecryptedFailurePacket = sharedSecrets match {
         case Nil => throw new RuntimeException(s"couldn't parse error packet=$packet with sharedSecrets=$sharedSecrets")
         case (secret, pubkey) :: tail =>
           val packet1 = wrap(packet, secret)
-          if (checkMac(secret, packet1)) ErrorPacket(pubkey, extractFailureMessage(packet1)) else loop(packet1, tail)
+          val um = generateKey("um", secret)
+          FailureMessageCodecs.failureOnionCodec(Hmac256(um)).decode(packet1.toBitVector) match {
+            case Attempt.Successful(value) => DecryptedFailurePacket(pubkey, value.value)
+            case _ => loop(packet1, tail)
+          }
       }
 
       loop(packet, sharedSecrets)

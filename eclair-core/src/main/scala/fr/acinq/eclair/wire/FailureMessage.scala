@@ -17,10 +17,12 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.crypto.Mac
 import fr.acinq.eclair.wire.CommonCodecs.{sha256, uint64overflow}
-import fr.acinq.eclair.wire.LightningMessageCodecs.channelUpdateCodec
+import fr.acinq.eclair.wire.LightningMessageCodecs.{channelUpdateCodec, lightningMessageCodec}
+import scodec.bits.ByteVector
 import scodec.codecs._
-import scodec.Attempt
+import scodec.{Attempt, Codec}
 
 /**
   * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
@@ -78,7 +80,7 @@ object FailureMessageCodecs {
   val NODE = 0x2000
   val UPDATE = 0x1000
 
-  val channelUpdateCodecWithType = LightningMessageCodecs.lightningMessageCodec.narrow[ChannelUpdate](f => Attempt.successful(f.asInstanceOf[ChannelUpdate]), g => g)
+  val channelUpdateCodecWithType = lightningMessageCodec.narrow[ChannelUpdate](f => Attempt.successful(f.asInstanceOf[ChannelUpdate]), g => g)
 
   // NB: for historical reasons some implementations were including/omitting the message type (258 for ChannelUpdate)
   // this codec supports both versions for decoding, and will encode with the message type
@@ -108,4 +110,20 @@ object FailureMessageCodecs {
     .typecase(18, ("expiry" | uint32).as[FinalIncorrectCltvExpiry])
     .typecase(19, ("amountMsat" | uint64overflow).as[FinalIncorrectHtlcAmount])
     .typecase(21, provide(ExpiryTooFar))
+
+  /**
+    * An onion-encrypted failure from an intermediate node:
+    * +----------------+----------------------------------+-----------------+----------------------+-----+
+    * | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
+    * +----------------+----------------------------------+-----------------+----------------------+-----+
+    * with failure message length + pad length = 256
+    */
+  def failureOnionCodec(mac: Mac): Codec[FailureMessage] = CommonCodecs.prependmac(
+    paddedFixedSizeBytesDependent(
+      260,
+      "failureMessage" | variableSizeBytes(uint16, FailureMessageCodecs.failureMessageCodec),
+      nBits => {
+        val nBytes = (nBits / 8).toInt
+        variableSizeBytes(uint16, bytes(nBytes - 2)).unit(ByteVector.empty)
+      }).as[FailureMessage], mac)
 }
