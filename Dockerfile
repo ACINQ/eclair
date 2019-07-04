@@ -46,7 +46,7 @@ FROM openjdk:8u181-jre-slim
 WORKDIR /app
 
 # install jq for eclair-cli
-RUN apt-get update && apt-get install -y bash jq
+RUN apt-get update && apt-get install -y bash jq curl
 
 # copy and install eclair-cli executable
 COPY --from=BUILD /usr/src/eclair-core/eclair-cli .
