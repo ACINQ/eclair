@@ -124,6 +124,7 @@ class Setup(datadir: File,
         // Make sure wallet support is enabled in bitcoind.
         _ <- bitcoinClient.invoke("getbalance").recover { case _ => throw BitcoinWalletDisabledException }
         progress = (json \ "verificationprogress").extract[Double]
+        ibd = (json \ "initialblockdownload").extract[Boolean]
         blocks = (json \ "blocks").extract[Long]
         headers = (json \ "headers").extract[Long]
         chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(s => ByteVector32.fromValidHex(s)).map(_.reverse)
@@ -133,16 +134,17 @@ class Setup(datadir: File,
             .filter(value => (value \ "spendable").extract[Boolean])
             .map(value => (value \ "address").extract[String])
         }
-      } yield (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
+      } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
       // blocking sanity checks
-      val (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
+      val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
       assert(bitcoinVersion >= 170000, "Eclair requires Bitcoin Core 0.17.0 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
         assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Make sure that all your UTXOS are segwit UTXOS and not p2pkh (check out our README for more details)")
       }
-      assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress")
-      assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks")
+      assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
+      assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
+      assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       val addresses = config.hasPath("electrum") match {

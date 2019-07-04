@@ -57,12 +57,13 @@ class WaitForFundingSignedTurboStateSpec extends TestkitBaseClass with StateTest
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     alice2blockchain.expectMsgType[WatchSpent]
     alice2blockchain.expectMsgType[WatchConfirmed]
     // This is a Turbo channel so alice becomes WAIT_FOR_FUNDING_LOCKED right away and sends a FundingLocked
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
     // Bob sees funding in a mempool and sends FundingLocked right away
-    bob ! Channel.WATCH_EVENT_CONFIRMED_TURBO
+    bob ! Channel.WATCH_EVENT_CONFIRMED_TURBO(fundingTx)
     val msg1 = alice2bob.expectMsgType[FundingLocked]
     val msg2 = bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)

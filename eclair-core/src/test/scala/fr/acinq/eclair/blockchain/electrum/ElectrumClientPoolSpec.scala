@@ -80,7 +80,7 @@ class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteL
 
   test("get transaction") {
     probe.send(pool, GetTransaction(referenceTx.txid))
-    val GetTransactionResponse(tx) = probe.expectMsgType[GetTransactionResponse](timeout)
+    val GetTransactionResponse(tx, _) = probe.expectMsgType[GetTransactionResponse](timeout)
     assert(tx == referenceTx)
   }
 
