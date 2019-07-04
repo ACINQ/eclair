@@ -1003,7 +1003,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isLeft)
     val peer = TestProbe()
     sender.send(alice, RevocationTimeout(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.index, peer.ref))
-    peer.expectMsg(Peer.Disconnect)
+    peer.expectMsg(Peer.Disconnect(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteParams.nodeId))
   }
 
   test("recv CMD_FULFILL_HTLC") { f =>
@@ -2036,7 +2036,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BITCOIN_FUNDING_DEEPLYBURIED", Tag("channels_public")) { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
     // public channel: we don't send the channel_update directly to the peer
     alice2bob.expectNoMsg(1 second)
@@ -2048,7 +2048,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BITCOIN_FUNDING_DEEPLYBURIED (short channel id changed)", Tag("channels_public")) { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400001, 22))
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400001, 22, null))
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
     // public channel: we don't send the channel_update directly to the peer
     alice2bob.expectNoMsg(1 second)
@@ -2060,7 +2060,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BITCOIN_FUNDING_DEEPLYBURIED (private channel)") { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
     // private channel: we send the channel_update directly to the peer
     val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
@@ -2071,7 +2071,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BITCOIN_FUNDING_DEEPLYBURIED (private channel, short channel id changed)") { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400001, 22))
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400001, 22, null))
     // private channel: we send the channel_update directly to the peer
     val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
@@ -2084,9 +2084,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val sender = TestProbe()
-    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
-    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
     val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
     import initialState.commitments.{localParams, remoteParams}
     val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.keyManager.fundingPublicKey(fundingKeyPath(localParams)).publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
@@ -2103,9 +2103,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val sender = TestProbe()
-    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10))
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10, null))
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
-    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10))
+    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10, null))
     val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
     import initialState.commitments.{localParams, remoteParams}
     val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.keyManager.fundingPublicKey(fundingKeyPath(localParams)).publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
@@ -2122,8 +2122,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BroadcastChannelUpdate", Tag("channels_public")) { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
-    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
+    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     val update1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
@@ -2138,8 +2138,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BroadcastChannelUpdate (no changes)", Tag("channels_public")) { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
-    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
+    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
@@ -2153,7 +2153,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv INPUT_DISCONNECTED") { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
     val update1a = alice2bob.expectMsgType[ChannelUpdate]
     assert(Announcements.isEnabled(update1a.channelFlags) == true)
 
@@ -2167,7 +2167,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv INPUT_DISCONNECTED (with pending unsigned htlcs)") { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
     val update1a = alice2bob.expectMsgType[ChannelUpdate]
     assert(Announcements.isEnabled(update1a.channelFlags) == true)
     val (_, htlc1) = addHtlc(10000, alice, bob, alice2bob, bob2alice)
@@ -2189,8 +2189,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv INPUT_DISCONNECTED (public channel)", Tag("channels_public")) { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
-    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
+    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     val update1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
@@ -2205,8 +2205,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv INPUT_DISCONNECTED (public channel, with pending unsigned htlcs)", Tag("channels_public")) { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
-    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
+    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[AnnouncementSignatures]

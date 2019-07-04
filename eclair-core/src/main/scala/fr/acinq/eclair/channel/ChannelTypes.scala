@@ -159,7 +159,7 @@ final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32,
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, fundingTxFee: Satoshi, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte, lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  fundingTx: Option[Transaction],
-                                                 waitingSince: Long,
+                                                 waitingSince: Long, // how long have we been waiting for the funding tx to confirm
                                                  deferred: Option[FundingLocked],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments
 final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, shortChannelId: ShortChannelId, lastSent: FundingLocked) extends Data with HasCommitments
@@ -176,10 +176,12 @@ final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
                                   bestUnpublishedClosingTx_opt: Option[Transaction]) extends Data with HasCommitments {
-  require(!closingTxProposed.isEmpty, "there must always be a list for the current negotiation")
-  require(!commitments.localParams.isFunder || closingTxProposed.forall(!_.isEmpty), "funder must have at least one closing signature for every negotation attempt because it initiates the closing")
+  require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
+  require(!commitments.localParams.isFunder || closingTxProposed.forall(_.nonEmpty), "funder must have at least one closing signature for every negotation attempt because it initiates the closing")
 }
 final case class DATA_CLOSING(commitments: Commitments,
+                              fundingTx: Option[Transaction], // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
+                              waitingSince: Long, // how long since we initiated the closing
                               mutualCloseProposed: List[Transaction], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
                               mutualClosePublished: List[Transaction] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,
@@ -188,7 +190,7 @@ final case class DATA_CLOSING(commitments: Commitments,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
   val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
-  require(spendingTxes.size > 0, "there must be at least one tx published in this state")
+  require(spendingTxes.nonEmpty, "there must be at least one tx published in this state")
 }
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments

@@ -183,10 +183,6 @@ object NodeAddress {
     *
     * We don't attempt to resolve onion addresses (it will be done by the tor proxy), so we just recognize them based on
     * the .onion TLD and rely on their length to separate v2/v3.
-    *
-    * @param host
-    * @param port
-    * @return
     */
   def fromParts(host: String, port: Int): Try[NodeAddress] = Try {
     host match {

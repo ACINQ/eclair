@@ -91,8 +91,10 @@ trait StateTestsHelperMethods extends TestKitBase {
     alice2blockchain.expectMsgType[WatchConfirmed]
     bob2blockchain.expectMsgType[WatchSpent]
     bob2blockchain.expectMsgType[WatchConfirmed]
-    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
-    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
+    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
+    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
     alice2blockchain.expectMsgType[WatchLost]
     bob2blockchain.expectMsgType[WatchLost]
     alice2bob.expectMsgType[FundingLocked]
@@ -103,7 +105,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2blockchain.expectMsgType[WatchConfirmed] // deeply buried
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSendMsat == pushMsat - TestConstants.Alice.channelParams.channelReserveSatoshis * 1000)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSendMsat == math.max(pushMsat - TestConstants.Alice.channelParams.channelReserveSatoshis * 1000, 0))
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
