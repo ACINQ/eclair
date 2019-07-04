@@ -29,11 +29,6 @@ import fr.acinq.eclair.{Globals, UInt64}
 import scala.util.{Failure, Success}
 
 // @formatter:off
-sealed trait ChannelVersion
-object ChannelVersion {
-  case object STANDARD extends ChannelVersion
-}
-
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
   def all: List[UpdateMessage] = proposed ++ signed ++ acked
 }
