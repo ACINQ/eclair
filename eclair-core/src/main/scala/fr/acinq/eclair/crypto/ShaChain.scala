@@ -17,7 +17,7 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.wire.LightningMessageCodecs
+import fr.acinq.eclair.wire.CommonCodecs
 import scodec.Codec
 
 import scala.annotation.tailrec
@@ -117,7 +117,7 @@ object ShaChain {
     import scodec.codecs._
 
     // codec for a single map entry (i.e. Vector[Boolean] -> ByteVector
-    val entryCodec = vectorOfN(uint16, bool) ~ variableSizeBytes(uint16, LightningMessageCodecs.bytes32)
+    val entryCodec = vectorOfN(uint16, bool) ~ variableSizeBytes(uint16, CommonCodecs.bytes32)
 
     // codec for a Map[Vector[Boolean], ByteVector]: write all k -> v pairs using the codec defined above
     val mapCodec: Codec[Map[Vector[Boolean], ByteVector32]] = Codec[Map[Vector[Boolean], ByteVector32]](

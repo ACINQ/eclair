@@ -187,7 +187,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     }
 
     client.expectMsg(GetTransaction(tx.txid))
-    wallet ! GetTransactionResponse(tx)
+    wallet ! GetTransactionResponse(tx, None)
     val TransactionReceived(_, _, Satoshi(100000), _, _, _) = listener.expectMsgType[TransactionReceived]
     // we think we have some unconfirmed funds
     val WalletReady(Satoshi(100000), _, _, _) = listener.expectMsgType[WalletReady]
@@ -204,7 +204,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
           TestActor.KeepRunning
       }
     })
-    probe.send(wallet, GetMerkleResponse(tx.txid, ByteVector32(ByteVector.fill(32)(1)) :: Nil, 2, 0))
+    probe.send(wallet, GetMerkleResponse(tx.txid, ByteVector32(ByteVector.fill(32)(1)) :: Nil, 2, 0, None))
     watcher.expectTerminated(probe.ref)
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
 
@@ -319,9 +319,9 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
             sender ! ElectrumClient.ElectrumReady(headers.length, headers.last, InetSocketAddress.createUnresolved("0.0.0.0", 9735))
             sender ! ElectrumClient.HeaderSubscriptionResponse(headers.length, headers.last)
             TestActor.KeepRunning
-          case request@GetTransaction(txid) =>
+          case request@GetTransaction(txid, context_opt) =>
             data.transactions.get(txid) match {
-              case Some(tx) => sender ! GetTransactionResponse(tx)
+              case Some(tx) => sender ! GetTransactionResponse(tx, context_opt)
               case None =>
                 sender ! ServerError(request, Error(0, s"unknwown tx $txid"))
             }

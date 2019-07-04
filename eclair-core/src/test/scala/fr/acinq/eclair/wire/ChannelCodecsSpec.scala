@@ -273,8 +273,8 @@ class ChannelCodecsSpec extends FunSuite {
       val oldnormal = stateDataCodec.decode(oldbin.bits).require.value
       // and we encode with new codec
       val newbin = stateDataCodec.encode(oldnormal).require.bytes
-      // make sure that encoding used the new 0x09 codec
-      assert(newbin.startsWith(hex"000009"))
+      // make sure that encoding used the new 0x10 codec
+      assert(newbin.startsWith(hex"000010"))
       // make sure that roundtrip yields the same data
       val newnormal = stateDataCodec.decode(newbin.bits).require.value
       assert(newnormal === oldnormal)
