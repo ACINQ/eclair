@@ -191,11 +191,7 @@ object LightningMessageCodecs {
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
     ("signature" | bytes64) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
-
-  /**
-    * NB: because this codec includes unknown trailing fields (as requested by BOLT 7), it must be enclosed inside a
-    * size-delimited codec at writing when followed by other messages.
-    */
+  
   val channelUpdateWitnessCodec =
     ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
