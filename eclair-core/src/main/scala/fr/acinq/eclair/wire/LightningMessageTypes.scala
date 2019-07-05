@@ -225,15 +225,6 @@ case class ChannelUpdate(signature: ByteVector64,
   require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
 }
 
-case class OnionPacket(version: Int,
-                       publicKey: ByteVector,
-                       payload: ByteVector,
-                       hmac: ByteVector32)
-
-case class PerHopPayload(shortChannelId: ShortChannelId,
-                         amtToForward: Long,
-                         outgoingCltvValue: Long)
-
 case class QueryShortChannelIds(chainHash: ByteVector32,
                                 data: ByteVector) extends RoutingMessage with HasChainHash
 

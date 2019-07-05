@@ -236,7 +236,7 @@ object PaymentLifecycle {
     require(nodes.size == payloads.size)
     val sessionKey = randomKey
     val payloadsbin: Seq[ByteVector] = payloads
-      .map(LightningMessageCodecs.perHopPayloadCodec.encode)
+      .map(OnionCodecs.perHopPayloadCodec.encode)
       .map {
         case Attempt.Successful(bitVector) => bitVector.toByteVector
         case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")

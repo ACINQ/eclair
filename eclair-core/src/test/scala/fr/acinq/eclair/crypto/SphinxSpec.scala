@@ -255,7 +255,7 @@ class SphinxSpec extends FunSuite {
 
     val packet = FailurePacket.wrap(
       FailurePacket.wrap(
-        FailurePacket.create(sharedSecrets.head, InvalidOnionUnknown(ByteVector32.Zeroes)),
+        FailurePacket.create(sharedSecrets.head, InvalidOnion(ByteVector32.Zeroes)),
         sharedSecrets(1)),
       sharedSecrets(2))
 
@@ -340,7 +340,7 @@ object SphinxSpec {
   import fr.acinq.eclair.wire.LightningMessageCodecs
 
   def serializePaymentOnion(onion: OnionPacket): ByteVector =
-    LightningMessageCodecs.paymentOnionPacketCodec.encode(onion).require.toByteVector
+    OnionCodecs.paymentOnionPacketCodec.encode(onion).require.toByteVector
 
   val privKeys = Seq(
     PrivateKey(hex"4141414141414141414141414141414141414141414141414141414141414141"),

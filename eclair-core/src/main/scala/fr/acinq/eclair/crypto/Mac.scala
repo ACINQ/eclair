@@ -29,7 +29,7 @@ import scodec.bits.ByteVector
 /**
   * Create and verify message authentication codes.
   */
-trait Mac {
+trait Mac32 {
 
   def mac(message: ByteVector): ByteVector32
 
@@ -37,15 +37,15 @@ trait Mac {
 
 }
 
-case class Hmac256(key: ByteVector) extends Mac {
+case class Hmac256(key: ByteVector) extends Mac32 {
 
-  override def mac(message: ByteVector): ByteVector32 = Mac.hmac256(key, message)
+  override def mac(message: ByteVector): ByteVector32 = Mac32.hmac256(key, message)
 
   override def verify(mac: ByteVector32, message: ByteVector): Boolean = this.mac(message) === mac
 
 }
 
-object Mac {
+object Mac32 {
 
   def hmac256(key: ByteVector, message: ByteVector): ByteVector32 = {
     val mac = new HMac(new SHA256Digest())

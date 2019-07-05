@@ -29,7 +29,6 @@ import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, ShortChannelId, nodeFee}
-import scodec.bits.BitVector
 import scodec.{Attempt, DecodeResult}
 
 import scala.collection.mutable
@@ -99,7 +98,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
     case ForwardAdd(add, previousFailures) =>
       log.debug(s"received forwarding request for htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId}")
-      tryDecryptPacket(add, nodeParams.privateKey) match {
+      decryptPacket(add, nodeParams.privateKey) match {
         case Right(p: FinalPayload) =>
           handleFinal(p) match {
             case Left(cmdFail) =>
@@ -226,18 +225,19 @@ object Relayer {
     *
     * @param add        incoming htlc
     * @param privateKey this node's private key
-    * @return the payload for the next hop
+    * @return the payload for the next hop or an error.
     */
-  def tryDecryptPacket(add: UpdateAddHtlc, privateKey: PrivateKey): Either[BadOnion, NextPayload] =
+  def decryptPacket(add: UpdateAddHtlc, privateKey: PrivateKey): Either[BadOnion, NextPayload] =
     Sphinx.PaymentPacket.peel(privateKey, add.paymentHash, add.onionRoutingPacket) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
-        LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload)) match {
+        OnionCodecs.perHopPayloadCodec.decode(payload.bits) match {
           case Attempt.Successful(DecodeResult(perHopPayload, _)) if p.isLastPacket =>
             Right(FinalPayload(add, perHopPayload))
           case Attempt.Successful(DecodeResult(perHopPayload, _)) =>
             Right(RelayPayload(add, perHopPayload, nextPacket))
           case Attempt.Failure(_) =>
-            Left(InvalidOnionUnknown(Sphinx.PaymentPacket.hash(add.onionRoutingPacket)))
+            // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
+            Left(InvalidOnion(Sphinx.PaymentPacket.hash(add.onionRoutingPacket)))
         }
       case Left(badOnion) => Left(badOnion)
     }

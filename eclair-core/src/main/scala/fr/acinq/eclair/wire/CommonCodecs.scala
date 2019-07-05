@@ -20,7 +20,7 @@ import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
-import fr.acinq.eclair.crypto.Mac
+import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
@@ -130,17 +130,11 @@ object CommonCodecs {
     * When encoding, prepend a valid mac to the output of the given codec.
     * When decoding, verify that a valid mac is prepended.
     */
-  def prependmac[A](codec: Codec[A], mac: Mac) = Codec[A](
-    (a: A) => codec.encode(a) match {
-      case Attempt.Successful(bits) => Attempt.Successful(mac.mac(bits.toByteVector).toBitVector ++ bits)
-      case Attempt.Failure(err) => Attempt.Failure(err)
-    },
+  def prependmac[A](codec: Codec[A], mac: Mac32) = Codec[A](
+    (a: A) => codec.encode(a).map(bits => mac.mac(bits.toByteVector).bits ++ bits),
     (bits: BitVector) => ("mac" | bytes32).decode(bits) match {
-      case Attempt.Successful(DecodeResult(msgMac, remainder)) =>
-        if (mac.verify(msgMac, remainder.toByteVector))
-          codec.decode(remainder)
-        else
-          Attempt.Failure(scodec.Err("invalid mac"))
+      case Attempt.Successful(DecodeResult(msgMac, remainder)) if mac.verify(msgMac, remainder.toByteVector) => codec.decode(remainder)
+      case Attempt.Successful(_) => Attempt.Failure(scodec.Err("invalid mac"))
       case Attempt.Failure(err) => Attempt.Failure(err)
     }
   )

@@ -174,7 +174,7 @@ object Switchboard extends Logging {
       .flatMap(_.commitments.remoteCommit.spec.htlcs)
       .filter(_.direction == OUT)
       .map(_.add)
-      .map(Relayer.tryDecryptPacket(_, privateKey))
+      .map(Relayer.decryptPacket(_, privateKey))
       .collect { case Right(RelayPayload(add, _, _)) => add } // we only consider htlcs that are relayed, not the ones for which we are the final node
 
     // Here we do it differently because we need the origin information.

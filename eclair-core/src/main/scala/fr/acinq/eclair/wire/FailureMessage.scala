@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.crypto.Mac
+import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.wire.CommonCodecs.{sha256, uint64overflow}
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelUpdateCodec, lightningMessageCodec}
 import scodec.bits.ByteVector
@@ -53,9 +53,9 @@ case class InvalidOnionKey(onionHash: ByteVector32) extends BadOnion with Perm {
   def failureCode = FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 6
   def message = "ephemeral key was unparsable by the processing node"
 }
-case class InvalidOnionUnknown(onionHash: ByteVector32) extends BadOnion with Perm {
+case class InvalidOnion(onionHash: ByteVector32) extends BadOnion with Perm {
   def failureCode = FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM
-  def message = "onion per-hop payload unknown error"
+  def message = "onion per-hop payload could not be parsed"
 }
 case class TemporaryChannelFailure(update: ChannelUpdate) extends Update { def message = s"channel ${update.shortChannelId} is currently unavailable" }
 case object PermanentChannelFailure extends Perm { def message = "channel is permanently unavailable" }
@@ -91,7 +91,7 @@ object FailureMessageCodecs {
     .typecase(NODE | 2, provide(TemporaryNodeFailure))
     .typecase(PERM | 2, provide(PermanentNodeFailure))
     .typecase(PERM | NODE | 3, provide(RequiredNodeFeatureMissing))
-    .typecase(BADONION | PERM, sha256.as[InvalidOnionUnknown])
+    .typecase(BADONION | PERM, sha256.as[InvalidOnion])
     .typecase(BADONION | PERM | 4, sha256.as[InvalidOnionVersion])
     .typecase(BADONION | PERM | 5, sha256.as[InvalidOnionHmac])
     .typecase(BADONION | PERM | 6, sha256.as[InvalidOnionKey])
@@ -118,7 +118,7 @@ object FailureMessageCodecs {
     * +----------------+----------------------------------+-----------------+----------------------+-----+
     * with failure message length + pad length = 256
     */
-  def failureOnionCodec(mac: Mac): Codec[FailureMessage] = CommonCodecs.prependmac(
+  def failureOnionCodec(mac: Mac32): Codec[FailureMessage] = CommonCodecs.prependmac(
     paddedFixedSizeBytesDependent(
       260,
       "failureMessage" | variableSizeBytes(uint16, FailureMessageCodecs.failureMessageCodec),

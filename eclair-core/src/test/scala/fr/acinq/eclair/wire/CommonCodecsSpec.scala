@@ -50,14 +50,13 @@ class CommonCodecsSpec extends FunSuite {
   }
 
   test("encode/decode UInt64") {
-    Seq(
+    val refs = Seq(
       UInt64(hex"ffffffffffffffff"),
       UInt64(hex"fffffffffffffffe"),
       UInt64(hex"efffffffffffffff"),
       UInt64(hex"effffffffffffffe")
-    ).map(value => {
-      assert(uint64.decode(uint64.encode(value).require).require.value === value)
-    })
+    )
+    assert(refs.forall(value => uint64.decode(uint64.encode(value).require).require.value === value))
   }
 
   test("encode/decode with varint codec") {

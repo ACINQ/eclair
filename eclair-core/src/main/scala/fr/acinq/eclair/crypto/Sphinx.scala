@@ -22,7 +22,7 @@ import fr.acinq.eclair.wire
 import fr.acinq.eclair.wire.{CommonCodecs, FailureMessage, FailureMessageCodecs}
 import grizzled.slf4j.Logging
 import scodec.Attempt
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 import scala.util.{Failure, Success, Try}
@@ -36,9 +36,9 @@ object Sphinx extends Logging {
   // We use HMAC-SHA256 which returns 32-bytes message authentication codes.
   val MacLength = 32
 
-  def mac(key: ByteVector, message: ByteVector): ByteVector32 = Mac.hmac256(key, message)
+  def mac(key: ByteVector, message: ByteVector): ByteVector32 = Mac32.hmac256(key, message)
 
-  def generateKey(keyType: ByteVector, secret: ByteVector32): ByteVector32 = Mac.hmac256(keyType, secret)
+  def generateKey(keyType: ByteVector, secret: ByteVector32): ByteVector32 = Mac32.hmac256(keyType, secret)
 
   def generateKey(keyType: String, secret: ByteVector32): ByteVector32 = generateKey(ByteVector.view(keyType.getBytes("UTF-8")), secret)
 
@@ -93,12 +93,11 @@ object Sphinx extends Logging {
         // The 1.1 BOLT spec changed the frame format to use variable-length per-hop payloads.
         // The first bytes contain a varint encoding the length of the payload data (not including the trailing mac).
         // Since messages are always smaller than 65535 bytes, this varint will either be 1 or 3 bytes long.
-        val dataLength = CommonCodecs.varintoverflow.decode(BitVector(payload.take(3))).require.value.toInt
-        val varintLength = dataLength match {
-          case i if i < 0xfd => 1
-          case _ => 3
-        }
-        varintLength + dataLength + MacLength
+        val lengthPrefix = payload.take(3)
+        val decodedLength = CommonCodecs.varintoverflow.decode(lengthPrefix.bits).require
+        val dataLength = decodedLength.value
+        val prefixLength = lengthPrefix.length - decodedLength.remainder.toByteVector.length
+        (prefixLength + dataLength + MacLength).toInt
     }
   }
 
@@ -277,7 +276,7 @@ object Sphinx extends Logging {
       * When an invalid onion is received, its hash should be included in the failure message.
       */
     def hash(onion: wire.OnionPacket): ByteVector32 =
-      Crypto.sha256(wire.LightningMessageCodecs.onionPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
+      Crypto.sha256(wire.OnionCodecs.onionPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
 
   }
 
