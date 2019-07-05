@@ -26,6 +26,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
+import fr.acinq.eclair.transactions.Transactions.FeeConf
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
 import scala.concurrent.duration._
@@ -75,7 +76,6 @@ object TestConstants {
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
       maxToLocalDelayBlocks = 1000,
-      smartfeeNBlocks = 3,
       feeEstimator = new TestFeeEstimator,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
@@ -86,6 +86,7 @@ object TestConstants {
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
+      feeTargets = FeeConf(3, 3, 3),
       maxFeerateMismatch = 1.5,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
@@ -142,7 +143,6 @@ object TestConstants {
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
       maxToLocalDelayBlocks = 1000,
-      smartfeeNBlocks = 3,
       feeEstimator = new TestFeeEstimator,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
@@ -153,6 +153,7 @@ object TestConstants {
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
+      feeTargets = FeeConf(3, 3, 3),
       maxFeerateMismatch = 1.0,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,

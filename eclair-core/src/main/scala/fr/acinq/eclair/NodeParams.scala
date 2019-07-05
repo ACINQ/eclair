@@ -20,7 +20,6 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
-
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
@@ -31,9 +30,9 @@ import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
+import fr.acinq.eclair.transactions.Transactions.FeeConf
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
-
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
 
@@ -55,7 +54,6 @@ case class NodeParams(keyManager: KeyManager,
                       toRemoteDelayBlocks: Int,
                       maxToLocalDelayBlocks: Int,
                       minDepthBlocks: Int,
-                      smartfeeNBlocks: Int,
                       feeEstimator: FeeEstimator,
                       feeBaseMsat: Int,
                       feeProportionalMillionth: Int,
@@ -66,6 +64,7 @@ case class NodeParams(keyManager: KeyManager,
                       pingInterval: FiniteDuration,
                       pingTimeout: FiniteDuration,
                       pingDisconnect: Boolean,
+                      feeTargets: FeeConf,
                       maxFeerateMismatch: Double,
                       updateFeeMinDiffRatio: Double,
                       autoReconnect: Boolean,
@@ -178,6 +177,12 @@ object NodeParams {
       .toList
       .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ torAddress_opt
 
+    val feeTargets = FeeConf(
+      fundingBlockTarget = config.getInt("fee-targets.funding"),
+      commitmentBlockTarget = config.getInt("fee-targets.commitment"),
+      mutualCloseBlockTarget = config.getInt("fee-targets.mutual-close")
+    )
+
     NodeParams(
       keyManager = keyManager,
       alias = nodeAlias,
@@ -194,7 +199,6 @@ object NodeParams {
       toRemoteDelayBlocks = config.getInt("to-remote-delay-blocks"),
       maxToLocalDelayBlocks = config.getInt("max-to-local-delay-blocks"),
       minDepthBlocks = config.getInt("mindepth-blocks"),
-      smartfeeNBlocks = 3,
       feeEstimator = new FeeEstimator {
         override def getFeeratePerKb(target: Int): Long = Globals.feeratesPerKB.get().feePerBlock(target)
         override def getFeeratePerKw(target: Int): Long = Globals.feeratesPerKw.get().feePerBlock(target)
@@ -208,6 +212,7 @@ object NodeParams {
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
       pingDisconnect = config.getBoolean("ping-disconnect"),
+      feeTargets = feeTargets,
       maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
       updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
       autoReconnect = config.getBoolean("auto-reconnect"),
