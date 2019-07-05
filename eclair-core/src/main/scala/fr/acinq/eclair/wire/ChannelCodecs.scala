@@ -266,7 +266,9 @@ object ChannelCodecs extends Logging {
       ("shortChannelId" | shortchannelid) ::
       ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
-  // All channel_announcement's written prior to supporting unknown trailing fields had the same size
+  // All channel_announcement's written prior to supporting unknown trailing fields had the same fixed size, because
+  // those are the announcements that *we* created and we always used an empty features field, which was the only
+  // variable-length field.
   val noUnknownFieldsChannelAnnouncementSizeCodec: Codec[Int] = provide(430)
 
   // We used to ignore unknown trailing fields, and assume that channel_update size was known. This is not true anymore,
@@ -279,7 +281,7 @@ object ChannelCodecs extends Logging {
     .map(messageFlags => if ((messageFlags & 1) != 0) 136 else 128) // depending on the value of option_channel_htlc_max, size will be 128B or 136B
     .decodeOnly // this is for compat, we only need to decode
 
-  // this is a decode-only codec compatible with versions de50cc4 and below
+  // this is a decode-only codec compatible with versions 9afb26e and below
   val DATA_NORMAL_COMPAT_03_Codec: Codec[DATA_NORMAL] = (
     ("commitments" | commitmentsCodec) ::
       ("shortChannelId" | shortchannelid) ::
