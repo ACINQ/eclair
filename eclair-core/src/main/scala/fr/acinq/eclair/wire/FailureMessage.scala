@@ -31,8 +31,7 @@ import scodec.{Attempt, Codec}
 
 // @formatter:off
 sealed trait FailureMessage { def message: String }
-sealed trait FailureCode { def failureCode: Int }
-sealed trait BadOnion extends FailureMessage with FailureCode { def onionHash: ByteVector32 }
+sealed trait BadOnion extends FailureMessage { def onionHash: ByteVector32 }
 sealed trait Perm extends FailureMessage
 sealed trait Node extends FailureMessage
 sealed trait Update extends FailureMessage { def update: ChannelUpdate }
@@ -41,22 +40,10 @@ case object InvalidRealm extends Perm { def message = "realm was not understood 
 case object TemporaryNodeFailure extends Node { def message = "general temporary failure of the processing node" }
 case object PermanentNodeFailure extends Perm with Node { def message = "general permanent failure of the processing node" }
 case object RequiredNodeFeatureMissing extends Perm with Node { def message = "processing node requires features that are missing from this onion" }
-case class InvalidOnionVersion(onionHash: ByteVector32) extends BadOnion with Perm {
-  def failureCode = FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 4
-  def message = "onion version was not understood by the processing node"
-}
-case class InvalidOnionHmac(onionHash: ByteVector32) extends BadOnion with Perm {
-  def failureCode = FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 5
-  def message = "onion HMAC was incorrect when it reached the processing node"
-}
-case class InvalidOnionKey(onionHash: ByteVector32) extends BadOnion with Perm {
-  def failureCode = FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 6
-  def message = "ephemeral key was unparsable by the processing node"
-}
-case class InvalidOnionPayload(onionHash: ByteVector32) extends BadOnion with Perm {
-  def failureCode = FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM
-  def message = "onion per-hop payload could not be parsed"
-}
+case class InvalidOnionVersion(onionHash: ByteVector32) extends BadOnion with Perm { def message = "onion version was not understood by the processing node" }
+case class InvalidOnionHmac(onionHash: ByteVector32) extends BadOnion with Perm { def message = "onion HMAC was incorrect when it reached the processing node" }
+case class InvalidOnionKey(onionHash: ByteVector32) extends BadOnion with Perm { def message = "ephemeral key was unparsable by the processing node" }
+case class InvalidOnionPayload(onionHash: ByteVector32) extends BadOnion with Perm { def message = "onion per-hop payload could not be parsed" }
 case class TemporaryChannelFailure(update: ChannelUpdate) extends Update { def message = s"channel ${update.shortChannelId} is currently unavailable" }
 case object PermanentChannelFailure extends Perm { def message = "channel is permanently unavailable" }
 case object RequiredChannelFeatureMissing extends Perm { def message = "channel requires features not present in the onion" }
@@ -110,6 +97,12 @@ object FailureMessageCodecs {
     .typecase(18, ("expiry" | uint32).as[FinalIncorrectCltvExpiry])
     .typecase(19, ("amountMsat" | uint64overflow).as[FinalIncorrectHtlcAmount])
     .typecase(21, provide(ExpiryTooFar))
+
+  /**
+    * Return the failure code for a given failure message. This method actually encodes the failure message, which is a
+    * bit clunky and not particularly efficient. It shouldn't be used on the application's hot path.
+    */
+  def failureCode(failure: FailureMessage): Int = failureMessageCodec.encode(failure).flatMap(uint16.decode).require.value
 
   /**
     * An onion-encrypted failure from an intermediate node:

@@ -22,7 +22,6 @@ import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomBytes64}
 import fr.acinq.eclair.wire.FailureMessageCodecs._
 import org.scalatest.FunSuite
 import scodec.bits._
-import scodec.codecs.uint16
 
 /**
   * Created by PM on 31/05/2016.
@@ -60,19 +59,15 @@ class FailureMessageCodecsSpec extends FunSuite {
   }
 
   test("bad onion failure code") {
-    val msgs = Seq(
-      InvalidOnionVersion(randomBytes32),
-      InvalidOnionHmac(randomBytes32),
-      InvalidOnionKey(randomBytes32),
-      InvalidOnionPayload(randomBytes32)
+    val msgs = Map(
+      (BADONION | PERM | 4) -> InvalidOnionVersion(randomBytes32),
+      (BADONION | PERM | 5) -> InvalidOnionHmac(randomBytes32),
+      (BADONION | PERM | 6) -> InvalidOnionKey(randomBytes32),
+      (BADONION | PERM) -> InvalidOnionPayload(randomBytes32)
     )
 
-    msgs.foreach {
-      msg => {
-        val encoded = failureMessageCodec.encode(msg).require.toByteVector
-        val failureCode = uint16.decode(encoded.take(2).toBitVector).require.value
-        assert(failureCode === msg.failureCode)
-      }
+    for ((code, message) <- msgs) {
+      assert(failureCode(message) === code)
     }
   }
 

@@ -119,7 +119,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           }
         case Left(badOnion) =>
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
-          val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.failureCode, commit = true)
+          val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, FailureMessageCodecs.failureCode(badOnion), commit = true)
           log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} reason=malformed onionHash=${cmdFail.onionHash} failureCode=${cmdFail.failureCode}")
           commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
       }
