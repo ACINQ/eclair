@@ -237,7 +237,7 @@ object Relayer {
             Right(RelayPayload(add, perHopPayload, nextPacket))
           case Attempt.Failure(_) =>
             // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
-            Left(InvalidOnion(Sphinx.PaymentPacket.hash(add.onionRoutingPacket)))
+            Left(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add.onionRoutingPacket)))
         }
       case Left(badOnion) => Left(badOnion)
     }

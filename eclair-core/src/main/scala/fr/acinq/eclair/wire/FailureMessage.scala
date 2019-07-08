@@ -53,7 +53,7 @@ case class InvalidOnionKey(onionHash: ByteVector32) extends BadOnion with Perm {
   def failureCode = FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 6
   def message = "ephemeral key was unparsable by the processing node"
 }
-case class InvalidOnion(onionHash: ByteVector32) extends BadOnion with Perm {
+case class InvalidOnionPayload(onionHash: ByteVector32) extends BadOnion with Perm {
   def failureCode = FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM
   def message = "onion per-hop payload could not be parsed"
 }
@@ -91,7 +91,7 @@ object FailureMessageCodecs {
     .typecase(NODE | 2, provide(TemporaryNodeFailure))
     .typecase(PERM | 2, provide(PermanentNodeFailure))
     .typecase(PERM | NODE | 3, provide(RequiredNodeFeatureMissing))
-    .typecase(BADONION | PERM, sha256.as[InvalidOnion])
+    .typecase(BADONION | PERM, sha256.as[InvalidOnionPayload])
     .typecase(BADONION | PERM | 4, sha256.as[InvalidOnionVersion])
     .typecase(BADONION | PERM | 5, sha256.as[InvalidOnionHmac])
     .typecase(BADONION | PERM | 6, sha256.as[InvalidOnionKey])

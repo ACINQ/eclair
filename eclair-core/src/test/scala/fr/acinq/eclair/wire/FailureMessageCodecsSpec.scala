@@ -45,7 +45,7 @@ class FailureMessageCodecsSpec extends FunSuite {
   test("encode/decode all channel messages") {
     val msgs: List[FailureMessage] =
       InvalidRealm :: TemporaryNodeFailure :: PermanentNodeFailure :: RequiredNodeFeatureMissing ::
-        InvalidOnionVersion(randomBytes32) :: InvalidOnionHmac(randomBytes32) :: InvalidOnionKey(randomBytes32) :: InvalidOnion(randomBytes32) ::
+        InvalidOnionVersion(randomBytes32) :: InvalidOnionHmac(randomBytes32) :: InvalidOnionKey(randomBytes32) :: InvalidOnionPayload(randomBytes32) ::
         TemporaryChannelFailure(channelUpdate) :: PermanentChannelFailure :: RequiredChannelFeatureMissing :: UnknownNextPeer ::
         AmountBelowMinimum(123456, channelUpdate) :: FeeInsufficient(546463, channelUpdate) :: IncorrectCltvExpiry(1211, channelUpdate) :: ExpiryTooSoon(channelUpdate) ::
         IncorrectOrUnknownPaymentDetails(123456L) :: IncorrectPaymentAmount :: FinalExpiryTooSoon :: FinalIncorrectCltvExpiry(1234) :: ChannelDisabled(0, 1, channelUpdate) :: ExpiryTooFar :: Nil
@@ -64,7 +64,7 @@ class FailureMessageCodecsSpec extends FunSuite {
       InvalidOnionVersion(randomBytes32),
       InvalidOnionHmac(randomBytes32),
       InvalidOnionKey(randomBytes32),
-      InvalidOnion(randomBytes32)
+      InvalidOnionPayload(randomBytes32)
     )
 
     msgs.foreach {
