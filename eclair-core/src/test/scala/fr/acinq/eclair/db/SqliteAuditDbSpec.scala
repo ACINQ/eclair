@@ -24,9 +24,10 @@ import fr.acinq.eclair.channel.{AvailableBalanceChanged, ChannelErrorOccured, Ne
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
-import fr.acinq.eclair.wire.ChannelCodecs
+import fr.acinq.eclair.wire.{ChannelCodecs, ChannelCodecsSpec}
 import fr.acinq.eclair._
 import org.scalatest.FunSuite
+
 import concurrent.duration._
 import scala.compat.Platform
 
@@ -49,7 +50,7 @@ class SqliteAuditDbSpec extends FunSuite {
     val e4 = NetworkFeePaid(null, randomKey.publicKey, randomBytes32, Transaction(0, Seq.empty, Seq.empty, 0), Satoshi(42), "mutual")
     val e5 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32, timestamp = 0)
     val e6 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32, timestamp = (Platform.currentTime.milliseconds + 10.minutes).toMillis)
-    val e7 = AvailableBalanceChanged(null, randomBytes32, ShortChannelId(500000, 42, 1), 456123000, ChannelStateSpec.commitments)
+    val e7 = AvailableBalanceChanged(null, randomBytes32, ShortChannelId(500000, 42, 1), 456123000, ChannelCodecsSpec.commitments)
     val e8 = ChannelLifecycleEvent(randomBytes32, randomKey.publicKey, 456123000, true, false, "mutual")
     val e9 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), true)
     val e10 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), true)
