@@ -37,6 +37,17 @@ case class FeeratesPerKB(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_1
 // stores fee rate in satoshi/kw (1 kw = 1000 weight units)
 case class FeeratesPerKw(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long) {
   require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0, "all feerates must be strictly greater than 0")
+
+  def getRatePerBlock(blockTarget: Int): Long = blockTarget match {
+    case 1 => block_1
+    case 2 => blocks_2
+    case 6 => blocks_6
+    case 12 => blocks_12
+    case 36 => blocks_36
+    case 72 => blocks_72
+    case _ => throw new IllegalArgumentException(s"can't choose ratePerBlock=$blockTarget")
+  }
+
 }
 
 object FeeratesPerKw {

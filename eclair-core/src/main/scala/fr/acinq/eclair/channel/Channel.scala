@@ -681,7 +681,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(fee: UpdateFee, d: DATA_NORMAL) =>
-      Try(Commitments.receiveFee(d.commitments, fee, nodeParams.maxFeerateMismatch)) match {
+      Try(Commitments.receiveFee(nodeParams.feeTargets, d.commitments, fee, nodeParams.maxFeerateMismatch)) match {
         case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
@@ -853,7 +853,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       handleLocalError(HtlcTimedout(d.channelId, d.commitments.timedoutOutgoingHtlcs(count)), d, Some(c))
 
     case Event(c@CurrentFeerates(feeratesPerKw), d: DATA_NORMAL) =>
-      val networkFeeratePerKw = feeratesPerKw.blocks_2
+      val networkFeeratePerKw = feeratesPerKw.getRatePerBlock(nodeParams.feeTargets.commitmentBlockTarget)
       d.commitments.localParams.isFunder match {
         case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, networkFeeratePerKw, nodeParams.updateFeeMinDiffRatio) =>
           self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
@@ -1040,7 +1040,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(fee: UpdateFee, d: DATA_SHUTDOWN) =>
-      Try(Commitments.receiveFee(d.commitments, fee, nodeParams.maxFeerateMismatch)) match {
+      Try(Commitments.receiveFee(nodeParams.feeTargets, d.commitments, fee, nodeParams.maxFeerateMismatch)) match {
         case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
@@ -1135,8 +1135,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c@CurrentBlockCount(count), d: DATA_SHUTDOWN) if d.commitments.timedoutOutgoingHtlcs(count).nonEmpty =>
       handleLocalError(HtlcTimedout(d.channelId, d.commitments.timedoutOutgoingHtlcs(count)), d, Some(c))
 
-    case Event(c@CurrentFeerates(feerates), d: DATA_SHUTDOWN) =>
-      val networkFeeratePerKw = feerates.blocks_2
+    case Event(c@CurrentFeerates(feeratesPerKw), d: DATA_SHUTDOWN) =>
+      val networkFeeratePerKw = feeratesPerKw.getRatePerBlock(nodeParams.feeTargets.commitmentBlockTarget)
       d.commitments.localParams.isFunder match {
         case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, networkFeeratePerKw, nodeParams.updateFeeMinDiffRatio) =>
           self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)

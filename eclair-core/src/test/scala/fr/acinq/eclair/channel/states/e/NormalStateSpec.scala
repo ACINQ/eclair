@@ -680,7 +680,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.expectMsg("ok")
 
     // actual test begins (note that channel sends a CMD_SIGN to itself when it receives RevokeAndAck and there are changes)
-    alice2bob.expectMsgType[UpdateFee]
+    val updateFee = alice2bob.expectMsgType[UpdateFee]
+    assert(updateFee.feeratePerKw == TestConstants.feeratePerKw + 1000)
     alice2bob.forward(bob)
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
@@ -1403,11 +1404,16 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv UpdateFee (local/remote feerates are too different)") { f =>
     import f._
+    Globals.feeratesPerKw.set(FeeratesPerKw(1000, 2000, 6000, 12000, 36000, 72000))
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(bob, UpdateFee(ByteVector32.Zeroes, 85000))
+    // Alice will use $localFeeRate when performing the checks for update_fee
+    val localFeeRate = Globals.feeratesPerKw.get.getRatePerBlock(Alice.nodeParams.feeTargets.commitmentBlockTarget)
+    assert(localFeeRate === 2000)
+    val remoteFeeUpdate = 85000
+    sender.send(bob, UpdateFee(ByteVector32.Zeroes, remoteFeeUpdate))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) === "local/remote feerates are too different: remoteFeeratePerKw=85000 localFeeratePerKw=10000")
+    assert(new String(error.data.toArray) === s"local/remote feerates are too different: remoteFeeratePerKw=$remoteFeeUpdate localFeeratePerKw=$localFeeRate")
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -1420,6 +1426,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw == Globals.feeratesPerKw.get().getRatePerBlock(Bob.nodeParams.feeTargets.commitmentBlockTarget))
     sender.send(bob, UpdateFee(ByteVector32.Zeroes, 252))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === "remote fee rate is too small: remoteFeeratePerKw=252")
@@ -1685,9 +1692,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val event = CurrentFeerates(FeeratesPerKw.single(20000))
+    val event = CurrentFeerates(FeeratesPerKw(100, 200, 600, 1200, 3600, 7200))
     sender.send(alice, event)
-    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.blocks_2))
+    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.getRatePerBlock(Alice.nodeParams.feeTargets.commitmentBlockTarget)))
   }
 
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>
