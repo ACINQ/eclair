@@ -16,16 +16,20 @@
 
 package fr.acinq.eclair.io
 
+import java.net.{Inet4Address, InetSocketAddress}
+
+import akka.actor.{ActorRef, ActorSystem, FSM, PoisonPill, Terminated}
 import java.net.{Inet4Address, InetAddress, InetSocketAddress, ServerSocket}
 
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.EclairWallet
-import fr.acinq.eclair.channel.HasCommitments
+import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
+import fr.acinq.eclair.channel.{ChannelCreated, Data, HasCommitments, State}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
@@ -47,10 +51,11 @@ class PeerSpec extends TestkitBaseClass {
   val updates = (fakeRoutingInfo.map(_._2) ++ fakeRoutingInfo.map(_._3)).toList
   val nodes = (fakeRoutingInfo.map(_._4) ++ fakeRoutingInfo.map(_._5)).toList
 
-  case class FixtureParam(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: TestFSMRef[Peer.State, Peer.Data, Peer])
+  case class FixtureParam(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: TestFSMRef[Peer.State, Peer.Data, Peer], feeEstimator: TestFeeEstimator)
 
   override protected def withFixture(test: OneArgTest): Outcome = {
-    val aParams = Alice.nodeParams
+    val feeEstimator = new TestFeeEstimator
+    val aParams = Alice.nodeParams.copy(feeEstimator = feeEstimator)
     val aliceParams = test.tags.contains("with_node_announcements") match {
       case true =>
         val bobAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
@@ -65,10 +70,10 @@ class PeerSpec extends TestkitBaseClass {
     val relayer = TestProbe()
     val connection = TestProbe()
     val transport = TestProbe()
-    val wallet: EclairWallet = null // unused
+    val wallet: EclairWallet = new TestWallet
     val remoteNodeId = Bob.nodeParams.nodeId
     val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
-    withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)))
+    withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, feeEstimator)))
   }
 
   def connect(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: ActorRef, channels: Set[HasCommitments] = Set.empty): Unit = {
@@ -235,6 +240,22 @@ class PeerSpec extends TestkitBaseClass {
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
     probe.expectMsg("disconnecting")
+  }
+
+  test("use correct fee rates when spawning a channel") { f =>
+    import f._
+
+    val probe = TestProbe()
+    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+
+    assert(peer.stateData.channels.isEmpty)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, Satoshi(12300), MilliSatoshi(0), None, None, None))
+    awaitCond(peer.stateData.channels.nonEmpty)
+
+    val channelCreated = probe.expectMsgType[ChannelCreated]
+    assert(channelCreated.initialFeeratePerKw == feeEstimator.getFeeratePerKw(Alice.nodeParams.feeTargets.commitmentBlockTarget))
+    assert(channelCreated.fundingTxFeeratePerKw.get == feeEstimator.getFeeratePerKw(Alice.nodeParams.feeTargets.fundingBlockTarget))
   }
 
   test("reply to ping") { f =>

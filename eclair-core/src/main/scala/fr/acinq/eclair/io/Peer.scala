@@ -284,7 +284,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
       val temporaryChannelId = randomBytes32
       val channelFeeratePerKw = nodeParams.feeEstimator.getFeeratePerKw(target = nodeParams.feeTargets.commitmentBlockTarget)
-      val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.feeEstimator.getFeeratePerKw(target = 6))
+      val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.feeEstimator.getFeeratePerKw(target = nodeParams.feeTargets.fundingBlockTarget))
       log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
       channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.transport, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
       stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
