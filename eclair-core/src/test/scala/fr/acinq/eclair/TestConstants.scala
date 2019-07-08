@@ -26,7 +26,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
-import fr.acinq.eclair.transactions.Transactions.FeeConf
+import fr.acinq.eclair.transactions.Transactions.FeeTargets
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
 
@@ -75,7 +75,7 @@ object TestConstants {
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
-      feeTargets = FeeConf(6, 2, 2),
+      feeTargets = FeeTargets(6, 2, 2, 6),
       maxFeerateMismatch = 1.5,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
@@ -141,7 +141,7 @@ object TestConstants {
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
-      feeTargets = FeeConf(6, 2, 2),
+      feeTargets = FeeTargets(6, 2, 2, 6),
       maxFeerateMismatch = 1.0,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,

@@ -29,7 +29,7 @@ import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.transactions.Transactions.FeeConf
+import fr.acinq.eclair.transactions.Transactions.FeeTargets
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
 import scala.collection.JavaConversions._
@@ -62,7 +62,7 @@ case class NodeParams(keyManager: KeyManager,
                       pingInterval: FiniteDuration,
                       pingTimeout: FiniteDuration,
                       pingDisconnect: Boolean,
-                      feeTargets: FeeConf,
+                      feeTargets: FeeTargets,
                       maxFeerateMismatch: Double,
                       updateFeeMinDiffRatio: Double,
                       autoReconnect: Boolean,
@@ -175,10 +175,11 @@ object NodeParams {
       .toList
       .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ torAddress_opt
 
-    val feeTargets = FeeConf(
+    val feeTargets = FeeTargets(
       fundingBlockTarget = config.getInt("fee-targets.funding"),
       commitmentBlockTarget = config.getInt("fee-targets.commitment"),
-      mutualCloseBlockTarget = config.getInt("fee-targets.mutual-close")
+      mutualCloseBlockTarget = config.getInt("fee-targets.mutual-close"),
+      claimMainBlockTarget = config.getInt("fee-targets.claim-main")
     )
 
     NodeParams(
