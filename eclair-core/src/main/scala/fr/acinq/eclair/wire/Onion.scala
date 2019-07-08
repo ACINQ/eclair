@@ -19,18 +19,18 @@ package fr.acinq.eclair.wire
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.crypto.Sphinx
-import scodec.Codec
-import scodec.bits.ByteVector
+import scodec.{Codec, DecodeResult, Decoder}
+import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 
 /**
   * Created by t-bast on 05/07/2019.
   */
 
-case class OnionPacket(version: Int,
-                       publicKey: ByteVector,
-                       payload: ByteVector,
-                       hmac: ByteVector32)
+case class OnionRoutingPacket(version: Int,
+                              publicKey: ByteVector,
+                              payload: ByteVector,
+                              hmac: ByteVector32)
 
 case class PerHopPayload(shortChannelId: ShortChannelId,
                          amtToForward: Long,
@@ -38,13 +38,13 @@ case class PerHopPayload(shortChannelId: ShortChannelId,
 
 object OnionCodecs {
 
-  def onionPacketCodec(payloadLength: Int): Codec[OnionPacket] = (
+  def onionPacketCodec(payloadLength: Int): Codec[OnionRoutingPacket] = (
     ("version" | uint8) ::
       ("publicKey" | bytes(33)) ::
       ("onionPayload" | bytes(payloadLength)) ::
-      ("hmac" | CommonCodecs.bytes32)).as[OnionPacket]
+      ("hmac" | CommonCodecs.bytes32)).as[OnionRoutingPacket]
 
-  val paymentOnionPacketCodec: Codec[OnionPacket] = onionPacketCodec(Sphinx.PaymentPacket.PayloadLength)
+  val paymentOnionPacketCodec: Codec[OnionRoutingPacket] = onionPacketCodec(Sphinx.PaymentPacket.PayloadLength)
 
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::
@@ -52,5 +52,14 @@ object OnionCodecs {
       ("amt_to_forward" | CommonCodecs.uint64overflow) ::
       ("outgoing_cltv_value" | uint32) ::
       ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[PerHopPayload]
+
+  /**
+    * The 1.1 BOLT spec changed the onion frame format to use variable-length per-hop payloads.
+    * The first bytes contain a varint encoding the length of the payload data (not including the trailing mac).
+    * That varint is considered to be part of the payload, so the payload length includes the number of bytes used by
+    * the varint prefix.
+    */
+  val payloadLengthDecoder = Decoder[Long]((bits: BitVector) =>
+    CommonCodecs.varintoverflow.decode(bits).map(d => DecodeResult(d.value + (bits.length - d.remainder.length) / 8, d.remainder)))
 
 }

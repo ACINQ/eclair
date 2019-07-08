@@ -104,13 +104,13 @@ class SphinxSpec extends FunSuite {
   test("is last packet") {
     val testCases = Seq(
       // Bolt 1.0 payloads use the next packet's hmac to signal termination.
-      (true, DecryptedPacket(hex"00", OnionPacket(0, publicKeys.head.value, ByteVector.empty, ByteVector32.Zeroes), ByteVector32.One)),
-      (false, DecryptedPacket(hex"00", OnionPacket(0, publicKeys.head.value, ByteVector.empty, ByteVector32.One), ByteVector32.One)),
+      (true, DecryptedPacket(hex"00", OnionRoutingPacket(0, publicKeys.head.value, ByteVector.empty, ByteVector32.Zeroes), ByteVector32.One)),
+      (false, DecryptedPacket(hex"00", OnionRoutingPacket(0, publicKeys.head.value, ByteVector.empty, ByteVector32.One), ByteVector32.One)),
       // Bolt 1.1 payloads may use either the next packet's hmac or a tlv type to signal termination.
-      (true, DecryptedPacket(hex"0101", OnionPacket(0, publicKeys.head.value, ByteVector.empty, ByteVector32.Zeroes), ByteVector32.One)),
-      (false, DecryptedPacket(hex"0101", OnionPacket(0, publicKeys.head.value, ByteVector.empty, ByteVector32.One), ByteVector32.One)),
-      (true, DecryptedPacket(hex"0100", OnionPacket(0, publicKeys.head.value, ByteVector.empty, ByteVector32.One), ByteVector32.One)),
-      (false, DecryptedPacket(hex"0101", OnionPacket(0, publicKeys.head.value, ByteVector.empty, ByteVector32.One), ByteVector32.One))
+      (true, DecryptedPacket(hex"0101", OnionRoutingPacket(0, publicKeys.head.value, ByteVector.empty, ByteVector32.Zeroes), ByteVector32.One)),
+      (false, DecryptedPacket(hex"0101", OnionRoutingPacket(0, publicKeys.head.value, ByteVector.empty, ByteVector32.One), ByteVector32.One)),
+      (true, DecryptedPacket(hex"0100", OnionRoutingPacket(0, publicKeys.head.value, ByteVector.empty, ByteVector32.One), ByteVector32.One)),
+      (false, DecryptedPacket(hex"0101", OnionRoutingPacket(0, publicKeys.head.value, ByteVector.empty, ByteVector32.One), ByteVector32.One))
     )
 
     for ((expected, packet) <- testCases) {
@@ -119,10 +119,10 @@ class SphinxSpec extends FunSuite {
   }
 
   test("bad onion") {
-    val badOnions = Seq[wire.OnionPacket](
-      wire.OnionPacket(1, ByteVector.fill(33)(0), ByteVector.fill(65)(1), ByteVector32.Zeroes),
-      wire.OnionPacket(0, ByteVector.fill(33)(0), ByteVector.fill(65)(1), ByteVector32.Zeroes),
-      wire.OnionPacket(0, publicKeys.head.value, ByteVector.fill(42)(1), ByteVector32(hex"2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"))
+    val badOnions = Seq[wire.OnionRoutingPacket](
+      wire.OnionRoutingPacket(1, ByteVector.fill(33)(0), ByteVector.fill(65)(1), ByteVector32.Zeroes),
+      wire.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(65)(1), ByteVector32.Zeroes),
+      wire.OnionRoutingPacket(0, publicKeys.head.value, ByteVector.fill(42)(1), ByteVector32(hex"2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"))
     )
 
     val expected = Seq[BadOnion](
@@ -339,7 +339,7 @@ object SphinxSpec {
 
   import fr.acinq.eclair.wire.LightningMessageCodecs
 
-  def serializePaymentOnion(onion: OnionPacket): ByteVector =
+  def serializePaymentOnion(onion: OnionRoutingPacket): ByteVector =
     OnionCodecs.paymentOnionPacketCodec.encode(onion).require.toByteVector
 
   val privKeys = Seq(

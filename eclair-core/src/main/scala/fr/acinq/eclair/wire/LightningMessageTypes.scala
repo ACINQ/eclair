@@ -123,7 +123,7 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          amountMsat: Long,
                          paymentHash: ByteVector32,
                          cltvExpiry: Long,
-                         onionRoutingPacket: OnionPacket) extends HtlcMessage with UpdateMessage with HasChannelId
+                         onionRoutingPacket: OnionRoutingPacket) extends HtlcMessage with UpdateMessage with HasChannelId
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,
                              id: Long,

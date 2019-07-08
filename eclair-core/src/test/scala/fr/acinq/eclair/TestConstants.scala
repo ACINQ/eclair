@@ -37,7 +37,7 @@ object TestConstants {
   val fundingSatoshis = 1000000L
   val pushMsat = 200000000L
   val feeratePerKw = 10000L
-  val emptyOnionPacket = wire.OnionPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
+  val emptyOnionPacket = wire.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
 
   def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
 

@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.wire
-import fr.acinq.eclair.wire.{CommonCodecs, FailureMessage, FailureMessageCodecs}
+import fr.acinq.eclair.wire.{FailureMessage, FailureMessageCodecs, OnionCodecs}
 import grizzled.slf4j.Logging
 import scodec.Attempt
 import scodec.bits.ByteVector
@@ -93,11 +93,7 @@ object Sphinx extends Logging {
         // The 1.1 BOLT spec changed the frame format to use variable-length per-hop payloads.
         // The first bytes contain a varint encoding the length of the payload data (not including the trailing mac).
         // Since messages are always smaller than 65535 bytes, this varint will either be 1 or 3 bytes long.
-        val lengthPrefix = payload.take(3)
-        val decodedLength = CommonCodecs.varintoverflow.decode(lengthPrefix.bits).require
-        val dataLength = decodedLength.value
-        val prefixLength = lengthPrefix.length - decodedLength.remainder.toByteVector.length
-        (prefixLength + dataLength + MacLength).toInt
+        MacLength + OnionCodecs.payloadLengthDecoder.decode(payload.take(3).bits).require.value.toInt
     }
   }
 
@@ -108,7 +104,7 @@ object Sphinx extends Logging {
     * @param nextPacket   packet for the next node.
     * @param sharedSecret shared secret for the sending node, which we will need to return failure messages.
     */
-  case class DecryptedPacket(payload: ByteVector, nextPacket: wire.OnionPacket, sharedSecret: ByteVector32) {
+  case class DecryptedPacket(payload: ByteVector, nextPacket: wire.OnionRoutingPacket, sharedSecret: ByteVector32) {
 
     val isLastPacket: Boolean = payload.head match {
       // In Bolt 1.0 the last hop is signaled via an empty hmac.
@@ -127,7 +123,7 @@ object Sphinx extends Logging {
     * @param sharedSecrets shared secrets (one per node in the route). Known (and needed) only if you're creating the
     *                      packet. Empty if you're just forwarding the packet to the next node.
     */
-  case class PacketAndSecrets(packet: wire.OnionPacket, sharedSecrets: Seq[(ByteVector32, PublicKey)])
+  case class PacketAndSecrets(packet: wire.OnionRoutingPacket, sharedSecrets: Seq[(ByteVector32, PublicKey)])
 
   sealed trait OnionPacket {
 
@@ -178,7 +174,7 @@ object Sphinx extends Logging {
       *         failure messages upstream.
       *         or a BadOnion error containing the hash of the invalid onion.
       */
-    def peel(privateKey: PrivateKey, associatedData: ByteVector, packet: wire.OnionPacket): Either[wire.BadOnion, DecryptedPacket] = packet.version match {
+    def peel(privateKey: PrivateKey, associatedData: ByteVector, packet: wire.OnionRoutingPacket): Either[wire.BadOnion, DecryptedPacket] = packet.version match {
       case 0 => Try(PublicKey(packet.publicKey, checkValid = true)) match {
         case Success(packetEphKey) =>
           val sharedSecret = computeSharedSecret(packetEphKey, privateKey)
@@ -198,7 +194,7 @@ object Sphinx extends Logging {
             val nextOnionPayload = bin.drop(perHopPayloadLength).take(PayloadLength)
             val nextPubKey = blind(packetEphKey, computeBlindingFactor(packetEphKey, sharedSecret))
 
-            Right(DecryptedPacket(perHopPayload, wire.OnionPacket(Version, nextPubKey.value, nextOnionPayload, hmac), sharedSecret))
+            Right(DecryptedPacket(perHopPayload, wire.OnionRoutingPacket(Version, nextPubKey.value, nextOnionPayload, hmac), sharedSecret))
           } else {
             Left(wire.InvalidOnionHmac(hash(packet)))
           }
@@ -224,7 +220,7 @@ object Sphinx extends Logging {
       * @param onionPayloadFiller optional onion payload filler, needed only when you're constructing the last packet.
       * @return the next packet.
       */
-    def wrap(payload: ByteVector, associatedData: ByteVector32, ephemeralPublicKey: PublicKey, sharedSecret: ByteVector32, packet: Option[wire.OnionPacket], onionPayloadFiller: ByteVector = ByteVector.empty): wire.OnionPacket = {
+    def wrap(payload: ByteVector, associatedData: ByteVector32, ephemeralPublicKey: PublicKey, sharedSecret: ByteVector32, packet: Option[wire.OnionRoutingPacket], onionPayloadFiller: ByteVector = ByteVector.empty): wire.OnionRoutingPacket = {
       require(payload.length <= PayloadLength - MacLength, s"packet payload cannot exceed ${PayloadLength - MacLength} bytes")
 
       val (currentMac, currentPayload): (ByteVector32, ByteVector) = packet match {
@@ -240,7 +236,7 @@ object Sphinx extends Logging {
       }
 
       val nextHmac = mac(generateKey("mu", sharedSecret), nextOnionPayload ++ associatedData)
-      val nextPacket = wire.OnionPacket(Version, ephemeralPublicKey.value, nextOnionPayload, nextHmac)
+      val nextPacket = wire.OnionRoutingPacket(Version, ephemeralPublicKey.value, nextOnionPayload, nextHmac)
       nextPacket
     }
 
@@ -261,7 +257,7 @@ object Sphinx extends Logging {
       val lastPacket = wrap(payloads.last, associatedData, ephemeralPublicKeys.last, sharedsecrets.last, None, filler)
 
       @tailrec
-      def loop(hopPayloads: Seq[ByteVector], ephKeys: Seq[PublicKey], sharedSecrets: Seq[ByteVector32], packet: wire.OnionPacket): wire.OnionPacket = {
+      def loop(hopPayloads: Seq[ByteVector], ephKeys: Seq[PublicKey], sharedSecrets: Seq[ByteVector32], packet: wire.OnionRoutingPacket): wire.OnionRoutingPacket = {
         if (hopPayloads.isEmpty) packet else {
           val nextPacket = wrap(hopPayloads.last, associatedData, ephKeys.last, sharedSecrets.last, Some(packet))
           loop(hopPayloads.dropRight(1), ephKeys.dropRight(1), sharedSecrets.dropRight(1), nextPacket)
@@ -275,7 +271,7 @@ object Sphinx extends Logging {
     /**
       * When an invalid onion is received, its hash should be included in the failure message.
       */
-    def hash(onion: wire.OnionPacket): ByteVector32 =
+    def hash(onion: wire.OnionRoutingPacket): ByteVector32 =
       Crypto.sha256(wire.OnionCodecs.onionPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
 
   }

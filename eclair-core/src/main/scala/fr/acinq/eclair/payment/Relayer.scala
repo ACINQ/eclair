@@ -213,7 +213,7 @@ object Relayer {
   // @formatter:off
   sealed trait NextPayload
   case class FinalPayload(add: UpdateAddHtlc, payload: PerHopPayload) extends NextPayload
-  case class RelayPayload(add: UpdateAddHtlc, payload: PerHopPayload, nextPacket: OnionPacket) extends NextPayload {
+  case class RelayPayload(add: UpdateAddHtlc, payload: PerHopPayload, nextPacket: OnionRoutingPacket) extends NextPayload {
     val relayFeeMsat: Long = add.amountMsat - payload.amtToForward
     val expiryDelta: Long = add.cltvExpiry - payload.outgoingCltvValue
   }
