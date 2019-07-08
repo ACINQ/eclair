@@ -38,13 +38,13 @@ case class PerHopPayload(shortChannelId: ShortChannelId,
 
 object OnionCodecs {
 
-  def onionPacketCodec(payloadLength: Int): Codec[OnionRoutingPacket] = (
+  def onionRoutingPacketCodec(payloadLength: Int): Codec[OnionRoutingPacket] = (
     ("version" | uint8) ::
       ("publicKey" | bytes(33)) ::
       ("onionPayload" | bytes(payloadLength)) ::
       ("hmac" | CommonCodecs.bytes32)).as[OnionRoutingPacket]
 
-  val paymentOnionPacketCodec: Codec[OnionRoutingPacket] = onionPacketCodec(Sphinx.PaymentPacket.PayloadLength)
+  val paymentOnionPacketCodec: Codec[OnionRoutingPacket] = onionRoutingPacketCodec(Sphinx.PaymentPacket.PayloadLength)
 
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::

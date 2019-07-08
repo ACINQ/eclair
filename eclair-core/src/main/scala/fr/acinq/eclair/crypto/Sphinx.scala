@@ -125,7 +125,7 @@ object Sphinx extends Logging {
     */
   case class PacketAndSecrets(packet: wire.OnionRoutingPacket, sharedSecrets: Seq[(ByteVector32, PublicKey)])
 
-  sealed trait OnionPacket {
+  sealed trait OnionRoutingPacket {
 
     /**
       * Supported packet version. Note that since this value is outside of the onion encrypted payload, intermediate
@@ -272,14 +272,14 @@ object Sphinx extends Logging {
       * When an invalid onion is received, its hash should be included in the failure message.
       */
     def hash(onion: wire.OnionRoutingPacket): ByteVector32 =
-      Crypto.sha256(wire.OnionCodecs.onionPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
+      Crypto.sha256(wire.OnionCodecs.onionRoutingPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
 
   }
 
   /**
     * A payment onion packet is used when offering an HTLC to a remote node.
     */
-  object PaymentPacket extends OnionPacket {
+  object PaymentPacket extends OnionRoutingPacket {
 
     override val PayloadLength = 1300
 
