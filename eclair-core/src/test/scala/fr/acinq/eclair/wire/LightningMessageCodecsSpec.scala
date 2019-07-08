@@ -124,7 +124,7 @@ class LightningMessageCodecsSpec extends FunSuite {
 
   case class TestItem(msg: Any, hex: String)
 
-  ignore("test vectors") {
+  test("test vectors") {
 
     val query_channel_range = QueryChannelRange(Block.RegtestGenesisBlock.blockId, 100000, 1500, None)
     val query_channel_range_timestamps_checksums = QueryChannelRange(Block.RegtestGenesisBlock.blockId, 35000, 100, Some(QueryChannelRangeExtension(QueryChannelRangeExtension.WANT_ALL)))

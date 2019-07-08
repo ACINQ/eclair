@@ -319,12 +319,12 @@ case class EncodedShortChannelIds(encoding: EncodingType,
 
 case class QueryShortChannelIds(chainHash: ByteVector32,
                                 shortChannelIds: EncodedShortChannelIds,
-                                extensions: List[Tlv]) extends RoutingMessage with HasChainHash {
-  val queryFlags: Option[EncodedQueryFlags] = extensions collectFirst { case flags: EncodedQueryFlags => flags }
+                                extensions: TlvStream) extends RoutingMessage with HasChainHash {
+  val queryFlags: Option[EncodedQueryFlags] = extensions.records collectFirst { case flags: EncodedQueryFlags => flags }
 }
 
 object QueryShortChannelIds {
-  def apply(chainHash: ByteVector32, shortChannelIds: EncodedShortChannelIds, flags: Option[EncodedQueryFlags]) = new QueryShortChannelIds(chainHash, shortChannelIds, flags.toList)
+  def apply(chainHash: ByteVector32, shortChannelIds: EncodedShortChannelIds, flags: Option[EncodedQueryFlags]) = new QueryShortChannelIds(chainHash, shortChannelIds, TlvStream(flags.toList))
 }
 
 case class QueryShortChannelIdsOld(chainHash: ByteVector32,
@@ -338,13 +338,13 @@ case class ReplyShortChannelIdsEnd(chainHash: ByteVector32,
 case class QueryChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
-                             extensions: List[Tlv]) extends RoutingMessage {
-  val queryExtension: Option[QueryChannelRangeExtension] = extensions collectFirst { case q: QueryChannelRangeExtension => q }
+                             extensions: TlvStream) extends RoutingMessage {
+  val queryExtension: Option[QueryChannelRangeExtension] = extensions.records collectFirst { case q: QueryChannelRangeExtension => q }
 }
 
 object QueryChannelRange {
   def apply(chainHash: ByteVector32, firstBlockNum: Long, numberOfBlocks: Long, queryExtension: Option[QueryChannelRangeExtension]) = {
-    new QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, queryExtension.toList)
+    new QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, TlvStream(queryExtension.toList))
   }
 }
 
@@ -353,10 +353,10 @@ case class ReplyChannelRange(chainHash: ByteVector32,
                              numberOfBlocks: Long,
                              complete: Byte,
                              shortChannelIds: EncodedShortChannelIds,
-                             extensions: List[Tlv]) extends RoutingMessage {
-  val timestamps: Option[EncodedTimestamps] = extensions collectFirst { case ts: EncodedTimestamps => ts }
+                             extensions: TlvStream) extends RoutingMessage {
+  val timestamps: Option[EncodedTimestamps] = extensions.records collectFirst { case ts: EncodedTimestamps => ts }
 
-  val checksums: Option[EncodedChecksums] = extensions collectFirst { case cs: EncodedChecksums => cs }
+  val checksums: Option[EncodedChecksums] = extensions.records collectFirst { case cs: EncodedChecksums => cs }
 }
 
 object ReplyChannelRange {
@@ -369,7 +369,7 @@ object ReplyChannelRange {
             checksums: Option[EncodedChecksums]) = {
     timestamps.foreach(ts => require(ts.timestamps.length == shortChannelIds.array.length))
     checksums.foreach(cs => require(cs.checksums.length == shortChannelIds.array.length))
-    new ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, complete, shortChannelIds, timestamps.toList ::: checksums.toList)
+    new ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, complete, shortChannelIds, TlvStream(timestamps.toList ::: checksums.toList))
   }
 }
 
