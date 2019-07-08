@@ -311,7 +311,7 @@ object Commitments {
     (commitments1, fee)
   }
 
-  def receiveFee(commitments: Commitments, fee: UpdateFee, maxFeerateMismatch: Double, feeEstimator: FeeEstimator): Commitments = {
+  def receiveFee(feeTargets: FeeConf, commitments: Commitments, fee: UpdateFee, maxFeerateMismatch: Double, feeEstimator: FeeEstimator): Commitments = {
     if (commitments.localParams.isFunder) {
       throw FundeeCannotSendUpdateFee(commitments.channelId)
     }
@@ -320,7 +320,7 @@ object Commitments {
       throw FeerateTooSmall(commitments.channelId, remoteFeeratePerKw = fee.feeratePerKw)
     }
 
-    val localFeeratePerKw = feeEstimator.getFeeratePerKw(target = 2)
+    val localFeeratePerKw = feeEstimator.getFeeratePerKw(target = feeTargets.commitmentBlockTarget)
     if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, maxFeerateMismatch)) {
       throw FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw)
     }

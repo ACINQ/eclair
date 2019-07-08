@@ -112,7 +112,7 @@ object Helpers {
       throw ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis)
     }
 
-    val localFeeratePerKw = nodeParams.feeEstimator.getFeeratePerKw(target = 2)
+    val localFeeratePerKw = nodeParams.feeEstimator.getFeeratePerKw(target = nodeParams.feeTargets.commitmentBlockTarget)
     if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.maxFeerateMismatch)) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
     // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
