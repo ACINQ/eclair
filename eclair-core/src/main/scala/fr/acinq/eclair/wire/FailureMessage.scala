@@ -115,8 +115,6 @@ object FailureMessageCodecs {
     paddedFixedSizeBytesDependent(
       260,
       "failureMessage" | variableSizeBytes(uint16, FailureMessageCodecs.failureMessageCodec),
-      nBits => {
-        val nBytes = (nBits / 8).toInt
-        variableSizeBytes(uint16, bytes(nBytes - 2)).unit(ByteVector.empty)
-      }).as[FailureMessage], mac)
+      nBits => "padding" | variableSizeBytes(uint16, ignore(nBits - 2 * 8)) // two bytes are used to encode the padding length
+    ).as[FailureMessage], mac)
 }
