@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.payment
 
-import java.math.BigInteger
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{MilliSatoshi, _}
 import fr.acinq.eclair.ShortChannelId
@@ -25,7 +23,8 @@ import fr.acinq.eclair.payment.PaymentRequest._
 import scodec.Codec
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
-
+import scala.concurrent.duration._
+import scala.compat.Platform
 import scala.util.Try
 
 /**
@@ -78,6 +77,11 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case cltvExpiry: PaymentRequest.MinFinalCltvExpiry => cltvExpiry.toLong
   }
 
+  def isExpired: Boolean = expiry match {
+    case Some(expiryTime) => timestamp + expiryTime <= Platform.currentTime.milliseconds.toSeconds
+    case None => timestamp + DEFAULT_EXPIRY_SECONDS <= Platform.currentTime.milliseconds.toSeconds
+  }
+
   /**
     *
     * @return the hash of this payment request
@@ -96,15 +100,17 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     * @return a signed payment request
     */
   def sign(priv: PrivateKey): PaymentRequest = {
-    val (r, s) = Crypto.sign(hash, priv)
-    val (pub1, pub2) = Crypto.recoverPublicKey((r, s), hash)
+    val sig64 = Crypto.sign(hash, priv)
+    val (pub1, _) = Crypto.recoverPublicKey(sig64, hash)
     val recid = if (nodeId == pub1) 0.toByte else 1.toByte
-    val signature = Crypto.fixSize(ByteVector.view(r.toByteArray.dropWhile(_ == 0.toByte))) ++ Crypto.fixSize(ByteVector.view(s.toByteArray.dropWhile(_ == 0.toByte))) :+ recid
+    val signature = sig64 :+ recid
     this.copy(signature = signature)
   }
 }
 
 object PaymentRequest {
+
+  val DEFAULT_EXPIRY_SECONDS = 3600
 
   val prefixes = Map(
     Block.RegtestGenesisBlock.hash -> "lnbcrt",
@@ -303,7 +309,7 @@ object PaymentRequest {
 
   object Codecs {
 
-    import fr.acinq.eclair.wire.LightningMessageCodecs._
+    import fr.acinq.eclair.wire.CommonCodecs._
     import scodec.bits.BitVector
     import scodec.codecs._
     import scodec.{Attempt, Codec, DecodeResult}
@@ -399,6 +405,7 @@ object PaymentRequest {
         case a if a.last == 'n' => Some(MilliSatoshi(a.dropRight(1).toLong * 100L))
         case a if a.last == 'u' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000L))
         case a if a.last == 'm' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000000L))
+        case a => Some(MilliSatoshi(a.toLong * 100000000000L))
       }
 
     def encode(amount: Option[MilliSatoshi]): String = {
@@ -434,15 +441,13 @@ object PaymentRequest {
     val prefix: String = prefixes.values.find(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
     val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.size - 6)) // 6 == checksum size
     val bolt11Data = Codecs.bolt11DataCodec.decode(data).require.value
-    val signature = bolt11Data.signature
-    val r = new BigInteger(1, signature.take(32).toArray)
-    val s = new BigInteger(1, signature.drop(32).take(32).toArray)
+    val signature = ByteVector64(bolt11Data.signature.take(64))
     val message: ByteVector = ByteVector.view(hrp.getBytes) ++ data.dropRight(520).toByteVector // we drop the sig bytes
-    val (pub1, pub2) = Crypto.recoverPublicKey((r, s), Crypto.sha256(message))
-    val recid = signature.last
+    val (pub1, pub2) = Crypto.recoverPublicKey(signature, Crypto.sha256(message))
+    val recid = bolt11Data.signature.last
     val pub = if (recid % 2 != 0) pub2 else pub1
     val amount_opt = Amount.decode(hrp.drop(prefix.length))
-    val validSig = Crypto.verifySignature(Crypto.sha256(message), (r, s), pub)
+    val validSig = Crypto.verifySignature(Crypto.sha256(message), signature, pub)
     require(validSig, "invalid signature")
     PaymentRequest(
       prefix = prefix,
@@ -450,7 +455,7 @@ object PaymentRequest {
       timestamp = bolt11Data.timestamp,
       nodeId = pub,
       tags = bolt11Data.taggedFields,
-      signature = signature
+      signature = bolt11Data.signature
     )
   }
 

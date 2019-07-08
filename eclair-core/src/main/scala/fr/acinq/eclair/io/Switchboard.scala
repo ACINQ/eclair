@@ -19,11 +19,13 @@ package fr.acinq.eclair.io
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.{HasCommitments, _}
+import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
@@ -62,20 +64,19 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
         brokenHtlcKiller ! brokenHtlcs
     }
 
+    cleanupRelayDb(channels, nodeParams.db.pendingRelay)
+
     channels
       .groupBy(_.commitments.remoteParams.nodeId)
       .map {
-        case (remoteNodeId, states) =>
-          val address_opt = peers.get(remoteNodeId).orElse {
-            nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption) // gets the first of the list! TODO improve selection?
-          }
-          (remoteNodeId, states, address_opt)
+        case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
       }
       .foreach {
         case (remoteNodeId, states, nodeaddress_opt) =>
           // we might not have an address if we didn't initiate the connection in the first place
           val address_opt = nodeaddress_opt.map(_.socketAddress)
-          createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
+          val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
+          peer ! Peer.Reconnect
       }
   }
 
@@ -111,8 +112,6 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     case 'peers => sender ! context.children
 
   }
-
-  def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
   /**
     * Retrieves a peer based on its public key.
@@ -155,6 +154,8 @@ object Switchboard extends Logging {
 
   def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet))
 
+  def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
+
   /**
     * If we have stopped eclair while it was forwarding HTLCs, it is possible that we are in a state were an incoming HTLC
     * was committed by both sides, but we didn't have time to send and/or sign the corresponding HTLC to the downstream node.
@@ -163,15 +164,12 @@ object Switchboard extends Logging {
     * get closed, which is a major inconvenience.
     *
     * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
-    *
-    * @param channels
-    * @return
     */
   def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey): Seq[UpdateAddHtlc] = {
 
-    // We are interested in incoming HTLCs, that have been *cross-signed*. They signed it first, so the HTLC will first
-    // appear in our commitment tx, and later on in their commitment when we subsequently sign it.
-    // That's why we need to look in *their* commitment with direction=OUT.
+    // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
+    // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
+    // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
     val htlcs_in = channels
       .flatMap(_.commitments.remoteCommit.spec.htlcs)
       .filter(_.direction == OUT)
@@ -190,6 +188,42 @@ object Switchboard extends Logging {
     logger.info(s"htlcs_in=${htlcs_in.size} htlcs_out=${relayed_out.size} htlcs_broken=${htlcs_broken.size}")
 
     htlcs_broken
+  }
+
+  /**
+    * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
+    * in a database (see [[fr.acinq.eclair.payment.CommandBuffer]]) because we
+    * don't want to lose preimages, or to forget to fail incoming htlcs, which
+    * would lead to unwanted channel closings.
+    *
+    * Because of the way our watcher works, in a scenario where a downstream
+    * channel has gone to the blockchain, it may send several times the same
+    * command, and the upstream channel may have disappeared in the meantime.
+    *
+    * That's why we need to periodically clean up the pending relay db.
+    */
+  def cleanupRelayDb(channels: Seq[HasCommitments], relayDb: PendingRelayDb): Int = {
+
+    // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
+    // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
+    // the command from the pending relay db.
+    val channel2Htlc: Set[(ByteVector32, Long)] =
+    channels
+      .flatMap(_.commitments.remoteCommit.spec.htlcs)
+      .filter(_.direction == OUT)
+      .map(htlc => (htlc.add.channelId, htlc.add.id))
+      .toSet
+
+    val pendingRelay: Set[(ByteVector32, Long)] = relayDb.listPendingRelay()
+
+    val toClean = pendingRelay -- channel2Htlc
+
+    toClean.foreach {
+      case (channelId, htlcId) =>
+        logger.info(s"cleaning up channelId=$channelId htlcId=$htlcId from relay db")
+        relayDb.removePendingRelay(channelId, htlcId)
+    }
+    toClean.size
   }
 
 }
