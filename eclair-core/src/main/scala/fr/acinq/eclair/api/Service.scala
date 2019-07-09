@@ -70,7 +70,7 @@ trait Service extends ExtraDirectives with Logging {
   implicit val actorSystem: ActorSystem
   implicit val mat: ActorMaterializer
 
-  // timeout for reading request parameters from the underlining stream
+  // timeout for reading request parameters from the underlying stream
   val paramParsingTimeout = 5 seconds
 
   val apiExceptionHandler = ExceptionHandler {
@@ -128,6 +128,7 @@ trait Service extends ExtraDirectives with Logging {
     respondWithDefaultHeaders(customHeaders) {
       handleExceptions(apiExceptionHandler) {
         handleRejections(apiRejectionHandler) {
+          // forcing the request entity to be fully parsed can have performance issues, see: https://doc.akka.io/docs/akka-http/current/routing-dsl/directives/basic-directives/toStrictEntity.html#description
           toStrictEntity(paramParsingTimeout) {
             formFields("timeoutSeconds".as[Timeout].?) { tm_opt =>
               // this is the akka timeout
