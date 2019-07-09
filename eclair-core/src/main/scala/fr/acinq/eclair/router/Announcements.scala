@@ -75,7 +75,7 @@ object Announcements {
 
   def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], timestamp: Long = Platform.currentTime.milliseconds.toSeconds): NodeAnnouncement = {
     require(alias.length <= 32)
-    val features = ByteVector.fromByte((1 << Features.OPTION_VARIABLE_LENGTH_ONION_OPTIONAL).byteValue)
+    val features = BitVector.fromLong(1 << Features.VARIABLE_LENGTH_ONION_OPTIONAL).bytes
     val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, features, nodeAddresses, unknownFields = ByteVector.empty)
     val sig = Crypto.sign(witness, nodeSecret)
     NodeAnnouncement(
@@ -119,8 +119,6 @@ object Announcements {
   /**
     * This method compares channel updates, ignoring fields that don't matter, like signature or timestamp
     *
-    * @param u1
-    * @param u2
     * @return true if channel updates are "equal"
     */
   def areSame(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
