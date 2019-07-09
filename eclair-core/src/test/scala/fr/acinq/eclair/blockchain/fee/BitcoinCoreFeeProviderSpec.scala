@@ -88,7 +88,7 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
       port = config.getInt("bitcoind.rpcport"))
 
     // the regtest client doesn't have enough data to estimate fees yet, so it's suppose to fail
-    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(1, 2, 3, 4, 5, 6))
+    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(1, 2, 3, 4, 5, 6, 7))
     val sender = TestProbe()
     regtestProvider.getFeerates.pipeTo(sender.ref)
     assert(sender.expectMsgType[Failure].cause.asInstanceOf[RuntimeException].getMessage.contains("Insufficient data or no feerate found"))
@@ -99,7 +99,8 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
       6 -> 1300,
       12 -> 1200,
       36 -> 1100,
-      72 -> 1000
+      72 -> 1000,
+      144 -> 900
     )
 
     val ref = FeeratesPerKB(
@@ -108,7 +109,8 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
       blocks_6 = fees(6),
       blocks_12 = fees(12),
       blocks_36 = fees(36),
-      blocks_72 = fees(72))
+      blocks_72 = fees(72),
+      blocks_144 = fees(144))
 
     val mockBitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
@@ -124,7 +126,7 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
       }
     }
 
-    val mockProvider = new BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(1, 2, 3, 4, 5, 6))
+    val mockProvider = new BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(1, 2, 3, 4, 5, 6, 7))
     mockProvider.getFeerates.pipeTo(sender.ref)
     assert(sender.expectMsgType[FeeratesPerKB] == ref)
   }

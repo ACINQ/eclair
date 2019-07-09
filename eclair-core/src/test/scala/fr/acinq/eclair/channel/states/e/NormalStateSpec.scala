@@ -1404,7 +1404,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv UpdateFee (local/remote feerates are too different)") { f =>
     import f._
-    Globals.feeratesPerKw.set(FeeratesPerKw(1000, 2000, 6000, 12000, 36000, 72000))
+    Globals.feeratesPerKw.set(FeeratesPerKw(1000, 2000, 6000, 12000, 36000, 72000, 140000))
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     // Alice will use $localFeeRate when performing the checks for update_fee
@@ -1692,7 +1692,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val event = CurrentFeerates(FeeratesPerKw(100, 200, 600, 1200, 3600, 7200))
+    val event = CurrentFeerates(FeeratesPerKw(100, 200, 600, 1200, 3600, 7200, 14400))
     sender.send(alice, event)
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.getRatePerBlock(Alice.nodeParams.feeTargets.commitmentBlockTarget)))
   }
