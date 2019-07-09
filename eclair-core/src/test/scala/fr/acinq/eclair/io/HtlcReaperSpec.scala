@@ -19,9 +19,8 @@ package fr.acinq.eclair.io
 import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.ChannelStateSpec
 import fr.acinq.eclair.randomBytes32
-import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, TemporaryNodeFailure, UpdateAddHtlc}
 import org.scalatest.FunSuiteLike
 import scodec.bits.ByteVector
 
@@ -35,7 +34,7 @@ class HtlcReaperSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   test("init and cleanup") {
 
-    val data = ChannelStateSpec.normal
+    val data = ChannelCodecsSpec.normal
 
     // assuming that data has incoming htlcs 0 and 1, we don't care about the amount/payment_hash/onion fields
     val add0 = UpdateAddHtlc(data.channelId, 0, 20000, randomBytes32, 100, ByteVector.empty)

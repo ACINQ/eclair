@@ -16,11 +16,19 @@
 
 package fr.acinq.eclair.wire
 
+import java.net.{Inet4Address, Inet6Address, InetAddress}
+
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire
 import fr.acinq.eclair.wire.CommonCodecs._
 import scodec.bits.ByteVector
 import scodec.codecs._
+import scodec.{Attempt, Codec, Err}
+
+import scala.util.{Failure, Success, Try}
+
 import scodec.Codec
 
 /**
@@ -154,13 +162,15 @@ object LightningMessageCodecs {
       ("nodeSignature" | bytes64) ::
       ("bitcoinSignature" | bytes64)).as[AnnouncementSignatures]
 
-  val channelAnnouncementWitnessCodec = ("features" | varsizebinarydata) ::
-    ("chainHash" | bytes32) ::
-    ("shortChannelId" | shortchannelid) ::
-    ("nodeId1" | publicKey) ::
-    ("nodeId2" | publicKey) ::
-    ("bitcoinKey1" | publicKey) ::
-    ("bitcoinKey2" | publicKey)
+  val channelAnnouncementWitnessCodec =
+    ("features" | varsizebinarydata) ::
+      ("chainHash" | bytes32) ::
+      ("shortChannelId" | shortchannelid) ::
+      ("nodeId1" | publicKey) ::
+      ("nodeId2" | publicKey) ::
+      ("bitcoinKey1" | publicKey) ::
+      ("bitcoinKey2" | publicKey) ::
+      ("unknownFields" | bytes)
 
   val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
     ("nodeSignature1" | bytes64) ::
@@ -169,17 +179,19 @@ object LightningMessageCodecs {
       ("bitcoinSignature2" | bytes64) ::
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
-  val nodeAnnouncementWitnessCodec = ("features" | varsizebinarydata) ::
-    ("timestamp" | uint32) ::
-    ("nodeId" | publicKey) ::
-    ("rgbColor" | rgb) ::
-    ("alias" | zeropaddedstring(32)) ::
-    ("addresses" | listofnodeaddresses)
+  val nodeAnnouncementWitnessCodec =
+    ("features" | varsizebinarydata) ::
+      ("timestamp" | uint32) ::
+      ("nodeId" | publicKey) ::
+      ("rgbColor" | rgb) ::
+      ("alias" | zeropaddedstring(32)) ::
+      ("addresses" | listofnodeaddresses) ::
+      ("unknownFields" | bytes)
 
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
     ("signature" | bytes64) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
-
+  
   val channelUpdateWitnessCodec =
     ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
@@ -190,7 +202,8 @@ object LightningMessageCodecs {
           ("htlcMinimumMsat" | uint64overflow) ::
           ("feeBaseMsat" | uint32) ::
           ("feeProportionalMillionths" | uint32) ::
-          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64overflow))
+          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64overflow)) ::
+          ("unknownFields" | bytes)
       })
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (
