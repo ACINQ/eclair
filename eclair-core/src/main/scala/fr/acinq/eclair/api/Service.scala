@@ -70,7 +70,8 @@ trait Service extends ExtraDirectives with Logging {
   implicit val actorSystem: ActorSystem
   implicit val mat: ActorMaterializer
 
-  val paramParsingTimeout = 30 seconds
+  // timeout for reading request parameters from the underlining stream
+  val paramParsingTimeout = 5 seconds
 
   val apiExceptionHandler = ExceptionHandler {
     case t: Throwable =>
