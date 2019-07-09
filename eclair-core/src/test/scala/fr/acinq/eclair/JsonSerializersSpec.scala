@@ -3,7 +3,6 @@ package fr.acinq.eclair
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint}
 import fr.acinq.eclair.channel.{LocalChanges, LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.db.ChannelStateSpec
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
@@ -109,12 +108,12 @@ class JsonSerializersSpec extends FunSuite with Logging {
   }
 
   test("serialize Commitments") {
-    val commitments = ChannelStateSpec.commitments
+    val commitments = ChannelCodecsSpec.commitments
     logger.info(write(commitments))
   }
 
   test("serialize DATA_NORMAL") {
-    val data = ChannelStateSpec.normal
+    val data = ChannelCodecsSpec.normal
     logger.info(write(data))
   }
 }

@@ -28,9 +28,9 @@ import scala.util.Try
 
 object TlvCodecs {
 
-  val genericTlv: Codec[GenericTlv] = (("type" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv]
+  private val genericTlv: Codec[GenericTlv] = (("type" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv]
 
-  def tlvFallback(codec: Codec[Tlv]): Codec[Tlv] = discriminatorFallback(genericTlv, codec).xmap({
+  private def tlvFallback(codec: Codec[Tlv]): Codec[Tlv] = discriminatorFallback(genericTlv, codec).xmap({
     case Left(l) => l
     case Right(r) => r
   }, {
@@ -44,9 +44,15 @@ object TlvCodecs {
     *
     * @param codec codec used for the tlv records contained in the stream.
     */
-  def tlvStream(codec: Codec[Tlv]): Codec[TlvStream] = list(codec).exmap(
+  def tlvStream(codec: Codec[Tlv]): Codec[TlvStream] = list(tlvFallback(codec)).exmap(
     records => Attempt.fromTry(Try(TlvStream(records))),
     stream => Attempt.successful(stream.records.toList)
   )
+
+  /**
+    * When used inside a message, a tlv stream needs to specify its length.
+    * Note that some messages will have an independent length field and won't need this codec.
+    */
+  def lengthPrefixedTlvStream(codec: Codec[Tlv]): Codec[TlvStream] = variableSizeBytesLong(CommonCodecs.varintoverflow, tlvStream(codec))
 
 }
