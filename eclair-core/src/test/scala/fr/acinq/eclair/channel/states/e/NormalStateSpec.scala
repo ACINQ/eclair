@@ -1781,9 +1781,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // assert the feerate of the claim main is what we expect
     val expectedFeeRate = Globals.feeratesPerKw.get.getRatePerBlock(Alice.nodeParams.feeTargets.claimMainBlockTarget)
-    val expectedFee = Transactions.weight2fee(expectedFeeRate, claimMain.weight())
+    val expectedFee = Transactions.weight2fee(expectedFeeRate, Transactions.claimP2WPKHOutputWeight).toLong
     val claimFee = claimMain.txIn.map(in => bobCommitTx.txOut(in.outPoint.index.toInt).amount.toLong).sum - claimMain.txOut.map(_.amount.toLong).sum
-    assert(claimFee == expectedFee.toLong)
+    assert(claimFee == expectedFee)
   }
 
   test("recv BITCOIN_FUNDING_SPENT (their *next* commit w/ htlc)") { f =>
