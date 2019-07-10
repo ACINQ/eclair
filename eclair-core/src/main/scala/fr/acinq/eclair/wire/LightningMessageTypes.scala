@@ -271,11 +271,11 @@ case class QueryChannelRangeExtension(flag: Long) extends Tlv {
 case object QueryChannelRangeExtension {
   val `type` = UInt64(1)
 
-  val WANT_TIMSTAMPS: Long = 1
+  val WANT_TIMESTAMPS: Long = 1
   val WANT_CHECKSUMS: Long = 2
-  val WANT_ALL: Long = (WANT_TIMSTAMPS | WANT_CHECKSUMS)
+  val WANT_ALL: Long = (WANT_TIMESTAMPS | WANT_CHECKSUMS)
 
-  def wantTimestamps(flag: Long) = (flag & WANT_TIMSTAMPS) != 0
+  def wantTimestamps(flag: Long) = (flag & WANT_TIMESTAMPS) != 0
 
   def wantChecksums(flag: Long) = (flag & WANT_CHECKSUMS) != 0
 }
