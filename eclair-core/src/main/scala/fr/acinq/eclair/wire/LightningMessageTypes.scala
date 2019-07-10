@@ -235,29 +235,33 @@ case class PerHopPayload(shortChannelId: ShortChannelId,
   * @param encoding 0 means uncompressed, 1 means compressed with zlib
   * @param array array of query flags, each flags specifies the info we want for a given channel
   */
-case class EncodedQueryFlags(encoding: EncodingType, array: List[Byte]) extends Tlv {
-  override val `type` = UInt64(1)
+case class EncodedQueryFlags(encoding: EncodingType, array: List[Long]) extends Tlv {
+  override val `type` = EncodedQueryFlags.`type`
+}
+
+object EncodedQueryFlags {
+  val `type` = UInt64(1)
 }
 
 case object QueryFlagType {
-  val INCLUDE_CHANNEL_ANNOUNCEMENT: Byte = 1
-  val INCLUDE_CHANNEL_UPDATE_1: Byte = 2
-  val INCLUDE_CHANNEL_UPDATE_2: Byte = 4
-  val INCLUDE_ALL: Byte = (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte
+  val INCLUDE_CHANNEL_ANNOUNCEMENT: Long = 1
+  val INCLUDE_CHANNEL_UPDATE_1: Long = 2
+  val INCLUDE_CHANNEL_UPDATE_2: Long = 4
+  val INCLUDE_ALL: Long = (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2)
 
-  def includeAnnouncement(flag: Byte) = (flag & INCLUDE_CHANNEL_ANNOUNCEMENT) != 0
+  def includeAnnouncement(flag: Long) = (flag & INCLUDE_CHANNEL_ANNOUNCEMENT) != 0
 
-  def includeUpdate1(flag: Byte) = (flag & INCLUDE_CHANNEL_UPDATE_1) != 0
+  def includeUpdate1(flag: Long) = (flag & INCLUDE_CHANNEL_UPDATE_1) != 0
 
-  def includeUpdate2(flag: Byte) = (flag & INCLUDE_CHANNEL_UPDATE_2) != 0
+  def includeUpdate2(flag: Long) = (flag & INCLUDE_CHANNEL_UPDATE_2) != 0
 }
 
 /**
   * Optional query flag that is appended to QueryChannelRange
   * @param flag bit 1 set means I want timestamps, bit 2 set means I want checksums
   */
-case class QueryChannelRangeExtension(flag: Byte) extends Tlv {
-  override val `type` = UInt64(1)
+case class QueryChannelRangeExtension(flag: Long) extends Tlv {
+  override val `type` = QueryChannelRangeExtension.`type`
 
   val wantTimestamps = QueryChannelRangeExtension.wantTimestamps(flag)
 
@@ -265,13 +269,15 @@ case class QueryChannelRangeExtension(flag: Byte) extends Tlv {
 }
 
 case object QueryChannelRangeExtension {
-  val WANT_TIMSTAMPS: Byte = 1
-  val WANT_CHECKSUMS: Byte = 2
-  val WANT_ALL: Byte = (WANT_TIMSTAMPS | WANT_CHECKSUMS).toByte
+  val `type` = UInt64(1)
 
-  def wantTimestamps(flag: Byte) = (flag & WANT_TIMSTAMPS) != 0
+  val WANT_TIMSTAMPS: Long = 1
+  val WANT_CHECKSUMS: Long = 2
+  val WANT_ALL: Long = (WANT_TIMSTAMPS | WANT_CHECKSUMS)
 
-  def wantChecksums(flag: Byte) = (flag & WANT_CHECKSUMS) != 0
+  def wantTimestamps(flag: Long) = (flag & WANT_TIMSTAMPS) != 0
+
+  def wantChecksums(flag: Long) = (flag & WANT_CHECKSUMS) != 0
 }
 
 
@@ -283,12 +289,16 @@ case object QueryChannelRangeExtension {
 case class Timestamps(timestamp1: Long, timestamp2: Long)
 
 /**
-  * Optional timstamps TLV that can be appended to ReplyChannelRange
+  * Optional timestamps TLV that can be appended to ReplyChannelRange
   * @param encoding same convention as for short channel ids
   * @param timestamps
   */
 case class EncodedTimestamps(encoding: EncodingType, timestamps: List[Timestamps]) extends Tlv {
-  override val `type` = UInt64(1)
+  override val `type` = EncodedTimestamps.`type`
+}
+
+object EncodedTimestamps {
+ val `type` = UInt64(1)
 }
 
 /**
@@ -304,7 +314,11 @@ case class Checksums(checksum1: Long, checksum2: Long)
   * @param checksums
   */
 case class EncodedChecksums(checksums: List[Checksums]) extends Tlv {
-  override val `type` = UInt64(3)
+  override val `type` = EncodedChecksums.`type`
+}
+
+object EncodedChecksums {
+   val `type` = UInt64(3)
 }
 
 // @formatter:on

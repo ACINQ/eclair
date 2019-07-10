@@ -21,14 +21,13 @@ import java.net.{Inet4Address, Inet6Address, InetAddress}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.wire
+import fr.acinq.eclair.{UInt64, wire}
 import fr.acinq.eclair.wire.CommonCodecs._
 import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
 
 import scala.util.{Failure, Success, Try}
-
 import scodec.Codec
 
 /**
@@ -228,14 +227,12 @@ object LightningMessageCodecs {
 
   val encodedQueryFlagsCodec: Codec[EncodedQueryFlags] =
     discriminated[EncodedQueryFlags].by(byte)
-      .\(0) { case a@EncodedQueryFlags(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(byte)).as[EncodedQueryFlags])
-      .\(1) { case a@EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(byte))).as[EncodedQueryFlags])
+      .\(0) { case a@EncodedQueryFlags(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(varintoverflow)).as[EncodedQueryFlags])
+      .\(1) { case a@EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(varintoverflow))).as[EncodedQueryFlags])
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = {
-    import fr.acinq.eclair.UInt64.Conversions._
-
     val extensionsCodec = TlvCodecs.tlvStream(discriminated[Tlv].by(varint)
-      .typecase(1, variableSizeBytesLong(varintoverflow, encodedQueryFlagsCodec))
+      .typecase(EncodedQueryFlags.`type`, variableSizeBytesLong(varintoverflow, encodedQueryFlagsCodec))
     )
 
     Codec(
@@ -250,13 +247,11 @@ object LightningMessageCodecs {
       ("complete" | byte)
     ).as[ReplyShortChannelIdsEnd]
 
-  val queryChannelRangeExtensionCodec: Codec[QueryChannelRangeExtension] = Codec(("flag" | byte)).as[QueryChannelRangeExtension]
+  val queryChannelRangeExtensionCodec: Codec[QueryChannelRangeExtension] = Codec(("flag" | varintoverflow)).as[QueryChannelRangeExtension]
 
   val queryChannelRangeCodec: Codec[QueryChannelRange] = {
-    import fr.acinq.eclair.UInt64.Conversions._
-
     val extensionsCodec = TlvCodecs.tlvStream(discriminated[Tlv].by(varint)
-      .typecase(1, variableSizeBytesLong(varintoverflow, queryChannelRangeExtensionCodec))
+      .typecase(QueryChannelRangeExtension.`type`, variableSizeBytesLong(varintoverflow, queryChannelRangeExtensionCodec))
     )
 
     Codec(
@@ -285,11 +280,9 @@ object LightningMessageCodecs {
   val encodedChecksumsCodec: Codec[EncodedChecksums] = Codec(("checksums" | list(checksumsCodec))).as[EncodedChecksums]
 
   val replyChannelRangeCodec: Codec[ReplyChannelRange] =  {
-    import fr.acinq.eclair.UInt64.Conversions._
-
     val extensionsCodec = TlvCodecs.tlvStream(discriminated[Tlv].by(varint)
-      .typecase(1, variableSizeBytesLong(varintoverflow, encodedTimestampsCodec))
-      .typecase(3, variableSizeBytesLong(varintoverflow, encodedChecksumsCodec))
+      .typecase(EncodedTimestamps.`type`, variableSizeBytesLong(varintoverflow, encodedTimestampsCodec))
+      .typecase(EncodedChecksums.`type`, variableSizeBytesLong(varintoverflow, encodedChecksumsCodec))
     )
 
     Codec(

@@ -82,7 +82,7 @@ case class RoutingState(channels: Iterable[ChannelAnnouncement], updates: Iterab
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
-case class ShortChannelIdAndFlag(shortChannelId: ShortChannelId, flag: Byte)
+case class ShortChannelIdAndFlag(shortChannelId: ShortChannelId, flag: Long)
 
 case class Sync(pending: List[RoutingMessage], total: Int)
 
@@ -845,8 +845,8 @@ object Router {
   def computeFlag(channels: SortedMap[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate])(
     shortChannelId: ShortChannelId,
     timestamps_opt: Option[Timestamps],
-    checksums_opt: Option[Checksums]): Byte = {
-    var flag = 0
+    checksums_opt: Option[Checksums]): Long = {
+    var flag = 0L
     (timestamps_opt, checksums_opt) match {
       case (Some(theirTimestamps), Some(theirChecksums)) if channels.contains(shortChannelId) =>
         val (ourTimestamps, ourChecksums) = Router.getChannelDigestInfo(channels, updates)(shortChannelId)
@@ -865,7 +865,7 @@ object Router {
         if (ourTimestamps.timestamp2 < theirTimestamps.timestamp2 && !isStale(theirTimestamps.timestamp2)) flag = flag | QueryFlagType.INCLUDE_CHANNEL_UPDATE_2
       case (None, Some(theirChecksums)) if channels.contains(shortChannelId) =>
         val (_, ourChecksums) = Router.getChannelDigestInfo(channels, updates)(shortChannelId)
-        // this should not happen as we will not ask for cheksums without asking for timestamps too
+        // this should not happen as we will not ask for checksums without asking for timestamps too
         if (ourChecksums.checksum1 != theirChecksums.checksum1 && theirChecksums.checksum1 != 0) flag = flag | QueryFlagType.INCLUDE_CHANNEL_UPDATE_1
         if (ourChecksums.checksum2 != theirChecksums.checksum2 && theirChecksums.checksum2 != 0) flag = flag | QueryFlagType.INCLUDE_CHANNEL_UPDATE_2
       case (None, None) if channels.contains(shortChannelId) =>
@@ -875,7 +875,7 @@ object Router {
         // we don't know this channel: we request everything
         flag = QueryFlagType.INCLUDE_CHANNEL_ANNOUNCEMENT | QueryFlagType.INCLUDE_CHANNEL_UPDATE_1 | QueryFlagType.INCLUDE_CHANNEL_UPDATE_2
     }
-    flag.toByte
+    flag
   }
 
   /**
