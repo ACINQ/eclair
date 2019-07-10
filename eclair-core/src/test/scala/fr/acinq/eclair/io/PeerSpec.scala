@@ -16,12 +16,10 @@
 
 package fr.acinq.eclair.io
 
-import java.net.{Inet4Address, InetSocketAddress}
-
-import akka.actor.{ActorRef, PoisonPill, Terminated}
 import java.net.{Inet4Address, InetAddress, InetSocketAddress, ServerSocket}
-import akka.actor.{ActorRef, ActorSystem, PoisonPill}
+
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
+import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
@@ -29,13 +27,13 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.db.ChannelStateSpec
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
-import fr.acinq.eclair.router.{ChannelRangeQueriesSpec, Rebroadcast, RoutingSyncSpec}
-import fr.acinq.eclair.wire.{Color, EncodedShortChannelIds, EncodingType, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong}
+import fr.acinq.eclair.router.{Rebroadcast, RoutingSyncSpec}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, EncodedShortChannelIds, EncodingType, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong, QueryShortChannelIds, TlvStream}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
+
 import scala.concurrent.duration._
 
 class PeerSpec extends TestkitBaseClass {
@@ -90,7 +88,7 @@ class PeerSpec extends TestkitBaseClass {
   test("restore existing channels") { f =>
     import f._
     val probe = TestProbe()
-    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelStateSpec.normal))
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelCodecsSpec.normal))
     probe.send(peer, Peer.GetPeerInfo)
     probe.expectMsg(PeerInfo(remoteNodeId, "CONNECTED", Some(fakeIPAddress.socketAddress), 1))
   }
@@ -138,7 +136,7 @@ class PeerSpec extends TestkitBaseClass {
   test("ignore reconnect (no known address)") { f =>
     import f._
     val probe = TestProbe()
-    probe.send(peer, Peer.Init(None, Set(ChannelStateSpec.normal)))
+    probe.send(peer, Peer.Init(None, Set(ChannelCodecsSpec.normal)))
     probe.send(peer, Peer.Reconnect)
     probe.expectNoMsg()
   }
@@ -157,13 +155,13 @@ class PeerSpec extends TestkitBaseClass {
 
     // we create a dummy tcp server and update bob's announcement to point to it
     val mockServer = new ServerSocket(0, 1, InetAddress.getLocalHost) // port will be assigned automatically
-    val mockAddress = NodeAddress.fromParts(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort).get
+  val mockAddress = NodeAddress.fromParts(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort).get
     val bobAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
     peer.underlyingActor.nodeParams.db.network.addNode(bobAnnouncement)
 
     val probe = TestProbe()
     awaitCond(peer.stateName == INSTANTIATING)
-    probe.send(peer, Peer.Init(None, Set(ChannelStateSpec.normal)))
+    probe.send(peer, Peer.Init(None, Set(ChannelCodecsSpec.normal)))
     awaitCond(peer.stateName == DISCONNECTED)
 
     // we have auto-reconnect=false so we need to manually tell the peer to reconnect
@@ -179,7 +177,7 @@ class PeerSpec extends TestkitBaseClass {
     import f._
     val probe = TestProbe()
     val previouslyKnownAddress = new InetSocketAddress("1.2.3.4", 9735)
-    probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set(ChannelStateSpec.normal)))
+    probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set(ChannelCodecsSpec.normal)))
     probe.send(peer, Peer.Reconnect)
     val interval = (peer.underlyingActor.nodeParams.maxReconnectInterval.toSeconds / 2) to peer.underlyingActor.nodeParams.maxReconnectInterval.toSeconds
     awaitCond(interval contains peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay.toSeconds)
@@ -188,7 +186,7 @@ class PeerSpec extends TestkitBaseClass {
   test("reconnect with increasing delays") { f =>
     import f._
     val probe = TestProbe()
-    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelStateSpec.normal))
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelCodecsSpec.normal))
     probe.send(transport.ref, PoisonPill)
     awaitCond(peer.stateName === DISCONNECTED)
     assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (10 seconds))
@@ -216,7 +214,7 @@ class PeerSpec extends TestkitBaseClass {
     import f._
 
     val probe = TestProbe()
-    probe.send(peer, Peer.Init(None, Set(ChannelStateSpec.normal)))
+    probe.send(peer, Peer.Init(None, Set(ChannelCodecsSpec.normal)))
     authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, None))
 
     probe.send(peer, Peer.GetPeerInfo)
@@ -230,7 +228,7 @@ class PeerSpec extends TestkitBaseClass {
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelStateSpec.normal))
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelCodecsSpec.normal))
 
     probe.send(peer, Peer.GetPeerInfo)
     assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
@@ -319,7 +317,11 @@ class PeerSpec extends TestkitBaseClass {
     import f._
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
-    val query = wire.QueryShortChannelIds(Alice.nodeParams.chainHash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42000))), None)
+
+    val query = QueryShortChannelIds(
+      Alice.nodeParams.chainHash,
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42000))),
+      TlvStream(List()))
 
     // make sure that routing messages go through
     for (ann <- channels ++ updates) {

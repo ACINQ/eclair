@@ -24,6 +24,7 @@ import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.eclair.channel.ChannelPersisted
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
+import fr.acinq.eclair.wire.ChannelCodecsSpec
 import fr.acinq.eclair.{TestConstants, TestUtils, randomBytes32}
 import org.scalatest.FunSuiteLike
 
@@ -35,7 +36,7 @@ class BackupHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val dest = new File(TestUtils.BUILD_DIRECTORY, s"backup-${UUID.randomUUID()}")
     wip.deleteOnExit()
     dest.deleteOnExit()
-    val channel = ChannelStateSpec.normal
+    val channel = ChannelCodecsSpec.normal
     db.channels.addOrUpdateChannel(channel)
     assert(db.channels.listLocalChannels() == Seq(channel))
 
