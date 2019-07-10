@@ -23,7 +23,8 @@ import fr.acinq.eclair.payment.PaymentRequest._
 import scodec.Codec
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
-
+import scala.concurrent.duration._
+import scala.compat.Platform
 import scala.util.Try
 
 /**
@@ -76,6 +77,11 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case cltvExpiry: PaymentRequest.MinFinalCltvExpiry => cltvExpiry.toLong
   }
 
+  def isExpired: Boolean = expiry match {
+    case Some(expiryTime) => timestamp + expiryTime <= Platform.currentTime.milliseconds.toSeconds
+    case None => timestamp + DEFAULT_EXPIRY_SECONDS <= Platform.currentTime.milliseconds.toSeconds
+  }
+
   /**
     *
     * @return the hash of this payment request
@@ -103,6 +109,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 }
 
 object PaymentRequest {
+
+  val DEFAULT_EXPIRY_SECONDS = 3600
 
   val prefixes = Map(
     Block.RegtestGenesisBlock.hash -> "lnbcrt",
