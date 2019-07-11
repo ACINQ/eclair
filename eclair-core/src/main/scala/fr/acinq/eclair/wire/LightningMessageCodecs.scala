@@ -18,8 +18,8 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.eclair.wire
 import fr.acinq.eclair.wire.CommonCodecs._
-import scodec.codecs._
 import scodec.Codec
+import scodec.codecs._
 
 /**
   * Created by PM on 15/11/2016.

@@ -19,9 +19,9 @@ package fr.acinq.eclair.wire
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.crypto.Sphinx
-import scodec.{Codec, DecodeResult, Decoder}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
+import scodec.{Codec, DecodeResult, Decoder}
 
 /**
   * Created by t-bast on 05/07/2019.

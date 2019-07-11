@@ -20,7 +20,6 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.wire.CommonCodecs.{sha256, uint64overflow}
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelUpdateCodec, lightningMessageCodec}
-import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
