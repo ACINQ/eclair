@@ -45,6 +45,7 @@ case class FeeratesPerKw(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_1
     case 12 => blocks_12
     case 36 => blocks_36
     case 72 => blocks_72
+    case 144 => blocks_144
     case _ => throw new IllegalArgumentException(s"can't choose ratePerBlock=$blockTarget")
   }
 
