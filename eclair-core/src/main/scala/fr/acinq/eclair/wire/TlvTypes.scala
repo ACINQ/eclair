@@ -19,45 +19,36 @@ package fr.acinq.eclair.wire
 import fr.acinq.eclair.UInt64
 import scodec.bits.ByteVector
 
-import scala.annotation.tailrec
-
 /**
   * Created by t-bast on 20/06/2019.
   */
 
 // @formatter:off
-trait Tlv {
-  val `type`: UInt64
-}
+trait Tlv
 sealed trait OnionTlv extends Tlv
 // @formatter:on
 
 /**
-  * Generic tlv type we fallback to if we don't understand the incoming type.
+  * Generic tlv type we fallback to if we don't understand the incoming tlv.
   *
-  * @param `type` tlv type.
-  * @param value  tlv value (length is implicit, and encoded as a varint).
+  * @param tag   tlv tag.
+  * @param value tlv value (length is implicit, and encoded as a varint).
   */
-case class GenericTlv(`type`: UInt64, value: ByteVector) extends Tlv
+case class GenericTlv(tag: UInt64, value: ByteVector) extends Tlv
 
 /**
   * A tlv stream is a collection of tlv records.
-  * A tlv stream is part of a given namespace that dictates how to parse the tlv records.
-  * That namespace is indicated by a trait extending the top-level tlv trait.
+  * A tlv stream is constrained to a specific tlv namespace that dictates how to parse the tlv records.
+  * That namespace is provided by a trait extending the top-level tlv trait.
   *
-  * @param records tlv records.
+  * @param records known tlv records.
+  * @param unknown unknown tlv records.
+  * @tparam T the stream namespace is a trait extending the top-level tlv trait.
   */
-case class TlvStream(records: Seq[Tlv]) {
+case class TlvStream[T <: Tlv](records: Traversable[T], unknown: Traversable[GenericTlv] = Nil)
 
-  records.foldLeft(Option.empty[Tlv]) {
-    case (None, record) =>
-      require(!record.isInstanceOf[GenericTlv] || record.`type`.toBigInt % 2 != 0, "tlv streams must not contain unknown even tlv types")
-      Some(record)
-    case (Some(previousRecord), record) =>
-      require(record.`type` != previousRecord.`type`, "tlv streams must not contain duplicate records")
-      require(record.`type` > previousRecord.`type`, "tlv records must be ordered by monotonically-increasing types")
-      require(!record.isInstanceOf[GenericTlv] || record.`type`.toBigInt % 2 != 0, "tlv streams must not contain unknown even tlv types")
-      Some(record)
-  }
+object TlvStream {
+
+  def apply[T <: Tlv](records: T*): TlvStream[T] = TlvStream(records, Nil)
 
 }
