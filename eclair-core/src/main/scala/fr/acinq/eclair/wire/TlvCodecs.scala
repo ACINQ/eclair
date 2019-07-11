@@ -22,6 +22,8 @@ import fr.acinq.eclair.wire.CommonCodecs._
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
 
+import scala.annotation.tailrec
+
 /**
   * Created by t-bast on 20/06/2019.
   */
@@ -70,29 +72,27 @@ object TlvCodecs {
 
   private val genericTlv: Codec[GenericTlv] = (("tag" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv].exmap(validateGenericTlv, validateGenericTlv)
 
+  private def tag[T <: Tlv](codec: DiscriminatorCodec[T, UInt64], record: Either[GenericTlv, T]): UInt64 = record match {
+    case Left(generic) => generic.tag
+    case Right(tlv) => tag(codec, tlv)
+  }
+
   private def tag[T <: Tlv](codec: DiscriminatorCodec[T, UInt64], record: T): UInt64 =
     codec.encode(record).flatMap(bits => varint.decode(bits)).require.value
 
   private def validateStream[T <: Tlv](codec: DiscriminatorCodec[T, UInt64], records: List[Either[GenericTlv, T]]): Attempt[TlvStream[T]] = {
-    records.foldLeft(Right(None): Either[Err, Option[UInt64]]) {
-      case (Left(err), _) => Left(err)
-      case (Right(None), Left(generic)) => Right(Some(generic.tag))
-      case (Right(None), Right(tlv)) => Right(Some(tag(codec, tlv)))
-      case (Right(Some(previous)), record) =>
-        val current = record match {
-          case Left(generic) => generic.tag
-          case Right(tlv) => tag(codec, tlv)
-        }
-        if (current == previous) {
-          Left(Err("tlv streams must not contain duplicate records"))
-        } else if (current < previous) {
-          Left(Err("tlv records must be ordered by monotonically-increasing types"))
-        } else {
-          Right(Some(current))
-        }
-    } match {
-      case Left(err) => Attempt.Failure(err)
-      case _ => Attempt.Successful(TlvStream(records.collect { case Right(tlv) => tlv }, records.collect { case Left(generic) => generic }))
+    @tailrec
+    def loop(previous: Option[UInt64], tags: List[UInt64]): Option[Err] = tags match {
+      case current :: rest if previous.isEmpty => loop(Some(current), rest)
+      case current :: _ if current == previous.get => Some(Err("tlv streams must not contain duplicate records"))
+      case current :: _ if current < previous.get => Some(Err("tlv records must be ordered by monotonically-increasing types"))
+      case current :: rest => loop(Some(current), rest)
+      case Nil => None
+    }
+
+    loop(None, records.map(r => tag(codec, r))) match {
+      case Some(err) => Attempt.Failure(err)
+      case None => Attempt.Successful(TlvStream(records.collect { case Right(tlv) => tlv }, records.collect { case Left(generic) => generic }))
     }
   }
 
@@ -106,16 +106,12 @@ object TlvCodecs {
   def tlvStream[T <: Tlv](codec: DiscriminatorCodec[T, UInt64]): Codec[TlvStream[T]] = list(discriminatorFallback(genericTlv, codec)).exmap(
     records => validateStream(codec, records),
     (stream: TlvStream[T]) => {
-      val records: List[Either[GenericTlv, T]] = (stream.records.map(Right(_)) ++ stream.unknown.map(Left(_))).toList
-      val recordsAndTags = records.map({
-        case Left(generic) => (generic.tag, Left(generic))
-        case Right(tlv) => (tag(codec, tlv), Right(tlv))
-      })
-      val tags = recordsAndTags.map(_._1)
+      val records = (stream.records.map(Right(_)) ++ stream.unknown.map(Left(_))).toList
+      val tags = records.map(r => tag(codec, r))
       if (tags.length != tags.distinct.length) {
         Attempt.Failure(Err("tlv streams must not contain duplicate records"))
       } else {
-        Attempt.Successful(recordsAndTags.sortBy(_._1).map(_._2))
+        Attempt.Successful(tags.zip(records).sortBy(_._1).map(_._2))
       }
     }
   )
