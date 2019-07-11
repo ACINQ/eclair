@@ -154,7 +154,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val closing = alice2bob.expectMsgType[ClosingSigned]
     val aliceData = alice.stateData.asInstanceOf[DATA_NEGOTIATING]
     val mutualClosingFeeRate = Globals.feeratesPerKw.get.getRatePerBlock(Alice.nodeParams.feeTargets.mutualCloseBlockTarget)
-    val expectedFirstProposedFee = Closing.firstClosingFee(mutualClosingFeeRate, aliceData.commitments, aliceData.localShutdown.scriptPubKey, aliceData.remoteShutdown.scriptPubKey)(akka.event.NoLogging)
+    val expectedFirstProposedFee = Closing.firstClosingFee(aliceData.commitments, aliceData.localShutdown.scriptPubKey, aliceData.remoteShutdown.scriptPubKey, mutualClosingFeeRate)(akka.event.NoLogging)
     assert(Alice.nodeParams.feeTargets.mutualCloseBlockTarget == 2 && mutualClosingFeeRate == 250)
     assert(closing.feeSatoshis == expectedFirstProposedFee.amount)
   }

@@ -423,7 +423,7 @@ object Helpers {
       }
     }
 
-    def firstClosingFee(feeratePerKw: Long, commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector)(implicit log: LoggingAdapter): Satoshi = {
+    def firstClosingFee(commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feeratePerKw: Long)(implicit log: LoggingAdapter): Satoshi = {
       import commitments._
       // this is just to estimate the weight, it depends on size of the pubkey scripts
       val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
@@ -432,17 +432,17 @@ object Helpers {
       Transactions.weight2fee(feeratePerKw, closingWeight)
     }
 
-    def firstClosingFee(nodeParams: NodeParams, commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector)(implicit log: LoggingAdapter): Satoshi = {
+    def firstClosingFee(commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feeTargets: FeeTargets)(implicit log: LoggingAdapter): Satoshi = {
       // we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
-      val blockTarget = Math.max(nodeParams.feeTargets.mutualCloseBlockTarget, nodeParams.feeTargets.commitmentBlockTarget)
+      val blockTarget = Math.max(feeTargets.mutualCloseBlockTarget, feeTargets.commitmentBlockTarget)
       val feeratePerKw = Globals.feeratesPerKw.get.getRatePerBlock(blockTarget)
-      firstClosingFee(feeratePerKw, commitments, localScriptPubkey, remoteScriptPubkey)
+      firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, feeratePerKw)
     }
 
     def nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
 
-    def makeFirstClosingTx(nodeParams: NodeParams, keyManager: KeyManager, commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector)(implicit log: LoggingAdapter): (ClosingTx, ClosingSigned) = {
-      val closingFee = firstClosingFee(nodeParams, commitments, localScriptPubkey, remoteScriptPubkey)
+    def makeFirstClosingTx(keyManager: KeyManager, commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feeTargets: FeeTargets)(implicit log: LoggingAdapter): (ClosingTx, ClosingSigned) = {
+      val closingFee = firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, feeTargets)
       makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
     }
 
@@ -495,7 +495,7 @@ object Helpers {
       * @param commitments our commitment data, which include payment preimages
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimCurrentLocalCommitTxOutputs(feeTargets: FeeTargets, keyManager: KeyManager, commitments: Commitments, tx: Transaction)(implicit log: LoggingAdapter): LocalCommitPublished = {
+    def claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feeTargets: FeeTargets)(implicit log: LoggingAdapter): LocalCommitPublished = {
       import commitments._
       require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
 
@@ -564,9 +564,10 @@ object Helpers {
       * @param commitments  our commitment data, which include payment preimages
       * @param remoteCommit the remote commitment data to use to claim outputs (it can be their current or next commitment)
       * @param tx           the remote commitment transaction that has just been published
+      * @param feeTargets   the block target to use when computing fees for the transactions
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimRemoteCommitTxOutputs(feeTargets: FeeTargets, keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
+    def claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, feeTargets: FeeTargets)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       import commitments.{commitInput, localParams, remoteParams}
       require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
       val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
