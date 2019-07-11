@@ -22,8 +22,6 @@ import fr.acinq.eclair.wire.CommonCodecs._
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
 
-import scala.util.Try
-
 /**
   * Created by t-bast on 20/06/2019.
   */
@@ -62,31 +60,73 @@ object TlvCodecs {
     case i => Attempt.Successful(i.toInt)
   }, l => Attempt.Successful(l))
 
-  private val genericTlv: Codec[GenericTlv] = (("type" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv]
+  private def validateGenericTlv(g: GenericTlv): Attempt[GenericTlv] = {
+    if (g.tag.toBigInt % 2 == 0) {
+      Attempt.Failure(Err("unknown even tlv type"))
+    } else {
+      Attempt.Successful(g)
+    }
+  }
 
-  private def tlvFallback(codec: Codec[Tlv]): Codec[Tlv] = discriminatorFallback(genericTlv, codec).xmap({
-    case Left(l) => l
-    case Right(r) => r
-  }, {
-    case g: GenericTlv => Left(g)
-    case o => Right(o)
-  })
+  private val genericTlv: Codec[GenericTlv] = (("tag" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv].exmap(validateGenericTlv, validateGenericTlv)
+
+  private def tag[T <: Tlv](codec: DiscriminatorCodec[T, UInt64], record: T): UInt64 =
+    codec.encode(record).flatMap(bits => varint.decode(bits)).require.value
+
+  private def validateStream[T <: Tlv](codec: DiscriminatorCodec[T, UInt64], records: List[Either[GenericTlv, T]]): Either[Err, Option[UInt64]] = {
+    records.foldLeft(Right(None): Either[Err, Option[UInt64]]) {
+      case (Left(err), _) => Left(err)
+      case (Right(None), Left(generic)) => Right(Some(generic.tag))
+      case (Right(None), Right(tlv)) => Right(Some(tag(codec, tlv)))
+      case (Right(Some(previous)), record) =>
+        val current = record match {
+          case Left(generic) => generic.tag
+          case Right(tlv) => tag(codec, tlv)
+        }
+        if (current == previous) {
+          Left(Err("tlv streams must not contain duplicate records"))
+        } else if (current < previous) {
+          Left(Err("tlv records must be ordered by monotonically-increasing types"))
+        } else {
+          Right(Some(current))
+        }
+    }
+  }
 
   /**
     * A tlv stream codec relies on an underlying tlv codec.
     * This allows tlv streams to have different namespaces, increasing the total number of tlv types available.
     *
     * @param codec codec used for the tlv records contained in the stream.
+    * @tparam T stream namespace.
     */
-  def tlvStream(codec: Codec[Tlv]): Codec[TlvStream] = list(tlvFallback(codec)).exmap(
-    records => Attempt.fromTry(Try(TlvStream(records))),
-    stream => Attempt.successful(stream.records.toList)
+  def tlvStream[T <: Tlv](codec: DiscriminatorCodec[T, UInt64]): Codec[TlvStream[T]] = list(discriminatorFallback(genericTlv, codec)).exmap(
+    records => validateStream(codec, records) match {
+      case Left(err) => Attempt.Failure(err)
+      case _ => Attempt.Successful(TlvStream(records.collect { case Right(tlv) => tlv }, records.collect { case Left(generic) => generic }))
+    },
+    (stream: TlvStream[T]) => {
+      val records: List[Either[GenericTlv, T]] = (stream.records.map(Right(_)) ++ stream.unknown.map(Left(_))).toList
+      val recordsAndTags = records.map({
+        case Left(generic) => (generic.tag, Left(generic))
+        case Right(tlv) => (tag(codec, tlv), Right(tlv))
+      })
+      val tags = recordsAndTags.map(_._1)
+      if (tags.length != tags.distinct.length) {
+        Attempt.Failure(Err("tlv streams must not contain duplicate records"))
+      } else {
+        Attempt.Successful(recordsAndTags.sortBy(_._1).map(_._2))
+      }
+    }
   )
 
   /**
-    * When used inside a message, a tlv stream needs to specify its length.
+    * When used inside a message, most of the time a tlv stream needs to specify its length.
     * Note that some messages will have an independent length field and won't need this codec.
+    *
+    * @param codec codec used for the tlv records contained in the stream.
+    * @tparam T stream namespace.
     */
-  def lengthPrefixedTlvStream(codec: Codec[Tlv]): Codec[TlvStream] = variableSizeBytesLong(CommonCodecs.varintoverflow, tlvStream(codec))
+  def lengthPrefixedTlvStream[T <: Tlv](codec: DiscriminatorCodec[T, UInt64]): Codec[TlvStream[T]] = variableSizeBytesLong(CommonCodecs.varintoverflow, tlvStream(codec))
 
 }

@@ -142,117 +142,155 @@ class TlvCodecsSpec extends FunSuite {
     }
   }
 
-  test("encode/decode tlv") {
+  test("encode/decode tlv stream") {
     val testCases = Seq(
-      (hex"01 01 2a", TestType1(42)),
-      (hex"02 08 0000000000000226", TestType2(ShortChannelId(550))),
-      (hex"03 31 02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619 0000000000000231 0000000000000451", TestType3(PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 561, 1105))
+      (hex"", TlvStream[TestTlv]()),
+      (hex"21 00", TlvStream[TestTlv](Nil, Seq(GenericTlv(33, hex"")))),
+      (hex"fd0102 00", TlvStream[TestTlv](Nil, Seq(GenericTlv(513, hex"")))),
+      (hex"fdfd00 00", TlvStream[TestTlv](Nil, Seq(GenericTlv(253, hex"")))),
+      (hex"fdff00 00", TlvStream[TestTlv](Nil, Seq(GenericTlv(255, hex"")))),
+      (hex"fe01000002 00", TlvStream[TestTlv](Nil, Seq(GenericTlv(33554433, hex"")))),
+      (hex"ff0100000000000002 00", TlvStream[TestTlv](Nil, Seq(GenericTlv(144115188075855873L, hex"")))),
+      (hex"01 00", TlvStream[TestTlv](TestType1(0))),
+      (hex"01 01 01", TlvStream[TestTlv](TestType1(1))),
+      (hex"01 01 2a", TlvStream[TestTlv](TestType1(42))),
+      (hex"01 02 0100", TlvStream[TestTlv](TestType1(256))),
+      (hex"01 03 010000", TlvStream[TestTlv](TestType1(65536))),
+      (hex"01 04 01000000", TlvStream[TestTlv](TestType1(16777216))),
+      (hex"01 05 0100000000", TlvStream[TestTlv](TestType1(4294967296L))),
+      (hex"01 06 010000000000", TlvStream[TestTlv](TestType1(1099511627776L))),
+      (hex"01 07 01000000000000", TlvStream[TestTlv](TestType1(281474976710656L))),
+      (hex"01 08 0100000000000000", TlvStream[TestTlv](TestType1(72057594037927936L))),
+      (hex"02 08 0000000000000226", TlvStream[TestTlv](TestType2(ShortChannelId(550)))),
+      (hex"03 31 023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb 0000000000000231 0000000000000451", TlvStream[TestTlv](TestType3(PublicKey(hex"023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb"), 561, 1105))),
+      (hex"fdfe00 02 0226", TlvStream[TestTlv](TestType254(550))),
+      (hex"01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451", TlvStream[TestTlv](TestType1(561), TestType2(ShortChannelId(1105)), TestType3(PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 561, 1105))),
+      (hex"01020231 0b020451 fdfe0002002a", TlvStream[TestTlv](Seq(TestType1(561), TestType254(42)), Seq(GenericTlv(11, hex"0451"))))
     )
 
     for ((bin, expected) <- testCases) {
-      val decoded = testTlvCodec.decode(bin.bits).require.value.asInstanceOf[Tlv]
+      val decoded = testTlvStreamCodec.decode(bin.bits).require.value
       assert(decoded === expected)
-      val encoded = testTlvCodec.encode(expected).require.bytes
+      val encoded = testTlvStreamCodec.encode(expected).require.bytes
       assert(encoded === bin)
-    }
-  }
-
-  test("decode invalid tlv") {
-    val testCases = Seq(
-      hex"fd02", // type truncated
-      hex"fd022a", // truncated after type
-      hex"fd0100", // not minimally encoded type
-      hex"2a fd02", // length truncated
-      hex"2a fd0226", // truncated after length
-      hex"2a fe01010000", // not minimally encoded length
-      hex"2a fd2602 0231", // value truncated
-      hex"02 01 2a", // short channel id too short
-      hex"02 09 010101010101010101", // short channel id length too big
-      hex"2a ff0000000000000080" // invalid length (too big to fit inside a long)
-    )
-
-    for (testCase <- testCases) {
-      assert(testTlvCodec.decode(testCase.bits).isFailure)
     }
   }
 
   test("decode invalid tlv stream") {
     val testCases = Seq(
-      hex"01012a 02", // valid tlv record followed by invalid tlv record (only type, length and value are missing)
+      // Type truncated.
+      hex"fd",
+      hex"fd01",
+      // Not minimally encoded type.
+      hex"fd0100 00",
+      // Missing length.
+      hex"fd0101",
+      // Length truncated.
+      hex"0f fd",
+      hex"0f fd02",
+      // Not minimally encoded length.
+      hex"0f fd0100 00",
+      hex"0f fe01000000 00",
+      // Missing value.
+      hex"0f fd0226",
+      // Value truncated.
+      hex"0f fd0102 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      // Unknown even type.
+      hex"12 00",
+      hex"0a 00",
+      hex"fd0201 00",
+      hex"fe02000001 00",
+      hex"01020101 0a0101",
+      hex"ff0200000000000001 00",
+      // Invalid TestTlv1.
+      hex"01 01 00", // not minimally-encoded
+      hex"01 02 0001", // not minimally-encoded
+      hex"01 03 000100", // not minimally-encoded
+      hex"01 04 00010000", // not minimally-encoded
+      hex"01 05 0001000000", // not minimally-encoded
+      hex"01 06 000100000000", // not minimally-encoded
+      hex"01 07 00010000000000", // not minimally-encoded
+      hex"01 08 0001000000000000", // not minimally-encoded
+      // Invalid TestTlv2.
+      hex"02 07 01010101010101", // invalid length
+      hex"02 09 010101010101010101", // invalid length
+      // Invalid TestTlv3.
+      hex"03 21 023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb", // invalid length
+      hex"03 29 023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb0000000000000001", // invalid length
+      hex"03 30 023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb000000000000000100000000000001", // invalid length
+      hex"03 32 023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb0000000000000001000000000000000001", // invalid length
+      // Invalid TestTlv254.
+      hex"fdfe00 00", // invalid length
+      hex"fdfe00 01 01", // invalid length
+      hex"fdfe00 03 010101", // invalid length
+      // Invalid multi-record streams.
+      hex"01012a 02", // valid tlv record followed by invalid tlv record (length missing)
+      hex"01012a 0208", // valid tlv record followed by invalid tlv record (value missing)
+      hex"01012a 020801010101", // valid tlv record followed by invalid tlv record (value truncated)
       hex"02080000000000000226 01012a", // valid tlv records but invalid ordering
+      hex"1f00 0f012a", // valid tlv records but invalid ordering
       hex"02080000000000000231 02080000000000000451", // duplicate tlv type
-      hex"01020100 2a0101", // unknown even type
-      hex"0a020231 0b020451" // valid tlv records but from different namespace
+      hex"01012a 0b020231 0b020451", // duplicate tlv type
+      hex"1f00 1f012a", // duplicate tlv type
+      hex"01012a 0a020231 0b020451" // valid tlv records but from different namespace
     )
 
     for (testCase <- testCases) {
-      assert(tlvStream(testTlvCodec).decode(testCase.bits).isFailure, testCase)
+      assert(testTlvStreamCodec.decode(testCase.bits).isFailure, testCase)
     }
   }
 
-  test("create invalid tlv stream") {
-    assertThrows[IllegalArgumentException](TlvStream(Seq(GenericTlv(42, hex"2a")))) // unknown even type
-    assertThrows[IllegalArgumentException](TlvStream(Seq(TestType1(561), TestType2(ShortChannelId(1105)), GenericTlv(42, hex"2a")))) // unknown even type
-    assertThrows[IllegalArgumentException](TlvStream(Seq(TestType1(561), TestType1(1105)))) // duplicate type
-    assertThrows[IllegalArgumentException](TlvStream(Seq(TestType2(ShortChannelId(1105)), TestType1(561)))) // invalid ordering
-  }
-
-  test("encode/decode empty tlv stream") {
-    assert(tlvStream(testTlvCodec).decode(hex"".bits).require.value === TlvStream(Nil))
-    assert(tlvStream(testTlvCodec).encode(TlvStream(Nil)).require.bytes === hex"")
-  }
-
-  test("encode/decode tlv stream") {
-    val bin = hex"01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451"
-    val expected = Seq(
-      TestType1(561),
-      TestType2(ShortChannelId(1105)),
-      TestType3(PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 561, 1105)
-    )
-
-    val decoded = tlvStream(testTlvCodec).decode(bin.bits).require.value
-    assert(decoded === TlvStream(expected))
-
-    val encoded = tlvStream(testTlvCodec).encode(TlvStream(expected)).require.bytes
-    assert(encoded === bin)
-  }
-
-  test("encode/decode tlv stream with unknown odd type") {
-    val bin = hex"01020231 0b020451 0d02002a"
-    val expected = Seq(
-      TestType1(561),
-      GenericTlv(11, hex"0451"),
-      TestType13(42)
-    )
-
-    val decoded = tlvStream(testTlvCodec).decode(bin.bits).require.value
-    assert(decoded === TlvStream(expected))
-
-    val encoded = tlvStream(testTlvCodec).encode(TlvStream(expected)).require.bytes
-    assert(encoded === bin)
-  }
-
   test("encode/decode length-prefixed tlv stream") {
-    val codec = lengthPrefixedTlvStream(testTlvCodec)
     val testCases = Seq(
       hex"41 01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451",
       hex"fd4d01 01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451 ff6543210987654321 fd0001 10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010010101010101"
     )
 
     for (testCase <- testCases) {
-      assert(codec.encode(codec.decode(testCase.bits).require.value).require.bytes === testCase)
+      assert(lengthPrefixedTestTlvStreamCodec.encode(lengthPrefixedTestTlvStreamCodec.decode(testCase.bits).require.value).require.bytes === testCase)
     }
   }
 
   test("decode invalid length-prefixed tlv stream") {
     val testCases = Seq(
+      // Length too big.
       hex"42 01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451",
+      // Length too short.
       hex"40 01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451",
-      hex"01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451"
+      // Missing length.
+      hex"01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451",
+      // Valid length but duplicate types.
+      hex"14 02080000000000000231 02080000000000000451",
+      // Valid length but invalid ordering.
+      hex"0e 02080000000000000451 01020231",
+      // Valid length but unknown even type.
+      hex"02 0a 00"
     )
 
     for (testCase <- testCases) {
-      assert(lengthPrefixedTlvStream(testTlvCodec).decode(testCase.bits).isFailure)
+      assert(lengthPrefixedTestTlvStreamCodec.decode(testCase.bits).isFailure)
+    }
+  }
+
+  test("encode unordered tlv stream (codec should sort appropriately)") {
+    val stream = TlvStream[TestTlv](Seq(TestType254(42), TestType1(42)), Seq(GenericTlv(13, hex"2a"), GenericTlv(11, hex"2b")))
+    assert(testTlvStreamCodec.encode(stream).require.toByteVector === hex"01012a 0b012b 0d012a fdfe0002002a")
+    assert(lengthPrefixedTestTlvStreamCodec.encode(stream).require.toByteVector === hex"0f 01012a 0b012b 0d012a fdfe0002002a")
+  }
+
+  test("encode invalid tlv stream") {
+    val testCases = Seq(
+      // Unknown even type.
+      TlvStream[TestTlv](Nil, Seq(GenericTlv(42, hex"2a"))),
+      TlvStream[TestTlv](Seq(TestType1(561), TestType2(ShortChannelId(1105))), Seq(GenericTlv(42, hex"2a"))),
+      // Duplicate type.
+      TlvStream[TestTlv](TestType1(561), TestType1(1105)),
+      TlvStream[TestTlv](Seq(TestType1(561)), Seq(GenericTlv(1, hex"0451")))
+    )
+
+    for (stream <- testCases) {
+      assert(testTlvStreamCodec.encode(stream).isFailure, stream)
+      assert(lengthPrefixedTestTlvStreamCodec.encode(stream).isFailure, stream)
     }
   }
 
@@ -260,32 +298,38 @@ class TlvCodecsSpec extends FunSuite {
 
 object TlvCodecsSpec {
 
+  // See https://github.com/lightningnetwork/lightning-rfc/blob/master/01-messaging.md#appendix-a-type-length-value-test-vectors
+
   // @formatter:off
   sealed trait TestTlv extends Tlv
-  case class TestType1(uintValue: UInt64) extends TestTlv { override val `type` = UInt64(1) }
-  case class TestType2(shortChannelId: ShortChannelId) extends TestTlv { override val `type` = UInt64(2) }
-  case class TestType3(nodeId: PublicKey, value1: UInt64, value2: UInt64) extends TestTlv { override val `type` = UInt64(3) }
-  case class TestType13(intValue: Int) extends TestTlv { override val `type` = UInt64(13) }
+  case class TestType1(uintValue: UInt64) extends TestTlv
+  case class TestType2(shortChannelId: ShortChannelId) extends TestTlv
+  case class TestType3(nodeId: PublicKey, value1: UInt64, value2: UInt64) extends TestTlv
+  case class TestType254(intValue: Int) extends TestTlv
 
-  val testCodec1: Codec[TestType1] = ("value" | tu64).as[TestType1]
-  val testCodec2: Codec[TestType2] = (("length" | constant(hex"08")) :: ("short_channel_id" | shortchannelid)).as[TestType2]
-  val testCodec3: Codec[TestType3] = (("length" | constant(hex"31")) :: ("node_id" | publicKey) :: ("value_1" | uint64) :: ("value_2" | uint64)).as[TestType3]
-  val testCodec13: Codec[TestType13] = (("length" | constant(hex"02")) :: ("value" | uint16)).as[TestType13]
-  val testTlvCodec = discriminated[Tlv].by(varint)
+  private val testCodec1: Codec[TestType1] = ("value" | tu64).as[TestType1]
+  private val testCodec2: Codec[TestType2] = (("length" | constant(hex"08")) :: ("short_channel_id" | shortchannelid)).as[TestType2]
+  private val testCodec3: Codec[TestType3] = (("length" | constant(hex"31")) :: ("node_id" | publicKey) :: ("value_1" | uint64) :: ("value_2" | uint64)).as[TestType3]
+  private val testCodec254: Codec[TestType254] = (("length" | constant(hex"02")) :: ("value" | uint16)).as[TestType254]
+
+  private val testTlvCodec = discriminated[TestTlv].by(varint)
     .typecase(1, testCodec1)
     .typecase(2, testCodec2)
     .typecase(3, testCodec3)
-    .typecase(13, testCodec13)
+    .typecase(254, testCodec254)
+
+  val testTlvStreamCodec = tlvStream(testTlvCodec)
+  val lengthPrefixedTestTlvStreamCodec = lengthPrefixedTlvStream(testTlvCodec)
 
   sealed trait OtherTlv extends Tlv
-  case class OtherType1(uintValue: UInt64) extends OtherTlv { override val `type` = UInt64(10) }
-  case class OtherType2(smallValue: Long) extends OtherTlv { override val `type` = UInt64(11) }
+  case class OtherType1(uintValue: UInt64) extends OtherTlv
+  case class OtherType2(smallValue: Long) extends OtherTlv
 
   val otherCodec1: Codec[OtherType1] = ("value" | tu64).as[OtherType1]
   val otherCodec2: Codec[OtherType2] = ("value" | tu32).as[OtherType2]
-  val otherTlvCodec = discriminated[Tlv].by(varint)
+  val otherTlvStreamCodec = tlvStream(discriminated[OtherTlv].by(varint)
     .typecase(10, otherCodec1)
-    .typecase(11, otherCodec2)
+    .typecase(11, otherCodec2))
   // @formatter:on
 
 }
