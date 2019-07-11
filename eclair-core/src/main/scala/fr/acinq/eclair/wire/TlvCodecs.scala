@@ -28,7 +28,7 @@ import scodec.{Attempt, Codec, Err}
 
 object TlvCodecs {
 
-  private def variableSizeUInt64(size: Int, min: UInt64): Codec[UInt64] = minimalint(bytes(size).xmap(UInt64(_), _.toByteVector.takeRight(size)), min)
+  private def variableSizeUInt64(size: Int, min: UInt64): Codec[UInt64] = minimalvalue(bytes(size).xmap(UInt64(_), _.toByteVector.takeRight(size)), min)
 
   /**
     * Length-prefixed truncated uint64 (1 to 9 bytes unsigned integer).
@@ -73,7 +73,7 @@ object TlvCodecs {
   private def tag[T <: Tlv](codec: DiscriminatorCodec[T, UInt64], record: T): UInt64 =
     codec.encode(record).flatMap(bits => varint.decode(bits)).require.value
 
-  private def validateStream[T <: Tlv](codec: DiscriminatorCodec[T, UInt64], records: List[Either[GenericTlv, T]]): Either[Err, Option[UInt64]] = {
+  private def validateStream[T <: Tlv](codec: DiscriminatorCodec[T, UInt64], records: List[Either[GenericTlv, T]]): Attempt[TlvStream[T]] = {
     records.foldLeft(Right(None): Either[Err, Option[UInt64]]) {
       case (Left(err), _) => Left(err)
       case (Right(None), Left(generic)) => Right(Some(generic.tag))
@@ -90,6 +90,9 @@ object TlvCodecs {
         } else {
           Right(Some(current))
         }
+    } match {
+      case Left(err) => Attempt.Failure(err)
+      case _ => Attempt.Successful(TlvStream(records.collect { case Right(tlv) => tlv }, records.collect { case Left(generic) => generic }))
     }
   }
 
@@ -101,10 +104,7 @@ object TlvCodecs {
     * @tparam T stream namespace.
     */
   def tlvStream[T <: Tlv](codec: DiscriminatorCodec[T, UInt64]): Codec[TlvStream[T]] = list(discriminatorFallback(genericTlv, codec)).exmap(
-    records => validateStream(codec, records) match {
-      case Left(err) => Attempt.Failure(err)
-      case _ => Attempt.Successful(TlvStream(records.collect { case Right(tlv) => tlv }, records.collect { case Left(generic) => generic }))
-    },
+    records => validateStream(codec, records),
     (stream: TlvStream[T]) => {
       val records: List[Either[GenericTlv, T]] = (stream.records.map(Right(_)) ++ stream.unknown.map(Left(_))).toList
       val recordsAndTags = records.map({
