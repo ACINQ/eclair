@@ -154,7 +154,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         if (remoteFeatures.hasChannelRangeQueriesOptional || remoteFeatures.hasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
           // NB: we always add extended info; if peer doesn't understand them it will ignore them
-          router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS))
+          router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = Some(QueryChannelRangeExtension(QueryChannelRangeExtension.WANT_ALL)))
         }
 
         // let's bring existing/requested channels online

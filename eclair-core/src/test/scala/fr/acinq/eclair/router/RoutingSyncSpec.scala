@@ -67,7 +67,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     def counts = BasicSyncResult(ranges.size, queries.size, channels.size, updates.size)
   }
 
-  def sync(src: TestFSMRef[State, Data, Router], tgt: TestFSMRef[State, Data, Router], extendedQueryFlags_opt: Option[ExtendedQueryFlags]): SyncResult = {
+  def sync(src: TestFSMRef[State, Data, Router], tgt: TestFSMRef[State, Data, Router], extendedQueryFlags_opt: Option[QueryChannelRangeExtension]): SyncResult = {
     val sender = TestProbe()
     val pipe = TestProbe()
     pipe.ignoreMsg {
@@ -161,7 +161,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
     val charlieId = randomKey.publicKey
     val sender = TestProbe()
-    val extendedQueryFlags_opt = Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS)
+    val extendedQueryFlags_opt = Some(QueryChannelRangeExtension(QueryChannelRangeExtension.WANT_ALL))
 
     // tell alice to sync with bob
     assert(BasicSyncResult(ranges = 1, queries = 0, channels = 0, updates = 0) === sync(alice, bob, extendedQueryFlags_opt).counts)

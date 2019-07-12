@@ -16,12 +16,19 @@
 
 package fr.acinq.eclair.wire
 
+import java.net.{Inet4Address, Inet6Address, InetAddress}
+
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.wire
+import fr.acinq.eclair.{UInt64, wire}
 import fr.acinq.eclair.wire.CommonCodecs._
-import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs._
+import scodec.{Attempt, Codec, Err}
+
+import scala.util.{Failure, Success, Try}
+import scodec.Codec
 
 /**
   * Created by PM on 15/11/2016.
@@ -220,49 +227,79 @@ object LightningMessageCodecs {
 
   val encodedQueryFlagsCodec: Codec[EncodedQueryFlags] =
     discriminated[EncodedQueryFlags].by(byte)
-      .\(0) { case a@EncodedQueryFlags(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(byte)).as[EncodedQueryFlags])
-      .\(1) { case a@EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(byte))).as[EncodedQueryFlags])
+      .\(0) { case a@EncodedQueryFlags(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(varintoverflow)).as[EncodedQueryFlags])
+      .\(1) { case a@EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(varintoverflow))).as[EncodedQueryFlags])
 
-  val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = (
-    ("chainHash" | bytes32) ::
-      ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
-      ("queryFlags_opt" | optional(bitsRemaining, variableSizeBytes(uint16, encodedQueryFlagsCodec)))
+  val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = {
+    val extensionsCodec = TlvCodecs.tlvStream(discriminated[Tlv].by(varint)
+      .typecase(EncodedQueryFlags.`type`, variableSizeBytesLong(varintoverflow, encodedQueryFlagsCodec))
+    )
+
+    Codec(
+      ("chainHash" | bytes32) ::
+        ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
+        ("extensions" | extensionsCodec)
     ).as[QueryShortChannelIds]
+  }
 
   val replyShortChanelIdsEndCodec: Codec[ReplyShortChannelIdsEnd] = (
     ("chainHash" | bytes32) ::
       ("complete" | byte)
     ).as[ReplyShortChannelIdsEnd]
 
-  val extendedQueryFlagsCodec: Codec[ExtendedQueryFlags] =
-    discriminated[ExtendedQueryFlags].by(byte)
-    .typecase(1, provide(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS))
+  val queryChannelRangeExtensionCodec: Codec[QueryChannelRangeExtension] = Codec(("flag" | varintoverflow)).as[QueryChannelRangeExtension]
 
-  val queryChannelRangeCodec: Codec[QueryChannelRange] = (
-    ("chainHash" | bytes32) ::
-      ("firstBlockNum" | uint32) ::
-      ("numberOfBlocks" | uint32) ::
-      ("optionExtendedQueryFlags" | optional(bitsRemaining, extendedQueryFlagsCodec))
-    ).as[QueryChannelRange]
+  val queryChannelRangeExtensionType = UInt64(1)
 
-  val timestampsAndChecksumsCodec: Codec[TimestampsAndChecksums] = (
-        ("timestamp1" | uint32) ::
-        ("timestamp2" | uint32) ::
-        ("checksum1" | uint32) ::
-        ("checksum2" | uint32)
-      ).as[TimestampsAndChecksums]
+  val queryChannelRangeCodec: Codec[QueryChannelRange] = {
+    val extensionsCodec = TlvCodecs.tlvStream(discriminated[Tlv].by(varint)
+      .typecase(queryChannelRangeExtensionType, variableSizeBytesLong(varintoverflow, queryChannelRangeExtensionCodec))
+    )
 
-  val extendedInfoCodec: Codec[ExtendedInfo] = list(timestampsAndChecksumsCodec).as[ExtendedInfo]
+    Codec(
+      ("chainHash" | bytes32) ::
+        ("firstBlockNum" | uint32) ::
+        ("numberOfBlocks" | uint32) ::
+        ("extensions" | extensionsCodec)
+      ).as[QueryChannelRange]
+  }
 
-  val replyChannelRangeCodec: Codec[ReplyChannelRange] = (
-    ("chainHash" | bytes32) ::
-      ("firstBlockNum" | uint32) ::
-      ("numberOfBlocks" | uint32) ::
-      ("complete" | byte) ::
-      ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
-      ("optionExtendedQueryFlags_opt" | optional(bitsRemaining, extendedQueryFlagsCodec)) ::
-      ("extendedInfo_opt" | optional(bitsRemaining, variableSizeBytes(uint16, extendedInfoCodec)))
-    ).as[ReplyChannelRange]
+  val timestampsCodec: Codec[Timestamps] = (
+    ("checksum1" | uint32) ::
+      ("checksum2" | uint32)
+    ).as[Timestamps]
+
+  val encodedTimestampsCodec: Codec[EncodedTimestamps] =
+    discriminated[EncodedTimestamps].by(byte)
+      .\(0) { case a@EncodedTimestamps(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(timestampsCodec)).as[EncodedTimestamps])
+      .\(1) { case a@EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(timestampsCodec))).as[EncodedTimestamps])
+
+  val encodedTimestampsType = UInt64(1)
+
+  val checksumsCodec: Codec[Checksums] = (
+    ("checksum1" | uint32) ::
+      ("checksum2" | uint32)
+    ).as[Checksums]
+
+  val encodedChecksumsCodec: Codec[EncodedChecksums] = Codec(("checksums" | list(checksumsCodec))).as[EncodedChecksums]
+
+  val encodedChecksumsType = UInt64(3)
+
+  val replyChannelRangeCodec: Codec[ReplyChannelRange] =  {
+    val extensionsCodec = TlvCodecs.tlvStream(discriminated[Tlv].by(varint)
+      .typecase(encodedTimestampsType, variableSizeBytesLong(varintoverflow, encodedTimestampsCodec))
+      .typecase(encodedChecksumsType, variableSizeBytesLong(varintoverflow, encodedChecksumsCodec))
+    )
+
+    Codec(
+      ("chainHash" | bytes32) ::
+        ("firstBlockNum" | uint32) ::
+        ("numberOfBlocks" | uint32) ::
+        ("complete" | byte) ::
+        ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
+        ("extensions" | extensionsCodec)
+      ).as[ReplyChannelRange]
+  }
 
   val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
     ("chainHash" | bytes32) ::

@@ -229,7 +229,81 @@ case class PerHopPayload(shortChannelId: ShortChannelId,
                          amtToForward: Long,
                          outgoingCltvValue: Long)
 
-// @formatter:off
+
+/**
+  * Optional TLV-based query message that can be appended to QueryShortChannelIds
+  * @param encoding 0 means uncompressed, 1 means compressed with zlib
+  * @param array array of query flags, each flags specifies the info we want for a given channel
+  */
+case class EncodedQueryFlags(encoding: EncodingType, array: List[Long]) extends Tlv
+
+object EncodedQueryFlags {
+  val `type` = UInt64(1)
+}
+
+case object QueryFlagType {
+  val INCLUDE_CHANNEL_ANNOUNCEMENT: Long = 1
+  val INCLUDE_CHANNEL_UPDATE_1: Long = 2
+  val INCLUDE_CHANNEL_UPDATE_2: Long = 4
+  val INCLUDE_ALL: Long = (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2)
+
+  def includeAnnouncement(flag: Long) = (flag & INCLUDE_CHANNEL_ANNOUNCEMENT) != 0
+
+  def includeUpdate1(flag: Long) = (flag & INCLUDE_CHANNEL_UPDATE_1) != 0
+
+  def includeUpdate2(flag: Long) = (flag & INCLUDE_CHANNEL_UPDATE_2) != 0
+}
+
+/**
+  * Optional query flag that is appended to QueryChannelRange
+  * @param flag bit 1 set means I want timestamps, bit 2 set means I want checksums
+  */
+case class QueryChannelRangeExtension(flag: Long) extends Tlv {
+  val wantTimestamps = QueryChannelRangeExtension.wantTimestamps(flag)
+
+  val wantChecksums = QueryChannelRangeExtension.wantChecksums(flag)
+}
+
+case object QueryChannelRangeExtension {
+  val WANT_TIMESTAMPS: Long = 1
+  val WANT_CHECKSUMS: Long = 2
+  val WANT_ALL: Long = (WANT_TIMESTAMPS | WANT_CHECKSUMS)
+
+  def wantTimestamps(flag: Long) = (flag & WANT_TIMESTAMPS) != 0
+
+  def wantChecksums(flag: Long) = (flag & WANT_CHECKSUMS) != 0
+}
+
+
+/**
+  *
+  * @param timestamp1 timestamp for node 1, or 0
+  * @param timestamp2 timestamp for node 2, or 0
+  */
+case class Timestamps(timestamp1: Long, timestamp2: Long)
+
+/**
+  * Optional timestamps TLV that can be appended to ReplyChannelRange
+  * @param encoding same convention as for short channel ids
+  * @param timestamps
+  */
+case class EncodedTimestamps(encoding: EncodingType, timestamps: List[Timestamps]) extends Tlv
+
+/**
+  *
+  * @param checksum1 checksum for node 1, or 0
+  * @param checksum2 checksum for node 2, or 0
+  */
+case class Checksums(checksum1: Long, checksum2: Long)
+
+/**
+  * Optional checksums TLV that can be appended to ReplyChannelRange
+  * There is no leading encoding byte, as compression would ne be very effective
+  * @param checksums
+  */
+case class EncodedChecksums(checksums: List[Checksums]) extends Tlv
+
+// @formatter:on
 sealed trait EncodingType
 object EncodingType {
   case object UNCOMPRESSED extends EncodingType
@@ -237,61 +311,68 @@ object EncodingType {
 }
 // @formatter:on
 
-case object QueryFlagTypes {
-  val INCLUDE_CHANNEL_ANNOUNCEMENT: Byte = 1
-  val INCLUDE_CHANNEL_UPDATE_1: Byte = 2
-  val INCLUDE_CHANNEL_UPDATE_2: Byte = 4
-  val INCLUDE_ALL: Byte = (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte
-
-  def includeAnnouncement(flag: Byte) = (flag & QueryFlagTypes.INCLUDE_CHANNEL_ANNOUNCEMENT) != 0
-
-  def includeUpdate1(flag: Byte) = (flag & QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_1) != 0
-
-  def includeUpdate2(flag: Byte) = (flag & QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_2) != 0
-}
 
 case class EncodedShortChannelIds(encoding: EncodingType,
                                   array: List[ShortChannelId])
 
-case class EncodedQueryFlags(encoding: EncodingType,
-                             array: List[Byte])
 
 case class QueryShortChannelIds(chainHash: ByteVector32,
+                                shortChannelIds: EncodedShortChannelIds,
+                                extensions: TlvStream[Tlv]) extends RoutingMessage with HasChainHash {
+  val queryFlags: Option[EncodedQueryFlags] = extensions.records collectFirst { case flags: EncodedQueryFlags => flags }
+}
+
+object QueryShortChannelIds {
+  def apply(chainHash: ByteVector32, shortChannelIds: EncodedShortChannelIds, flags: Option[EncodedQueryFlags]) = new QueryShortChannelIds(chainHash, shortChannelIds, TlvStream(flags.toList))
+}
+
+case class QueryShortChannelIdsOld(chainHash: ByteVector32,
                                 shortChannelIds: EncodedShortChannelIds,
                                 queryFlags_opt: Option[EncodedQueryFlags]) extends RoutingMessage with HasChainHash
 
 case class ReplyShortChannelIdsEnd(chainHash: ByteVector32,
                                    complete: Byte) extends RoutingMessage with HasChainHash
 
-// @formatter:off
-sealed trait ExtendedQueryFlags
-object ExtendedQueryFlags {
-  case object TIMESTAMPS_AND_CHECKSUMS extends ExtendedQueryFlags
-}
-// @formatter:on
 
 case class QueryChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
-                             extendedQueryFlags_opt: Option[ExtendedQueryFlags]) extends RoutingMessage with HasChainHash
+                             extensions: TlvStream[Tlv]) extends RoutingMessage {
+  val queryExtension: Option[QueryChannelRangeExtension] = extensions.records collectFirst { case q: QueryChannelRangeExtension => q }
+}
+
+object QueryChannelRange {
+  def apply(chainHash: ByteVector32, firstBlockNum: Long, numberOfBlocks: Long, queryExtension: Option[QueryChannelRangeExtension]) = {
+    new QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, TlvStream(queryExtension.toList))
+  }
+}
 
 case class ReplyChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
                              complete: Byte,
                              shortChannelIds: EncodedShortChannelIds,
-                             extendedQueryFlags_opt: Option[ExtendedQueryFlags],
-                             extendedInfo_opt: Option[ExtendedInfo]) extends RoutingMessage with HasChainHash {
-  extendedInfo_opt.foreach(extendedInfo => require(shortChannelIds.array.size == extendedInfo.array.size, s"shortChannelIds.size=${shortChannelIds.array.size} != extendedInfo.size=${extendedInfo.array.size}"))
+                             extensions: TlvStream[Tlv]) extends RoutingMessage {
+  val timestamps: Option[EncodedTimestamps] = extensions.records collectFirst { case ts: EncodedTimestamps => ts }
+
+  val checksums: Option[EncodedChecksums] = extensions.records collectFirst { case cs: EncodedChecksums => cs }
 }
+
+object ReplyChannelRange {
+  def apply(chainHash: ByteVector32,
+            firstBlockNum: Long,
+            numberOfBlocks: Long,
+            complete: Byte,
+            shortChannelIds: EncodedShortChannelIds,
+            timestamps: Option[EncodedTimestamps],
+            checksums: Option[EncodedChecksums]) = {
+    timestamps.foreach(ts => require(ts.timestamps.length == shortChannelIds.array.length))
+    checksums.foreach(cs => require(cs.checksums.length == shortChannelIds.array.length))
+    new ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, complete, shortChannelIds, TlvStream(timestamps.toList ::: checksums.toList))
+  }
+}
+
 
 case class GossipTimestampFilter(chainHash: ByteVector32,
                                  firstTimestamp: Long,
                                  timestampRange: Long) extends RoutingMessage with HasChainHash
-
-case class TimestampsAndChecksums(timestamp1: Long,
-                                  checksum1: Long,
-                                  timestamp2: Long,
-                                  checksum2: Long)
-
-case class ExtendedInfo(array: List[TimestampsAndChecksums])
