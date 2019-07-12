@@ -49,13 +49,13 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPaymentToRoute, WaitingForRequest) =>
       val send = SendPayment(c.amountMsat, c.paymentHash, c.hops.last, finalCltvExpiry = c.finalCltvExpiry, maxAttempts = 1)
-      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, feeMsat = 0L, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
       router ! FinalizeRoute(c.hops)
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
 
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
-      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, feeMsat = 0L, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 
@@ -72,7 +72,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
 
     case Event(Status.Failure(t), WaitingForRoute(s, c, failures)) =>
       reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ LocalFailure(t)))
-      paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+      paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, preimage = None, feeMsat = 0L)
       stop(FSM.Normal)
   }
 
@@ -80,9 +80,10 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
     case Event("ok", _) => stay()
 
     case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, c, cmd, _, _, _, _, hops)) =>
-      paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.SUCCEEDED, preimage = Some(fulfill.paymentPreimage))
+      val feesPaid = MilliSatoshi(cmd.amountMsat - c.amountMsat)
+      paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.SUCCEEDED, preimage = Some(fulfill.paymentPreimage), feeMsat = feesPaid.amount)
       reply(s, PaymentSucceeded(id, cmd.amountMsat, c.paymentHash, fulfill.paymentPreimage, hops))
-      context.system.eventStream.publish(PaymentSent(id, MilliSatoshi(c.amountMsat), MilliSatoshi(cmd.amountMsat - c.amountMsat), cmd.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
+      context.system.eventStream.publish(PaymentSent(id, MilliSatoshi(c.amountMsat), feesPaid, cmd.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
       stop(FSM.Normal)
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
@@ -91,7 +92,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
           // if destination node returns an error, we fail the payment immediately
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
           reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ RemoteFailure(hops, e)))
-          paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+          paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, preimage = None, feeMsat = 0L)
           stop(FSM.Normal)
         case res if failures.size + 1 >= c.maxAttempts =>
           // otherwise we never try more than maxAttempts, no matter the kind of error returned
@@ -105,7 +106,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
           }
           log.warning(s"too many failed attempts, failing the payment")
           reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ failure))
-          paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+          paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, preimage = None, feeMsat = 0L)
           stop(FSM.Normal)
         case Failure(t) =>
           log.warning(s"cannot parse returned error: ${t.getMessage}")
@@ -170,7 +171,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
 
     case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
       if (failures.size + 1 >= c.maxAttempts) {
-        paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+        paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, preimage = None, feeMsat = 0L)
         reply(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))
         stop(FSM.Normal)
       } else {

@@ -137,7 +137,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case Local(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost,
           // we publish the failure on the event stream and update the status in paymentDb
-          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, preimage = None, feeMsat = 0L)
           context.system.eventStream.publish(PaymentFailed(id, paymentHash, Nil))
         case Local(_, Some(sender)) =>
           sender ! Status.Failure(addFailed)
@@ -162,7 +162,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           context.system.eventStream.publish(PaymentSent(id, MilliSatoshi(add.amountMsat), feesPaid, add.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
           // we sent the payment, but we probably restarted and the reference to the original sender was lost,
           // we publish the failure on the event stream and update the status in paymentDb
-          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.SUCCEEDED, Some(fulfill.paymentPreimage))
+          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.SUCCEEDED, Some(fulfill.paymentPreimage), feeMsat = 0L)
           context.system.eventStream.publish(PaymentSucceeded(id, add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil)) //
         case Local(_, Some(sender)) =>
           sender ! fulfill
@@ -177,7 +177,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case Local(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost
           // we publish the failure on the event stream and update the status in paymentDb
-          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, preimage = None, feeMsat = 0L)
           context.system.eventStream.publish(PaymentFailed(id, add.paymentHash, Nil))
         case Local(_, Some(sender)) =>
           sender ! fail
@@ -191,7 +191,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case Local(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost
           // we publish the failure on the event stream and update the status in paymentDb
-          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, preimage = None, feeMsat = 0L)
           context.system.eventStream.publish(PaymentFailed(id, add.paymentHash, Nil))
         case Local(_, Some(sender)) =>
           sender ! fail

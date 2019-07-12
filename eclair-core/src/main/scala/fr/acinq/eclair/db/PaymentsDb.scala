@@ -26,7 +26,7 @@ trait PaymentsDb {
   def addOutgoingPayment(outgoingPayment: OutgoingPayment)
 
   // updates the status of the payment, if the newStatus is SUCCEEDED you must supply a preimage
-  def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value, preimage: Option[ByteVector32] = None)
+  def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value, preimage: Option[ByteVector32], feeMsat: Long)
 
   def getOutgoingPayment(id: UUID): Option[OutgoingPayment]
 
@@ -77,7 +77,7 @@ case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, received
   * @param completedAt absolute time in seconds since UNIX epoch when the payment succeeded.
   * @param status      current status of the payment.
   */
-case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, preimage:Option[ByteVector32], amountMsat: Long, createdAt: Long, completedAt: Option[Long], status: OutgoingPaymentStatus.Value)
+case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, preimage: Option[ByteVector32], amountMsat: Long, feeMsat: Long, createdAt: Long, completedAt: Option[Long], status: OutgoingPaymentStatus.Value)
 
 object OutgoingPaymentStatus extends Enumeration {
   val PENDING = Value(1, "PENDING")
