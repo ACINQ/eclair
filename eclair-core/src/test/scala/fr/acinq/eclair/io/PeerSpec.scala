@@ -30,7 +30,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{Rebroadcast, RoutingSyncSpec}
-import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, EncodedShortChannelIds, EncodingType, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong, QueryShortChannelIds, TlvStream}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, EncodedShortChannelIds, EncodingType, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong, QueryShortChannelIds, Tlv, TlvStream}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
@@ -321,7 +321,7 @@ class PeerSpec extends TestkitBaseClass {
     val query = QueryShortChannelIds(
       Alice.nodeParams.chainHash,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42000))),
-      TlvStream(List()))
+      TlvStream(List.empty[Tlv]))
 
     // make sure that routing messages go through
     for (ann <- channels ++ updates) {

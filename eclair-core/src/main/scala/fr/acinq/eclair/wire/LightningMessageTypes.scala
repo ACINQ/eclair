@@ -235,9 +235,7 @@ case class PerHopPayload(shortChannelId: ShortChannelId,
   * @param encoding 0 means uncompressed, 1 means compressed with zlib
   * @param array array of query flags, each flags specifies the info we want for a given channel
   */
-case class EncodedQueryFlags(encoding: EncodingType, array: List[Long]) extends Tlv {
-  override val `type` = EncodedQueryFlags.`type`
-}
+case class EncodedQueryFlags(encoding: EncodingType, array: List[Long]) extends Tlv
 
 object EncodedQueryFlags {
   val `type` = UInt64(1)
@@ -261,16 +259,12 @@ case object QueryFlagType {
   * @param flag bit 1 set means I want timestamps, bit 2 set means I want checksums
   */
 case class QueryChannelRangeExtension(flag: Long) extends Tlv {
-  override val `type` = QueryChannelRangeExtension.`type`
-
   val wantTimestamps = QueryChannelRangeExtension.wantTimestamps(flag)
 
   val wantChecksums = QueryChannelRangeExtension.wantChecksums(flag)
 }
 
 case object QueryChannelRangeExtension {
-  val `type` = UInt64(1)
-
   val WANT_TIMESTAMPS: Long = 1
   val WANT_CHECKSUMS: Long = 2
   val WANT_ALL: Long = (WANT_TIMESTAMPS | WANT_CHECKSUMS)
@@ -293,13 +287,7 @@ case class Timestamps(timestamp1: Long, timestamp2: Long)
   * @param encoding same convention as for short channel ids
   * @param timestamps
   */
-case class EncodedTimestamps(encoding: EncodingType, timestamps: List[Timestamps]) extends Tlv {
-  override val `type` = EncodedTimestamps.`type`
-}
-
-object EncodedTimestamps {
- val `type` = UInt64(1)
-}
+case class EncodedTimestamps(encoding: EncodingType, timestamps: List[Timestamps]) extends Tlv
 
 /**
   *
@@ -313,13 +301,7 @@ case class Checksums(checksum1: Long, checksum2: Long)
   * There is no leading encoding byte, as compression would ne be very effective
   * @param checksums
   */
-case class EncodedChecksums(checksums: List[Checksums]) extends Tlv {
-  override val `type` = EncodedChecksums.`type`
-}
-
-object EncodedChecksums {
-   val `type` = UInt64(3)
-}
+case class EncodedChecksums(checksums: List[Checksums]) extends Tlv
 
 // @formatter:on
 sealed trait EncodingType
@@ -336,7 +318,7 @@ case class EncodedShortChannelIds(encoding: EncodingType,
 
 case class QueryShortChannelIds(chainHash: ByteVector32,
                                 shortChannelIds: EncodedShortChannelIds,
-                                extensions: TlvStream) extends RoutingMessage with HasChainHash {
+                                extensions: TlvStream[Tlv]) extends RoutingMessage with HasChainHash {
   val queryFlags: Option[EncodedQueryFlags] = extensions.records collectFirst { case flags: EncodedQueryFlags => flags }
 }
 
@@ -355,7 +337,7 @@ case class ReplyShortChannelIdsEnd(chainHash: ByteVector32,
 case class QueryChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
-                             extensions: TlvStream) extends RoutingMessage {
+                             extensions: TlvStream[Tlv]) extends RoutingMessage {
   val queryExtension: Option[QueryChannelRangeExtension] = extensions.records collectFirst { case q: QueryChannelRangeExtension => q }
 }
 
@@ -370,7 +352,7 @@ case class ReplyChannelRange(chainHash: ByteVector32,
                              numberOfBlocks: Long,
                              complete: Byte,
                              shortChannelIds: EncodedShortChannelIds,
-                             extensions: TlvStream) extends RoutingMessage {
+                             extensions: TlvStream[Tlv]) extends RoutingMessage {
   val timestamps: Option[EncodedTimestamps] = extensions.records collectFirst { case ts: EncodedTimestamps => ts }
 
   val checksums: Option[EncodedChecksums] = extensions.records collectFirst { case cs: EncodedChecksums => cs }

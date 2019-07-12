@@ -20,8 +20,8 @@ import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.eclair.{UInt64, randomBytes32}
 import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.{UInt64, randomBytes32}
 import org.scalatest.FunSuite
 import scodec.bits.{BitVector, HexStringSyntax}
 

@@ -11,7 +11,7 @@ class ExtendedQueriesCodecsSpec extends FunSuite {
     val query_short_channel_id = QueryShortChannelIds(
       Block.RegtestGenesisBlock.blockId,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
-      TlvStream(List()))
+      TlvStream(List.empty[Tlv]))
 
     val encoded = queryShortChannelIdsCodec.encode(query_short_channel_id).require
     val decoded = queryShortChannelIdsCodec.decode(encoded).require.value
@@ -22,7 +22,7 @@ class ExtendedQueriesCodecsSpec extends FunSuite {
     val query_short_channel_id = QueryShortChannelIds(
       Block.RegtestGenesisBlock.blockId,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
-      TlvStream(List(EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1.toByte, 2.toByte, 3.toByte, 4.toByte, 5.toByte)))))
+      TlvStream[Tlv](List(EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1.toByte, 2.toByte, 3.toByte, 4.toByte, 5.toByte)))))
 
     val encoded = queryShortChannelIdsCodec.encode(query_short_channel_id).require
     val decoded = queryShortChannelIdsCodec.decode(encoded).require.value
@@ -33,11 +33,9 @@ class ExtendedQueriesCodecsSpec extends FunSuite {
     val query_short_channel_id = QueryShortChannelIds(
       Block.RegtestGenesisBlock.blockId,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
-      TlvStream(
-        List(
-          EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1.toByte, 2.toByte, 3.toByte, 4.toByte, 5.toByte)),
-          GenericTlv(UInt64(43), ByteVector.fromValidHex("deadbeef")))
-      )
+      TlvStream[Tlv](
+        EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1.toByte, 2.toByte, 3.toByte, 4.toByte, 5.toByte)) :: Nil,
+        GenericTlv(UInt64(43), ByteVector.fromValidHex("deadbeef")) :: Nil)
     )
 
     val encoded = queryShortChannelIdsCodec.encode(query_short_channel_id).require
@@ -81,9 +79,9 @@ class ExtendedQueriesCodecsSpec extends FunSuite {
       TlvStream(
         List(
           EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1, 1), Timestamps(2, 2), Timestamps(3, 3))),
-          EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3))),
-          GenericTlv(UInt64(7), ByteVector.fromValidHex("deadbeef"))
-        )
+          EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3)))
+        ),
+        GenericTlv(UInt64(7), ByteVector.fromValidHex("deadbeef")) :: Nil
       )
     )
 

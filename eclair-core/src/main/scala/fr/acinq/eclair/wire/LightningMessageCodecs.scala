@@ -249,9 +249,11 @@ object LightningMessageCodecs {
 
   val queryChannelRangeExtensionCodec: Codec[QueryChannelRangeExtension] = Codec(("flag" | varintoverflow)).as[QueryChannelRangeExtension]
 
+  val queryChannelRangeExtensionType = UInt64(1)
+
   val queryChannelRangeCodec: Codec[QueryChannelRange] = {
     val extensionsCodec = TlvCodecs.tlvStream(discriminated[Tlv].by(varint)
-      .typecase(QueryChannelRangeExtension.`type`, variableSizeBytesLong(varintoverflow, queryChannelRangeExtensionCodec))
+      .typecase(queryChannelRangeExtensionType, variableSizeBytesLong(varintoverflow, queryChannelRangeExtensionCodec))
     )
 
     Codec(
@@ -272,6 +274,8 @@ object LightningMessageCodecs {
       .\(0) { case a@EncodedTimestamps(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(timestampsCodec)).as[EncodedTimestamps])
       .\(1) { case a@EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(timestampsCodec))).as[EncodedTimestamps])
 
+  val encodedTimestampsType = UInt64(1)
+
   val checksumsCodec: Codec[Checksums] = (
     ("checksum1" | uint32) ::
       ("checksum2" | uint32)
@@ -279,10 +283,12 @@ object LightningMessageCodecs {
 
   val encodedChecksumsCodec: Codec[EncodedChecksums] = Codec(("checksums" | list(checksumsCodec))).as[EncodedChecksums]
 
+  val encodedChecksumsType = UInt64(3)
+
   val replyChannelRangeCodec: Codec[ReplyChannelRange] =  {
     val extensionsCodec = TlvCodecs.tlvStream(discriminated[Tlv].by(varint)
-      .typecase(EncodedTimestamps.`type`, variableSizeBytesLong(varintoverflow, encodedTimestampsCodec))
-      .typecase(EncodedChecksums.`type`, variableSizeBytesLong(varintoverflow, encodedChecksumsCodec))
+      .typecase(encodedTimestampsType, variableSizeBytesLong(varintoverflow, encodedTimestampsCodec))
+      .typecase(encodedChecksumsType, variableSizeBytesLong(varintoverflow, encodedChecksumsCodec))
     )
 
     Codec(
