@@ -58,7 +58,7 @@ Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful function
 * eclair-node, which is a headless application that you can run on servers and desktops, and control from the command line
 * eclair-node-gui, which also includes a JavaFX GUI
 
-To run Eclair, you first need to install Java, we recommend that you use [OpenJDK 11](https://jdk.java.net/11/). Eclair will also run on Oracle JDK 1.8, Oracle JDK 11, and other versions of OpenJDK but we don't recommend using them.
+To run Eclair, you first need to install Java, we recommend that you use [OpenJDK 11](https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot). Eclair will also run on Oracle JDK 1.8, Oracle JDK 11, and other versions of OpenJDK but we don't recommend using them.
 
 Then download our latest [release](https://github.com/ACINQ/eclair/releases) and depending on whether or not you want a GUI run the following command:
 * with GUI:
@@ -161,6 +161,11 @@ If you want to persist the data directory, you can make the volume to your host 
 
 ```
 docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConsole" acinq/eclair
+```
+
+If you enabled the API you can check the status of eclair using the command line tool:
+```
+docker exec <container_name> eclair-cli -p foobar getinfo
 ```
 
 ## Plugins

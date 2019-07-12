@@ -164,7 +164,8 @@ case class ChannelAnnouncement(nodeSignature1: ByteVector64,
                                nodeId1: PublicKey,
                                nodeId2: PublicKey,
                                bitcoinKey1: PublicKey,
-                               bitcoinKey2: PublicKey) extends RoutingMessage with HasChainHash
+                               bitcoinKey2: PublicKey,
+                               unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with HasChainHash
 
 case class Color(r: Byte, g: Byte, b: Byte) {
   override def toString: String = f"#$r%02x$g%02x$b%02x" // to hexa s"#  ${r}%02x ${r & 0xFF}${g & 0xFF}${b & 0xFF}"
@@ -181,10 +182,6 @@ object NodeAddress {
     *
     * We don't attempt to resolve onion addresses (it will be done by the tor proxy), so we just recognize them based on
     * the .onion TLD and rely on their length to separate v2/v3.
-    *
-    * @param host
-    * @param port
-    * @return
     */
   def fromParts(host: String, port: Int): Try[NodeAddress] = Try {
     host match {
@@ -210,7 +207,8 @@ case class NodeAnnouncement(signature: ByteVector64,
                             nodeId: PublicKey,
                             rgbColor: Color,
                             alias: String,
-                            addresses: List[NodeAddress]) extends RoutingMessage with HasTimestamp
+                            addresses: List[NodeAddress],
+                            unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with HasTimestamp
 
 case class ChannelUpdate(signature: ByteVector64,
                          chainHash: ByteVector32,
@@ -222,7 +220,8 @@ case class ChannelUpdate(signature: ByteVector64,
                          htlcMinimumMsat: Long,
                          feeBaseMsat: Long,
                          feeProportionalMillionths: Long,
-                         htlcMaximumMsat: Option[Long]) extends RoutingMessage with HasTimestamp with HasChainHash {
+                         htlcMaximumMsat: Option[Long],
+                         unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with HasTimestamp with HasChainHash {
   require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
 }
 

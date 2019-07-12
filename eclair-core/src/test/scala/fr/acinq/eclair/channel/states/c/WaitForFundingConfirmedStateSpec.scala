@@ -18,11 +18,13 @@ package fr.acinq.eclair.channel.states.c
 
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Satoshi, Script, Transaction}
+import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.scalatest.Outcome
@@ -63,7 +65,8 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
   test("recv FundingLocked") { f =>
     import f._
     // make bob send a FundingLocked msg
-    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42)
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
+    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42, fundingTx)
     val msg = bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].deferred.contains(msg))
@@ -72,10 +75,29 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
 
   test("recv BITCOIN_FUNDING_DEPTHOK") { f =>
     import f._
-    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42)
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
+    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42, fundingTx)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
     alice2blockchain.expectMsgType[WatchLost]
     alice2bob.expectMsgType[FundingLocked]
+  }
+
+  test("recv BITCOIN_FUNDING_DEPTHOK (bad funding pubkey script)") { f =>
+    import f._
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
+    val badOutputScript = fundingTx.txOut(0).copy(publicKeyScript = Script.write(multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
+    val badFundingTx = fundingTx.copy(txOut = Seq(badOutputScript))
+    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42, badFundingTx)
+    awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv BITCOIN_FUNDING_DEPTHOK (bad funding amount)") { f =>
+    import f._
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
+    val badOutputAmount = fundingTx.txOut(0).copy(amount = Satoshi(1234567))
+    val badFundingTx = fundingTx.copy(txOut = Seq(badOutputAmount))
+    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42, badFundingTx)
+    awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv BITCOIN_FUNDING_PUBLISH_FAILED") { f =>

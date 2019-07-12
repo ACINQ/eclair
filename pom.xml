@@ -20,7 +20,7 @@
 
     <groupId>fr.acinq.eclair</groupId>
     <artifactId>eclair_2.11</artifactId>
-    <version>0.3.1-SNAPSHOT</version>
+    <version>0.3.2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -130,6 +130,11 @@
 			<!-- needed to compile Scala code on JDK9+ -->
                         <arg>-nobootcp</arg>
                     </args>
+                    <jvmArgs>
+                        <jvmArg>-Xmx1024m</jvmArg>
+                        <jvmArg>-Xms1024m</jvmArg>
+                        <jvmArg>-Xss32m</jvmArg>
+                    </jvmArgs>
                     <scalaCompatVersion>${scala.version.short}</scalaCompatVersion>
                 </configuration>
                 <executions>
