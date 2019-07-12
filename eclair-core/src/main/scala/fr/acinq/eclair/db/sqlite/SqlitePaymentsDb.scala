@@ -75,9 +75,9 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value, preimage: Option[ByteVector32], feeMsat: Long): Unit = {
-    require((newStatus == SUCCEEDED && preimage.isDefined) || (newStatus == FAILED && preimage.isEmpty), "Wrong combination of state/preimage")
+    require((newStatus == SUCCEEDED && preimage.isDefined) || (newStatus != SUCCEEDED && preimage.isEmpty && feeMsat == 0L), "Wrong combination of state/preimage")
 
-    using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, preimage, status, fee_msat) = (?, ?, ?,?) WHERE id = ? AND completed_at IS NULL")) { statement =>
+    using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, preimage, status, fee_msat) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
       statement.setLong(1, Platform.currentTime)
       statement.setBytes(2, if (preimage.isEmpty) null else preimage.get.toArray)
       statement.setString(3, newStatus.toString)

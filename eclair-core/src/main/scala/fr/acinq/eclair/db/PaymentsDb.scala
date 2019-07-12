@@ -73,6 +73,7 @@ case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, received
   * @param paymentHash payment_hash
   * @param preimage    the preimage of the payment_hash, known if the outgoing payment was successful
   * @param amountMsat  amount of the payment, in milli-satoshis
+  * @param feeMsat     amount of fees paid, in milli-satoshis
   * @param createdAt   absolute time in seconds since UNIX epoch when the payment was created.
   * @param completedAt absolute time in seconds since UNIX epoch when the payment succeeded.
   * @param status      current status of the payment.
