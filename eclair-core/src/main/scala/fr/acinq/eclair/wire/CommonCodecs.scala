@@ -18,14 +18,15 @@ package fr.acinq.eclair.wire
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.apache.commons.codec.binary.Base32
-import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
+import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
 
+import scala.Ordering.Implicits._
 import scala.util.Try
 
 /**
@@ -56,14 +57,15 @@ object CommonCodecs {
   val uint64L: Codec[UInt64] = bytes(8).xmap(b => UInt64(b.reverse), a => a.toByteVector.padLeft(8).reverse)
 
   /**
-    * We impose a minimal encoding on varint values to ensure that signed hashes can be reproduced easily.
+    * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be
+    * re-computed correctly.
     * If a value could be encoded with less bytes, it's considered invalid and results in a failed decoding attempt.
     *
-    * @param codec the integer codec (depends on the value).
+    * @param codec the value codec (depends on the value).
     * @param min   the minimal value that should be encoded.
     */
-  def uint64min(codec: Codec[UInt64], min: UInt64): Codec[UInt64] = codec.exmap({
-    case i if i < min => Attempt.failure(Err("varint was not minimally encoded"))
+  def minimalvalue[A : Ordering](codec: Codec[A], min: A): Codec[A] = codec.exmap({
+    case i if i < min => Attempt.failure(Err("value was not minimally encoded"))
     case i => Attempt.successful(i)
   }, Attempt.successful)
 
@@ -71,9 +73,9 @@ object CommonCodecs {
   // See https://bitcoin.org/en/developer-reference#compactsize-unsigned-integers for reference.
   val varint: Codec[UInt64] = discriminatorWithDefault(
     discriminated[UInt64].by(uint8L)
-      .\(0xff) { case i if i >= UInt64(0x100000000L) => i }(uint64min(uint64L, UInt64(0x100000000L)))
-      .\(0xfe) { case i if i >= UInt64(0x10000) => i }(uint64min(uint32L.xmap(UInt64(_), _.toBigInt.toLong), UInt64(0x10000)))
-      .\(0xfd) { case i if i >= UInt64(0xfd) => i }(uint64min(uint16L.xmap(UInt64(_), _.toBigInt.toInt), UInt64(0xfd))),
+      .\(0xff) { case i if i >= UInt64(0x100000000L) => i }(minimalvalue(uint64L, UInt64(0x100000000L)))
+      .\(0xfe) { case i if i >= UInt64(0x10000) => i }(minimalvalue(uint32L.xmap(UInt64(_), _.toBigInt.toLong), UInt64(0x10000)))
+      .\(0xfd) { case i if i >= UInt64(0xfd) => i }(minimalvalue(uint16L.xmap(UInt64(_), _.toBigInt.toInt), UInt64(0xfd))),
     uint8L.xmap(UInt64(_), _.toBigInt.toInt)
   )
 
