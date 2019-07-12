@@ -213,8 +213,8 @@ object Relayer extends Logging {
 
   // @formatter:off
   sealed trait NextPayload
-  case class FinalPayload(add: UpdateAddHtlc, payload: PerHopPayload) extends NextPayload
-  case class RelayPayload(add: UpdateAddHtlc, payload: PerHopPayload, nextPacket: OnionRoutingPacket) extends NextPayload {
+  case class FinalPayload(add: UpdateAddHtlc, payload: OnionForwardInfo) extends NextPayload
+  case class RelayPayload(add: UpdateAddHtlc, payload: OnionForwardInfo, nextPacket: OnionRoutingPacket) extends NextPayload {
     val relayFeeMsat: MilliSatoshi = add.amountMsat - payload.amtToForward
     val expiryDelta: CltvExpiryDelta = add.cltvExpiry - payload.outgoingCltvValue
   }
@@ -231,7 +231,7 @@ object Relayer extends Logging {
   def decryptPacket(add: UpdateAddHtlc, privateKey: PrivateKey): Either[BadOnion, NextPayload] =
     Sphinx.PaymentPacket.peel(privateKey, add.paymentHash, add.onionRoutingPacket) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
-        OnionCodecs.perHopPayloadCodec.decode(payload.bits) match {
+        OnionCodecs.legacyPerHopPayloadCodec.decode(payload.bits) match {
           case Attempt.Successful(DecodeResult(perHopPayload, remainder)) =>
             if (remainder.nonEmpty) {
               logger.warn(s"${remainder.length} bits remaining after per-hop payload decoding: there might be an issue with the onion codec")
@@ -259,9 +259,9 @@ object Relayer extends Logging {
   def handleFinal(finalPayload: FinalPayload): Either[CMD_FAIL_HTLC, UpdateAddHtlc] = {
     import finalPayload.add
     finalPayload.payload match {
-      case PerHopPayload(_, finalAmountToForward, _) if finalAmountToForward > add.amountMsat =>
+      case OnionForwardInfo(_, finalAmountToForward, _) if finalAmountToForward > add.amountMsat =>
         Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectHtlcAmount(add.amountMsat)), commit = true))
-      case PerHopPayload(_, _, finalOutgoingCltvValue) if finalOutgoingCltvValue != add.cltvExpiry =>
+      case OnionForwardInfo(_, _, finalOutgoingCltvValue) if finalOutgoingCltvValue != add.cltvExpiry =>
         Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectCltvExpiry(add.cltvExpiry)), commit = true))
       case _ =>
         Right(add)

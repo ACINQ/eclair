@@ -25,7 +25,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, PacketAndSecrets}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Hop
-import fr.acinq.eclair.wire.{ChannelUpdate, OnionCodecs, PerHopPayload}
+import fr.acinq.eclair.wire.{ChannelUpdate, OnionCodecs, OnionForwardInfo}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, nodeFee, randomBytes32}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
@@ -55,10 +55,10 @@ class HtlcGenerationSpec extends FunSuite {
     assert(firstAmountMsat === amount_ab)
     assert(firstExpiry === expiry_ab)
     assert(payloads ===
-      PerHopPayload(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc) ::
-        PerHopPayload(channelUpdate_cd.shortChannelId, amount_cd, expiry_cd) ::
-        PerHopPayload(channelUpdate_de.shortChannelId, amount_de, expiry_de) ::
-        PerHopPayload(ShortChannelId(0L), finalAmountMsat, finalExpiry) :: Nil)
+      OnionForwardInfo(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc) ::
+        OnionForwardInfo(channelUpdate_cd.shortChannelId, amount_cd, expiry_cd) ::
+        OnionForwardInfo(channelUpdate_de.shortChannelId, amount_de, expiry_de) ::
+        OnionForwardInfo(ShortChannelId(0L), finalAmountMsat, finalExpiry) :: Nil)
   }
 
   test("build onion") {
@@ -70,25 +70,25 @@ class HtlcGenerationSpec extends FunSuite {
 
     // let's peel the onion
     val Right(DecryptedPacket(bin_b, packet_c, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, packet_b)
-    val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
+    val payload_b = OnionCodecs.legacyPerHopPayloadCodec.decode(bin_b.toBitVector).require.value
     assert(packet_c.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_b.amtToForward === amount_bc)
     assert(payload_b.outgoingCltvValue === expiry_bc)
 
     val Right(DecryptedPacket(bin_c, packet_d, _)) = Sphinx.PaymentPacket.peel(priv_c.privateKey, paymentHash, packet_c)
-    val payload_c = OnionCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
+    val payload_c = OnionCodecs.legacyPerHopPayloadCodec.decode(bin_c.toBitVector).require.value
     assert(packet_d.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_c.amtToForward === amount_cd)
     assert(payload_c.outgoingCltvValue === expiry_cd)
 
     val Right(DecryptedPacket(bin_d, packet_e, _)) = Sphinx.PaymentPacket.peel(priv_d.privateKey, paymentHash, packet_d)
-    val payload_d = OnionCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
+    val payload_d = OnionCodecs.legacyPerHopPayloadCodec.decode(bin_d.toBitVector).require.value
     assert(packet_e.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_d.amtToForward === amount_de)
     assert(payload_d.outgoingCltvValue === expiry_de)
 
     val Right(DecryptedPacket(bin_e, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_e.privateKey, paymentHash, packet_e)
-    val payload_e = OnionCodecs.perHopPayloadCodec.decode(bin_e.toBitVector).require.value
+    val payload_e = OnionCodecs.legacyPerHopPayloadCodec.decode(bin_e.toBitVector).require.value
     assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_e.amtToForward === finalAmountMsat)
     assert(payload_e.outgoingCltvValue === finalExpiry)
@@ -105,25 +105,25 @@ class HtlcGenerationSpec extends FunSuite {
 
     // let's peel the onion
     val Right(DecryptedPacket(bin_b, packet_c, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, add.onion)
-    val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
+    val payload_b = OnionCodecs.legacyPerHopPayloadCodec.decode(bin_b.toBitVector).require.value
     assert(packet_c.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_b.amtToForward === amount_bc)
     assert(payload_b.outgoingCltvValue === expiry_bc)
 
     val Right(DecryptedPacket(bin_c, packet_d, _)) = Sphinx.PaymentPacket.peel(priv_c.privateKey, paymentHash, packet_c)
-    val payload_c = OnionCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
+    val payload_c = OnionCodecs.legacyPerHopPayloadCodec.decode(bin_c.toBitVector).require.value
     assert(packet_d.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_c.amtToForward === amount_cd)
     assert(payload_c.outgoingCltvValue === expiry_cd)
 
     val Right(DecryptedPacket(bin_d, packet_e, _)) = Sphinx.PaymentPacket.peel(priv_d.privateKey, paymentHash, packet_d)
-    val payload_d = OnionCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
+    val payload_d = OnionCodecs.legacyPerHopPayloadCodec.decode(bin_d.toBitVector).require.value
     assert(packet_e.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_d.amtToForward === amount_de)
     assert(payload_d.outgoingCltvValue === expiry_de)
 
     val Right(DecryptedPacket(bin_e, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_e.privateKey, paymentHash, packet_e)
-    val payload_e = OnionCodecs.perHopPayloadCodec.decode(bin_e.toBitVector).require.value
+    val payload_e = OnionCodecs.legacyPerHopPayloadCodec.decode(bin_e.toBitVector).require.value
     assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_e.amtToForward === finalAmountMsat)
     assert(payload_e.outgoingCltvValue === finalExpiry)
@@ -139,7 +139,7 @@ class HtlcGenerationSpec extends FunSuite {
 
     // let's peel the onion
     val Right(DecryptedPacket(bin_b, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, add.onion)
-    val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
+    val payload_b = OnionCodecs.legacyPerHopPayloadCodec.decode(bin_b.toBitVector).require.value
     assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_b.amtToForward === finalAmountMsat)
     assert(payload_b.outgoingCltvValue === finalExpiry)

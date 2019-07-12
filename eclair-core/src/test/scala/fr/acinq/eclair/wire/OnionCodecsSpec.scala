@@ -17,8 +17,10 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.wire.OnionCodecs._
-import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, ShortChannelId}
+import fr.acinq.eclair.wire.OnionTlv._
+import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi, ShortChannelId}
 import org.scalatest.FunSuite
 import scodec.bits.HexStringSyntax
 
@@ -39,18 +41,19 @@ class OnionCodecsSpec extends FunSuite {
     assert(encoded.toByteVector === bin)
   }
 
-  test("encode/decode per-hop payload") {
-    val payload = PerHopPayload(shortChannelId = ShortChannelId(42), amtToForward = 142000 msat, outgoingCltvValue = CltvExpiry(500000))
-    val bin = perHopPayloadCodec.encode(payload).require
-    assert(bin.toByteVector.size === 33)
-    val payload1 = perHopPayloadCodec.decode(bin).require.value
-    assert(payload === payload1)
+  test("encode/decode fixed-size (legacy) per-hop payload") {
+    val testCases = Map(
+      OnionForwardInfo(ShortChannelId(0), 0 msat, CltvExpiry(0)) -> hex"00 0000000000000000 0000000000000000 00000000 000000000000000000000000",
+      OnionForwardInfo(ShortChannelId(42), 142000 msat, CltvExpiry(500000)) -> hex"00 000000000000002a 0000000000022ab0 0007a120 000000000000000000000000",
+      OnionForwardInfo(ShortChannelId(561), 1105 msat, CltvExpiry(1729)) -> hex"00 0000000000000231 0000000000000451 000006c1 000000000000000000000000"
+    )
 
-    // realm (the first byte) should be 0
-    val bin1 = bin.toByteVector.update(0, 1)
-    intercept[IllegalArgumentException] {
-      val payload2 = perHopPayloadCodec.decode(bin1.bits).require.value
-      assert(payload2 === payload1)
+    for ((expected, bin) <- testCases) {
+      val decoded = perHopPayloadCodec.decode(bin.bits).require.value
+      assert(decoded === Right(expected))
+
+      val encoded = perHopPayloadCodec.encode(Right(expected)).require.bytes
+      assert(encoded === bin)
     }
   }
 
@@ -68,6 +71,39 @@ class OnionCodecsSpec extends FunSuite {
 
     for ((payloadLength, bin) <- testCases) {
       assert(payloadLengthDecoder.decode(bin.bits).require.value === payloadLength)
+    }
+  }
+
+  test("encode/decode variable-length (tlv) per-hop payload") {
+    val testCases = Map(
+      TlvStream[OnionTlv](Destination()) -> hex"02 0000",
+      TlvStream[OnionTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), OutgoingChannelId(ShortChannelId(1105))) -> hex"11 02020231 04012a 06080000000000000451",
+      TlvStream[OnionTlv](Seq(Destination(), AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42))), Seq(GenericTlv(65535, hex"06c1"))) -> hex"0f 0000 02020231 04012a fdffff0206c1"
+    )
+
+    for ((expected, bin) <- testCases) {
+      val decoded = perHopPayloadCodec.decode(bin.bits).require.value
+      assert(decoded === Left(expected))
+
+      val encoded = perHopPayloadCodec.encode(Left(expected)).require.bytes
+      assert(encoded === bin)
+    }
+  }
+
+  test("decode invalid per-hop payload") {
+    val testCases = Seq(
+      // Invalid fixed-size (legacy) payload.
+      hex"00 000000000000002a 000000000000002a", // invalid length
+      // Invalid variable-length (tlv) payload.
+      hex"01", // invalid length
+      hex"01 0000", // invalid length
+      hex"04 0000 2a00", // unknown even types
+      hex"04 0000 0000", // duplicate types
+      hex"04 0100 0000" // unordered types
+    )
+
+    for (testCase <- testCases) {
+      assert(perHopPayloadCodec.decode(testCase.bits).isFailure)
     }
   }
 

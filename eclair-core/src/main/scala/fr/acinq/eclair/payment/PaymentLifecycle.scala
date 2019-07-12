@@ -231,11 +231,11 @@ object PaymentLifecycle {
   // @formatter:on
 
 
-  def buildOnion(nodes: Seq[PublicKey], payloads: Seq[PerHopPayload], associatedData: ByteVector32): Sphinx.PacketAndSecrets = {
+  def buildOnion(nodes: Seq[PublicKey], payloads: Seq[OnionForwardInfo], associatedData: ByteVector32): Sphinx.PacketAndSecrets = {
     require(nodes.size == payloads.size)
     val sessionKey = randomKey
     val payloadsbin: Seq[ByteVector] = payloads
-      .map(OnionCodecs.perHopPayloadCodec.encode)
+      .map(OnionCodecs.legacyPerHopPayloadCodec.encode)
       .map {
         case Attempt.Successful(bitVector) => bitVector.toByteVector
         case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
@@ -253,11 +253,11 @@ object PaymentLifecycle {
    *         - firstExpiry is the cltv expiry for the first htlc in the route
    *         - a sequence of payloads that will be used to build the onion
    */
-  def buildPayloads(finalAmount: MilliSatoshi, finalExpiry: CltvExpiry, hops: Seq[Hop]): (MilliSatoshi, CltvExpiry, Seq[PerHopPayload]) =
-    hops.reverse.foldLeft((finalAmount, finalExpiry, PerHopPayload(ShortChannelId(0L), finalAmount, finalExpiry) :: Nil)) {
+  def buildPayloads(finalAmount: MilliSatoshi, finalExpiry: CltvExpiry, hops: Seq[Hop]): (MilliSatoshi, CltvExpiry, Seq[OnionForwardInfo]) =
+    hops.reverse.foldLeft((finalAmount, finalExpiry, OnionForwardInfo(ShortChannelId(0L), finalAmount, finalExpiry) :: Nil)) {
       case ((msat, expiry, payloads), hop) =>
         val nextFee = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, msat)
-        (msat + nextFee, expiry + hop.lastUpdate.cltvExpiryDelta, PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
+        (msat + nextFee, expiry + hop.lastUpdate.cltvExpiryDelta, OnionForwardInfo(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
     }
 
   def buildCommand(id: UUID, finalAmount: MilliSatoshi, finalExpiry: CltvExpiry, paymentHash: ByteVector32, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {

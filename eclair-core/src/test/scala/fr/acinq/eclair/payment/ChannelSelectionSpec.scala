@@ -39,7 +39,7 @@ class ChannelSelectionSpec extends FunSuite {
   test("convert to CMD_FAIL_HTLC/CMD_ADD_HTLC") {
     val relayPayload = RelayPayload(
       add = UpdateAddHtlc(randomBytes32, 42, 1000000 msat, randomBytes32, CltvExpiry(70), TestConstants.emptyOnionPacket),
-      payload = PerHopPayload(ShortChannelId(12345), amtToForward = 998900 msat, outgoingCltvValue = CltvExpiry(60)),
+      payload = OnionForwardInfo(ShortChannelId(12345), amtToForward = 998900 msat, outgoingCltvValue = CltvExpiry(60)),
       nextPacket = TestConstants.emptyOnionPacket // just a placeholder
     )
 
@@ -52,7 +52,7 @@ class ChannelSelectionSpec extends FunSuite {
     // no channel_update
     assert(Relayer.relayOrFail(relayPayload, channelUpdate_opt = None) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(UnknownNextPeer), commit = true)))
     // channel disabled
-    val channelUpdate_disabled = channelUpdate.copy(channelFlags = Announcements.makeChannelFlags(true, enable = false))
+    val channelUpdate_disabled = channelUpdate.copy(channelFlags = Announcements.makeChannelFlags(isNode1 = true, enable = false))
     assert(Relayer.relayOrFail(relayPayload, Some(channelUpdate_disabled)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(ChannelDisabled(channelUpdate_disabled.messageFlags, channelUpdate_disabled.channelFlags, channelUpdate_disabled)), commit = true)))
     // amount too low
     val relayPayload_toolow = relayPayload.copy(payload = relayPayload.payload.copy(amtToForward = 99 msat))
@@ -72,7 +72,7 @@ class ChannelSelectionSpec extends FunSuite {
 
     val relayPayload = RelayPayload(
       add = UpdateAddHtlc(randomBytes32, 42, 1000000 msat, randomBytes32, CltvExpiry(70), TestConstants.emptyOnionPacket),
-      payload = PerHopPayload(ShortChannelId(12345), amtToForward = 998900 msat, outgoingCltvValue = CltvExpiry(60)),
+      payload = OnionForwardInfo(ShortChannelId(12345), amtToForward = 998900 msat, outgoingCltvValue = CltvExpiry(60)),
       nextPacket = TestConstants.emptyOnionPacket // just a placeholder
     )
 

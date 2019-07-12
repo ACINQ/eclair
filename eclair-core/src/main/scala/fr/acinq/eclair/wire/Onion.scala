@@ -18,8 +18,11 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId}
-import scodec.bits.{BitVector, ByteVector}
+import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.wire.OnionTlv._
+import fr.acinq.eclair.wire.TlvCodecs._
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, UInt64}
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 import scodec.codecs._
 import scodec.{Codec, DecodeResult, Decoder}
 
@@ -32,9 +35,38 @@ case class OnionRoutingPacket(version: Int,
                               payload: ByteVector,
                               hmac: ByteVector32)
 
-case class PerHopPayload(shortChannelId: ShortChannelId,
-                         amtToForward: MilliSatoshi,
-                         outgoingCltvValue: CltvExpiry)
+case class OnionForwardInfo(shortChannelId: ShortChannelId,
+                            amtToForward: MilliSatoshi,
+                            outgoingCltvValue: CltvExpiry)
+
+/**
+ * Tlv types used inside onion messages.
+ */
+sealed trait OnionTlv extends Tlv
+
+object OnionTlv {
+
+  /**
+   * If this record is present in an onion payload, the current node is the final destination of the onion message.
+   */
+  case class Destination() extends OnionTlv
+
+  /**
+   * Amount to forward to the next node.
+   */
+  case class AmountToForward(amount: MilliSatoshi) extends OnionTlv
+
+  /**
+   * CLTV value to use for the HTLC offered to the next node.
+   */
+  case class OutgoingCltv(cltv: CltvExpiry) extends OnionTlv
+
+  /**
+   * Id of the channel to use to forward a payment to the next node.
+   */
+  case class OutgoingChannelId(shortChannelId: ShortChannelId) extends OnionTlv
+
+}
 
 object OnionCodecs {
 
@@ -42,16 +74,9 @@ object OnionCodecs {
     ("version" | uint8) ::
       ("publicKey" | bytes(33)) ::
       ("onionPayload" | bytes(payloadLength)) ::
-      ("hmac" | CommonCodecs.bytes32)).as[OnionRoutingPacket]
+      ("hmac" | bytes32)).as[OnionRoutingPacket]
 
   val paymentOnionPacketCodec: Codec[OnionRoutingPacket] = onionRoutingPacketCodec(Sphinx.PaymentPacket.PayloadLength)
-
-  val perHopPayloadCodec: Codec[PerHopPayload] = (
-    ("realm" | constant(ByteVector.fromByte(0))) ::
-      ("short_channel_id" | CommonCodecs.shortchannelid) ::
-      ("amt_to_forward" | CommonCodecs.millisatoshi) ::
-      ("outgoing_cltv_value" | CommonCodecs.cltvExpiry) ::
-      ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[PerHopPayload]
 
   /**
    * The 1.1 BOLT spec changed the onion frame format to use variable-length per-hop payloads.
@@ -60,6 +85,31 @@ object OnionCodecs {
    * the varint prefix.
    */
   val payloadLengthDecoder = Decoder[Long]((bits: BitVector) =>
-    CommonCodecs.varintoverflow.decode(bits).map(d => DecodeResult(d.value + (bits.length - d.remainder.length) / 8, d.remainder)))
+    varintoverflow.decode(bits).map(d => DecodeResult(d.value + (bits.length - d.remainder.length) / 8, d.remainder)))
+
+  private val destination: Codec[Destination] = ("length" | constant(hex"00")).xmap(_ => Destination(), _ => ())
+
+  private val amountToForward: Codec[AmountToForward] = ("amount_msat" | tu64overflow).xmap(amountMsat => AmountToForward(MilliSatoshi(amountMsat)), (a: AmountToForward) => a.amount.toLong)
+
+  private val outgoingCltv: Codec[OutgoingCltv] = ("cltv" | tu32).xmap(cltv => OutgoingCltv(CltvExpiry(cltv)), (c: OutgoingCltv) => c.cltv.toLong)
+
+  private val outgoingChannelId: Codec[OutgoingChannelId] = (("length" | constant(hex"08")) :: ("short_channel_id" | shortchannelid)).as[OutgoingChannelId]
+
+  private val onionTlvCodec = discriminated[OnionTlv].by(varint)
+    .typecase(UInt64(0), destination)
+    .typecase(UInt64(2), amountToForward)
+    .typecase(UInt64(4), outgoingCltv)
+    .typecase(UInt64(6), outgoingChannelId)
+
+  val tlvPerHopPayloadCodec: Codec[TlvStream[OnionTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionTlv](onionTlvCodec).complete
+
+  val legacyPerHopPayloadCodec: Codec[OnionForwardInfo] = (
+    ("realm" | constant(ByteVector.fromByte(0))) ::
+      ("short_channel_id" | shortchannelid) ::
+      ("amt_to_forward" | millisatoshi) ::
+      ("outgoing_cltv_value" | cltvExpiry) ::
+      ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[OnionForwardInfo]
+
+  val perHopPayloadCodec: Codec[Either[TlvStream[OnionTlv], OnionForwardInfo]] = fallback(tlvPerHopPayloadCodec, legacyPerHopPayloadCodec)
 
 }
