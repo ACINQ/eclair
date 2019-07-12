@@ -19,14 +19,14 @@ package fr.acinq.eclair.channel
 import java.util.UUID
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.Crypto.{PublicKey}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
-import scodec.bits.ByteVector
+import scodec.bits.{BitVector, ByteVector}
 
 
 /**
@@ -223,8 +223,10 @@ object ChannelFlags {
   val Empty = 0x00.toByte
 }
 
-sealed trait ChannelVersion
+case class ChannelVersion(bits: BitVector) {
+  require(bits.size == 4 * 8, "channel version takes 4 bytes")
+}
 object ChannelVersion {
-  case object STANDARD extends ChannelVersion
+  val STANDARD = ChannelVersion(BitVector.fill(4 * 8)(false))
 }
 // @formatter:on
