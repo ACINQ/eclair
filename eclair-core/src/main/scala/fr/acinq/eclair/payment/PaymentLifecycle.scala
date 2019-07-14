@@ -49,13 +49,13 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPaymentToRoute, WaitingForRequest) =>
       val send = SendPayment(c.amountMsat, c.paymentHash, c.hops.last, finalCltvExpiry = c.finalCltvExpiry, maxAttempts = 1)
-      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING, Seq()))
       router ! FinalizeRoute(c.hops)
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
 
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, routeParams = c.routeParams)
-      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
+      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amountMsat, Platform.currentTime, None, OutgoingPaymentStatus.PENDING, Seq()))
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 
@@ -71,8 +71,9 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
     case Event(Status.Failure(t), WaitingForRoute(s, c, failures)) =>
-      reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ LocalFailure(t)))
-      paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+      val paymentFailed = PaymentFailed(id, c.paymentHash, failures = failures :+ LocalFailure(t))
+      reply(s, paymentFailed)
+      paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, failures = paymentFailed.errorMessages)
       stop(FSM.Normal)
   }
 
@@ -90,8 +91,9 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
         case Success(e@ErrorPacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
           // if destination node returns an error, we fail the payment immediately
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
-          reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ RemoteFailure(hops, e)))
-          paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+          val paymentFailed = PaymentFailed(id, c.paymentHash, failures = failures :+ RemoteFailure(hops, e))
+          reply(s, paymentFailed)
+          paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, failures = paymentFailed.errorMessages)
           stop(FSM.Normal)
         case res if failures.size + 1 >= c.maxAttempts =>
           // otherwise we never try more than maxAttempts, no matter the kind of error returned
@@ -104,8 +106,9 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
               UnreadableRemoteFailure(hops)
           }
           log.warning(s"too many failed attempts, failing the payment")
-          reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ failure))
-          paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+          val paymentFailed = PaymentFailed(id, c.paymentHash, failures = failures :+ failure)
+          reply(s, paymentFailed)
+          paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, failures = paymentFailed.errorMessages)
           stop(FSM.Normal)
         case Failure(t) =>
           log.warning(s"cannot parse returned error: ${t.getMessage}")
@@ -170,8 +173,9 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
 
     case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
       if (failures.size + 1 >= c.maxAttempts) {
-        paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
-        reply(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))
+        val paymentFailed = PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t))
+        paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, failures = paymentFailed.errorMessages)
+        reply(s, paymentFailed)
         stop(FSM.Normal)
       } else {
         log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
@@ -214,11 +218,21 @@ object PaymentLifecycle {
 
   sealed trait PaymentResult
   case class PaymentSucceeded(id: UUID, amountMsat: Long, paymentHash: ByteVector32, paymentPreimage: ByteVector32, route: Seq[Hop]) extends PaymentResult // note: the amount includes fees
-  sealed trait PaymentFailure
-  case class LocalFailure(t: Throwable) extends PaymentFailure
-  case class RemoteFailure(route: Seq[Hop], e: ErrorPacket) extends PaymentFailure
-  case class UnreadableRemoteFailure(route: Seq[Hop]) extends PaymentFailure
-  case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[PaymentFailure]) extends PaymentResult
+  sealed trait PaymentFailure {
+    def errorMessage: String
+  }
+  case class LocalFailure(t: Throwable) extends PaymentFailure {
+    override def errorMessage: String = t.getMessage
+  }
+  case class RemoteFailure(route: Seq[Hop], e: ErrorPacket) extends PaymentFailure {
+    override def errorMessage: String = e.failureMessage.message
+  }
+  case class UnreadableRemoteFailure(route: Seq[Hop]) extends PaymentFailure {
+    override def errorMessage: String = "unreadable remote failure"
+  }
+  case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[PaymentFailure]) extends PaymentResult {
+    def errorMessages: Seq[String] = failures.map(_.errorMessage).filter(_.nonEmpty)
+  }
 
   sealed trait Data
   case object WaitingForRequest extends Data

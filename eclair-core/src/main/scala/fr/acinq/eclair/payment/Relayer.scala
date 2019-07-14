@@ -137,7 +137,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case Local(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost,
           // we publish the failure on the event stream and update the status in paymentDb
-          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, failures = Nil)
           context.system.eventStream.publish(PaymentFailed(id, paymentHash, Nil))
         case Local(_, Some(sender)) =>
           sender ! Status.Failure(addFailed)
@@ -177,7 +177,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case Local(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost
           // we publish the failure on the event stream and update the status in paymentDb
-          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, failures = Nil)
           context.system.eventStream.publish(PaymentFailed(id, add.paymentHash, Nil))
         case Local(_, Some(sender)) =>
           sender ! fail
@@ -191,7 +191,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case Local(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost
           // we publish the failure on the event stream and update the status in paymentDb
-          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED, failures = Nil)
           context.system.eventStream.publish(PaymentFailed(id, add.paymentHash, Nil))
         case Local(_, Some(sender)) =>
           sender ! fail
