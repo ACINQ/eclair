@@ -43,7 +43,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) <= CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // version 3 is "backward compatible" in the sense that it uses separate tables from versions 1 and 2. There is no migration though
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments_failures (id TEXT NOT NULL, failure VARCHAR NOT NULL, PRIMARY KEY (id, failure))")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments_failures (id TEXT NOT NULL, failure TEXT NOT NULL)")
+    statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_payments_failures_idx ON sent_payments_failures(id)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON sent_payments(payment_hash)")
     setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
