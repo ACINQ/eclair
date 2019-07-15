@@ -224,9 +224,10 @@ object ChannelFlags {
 }
 
 case class ChannelVersion(bits: BitVector) {
-  require(bits.size == 4 * 8, "channel version takes 4 bytes")
+  require(bits.size == ChannelVersion.LENGTH_BITS, "channel version takes 4 bytes")
 }
 object ChannelVersion {
-  val STANDARD = ChannelVersion(BitVector.fill(4 * 8)(false))
+  val LENGTH_BITS = 4 * 8
+  val STANDARD = ChannelVersion(BitVector.fill(LENGTH_BITS)(false))
 }
 // @formatter:on
