@@ -82,7 +82,7 @@ class PrivateKeySerializer extends CustomSerializer[PrivateKey](format => ({ nul
 }))
 
 class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](format => ({ null }, {
-  case x: ChannelVersion => JString(x.toString)
+  case x: ChannelVersion => JString(x.bits.toBin)
 }))
 
 class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ({ null }, {

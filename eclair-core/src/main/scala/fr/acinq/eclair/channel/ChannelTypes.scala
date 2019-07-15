@@ -28,7 +28,7 @@ import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
-import scodec.bits.ByteVector
+import scodec.bits.{BitVector, ByteVector}
 
 
 /**
@@ -232,9 +232,12 @@ object ChannelFlags {
   val Empty = 0x00.toByte
 }
 
-sealed trait ChannelVersion
+case class ChannelVersion(bits: BitVector) {
+  require(bits.size == ChannelVersion.LENGTH_BITS, "channel version takes 4 bytes")
+}
 object ChannelVersion {
-  case object STANDARD extends ChannelVersion
-  case object DETERMINISTIC_KEYPATH extends ChannelVersion
+  val LENGTH_BITS = 4 * 8
+  val STANDARD = ChannelVersion(BitVector.fill(LENGTH_BITS)(false))
+  val DETERMINISTIC_KEYPATH = ChannelVersion(BitVector.one ++ BitVector.fill(LENGTH_BITS -1)(false))
 }
 // @formatter:on
