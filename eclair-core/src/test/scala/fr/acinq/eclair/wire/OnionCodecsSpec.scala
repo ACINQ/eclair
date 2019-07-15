@@ -59,11 +59,11 @@ class OnionCodecsSpec extends FunSuite {
       (1, hex"00"),
       (43, hex"2a 0000"),
       (253, hex"fc 0000"),
-      (256, hex"fdfd00 000000"),
+      (256, hex"fd00fd 000000"),
       (260, hex"fd0101 00"),
       (65538, hex"fdffff 00"),
-      (65541, hex"fe00000100 00"),
-      (4294967305L, hex"ff0000000001000000 00")
+      (65541, hex"fe00010000 00"),
+      (4294967305L, hex"ff0000000100000000 00")
     )
 
     for ((payloadLength, bin) <- testCases) {
