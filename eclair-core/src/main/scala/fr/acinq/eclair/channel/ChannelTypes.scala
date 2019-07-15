@@ -231,4 +231,10 @@ object ChannelFlags {
   val AnnounceChannel = 0x01.toByte
   val Empty = 0x00.toByte
 }
+
+sealed trait ChannelVersion
+object ChannelVersion {
+  case object STANDARD extends ChannelVersion
+  case object DETERMINISTIC_KEYPATH extends ChannelVersion
+}
 // @formatter:on

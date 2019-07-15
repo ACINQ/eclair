@@ -24,7 +24,7 @@ import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, MilliSatoshi, OutPoint, Transaction}
-import fr.acinq.eclair.channel.State
+import fr.acinq.eclair.channel.{ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.payment.PaymentRequest
@@ -81,6 +81,9 @@ class PrivateKeySerializer extends CustomSerializer[PrivateKey](format => ({ nul
   case x: PrivateKey => JString("XXX")
 }))
 
+class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](format => ({ null }, {
+  case x: ChannelVersion => JString(x.toString)
+}))
 
 class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ({ null }, {
   case x: Transaction => JObject(List(
@@ -195,6 +198,7 @@ object JsonSupport extends Json4sSupport {
     new InetSocketAddressSerializer +
     new OutPointSerializer +
     new OutPointKeySerializer +
+    new ChannelVersionSerializer +
     new InputInfoSerializer +
     new ColorSerializer +
     new RouteResponseSerializer +

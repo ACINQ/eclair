@@ -138,6 +138,7 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     Transactions.sign(tx, currentKey)
   }
 
+  
   /**
     * Ths method is used to spend revoked transactions, with the corresponding revocation key
     *
@@ -154,13 +155,8 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
   }
 
   override def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector64, ByteVector64) = {
-    val witness = if (Announcements.isNode1(nodeId, remoteNodeId)) {
-      Announcements.channelAnnouncementWitnessEncode(chainHash, shortChannelId, nodeId, remoteNodeId, fundingPublicKey(channelKeyPath).publicKey, remoteFundingKey, features)
-    } else {
-      Announcements.channelAnnouncementWitnessEncode(chainHash, shortChannelId, remoteNodeId, nodeId, remoteFundingKey, fundingPublicKey(channelKeyPath).publicKey, features)
-    }
-    val nodeSig = Crypto.sign(witness, nodeKey.privateKey)
-    val bitcoinSig = Crypto.sign(witness, fundingPrivateKey(channelKeyPath).privateKey)
-    (nodeSig, bitcoinSig)
+    val localNodeSecret = nodeKey.privateKey
+    val localFundingPrivKey = fundingPrivateKey(channelKeyPath).privateKey
+    Announcements.signChannelAnnouncement(chainHash, shortChannelId, localNodeSecret, remoteNodeId, localFundingPrivKey, remoteFundingKey, features)
   }
 }
