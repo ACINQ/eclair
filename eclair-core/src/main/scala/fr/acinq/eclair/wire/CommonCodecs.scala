@@ -54,8 +54,6 @@ object CommonCodecs {
 
   val uint64: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
 
-  val uint64L: Codec[UInt64] = bytes(8).xmap(b => UInt64(b.reverse), a => a.toByteVector.padLeft(8).reverse)
-
   /**
     * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be
     * re-computed correctly.
@@ -73,9 +71,9 @@ object CommonCodecs {
   // See https://bitcoin.org/en/developer-reference#compactsize-unsigned-integers for reference.
   val varint: Codec[UInt64] = discriminatorWithDefault(
     discriminated[UInt64].by(uint8L)
-      .\(0xff) { case i if i >= UInt64(0x100000000L) => i }(minimalvalue(uint64L, UInt64(0x100000000L)))
-      .\(0xfe) { case i if i >= UInt64(0x10000) => i }(minimalvalue(uint32L.xmap(UInt64(_), _.toBigInt.toLong), UInt64(0x10000)))
-      .\(0xfd) { case i if i >= UInt64(0xfd) => i }(minimalvalue(uint16L.xmap(UInt64(_), _.toBigInt.toInt), UInt64(0xfd))),
+      .\(0xff) { case i if i >= UInt64(0x100000000L) => i }(minimalvalue(uint64, UInt64(0x100000000L)))
+      .\(0xfe) { case i if i >= UInt64(0x10000) => i }(minimalvalue(uint32.xmap(UInt64(_), _.toBigInt.toLong), UInt64(0x10000)))
+      .\(0xfd) { case i if i >= UInt64(0xfd) => i }(minimalvalue(uint16.xmap(UInt64(_), _.toBigInt.toInt), UInt64(0xfd))),
     uint8L.xmap(UInt64(_), _.toBigInt.toInt)
   )
 
