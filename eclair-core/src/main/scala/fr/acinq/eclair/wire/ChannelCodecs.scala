@@ -52,7 +52,7 @@ object ChannelCodecs extends Logging {
 
   val channelVersionCodec: Codec[ChannelVersion] = discriminatorWithDefault[ChannelVersion](
     discriminator = discriminated[ChannelVersion].by(byte)
-      .typecase(0x01, provide(ChannelVersion.STANDARD))
+      .typecase(0x01, bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion])
       // NB: 0x02 and 0x03 are *reserved* for backward compatibility reasons
       ,
     fallback = provide(ChannelVersion.STANDARD)
