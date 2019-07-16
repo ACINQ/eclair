@@ -141,10 +141,10 @@ class Setup(datadir: File,
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
         assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Make sure that all your UTXOS are segwit UTXOS and not p2pkh (check out our README for more details)")
+        assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
+        assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
+        assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
       }
-      assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
-      assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
-      assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       val addresses = config.hasPath("electrum") match {
