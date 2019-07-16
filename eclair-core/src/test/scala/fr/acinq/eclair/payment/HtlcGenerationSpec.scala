@@ -20,7 +20,7 @@ import java.util.UUID
 
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
-import fr.acinq.eclair.channel.{Channel, Commitments}
+import fr.acinq.eclair.channel.{Channel, ChannelVersion, Commitments}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{PacketAndSecrets, ParsedPacket}
 import fr.acinq.eclair.payment.PaymentLifecycle._
@@ -152,7 +152,7 @@ class HtlcGenerationSpec extends FunSuite {
 object HtlcGenerationSpec {
 
   def makeCommitments(channelId: ByteVector32, availableBalanceForSend: Long = 50000000L, availableBalanceForReceive: Long = 50000000L) =
-    new Commitments(null, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId) {
+    new Commitments(ChannelVersion.STANDARD, null, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId) {
       override lazy val availableBalanceForSendMsat: Long = availableBalanceForSend.max(0)
       override lazy val availableBalanceForReceiveMsat: Long = availableBalanceForReceive.max(0)
     }

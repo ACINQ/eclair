@@ -163,6 +163,11 @@ If you want to persist the data directory, you can make the volume to your host 
 docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConsole" acinq/eclair
 ```
 
+If you enabled the API you can check the status of eclair using the command line tool:
+```
+docker exec <container_name> eclair-cli -p foobar getinfo
+```
+
 ## Plugins
 
 For advanced usage, Eclair supports plugins written in Scala, Java, or any JVM-compatible language.

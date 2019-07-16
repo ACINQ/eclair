@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.Crypto.{PublicKey, PrivateKey, sha256}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
@@ -25,7 +25,6 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, UInt64}
-import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success}
 
@@ -50,7 +49,8 @@ case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig,
   * So, when we've signed and sent a commit message and are waiting for their revocation message,
   * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
   */
-case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
+case class Commitments(channelVersion: ChannelVersion,
+                       localParams: LocalParams, remoteParams: RemoteParams,
                        channelFlags: Byte,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
@@ -475,7 +475,7 @@ object Commitments {
       case Left(_) if revocation.perCommitmentSecret.publicKey != remoteCommit.remotePerCommitmentPoint =>
         throw InvalidRevocation(commitments.channelId)
       case Left(WaitingForRevocation(theirNextCommit, _, _, _)) =>
-         val forwards = commitments.remoteChanges.signed collect {
+        val forwards = commitments.remoteChanges.signed collect {
           // we forward adds downstream only when they have been committed by both sides
           // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
           case add: UpdateAddHtlc => ForwardAdd(add)
