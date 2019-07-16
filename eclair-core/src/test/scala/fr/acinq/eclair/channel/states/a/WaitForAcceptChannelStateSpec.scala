@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel.states.a
 
+import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -52,11 +53,24 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
+      val aliceMonitor = TestProbe()
+      val bobMonitor = TestProbe()
+      alice ! SubscribeTransitionCallBack(aliceMonitor.ref)
+      bob ! SubscribeTransitionCallBack(bobMonitor.ref)
+
+      val CurrentState(_, WAIT_FOR_INIT_INTERNAL) = aliceMonitor.expectMsgClass(classOf[CurrentState[_]])
+      val CurrentState(_, WAIT_FOR_INIT_INTERNAL) = bobMonitor.expectMsgClass(classOf[CurrentState[_]])
+
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, alice2bob.ref, bobInit, ChannelFlags.Empty)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
+
+      val Transition(_, WAIT_FOR_INIT_INTERNAL, WAIT_FOR_FUNDING_INTERNAL_CREATED) = aliceMonitor.expectMsgClass(classOf[Transition[_]])
+      val Transition(_, WAIT_FOR_INIT_INTERNAL, WAIT_FOR_OPEN_CHANNEL) = bobMonitor.expectMsgClass(classOf[Transition[_]])
+
       alice2bob.expectMsgType[OpenChannel]
-      alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)
+      alice2bob.forward(bob)
+      val Transition(_, WAIT_FOR_OPEN_CHANNEL, WAIT_FOR_FUNDING_CREATED) = bobMonitor.expectMsgClass(classOf[Transition[_]])
       withFixture(test.toNoArgTest(FixtureParam(alice, alice2bob, bob2alice, alice2blockchain)))
     }
   }
