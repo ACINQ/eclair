@@ -1,7 +1,5 @@
 package fr.acinq.eclair
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -11,8 +9,8 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, IPv4, IPv6, Init, NodeAddress, OpenChannel, Shutdown, Tor2, Tor3, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateMessage}
-import scodec.bits.ByteVector
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, Init, NodeAddress, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateMessage}
+import scodec.bits.{BitVector, ByteVector}
 
 object JsonSerializers {
 
@@ -26,6 +24,7 @@ object JsonSerializers {
   implicit val bytevector32ReadWriter: ReadWriter[ByteVector32] = readwriter[String].bimap[ByteVector32](_.bytes.toHex, s => ByteVector32.fromValidHex(s))
   implicit val bytevector64ReadWriter: ReadWriter[ByteVector64] = readwriter[String].bimap[ByteVector64](_.bytes.toHex, s => ByteVector64.fromValidHex(s))
   implicit val uint64ReadWriter: ReadWriter[UInt64] = readwriter[String].bimap[UInt64](_.toString, s => UInt64(s.toLong))
+  implicit val channelVersionReadWriter: ReadWriter[ChannelVersion] = readwriter[String].bimap[ChannelVersion](_.bits.toBin, s => ChannelVersion(BitVector.fromValidBin(s)))
   implicit val localParamsReadWriter: ReadWriter[LocalParams] = macroRW
   implicit val remoteParamsReadWriter: ReadWriter[RemoteParams] = macroRW
   implicit val directionReadWriter: ReadWriter[Direction] = readwriter[String].bimap[Direction](_ match {

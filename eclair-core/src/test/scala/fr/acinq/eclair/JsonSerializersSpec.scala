@@ -1,7 +1,7 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint}
-import fr.acinq.eclair.channel.{LocalChanges, LocalParams, RemoteParams}
+import fr.acinq.eclair.channel.{ChannelVersion, LocalChanges, LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
@@ -34,6 +34,10 @@ class JsonSerializersSpec extends FunSuite with Logging {
 
     assert(write(ipv4) === s""""10.0.0.1:8888"""")
     assert(write(ipv6LocalHost) === s""""[0:0:0:0:0:0:0:1]:9735"""")
+  }
+
+  test("ChannelVersion serialization") {
+    assert(write(ChannelVersion.STANDARD) ===  """"00000000000000000000000000000000"""")
   }
 
   test("Direction serialization") {

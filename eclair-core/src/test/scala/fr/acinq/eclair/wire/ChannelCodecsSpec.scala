@@ -63,6 +63,21 @@ class ChannelCodecsSpec extends FunSuite {
     assert(keyPath === decoded.value)
   }
 
+  test("encode/decode channel version in a backward compatible way") {
+    // before we had commitment version, public keys were stored first (they started with 0x02 and 0x03)
+    val legacy02 = hex"02a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
+    val legacy03 = hex"03d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
+    val current02 = hex"010000000002a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
+    val current03 = hex"010000000003d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
+
+    assert(channelVersionCodec.decode(legacy02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, legacy02.bits)))
+    assert(channelVersionCodec.decode(legacy03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, legacy03.bits)))
+    assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(5).bits)))
+    assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(5).bits)))
+
+    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000000".bits))
+  }
+
   test("encode/decode localparams") {
     val o = LocalParams(
       nodeId = randomKey.publicKey,
@@ -299,8 +314,8 @@ class ChannelCodecsSpec extends FunSuite {
       val newnormal = stateDataCodec.decode(newbin.bits).require.value.asInstanceOf[DATA_NORMAL]
       // finally we check that the actual data is the same as before (we just remove the new json field)
       import JsonSerializers._
-      val oldjson = upickle.default.write(oldnormal).replace(""","unknownFields":""""", "")
-      val newjson = upickle.default.write(newnormal).replace(""","unknownFields":""""", "")
+      val oldjson = upickle.default.write(oldnormal).replace(""","unknownFields":""""", "").replace(""""channelVersion":"00000000000000000000000000000000",""", "")
+      val newjson = upickle.default.write(newnormal).replace(""","unknownFields":""""", "").replace(""""channelVersion":"00000000000000000000000000000000",""", "")
       assert(oldjson === refjson)
       assert(newjson === refjson)
     }
@@ -363,7 +378,7 @@ object ChannelCodecsSpec {
 
   val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000, 70000000), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
   val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, 50000, 700000), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
-  val commitments = Commitments(localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
+  val commitments = Commitments(ChannelVersion.STANDARD, localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 32L,
     remoteNextHtlcId = 4L,
     originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000L, 10000000L)),
