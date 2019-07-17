@@ -20,14 +20,15 @@ import akka.actor.Status
 import java.util.UUID
 
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.{PrivateKey}
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
-import fr.acinq.eclair.blockchain.{PublishAsap, WatchEventSpent}
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.blockchain.{CurrentFeerates, PublishAsap, WatchEventSpent}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes32}
+import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.Outcome
 
 import scala.concurrent.duration._
@@ -389,6 +390,50 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // alice will broadcast a new disabled channel_update
     val update = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(Announcements.isEnabled(update.channelUpdate.channelFlags) == false)
+  }
+
+  test("handle feerate changes while offline (funder scenario)") { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    val aliceCommitTx = aliceStateData.commitments.localCommit.publishableTxs.commitTx.tx
+
+    val localFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
+    val tooHighFeeratePerKw = ((TestConstants.Alice.nodeParams.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
+    val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
+
+    // alice is funder
+    sender.send(alice, CurrentFeerates(highFeerate))
+    alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
+  }
+
+  test("handle feerate changes while offline (fundee scenario)") { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    val bobStateData = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val bobCommitTx = bobStateData.commitments.localCommit.publishableTxs.commitTx.tx
+
+    val localFeeratePerKw = bobStateData.commitments.localCommit.spec.feeratePerKw
+    val tooHighFeeratePerKw = ((TestConstants.Bob.nodeParams.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
+    val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
+
+    // bob is fundee
+    sender.send(bob, CurrentFeerates(highFeerate))
+    bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
   }
 
 }
