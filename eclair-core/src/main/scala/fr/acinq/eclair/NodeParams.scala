@@ -78,6 +78,7 @@ case class NodeParams(keyManager: KeyManager,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int) {
+  require(upstreamTimeoutSafetyBlocks < expiryDeltaBlocks, "upstream-timeout-safety-blocks must be smaller than expiry-delta-blocks")
 
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
