@@ -50,6 +50,7 @@ case class NodeParams(keyManager: KeyManager,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
                       expiryDeltaBlocks: Int,
+                      upstreamTimeoutSafetyBlocks: Int,
                       htlcMinimumMsat: Int,
                       toRemoteDelayBlocks: Int,
                       maxToLocalDelayBlocks: Int,
@@ -156,7 +157,7 @@ object NodeParams {
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
       val gf = ByteVector.fromValidHex(e.getString("global-features"))
       val lf = ByteVector.fromValidHex(e.getString("local-features"))
-      (p -> (gf, lf))
+      p -> (gf, lf)
     }.toMap
 
     val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {
@@ -188,6 +189,7 @@ object NodeParams {
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),
       maxAcceptedHtlcs = maxAcceptedHtlcs,
       expiryDeltaBlocks = config.getInt("expiry-delta-blocks"),
+      upstreamTimeoutSafetyBlocks = config.getInt("upstream-timeout-safety-blocks"),
       htlcMinimumMsat = config.getInt("htlc-minimum-msat"),
       toRemoteDelayBlocks = config.getInt("to-remote-delay-blocks"),
       maxToLocalDelayBlocks = config.getInt("max-to-local-delay-blocks"),

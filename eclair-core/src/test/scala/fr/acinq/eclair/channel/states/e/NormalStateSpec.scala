@@ -33,7 +33,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.{htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
+import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass, randomBytes32}
@@ -49,6 +49,8 @@ import scala.concurrent.duration._
 class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   type FixtureParam = SetupFixture
+
+  implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
@@ -1677,8 +1679,37 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout
     alice2blockchain.expectMsgType[PublishAsap] // htlc delayed
-  val watch = alice2blockchain.expectMsgType[WatchConfirmed]
+    val watch = alice2blockchain.expectMsgType[WatchConfirmed]
     assert(watch.event === BITCOIN_TX_CONFIRMED(aliceCommitTx))
+  }
+
+  test("recv CurrentBlockCount (an htlc that should be fulfilled will timeout upstream") { f =>
+    import f._
+    val sender = TestProbe()
+    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // actual test begins:
+    //  * Bob receives the HTLC pre-image and wants to fulfill
+    //  * Alice does not send signed commitment with the fulfilled HTLC
+    //  * When the HTLC timeout on Alice side is near, Bob needs to close the channel to avoid an on-chain race
+    //    condition between his HTLC-success and Alice's HTLC-timeout
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val initialCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
+    val HtlcSuccessTx(_, htlcSuccessTx, _) = initialState.commitments.localCommit.publishableTxs.htlcTxsAndSigs.head.txinfo
+    val (bobFulfilled, _) = Commitments.sendFulfill(initialState.commitments, CMD_FULFILL_HTLC(htlc.id, r, commit = true))
+    val (bobSigned, _) = Commitments.sendCommit(bobFulfilled, TestConstants.Bob.keyManager)
+    bob.setState(stateData = initialState.copy(commitments = bobSigned))
+
+    sender.send(bob, CurrentBlockCount(400144 - Bob.nodeParams.upstreamTimeoutSafetyBlocks))
+    bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
+    bob2blockchain.expectMsgType[PublishAsap] // main delayed
+    val htlcPublishedTx = bob2blockchain.expectMsgType[PublishAsap]
+    assert(htlcPublishedTx.tx.txOut === htlcSuccessTx.txOut)
+    bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
+    val watch = bob2blockchain.expectMsgType[WatchConfirmed]
+    assert(watch.event === BITCOIN_TX_CONFIRMED(initialCommitTx))
+    alice2blockchain.expectNoMsg(500 millis)
   }
 
   test("recv CurrentFeerate (when funder, triggers an UpdateFee)") { f =>
