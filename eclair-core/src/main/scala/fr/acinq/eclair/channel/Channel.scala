@@ -1428,6 +1428,16 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
       handleLocalError(HtlcTimedout(d.channelId, d.commitments.timedoutOutgoingHtlcs(count)), d, Some(c))
 
+    case Event(c@CurrentFeerates(feeratesPerKw), d: HasCommitments) =>
+      val networkFeeratePerKw = feeratesPerKw.blocks_2
+      val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
+      // if the fees are too high we risk to not be able to confirm our current commitment
+      if(networkFeeratePerKw > currentFeeratePerKw && Helpers.isFeeDiffTooHigh(currentFeeratePerKw, networkFeeratePerKw, nodeParams.maxFeerateMismatch)){
+        handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = currentFeeratePerKw, remoteFeeratePerKw = networkFeeratePerKw), d, Some(c))
+      } else {
+        stay
+      }
+
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
 
     case Event(CMD_UPDATE_RELAY_FEE(feeBaseMsat, feeProportionalMillionths), d: DATA_NORMAL) =>
