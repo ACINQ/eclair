@@ -50,7 +50,7 @@ case class NodeParams(keyManager: KeyManager,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
                       expiryDeltaBlocks: Int,
-                      upstreamTimeoutSafetyBlocks: Int,
+                      fulfillSafetyBeforeTimeoutBlocks: Int,
                       htlcMinimumMsat: Int,
                       toRemoteDelayBlocks: Int,
                       maxToLocalDelayBlocks: Int,
@@ -78,7 +78,7 @@ case class NodeParams(keyManager: KeyManager,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int) {
-  require(upstreamTimeoutSafetyBlocks < expiryDeltaBlocks, "upstream-timeout-safety-blocks must be smaller than expiry-delta-blocks")
+  require(fulfillSafetyBeforeTimeoutBlocks < expiryDeltaBlocks, "fulfill-safety-before-timeout-blocks must be smaller than expiry-delta-blocks")
 
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
@@ -190,7 +190,7 @@ object NodeParams {
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),
       maxAcceptedHtlcs = maxAcceptedHtlcs,
       expiryDeltaBlocks = config.getInt("expiry-delta-blocks"),
-      upstreamTimeoutSafetyBlocks = config.getInt("upstream-timeout-safety-blocks"),
+      fulfillSafetyBeforeTimeoutBlocks = config.getInt("fulfill-safety-before-timeout-blocks"),
       htlcMinimumMsat = config.getInt("htlc-minimum-msat"),
       toRemoteDelayBlocks = config.getInt("to-remote-delay-blocks"),
       maxToLocalDelayBlocks = config.getInt("max-to-local-delay-blocks"),

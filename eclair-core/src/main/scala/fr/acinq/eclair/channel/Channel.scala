@@ -852,8 +852,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c@CurrentBlockCount(count), d: DATA_NORMAL) if d.commitments.timedOutOutgoingHtlcs(count).nonEmpty =>
       handleLocalError(HtlcTimedout(d.channelId, d.commitments.timedOutOutgoingHtlcs(count)), d, Some(c))
 
-    case Event(c@CurrentBlockCount(count), d: DATA_NORMAL) if d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.upstreamTimeoutSafetyBlocks).nonEmpty =>
-      handleLocalError(HtlcWillTimeoutUpstream(d.channelId, d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.upstreamTimeoutSafetyBlocks)), d, Some(c))
+    case Event(c@CurrentBlockCount(count), d: DATA_NORMAL) if d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.fulfillSafetyBeforeTimeoutBlocks).nonEmpty =>
+      handleLocalError(HtlcWillTimeoutUpstream(d.channelId, d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.fulfillSafetyBeforeTimeoutBlocks)), d, Some(c))
 
     case Event(c@CurrentFeerates(feeratesPerKw), d: DATA_NORMAL) =>
       val networkFeeratePerKw = feeratesPerKw.blocks_2
@@ -1138,8 +1138,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c@CurrentBlockCount(count), d: DATA_SHUTDOWN) if d.commitments.timedOutOutgoingHtlcs(count).nonEmpty =>
       handleLocalError(HtlcTimedout(d.channelId, d.commitments.timedOutOutgoingHtlcs(count)), d, Some(c))
 
-    case Event(c@CurrentBlockCount(count), d: DATA_SHUTDOWN) if d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.upstreamTimeoutSafetyBlocks).nonEmpty =>
-      handleLocalError(HtlcWillTimeoutUpstream(d.channelId, d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.upstreamTimeoutSafetyBlocks)), d, Some(c))
+    case Event(c@CurrentBlockCount(count), d: DATA_SHUTDOWN) if d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.fulfillSafetyBeforeTimeoutBlocks).nonEmpty =>
+      handleLocalError(HtlcWillTimeoutUpstream(d.channelId, d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.fulfillSafetyBeforeTimeoutBlocks)), d, Some(c))
 
     case Event(c@CurrentFeerates(feerates), d: DATA_SHUTDOWN) =>
       val networkFeeratePerKw = feerates.blocks_2
@@ -1434,8 +1434,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
       handleLocalError(HtlcTimedout(d.channelId, d.commitments.timedOutOutgoingHtlcs(count)), d, Some(c))
 
-    case Event(c@CurrentBlockCount(count), d: HasCommitments) if d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.upstreamTimeoutSafetyBlocks).nonEmpty =>
-      handleLocalError(HtlcWillTimeoutUpstream(d.channelId, d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.upstreamTimeoutSafetyBlocks)), d, Some(c))
+    case Event(c@CurrentBlockCount(count), d: HasCommitments) if d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.fulfillSafetyBeforeTimeoutBlocks).nonEmpty =>
+      handleLocalError(HtlcWillTimeoutUpstream(d.channelId, d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.fulfillSafetyBeforeTimeoutBlocks)), d, Some(c))
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
 
@@ -1572,8 +1572,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c@CurrentBlockCount(count), d: HasCommitments) if d.commitments.timedOutOutgoingHtlcs(count).nonEmpty =>
       handleLocalError(HtlcTimedout(d.channelId, d.commitments.timedOutOutgoingHtlcs(count)), d, Some(c))
 
-    case Event(c@CurrentBlockCount(count), d: HasCommitments) if d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.upstreamTimeoutSafetyBlocks).nonEmpty =>
-      handleLocalError(HtlcWillTimeoutUpstream(d.channelId, d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.upstreamTimeoutSafetyBlocks)), d, Some(c))
+    case Event(c@CurrentBlockCount(count), d: HasCommitments) if d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.fulfillSafetyBeforeTimeoutBlocks).nonEmpty =>
+      handleLocalError(HtlcWillTimeoutUpstream(d.channelId, d.commitments.almostTimedOutIncomingHtlcs(count, nodeParams.fulfillSafetyBeforeTimeoutBlocks)), d, Some(c))
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
 

@@ -73,11 +73,12 @@ case class Commitments(channelVersion: ChannelVersion,
     * there will be an on-chain race condition between their HTLC timeout and our HTLC success (both will be enforceable).
     * If we get too close to the timeout, we must close the channel to enforce our HTLC success transactions safely.
     */
-  def almostTimedOutIncomingHtlcs(blockheight: Long, timeoutSafety: Int): Set[UpdateAddHtlc] =
-    localCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry - timeoutSafety && localChanges.signed.exists({
-      case f: UpdateFulfillHtlc => f.id == htlc.add.id
-      case _ => false
-    })).map(_.add)
+  def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: Int): Set[UpdateAddHtlc] = {
+    val pendingFulfills = (localChanges.proposed ++ localChanges.signed ++ localChanges.acked).collect { case u: UpdateFulfillHtlc => u.id }.toSet
+    localCommit.spec.htlcs.collect {
+      case htlc if htlc.direction == IN && blockheight >= htlc.add.cltvExpiry - fulfillSafety && pendingFulfills.contains(htlc.add.id) => htlc.add
+    }
+  }
 
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
 

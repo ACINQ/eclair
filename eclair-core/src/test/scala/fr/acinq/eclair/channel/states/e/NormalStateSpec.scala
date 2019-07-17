@@ -1683,7 +1683,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(watch.event === BITCOIN_TX_CONFIRMED(aliceCommitTx))
   }
 
-  test("recv CurrentBlockCount (an htlc that should be fulfilled will timeout upstream") { f =>
+  test("recv CurrentBlockCount (fulfilled signed htlc ignored by upstream peer)") { f =>
     import f._
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -1691,17 +1691,81 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test begins:
     //  * Bob receives the HTLC pre-image and wants to fulfill
-    //  * Alice does not send signed commitment with the fulfilled HTLC
+    //  * Alice does not react to the fulfill (drops the message for some reason)
     //  * When the HTLC timeout on Alice side is near, Bob needs to close the channel to avoid an on-chain race
     //    condition between his HTLC-success and Alice's HTLC-timeout
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
     val HtlcSuccessTx(_, htlcSuccessTx, _) = initialState.commitments.localCommit.publishableTxs.htlcTxsAndSigs.head.txinfo
-    val (bobFulfilled, _) = Commitments.sendFulfill(initialState.commitments, CMD_FULFILL_HTLC(htlc.id, r, commit = true))
-    val (bobSigned, _) = Commitments.sendCommit(bobFulfilled, TestConstants.Bob.keyManager)
-    bob.setState(stateData = initialState.copy(commitments = bobSigned))
 
-    sender.send(bob, CurrentBlockCount(400144 - Bob.nodeParams.upstreamTimeoutSafetyBlocks))
+    sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r, commit = true))
+    sender.expectMsg("ok")
+    sender.send(bob, CurrentBlockCount(htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks))
+
+    bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
+    bob2blockchain.expectMsgType[PublishAsap] // main delayed
+    val htlcPublishedTx = bob2blockchain.expectMsgType[PublishAsap]
+    assert(htlcPublishedTx.tx.txOut === htlcSuccessTx.txOut)
+    bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
+    val watch = bob2blockchain.expectMsgType[WatchConfirmed]
+    assert(watch.event === BITCOIN_TX_CONFIRMED(initialCommitTx))
+    alice2blockchain.expectNoMsg(500 millis)
+  }
+
+  test("recv CurrentBlockCount (fulfilled proposed htlc ignored by upstream peer)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // actual test begins:
+    //  * Bob receives the HTLC pre-image and wants to fulfill but doesn't sign
+    //  * Alice does not react to the fulfill (drops the message for some reason)
+    //  * When the HTLC timeout on Alice side is near, Bob needs to close the channel to avoid an on-chain race
+    //    condition between his HTLC-success and Alice's HTLC-timeout
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val initialCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
+    val HtlcSuccessTx(_, htlcSuccessTx, _) = initialState.commitments.localCommit.publishableTxs.htlcTxsAndSigs.head.txinfo
+
+    sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r, commit = false))
+    sender.expectMsg("ok")
+    sender.send(bob, CurrentBlockCount(htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks))
+
+    bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
+    bob2blockchain.expectMsgType[PublishAsap] // main delayed
+    val htlcPublishedTx = bob2blockchain.expectMsgType[PublishAsap]
+    assert(htlcPublishedTx.tx.txOut === htlcSuccessTx.txOut)
+    bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
+    val watch = bob2blockchain.expectMsgType[WatchConfirmed]
+    assert(watch.event === BITCOIN_TX_CONFIRMED(initialCommitTx))
+    alice2blockchain.expectNoMsg(500 millis)
+  }
+
+  test("recv CurrentBlockCount (fulfilled proposed htlc acked but not committed by upstream peer)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // actual test begins:
+    //  * Bob receives the HTLC pre-image and wants to fulfill
+    //  * Alice acks but doesn't commit
+    //  * When the HTLC timeout on Alice side is near, Bob needs to close the channel to avoid an on-chain race
+    //    condition between his HTLC-success and Alice's HTLC-timeout
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val initialCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
+    val HtlcSuccessTx(_, htlcSuccessTx, _) = initialState.commitments.localCommit.publishableTxs.htlcTxsAndSigs.head.txinfo
+
+    sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r, commit = true))
+    sender.expectMsg("ok")
+    bob2alice.expectMsgType[UpdateFulfillHtlc]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    sender.send(bob, CurrentBlockCount(htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks))
+
     bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     val htlcPublishedTx = bob2blockchain.expectMsgType[PublishAsap]
