@@ -41,18 +41,16 @@ import scala.util.Try
  */
 case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.TaggedField], signature: ByteVector) {
 
-  amount.map(a => require(a > 0.msat, s"amount is not valid"))
-  require(tags.collect { case _: PaymentRequest.PaymentHash => {} }.size == 1, "there must be exactly one payment hash tag")
-  require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => {} }.size == 1, "there must be exactly one description tag or one description hash tag")
+  amount.foreach(a => require(a > 0.msat, s"amount is not valid"))
+  require(tags.collect { case _: PaymentRequest.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
+  require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
 
   /**
-   *
    * @return the payment hash
    */
   lazy val paymentHash = tags.collectFirst { case p: PaymentRequest.PaymentHash => p }.get.hash
 
   /**
-   *
    * @return the description of the payment, or its hash
    */
   lazy val description: Either[String, ByteVector32] = tags.collectFirst {
@@ -61,7 +59,6 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   }.get
 
   /**
-   *
    * @return the fallback address if any. It could be a script address, pubkey address, ..
    */
   def fallbackAddress(): Option[String] = tags.collectFirst {
@@ -78,17 +75,18 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case cltvExpiry: PaymentRequest.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta
   }
 
+  lazy val features: Features = tags.collectFirst { case f: Features => f }.getOrElse(Features(BitVector.empty))
+
   def isExpired: Boolean = expiry match {
     case Some(expiryTime) => timestamp + expiryTime <= Platform.currentTime.milliseconds.toSeconds
     case None => timestamp + DEFAULT_EXPIRY_SECONDS <= Platform.currentTime.milliseconds.toSeconds
   }
 
   /**
-   *
    * @return the hash of this payment request
    */
   def hash: ByteVector32 = {
-    val hrp = s"${prefix}${Amount.encode(amount)}".getBytes("UTF-8")
+    val hrp = s"$prefix${Amount.encode(amount)}".getBytes("UTF-8")
     val data = Bolt11Data(timestamp, tags, ByteVector.fill(65)(0)) // fake sig that we are going to strip next
     val bin = Codecs.bolt11DataCodec.encode(data).require
     val message = ByteVector.view(hrp) ++ bin.dropRight(520).toByteVector
@@ -96,7 +94,6 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   }
 
   /**
-   *
    * @param priv private key
    * @return a signed payment request
    */
@@ -120,7 +117,8 @@ object PaymentRequest {
 
   def apply(chainHash: ByteVector32, amount: Option[MilliSatoshi], paymentHash: ByteVector32, privateKey: PrivateKey,
             description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
-            extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L): PaymentRequest = {
+            extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L,
+            features: Option[Features] = None): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
 
@@ -133,8 +131,9 @@ object PaymentRequest {
         Some(PaymentHash(paymentHash)),
         Some(Description(description)),
         fallbackAddress.map(FallbackAddress(_)),
-        expirySeconds.map(Expiry(_))
-      ).flatten ++ extraHops.map(RoutingInfo(_)),
+        expirySeconds.map(Expiry(_)),
+        features
+      ).flatten ++ extraHops.map(RoutingInfo),
       signature = ByteVector.empty)
       .sign(privateKey)
   }
@@ -150,7 +149,6 @@ object PaymentRequest {
   case class UnknownTag1(data: BitVector) extends UnknownTaggedField
   case class UnknownTag2(data: BitVector) extends UnknownTaggedField
   case class UnknownTag4(data: BitVector) extends UnknownTaggedField
-  case class UnknownTag5(data: BitVector) extends UnknownTaggedField
   case class UnknownTag7(data: BitVector) extends UnknownTaggedField
   case class UnknownTag8(data: BitVector) extends UnknownTaggedField
   case class UnknownTag10(data: BitVector) extends UnknownTaggedField
@@ -198,13 +196,11 @@ object PaymentRequest {
 
   /**
    * Fallback Payment that specifies a fallback payment address to be used if LN payment cannot be processed
-   *
    */
   case class FallbackAddress(version: Byte, data: ByteVector) extends TaggedField
 
   object FallbackAddress {
     /**
-     *
      * @param address valid base58 or bech32 address
      * @return a FallbackAddressTag instance
      */
@@ -244,8 +240,6 @@ object PaymentRequest {
   /**
    * This returns a bitvector with the minimum size necessary to encode the long, left padded
    * to have a length (in bits) multiples of 5
-   *
-   * @param l
    */
   def long2bits(l: Long) = {
     val bin = BitVector.fromLong(l)
@@ -256,7 +250,7 @@ object PaymentRequest {
     val nonPadded = if (highest == -1) BitVector.empty else bin.drop(highest)
     nonPadded.size % 5 match {
       case 0 => nonPadded
-      case remaining => BitVector.fill(5 - remaining)(false) ++ nonPadded
+      case remaining => BitVector.fill(5 - remaining)(high = false) ++ nonPadded
     }
   }
 
@@ -294,7 +288,6 @@ object PaymentRequest {
 
   /**
    * Min final CLTV expiry
-   *
    */
   case class MinFinalCltvExpiry(bin: BitVector) extends TaggedField {
     def toCltvExpiryDelta = CltvExpiryDelta(bin.toInt(signed = false))
@@ -307,6 +300,17 @@ object PaymentRequest {
      * @param blocks min final cltv expiry, in blocks
      */
     def apply(blocks: Long): MinFinalCltvExpiry = MinFinalCltvExpiry(long2bits(blocks))
+  }
+
+  /**
+   * Features supported or required for receiving this payment.
+   */
+  case class Features(bitmask: BitVector) extends TaggedField
+
+  object Features {
+    def apply(features: Int*): Features = Features(long2bits(features.foldLeft(0) {
+      case (current, feature) => current + (1 << feature)
+    }))
   }
 
   object Codecs {
@@ -331,7 +335,7 @@ object PaymentRequest {
 
     def alignedBytesCodec[A](valueCodec: Codec[A]): Codec[A] = Codec[A](
       (value: A) => valueCodec.encode(value),
-      (wire: BitVector) => (limitedSizeBits(wire.size - wire.size % 8, valueCodec) ~ constant(BitVector.fill(wire.size % 8)(false))).map(_._1).decode(wire) // the 'constant' codec ensures that padding is zero
+      (wire: BitVector) => (limitedSizeBits(wire.size - wire.size % 8, valueCodec) ~ constant(BitVector.fill(wire.size % 8)(high = false))).map(_._1).decode(wire) // the 'constant' codec ensures that padding is zero
     )
 
     val dataLengthCodec: Codec[Long] = uint(10).xmap(_ * 5, s => (s / 5 + (if (s % 5 == 0) 0 else 1)).toInt)
@@ -344,7 +348,7 @@ object PaymentRequest {
       .typecase(2, dataCodec(bits).as[UnknownTag2])
       .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo])
       .typecase(4, dataCodec(bits).as[UnknownTag4])
-      .typecase(5, dataCodec(bits).as[UnknownTag5])
+      .typecase(5, dataCodec(bits).as[Features])
       .typecase(6, dataCodec(bits).as[Expiry])
       .typecase(7, dataCodec(bits).as[UnknownTag7])
       .typecase(8, dataCodec(bits).as[UnknownTag8])
@@ -390,7 +394,6 @@ object PaymentRequest {
   object Amount {
 
     /**
-     * @param amount
      * @return the unit allowing for the shortest representation possible
      */
     def unit(amount: MilliSatoshi): Char = amount.toLong * 10 match { // 1 milli-satoshis == 10 pico-bitcoin
@@ -430,7 +433,6 @@ object PaymentRequest {
   val eight2fiveCodec: Codec[List[Byte]] = list(ubyte(5))
 
   /**
-   *
    * @param input bech32-encoded payment request
    * @return a payment request
    */
@@ -441,7 +443,7 @@ object PaymentRequest {
     val separatorIndex = lowercaseInput.lastIndexOf('1')
     val hrp = lowercaseInput.take(separatorIndex)
     val prefix: String = prefixes.values.find(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
-    val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.size - 6)) // 6 == checksum size
+    val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.length - 6)) // 6 == checksum size
     val bolt11Data = Codecs.bolt11DataCodec.decode(data).require.value
     val signature = ByteVector64(bolt11Data.signature.take(64))
     val message: ByteVector = ByteVector.view(hrp.getBytes) ++ data.dropRight(520).toByteVector // we drop the sig bytes
@@ -462,7 +464,6 @@ object PaymentRequest {
   }
 
   /**
-   *
    * @param pr payment request
    * @return a bech32-encoded payment request
    */
