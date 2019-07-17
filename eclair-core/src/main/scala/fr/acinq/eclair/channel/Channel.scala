@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
-import fr.acinq.bitcoin.Crypto.{PublicKey, PrivateKey, sha256}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -98,7 +98,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   import nodeParams.keyManager
 
   // we pass these to helpers classes so that they have the logging context
-  implicit def implicitLog = log
+  implicit def implicitLog: akka.event.LoggingAdapter = log
 
   val forwarder = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
 
@@ -146,7 +146,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
     case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, _, localParams, remote, _, channelFlags), Nothing) =>
-      context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, true, temporaryChannelId))
+      context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, isFunder = true, temporaryChannelId))
       forwarder ! remote
       val open = OpenChannel(nodeParams.chainHash,
         temporaryChannelId = temporaryChannelId,
@@ -270,7 +270,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Try(Helpers.validateParamsFundee(nodeParams, open)) match {
         case Failure(t) => handleLocalError(t, d, Some(open))
         case Success(_) =>
-          context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, false, open.temporaryChannelId))
+          context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, isFunder = false, open.temporaryChannelId))
           // TODO: maybe also check uniqueness of temporary channel id
           val minimumDepth = nodeParams.minDepthBlocks
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
@@ -762,7 +762,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             // we were waiting for our pending htlcs to be signed before replying with our local shutdown
             val localShutdown = Shutdown(d.channelId, commitments1.localParams.defaultFinalScriptPubKey)
             // note: it means that we had pending htlcs to sign, therefore we go to SHUTDOWN, not to NEGOTIATING
-            require(commitments1.remoteCommit.spec.htlcs.size > 0, "we must have just signed new htlcs, otherwise we would have sent our Shutdown earlier")
+            require(commitments1.remoteCommit.spec.htlcs.nonEmpty, "we must have just signed new htlcs, otherwise we would have sent our Shutdown earlier")
             goto(SHUTDOWN) using store(DATA_SHUTDOWN(commitments1, localShutdown, d.remoteShutdown.get)) sending localShutdown
           } else {
             stay using store(d.copy(commitments = commitments1))
@@ -937,7 +937,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NORMAL) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
-    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NORMAL) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NORMAL) if d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid).contains(tx.txid) => handleRemoteSpentNext(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NORMAL) => handleRemoteSpentOther(tx, d)
 
@@ -1154,7 +1154,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_SHUTDOWN) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
-    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_SHUTDOWN) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_SHUTDOWN) if d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid).contains(tx.txid) => handleRemoteSpentNext(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_SHUTDOWN) => handleRemoteSpentOther(tx, d)
 
@@ -1168,7 +1168,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c@ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) =>
       log.info(s"received closingFeeSatoshis=$remoteClosingFee")
       Closing.checkClosingSignature(keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(remoteClosingFee), remoteSig) match {
-        case Success(signedClosingTx) if Some(remoteClosingFee) == d.closingTxProposed.last.lastOption.map(_.localClosingSigned.feeSatoshis) || d.closingTxProposed.flatten.size >= MAX_NEGOTIATION_ITERATIONS =>
+        case Success(signedClosingTx) if d.closingTxProposed.last.lastOption.map(_.localClosingSigned.feeSatoshis).contains(remoteClosingFee) || d.closingTxProposed.flatten.size >= MAX_NEGOTIATION_ITERATIONS =>
           // we close when we converge or when there were too many iterations
           handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTx_opt = Some(signedClosingTx))))
         case Success(signedClosingTx) =>
@@ -1178,7 +1178,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             localClosingFee = lastLocalClosingFee.getOrElse(Closing.firstClosingFee(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey)),
             remoteClosingFee = Satoshi(remoteClosingFee))
           val (closingTx, closingSigned) = Closing.makeClosingTx(keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nextClosingFee)
-          if (Some(nextClosingFee) == lastLocalClosingFee) {
+          if (lastLocalClosingFee.contains(nextClosingFee)) {
             // next computed fee is the same than the one we previously sent (probably because of rounding), let's close now
             handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTx_opt = Some(signedClosingTx))))
           } else if (nextClosingFee == Satoshi(remoteClosingFee)) {
@@ -1203,7 +1203,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
-    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) if d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid).contains(tx.txid) => handleRemoteSpentNext(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) => handleRemoteSpentOther(tx, d)
 
@@ -1219,19 +1219,19 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Success((commitments1, _)) =>
           log.info(s"got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain")
           val localCommitPublished1 = d.localCommitPublished.map {
-            case localCommitPublished =>
+            localCommitPublished =>
               val localCommitPublished1 = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, commitments1, localCommitPublished.commitTx)
               doPublish(localCommitPublished1)
               localCommitPublished1
           }
           val remoteCommitPublished1 = d.remoteCommitPublished.map {
-            case remoteCommitPublished =>
+            remoteCommitPublished =>
               val remoteCommitPublished1 = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx)
               doPublish(remoteCommitPublished1)
               remoteCommitPublished1
           }
           val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map {
-            case remoteCommitPublished =>
+            remoteCommitPublished =>
               val remoteCommitPublished1 = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx)
               doPublish(remoteCommitPublished1)
               remoteCommitPublished1
@@ -1253,22 +1253,22 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       } else if (d.mutualCloseProposed.map(_.txid).contains(tx.txid)) {
         // at any time they can publish a closing tx with any sig we sent them
         handleMutualClose(tx, Right(d))
-      } else if (Some(tx.txid) == d.localCommitPublished.map(_.commitTx.txid)) {
+      } else if (d.localCommitPublished.map(_.commitTx.txid).contains(tx.txid)) {
         // this is because WatchSpent watches never expire and we are notified multiple times
         stay
-      } else if (Some(tx.txid) == d.remoteCommitPublished.map(_.commitTx.txid)) {
+      } else if (d.remoteCommitPublished.map(_.commitTx.txid).contains(tx.txid)) {
         // this is because WatchSpent watches never expire and we are notified multiple times
         stay
-      } else if (Some(tx.txid) == d.nextRemoteCommitPublished.map(_.commitTx.txid)) {
+      } else if (d.nextRemoteCommitPublished.map(_.commitTx.txid).contains(tx.txid)) {
         // this is because WatchSpent watches never expire and we are notified multiple times
         stay
-      } else if (Some(tx.txid) == d.futureRemoteCommitPublished.map(_.commitTx.txid)) {
+      } else if (d.futureRemoteCommitPublished.map(_.commitTx.txid).contains(tx.txid)) {
         // this is because WatchSpent watches never expire and we are notified multiple times
         stay
       } else if (tx.txid == d.commitments.remoteCommit.txid) {
         // counterparty may attempt to spend its last commit tx at any time
         handleRemoteSpentCurrent(tx, d)
-      } else if (Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid)) {
+      } else if (d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid).contains(tx.txid)) {
         // counterparty may attempt to spend its last commit tx at any time
         handleRemoteSpentNext(tx, d)
       } else {
@@ -1313,7 +1313,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val futureRemoteCommitPublished1 = d.futureRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx))
       val revokedCommitPublished1 = d.revokedCommitPublished.map(Closing.updateRevokedCommitPublished(_, tx))
       // if the local commitment tx just got confirmed, let's send an event telling when we will get the main output refund
-      if (localCommitPublished1.map(_.commitTx.txid) == Some(tx.txid)) {
+      if (localCommitPublished1.map(_.commitTx.txid).contains(tx.txid)) {
         context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.remoteParams.toSelfDelay))
       }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
@@ -1351,7 +1351,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // we update the channel data
       val d1 = d.copy(localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1, futureRemoteCommitPublished = futureRemoteCommitPublished1, revokedCommitPublished = revokedCommitPublished1)
       // and we also send events related to fee
-      Closing.networkFeePaid(tx, d1) map { case (fee, desc) => feePaid(fee, tx, desc, d.channelId) }
+      Closing.networkFeePaid(tx, d1) foreach { case (fee, desc) => feePaid(fee, tx, desc, d.channelId) }
       // then let's see if any of the possible close scenarii can be considered done
       val closingType_opt = Closing.isClosed(d1, Some(tx))
       // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay (note that we don't store the state)
@@ -1385,7 +1385,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case d: HasCommitments =>
           log.info(s"deleting database record for channelId=${d.channelId}")
           nodeParams.db.channels.removeChannel(d.channelId)
-        case _ => {}
+        case _ =>
       }
       log.info("shutting down")
       stop(FSM.Normal)
@@ -1484,7 +1484,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
           // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
           if (keyManager.commitmentSecret(d.commitments.localParams.channelKeyPath, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
-            log.warning(s"counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${d.commitments.localCommit.index} theirCommitmentNumber=${nextRemoteRevocationNumber}")
+            log.warning(s"counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${d.commitments.localCommit.index} theirCommitmentNumber=$nextRemoteRevocationNumber")
             // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
             // would punish us by taking all the funds in the channel
             val exc = PleasePublishYourCommitment(d.channelId)
@@ -1496,7 +1496,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           }
         case ChannelReestablish(_, nextLocalCommitmentNumber, _, _, _) if !Helpers.checkRemoteCommit(d, nextLocalCommitmentNumber) =>
           // if next_local_commit_number is more than one more our remote commitment index, it means that either we are using an outdated commitment, or they are lying
-          log.warning(s"counterparty says that they have a more recent commitment than the one we know of!!! ourCommitmentNumber=${d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.index).getOrElse(d.commitments.remoteCommit.index)} theirCommitmentNumber=${nextLocalCommitmentNumber}")
+          log.warning(s"counterparty says that they have a more recent commitment than the one we know of!!! ourCommitmentNumber=${d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.index).getOrElse(d.commitments.remoteCommit.index)} theirCommitmentNumber=$nextLocalCommitmentNumber")
           // there is no way to make sure that they are saying the truth, the best thing to do is ask them to publish their commitment right now
           // maybe they will publish their commitment, in that case we need to remember their commitment point in order to be able to claim our outputs
           // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
@@ -1735,13 +1735,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   /**
     * This function is used to return feedback to user at channel opening
     */
-  def replyToUser(message: Either[Channel.ChannelError, String]) = {
+  def replyToUser(message: Either[Channel.ChannelError, String]): Unit = {
     val m = message match {
       case Left(LocalError(t)) => Status.Failure(t)
       case Left(RemoteError(e)) => Status.Failure(new RuntimeException(s"peer sent error: ascii='${e.toAscii}' bin=${e.data.toHex}"))
       case Right(s) => s
     }
-    origin_opt.map(_ ! m)
+    origin_opt.foreach(_ ! m)
   }
 
   def handleCommandSuccess(sender: ActorRef, newData: Data) = {
@@ -1761,10 +1761,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   /**
     * When we are funder, we use this function to detect when our funding tx has been double-spent (by another transaction
     * that we made for some reason). If the funding tx has been double spent we can forget about the channel.
-    *
-    * @param fundingTx
     */
-  def checkDoubleSpent(fundingTx: Transaction) = {
+  def checkDoubleSpent(fundingTx: Transaction): Unit = {
     log.debug(s"checking status of funding tx txid=${fundingTx.txid}")
     wallet.doubleSpent(fundingTx).onComplete {
       case Success(true) =>
@@ -1899,7 +1897,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     goto(CLOSING) using store(nextData)
   }
 
-  def doPublish(closingTx: Transaction) = {
+  def doPublish(closingTx: Transaction): Unit = {
     blockchain ! PublishAsap(closingTx)
     blockchain ! WatchConfirmed(self, closingTx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(closingTx))
   }
@@ -1934,11 +1932,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   /**
     * This helper method will publish txes only if they haven't yet reached minDepth
-    *
-    * @param txes
-    * @param irrevocablySpent
     */
-  def publishIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]) = {
+  def publishIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]): Unit = {
     val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
     process.foreach { tx =>
       log.info(s"publishing txid=${tx.txid}")
@@ -1949,11 +1944,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   /**
     * This helper method will watch txes only if they haven't yet reached minDepth
-    *
-    * @param txes
-    * @param irrevocablySpent
     */
-  def watchConfirmedIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]) = {
+  def watchConfirmedIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]): Unit = {
     val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
     process.foreach(tx => blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
     skip.foreach(tx => log.info(s"no need to watch txid=${tx.txid}, it has already been confirmed"))
@@ -1961,18 +1953,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   /**
     * This helper method will watch txes only if the utxo they spend hasn't already been irrevocably spent
-    *
-    * @param parentTx
-    * @param txes
-    * @param irrevocablySpent
     */
-  def watchSpentIfNeeded(parentTx: Transaction, txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]) = {
+  def watchSpentIfNeeded(parentTx: Transaction, txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]): Unit = {
     val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
     process.foreach(tx => blockchain ! WatchSpent(self, parentTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
     skip.foreach(tx => log.info(s"no need to watch txid=${tx.txid}, it has already been confirmed"))
   }
 
-  def doPublish(localCommitPublished: LocalCommitPublished) = {
+  def doPublish(localCommitPublished: LocalCommitPublished): Unit = {
     import localCommitPublished._
 
     val publishQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ htlcSuccessTxs ++ htlcTimeoutTxs ++ claimHtlcDelayedTxs
@@ -2036,7 +2024,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     goto(CLOSING) using store(nextData)
   }
 
-  def doPublish(remoteCommitPublished: RemoteCommitPublished) = {
+  def doPublish(remoteCommitPublished: RemoteCommitPublished): Unit = {
     import remoteCommitPublished._
 
     val publishQueue = claimMainOutputTx ++ claimHtlcSuccessTxs ++ claimHtlcTimeoutTxs
@@ -2078,7 +2066,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     }
   }
 
-  def doPublish(revokedCommitPublished: RevokedCommitPublished) = {
+  def doPublish(revokedCommitPublished: RevokedCommitPublished): Unit = {
     import revokedCommitPublished._
 
     val publishQueue = claimMainOutputTx ++ mainPenaltyTx ++ htlcPenaltyTxs ++ claimHtlcDelayedPenaltyTxs
@@ -2121,7 +2109,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     log.debug(s"localNextHtlcId=${d.commitments.localNextHtlcId}->${commitments1.localNextHtlcId}")
     log.debug(s"remoteNextHtlcId=${d.commitments.remoteNextHtlcId}->${commitments1.remoteNextHtlcId}")
 
-    def resendRevocation = {
+    def resendRevocation(): Unit = {
       // let's see the state of remote sigs
       if (commitments1.localCommit.index == channelReestablish.nextRemoteRevocationNumber) {
         // nothing to do
@@ -2146,24 +2134,24 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         // they had received the new sig but their revocation was lost during the disconnection
         // they will send us the revocation, nothing to do here
         log.debug(s"waiting for them to re-send their last revocation")
-        resendRevocation
+        resendRevocation()
       case Left(waitingForRevocation) if waitingForRevocation.nextRemoteCommit.index == channelReestablish.nextLocalCommitmentNumber =>
         // we had sent a new sig and were waiting for their revocation
         // they didn't receive the new sig because of the disconnection
         // we just resend the same updates and the same sig
 
         val revWasSentLast = commitments1.localCommit.index > waitingForRevocation.sentAfterLocalCommitIndex
-        if (!revWasSentLast) resendRevocation
+        if (!revWasSentLast) resendRevocation()
 
         log.debug(s"re-sending previously local signed changes: ${commitments1.localChanges.signed.map(Commitments.msg2String(_)).mkString(",")}")
         commitments1.localChanges.signed.foreach(forwarder ! _)
         log.debug(s"re-sending the exact same previous sig")
         forwarder ! waitingForRevocation.sent
 
-        if (revWasSentLast) resendRevocation
+        if (revWasSentLast) resendRevocation()
       case Right(_) if commitments1.remoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber =>
         // there wasn't any sig in-flight when the disconnection occurred
-        resendRevocation
+        resendRevocation()
       case _ => throw CommitmentSyncError(d.channelId)
     }
 
@@ -2208,7 +2196,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Right(u) => Relayed(u.channelId, u.id, u.amountMsat, c.amountMsat) // this is a relayed payment
   }
 
-  def feePaid(fee: Satoshi, tx: Transaction, desc: String, channelId: ByteVector32) = {
+  def feePaid(fee: Satoshi, tx: Transaction, desc: String, channelId: ByteVector32): Unit = {
     log.info(s"paid feeSatoshi=${fee.amount} for txid=${tx.txid} desc=$desc")
     context.system.eventStream.publish(NetworkFeePaid(self, remoteNodeId, channelId, tx, fee, desc))
   }
