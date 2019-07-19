@@ -17,10 +17,10 @@
 package fr.acinq.eclair
 
 import java.sql.{Connection, DriverManager}
-
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratesPerKw}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
@@ -37,6 +37,17 @@ object TestConstants {
   val fundingSatoshis = 1000000L
   val pushMsat = 200000000L
   val feeratePerKw = 10000L
+
+  class TestFeeEstimator extends FeeEstimator {
+    private var currentFeerates = FeeratesPerKw.single(feeratePerKw)
+
+    override def getFeeratePerKb(target: Int): Long = feerateKw2KB(currentFeerates.feePerBlock(target))
+    override def getFeeratePerKw(target: Int): Long = currentFeerates.feePerBlock(target)
+
+    def setFeerate(feeratesPerKw: FeeratesPerKw): Unit = {
+      currentFeerates = feeratesPerKw
+    }
+  }
 
   def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
 
@@ -65,6 +76,7 @@ object TestConstants {
       toRemoteDelayBlocks = 144,
       maxToLocalDelayBlocks = 1000,
       smartfeeNBlocks = 3,
+      feeEstimator = new TestFeeEstimator,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
@@ -131,6 +143,7 @@ object TestConstants {
       toRemoteDelayBlocks = 144,
       maxToLocalDelayBlocks = 1000,
       smartfeeNBlocks = 3,
+      feeEstimator = new TestFeeEstimator,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)

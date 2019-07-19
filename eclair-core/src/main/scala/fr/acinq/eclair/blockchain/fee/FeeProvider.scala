@@ -32,11 +32,29 @@ trait FeeProvider {
 // stores fee rate in satoshi/kb (1 kb = 1000 bytes)
 case class FeeratesPerKB(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long) {
   require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0, "all feerates must be strictly greater than 0")
+
+  def feePerBlock(target: Int) = target match {
+    case 1 => block_1
+    case 2 => blocks_2
+    case t if t <= 6 => blocks_6
+    case t if t <= 12 => blocks_12
+    case t if t <= 36 => blocks_36
+    case _ => blocks_72
+  }
 }
 
 // stores fee rate in satoshi/kw (1 kw = 1000 weight units)
 case class FeeratesPerKw(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long) {
   require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0, "all feerates must be strictly greater than 0")
+
+  def feePerBlock(target: Int) = target match {
+    case 1 => block_1
+    case 2 => blocks_2
+    case t if t <= 6 => blocks_6
+    case t if t <= 12 => blocks_12
+    case t if t <= 36 => blocks_36
+    case _ => blocks_72
+  }
 }
 
 object FeeratesPerKw {

@@ -25,6 +25,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.WatcherType
+import fr.acinq.eclair.blockchain.fee.FeeEstimator
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
@@ -55,6 +56,7 @@ case class NodeParams(keyManager: KeyManager,
                       maxToLocalDelayBlocks: Int,
                       minDepthBlocks: Int,
                       smartfeeNBlocks: Int,
+                      feeEstimator: FeeEstimator,
                       feeBaseMsat: Int,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
@@ -193,6 +195,10 @@ object NodeParams {
       maxToLocalDelayBlocks = config.getInt("max-to-local-delay-blocks"),
       minDepthBlocks = config.getInt("mindepth-blocks"),
       smartfeeNBlocks = 3,
+      feeEstimator = new FeeEstimator {
+        override def getFeeratePerKb(target: Int): Long = Globals.feeratesPerKB.get().feePerBlock(target)
+        override def getFeeratePerKw(target: Int): Long = Globals.feeratesPerKw.get().feePerBlock(target)
+      },
       feeBaseMsat = config.getInt("fee-base-msat"),
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),

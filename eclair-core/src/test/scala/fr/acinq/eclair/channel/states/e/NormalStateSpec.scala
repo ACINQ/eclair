@@ -1388,8 +1388,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
-    // we first update the global variable so that we don't trigger a 'fee too different' error
-    Globals.feeratesPerKw.set(FeeratesPerKw.single(fee.feeratePerKw))
+    // we first update the feerates so that we don't trigger a 'fee too different' error
+    feeEstimator.setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
     sender.send(bob, fee)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missingSatoshis = 71620000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
