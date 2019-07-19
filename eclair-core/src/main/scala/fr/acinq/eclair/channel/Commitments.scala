@@ -68,16 +68,27 @@ case class Commitments(channelVersion: ChannelVersion,
       remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry)).getOrElse(Set.empty[DirectedHtlc])).map(_.add)
 
   /**
+    * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
+    * HTLCs, we need to get a remote signed updated commitment that removes this HTLC.
+    * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
+    * and our HTLC success in case of a force-close.
+    */
+  def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: Int): Set[UpdateAddHtlc] = {
+    localCommit.spec.htlcs.collect {
+      case htlc if htlc.direction == IN && blockheight >= htlc.add.cltvExpiry - fulfillSafety => htlc.add
+    }
+  }
+
+  /**
     * Once we have the pre-image for incoming htlcs, we are able to spend the HTLC success transaction.
     * However, if the upstream peer doesn't update its commitment to remove that HTLC and waits for the HTLC timeout,
     * there will be an on-chain race condition between their HTLC timeout and our HTLC success (both will be enforceable).
     * If we get too close to the timeout, we must close the channel to enforce our HTLC success transactions safely.
     */
-  def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: Int): Set[UpdateAddHtlc] = {
-    val pendingFulfills = (localChanges.proposed ++ localChanges.signed ++ localChanges.acked).collect { case u: UpdateFulfillHtlc => u.id }.toSet
-    localCommit.spec.htlcs.collect {
-      case htlc if htlc.direction == IN && blockheight >= htlc.add.cltvExpiry - fulfillSafety && pendingFulfills.contains(htlc.add.id) => htlc.add
-    }
+  def pendingFulfillHtlcs(): Set[UpdateFulfillHtlc] = {
+    localChanges.all.collect {
+      case u: UpdateFulfillHtlc => u
+    }.toSet
   }
 
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)

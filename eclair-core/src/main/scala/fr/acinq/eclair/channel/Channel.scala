@@ -1771,7 +1771,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             // we also check if the funding tx has been double-spent
             checkDoubleSpent(fundingTx)
             context.system.scheduler.scheduleOnce(1 day, blockchain, GetTxWithMeta(txid))
-          case None if (now.seconds - waitingSince.seconds) > FUNDING_TIMEOUT_FUNDEE  && (now.seconds - lastBlockTimestamp.seconds) < 1.hour =>
+          case None if (now.seconds - waitingSince.seconds) > FUNDING_TIMEOUT_FUNDEE && (now.seconds - lastBlockTimestamp.seconds) < 1.hour =>
             // if we are fundee, we give up after some time
             // NB: we want to be sure that the blockchain is in sync to prevent false negatives
             log.warning(s"funding tx hasn't been published in ${(now.seconds - waitingSince.seconds).toDays} days and blockchain is fresh from ${(now.seconds - lastBlockTimestamp.seconds).toMinutes} minutes ago")
@@ -1832,10 +1832,28 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   def handleNewBlock(c: CurrentBlockCount, d: HasCommitments) = {
-    if (d.commitments.timedOutOutgoingHtlcs(c.blockCount).nonEmpty) {
-      handleLocalError(HtlcTimedout(d.channelId, d.commitments.timedOutOutgoingHtlcs(c.blockCount)), d, Some(c))
-    } else if (d.commitments.almostTimedOutIncomingHtlcs(c.blockCount, nodeParams.fulfillSafetyBeforeTimeoutBlocks).nonEmpty) {
-      handleLocalError(HtlcWillTimeoutUpstream(d.channelId, d.commitments.almostTimedOutIncomingHtlcs(c.blockCount, nodeParams.fulfillSafetyBeforeTimeoutBlocks)), d, Some(c))
+    val timedOutOutgoing = d.commitments.timedOutOutgoingHtlcs(c.blockCount)
+    val almostTimedOutIncoming = d.commitments.almostTimedOutIncomingHtlcs(c.blockCount, nodeParams.fulfillSafetyBeforeTimeoutBlocks)
+    if (timedOutOutgoing.nonEmpty) {
+      // Downstream timed out.
+      handleLocalError(HtlcTimedout(d.channelId, timedOutOutgoing), d, Some(c))
+    } else if (almostTimedOutIncoming.nonEmpty) {
+      // Upstream is close to timing out.
+      val relayedFulfills = d.commitments.pendingFulfillHtlcs().map(_.id)
+      val offendingRelayedHtlcs = almostTimedOutIncoming.filter(htlc => relayedFulfills.contains(htlc.id))
+      if (offendingRelayedHtlcs.nonEmpty) {
+        handleLocalError(HtlcWillTimeoutUpstream(d.channelId, offendingRelayedHtlcs), d, Some(c))
+      } else {
+        // There might be pending fulfill commands that we haven't relayed yet.
+        // Since this involves a DB call, we only want to check it if all the previous checks failed (this is the slow path).
+        val pendingRelayFulfills = nodeParams.db.pendingRelay.listPendingRelay(d.channelId).collect { case CMD_FULFILL_HTLC(id, r, _) => id }
+        val offendingPendingRelayFulfills = almostTimedOutIncoming.filter(htlc => pendingRelayFulfills.contains(htlc.id))
+        if (offendingPendingRelayFulfills.nonEmpty) {
+          handleLocalError(HtlcWillTimeoutUpstream(d.channelId, offendingPendingRelayFulfills), d, Some(c))
+        } else {
+          stay
+        }
+      }
     } else {
       stay
     }
