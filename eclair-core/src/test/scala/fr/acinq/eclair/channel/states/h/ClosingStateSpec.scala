@@ -21,9 +21,12 @@ import java.util.UUID
 import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
+import com.typesafe.sslconfig.util.NoopLogger
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, ScriptFlags, Transaction, TxIn}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratesPerKw}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
@@ -135,6 +138,26 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == CLOSING)
     awaitCond(bob.stateName == CLOSING)
     // both nodes are now in CLOSING state with a mutual close tx pending for confirmation
+  }
+
+  test("start fee negotiation from configured block target") { f =>
+    import f._
+
+    feeEstimator.setFeerate(FeeratesPerKw(100, 250, 350, 450, 600, 800))
+
+    val sender = TestProbe()
+    // alice initiates a closing
+    sender.send(alice, CMD_CLOSE(None))
+    alice2bob.expectMsgType[Shutdown]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[Shutdown]
+    bob2alice.forward(alice)
+    val closing = alice2bob.expectMsgType[ClosingSigned]
+    val aliceData = alice.stateData.asInstanceOf[DATA_NEGOTIATING]
+    val mutualClosingFeeRate = feeEstimator.getFeeratePerKw(Alice.nodeParams.feeTargets.mutualCloseBlockTarget)
+    val expectedFirstProposedFee = Closing.firstClosingFee(mutualClosingFeeRate, aliceData.commitments, aliceData.localShutdown.scriptPubKey, aliceData.remoteShutdown.scriptPubKey)(akka.event.NoLogging)
+    assert(Alice.nodeParams.feeTargets.mutualCloseBlockTarget == 2 && mutualClosingFeeRate == 250)
+    assert(closing.feeSatoshis == expectedFirstProposedFee.amount)
   }
 
   test("recv BITCOIN_FUNDING_PUBLISH_FAILED", Tag("funding_unconfirmed")) { f =>
