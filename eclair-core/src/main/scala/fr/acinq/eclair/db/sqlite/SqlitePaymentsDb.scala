@@ -35,8 +35,10 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   val DB_NAME = "payments"
   val CURRENT_VERSION = 3
 
-  def migration123(statement: Statement): Unit = {
-    // 1 -> 2 was backwards compatible so this method is used to migrate both 1 and 2 to 3
+  // 1 -> 2 was backwards compatible so this method is noop
+  def migration12(statement: Statement): Unit = ()
+
+  def migration23(statement: Statement): Unit = {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL)")
     statement.executeUpdate("ALTER TABLE sent_payments ADD COLUMN fee_msat INTEGER DEFAULT 0 NOT NULL")
@@ -47,11 +49,12 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
       case 1 => // previous version let's migrate
         logger.warn(s"migrating db $DB_NAME, found version=1 current=$CURRENT_VERSION")
-        migration123(statement)
+        migration12(statement)
+        migration23(statement)
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case 2 =>
         logger.warn(s"migrating db $DB_NAME, found version=2 current=$CURRENT_VERSION")
-        migration123(statement)
+        migration23(statement)
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
