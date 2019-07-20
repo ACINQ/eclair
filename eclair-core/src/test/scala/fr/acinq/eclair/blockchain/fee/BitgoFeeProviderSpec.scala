@@ -60,7 +60,8 @@ class BitgoFeeProviderSpec extends FunSuite {
       blocks_6 = 105566,
       blocks_12 = 96254,
       blocks_36 = 71098,
-      blocks_72 = 68182)
+      blocks_72 = 68182,
+      blocks_144 = 16577)
     assert(feerates === ref)
   }
 

@@ -143,7 +143,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("start fee negotiation from configured block target") { f =>
     import f._
 
-    feeEstimator.setFeerate(FeeratesPerKw(100, 250, 350, 450, 600, 800))
+    feeEstimator.setFeerate(FeeratesPerKw(100, 250, 350, 450, 600, 800, 900))
 
     val sender = TestProbe()
     // alice initiates a closing
