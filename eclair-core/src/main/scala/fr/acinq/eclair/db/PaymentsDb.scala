@@ -26,7 +26,7 @@ trait PaymentsDb {
   def addOutgoingPayment(outgoingPayment: OutgoingPayment)
 
   // updates the status of the payment, if the newStatus is SUCCEEDED you must supply a preimage
-  def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value, preimage: Option[ByteVector32] = None, failures: Traversable[String] = Seq())
+  def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value, preimage: Option[ByteVector32] = None, failures: Seq[String] = Seq.empty)
 
   def getOutgoingPayment(id: UUID): Option[OutgoingPayment]
 

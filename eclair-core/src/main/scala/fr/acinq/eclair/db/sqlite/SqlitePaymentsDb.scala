@@ -18,16 +18,13 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
 import java.util.UUID
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment, OutgoingPaymentStatus, PaymentsDb}
 import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
-
 import scala.collection.immutable.Queue
 import OutgoingPaymentStatus._
-
 import concurrent.duration._
 import scala.collection.mutable
 import scala.compat.Platform
@@ -62,7 +59,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     insertFailures(sent.id, sent.failures)
   }
 
-  override def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value, preimage: Option[ByteVector32] = None, failures: Traversable[String] = Seq()): Unit = {
+  override def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value, preimage: Option[ByteVector32] = None, failures: Seq[String] = Seq.empty): Unit = {
     require((newStatus == SUCCEEDED && preimage.isDefined) || (newStatus == FAILED && preimage.isEmpty), "Wrong combination of state/preimage")
     require((newStatus == SUCCEEDED && failures.isEmpty) || (newStatus == FAILED && failures.nonEmpty), "Wrong combination of state/failures")
 
@@ -81,9 +78,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setString(1, id.toString)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        val id = UUID.fromString(rs.getString("id"))
         Some(OutgoingPayment(
-          id,
+          UUID.fromString(rs.getString("id")),
           rs.getByteVector32("payment_hash"),
           rs.getByteVector32Nullable("preimage"),
           rs.getLong("amount_msat"),
@@ -257,7 +253,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setString(1, id.toString)
       val rs = statement.executeQuery()
       while (rs.next()) {
-        res += rs.getString(1)
+        res += rs.getString("failure")
       }
     }
     res.toList

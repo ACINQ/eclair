@@ -139,11 +139,11 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val s3 = s2.copy(id = UUID.randomUUID(), amountMsat = 88776655)
     db.addOutgoingPayment(s3)
 
-    db.updateOutgoingPayment(s3.id, FAILED, failures = Seq("one", "two", "three"))
+    db.updateOutgoingPayment(s3.id, FAILED, failures = Seq("one", "one", "two", "three"))
     assert(db.getOutgoingPayment(s3.id).get.status == FAILED)
     assert(db.getOutgoingPayment(s3.id).get.preimage.isEmpty) // failed sent payments don't have a preimage
     assert(db.getOutgoingPayment(s3.id).get.completedAt.isDefined)
-    assert(db.getOutgoingPayment(s3.id).get.failures.toSet == Set("one", "two", "three"))
+    assert(db.getOutgoingPayment(s3.id).get.failures.sorted == Seq("one", "one", "two", "three").sorted)
 
     // can't update again once it's in a final state
     assertThrows[IllegalArgumentException](db.updateOutgoingPayment(s3.id, SUCCEEDED))
