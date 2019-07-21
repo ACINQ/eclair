@@ -158,6 +158,40 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectNoMsg(200 millis)
   }
 
+  test("recv CMD_ADD_HTLC (HTLC dips remote funder below reserve)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (_, htlc) = addHtlc(771000000, alice, bob, alice2bob, bob2alice)
+
+    sender.send(alice, CMD_SIGN)
+    sender.expectMsg("ok")
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
+
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+
+    // at this point bob still hasn't forwarded the htlc downstream
+    relayerB.expectNoMsg()
+
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
+    // now bob will forward the htlc downstream
+    val forward = relayerB.expectMsgType[ForwardAdd]
+    assert(forward.add === htlc)
+
+    // actual test begins
+    // at this point alice has minimal amount to sustain a channel (29000 sat ~= alice reserve + commit fee)
+    val add = CMD_ADD_HTLC(120000000, randomBytes32, cltvExpiry = 400144, upstream = Left(UUID.randomUUID()))
+    sender.send(bob, add)
+    val error = InsufficientFunds(channelId(bob), add.amountMsat, missingSatoshis = 1680, 20000, 10680, isLocal = false)
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate), Some(add))))
+  }
+
   test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs and 0 balance)") { f =>
     import f._
     val sender = TestProbe()
