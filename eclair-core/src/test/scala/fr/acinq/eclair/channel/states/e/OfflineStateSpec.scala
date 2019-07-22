@@ -23,6 +23,7 @@ import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, PublishAsap, WatchConfirmed, WatchEventSpent}
+import fr.acinq.eclair.channel.Channel.LocalError
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment.CommandBuffer
@@ -403,6 +404,9 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccured])
+
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
     val HtlcSuccessTx(_, htlcSuccessTx, _) = initialState.commitments.localCommit.publishableTxs.htlcTxsAndSigs.head.txinfo
@@ -417,16 +421,18 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(commandBuffer, CommandSend(htlc.channelId, htlc.id, CMD_FULFILL_HTLC(htlc.id, r, commit = true)))
     sender.send(bob, CurrentBlockCount(htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks))
 
+    val ChannelErrorOccured(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccured]
+    assert(isFatal)
+    assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
+
     bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
-    val watch = bob2blockchain.expectMsgType[WatchConfirmed]
-    assert(watch.event === BITCOIN_TX_CONFIRMED(initialCommitTx))
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
     bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
 
     bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
-    val htlcPublishedTx = bob2blockchain.expectMsgType[PublishAsap]
-    assert(htlcPublishedTx.tx.txOut === htlcSuccessTx.txOut)
+    assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
     bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
     alice2blockchain.expectNoMsg(500 millis)
   }

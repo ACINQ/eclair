@@ -1839,7 +1839,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       handleLocalError(HtlcTimedout(d.channelId, timedOutOutgoing), d, Some(c))
     } else if (almostTimedOutIncoming.nonEmpty) {
       // Upstream is close to timing out.
-      val relayedFulfills = d.commitments.pendingFulfillHtlcs().map(_.id)
+      val relayedFulfills = d.commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.id }.toSet
       val offendingRelayedHtlcs = almostTimedOutIncoming.filter(htlc => relayedFulfills.contains(htlc.id))
       if (offendingRelayedHtlcs.nonEmpty) {
         handleLocalError(HtlcWillTimeoutUpstream(d.channelId, offendingRelayedHtlcs), d, Some(c))

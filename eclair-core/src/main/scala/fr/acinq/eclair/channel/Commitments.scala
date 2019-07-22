@@ -79,18 +79,6 @@ case class Commitments(channelVersion: ChannelVersion,
     }
   }
 
-  /**
-    * Once we have the pre-image for incoming htlcs, we are able to spend the HTLC success transaction.
-    * However, if the upstream peer doesn't update its commitment to remove that HTLC and waits for the HTLC timeout,
-    * there will be an on-chain race condition between their HTLC timeout and our HTLC success (both will be enforceable).
-    * If we get too close to the timeout, we must close the channel to enforce our HTLC success transactions safely.
-    */
-  def pendingFulfillHtlcs(): Set[UpdateFulfillHtlc] = {
-    localChanges.all.collect {
-      case u: UpdateFulfillHtlc => u
-    }.toSet
-  }
-
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)

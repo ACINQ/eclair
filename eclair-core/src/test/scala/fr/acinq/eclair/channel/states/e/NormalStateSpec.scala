@@ -27,9 +27,9 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
-import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh, Reconnected, RevocationTimeout}
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.Channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.channel.{ChannelErrorOccured, _}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
@@ -1689,6 +1689,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccured])
+
     // actual test begins:
     //  * Bob receives the HTLC pre-image and wants to fulfill
     //  * Alice does not react to the fulfill (drops the message for some reason)
@@ -1700,15 +1703,18 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r, commit = true))
     sender.expectMsg("ok")
+    bob2alice.expectMsgType[UpdateFulfillHtlc]
     sender.send(bob, CurrentBlockCount(htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks))
+
+    val ChannelErrorOccured(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccured]
+    assert(isFatal)
+    assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
 
     bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
-    val htlcPublishedTx = bob2blockchain.expectMsgType[PublishAsap]
-    assert(htlcPublishedTx.tx.txOut === htlcSuccessTx.txOut)
+    assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
     bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
-    val watch = bob2blockchain.expectMsgType[WatchConfirmed]
-    assert(watch.event === BITCOIN_TX_CONFIRMED(initialCommitTx))
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
     alice2blockchain.expectNoMsg(500 millis)
   }
 
@@ -1717,6 +1723,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
+
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccured])
 
     // actual test begins:
     //  * Bob receives the HTLC pre-image and wants to fulfill but doesn't sign
@@ -1729,15 +1738,18 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r, commit = false))
     sender.expectMsg("ok")
+    bob2alice.expectMsgType[UpdateFulfillHtlc]
     sender.send(bob, CurrentBlockCount(htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks))
+
+    val ChannelErrorOccured(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccured]
+    assert(isFatal)
+    assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
 
     bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
-    val htlcPublishedTx = bob2blockchain.expectMsgType[PublishAsap]
-    assert(htlcPublishedTx.tx.txOut === htlcSuccessTx.txOut)
+    assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
     bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
-    val watch = bob2blockchain.expectMsgType[WatchConfirmed]
-    assert(watch.event === BITCOIN_TX_CONFIRMED(initialCommitTx))
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
     alice2blockchain.expectNoMsg(500 millis)
   }
 
@@ -1746,6 +1758,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
+
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccured])
 
     // actual test begins:
     //  * Bob receives the HTLC pre-image and wants to fulfill
@@ -1766,13 +1781,15 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.forward(bob)
     sender.send(bob, CurrentBlockCount(htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks))
 
+    val ChannelErrorOccured(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccured]
+    assert(isFatal)
+    assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
+
     bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
-    val htlcPublishedTx = bob2blockchain.expectMsgType[PublishAsap]
-    assert(htlcPublishedTx.tx.txOut === htlcSuccessTx.txOut)
+    assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
     bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
-    val watch = bob2blockchain.expectMsgType[WatchConfirmed]
-    assert(watch.event === BITCOIN_TX_CONFIRMED(initialCommitTx))
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
     alice2blockchain.expectNoMsg(500 millis)
   }
 
