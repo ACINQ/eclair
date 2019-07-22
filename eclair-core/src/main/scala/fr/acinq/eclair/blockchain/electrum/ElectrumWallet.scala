@@ -445,6 +445,11 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
       log.info(s"cancelling txid=${tx.txid}")
       stay using persistAndNotify(data.cancelTransaction(tx)) replying CancelTransactionResponse(tx)
 
+    case Event(SignTransaction(tx), data) =>
+      log.info(s"signing txid=${tx.txid}")
+      val signed = data.signTransaction(tx)
+      stay replying SignTransactionResponse(signed)
+
     case Event(bc@ElectrumClient.BroadcastTransaction(tx), _) =>
       log.info(s"broadcasting txid=${tx.txid}")
       client forward bc
@@ -542,6 +547,9 @@ object ElectrumWallet {
 
   case class IsDoubleSpent(tx: Transaction) extends Request
   case class IsDoubleSpentResponse(tx: Transaction, isDoubleSpent: Boolean) extends Response
+
+  case class SignTransaction(tx: Transaction) extends Request
+  case class SignTransactionResponse(tx: Transaction) extends Response
 
   sealed trait WalletEvent
   /**

@@ -24,7 +24,7 @@ import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
-import scodec.bits.ByteVector
+import scodec.bits.{ByteOrdering, ByteVector}
 
 object LocalKeyManager {
   def channelKeyBasePath(chainHash: ByteVector32) = chainHash match {
@@ -40,6 +40,11 @@ object LocalKeyManager {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(0) :: Nil
   }
+
+  // split the SHA(input) into 8 groups of 4 bytes and convert to uint32
+  def fourByteGroupsFromSha(input: ByteVector): List[Long] = Crypto.sha256(input).toArray.grouped(4).map(ByteVector(_).toLong(signed = false)).toList
+
+  def makeChannelKeyPathFunder(entropy: ByteVector) = KeyPath(fourByteGroupsFromSha(entropy) :+ hardened(0))
 }
 
 /**

@@ -22,7 +22,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL, _}
+import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL_SIGNED, _}
 import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.scalatest.{Outcome, Tag}
@@ -40,19 +40,19 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val noopWallet = new TestWallet {
-      override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse].future  // will never be completed
-    }
     val setup = if (test.tags.contains("mainnet")) {
-      init(TestConstants.Alice.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), TestConstants.Bob.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), wallet = noopWallet)
+      val mainnetWallet = new TestWallet {
+        override def getFinalAddress: Future[String] = Future.successful("3LcWzTnuZGPkGkPyX7tfKsktdvMoz4VabR")
+      }
+      init(TestConstants.Alice.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), TestConstants.Bob.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), wallet = mainnetWallet)
     } else {
-      init(wallet = noopWallet)
+      init()
     }
     import setup._
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, alice2bob.ref, bobInit, ChannelFlags.Empty)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -65,7 +65,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     import f._
     bob2alice.expectMsgType[AcceptChannel]
     bob2alice.forward(alice)
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL_SIGNED)
   }
 
   test("recv AcceptChannel (invalid max accepted htlcs)") { f =>

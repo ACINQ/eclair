@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.{ByteVector32, Crypto, OP_PUSHDATA, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.randomBytes
 import scodec.bits.ByteVector
 
 import scala.concurrent.Future
@@ -31,10 +32,14 @@ class TestWallet extends EclairWallet {
 
   override def getBalance: Future[Satoshi] = ???
 
-  override def getFinalAddress: Future[String] = Future.successful("2MsRZ1asG6k94m6GYUufDGaZJMoJ4EV5JKs")
+  override def getFinalAddress: Future[String] = Future.successful("bcrt1q82l6tngfd7stp2amhd8w2crn7dfy3qyelzywtn")
 
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] =
     Future.successful(TestWallet.makeDummyFundingTx(pubkeyScript, amount, feeRatePerKw))
+
+  override def signTransactionComplete(tx: Transaction): Future[Transaction] = Future.successful {
+    tx.updateWitness(0, ScriptWitness(Seq(randomBytes(73))))
+  }
 
   override def commit(tx: Transaction): Future[Boolean] = Future.successful(true)
 

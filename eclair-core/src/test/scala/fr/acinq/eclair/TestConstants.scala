@@ -19,8 +19,10 @@ package fr.acinq.eclair
 import java.sql.{Connection, DriverManager}
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
+import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
@@ -28,6 +30,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
+
 import scala.concurrent.duration._
 
 /**
@@ -101,11 +104,13 @@ object TestConstants {
       maxPaymentAttempts = 5
     )
 
-    def channelParams = Peer.makeChannelParams(
+    def channelParams = Channel.makeChannelParams(
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       isFunder = true,
-      fundingSatoshis).copy(
+      fundingSatoshis,
+      KeyPath(Seq(1, 2, 3, 4L))
+    ).copy(
       channelReserveSatoshis = 10000 // Bob will need to keep that much satoshis as direct payment
     )
   }
@@ -167,11 +172,13 @@ object TestConstants {
       maxPaymentAttempts = 5
     )
 
-    def channelParams = Peer.makeChannelParams(
+    def channelParams = Channel.makeChannelParams(
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       isFunder = false,
-      fundingSatoshis).copy(
+      fundingSatoshis,
+      KeyPath(Seq(1, 2, 3, 4L))
+    ).copy(
       channelReserveSatoshis = 20000 // Alice will need to keep that much satoshis as direct payment
     )
   }
