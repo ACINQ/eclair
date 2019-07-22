@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
-import fr.acinq.eclair.blockchain.fee.FeeEstimator
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._
@@ -311,7 +311,7 @@ object Commitments {
     (commitments1, fee)
   }
 
-  def receiveFee(feeTargets: FeeTargets, commitments: Commitments, fee: UpdateFee, maxFeerateMismatch: Double, feeEstimator: FeeEstimator): Commitments = {
+  def receiveFee(commitments: Commitments, fee: UpdateFee, maxFeerateMismatch: Double, feeEstimator: FeeEstimator, feeTargets: FeeTargets): Commitments = {
     if (commitments.localParams.isFunder) {
       throw FundeeCannotSendUpdateFee(commitments.channelId)
     }

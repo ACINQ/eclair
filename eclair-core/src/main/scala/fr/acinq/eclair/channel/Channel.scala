@@ -681,7 +681,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(fee: UpdateFee, d: DATA_NORMAL) =>
-      Try(Commitments.receiveFee(nodeParams.feeTargets, d.commitments, fee, nodeParams.maxFeerateMismatch, nodeParams.feeEstimator)) match {
+      Try(Commitments.receiveFee(d.commitments, fee, nodeParams.maxFeerateMismatch, nodeParams.feeEstimator, nodeParams.feeTargets)) match {
         case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
@@ -1040,7 +1040,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(fee: UpdateFee, d: DATA_SHUTDOWN) =>
-      Try(Commitments.receiveFee(nodeParams.feeTargets, d.commitments, fee, nodeParams.maxFeerateMismatch, nodeParams.feeEstimator)) match {
+      Try(Commitments.receiveFee(d.commitments, fee, nodeParams.maxFeerateMismatch, nodeParams.feeEstimator, nodeParams.feeTargets)) match {
         case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
@@ -1214,19 +1214,19 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           log.info(s"got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain")
           val localCommitPublished1 = d.localCommitPublished.map {
             case localCommitPublished =>
-              val localCommitPublished1 = Helpers.Closing.claimCurrentLocalCommitTxOutputs(nodeParams.feeTargets, keyManager, commitments1, localCommitPublished.commitTx, nodeParams.feeEstimator)
+              val localCommitPublished1 = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, commitments1, localCommitPublished.commitTx, nodeParams.feeEstimator, nodeParams.feeTargets)
               doPublish(localCommitPublished1)
               localCommitPublished1
           }
           val remoteCommitPublished1 = d.remoteCommitPublished.map {
             case remoteCommitPublished =>
-              val remoteCommitPublished1 = Helpers.Closing.claimRemoteCommitTxOutputs(nodeParams.feeTargets, keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx, nodeParams.feeEstimator)
+              val remoteCommitPublished1 = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx, nodeParams.feeEstimator, nodeParams.feeTargets)
               doPublish(remoteCommitPublished1)
               remoteCommitPublished1
           }
           val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map {
             case remoteCommitPublished =>
-              val remoteCommitPublished1 = Helpers.Closing.claimRemoteCommitTxOutputs(nodeParams.feeTargets, keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx, nodeParams.feeEstimator)
+              val remoteCommitPublished1 = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx, nodeParams.feeEstimator, nodeParams.feeTargets)
               doPublish(remoteCommitPublished1)
               remoteCommitPublished1
           }
@@ -1906,7 +1906,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     } else {
       val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
 
-      val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(nodeParams.feeTargets, keyManager, d.commitments, commitTx, nodeParams.feeEstimator)
+      val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.feeEstimator, nodeParams.feeTargets)
       doPublish(localCommitPublished)
 
       val nextData = d match {
@@ -1981,7 +1981,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     log.warning(s"they published their current commit in txid=${commitTx.txid}")
     require(commitTx.txid == d.commitments.remoteCommit.txid, "txid mismatch")
 
-    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(nodeParams.feeTargets, keyManager, d.commitments, d.commitments.remoteCommit, commitTx, nodeParams.feeEstimator)
+    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, d.commitments.remoteCommit, commitTx, nodeParams.feeEstimator, nodeParams.feeTargets)
     doPublish(remoteCommitPublished)
 
     val nextData = d match {
@@ -1998,7 +1998,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     log.warning(s"they published their future commit (because we asked them to) in txid=${commitTx.txid}")
     // if we are in this state, then this field is defined
     val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint.get
-    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(nodeParams.feeTargets, keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.feeEstimator)
+    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.feeEstimator, nodeParams.feeTargets)
     val nextData = DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
 
     doPublish(remoteCommitPublished)
@@ -2011,7 +2011,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val remoteCommit = d.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit
     require(commitTx.txid == remoteCommit.txid, "txid mismatch")
 
-    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(nodeParams.feeTargets, keyManager, d.commitments, remoteCommit, commitTx, nodeParams.feeEstimator)
+    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, remoteCommit, commitTx, nodeParams.feeEstimator, nodeParams.feeTargets)
     doPublish(remoteCommitPublished)
 
     val nextData = d match {
@@ -2044,7 +2044,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
     log.warning(s"funding tx spent in txid=${tx.txid}")
 
-    Helpers.Closing.claimRevokedRemoteCommitTxOutputs(nodeParams.feeTargets, keyManager, d.commitments, tx, nodeParams.db.channels, nodeParams.feeEstimator) match {
+    Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.db.channels, nodeParams.feeEstimator, nodeParams.feeTargets) match {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
         val exc = FundingTxSpent(d.channelId, tx)
@@ -2091,7 +2091,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     // let's try to spend our current local tx
     val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
-    val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(nodeParams.feeTargets, keyManager, d.commitments, commitTx, nodeParams.feeEstimator)
+    val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.feeEstimator, nodeParams.feeTargets)
     doPublish(localCommitPublished)
 
     goto(ERR_INFORMATION_LEAK) sending error

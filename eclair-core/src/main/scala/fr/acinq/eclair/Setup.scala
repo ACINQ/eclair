@@ -96,7 +96,12 @@ class Setup(datadir: File,
     case None => Databases.sqliteJDBC(chaindir)
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database)
+  val feeEstimator = new FeeEstimator {
+    override def getFeeratePerKb(target: Int): Long = Globals.feeratesPerKB.get().feePerBlock(target)
+    override def getFeeratePerKw(target: Int): Long = Globals.feeratesPerKw.get().feePerBlock(target)
+  }
+
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database, feeEstimator)
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),

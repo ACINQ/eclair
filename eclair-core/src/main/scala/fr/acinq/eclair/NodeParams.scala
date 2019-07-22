@@ -20,19 +20,20 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
+
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.WatcherType
-import fr.acinq.eclair.blockchain.fee.FeeEstimator
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.transactions.Transactions.FeeTargets
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
+
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
 
@@ -125,7 +126,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases): NodeParams = {
+  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, feeEstimator: FeeEstimator): NodeParams = {
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
@@ -200,10 +201,7 @@ object NodeParams {
       toRemoteDelayBlocks = config.getInt("to-remote-delay-blocks"),
       maxToLocalDelayBlocks = config.getInt("max-to-local-delay-blocks"),
       minDepthBlocks = config.getInt("mindepth-blocks"),
-      feeEstimator = new FeeEstimator {
-        override def getFeeratePerKb(target: Int): Long = Globals.feeratesPerKB.get().feePerBlock(target)
-        override def getFeeratePerKw(target: Int): Long = Globals.feeratesPerKw.get().feePerBlock(target)
-      },
+      feeEstimator = feeEstimator,
       feeBaseMsat = config.getInt("fee-base-msat"),
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),

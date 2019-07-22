@@ -22,3 +22,5 @@ trait FeeEstimator {
   def getFeeratePerKw(target: Int) : Long
 
 }
+
+case class FeeTargets(fundingBlockTarget: Int, commitmentBlockTarget: Int, mutualCloseBlockTarget: Int, claimMainBlockTarget: Int)

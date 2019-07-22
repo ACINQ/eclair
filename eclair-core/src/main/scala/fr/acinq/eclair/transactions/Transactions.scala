@@ -65,7 +65,6 @@ object Transactions {
   case object OutputNotFound extends RuntimeException(s"output not found (probably trimmed)") with TxGenerationSkipped
   case object AmountBelowDustLimit extends RuntimeException(s"amount is below dust limit") with TxGenerationSkipped
 
-  case class FeeTargets(fundingBlockTarget: Int, commitmentBlockTarget: Int, mutualCloseBlockTarget: Int, claimMainBlockTarget: Int)
   // @formatter:on
 
   /**
