@@ -45,6 +45,15 @@ object LocalKeyManager {
   def fourByteGroupsFromSha(input: ByteVector): List[Long] = Crypto.sha256(input).toArray.grouped(4).map(ByteVector(_).toLong(signed = false)).toList
 
   def makeChannelKeyPathFunder(entropy: ByteVector) = KeyPath(fourByteGroupsFromSha(entropy) :+ hardened(0))
+  def makeChannelKeyPathFundee(entropy: ByteVector) = KeyPath(fourByteGroupsFromSha(entropy) :+ hardened(1))
+  def makeChannelKeyPathFundeePubkey(entropy: ByteVector) = KeyPath(fourByteGroupsFromSha(entropy) :+ hardened(2))
+
+  def makeChannelKeyPathFundeePubkey(blockHeight: Long, counter: Long): KeyPath = {
+    val blockHeightBytes = ByteVector.fromLong(blockHeight, size = 4, ordering = ByteOrdering.LittleEndian)
+    val counterBytes = ByteVector.fromLong(counter, size = 4, ordering = ByteOrdering.LittleEndian)
+
+    makeChannelKeyPathFundeePubkey(blockHeightBytes ++ counterBytes)
+  }
 }
 
 /**
@@ -84,6 +93,9 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
   private def htlcSecret(channelKeyPath: DeterministicWallet.KeyPath) = privateKeys.get(internalKeyPath(channelKeyPath, hardened(4)))
 
   private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath) = Crypto.sha256(privateKeys.get(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value :+ 1.toByte)
+
+  // used only in test
+  def shaSeedPub(channelKeyPath: DeterministicWallet.KeyPath) = publicKeys.get(internalKeyPath(channelKeyPath, hardened(5)))
 
   override def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath) = publicKeys.get(internalKeyPath(channelKeyPath, hardened(0)))
 

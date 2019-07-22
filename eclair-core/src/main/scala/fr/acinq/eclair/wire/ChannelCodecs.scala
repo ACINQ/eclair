@@ -68,23 +68,8 @@ object ChannelCodecs extends Logging {
     fallback = provide(ChannelVersion.STANDARD)
   )
 
-  val localParamsCodec: Codec[LocalParams] = (
-    ("nodeId" | publicKey) ::
-      ("channelPath" | keyPathCodec) ::
-      ("dustLimitSatoshis" | uint64overflow) ::
-      ("maxHtlcValueInFlightMsat" | uint64) ::
-      ("channelReserveSatoshis" | uint64overflow) ::
-      ("htlcMinimumMsat" | uint64overflow) ::
-      ("toSelfDelay" | uint16) ::
-      ("maxAcceptedHtlcs" | uint16) ::
-      ("isFunder" | bool) ::
-      ("defaultFinalScriptPubKey" | varsizebinarydata) ::
-      ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[LocalParams]
-
-
   import shapeless._
-  val localParamsCodecPreDKP: Codec[LocalParamsWithDKP] = (
+  val localParamsCodecPreDKP: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
       ("channelPath" | keyPathCodec) ::
       ("dustLimitSatoshis" | uint64overflow) ::
@@ -109,7 +94,7 @@ object ChannelCodecs extends Logging {
       defaultFinalScriptPubKey ::
       globalFeatures :: localFeatures :: HNil =>
 
-      LocalParamsWithDKP(
+      LocalParams(
         nodeId = nodeId,
         // old versions of "LocalParams" use a single keypath
         channelKeyPath = if(isFunder) Left(keyPath) else Right(KeyPathFundee(keyPath, keyPath)),
@@ -137,7 +122,7 @@ object ChannelCodecs extends Logging {
       localParams.globalFeatures :: localParams.localFeatures :: HNil
   })
 
-  val localParamsCodecCurrent: Codec[LocalParamsWithDKP] = (
+  val localParamsCodecCurrent: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
       ("channelPath" | channelKeyPathCodec) ::
       ("dustLimitSatoshis" | uint64overflow) ::
@@ -148,10 +133,9 @@ object ChannelCodecs extends Logging {
       ("maxAcceptedHtlcs" | uint16) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
       ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[LocalParamsWithDKP]
+      ("localFeatures" | varsizebinarydata)).as[LocalParams]
 
-  // unused for now
-  def localParamsCodecWithVersion(version: ChannelVersion): Codec[LocalParamsWithDKP] = version match {
+  def localParamsCodec(version: ChannelVersion): Codec[LocalParams] = version match {
     case STANDARD => localParamsCodecPreDKP
     case DETERMINISTIC_KEYPATH => localParamsCodecCurrent
   }
@@ -295,22 +279,23 @@ object ChannelCodecs extends Logging {
     (wire: BitVector) => spentListCodec.decode(wire).map(_.map(_.toMap))
   )
 
-  val commitmentsCodec: Codec[Commitments] = (
-      ("channelVersion" | channelVersionCodec) ::
-      ("localParams" | localParamsCodec) ::
-      ("remoteParams" | remoteParamsCodec) ::
-      ("channelFlags" | byte) ::
-      ("localCommit" | localCommitCodec) ::
-      ("remoteCommit" | remoteCommitCodec) ::
-      ("localChanges" | localChangesCodec) ::
-      ("remoteChanges" | remoteChangesCodec) ::
-      ("localNextHtlcId" | uint64overflow) ::
-      ("remoteNextHtlcId" | uint64overflow) ::
-      ("originChannels" | originsMapCodec) ::
-      ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, publicKey)) ::
-      ("commitInput" | inputInfoCodec) ::
-      ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
-      ("channelId" | bytes32)).as[Commitments]
+  val commitmentsCodec: Codec[Commitments] =
+    (("channelVersion" | channelVersionCodec) >>:~ { version =>
+      ("localParams" | localParamsCodec(version)) ::
+        ("remoteParams" | remoteParamsCodec) ::
+        ("channelFlags" | byte) ::
+        ("localCommit" | localCommitCodec) ::
+        ("remoteCommit" | remoteCommitCodec) ::
+        ("localChanges" | localChangesCodec) ::
+        ("remoteChanges" | remoteChangesCodec) ::
+        ("localNextHtlcId" | uint64overflow) ::
+        ("remoteNextHtlcId" | uint64overflow) ::
+        ("originChannels" | originsMapCodec) ::
+        ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, publicKey)) ::
+        ("commitInput" | inputInfoCodec) ::
+        ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
+        ("channelId" | bytes32)
+    }).as[Commitments]
 
   val closingTxProposedCodec: Codec[ClosingTxProposed] = (
     ("unsignedTx" | txCodec) ::

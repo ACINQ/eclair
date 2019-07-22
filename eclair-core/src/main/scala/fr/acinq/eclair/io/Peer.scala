@@ -35,6 +35,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{secureRandom, wire, _}
 import scodec.Attempt
 import scodec.bits.ByteVector
+
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
@@ -295,7 +296,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       d.transport ! TransportHandler.ReadAck(msg)
       d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
         case None =>
-          val (channel, localParams) = createNewChannel(nodeParams, funder = false, fundingSatoshis = msg.fundingSatoshis, origin_opt = None)
+
+          val channel = spawnChannel(nodeParams, origin_opt = None)
+          val defaultFinalScriptPubkey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
+          val localParams = Channel.makeFundeeChannelParams(nodeParams, msg, defaultFinalScriptPubkey, msg.fundingSatoshis)
           val temporaryChannelId = msg.temporaryChannelId
           log.info(s"accepting a new channel to $remoteNodeId temporaryChannelId=$temporaryChannelId")
 
@@ -526,13 +530,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case DISCONNECTED -> _ if nodeParams.autoReconnect => cancelTimer(RECONNECT_TIMER)
   }
 
-  def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingSatoshis: Long, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
-    val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
-    val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, funder, fundingSatoshis)
-    val channel = spawnChannel(nodeParams, origin_opt)
-    (channel, localParams)
-  }
-
   def spawnChannel(nodeParams: NodeParams, origin_opt: Option[ActorRef]): ActorRef = {
     val channel = context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, router, relayer, origin_opt))
     context watch channel
@@ -630,30 +627,6 @@ object Peer {
   case class Behavior(fundingTxAlreadySpentCount: Int = 0, fundingTxNotFoundCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 
   // @formatter:on
-
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
-    val entropy = new Array[Byte](16)
-    secureRandom.nextBytes(entropy)
-    val bis = new ByteArrayInputStream(entropy)
-    val channelKeyPath = DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)))
-    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelKeyPath)
-  }
-
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: DeterministicWallet.KeyPath): LocalParams = {
-    LocalParams(
-      nodeParams.nodeId,
-      channelKeyPath,
-      dustLimitSatoshis = nodeParams.dustLimitSatoshis,
-      maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
-      channelReserveSatoshis = Math.max((nodeParams.reserveToFundingRatio * fundingSatoshis).toLong, nodeParams.dustLimitSatoshis), // BOLT #2: make sure that our reserve is above our dust limit
-      htlcMinimumMsat = nodeParams.htlcMinimumMsat,
-      toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
-      maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
-      defaultFinalScriptPubKey = defaultFinalScriptPubKey,
-      isFunder = isFunder,
-      globalFeatures = nodeParams.globalFeatures,
-      localFeatures = nodeParams.localFeatures)
-  }
 
   /**
     * Peer may want to filter announcements based on timestamp

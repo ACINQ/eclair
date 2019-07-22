@@ -67,6 +67,7 @@ class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with State
 
   test("recv CMD_CLOSE") { f =>
     import f._
+
     alice ! CMD_CLOSE(None)
     awaitCond(alice.stateName == CLOSED)
   }

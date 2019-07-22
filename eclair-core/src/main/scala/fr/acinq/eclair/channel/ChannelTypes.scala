@@ -66,7 +66,6 @@ case object OFFLINE extends State
 case object SYNCING extends State
 case object WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT extends State
 case object ERR_FUNDING_LOST extends State
-case object ERR_FUNDING_TIMEOUT extends State
 case object ERR_INFORMATION_LEAK extends State
 
 /*
@@ -197,19 +196,6 @@ final case class DATA_CLOSING(commitments: Commitments,
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
 final case class LocalParams(nodeId: PublicKey,
-                             channelKeyPath: DeterministicWallet.KeyPath,
-                             dustLimitSatoshis: Long,
-                             maxHtlcValueInFlightMsat: UInt64,
-                             channelReserveSatoshis: Long,
-                             htlcMinimumMsat: Long,
-                             toSelfDelay: Int,
-                             maxAcceptedHtlcs: Int,
-                             isFunder: Boolean,
-                             defaultFinalScriptPubKey: ByteVector,
-                             globalFeatures: ByteVector,
-                             localFeatures: ByteVector)
-
-final case class LocalParamsWithDKP(nodeId: PublicKey,
                              channelKeyPath: Either[DeterministicWallet.KeyPath, KeyPathFundee],
                              dustLimitSatoshis: Long,
                              maxHtlcValueInFlightMsat: UInt64,
@@ -220,6 +206,7 @@ final case class LocalParamsWithDKP(nodeId: PublicKey,
                              defaultFinalScriptPubKey: ByteVector,
                              globalFeatures: ByteVector,
                              localFeatures: ByteVector) {
+
   def isFunder = channelKeyPath.isLeft
 }
 
