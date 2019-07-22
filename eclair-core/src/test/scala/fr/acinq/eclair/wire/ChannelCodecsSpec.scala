@@ -21,9 +21,11 @@ import java.util.UUID
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.{Crypto, DeterministicWallet, OutPoint}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, MilliSatoshi, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair._
 import fr.acinq.eclair.api.JsonSupport
+import fr.acinq.eclair.channel.ChannelVersion.STANDARD
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain, Sphinx}
@@ -80,9 +82,9 @@ class ChannelCodecsSpec extends FunSuite {
   }
 
   test("encode/decode localparams") {
-    val o = LocalParams(
+    val localParamFundee = LocalParamsWithDKP(
       nodeId = randomKey.publicKey,
-      channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
+      channelKeyPath = Right(KeyPathFundee(KeyPath(Seq(4, 3, 2, 1L)), KeyPath(Seq(1, 2, 3, 4L)))),
       dustLimitSatoshis = Random.nextInt(Int.MaxValue),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserveSatoshis = Random.nextInt(Int.MaxValue),
@@ -90,12 +92,29 @@ class ChannelCodecsSpec extends FunSuite {
       toSelfDelay = Random.nextInt(Short.MaxValue),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
-      isFunder = Random.nextBoolean(),
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))
-    val encoded = localParamsCodec.encode(o).require
-    val decoded = localParamsCodec.decode(encoded).require
-    assert(o === decoded.value)
+
+    val encoded = localParamsCodecWithVersion(ChannelVersion.DETERMINISTIC_KEYPATH).encode(localParamFundee).require
+    val decoded = localParamsCodecWithVersion(ChannelVersion.DETERMINISTIC_KEYPATH).decode(encoded).require
+    assert(localParamFundee === decoded.value)
+
+    val localParamFunder = LocalParamsWithDKP(
+      nodeId = randomKey.publicKey,
+      channelKeyPath = Left(KeyPath(Seq(4, 3, 2, 1L))),
+      dustLimitSatoshis = Random.nextInt(Int.MaxValue),
+      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
+      channelReserveSatoshis = Random.nextInt(Int.MaxValue),
+      htlcMinimumMsat = Random.nextInt(Int.MaxValue),
+      toSelfDelay = Random.nextInt(Short.MaxValue),
+      maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
+      defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
+      globalFeatures = randomBytes(256),
+      localFeatures = randomBytes(256))
+
+    val encoded1 = localParamsCodecWithVersion(ChannelVersion.DETERMINISTIC_KEYPATH).encode(localParamFunder).require
+    val decoded1 = localParamsCodecWithVersion(ChannelVersion.DETERMINISTIC_KEYPATH).decode(encoded1).require
+    assert(localParamFunder === decoded1.value)
   }
 
   test("encode/decode remoteparams") {
@@ -200,6 +219,7 @@ class ChannelCodecsSpec extends FunSuite {
   test("basic serialization test (NORMAL)") {
     val data = normal
     val bin = ChannelCodecs.DATA_NORMAL_Codec.encode(data).require
+    assert(data.commitments.channelVersion == STANDARD)
     val check = ChannelCodecs.DATA_NORMAL_Codec.decodeValue(bin).require
     assert(data.commitments.localCommit.spec === check.commitments.localCommit.spec)
     assert(data === check)
@@ -311,11 +331,11 @@ class ChannelCodecsSpec extends FunSuite {
       val newbin = stateDataCodec.encode(oldnormal).require.bytes
       // and we decode with the new codec
       val newnormal = stateDataCodec.decode(newbin.bits).require.value
-      // finally we check that the actual data is the same as before (we just remove the new json field)
-      val oldjson = Serialization.write(oldnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"00000000000000000000000000000000",""", "")
-      val newjson = Serialization.write(newnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"00000000000000000000000000000000",""", "")
-      assert(oldjson === refjson)
-      assert(newjson === refjson)
+      // finally we check that the actual data is the same as before
+      val oldjson = Serialization.write(oldnormal)(JsonSupport.formats)
+      val newjson = Serialization.write(newnormal)(JsonSupport.formats)
+
+      assert(oldjson === newjson)
     }
 
   }

@@ -19,8 +19,11 @@ package fr.acinq.eclair.wire
 import java.util.UUID
 
 import akka.actor.ActorRef
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.channel.ChannelVersion.{DETERMINISTIC_KEYPATH, STANDARD}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.{Local, Origin, Relayed}
@@ -29,9 +32,10 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import grizzled.slf4j.Logging
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.{Attempt, Codec, Decoder, Encoder}
+import shapeless.{HList, HNil}
 
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -42,6 +46,12 @@ import scala.concurrent.duration._
 object ChannelCodecs extends Logging {
 
   val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
+  val keyPathFundeeCodec: Codec[KeyPathFundee] = (
+    ("fundingKeyPath" | keyPathCodec) ::
+      ("pointsKeyPath" | keyPathCodec)
+    ).as[KeyPathFundee]
+
+  val channelKeyPathCodec = either(bool, keyPathCodec, keyPathFundeeCodec)
 
   val extendedPrivateKeyCodec: Codec[ExtendedPrivateKey] = (
     ("secretkeybytes" | bytes32) ::
@@ -71,6 +81,80 @@ object ChannelCodecs extends Logging {
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
       ("globalFeatures" | varsizebinarydata) ::
       ("localFeatures" | varsizebinarydata)).as[LocalParams]
+
+
+  import shapeless._
+  val localParamsCodecPreDKP: Codec[LocalParamsWithDKP] = (
+    ("nodeId" | publicKey) ::
+      ("channelPath" | keyPathCodec) ::
+      ("dustLimitSatoshis" | uint64overflow) ::
+      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("channelReserveSatoshis" | uint64overflow) ::
+      ("htlcMinimumMsat" | uint64overflow) ::
+      ("toSelfDelay" | uint16) ::
+      ("maxAcceptedHtlcs" | uint16) ::
+      ("isFunder" | bool) ::
+      ("defaultFinalScriptPubKey" | varsizebinarydata) ::
+      ("globalFeatures" | varsizebinarydata) ::
+      ("localFeatures" | varsizebinarydata)).xmap({
+    case nodeId ::
+      keyPath ::
+      dustLimitSatoshis ::
+      maxHtlcValueInFlightMsat ::
+      channelReserveSatoshis ::
+      htlcMinimumMsat ::
+      toSelfDelay ::
+      maxAcceptedHtlcs ::
+      isFunder ::
+      defaultFinalScriptPubKey ::
+      globalFeatures :: localFeatures :: HNil =>
+
+      LocalParamsWithDKP(
+        nodeId = nodeId,
+        // old versions of "LocalParams" use a single keypath
+        channelKeyPath = if(isFunder) Left(keyPath) else Right(KeyPathFundee(keyPath, keyPath)),
+        dustLimitSatoshis = dustLimitSatoshis,
+        maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat,
+        channelReserveSatoshis = channelReserveSatoshis,
+        htlcMinimumMsat = htlcMinimumMsat,
+        toSelfDelay = toSelfDelay,
+        maxAcceptedHtlcs = maxAcceptedHtlcs,
+        defaultFinalScriptPubKey = defaultFinalScriptPubKey,
+        globalFeatures = globalFeatures,
+        localFeatures = localFeatures)
+  },{ localParams =>
+
+    localParams.nodeId ::
+      localParams.channelKeyPath.fold(kp => kp, fKp => fKp.fundingKeyPath) :: // when encoding an old version of local params 'KeyPathFundee' holds 2 identical keypaths
+      localParams.dustLimitSatoshis ::
+      localParams.maxHtlcValueInFlightMsat ::
+      localParams.channelReserveSatoshis ::
+      localParams.htlcMinimumMsat ::
+      localParams.toSelfDelay ::
+      localParams.maxAcceptedHtlcs ::
+      localParams.isFunder ::
+      localParams.defaultFinalScriptPubKey ::
+      localParams.globalFeatures :: localParams.localFeatures :: HNil
+  })
+
+  val localParamsCodecCurrent: Codec[LocalParamsWithDKP] = (
+    ("nodeId" | publicKey) ::
+      ("channelPath" | channelKeyPathCodec) ::
+      ("dustLimitSatoshis" | uint64overflow) ::
+      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("channelReserveSatoshis" | uint64overflow) ::
+      ("htlcMinimumMsat" | uint64overflow) ::
+      ("toSelfDelay" | uint16) ::
+      ("maxAcceptedHtlcs" | uint16) ::
+      ("defaultFinalScriptPubKey" | varsizebinarydata) ::
+      ("globalFeatures" | varsizebinarydata) ::
+      ("localFeatures" | varsizebinarydata)).as[LocalParamsWithDKP]
+
+  // unused for now
+  def localParamsCodecWithVersion(version: ChannelVersion): Codec[LocalParamsWithDKP] = version match {
+    case STANDARD => localParamsCodecPreDKP
+    case DETERMINISTIC_KEYPATH => localParamsCodecCurrent
+  }
 
   val remoteParamsCodec: Codec[RemoteParams] = (
     ("nodeId" | publicKey) ::

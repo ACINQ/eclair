@@ -209,6 +209,22 @@ final case class LocalParams(nodeId: PublicKey,
                              globalFeatures: ByteVector,
                              localFeatures: ByteVector)
 
+final case class LocalParamsWithDKP(nodeId: PublicKey,
+                             channelKeyPath: Either[DeterministicWallet.KeyPath, KeyPathFundee],
+                             dustLimitSatoshis: Long,
+                             maxHtlcValueInFlightMsat: UInt64,
+                             channelReserveSatoshis: Long,
+                             htlcMinimumMsat: Long,
+                             toSelfDelay: Int,
+                             maxAcceptedHtlcs: Int,
+                             defaultFinalScriptPubKey: ByteVector,
+                             globalFeatures: ByteVector,
+                             localFeatures: ByteVector) {
+  def isFunder = channelKeyPath.isLeft
+}
+
+case class KeyPathFundee(fundingKeyPath: KeyPath, pointsKeyPath: KeyPath)
+
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimitSatoshis: Long,
                               maxHtlcValueInFlightMsat: UInt64,
@@ -235,5 +251,6 @@ case class ChannelVersion(bits: BitVector) {
 object ChannelVersion {
   val LENGTH_BITS = 4 * 8
   val STANDARD = ChannelVersion(BitVector.fill(LENGTH_BITS)(false))
+  val DETERMINISTIC_KEYPATH = ChannelVersion(BitVector.one ++ BitVector.fill(LENGTH_BITS -1)(false))
 }
 // @formatter:on
