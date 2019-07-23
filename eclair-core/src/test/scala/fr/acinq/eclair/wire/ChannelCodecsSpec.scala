@@ -69,15 +69,15 @@ class ChannelCodecsSpec extends FunSuite {
     // before we had commitment version, public keys were stored first (they started with 0x02 and 0x03)
     val legacy02 = hex"02a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
     val legacy03 = hex"03d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
-    val current02 = hex"0102a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
-    val current03 = hex"0103d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
+    val current02 = hex"010000000002a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
+    val current03 = hex"010000000003d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
 
     assert(channelVersionCodec.decode(legacy02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, legacy02.bits)))
     assert(channelVersionCodec.decode(legacy03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, legacy03.bits)))
-    assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(1).bits)))
-    assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(1).bits)))
+    assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(5).bits)))
+    assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(5).bits)))
 
-    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"01".bits))
+    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000000".bits))
   }
 
   test("encode/decode localparams") {
@@ -313,8 +313,8 @@ class ChannelCodecsSpec extends FunSuite {
       // and we decode with the new codec
       val newnormal = stateDataCodec.decode(newbin.bits).require.value
       // finally we check that the actual data is the same as before (we just remove the new json field)
-      val oldjson = Serialization.write(oldnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"STANDARD",""", "")
-      val newjson = Serialization.write(newnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"STANDARD",""", "")
+      val oldjson = Serialization.write(oldnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"00000000000000000000000000000000",""", "")
+      val newjson = Serialization.write(newnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"00000000000000000000000000000000",""", "")
       assert(oldjson === refjson)
       assert(newjson === refjson)
     }

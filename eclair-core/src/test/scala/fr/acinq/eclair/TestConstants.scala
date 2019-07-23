@@ -27,6 +27,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
+
 import scala.concurrent.duration._
 
 /**
@@ -60,6 +61,7 @@ object TestConstants {
       maxHtlcValueInFlightMsat = UInt64(150000000),
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = 144,
+      fulfillSafetyBeforeTimeoutBlocks = 6,
       htlcMinimumMsat = 0,
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
@@ -126,6 +128,7 @@ object TestConstants {
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
       expiryDeltaBlocks = 144,
+      fulfillSafetyBeforeTimeoutBlocks = 6,
       htlcMinimumMsat = 1000,
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
