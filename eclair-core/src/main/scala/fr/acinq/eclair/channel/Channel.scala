@@ -1724,11 +1724,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   def handleCurrentFeerate(c: CurrentFeerates, d: HasCommitments) = {
     val networkFeeratePerKw = c.feeratesPerKw.blocks_2
+    val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
     d.commitments.localParams.isFunder match {
-      case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, networkFeeratePerKw, nodeParams.updateFeeMinDiffRatio) =>
+      case true if Helpers.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw, nodeParams.updateFeeMinDiffRatio) =>
         self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
         stay
-      case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, networkFeeratePerKw, nodeParams.maxFeerateMismatch) =>
+      case false if Helpers.isFeeDiffTooHigh(currentFeeratePerKw, networkFeeratePerKw, nodeParams.maxFeerateMismatch) =>
         handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = networkFeeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d, Some(c))
       case _ => stay
     }
