@@ -298,7 +298,7 @@ class RelayerSpec extends TestkitBaseClass {
       TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_bc.shortChannelId), AmountToForward(amount_bc)), // Missing cltv expiry.
       TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_bc.shortChannelId), OutgoingCltv(expiry_bc)), // Missing forwarding amount.
       TlvStream[OnionTlv](AmountToForward(amount_bc), OutgoingCltv(expiry_bc))) // Missing channel id.
-  val payload_cd = TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_cd.shortChannelId), AmountToForward(amount_cd), OutgoingCltv(expiry_cd))
+    val payload_cd = TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_cd.shortChannelId), AmountToForward(amount_cd), OutgoingCltv(expiry_cd))
 
     val sender = TestProbe()
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
@@ -316,6 +316,30 @@ class RelayerSpec extends TestkitBaseClass {
       register.expectNoMsg(100 millis)
       paymentHandler.expectNoMsg(100 millis)
     }
+  }
+
+  test("fail to relay an htlc-add when variable length onion is disabled") { f =>
+    import f._
+    import fr.acinq.eclair.wire.OnionTlv._
+
+    val relayer = system.actorOf(Relayer.props(TestConstants.Bob.nodeParams.copy(globalFeatures = ByteVector.empty), register.ref, paymentHandler.ref))
+    val sender = TestProbe()
+    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
+
+    val payload_bc = TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_bc.shortChannelId), AmountToForward(amount_bc), OutgoingCltv(expiry_bc))
+    val payload_cd = TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_cd.shortChannelId), AmountToForward(amount_cd), OutgoingCltv(expiry_cd))
+
+    val Sphinx.PacketAndSecrets(onion, _) = buildOnion(Seq(b, c), Seq(payload_bc, payload_cd), paymentHash)
+    val add_ab = UpdateAddHtlc(channelId_ab, 123456, amount_ab, paymentHash, expiry_ab, onion)
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    val fail = register.expectMsgType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
+    assert(fail.id === add_ab.id)
+    assert(fail.onionHash == Sphinx.PaymentPacket.hash(add_ab.onionRoutingPacket))
+    assert(fail.failureCode === (FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM))
+
+    register.expectNoMsg(100 millis)
+    paymentHandler.expectNoMsg(100 millis)
   }
 
   test("fail to relay an htlc-add when amount is below the next hop's requirements") { f =>

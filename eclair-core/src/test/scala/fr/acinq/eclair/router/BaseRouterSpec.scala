@@ -30,7 +30,7 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestkitBaseClass, randomKey, _}
 import org.scalatest.Outcome
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration._
 
@@ -55,12 +55,12 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
   val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f) = (priv_funding_a.publicKey, priv_funding_b.publicKey, priv_funding_c.publicKey, priv_funding_d.publicKey, priv_funding_e.publicKey, priv_funding_f.publicKey)
 
-  val ann_a = makeNodeAnnouncement(priv_a, "node-A", Color(15, 10, -70), Nil)
-  val ann_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil)
-  val ann_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil)
-  val ann_d = makeNodeAnnouncement(priv_d, "node-D", Color(-120, -20, 60), Nil)
-  val ann_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil)
-  val ann_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil)
+  val ann_a = makeNodeAnnouncement(priv_a, "node-A", Color(15, 10, -70), Nil, hex"0200")
+  val ann_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil, hex"")
+  val ann_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, hex"0200")
+  val ann_d = makeNodeAnnouncement(priv_d, "node-D", Color(-120, -20, 60), Nil, hex"00")
+  val ann_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil, hex"00")
+  val ann_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil, hex"00")
 
   val channelId_ab = ShortChannelId(420000, 1, 0)
   val channelId_bc = ShortChannelId(420000, 2, 0)

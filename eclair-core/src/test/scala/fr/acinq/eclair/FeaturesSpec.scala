@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair
 
-import java.nio.ByteOrder
-
-import fr.acinq.bitcoin.Protocol
 import fr.acinq.eclair.Features._
 import org.scalatest.FunSuite
 import scodec.bits._
@@ -45,14 +42,17 @@ class FeaturesSpec extends FunSuite {
 
   test("'variable_length_onion' feature") {
     assert(hasFeature(hex"0100", Features.VARIABLE_LENGTH_ONION_MANDATORY))
+    assert(hasVariableLengthOnion(hex"0100"))
     assert(hasFeature(hex"0200", Features.VARIABLE_LENGTH_ONION_OPTIONAL))
+    assert(hasVariableLengthOnion(hex"0200"))
   }
 
   test("features compatibility") {
-    assert(areSupported(Protocol.writeUInt64(1l << INITIAL_ROUTING_SYNC_BIT_OPTIONAL, ByteOrder.BIG_ENDIAN)))
-    assert(areSupported(Protocol.writeUInt64(1L << OPTION_DATA_LOSS_PROTECT_MANDATORY, ByteOrder.BIG_ENDIAN)))
-    assert(areSupported(Protocol.writeUInt64(1l << OPTION_DATA_LOSS_PROTECT_OPTIONAL, ByteOrder.BIG_ENDIAN)))
-    assert(areSupported(Protocol.writeUInt64(1l << VARIABLE_LENGTH_ONION_OPTIONAL, ByteOrder.BIG_ENDIAN)))
+    assert(areSupported(ByteVector.fromLong(1L << INITIAL_ROUTING_SYNC_BIT_OPTIONAL)))
+    assert(areSupported(ByteVector.fromLong(1L << OPTION_DATA_LOSS_PROTECT_MANDATORY)))
+    assert(areSupported(ByteVector.fromLong(1L << OPTION_DATA_LOSS_PROTECT_OPTIONAL)))
+    assert(areSupported(ByteVector.fromLong(1L << VARIABLE_LENGTH_ONION_OPTIONAL)))
+    assert(areSupported(hex"0b"))
     assert(!areSupported(hex"14"))
     assert(!areSupported(hex"0141"))
   }

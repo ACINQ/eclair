@@ -28,8 +28,9 @@ import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, nodeFee}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, nodeFee}
 import grizzled.slf4j.Logging
+import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
 import scala.collection.mutable
@@ -99,7 +100,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
     case ForwardAdd(add, previousFailures) =>
       log.debug(s"received forwarding request for htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId}")
-      decryptPacket(add, nodeParams.privateKey) match {
+      decryptPacket(add, nodeParams.privateKey, nodeParams.globalFeatures) match {
         case Right(p: FinalPayload) =>
           handleFinal(p) match {
             case Left(cmdFail) =>
@@ -228,10 +229,12 @@ object Relayer extends Logging {
    * @param privateKey this node's private key
    * @return the payload for the next hop or an error.
    */
-  def decryptPacket(add: UpdateAddHtlc, privateKey: PrivateKey): Either[BadOnion, NextPayload] =
+  def decryptPacket(add: UpdateAddHtlc, privateKey: PrivateKey, features: ByteVector): Either[BadOnion, NextPayload] =
     Sphinx.PaymentPacket.peel(privateKey, add.paymentHash, add.onionRoutingPacket) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
         OnionCodecs.perHopPayloadCodec.decode(payload.bits) match {
+          case Attempt.Successful(DecodeResult(OnionPerHopPayload(Left(_)), _)) if !Features.hasVariableLengthOnion(features) =>
+            Left(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add.onionRoutingPacket)))
           case Attempt.Successful(DecodeResult(perHopPayload, remainder)) =>
             if (remainder.nonEmpty) {
               logger.warn(s"${remainder.length} bits remaining after per-hop payload decoding: there might be an issue with the onion codec")

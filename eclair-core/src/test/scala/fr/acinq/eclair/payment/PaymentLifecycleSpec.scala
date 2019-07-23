@@ -35,6 +35,7 @@ import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnounce
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
+import scodec.bits.HexStringSyntax
 
 /**
  * Created by PM on 29/08/2016.
@@ -414,7 +415,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val (priv_g, priv_funding_g) = (randomKey, randomKey)
     val (g, funding_g) = (priv_g.publicKey, priv_funding_g.publicKey)
-    val ann_g = makeNodeAnnouncement(priv_g, "node-G", Color(-30, 10, -50), Nil)
+    val ann_g = makeNodeAnnouncement(priv_g, "node-G", Color(-30, 10, -50), Nil, hex"0200")
     val channelId_bg = ShortChannelId(420000, 5, 0)
     val chan_bg = channelAnnouncement(channelId_bg, priv_b, priv_g, priv_funding_b, priv_funding_g)
     val channelUpdate_bg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, g, channelId_bg, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 0 msat, feeProportionalMillionths = 0, htlcMaximumMsat = 500000000 msat)
