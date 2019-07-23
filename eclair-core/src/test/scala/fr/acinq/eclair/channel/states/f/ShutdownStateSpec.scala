@@ -582,7 +582,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
     // we first update the feerates so that we don't trigger a 'fee too different' error
-    feeEstimator.setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
+    bob.underlyingActor.nodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
     sender.send(bob, fee)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missingSatoshis = 72120000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)

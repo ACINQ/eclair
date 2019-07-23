@@ -20,9 +20,8 @@ import java.util.UUID
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
-import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
+import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratesPerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
@@ -43,11 +42,9 @@ trait StateTestsHelperMethods extends TestKitBase {
                    router: TestProbe,
                    relayerA: TestProbe,
                    relayerB: TestProbe,
-                   channelUpdateListener: TestProbe,
-                   feeEstimator: TestFeeEstimator)
+                   channelUpdateListener: TestProbe)
 
   def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: EclairWallet = new TestWallet): SetupFixture = {
-    val testFeeEstimator = new TestFeeEstimator
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alice2blockchain = TestProbe()
@@ -58,9 +55,9 @@ trait StateTestsHelperMethods extends TestKitBase {
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA.copy(feeEstimator = testFeeEstimator), wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, router.ref, relayerA.ref))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB.copy(feeEstimator = testFeeEstimator), wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, router.ref, relayerB.ref))
-    SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, testFeeEstimator)
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, router.ref, relayerA.ref))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, router.ref, relayerB.ref))
+    SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener)
   }
 
   def reachNormal(setup: SetupFixture,

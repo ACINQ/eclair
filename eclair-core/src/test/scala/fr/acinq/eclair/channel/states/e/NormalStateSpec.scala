@@ -23,7 +23,7 @@ import akka.actor.Status.Failure
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi, ScriptFlags, Transaction}
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
@@ -1393,7 +1393,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
     // we first update the feerates so that we don't trigger a 'fee too different' error
-    feeEstimator.setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
+    bob.underlyingActor.nodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
     sender.send(bob, fee)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missingSatoshis = 71620000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
@@ -1407,11 +1407,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv UpdateFee (local/remote feerates are too different)") { f =>
     import f._
-    feeEstimator.setFeerate(FeeratesPerKw(1000, 2000, 6000, 12000, 36000, 72000, 140000))
+    val bobNodeParams = bob.underlyingActor.nodeParams
+    bobNodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw(1000, 2000, 6000, 12000, 36000, 72000, 140000))
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     // Alice will use $localFeeRate when performing the checks for update_fee
-    val localFeeRate = feeEstimator.getFeeratePerKw(Alice.nodeParams.feeTargets.commitmentBlockTarget)
+    val localFeeRate = bobNodeParams.feeEstimator.getFeeratePerKw(bobNodeParams.feeTargets.commitmentBlockTarget)
     assert(localFeeRate === 2000)
     val remoteFeeUpdate = 85000
     sender.send(bob, UpdateFee(ByteVector32.Zeroes, remoteFeeUpdate))
@@ -1427,9 +1428,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv UpdateFee (remote feerate is too small)") { f =>
     import f._
-    val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    val bobNodeParams = bob.underlyingActor.nodeParams
+    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val tx = bobCommitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw == feeEstimator.getFeeratePerKw(Bob.nodeParams.feeTargets.commitmentBlockTarget))
+    assert(bobCommitments.localCommit.spec.feeratePerKw == bobNodeParams.feeEstimator.getFeeratePerKw(bobNodeParams.feeTargets.commitmentBlockTarget))
     sender.send(bob, UpdateFee(ByteVector32.Zeroes, 252))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === "remote fee rate is too small: remoteFeeratePerKw=252")
@@ -1893,7 +1896,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.claimHtlcTimeoutTxs.size == 2)
 
     // assert the feerate of the claim main is what we expect
-    val expectedFeeRate = feeEstimator.getFeeratePerKw(Alice.nodeParams.feeTargets.claimMainBlockTarget)
+    val aliceNodeParams = alice.underlyingActor.nodeParams
+    val expectedFeeRate = aliceNodeParams.feeEstimator.getFeeratePerKw(aliceNodeParams.feeTargets.claimMainBlockTarget)
     val expectedFee = Transactions.weight2fee(expectedFeeRate, Transactions.claimP2WPKHOutputWeight).toLong
     val claimFee = claimMain.txIn.map(in => bobCommitTx.txOut(in.outPoint.index.toInt).amount.toLong).sum - claimMain.txOut.map(_.amount.toLong).sum
     assert(claimFee == expectedFee)

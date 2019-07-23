@@ -332,7 +332,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     // agreeing on a closing fee
     val aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
-    val nodeParams = alice.underlyingActor.nodeParams
+    val nodeParams = bob.underlyingActor.nodeParams
     nodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(100))
     alice2bob.forward(bob)
     val bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
