@@ -18,26 +18,21 @@ package fr.acinq.eclair.channel.states
 
 import java.util.UUID
 
-import akka.actor.Actor
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratesPerKw}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, TestConstants, randomBytes32}
-import scodec.bits.ByteVector
 
 /**
   * Created by PM on 23/08/2016.
   */
 trait StateTestsHelperMethods extends TestKitBase {
-
-  def defaultOnion: ByteVector = ByteVector.fill(Sphinx.PacketLength)(0)
 
   case class SetupFixture(alice: TestFSMRef[State, Data, Channel],
                    bob: TestFSMRef[State, Data, Channel],

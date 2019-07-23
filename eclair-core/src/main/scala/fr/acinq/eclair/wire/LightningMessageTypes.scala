@@ -20,8 +20,8 @@ import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 import java.nio.charset.StandardCharsets
 
 import com.google.common.base.Charsets
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
-import fr.acinq.bitcoin.Crypto.{PublicKey, PrivateKey}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -123,7 +123,7 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          amountMsat: Long,
                          paymentHash: ByteVector32,
                          cltvExpiry: Long,
-                         onionRoutingPacket: ByteVector) extends HtlcMessage with UpdateMessage with HasChannelId
+                         onionRoutingPacket: OnionRoutingPacket) extends HtlcMessage with UpdateMessage with HasChannelId
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,
                              id: Long,
@@ -224,10 +224,6 @@ case class ChannelUpdate(signature: ByteVector64,
                          unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with HasTimestamp with HasChainHash {
   require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
 }
-
-case class PerHopPayload(shortChannelId: ShortChannelId,
-                         amtToForward: Long,
-                         outgoingCltvValue: Long)
 
 case class QueryShortChannelIds(chainHash: ByteVector32,
                                 data: ByteVector) extends RoutingMessage with HasChainHash

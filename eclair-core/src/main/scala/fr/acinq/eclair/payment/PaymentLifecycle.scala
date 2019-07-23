@@ -20,10 +20,9 @@ import java.util.UUID
 
 import akka.actor.{ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, MilliSatoshi}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Channel, Register}
-import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.PaymentLifecycle._
@@ -86,8 +85,8 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
       stop(FSM.Normal)
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
-      Sphinx.parseErrorPacket(fail.reason, sharedSecrets) match {
-        case Success(e@ErrorPacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
+      Sphinx.FailurePacket.decrypt(fail.reason, sharedSecrets) match {
+        case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
           // if destination node returns an error, we fail the payment immediately
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
           reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ RemoteFailure(hops, e)))
@@ -96,7 +95,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
         case res if failures.size + 1 >= c.maxAttempts =>
           // otherwise we never try more than maxAttempts, no matter the kind of error returned
           val failure = res match {
-            case Success(e@ErrorPacket(nodeId, failureMessage)) =>
+            case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
               log.info(s"received an error message from nodeId=$nodeId (failure=$failureMessage)")
               RemoteFailure(hops, e)
             case Failure(t) =>
@@ -114,12 +113,12 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
           log.warning(s"blacklisting intermediate nodes=${blacklist.mkString(",")}")
           router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes ++ blacklist, ignoreChannels, c.routeParams)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ UnreadableRemoteFailure(hops))
-        case Success(e@ErrorPacket(nodeId, failureMessage: Node)) =>
+        case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Node)) =>
           log.info(s"received 'Node' type error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
           // let's try to route around this node
           router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, c.routeParams)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
-        case Success(e@ErrorPacket(nodeId, failureMessage: Update)) =>
+        case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
           log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
           if (Announcements.checkSig(failureMessage.update, nodeId)) {
             getChannelUpdateForNode(nodeId, hops) match {
@@ -152,7 +151,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
             router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amountMsat, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, c.routeParams)
           }
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
-        case Success(e@ErrorPacket(nodeId, failureMessage)) =>
+        case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
           log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
           // let's try again without the channel outgoing from nodeId
           val faultyChannel = hops.find(_.nodeId == nodeId).map(hop => ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId))
@@ -216,7 +215,7 @@ object PaymentLifecycle {
   case class PaymentSucceeded(id: UUID, amountMsat: Long, paymentHash: ByteVector32, paymentPreimage: ByteVector32, route: Seq[Hop]) extends PaymentResult // note: the amount includes fees
   sealed trait PaymentFailure
   case class LocalFailure(t: Throwable) extends PaymentFailure
-  case class RemoteFailure(route: Seq[Hop], e: ErrorPacket) extends PaymentFailure
+  case class RemoteFailure(route: Seq[Hop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
   case class UnreadableRemoteFailure(route: Seq[Hop]) extends PaymentFailure
   case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[PaymentFailure]) extends PaymentResult
 
@@ -237,12 +236,12 @@ object PaymentLifecycle {
     require(nodes.size == payloads.size)
     val sessionKey = randomKey
     val payloadsbin: Seq[ByteVector] = payloads
-      .map(LightningMessageCodecs.perHopPayloadCodec.encode)
+      .map(OnionCodecs.perHopPayloadCodec.encode)
       .map {
         case Attempt.Successful(bitVector) => bitVector.toByteVector
         case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
       }
-    Sphinx.makePacket(sessionKey, nodes, payloadsbin, associatedData)
+    Sphinx.PaymentPacket.create(sessionKey, nodes, payloadsbin, associatedData)
   }
 
   /**
@@ -267,7 +266,7 @@ object PaymentLifecycle {
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
     val onion = buildOnion(nodes, payloads, paymentHash)
-    CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, Packet.write(onion.packet), upstream = Left(id), commit = true) -> onion.sharedSecrets
+    CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, onion.packet, upstream = Left(id), commit = true) -> onion.sharedSecrets
   }
 
   /**
@@ -312,6 +311,6 @@ object PaymentLifecycle {
     */
   def hasAlreadyFailedOnce(nodeId: PublicKey, failures: Seq[PaymentFailure]): Boolean =
     failures
-      .collectFirst { case RemoteFailure(_, ErrorPacket(origin, u: Update)) if origin == nodeId => u.update }
+      .collectFirst { case RemoteFailure(_, Sphinx.DecryptedFailurePacket(origin, u: Update)) if origin == nodeId => u.update }
       .isDefined
 }

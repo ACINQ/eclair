@@ -51,6 +51,7 @@ case class NodeParams(keyManager: KeyManager,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
                       expiryDeltaBlocks: Int,
+                      fulfillSafetyBeforeTimeoutBlocks: Int,
                       htlcMinimumMsat: Int,
                       toRemoteDelayBlocks: Int,
                       maxToLocalDelayBlocks: Int,
@@ -151,6 +152,10 @@ object NodeParams {
     val offeredCLTV = config.getInt("to-remote-delay-blocks")
     require(maxToLocalCLTV <= Channel.MAX_TO_SELF_DELAY && offeredCLTV <= Channel.MAX_TO_SELF_DELAY, s"CLTV delay values too high, max is ${Channel.MAX_TO_SELF_DELAY}")
 
+    val expiryDeltaBlocks = config.getInt("expiry-delta-blocks")
+    val fulfillSafetyBeforeTimeoutBlocks = config.getInt("fulfill-safety-before-timeout-blocks")
+    require(fulfillSafetyBeforeTimeoutBlocks < expiryDeltaBlocks, "fulfill-safety-before-timeout-blocks must be smaller than expiry-delta-blocks")
+
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
@@ -158,7 +163,7 @@ object NodeParams {
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
       val gf = ByteVector.fromValidHex(e.getString("global-features"))
       val lf = ByteVector.fromValidHex(e.getString("local-features"))
-      (p -> (gf, lf))
+      p -> (gf, lf)
     }.toMap
 
     val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {
@@ -196,7 +201,8 @@ object NodeParams {
       dustLimitSatoshis = dustLimitSatoshis,
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),
       maxAcceptedHtlcs = maxAcceptedHtlcs,
-      expiryDeltaBlocks = config.getInt("expiry-delta-blocks"),
+      expiryDeltaBlocks = expiryDeltaBlocks,
+      fulfillSafetyBeforeTimeoutBlocks = fulfillSafetyBeforeTimeoutBlocks,
       htlcMinimumMsat = config.getInt("htlc-minimum-msat"),
       toRemoteDelayBlocks = config.getInt("to-remote-delay-blocks"),
       maxToLocalDelayBlocks = config.getInt("max-to-local-delay-blocks"),
