@@ -26,8 +26,6 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, UInt64}
 
-import scala.util.{Failure, Success}
-
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
   def all: List[UpdateMessage] = proposed ++ signed ++ acked
@@ -62,10 +60,22 @@ case class Commitments(channelVersion: ChannelVersion,
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
-  def timedoutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
+  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
     (localCommit.spec.htlcs.filter(htlc => htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry) ++
       remoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry) ++
       remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry)).getOrElse(Set.empty[DirectedHtlc])).map(_.add)
+
+  /**
+    * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
+    * HTLCs, we need to get a remote signed updated commitment that removes this HTLC.
+    * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
+    * and our HTLC success in case of a force-close.
+    */
+  def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: Int): Set[UpdateAddHtlc] = {
+    localCommit.spec.htlcs.collect {
+      case htlc if htlc.direction == IN && blockheight >= htlc.add.cltvExpiry - fulfillSafety => htlc.add
+    }
+  }
 
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
 
@@ -87,12 +97,13 @@ case class Commitments(channelVersion: ChannelVersion,
 }
 
 object Commitments {
+
   /**
-    * add a change to our proposed change list
+    * Add a change to our proposed change list.
     *
-    * @param commitments
-    * @param proposal
-    * @return an updated commitment instance
+    * @param commitments current commitments.
+    * @param proposal    proposed change to add.
+    * @return an updated commitment instance.
     */
   private def addLocalProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
     commitments.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed :+ proposal))
@@ -212,14 +223,14 @@ object Commitments {
         val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.r)
         val commitments1 = addLocalProposal(commitments, fulfill)
         (commitments1, fulfill)
-      case Some(htlc) => throw InvalidHtlcPreimage(commitments.channelId, cmd.id)
+      case Some(_) => throw InvalidHtlcPreimage(commitments.channelId, cmd.id)
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
     }
 
   def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Either[Commitments, (Commitments, Origin, UpdateAddHtlc)] =
     getHtlcCrossSigned(commitments, OUT, fulfill.id) match {
       case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => Right((addRemoteProposal(commitments, fulfill), commitments.originChannels(fulfill.id), htlc))
-      case Some(htlc) => throw InvalidHtlcPreimage(commitments.channelId, fulfill.id)
+      case Some(_) => throw InvalidHtlcPreimage(commitments.channelId, fulfill.id)
       case None => throw UnknownHtlcId(commitments.channelId, fulfill.id)
     }
 
@@ -235,16 +246,16 @@ object Commitments {
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(htlc) =>
         // we need the shared secret to build the error packet
-        Sphinx.parsePacket(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket).map(_.sharedSecret) match {
-          case Success(sharedSecret) =>
+        Sphinx.PaymentPacket.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket) match {
+          case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
             val reason = cmd.reason match {
-              case Left(forwarded) => Sphinx.forwardErrorPacket(forwarded, sharedSecret)
-              case Right(failure) => Sphinx.createErrorPacket(sharedSecret, failure)
+              case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
+              case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
             }
             val fail = UpdateFailHtlc(commitments.channelId, cmd.id, reason)
             val commitments1 = addLocalProposal(commitments, fail)
             (commitments1, fail)
-          case Failure(_) => throw new CannotExtractSharedSecret(commitments.channelId, htlc)
+          case Left(_) => throw CannotExtractSharedSecret(commitments.channelId, htlc)
         }
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
     }
@@ -263,7 +274,7 @@ object Commitments {
       } =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
-      case Some(htlc) =>
+      case Some(_) =>
         val fail = UpdateFailMalformedHtlc(commitments.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
         val commitments1 = addLocalProposal(commitments, fail)
         (commitments1, fail)
@@ -348,9 +359,9 @@ object Commitments {
 
   def remoteHasUnsignedOutgoingHtlcs(commitments: Commitments): Boolean = commitments.remoteChanges.proposed.collectFirst { case u: UpdateAddHtlc => u }.isDefined
 
-  def localHasChanges(commitments: Commitments): Boolean = commitments.remoteChanges.acked.size > 0 || commitments.localChanges.proposed.size > 0
+  def localHasChanges(commitments: Commitments): Boolean = commitments.remoteChanges.acked.nonEmpty || commitments.localChanges.proposed.nonEmpty
 
-  def remoteHasChanges(commitments: Commitments): Boolean = commitments.localChanges.acked.size > 0 || commitments.remoteChanges.proposed.size > 0
+  def remoteHasChanges(commitments: Commitments): Boolean = commitments.localChanges.acked.nonEmpty || commitments.remoteChanges.proposed.nonEmpty
 
   def revocationPreimage(seed: ByteVector32, index: Long): ByteVector32 = ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - index)
 
@@ -428,7 +439,7 @@ object Commitments {
 
     val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
     if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
-      throw new HtlcSigCountMismatch(commitments.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size)
+      throw HtlcSigCountMismatch(commitments.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size)
     }
     val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(localParams.channelKeyPath), localPerCommitmentPoint))
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
@@ -436,13 +447,13 @@ object Commitments {
     val htlcTxsAndSigs = (sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped.toList.collect {
       case (htlcTx: HtlcTimeoutTx, localSig, remoteSig) =>
         if (Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig)).isFailure) {
-          throw new InvalidHtlcSignature(commitments.channelId, htlcTx.tx)
+          throw InvalidHtlcSignature(commitments.channelId, htlcTx.tx)
         }
         HtlcTxAndSigs(htlcTx, localSig, remoteSig)
       case (htlcTx: HtlcSuccessTx, localSig, remoteSig) =>
         // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
-        if (Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey) == false) {
-          throw new InvalidHtlcSignature(commitments.channelId, htlcTx.tx)
+        if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey)) {
+          throw InvalidHtlcSignature(commitments.channelId, htlcTx.tx)
         }
         HtlcTxAndSigs(htlcTx, localSig, remoteSig)
     }

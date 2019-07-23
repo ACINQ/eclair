@@ -16,16 +16,20 @@
 
 package fr.acinq.eclair.channel.states.e
 
-import akka.actor.Status
 import java.util.UUID
 
-import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.{PrivateKey}
+import akka.actor.Status
+import akka.testkit.{TestActorRef, TestProbe}
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
-import fr.acinq.eclair.blockchain.{PublishAsap, WatchEventSpent}
+import fr.acinq.eclair.blockchain.{CurrentBlockCount, PublishAsap, WatchConfirmed, WatchEventSpent}
+import fr.acinq.eclair.channel.Channel.LocalError
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.payment.CommandBuffer
+import fr.acinq.eclair.payment.CommandBuffer.CommandSend
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.Outcome
@@ -52,6 +56,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   }
 
   def aliceInit = Init(TestConstants.Alice.nodeParams.globalFeatures, TestConstants.Alice.nodeParams.localFeatures)
+
   def bobInit = Init(TestConstants.Bob.nodeParams.globalFeatures, TestConstants.Bob.nodeParams.localFeatures)
 
   /**
@@ -61,7 +66,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000, ByteVector32.Zeroes, 400144, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(1000000, ByteVector32.Zeroes, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob)
@@ -138,7 +143,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000, randomBytes32, 400144, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(1000000, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob, ab_add_0)
@@ -180,7 +185,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // b will re-send the lost revocation
     val ba_rev_0_re = bob2alice.expectMsg(ba_rev_0)
     // rev ->a
-    bob2alice.forward(alice, ba_rev_0)
+    bob2alice.forward(alice, ba_rev_0_re)
 
     // and b will attempt a new signature
     bob2alice.expectMsg(ba_sig_0)
@@ -256,7 +261,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // we start by storing the current state
     val oldStateData = alice.stateData
     // then we add an htlc and sign it
-    val (ra1, htlca1) = addHtlc(250000000, alice, bob, alice2bob, bob2alice)
+    addHtlc(250000000, alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[CommitSig]
@@ -362,7 +367,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val channelUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate](20 seconds).channelUpdate
     assert(channelUpdate.feeBaseMsat === 4200)
     assert(channelUpdate.feeProportionalMillionths === 123456)
-    assert(Announcements.isEnabled(channelUpdate.channelFlags) == true)
+    assert(Announcements.isEnabled(channelUpdate.channelFlags))
 
     // no more messages
     channelUpdateListener.expectNoMsg(300 millis)
@@ -382,13 +387,76 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     channelUpdateListener.expectNoMsg(300 millis)
 
     // we attempt to send a payment
-    sender.send(alice, CMD_ADD_HTLC(4200, randomBytes32, 123456, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(4200, randomBytes32, 123456, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     val failure = sender.expectMsgType[Status.Failure]
     val AddHtlcFailed(_, _, ChannelUnavailable(_), _, _, _) = failure.cause
 
     // alice will broadcast a new disabled channel_update
     val update = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(Announcements.isEnabled(update.channelUpdate.channelFlags) == false)
+    assert(!Announcements.isEnabled(update.channelUpdate.channelFlags))
+  }
+
+  test("pending non-relayed fulfill htlcs will timeout upstream") { f =>
+    import f._
+    val sender = TestProbe()
+    val register = TestProbe()
+    val commandBuffer = TestActorRef(new CommandBuffer(bob.underlyingActor.nodeParams, register.ref))
+    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccured])
+
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val initialCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
+    val HtlcSuccessTx(_, htlcSuccessTx, _) = initialState.commitments.localCommit.publishableTxs.htlcTxsAndSigs.head.txinfo
+
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // We simulate a pending fulfill on that HTLC but not relayed.
+    // When it is close to expiring upstream, we should close the channel.
+    sender.send(commandBuffer, CommandSend(htlc.channelId, htlc.id, CMD_FULFILL_HTLC(htlc.id, r, commit = true)))
+    sender.send(bob, CurrentBlockCount(htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks))
+
+    val ChannelErrorOccured(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccured]
+    assert(isFatal)
+    assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
+
+    bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
+    bob2blockchain.expectMsgType[PublishAsap] // main delayed
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
+    bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
+
+    bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
+    bob2blockchain.expectMsgType[PublishAsap] // main delayed
+    assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
+    bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
+    alice2blockchain.expectNoMsg(500 millis)
+  }
+
+  test("pending non-relayed fail htlcs will timeout upstream") { f =>
+    import f._
+    val sender = TestProbe()
+    val register = TestProbe()
+    val commandBuffer = TestActorRef(new CommandBuffer(bob.underlyingActor.nodeParams, register.ref))
+    val (_, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // We simulate a pending failure on that HTLC.
+    // Even if we get close to expiring upstream we shouldn't close the channel, because we have nothing to lose.
+    sender.send(commandBuffer, CommandSend(htlc.channelId, htlc.id, CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(0)))))
+    sender.send(bob, CurrentBlockCount(htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks))
+
+    bob2blockchain.expectNoMsg(250 millis)
+    alice2blockchain.expectNoMsg(250 millis)
   }
 
 }
