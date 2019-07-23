@@ -22,15 +22,13 @@ import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.channel.{Channel, ChannelVersion, Commitments}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.crypto.Sphinx.{PacketAndSecrets, ParsedPacket}
+import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, PacketAndSecrets}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Hop
-import fr.acinq.eclair.wire.{ChannelUpdate, LightningMessageCodecs, PerHopPayload}
+import fr.acinq.eclair.wire.{ChannelUpdate, OnionCodecs, PerHopPayload}
 import fr.acinq.eclair.{ShortChannelId, TestConstants, nodeFee, randomBytes32}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
-
-import scala.util.Success
 
 /**
   * Created by PM on 31/05/2016.
@@ -68,30 +66,30 @@ class HtlcGenerationSpec extends FunSuite {
     val (_, _, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
     val nodes = hops.map(_.nextNodeId)
     val PacketAndSecrets(packet_b, _) = buildOnion(nodes, payloads, paymentHash)
-    assert(packet_b.serialize.size === Sphinx.PacketLength)
+    assert(packet_b.payload.length === Sphinx.PaymentPacket.PayloadLength)
 
     // let's peel the onion
-    val Success(ParsedPacket(bin_b, packet_c, _)) = Sphinx.parsePacket(priv_b.privateKey, paymentHash, packet_b.serialize)
-    val payload_b = LightningMessageCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
-    assert(packet_c.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_b, packet_c, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, packet_b)
+    val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
+    assert(packet_c.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_b.amtToForward === amount_bc)
     assert(payload_b.outgoingCltvValue === expiry_bc)
 
-    val Success(ParsedPacket(bin_c, packet_d, _)) = Sphinx.parsePacket(priv_c.privateKey, paymentHash, packet_c.serialize)
-    val payload_c = LightningMessageCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
-    assert(packet_d.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_c, packet_d, _)) = Sphinx.PaymentPacket.peel(priv_c.privateKey, paymentHash, packet_c)
+    val payload_c = OnionCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
+    assert(packet_d.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_c.amtToForward === amount_cd)
     assert(payload_c.outgoingCltvValue === expiry_cd)
 
-    val Success(ParsedPacket(bin_d, packet_e, _)) = Sphinx.parsePacket(priv_d.privateKey, paymentHash, packet_d.serialize)
-    val payload_d = LightningMessageCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
-    assert(packet_e.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_d, packet_e, _)) = Sphinx.PaymentPacket.peel(priv_d.privateKey, paymentHash, packet_d)
+    val payload_d = OnionCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
+    assert(packet_e.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_d.amtToForward === amount_de)
     assert(payload_d.outgoingCltvValue === expiry_de)
 
-    val Success(ParsedPacket(bin_e, packet_random, _)) = Sphinx.parsePacket(priv_e.privateKey, paymentHash, packet_e.serialize)
-    val payload_e = LightningMessageCodecs.perHopPayloadCodec.decode(bin_e.toBitVector).require.value
-    assert(packet_random.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_e, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_e.privateKey, paymentHash, packet_e)
+    val payload_e = OnionCodecs.perHopPayloadCodec.decode(bin_e.toBitVector).require.value
+    assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_e.amtToForward === finalAmountMsat)
     assert(payload_e.outgoingCltvValue === finalExpiry)
   }
@@ -103,30 +101,30 @@ class HtlcGenerationSpec extends FunSuite {
     assert(add.amountMsat > finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry + channelUpdate_de.cltvExpiryDelta + channelUpdate_cd.cltvExpiryDelta + channelUpdate_bc.cltvExpiryDelta)
     assert(add.paymentHash === paymentHash)
-    assert(add.onion.length === Sphinx.PacketLength)
+    assert(add.onion.payload.length === Sphinx.PaymentPacket.PayloadLength)
 
     // let's peel the onion
-    val Success(ParsedPacket(bin_b, packet_c, _)) = Sphinx.parsePacket(priv_b.privateKey, paymentHash, add.onion)
-    val payload_b = LightningMessageCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
-    assert(packet_c.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_b, packet_c, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, add.onion)
+    val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
+    assert(packet_c.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_b.amtToForward === amount_bc)
     assert(payload_b.outgoingCltvValue === expiry_bc)
 
-    val Success(ParsedPacket(bin_c, packet_d, _)) = Sphinx.parsePacket(priv_c.privateKey, paymentHash, packet_c.serialize)
-    val payload_c = LightningMessageCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
-    assert(packet_d.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_c, packet_d, _)) = Sphinx.PaymentPacket.peel(priv_c.privateKey, paymentHash, packet_c)
+    val payload_c = OnionCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
+    assert(packet_d.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_c.amtToForward === amount_cd)
     assert(payload_c.outgoingCltvValue === expiry_cd)
 
-    val Success(ParsedPacket(bin_d, packet_e, _)) = Sphinx.parsePacket(priv_d.privateKey, paymentHash, packet_d.serialize)
-    val payload_d = LightningMessageCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
-    assert(packet_e.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_d, packet_e, _)) = Sphinx.PaymentPacket.peel(priv_d.privateKey, paymentHash, packet_d)
+    val payload_d = OnionCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
+    assert(packet_e.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_d.amtToForward === amount_de)
     assert(payload_d.outgoingCltvValue === expiry_de)
 
-    val Success(ParsedPacket(bin_e, packet_random, _)) = Sphinx.parsePacket(priv_e.privateKey, paymentHash, packet_e.serialize)
-    val payload_e = LightningMessageCodecs.perHopPayloadCodec.decode(bin_e.toBitVector).require.value
-    assert(packet_random.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_e, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_e.privateKey, paymentHash, packet_e)
+    val payload_e = OnionCodecs.perHopPayloadCodec.decode(bin_e.toBitVector).require.value
+    assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_e.amtToForward === finalAmountMsat)
     assert(payload_e.outgoingCltvValue === finalExpiry)
   }
@@ -137,12 +135,12 @@ class HtlcGenerationSpec extends FunSuite {
     assert(add.amountMsat === finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry)
     assert(add.paymentHash === paymentHash)
-    assert(add.onion.size === Sphinx.PacketLength)
+    assert(add.onion.payload.length === Sphinx.PaymentPacket.PayloadLength)
 
     // let's peel the onion
-    val Success(ParsedPacket(bin_b, packet_random, _)) = Sphinx.parsePacket(priv_b.privateKey, paymentHash, add.onion)
-    val payload_b = LightningMessageCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
-    assert(packet_random.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_b, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, add.onion)
+    val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
+    assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_b.amtToForward === finalAmountMsat)
     assert(payload_b.outgoingCltvValue === finalExpiry)
   }
