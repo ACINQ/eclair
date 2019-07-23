@@ -25,7 +25,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, PacketAndSecrets}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Hop
-import fr.acinq.eclair.wire.{ChannelUpdate, OnionCodecs, OnionForwardInfo}
+import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, nodeFee, randomBytes32}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
@@ -49,20 +49,19 @@ class HtlcGenerationSpec extends FunSuite {
   import HtlcGenerationSpec._
 
   test("compute payloads with fees and expiry delta") {
-
     val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
+    val expectedPayloads = Seq[OnionPerHopPayload](
+      OnionForwardInfo(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc),
+      OnionForwardInfo(channelUpdate_cd.shortChannelId, amount_cd, expiry_cd),
+      OnionForwardInfo(channelUpdate_de.shortChannelId, amount_de, expiry_de),
+      OnionForwardInfo(ShortChannelId(0L), finalAmountMsat, finalExpiry))
 
     assert(firstAmountMsat === amount_ab)
     assert(firstExpiry === expiry_ab)
-    assert(payloads ===
-      OnionForwardInfo(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc) ::
-        OnionForwardInfo(channelUpdate_cd.shortChannelId, amount_cd, expiry_cd) ::
-        OnionForwardInfo(channelUpdate_de.shortChannelId, amount_de, expiry_de) ::
-        OnionForwardInfo(ShortChannelId(0L), finalAmountMsat, finalExpiry) :: Nil)
+    assert(payloads === expectedPayloads)
   }
 
   test("build onion") {
-
     val (_, _, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
     val nodes = hops.map(_.nextNodeId)
     val PacketAndSecrets(packet_b, _) = buildOnion(nodes, payloads, paymentHash)
@@ -94,8 +93,36 @@ class HtlcGenerationSpec extends FunSuite {
     assert(payload_e.outgoingCltvValue === finalExpiry)
   }
 
-  test("build a command including the onion") {
+  test("build onion with final tlv payload") {
+    val (_, _, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1), TlvPayload)
+    val nodes = hops.map(_.nextNodeId)
+    val PacketAndSecrets(packet_b, _) = buildOnion(nodes, payloads, paymentHash)
+    assert(packet_b.payload.length === Sphinx.PaymentPacket.PayloadLength)
 
+    // let's peel the onion
+    val Right(DecryptedPacket(bin_b, packet_c, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, packet_b)
+    val payload_b = OnionCodecs.legacyPerHopPayloadCodec.decode(bin_b.toBitVector).require.value
+    assert(packet_c.payload.length === Sphinx.PaymentPacket.PayloadLength)
+    assert(payload_b === OnionForwardInfo(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc))
+
+    val Right(DecryptedPacket(bin_c, packet_d, _)) = Sphinx.PaymentPacket.peel(priv_c.privateKey, paymentHash, packet_c)
+    val payload_c = OnionCodecs.legacyPerHopPayloadCodec.decode(bin_c.toBitVector).require.value
+    assert(packet_d.payload.length === Sphinx.PaymentPacket.PayloadLength)
+    assert(payload_c === OnionForwardInfo(channelUpdate_cd.shortChannelId, amount_cd, expiry_cd))
+
+    val Right(DecryptedPacket(bin_d, packet_e, _)) = Sphinx.PaymentPacket.peel(priv_d.privateKey, paymentHash, packet_d)
+    val payload_d = OnionCodecs.legacyPerHopPayloadCodec.decode(bin_d.toBitVector).require.value
+    assert(packet_e.payload.length === Sphinx.PaymentPacket.PayloadLength)
+    assert(payload_d === OnionForwardInfo(channelUpdate_de.shortChannelId, amount_de, expiry_de))
+
+    val Right(DecryptedPacket(bin_e, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_e.privateKey, paymentHash, packet_e)
+    val payload_e = OnionCodecs.tlvPerHopPayloadCodec.decode(bin_e.toBitVector).require.value
+    val paymentInfo = OnionPerHopPayload(Left(payload_e)).paymentInfo
+    assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
+    assert(paymentInfo === Some(OnionPaymentInfo(finalAmountMsat, finalExpiry)))
+  }
+
+  test("build a command including the onion") {
     val (add, _) = buildCommand(UUID.randomUUID, finalAmountMsat, finalExpiry, paymentHash, hops)
 
     assert(add.amount > finalAmountMsat)

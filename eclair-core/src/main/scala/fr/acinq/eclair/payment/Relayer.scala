@@ -213,7 +213,7 @@ object Relayer extends Logging {
 
   // @formatter:off
   sealed trait NextPayload
-  case class FinalPayload(add: UpdateAddHtlc, payload: OnionForwardInfo) extends NextPayload
+  case class FinalPayload(add: UpdateAddHtlc, payload: OnionPerHopPayload) extends NextPayload
   case class RelayPayload(add: UpdateAddHtlc, payload: OnionForwardInfo, nextPacket: OnionRoutingPacket) extends NextPayload {
     val relayFeeMsat: MilliSatoshi = add.amountMsat - payload.amtToForward
     val expiryDelta: CltvExpiryDelta = add.cltvExpiry - payload.outgoingCltvValue
@@ -231,15 +231,21 @@ object Relayer extends Logging {
   def decryptPacket(add: UpdateAddHtlc, privateKey: PrivateKey): Either[BadOnion, NextPayload] =
     Sphinx.PaymentPacket.peel(privateKey, add.paymentHash, add.onionRoutingPacket) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
-        OnionCodecs.legacyPerHopPayloadCodec.decode(payload.bits) match {
+        OnionCodecs.perHopPayloadCodec.decode(payload.bits) match {
           case Attempt.Successful(DecodeResult(perHopPayload, remainder)) =>
             if (remainder.nonEmpty) {
               logger.warn(s"${remainder.length} bits remaining after per-hop payload decoding: there might be an issue with the onion codec")
             }
             if (p.isLastPacket) {
-              Right(FinalPayload(add, perHopPayload))
+              perHopPayload.paymentInfo match {
+                case Some(_) => Right(FinalPayload(add, perHopPayload))
+                case None => Left(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add.onionRoutingPacket)))
+              }
             } else {
-              Right(RelayPayload(add, perHopPayload, nextPacket))
+              perHopPayload.forwardInfo match {
+                case Some(forwardInfo) => Right(RelayPayload(add, forwardInfo, nextPacket))
+                case None => Left(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add.onionRoutingPacket)))
+              }
             }
           case Attempt.Failure(_) =>
             // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
@@ -258,11 +264,13 @@ object Relayer extends Logging {
    */
   def handleFinal(finalPayload: FinalPayload): Either[CMD_FAIL_HTLC, UpdateAddHtlc] = {
     import finalPayload.add
-    finalPayload.payload match {
-      case OnionForwardInfo(_, finalAmountToForward, _) if finalAmountToForward > add.amountMsat =>
+    finalPayload.payload.paymentInfo match {
+      case Some(OnionPaymentInfo(amountMsat, _)) if amountMsat > add.amountMsat =>
         Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectHtlcAmount(add.amountMsat)), commit = true))
-      case OnionForwardInfo(_, _, finalOutgoingCltvValue) if finalOutgoingCltvValue != add.cltvExpiry =>
+      case Some(OnionPaymentInfo(_, cltvExpiry)) if cltvExpiry != add.cltvExpiry =>
         Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectCltvExpiry(add.cltvExpiry)), commit = true))
+      case None =>
+        Left(CMD_FAIL_HTLC(add.id, Right(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add.onionRoutingPacket))), commit = true))
       case _ =>
         Right(add)
     }

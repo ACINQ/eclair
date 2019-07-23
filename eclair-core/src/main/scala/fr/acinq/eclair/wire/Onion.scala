@@ -30,6 +30,11 @@ import scodec.{Codec, DecodeResult, Decoder}
  * Created by t-bast on 05/07/2019.
  */
 
+/**
+ * Tlv types used inside onion messages.
+ */
+sealed trait OnionTlv extends Tlv
+
 case class OnionRoutingPacket(version: Int,
                               publicKey: ByteVector,
                               payload: ByteVector,
@@ -39,17 +44,39 @@ case class OnionForwardInfo(shortChannelId: ShortChannelId,
                             amtToForward: MilliSatoshi,
                             outgoingCltvValue: CltvExpiry)
 
-/**
- * Tlv types used inside onion messages.
- */
-sealed trait OnionTlv extends Tlv
+case class OnionPaymentInfo(amount: MilliSatoshi, cltvExpiry: CltvExpiry)
+
+case class OnionPerHopPayload(payload: Either[TlvStream[OnionTlv], OnionForwardInfo]) {
+
+  lazy val paymentInfo: Option[OnionPaymentInfo] = payload match {
+    case Right(OnionForwardInfo(_, amount, cltv)) => Some(OnionPaymentInfo(amount, cltv))
+    case Left(tlv) => for {
+      amount <- tlv.get[AmountToForward].map(_.amount)
+      cltv <- tlv.get[OutgoingCltv].map(_.cltv)
+    } yield OnionPaymentInfo(amount, cltv)
+  }
+
+  lazy val forwardInfo: Option[OnionForwardInfo] = payload match {
+    case Right(onionForwardInfo) => Some(onionForwardInfo)
+    case Left(tlv) => for {
+      shortChannelId <- tlv.get[OutgoingChannelId].map(_.shortChannelId)
+      amount <- tlv.get[AmountToForward].map(_.amount)
+      cltv <- tlv.get[OutgoingCltv].map(_.cltv)
+    } yield OnionForwardInfo(shortChannelId, amount, cltv)
+  }
+
+}
+
+object OnionPerHopPayload {
+
+  // @formatter:off
+  implicit def legacyToPerHopPayload(legacy: OnionForwardInfo): OnionPerHopPayload = OnionPerHopPayload(Right(legacy))
+  implicit def tlvToPerHopPayload(tlv: TlvStream[OnionTlv]): OnionPerHopPayload = OnionPerHopPayload(Left(tlv))
+  // @formatter:on
+
+}
 
 object OnionTlv {
-
-  /**
-   * If this record is present in an onion payload, the current node is the final destination of the onion message.
-   */
-  case class Destination() extends OnionTlv
 
   /**
    * Amount to forward to the next node.
@@ -87,8 +114,6 @@ object OnionCodecs {
   val payloadLengthDecoder = Decoder[Long]((bits: BitVector) =>
     varintoverflow.decode(bits).map(d => DecodeResult(d.value + (bits.length - d.remainder.length) / 8, d.remainder)))
 
-  private val destination: Codec[Destination] = ("length" | constant(hex"00")).xmap(_ => Destination(), _ => ())
-
   private val amountToForward: Codec[AmountToForward] = ("amount_msat" | tu64overflow).xmap(amountMsat => AmountToForward(MilliSatoshi(amountMsat)), (a: AmountToForward) => a.amount.toLong)
 
   private val outgoingCltv: Codec[OutgoingCltv] = ("cltv" | tu32).xmap(cltv => OutgoingCltv(CltvExpiry(cltv)), (c: OutgoingCltv) => c.cltv.toLong)
@@ -96,7 +121,6 @@ object OnionCodecs {
   private val outgoingChannelId: Codec[OutgoingChannelId] = (("length" | constant(hex"08")) :: ("short_channel_id" | shortchannelid)).as[OutgoingChannelId]
 
   private val onionTlvCodec = discriminated[OnionTlv].by(varint)
-    .typecase(UInt64(0), destination)
     .typecase(UInt64(2), amountToForward)
     .typecase(UInt64(4), outgoingCltv)
     .typecase(UInt64(6), outgoingChannelId)
@@ -110,6 +134,6 @@ object OnionCodecs {
       ("outgoing_cltv_value" | cltvExpiry) ::
       ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[OnionForwardInfo]
 
-  val perHopPayloadCodec: Codec[Either[TlvStream[OnionTlv], OnionForwardInfo]] = fallback(tlvPerHopPayloadCodec, legacyPerHopPayloadCodec)
+  val perHopPayloadCodec: Codec[OnionPerHopPayload] = fallback(tlvPerHopPayloadCodec, legacyPerHopPayloadCodec).as[OnionPerHopPayload]
 
 }

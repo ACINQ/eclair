@@ -23,10 +23,10 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
+import fr.acinq.eclair.payment.PaymentLifecycle.{buildCommand, buildOnion}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, TestkitBaseClass, UInt64, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, TestkitBaseClass, UInt64, nodeFee, randomBytes32}
 import org.scalatest.Outcome
 import scodec.bits.ByteVector
 
@@ -71,6 +71,36 @@ class RelayerSpec extends TestkitBaseClass {
 
     val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
+    assert(fwd.message.amount === amount_bc)
+    assert(fwd.message.cltvExpiry === expiry_bc)
+    assert(fwd.message.upstream === Right(add_ab))
+
+    sender.expectNoMsg(100 millis)
+    paymentHandler.expectNoMsg(100 millis)
+  }
+
+  test("relay an htlc-add with onion tlv payload") { f =>
+    import f._
+    import fr.acinq.eclair.wire.OnionTlv._
+    val sender = TestProbe()
+
+    val finalPayload: Seq[OnionPerHopPayload] = TlvStream[OnionTlv](AmountToForward(finalAmountMsat), OutgoingCltv(finalExpiry)) :: Nil
+    val (firstAmountMsat, firstExpiry, payloads) = hops.drop(1).reverse.foldLeft((finalAmountMsat, finalExpiry, finalPayload)) {
+      case ((amountMsat, expiry, currentPayloads), hop) =>
+        val nextFee = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, amountMsat)
+        val payload: OnionPerHopPayload =  TlvStream[OnionTlv](AmountToForward(amountMsat), OutgoingCltv(expiry), OutgoingChannelId(hop.lastUpdate.shortChannelId))
+        (amountMsat + nextFee, expiry + hop.lastUpdate.cltvExpiryDelta, payload +: currentPayloads)
+    }
+    val Sphinx.PacketAndSecrets(onion, _) = buildOnion(hops.map(_.nextNodeId), payloads, paymentHash)
+    val add_ab = UpdateAddHtlc(channelId_ab, 123456, firstAmountMsat, paymentHash, firstExpiry, onion)
+    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
+
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
+    assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
+    assert(fwd.message.amount === amount_bc)
+    assert(fwd.message.cltvExpiry === expiry_bc)
     assert(fwd.message.upstream === Right(add_ab))
 
     sender.expectNoMsg(100 millis)
@@ -120,6 +150,21 @@ class RelayerSpec extends TestkitBaseClass {
 
     sender.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)
+  }
+
+  test("relay an htlc-add at the final node to the payment handler") { f =>
+    import f._
+    val sender = TestProbe()
+
+    val (cmd, _) = buildCommand(UUID.randomUUID(), finalAmountMsat, finalExpiry, paymentHash, hops.take(1))
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    val htlc = paymentHandler.expectMsgType[UpdateAddHtlc]
+    assert(htlc === add_ab)
+
+    sender.expectNoMsg(100 millis)
+    register.expectNoMsg(100 millis)
   }
 
   test("fail to relay an htlc-add when we have no channel_update for the next channel") { f =>
@@ -244,6 +289,35 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
+  test("fail to relay an htlc-add when the onion payload is missing data") { f =>
+    import f._
+    import fr.acinq.eclair.wire.OnionTlv._
+
+    // B is not the last hop and receives an onion missing some routing information.
+    val invalidPayloads_bc = Seq(
+      TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_bc.shortChannelId), AmountToForward(amount_bc)), // Missing cltv expiry.
+      TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_bc.shortChannelId), OutgoingCltv(expiry_bc)), // Missing forwarding amount.
+      TlvStream[OnionTlv](AmountToForward(amount_bc), OutgoingCltv(expiry_bc))) // Missing channel id.
+  val payload_cd = TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_cd.shortChannelId), AmountToForward(amount_cd), OutgoingCltv(expiry_cd))
+
+    val sender = TestProbe()
+    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
+
+    for (invalidPayload_bc <- invalidPayloads_bc) {
+      val Sphinx.PacketAndSecrets(onion, _) = buildOnion(Seq(b, c), Seq(invalidPayload_bc, payload_cd), paymentHash)
+      val add_ab = UpdateAddHtlc(channelId_ab, 123456, amount_ab, paymentHash, expiry_ab, onion)
+      sender.send(relayer, ForwardAdd(add_ab))
+
+      val fail = register.expectMsgType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
+      assert(fail.id === add_ab.id)
+      assert(fail.onionHash == Sphinx.PaymentPacket.hash(add_ab.onionRoutingPacket))
+      assert(fail.failureCode === (FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM))
+
+      register.expectNoMsg(100 millis)
+      paymentHandler.expectNoMsg(100 millis)
+    }
+  }
+
   test("fail to relay an htlc-add when amount is below the next hop's requirements") { f =>
     import f._
     val sender = TestProbe()
@@ -344,6 +418,32 @@ class RelayerSpec extends TestkitBaseClass {
 
     register.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)
+  }
+
+  test("fail an htlc-add at the final node when the onion payload is missing data") { f =>
+    import f._
+    import fr.acinq.eclair.wire.OnionTlv._
+
+    // B is the last hop and receives an onion missing some payment information.
+    val invalidFinalPayloads = Seq(
+      TlvStream[OnionTlv](AmountToForward(amount_bc)), // Missing cltv expiry.
+      TlvStream[OnionTlv](OutgoingCltv(expiry_bc))) // Missing forwarding amount.
+
+    val sender = TestProbe()
+
+    for (invalidFinalPayload <- invalidFinalPayloads) {
+      val Sphinx.PacketAndSecrets(onion, _) = buildOnion(Seq(b), Seq(invalidFinalPayload), paymentHash)
+      val add_ab = UpdateAddHtlc(channelId_ab, 123456, amount_ab, paymentHash, expiry_ab, onion)
+      sender.send(relayer, ForwardAdd(add_ab))
+
+      val fail = register.expectMsgType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
+      assert(fail.id === add_ab.id)
+      assert(fail.onionHash == Sphinx.PaymentPacket.hash(add_ab.onionRoutingPacket))
+      assert(fail.failureCode === (FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM))
+
+      register.expectNoMsg(100 millis)
+      paymentHandler.expectNoMsg(100 millis)
+    }
   }
 
   test("correctly translates errors returned by channel when attempting to add an htlc") { f =>
