@@ -22,8 +22,6 @@ import akka.actor.Status
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
-import fr.acinq.eclair.blockchain.{CurrentBlockCount, PublishAsap, WatchConfirmed, WatchEventSpent}
-import fr.acinq.eclair.channel.Channel.LocalError
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates, PublishAsap, WatchConfirmed, WatchEventSpent}
 import fr.acinq.eclair.channel.Channel.LocalError
@@ -504,6 +502,69 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // bob is fundee
     sender.send(bob, CurrentFeerates(highFeerate))
     bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
+  }
+
+  test("pending non-relayed fulfill htlcs will timeout upstream") { f =>
+    import f._
+    val sender = TestProbe()
+    val register = TestProbe()
+    val commandBuffer = TestActorRef(new CommandBuffer(bob.underlyingActor.nodeParams, register.ref))
+    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccured])
+
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val initialCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
+    val HtlcSuccessTx(_, htlcSuccessTx, _) = initialState.commitments.localCommit.publishableTxs.htlcTxsAndSigs.head.txinfo
+
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // We simulate a pending fulfill on that HTLC but not relayed.
+    // When it is close to expiring upstream, we should close the channel.
+    sender.send(commandBuffer, CommandSend(htlc.channelId, htlc.id, CMD_FULFILL_HTLC(htlc.id, r, commit = true)))
+    sender.send(bob, CurrentBlockCount(htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks))
+
+    val ChannelErrorOccured(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccured]
+    assert(isFatal)
+    assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
+
+    bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
+    bob2blockchain.expectMsgType[PublishAsap] // main delayed
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
+    bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
+
+    bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
+    bob2blockchain.expectMsgType[PublishAsap] // main delayed
+    assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
+    bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
+    alice2blockchain.expectNoMsg(500 millis)
+  }
+
+  test("pending non-relayed fail htlcs will timeout upstream") { f =>
+    import f._
+    val sender = TestProbe()
+    val register = TestProbe()
+    val commandBuffer = TestActorRef(new CommandBuffer(bob.underlyingActor.nodeParams, register.ref))
+    val (_, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // We simulate a pending failure on that HTLC.
+    // Even if we get close to expiring upstream we shouldn't close the channel, because we have nothing to lose.
+    sender.send(commandBuffer, CommandSend(htlc.channelId, htlc.id, CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(0)))))
+    sender.send(bob, CurrentBlockCount(htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks))
+
+    bob2blockchain.expectNoMsg(250 millis)
+    alice2blockchain.expectNoMsg(250 millis)
   }
 
 }
