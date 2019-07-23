@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
@@ -160,5 +161,8 @@ trait StateTestsHelperMethods extends TestKitBase {
   }
 
   def channelId(a: TestFSMRef[State, Data, Channel]) = Helpers.getChannelId(a.stateData)
+
+  def feeConfOfChannel(a: TestFSMRef[State, Data, Channel]) = a.underlyingActor.nodeParams.onChainFeeConf
+  def feeConfOfPeer(a: TestFSMRef[Peer.State, Peer.Data, Peer]) = a.underlyingActor.nodeParams.onChainFeeConf
 
 }

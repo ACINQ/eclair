@@ -26,6 +26,7 @@ import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
+import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{ChannelCreated, HasCommitments}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
@@ -37,7 +38,7 @@ import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
-class PeerSpec extends TestkitBaseClass {
+class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   def ipv4FromInet4(address: InetSocketAddress) = IPv4.apply(address.getAddress.asInstanceOf[Inet4Address], address.getPort)
 
@@ -249,10 +250,9 @@ class PeerSpec extends TestkitBaseClass {
     probe.send(peer, Peer.OpenChannel(remoteNodeId, Satoshi(12300), MilliSatoshi(0), None, None, None))
     awaitCond(peer.stateData.channels.nonEmpty)
 
-    val nodeParams = peer.underlyingActor.nodeParams
     val channelCreated = probe.expectMsgType[ChannelCreated]
-    assert(channelCreated.initialFeeratePerKw == nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget))
-    assert(channelCreated.fundingTxFeeratePerKw.get == nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
+    assert(channelCreated.initialFeeratePerKw == feeConfOfPeer(peer).feeEstimator.getFeeratePerKw(feeConfOfPeer(peer).feeTargets.commitmentBlockTarget))
+    assert(channelCreated.fundingTxFeeratePerKw.get == feeConfOfPeer(peer).feeEstimator.getFeeratePerKw(feeConfOfPeer(peer).feeTargets.fundingBlockTarget))
   }
 
   test("reply to ping") { f =>

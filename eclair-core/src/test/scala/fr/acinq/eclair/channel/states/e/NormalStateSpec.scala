@@ -1393,7 +1393,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
     // we first update the feerates so that we don't trigger a 'fee too different' error
-    bob.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
+    feeConfOfChannel(bob).feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
     sender.send(bob, fee)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missingSatoshis = 71620000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
@@ -1407,12 +1407,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv UpdateFee (local/remote feerates are too different)") { f =>
     import f._
-    val bobNodeParams = bob.underlyingActor.nodeParams
-    bobNodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw(1000, 2000, 6000, 12000, 36000, 72000, 140000))
+    feeConfOfChannel(bob).feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw(1000, 2000, 6000, 12000, 36000, 72000, 140000))
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     // Alice will use $localFeeRate when performing the checks for update_fee
-    val localFeeRate = bobNodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(bobNodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
+    val localFeeRate = feeConfOfChannel(bob).feeEstimator.getFeeratePerKw(feeConfOfChannel(bob).feeTargets.commitmentBlockTarget)
     assert(localFeeRate === 2000)
     val remoteFeeUpdate = 85000
     sender.send(bob, UpdateFee(ByteVector32.Zeroes, remoteFeeUpdate))
@@ -1428,11 +1427,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv UpdateFee (remote feerate is too small)") { f =>
     import f._
-    val bobNodeParams = bob.underlyingActor.nodeParams
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     val tx = bobCommitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    assert(bobCommitments.localCommit.spec.feeratePerKw == bobNodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(bobNodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget))
+    val expectedFeeratePerKw = feeConfOfChannel(bob).feeEstimator.getFeeratePerKw(feeConfOfChannel(bob).feeTargets.commitmentBlockTarget)
+    assert(bobCommitments.localCommit.spec.feeratePerKw == expectedFeeratePerKw)
     sender.send(bob, UpdateFee(ByteVector32.Zeroes, 252))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === "remote fee rate is too small: remoteFeeratePerKw=252")
@@ -1896,8 +1895,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.claimHtlcTimeoutTxs.size == 2)
 
     // assert the feerate of the claim main is what we expect
-    val aliceNodeParams = alice.underlyingActor.nodeParams
-    val expectedFeeRate = aliceNodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(aliceNodeParams.onChainFeeConf.feeTargets.claimMainBlockTarget)
+    val expectedFeeRate = feeConfOfChannel(alice).feeEstimator.getFeeratePerKw(feeConfOfChannel(alice).feeTargets.claimMainBlockTarget)
     val expectedFee = Transactions.weight2fee(expectedFeeRate, Transactions.claimP2WPKHOutputWeight).toLong
     val claimFee = claimMain.txIn.map(in => bobCommitTx.txOut(in.outPoint.index.toInt).amount.toLong).sum - claimMain.txOut.map(_.amount.toLong).sum
     assert(claimFee == expectedFee)
