@@ -681,7 +681,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(fee: UpdateFee, d: DATA_NORMAL) =>
-      Try(Commitments.receiveFee(d.commitments, fee, nodeParams.maxFeerateMismatch, nodeParams.feeEstimator, nodeParams.feeTargets)) match {
+      Try(Commitments.receiveFee(d.commitments, nodeParams.feeEstimator, nodeParams.feeTargets, fee, nodeParams.maxFeerateMismatch)) match {
         case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
@@ -1040,7 +1040,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(fee: UpdateFee, d: DATA_SHUTDOWN) =>
-      Try(Commitments.receiveFee(d.commitments, fee, nodeParams.maxFeerateMismatch, nodeParams.feeEstimator, nodeParams.feeTargets)) match {
+      Try(Commitments.receiveFee(d.commitments, nodeParams.feeEstimator, nodeParams.feeTargets, fee, nodeParams.maxFeerateMismatch)) match {
         case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }

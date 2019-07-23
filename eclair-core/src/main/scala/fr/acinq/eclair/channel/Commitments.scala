@@ -311,7 +311,7 @@ object Commitments {
     (commitments1, fee)
   }
 
-  def receiveFee(commitments: Commitments, fee: UpdateFee, maxFeerateMismatch: Double, feeEstimator: FeeEstimator, feeTargets: FeeTargets): Commitments = {
+  def receiveFee(commitments: Commitments, feeEstimator: FeeEstimator, feeTargets: FeeTargets, fee: UpdateFee, maxFeerateMismatch: Double): Commitments = {
     if (commitments.localParams.isFunder) {
       throw FundeeCannotSendUpdateFee(commitments.channelId)
     }
