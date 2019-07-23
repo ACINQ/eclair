@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.states.a
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.{Block, ByteVector32, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -69,10 +69,10 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   test("recv OpenChannel (funding too low)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val lowFundingMsat = 100
-    bob ! open.copy(fundingSatoshis = lowFundingMsat)
+    val lowFunding = 100
+    bob ! open.copy(fundingSatoshis = Satoshi(lowFunding))
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFundingMsat, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS).getMessage))
+    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFunding, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -80,9 +80,9 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val highFundingMsat = 100000000
-    bob ! open.copy(fundingSatoshis = highFundingMsat)
+    bob ! open.copy(fundingSatoshis = Satoshi(highFundingMsat))
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS).getMessage))
+    assert(error.toAscii === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS).getMessage).toAscii)
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -102,7 +102,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     val invalidPushMsat = 100000000000L
     bob ! open.copy(pushMsat = invalidPushMsat)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, invalidPushMsat, 1000 * open.fundingSatoshis).getMessage))
+    assert(error === Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, invalidPushMsat, 1000 * open.fundingSatoshis.toLong).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -168,7 +168,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     val open = alice2bob.expectMsgType[OpenChannel]
     val fundingSatoshis = open.channelReserveSatoshis + 499
     val pushMsat = 500 * 1000
-    bob ! open.copy(fundingSatoshis = fundingSatoshis, pushMsat = pushMsat)
+    bob ! open.copy(fundingSatoshis = Satoshi(fundingSatoshis), pushMsat = pushMsat)
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
     assert(error === Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, 500 * 1000, (open.channelReserveSatoshis - 1) * 1000, open.channelReserveSatoshis).getMessage))

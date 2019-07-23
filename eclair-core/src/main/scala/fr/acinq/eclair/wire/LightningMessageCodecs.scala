@@ -16,9 +16,11 @@
 
 package fr.acinq.eclair.wire
 
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire
 import fr.acinq.eclair.wire.CommonCodecs._
 import scodec.Codec
+import scodec.bits.ByteVector
 import scodec.codecs._
 
 /**
@@ -51,7 +53,7 @@ object LightningMessageCodecs {
   val openChannelCodec: Codec[OpenChannel] = (
     ("chainHash" | bytes32) ::
       ("temporaryChannelId" | bytes32) ::
-      ("fundingSatoshis" | uint64overflow) ::
+      ("fundingSatoshis" | uint64overflowSat) ::
       ("pushMsat" | uint64overflow) ::
       ("dustLimitSatoshis" | uint64overflow) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::

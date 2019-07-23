@@ -87,10 +87,10 @@ object Helpers {
     // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
     // MUST reject the channel.
     if (nodeParams.chainHash != open.chainHash) throw InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash)
-    if (open.fundingSatoshis < nodeParams.minFundingSatoshis || open.fundingSatoshis >= Channel.MAX_FUNDING_SATOSHIS) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS)
+    if (open.fundingSatoshis.toLong < nodeParams.minFundingSatoshis || open.fundingSatoshis.toLong >= Channel.MAX_FUNDING_SATOSHIS) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis.toLong, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS)
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
-    if (open.pushMsat > 1000 * open.fundingSatoshis) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat, 1000 * open.fundingSatoshis)
+    if (open.pushMsat > 1000 * open.fundingSatoshis.toLong) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat, 1000 * open.fundingSatoshis.toLong)
 
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
     if (open.toSelfDelay > Channel.MAX_TO_SELF_DELAY || open.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
@@ -106,7 +106,7 @@ object Helpers {
 
     // BOLT #2: The receiving node MUST fail the channel if both to_local and to_remote amounts for the initial commitment
     // transaction are less than or equal to channel_reserve_satoshis (see BOLT 3).
-    val (toLocalMsat, toRemoteMsat) = (open.pushMsat, open.fundingSatoshis * 1000 - open.pushMsat)
+    val (toLocalMsat, toRemoteMsat) = (open.pushMsat, open.fundingSatoshis.toLong * 1000 - open.pushMsat)
     if (toLocalMsat < open.channelReserveSatoshis * 1000 && toRemoteMsat < open.channelReserveSatoshis * 1000) {
       throw ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis)
     }
@@ -121,7 +121,7 @@ object Helpers {
     // we don't check that the funder's amount for the initial commitment transaction is sufficient for full fee payment
     // now, but it will be done later when we receive `funding_created`
 
-    val reserveToFundingRatio = open.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis, 1)
+    val reserveToFundingRatio = open.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
   }
 
@@ -150,7 +150,7 @@ object Helpers {
     // MUST reject the channel. Other fields have the same requirements as their counterparts in open_channel.
     if (open.channelReserveSatoshis < accept.dustLimitSatoshis) throw DustLimitAboveOurChannelReserve(accept.temporaryChannelId, accept.dustLimitSatoshis, open.channelReserveSatoshis)
 
-    val reserveToFundingRatio = accept.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis, 1)
+    val reserveToFundingRatio = accept.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
   }
 
@@ -251,9 +251,9 @@ object Helpers {
       * @param remoteFirstPerCommitmentPoint
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
-    def makeFirstCommitTxs(keyManager: KeyManager, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
-      val toLocalMsat = if (localParams.isFunder) fundingSatoshis * 1000 - pushMsat else pushMsat
-      val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingSatoshis * 1000 - pushMsat
+    def makeFirstCommitTxs(keyManager: KeyManager, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
+      val toLocalMsat = if (localParams.isFunder) fundingAmount.toLong * 1000 - pushMsat else pushMsat
+      val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingAmount.toLong * 1000 - pushMsat
 
       val localSpec = CommitmentSpec(Set.empty[DirectedHtlc], feeratePerKw = initialFeeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
       val remoteSpec = CommitmentSpec(Set.empty[DirectedHtlc], feeratePerKw = initialFeeratePerKw, toLocalMsat = toRemoteMsat, toRemoteMsat = toLocalMsat)
@@ -268,7 +268,7 @@ object Helpers {
         }
       }
 
-      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(fundingSatoshis), keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey)
+      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey)
       val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, 0)
       val (localCommitTx, _, _) = Commitments.makeLocalTxs(keyManager, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
       val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)

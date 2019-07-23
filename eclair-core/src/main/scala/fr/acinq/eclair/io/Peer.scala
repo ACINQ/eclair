@@ -293,7 +293,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       d.transport ! TransportHandler.ReadAck(msg)
       d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
         case None =>
-          val (channel, localParams) = createNewChannel(nodeParams, funder = false, fundingSatoshis = msg.fundingSatoshis, origin_opt = None)
+          val (channel, localParams) = createNewChannel(nodeParams, funder = false, fundingSatoshis = msg.fundingSatoshis.toLong, origin_opt = None)
           val temporaryChannelId = msg.temporaryChannelId
           log.info(s"accepting a new channel to $remoteNodeId temporaryChannelId=$temporaryChannelId localParams=$localParams")
           channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.transport, d.remoteInit)
