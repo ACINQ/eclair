@@ -119,10 +119,14 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
               log.info(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=$selectedShortChannelId")
               register ! Register.ForwardShortId(selectedShortChannelId, cmdAdd)
           }
-        case Left(badOnion) =>
+        case Left(badOnion: BadOnion) =>
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
           val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, commit = true)
           log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} reason=malformed onionHash=${cmdFail.onionHash} failureCode=${cmdFail.failureCode}")
+          commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
+        case Left(failure) =>
+          log.warning(s"couldn't process onion: reason=${failure.message}")
+          val cmdFail = CMD_FAIL_HTLC(add.id, Right(failure), commit = true)
           commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
       }
 
@@ -229,12 +233,12 @@ object Relayer extends Logging {
    * @param privateKey this node's private key
    * @return the payload for the next hop or an error.
    */
-  def decryptPacket(add: UpdateAddHtlc, privateKey: PrivateKey, features: ByteVector): Either[BadOnion, NextPayload] =
+  def decryptPacket(add: UpdateAddHtlc, privateKey: PrivateKey, features: ByteVector): Either[FailureMessage, NextPayload] =
     Sphinx.PaymentPacket.peel(privateKey, add.paymentHash, add.onionRoutingPacket) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
         OnionCodecs.perHopPayloadCodec.decode(payload.bits) match {
           case Attempt.Successful(DecodeResult(OnionPerHopPayload(Left(_)), _)) if !Features.hasVariableLengthOnion(features) =>
-            Left(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add.onionRoutingPacket)))
+            Left(InvalidRealm)
           case Attempt.Successful(DecodeResult(perHopPayload, remainder)) =>
             if (remainder.nonEmpty) {
               logger.warn(s"${remainder.length} bits remaining after per-hop payload decoding: there might be an issue with the onion codec")

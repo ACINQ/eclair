@@ -49,7 +49,6 @@ case object RequiredNodeFeatureMissing extends Perm with Node { def message = "p
 case class InvalidOnionVersion(onionHash: ByteVector32) extends BadOnion with Perm { def message = "onion version was not understood by the processing node" }
 case class InvalidOnionHmac(onionHash: ByteVector32) extends BadOnion with Perm { def message = "onion HMAC was incorrect when it reached the processing node" }
 case class InvalidOnionKey(onionHash: ByteVector32) extends BadOnion with Perm { def message = "ephemeral key was unparsable by the processing node" }
-case class InvalidOnionPayload(onionHash: ByteVector32) extends BadOnion with Perm { def message = "onion per-hop payload could not be parsed" }
 case class TemporaryChannelFailure(update: ChannelUpdate) extends Update { def message = s"channel ${update.shortChannelId} is currently unavailable" }
 case object PermanentChannelFailure extends Perm { def message = "channel is permanently unavailable" }
 case object RequiredChannelFeatureMissing extends Perm { def message = "channel requires features not present in the onion" }
@@ -63,6 +62,7 @@ case class ExpiryTooSoon(update: ChannelUpdate) extends Update { def message = "
 case class FinalIncorrectCltvExpiry(expiry: CltvExpiry) extends FailureMessage { def message = "payment expiry doesn't match the value in the onion" }
 case class FinalIncorrectHtlcAmount(amount: MilliSatoshi) extends FailureMessage { def message = "payment amount is incorrect in the final htlc" }
 case object ExpiryTooFar extends FailureMessage { def message = "payment expiry is too far in the future" }
+case class InvalidOnionPayload(onionHash: ByteVector32) extends Perm { def message = "onion per-hop payload is invalid" }
 
 /**
  * We allow remote nodes to send us unknown failure codes (e.g. deprecated failure codes).
@@ -97,7 +97,6 @@ object FailureMessageCodecs {
       .typecase(NODE | 2, provide(TemporaryNodeFailure))
       .typecase(PERM | NODE | 2, provide(PermanentNodeFailure))
       .typecase(PERM | NODE | 3, provide(RequiredNodeFeatureMissing))
-      .typecase(BADONION | PERM, sha256.as[InvalidOnionPayload])
       .typecase(BADONION | PERM | 4, sha256.as[InvalidOnionVersion])
       .typecase(BADONION | PERM | 5, sha256.as[InvalidOnionHmac])
       .typecase(BADONION | PERM | 6, sha256.as[InvalidOnionKey])
@@ -115,7 +114,8 @@ object FailureMessageCodecs {
       // PERM | 17 (final_expiry_too_soon) has been deprecated because it allowed probing attacks: IncorrectOrUnknownPaymentDetails should be used instead.
       .typecase(18, ("expiry" | cltvExpiry).as[FinalIncorrectCltvExpiry])
       .typecase(19, ("amountMsat" | millisatoshi).as[FinalIncorrectHtlcAmount])
-      .typecase(21, provide(ExpiryTooFar)),
+      .typecase(21, provide(ExpiryTooFar))
+      .typecase(PERM, sha256.as[InvalidOnionPayload]),
     uint16.xmap(code => {
       val failureMessage = code match {
         // @formatter:off

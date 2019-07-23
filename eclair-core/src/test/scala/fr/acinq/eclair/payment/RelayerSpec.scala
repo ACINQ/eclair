@@ -308,11 +308,7 @@ class RelayerSpec extends TestkitBaseClass {
       val add_ab = UpdateAddHtlc(channelId_ab, 123456, amount_ab, paymentHash, expiry_ab, onion)
       sender.send(relayer, ForwardAdd(add_ab))
 
-      val fail = register.expectMsgType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
-      assert(fail.id === add_ab.id)
-      assert(fail.onionHash == Sphinx.PaymentPacket.hash(add_ab.onionRoutingPacket))
-      assert(fail.failureCode === (FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM))
-
+      register.expectMsg(Register.Forward(channelId_ab, CMD_FAIL_HTLC(add_ab.id, Right(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add_ab.onionRoutingPacket))), commit = true)))
       register.expectNoMsg(100 millis)
       paymentHandler.expectNoMsg(100 millis)
     }
@@ -333,11 +329,7 @@ class RelayerSpec extends TestkitBaseClass {
     val add_ab = UpdateAddHtlc(channelId_ab, 123456, amount_ab, paymentHash, expiry_ab, onion)
     sender.send(relayer, ForwardAdd(add_ab))
 
-    val fail = register.expectMsgType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
-    assert(fail.id === add_ab.id)
-    assert(fail.onionHash == Sphinx.PaymentPacket.hash(add_ab.onionRoutingPacket))
-    assert(fail.failureCode === (FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM))
-
+    register.expectMsg(Register.Forward(channelId_ab, CMD_FAIL_HTLC(add_ab.id, Right(InvalidRealm), commit = true)))
     register.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)
   }
@@ -460,11 +452,7 @@ class RelayerSpec extends TestkitBaseClass {
       val add_ab = UpdateAddHtlc(channelId_ab, 123456, amount_ab, paymentHash, expiry_ab, onion)
       sender.send(relayer, ForwardAdd(add_ab))
 
-      val fail = register.expectMsgType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
-      assert(fail.id === add_ab.id)
-      assert(fail.onionHash == Sphinx.PaymentPacket.hash(add_ab.onionRoutingPacket))
-      assert(fail.failureCode === (FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM))
-
+      register.expectMsg(Register.Forward(channelId_ab, CMD_FAIL_HTLC(add_ab.id, Right(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add_ab.onionRoutingPacket))), commit = true)))
       register.expectNoMsg(100 millis)
       paymentHandler.expectNoMsg(100 millis)
     }
