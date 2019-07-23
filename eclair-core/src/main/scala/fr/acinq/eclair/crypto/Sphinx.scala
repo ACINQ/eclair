@@ -106,13 +106,7 @@ object Sphinx extends Logging {
     */
   case class DecryptedPacket(payload: ByteVector, nextPacket: wire.OnionRoutingPacket, sharedSecret: ByteVector32) {
 
-    val isLastPacket: Boolean = payload.head match {
-      // In Bolt 1.0 the last hop is signaled via an empty hmac.
-      case 0 => nextPacket.hmac == ByteVector32.Zeroes
-      // In Bolt 1.1 the last hop can also be signaled via a dedicated TLV type with type=0x00.
-      case 0xfd => payload(3) == 0 || nextPacket.hmac == ByteVector32.Zeroes
-      case _ => payload(1) == 0 || nextPacket.hmac == ByteVector32.Zeroes
-    }
+    val isLastPacket: Boolean = nextPacket.hmac == ByteVector32.Zeroes
 
   }
 
