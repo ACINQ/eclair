@@ -233,12 +233,14 @@ object Relayer extends Logging {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
         OnionCodecs.perHopPayloadCodec.decode(payload.bits) match {
           case Attempt.Successful(DecodeResult(perHopPayload, remainder)) =>
-            if (remainder.nonEmpty)
+            if (remainder.nonEmpty) {
               logger.warn(s"${remainder.length} bits remaining after per-hop payload decoding: there might be an issue with the onion codec")
-            if (p.isLastPacket)
+            }
+            if (p.isLastPacket) {
               Right(FinalPayload(add, perHopPayload))
-            else
+            } else {
               Right(RelayPayload(add, perHopPayload, nextPacket))
+            }
           case Attempt.Failure(_) =>
             // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
             Left(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add.onionRoutingPacket)))
