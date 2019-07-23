@@ -151,7 +151,7 @@ object Commitments {
     val missingRemote = reduced.toLocalMsat / 1000 - commitments1.localParams.channelReserveSatoshis - fees
 
     if (commitments1.localParams.isFunder && missingLocal < 0) {
-      return Left(InsufficientFunds(commitments.channelId, amountMsat = cmd.amountMsat, missingSatoshis = -missingLocal, reserveSatoshis = commitments1.remoteParams.channelReserveSatoshis, feesSatoshis = fees))
+      return Left(InsufficientFunds(commitments.channelId, amountMsat = cmd.amountMsat, missingSatoshis = -missingLocal, reserveSatoshis = commitments1.remoteParams.channelReserveSatoshis, feesSatoshis = fees, isLocal = true))
     } else if (!commitments1.localParams.isFunder && missingRemote < 0) {
       return Left(InsufficientFunds(commitments.channelId, amountMsat = cmd.amountMsat, missingSatoshis = -missingRemote, reserveSatoshis = commitments1.localParams.channelReserveSatoshis, feesSatoshis = fees, isLocal = false))
     }
@@ -186,7 +186,7 @@ object Commitments {
     val fees = if (commitments1.localParams.isFunder) 0 else Transactions.commitTxFee(Satoshi(commitments1.localParams.dustLimitSatoshis), reduced).amount
     val missing = reduced.toRemoteMsat / 1000 - commitments1.localParams.channelReserveSatoshis - fees
     if (missing < 0) {
-      throw InsufficientFunds(commitments.channelId, amountMsat = add.amountMsat, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.localParams.channelReserveSatoshis, feesSatoshis = fees)
+      throw InsufficientFunds(commitments.channelId, amountMsat = add.amountMsat, missingSatoshis = -missing, reserveSatoshis = commitments1.localParams.channelReserveSatoshis, feesSatoshis = fees, isLocal = true)
     }
 
     commitments1
