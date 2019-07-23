@@ -44,6 +44,7 @@ object TestConstants {
     private var currentFeerates = FeeratesPerKw.single(feeratePerKw)
 
     override def getFeeratePerKb(target: Int): Long = feerateKw2KB(currentFeerates.feePerBlock(target))
+
     override def getFeeratePerKw(target: Int): Long = currentFeerates.feePerBlock(target)
 
     def setFeerate(feeratesPerKw: FeeratesPerKw): Unit = {
