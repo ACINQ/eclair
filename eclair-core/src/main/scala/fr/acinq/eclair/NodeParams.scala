@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
-import fr.acinq.eclair.NodeParams.WatcherType
+import fr.acinq.eclair.NodeParams.{OnChainFeeConf, WatcherType}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
@@ -56,7 +56,6 @@ case class NodeParams(keyManager: KeyManager,
                       toRemoteDelayBlocks: Int,
                       maxToLocalDelayBlocks: Int,
                       minDepthBlocks: Int,
-                      feeEstimator: FeeEstimator,
                       feeBaseMsat: Int,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
@@ -66,9 +65,7 @@ case class NodeParams(keyManager: KeyManager,
                       pingInterval: FiniteDuration,
                       pingTimeout: FiniteDuration,
                       pingDisconnect: Boolean,
-                      feeTargets: FeeTargets,
-                      maxFeerateMismatch: Double,
-                      updateFeeMinDiffRatio: Double,
+                      onChainFeeConf: OnChainFeeConf,
                       autoReconnect: Boolean,
                       initialRandomReconnectDelay: FiniteDuration,
                       maxReconnectInterval: FiniteDuration,
@@ -92,6 +89,13 @@ object NodeParams {
   object BITCOIND extends WatcherType
 
   object ELECTRUM extends WatcherType
+
+  case class OnChainFeeConf(
+    feeTargets: FeeTargets,
+    feeEstimator: FeeEstimator,
+    maxFeerateMismatch: Double,
+    updateFeeMinDiffRatio: Double
+  )
 
   /**
     * Order of precedence for the configuration parameters:
@@ -184,10 +188,10 @@ object NodeParams {
       .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ torAddress_opt
 
     val feeTargets = FeeTargets(
-      fundingBlockTarget = config.getInt("fee-targets.funding"),
-      commitmentBlockTarget = config.getInt("fee-targets.commitment"),
-      mutualCloseBlockTarget = config.getInt("fee-targets.mutual-close"),
-      claimMainBlockTarget = config.getInt("fee-targets.claim-main")
+      fundingBlockTarget = config.getInt("on-chain-fees.fee-targets.funding"),
+      commitmentBlockTarget = config.getInt("on-chain-fees.fee-targets.commitment"),
+      mutualCloseBlockTarget = config.getInt("on-chain-fees.fee-targets.mutual-close"),
+      claimMainBlockTarget = config.getInt("on-chain-fees.fee-targets.claim-main")
     )
 
     NodeParams(
@@ -207,7 +211,6 @@ object NodeParams {
       toRemoteDelayBlocks = config.getInt("to-remote-delay-blocks"),
       maxToLocalDelayBlocks = config.getInt("max-to-local-delay-blocks"),
       minDepthBlocks = config.getInt("mindepth-blocks"),
-      feeEstimator = feeEstimator,
       feeBaseMsat = config.getInt("fee-base-msat"),
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
@@ -217,9 +220,12 @@ object NodeParams {
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
       pingDisconnect = config.getBoolean("ping-disconnect"),
-      feeTargets = feeTargets,
-      maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
-      updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
+      onChainFeeConf = OnChainFeeConf(
+        feeTargets = feeTargets,
+        feeEstimator = feeEstimator,
+        maxFeerateMismatch = config.getDouble("on-chain-fees.max-feerate-mismatch"),
+        updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee_min-diff-ratio")
+      ),
       autoReconnect = config.getBoolean("auto-reconnect"),
       initialRandomReconnectDelay = FiniteDuration(config.getDuration("initial-random-reconnect-delay").getSeconds, TimeUnit.SECONDS),
       maxReconnectInterval = FiniteDuration(config.getDuration("max-reconnect-interval").getSeconds, TimeUnit.SECONDS),

@@ -251,8 +251,8 @@ class PeerSpec extends TestkitBaseClass {
 
     val nodeParams = peer.underlyingActor.nodeParams
     val channelCreated = probe.expectMsgType[ChannelCreated]
-    assert(channelCreated.initialFeeratePerKw == nodeParams.feeEstimator.getFeeratePerKw(nodeParams.feeTargets.commitmentBlockTarget))
-    assert(channelCreated.fundingTxFeeratePerKw.get == nodeParams.feeEstimator.getFeeratePerKw(nodeParams.feeTargets.fundingBlockTarget))
+    assert(channelCreated.initialFeeratePerKw == nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget))
+    assert(channelCreated.fundingTxFeeratePerKw.get == nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
   }
 
   test("reply to ping") { f =>

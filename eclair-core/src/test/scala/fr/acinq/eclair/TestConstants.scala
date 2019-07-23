@@ -20,7 +20,7 @@ import java.sql.{Connection, DriverManager}
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
-import fr.acinq.eclair.NodeParams.BITCOIND
+import fr.acinq.eclair.NodeParams.{BITCOIND, OnChainFeeConf}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
@@ -79,7 +79,6 @@ object TestConstants {
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
       maxToLocalDelayBlocks = 1000,
-      feeEstimator = new TestFeeEstimator,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
@@ -89,9 +88,12 @@ object TestConstants {
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
-      feeTargets = FeeTargets(6, 2, 2, 6),
-      maxFeerateMismatch = 1.5,
-      updateFeeMinDiffRatio = 0.1,
+      onChainFeeConf = OnChainFeeConf(
+        feeTargets = FeeTargets(6, 2, 2, 6),
+        feeEstimator = new TestFeeEstimator,
+        maxFeerateMismatch = 1.5,
+        updateFeeMinDiffRatio = 0.1
+      ),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
@@ -147,7 +149,6 @@ object TestConstants {
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
       maxToLocalDelayBlocks = 1000,
-      feeEstimator = new TestFeeEstimator,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
@@ -157,9 +158,12 @@ object TestConstants {
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
-      feeTargets = FeeTargets(6, 2, 2, 6),
-      maxFeerateMismatch = 1.0,
-      updateFeeMinDiffRatio = 0.1,
+      onChainFeeConf = OnChainFeeConf(
+        feeTargets = FeeTargets(6, 2, 2, 6),
+        feeEstimator = new TestFeeEstimator,
+        maxFeerateMismatch = 1.0,
+        updateFeeMinDiffRatio = 0.1
+      ),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,

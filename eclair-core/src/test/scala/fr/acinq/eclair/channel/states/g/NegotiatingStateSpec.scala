@@ -53,12 +53,12 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       val sender = TestProbe()
       // alice initiates a closing
       if (test.tags.contains("fee2")) {
-        alice.underlyingActor.nodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(4319))
-        bob.underlyingActor.nodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(4319))
+        alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(4319))
+        bob.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(4319))
       }
       else {
-        alice.underlyingActor.nodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(10000))
-        bob.underlyingActor.nodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(10000))
+        alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(10000))
+        bob.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(10000))
       }
       sender.send(bob, CMD_CLOSE(None))
       bob2alice.expectMsgType[Shutdown]
@@ -69,11 +69,11 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       // In order to force a fee negotiation, we will change the current fee before forwarding
       // the Shutdown message to alice, so that alice computes a different initial closing fee.
       if (test.tags.contains("fee2")) {
-        alice.underlyingActor.nodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(4316))
-        bob.underlyingActor.nodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(4316))
+        alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(4316))
+        bob.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(4316))
       } else {
-        alice.underlyingActor.nodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(5000))
-        bob.underlyingActor.nodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(5000))
+        alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(5000))
+        bob.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(5000))
       }
       alice2bob.forward(bob)
       awaitCond(bob.stateName == NEGOTIATING)
