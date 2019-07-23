@@ -46,7 +46,7 @@ import scala.concurrent.duration._
 
 class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayerA: TestProbe, relayerB: TestProbe, channelUpdateListener: TestProbe, bobCommitTxes: List[PublishableTxs], feeEstimator: TestFeeEstimator)
+  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayerA: TestProbe, relayerB: TestProbe, channelUpdateListener: TestProbe, bobCommitTxes: List[PublishableTxs])
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
@@ -83,7 +83,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         bob2blockchain.expectMsgType[WatchConfirmed]
         awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
         awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, Nil, feeEstimator)))
+        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, Nil)))
       }
     } else {
     within(30 seconds) {
@@ -105,7 +105,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
-      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, bobCommitTxes, feeEstimator)))
+      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, bobCommitTxes)))
     }
     }
   }
@@ -143,7 +143,8 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("start fee negotiation from configured block target") { f =>
     import f._
 
-    feeEstimator.setFeerate(FeeratesPerKw(100, 250, 350, 450, 600, 800, 900))
+    val nodeParams = alice.underlyingActor.nodeParams
+    nodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw(100, 250, 350, 450, 600, 800, 900))
 
     val sender = TestProbe()
     // alice initiates a closing
@@ -154,7 +155,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     val closing = alice2bob.expectMsgType[ClosingSigned]
     val aliceData = alice.stateData.asInstanceOf[DATA_NEGOTIATING]
-    val mutualClosingFeeRate = feeEstimator.getFeeratePerKw(Alice.nodeParams.feeTargets.mutualCloseBlockTarget)
+    val mutualClosingFeeRate = nodeParams.feeEstimator.getFeeratePerKw(nodeParams.feeTargets.mutualCloseBlockTarget)
     val expectedFirstProposedFee = Closing.firstClosingFee(aliceData.commitments, aliceData.localShutdown.scriptPubKey, aliceData.remoteShutdown.scriptPubKey, mutualClosingFeeRate)(akka.event.NoLogging)
     assert(Alice.nodeParams.feeTargets.mutualCloseBlockTarget == 2 && mutualClosingFeeRate == 250)
     assert(closing.feeSatoshis == expectedFirstProposedFee.amount)
@@ -331,7 +332,8 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     // agreeing on a closing fee
     val aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
-    feeEstimator.setFeerate(FeeratesPerKw.single(100))
+    val nodeParams = alice.underlyingActor.nodeParams
+    nodeParams.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(100))
     alice2bob.forward(bob)
     val bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
     bob2alice.forward(alice)
