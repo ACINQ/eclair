@@ -19,8 +19,8 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.crypto.Mac32
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
@@ -52,7 +52,6 @@ object CommonCodecs {
   // this codec can be safely used for values < 2^63 and will fail otherwise
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
   val uint64overflow: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
-
   val uint64: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
 
   val uint64overflowSat: Codec[Satoshi] = uint64overflow.xmapc(l => Satoshi(l))(_.toLong)

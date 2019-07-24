@@ -151,7 +151,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val open = OpenChannel(nodeParams.chainHash,
         temporaryChannelId = temporaryChannelId,
         fundingSatoshis = Satoshi(fundingSatoshis),
-        pushMsat = pushMsat,
+        pushMsat = MilliSatoshi(pushMsat),
         dustLimitSatoshis = localParams.dustLimitSatoshis,
         maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
         channelReserveSatoshis = localParams.channelReserveSatoshis,
@@ -303,7 +303,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             globalFeatures = remoteInit.globalFeatures,
             localFeatures = remoteInit.localFeatures)
           log.debug(s"remote params: $remoteParams")
-          goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, localParams, remoteParams, open.fundingSatoshis, open.pushMsat, open.feeratePerKw, open.firstPerCommitmentPoint, open.channelFlags, accept) sending accept
+          goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, localParams, remoteParams, open.fundingSatoshis, open.pushMsat.toLong, open.feeratePerKw, open.firstPerCommitmentPoint, open.channelFlags, accept) sending accept
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED) replying "ok"

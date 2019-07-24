@@ -20,7 +20,7 @@ import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 import java.nio.charset.StandardCharsets
 
 import com.google.common.base.Charsets
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, MilliSatoshi, Satoshi}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import scodec.bits.ByteVector
@@ -69,7 +69,7 @@ case class ChannelReestablish(channelId: ByteVector32,
 case class OpenChannel(chainHash: ByteVector32,
                        temporaryChannelId: ByteVector32,
                        fundingSatoshis: Satoshi,
-                       pushMsat: Long,
+                       pushMsat: MilliSatoshi,
                        dustLimitSatoshis: Long,
                        maxHtlcValueInFlightMsat: UInt64,
                        channelReserveSatoshis: Long,

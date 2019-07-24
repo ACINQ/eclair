@@ -90,7 +90,7 @@ object Helpers {
     if (open.fundingSatoshis.toLong < nodeParams.minFundingSatoshis || open.fundingSatoshis.toLong >= Channel.MAX_FUNDING_SATOSHIS) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis.toLong, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS)
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
-    if (open.pushMsat > 1000 * open.fundingSatoshis.toLong) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat, 1000 * open.fundingSatoshis.toLong)
+    if (open.pushMsat > open.fundingSatoshis) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat.toLong, open.fundingSatoshis.toLong)
 
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
     if (open.toSelfDelay > Channel.MAX_TO_SELF_DELAY || open.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
@@ -106,7 +106,7 @@ object Helpers {
 
     // BOLT #2: The receiving node MUST fail the channel if both to_local and to_remote amounts for the initial commitment
     // transaction are less than or equal to channel_reserve_satoshis (see BOLT 3).
-    val (toLocalMsat, toRemoteMsat) = (open.pushMsat, open.fundingSatoshis.toLong * 1000 - open.pushMsat)
+    val (toLocalMsat, toRemoteMsat) = (open.pushMsat.toLong, open.fundingSatoshis.toLong * 1000 - open.pushMsat.toLong)
     if (toLocalMsat < open.channelReserveSatoshis * 1000 && toRemoteMsat < open.channelReserveSatoshis * 1000) {
       throw ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis)
     }

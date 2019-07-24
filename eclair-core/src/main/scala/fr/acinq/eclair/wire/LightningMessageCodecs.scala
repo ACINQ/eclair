@@ -54,7 +54,7 @@ object LightningMessageCodecs {
     ("chainHash" | bytes32) ::
       ("temporaryChannelId" | bytes32) ::
       ("fundingSatoshis" | uint64overflowSat) ::
-      ("pushMsat" | uint64overflow) ::
+      ("pushMsat" | uint64overflowMsat) ::
       ("dustLimitSatoshis" | uint64overflow) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserveSatoshis" | uint64overflow) ::

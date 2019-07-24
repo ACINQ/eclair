@@ -100,9 +100,9 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val invalidPushMsat = 100000000000L
-    bob ! open.copy(pushMsat = invalidPushMsat)
+    bob ! open.copy(pushMsat = MilliSatoshi(invalidPushMsat))
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, invalidPushMsat, 1000 * open.fundingSatoshis.toLong).getMessage))
+    assert(error === Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, invalidPushMsat, open.fundingSatoshis.toLong).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -168,7 +168,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     val open = alice2bob.expectMsgType[OpenChannel]
     val fundingSatoshis = open.channelReserveSatoshis + 499
     val pushMsat = 500 * 1000
-    bob ! open.copy(fundingSatoshis = Satoshi(fundingSatoshis), pushMsat = pushMsat)
+    bob ! open.copy(fundingSatoshis = Satoshi(fundingSatoshis), pushMsat = MilliSatoshi(pushMsat))
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
     assert(error === Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, 500 * 1000, (open.channelReserveSatoshis - 1) * 1000, open.channelReserveSatoshis).getMessage))

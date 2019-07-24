@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, InetAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, MilliSatoshi, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
@@ -52,7 +52,7 @@ class LightningMessageCodecsSpec extends FunSuite {
   }
 
   test("encode/decode all channel messages") {
-    val open = OpenChannel(randomBytes32, randomBytes32, Satoshi(3), 4, 5, UInt64(6), 7, 8, 9, 10, 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
+    val open = OpenChannel(randomBytes32, randomBytes32, Satoshi(3), MilliSatoshi(4), 5, UInt64(6), 7, 8, 9, 10, 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
     val accept = AcceptChannel(randomBytes32, 3, UInt64(4), 5, 6, 7, 8, 9, publicKey(1), point(2), point(3), point(4), point(5), point(6))
     val funding_created = FundingCreated(randomBytes32, bin32(0), 3, randomBytes64)
     val funding_signed = FundingSigned(randomBytes32, randomBytes64)
