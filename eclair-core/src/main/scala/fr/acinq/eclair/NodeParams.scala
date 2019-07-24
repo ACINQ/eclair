@@ -24,8 +24,8 @@ import java.util.concurrent.TimeUnit
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
-import fr.acinq.eclair.NodeParams.{OnChainFeeConf, WatcherType}
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
+import fr.acinq.eclair.NodeParams.{WatcherType}
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
@@ -89,13 +89,6 @@ object NodeParams {
   object BITCOIND extends WatcherType
 
   object ELECTRUM extends WatcherType
-
-  case class OnChainFeeConf(
-    feeTargets: FeeTargets,
-    feeEstimator: FeeEstimator,
-    maxFeerateMismatch: Double,
-    updateFeeMinDiffRatio: Double
-  )
 
   /**
     * Order of precedence for the configuration parameters:
