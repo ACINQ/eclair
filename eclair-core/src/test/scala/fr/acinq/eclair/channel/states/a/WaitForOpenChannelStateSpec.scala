@@ -121,7 +121,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     val open = alice2bob.expectMsgType[OpenChannel]
     // 30% is huge, recommended ratio is 1%
     val reserveTooHigh = (0.3 * TestConstants.fundingSatoshis).toLong
-    bob ! open.copy(channelReserveSatoshis = reserveTooHigh)
+    bob ! open.copy(channelReserveSatoshis = Satoshi(reserveTooHigh))
     val error = bob2alice.expectMsgType[Error]
     assert(error === Error(open.temporaryChannelId, ChannelReserveTooHigh(open.temporaryChannelId, reserveTooHigh, 0.3, 0.05).getMessage))
     awaitCond(bob.stateName == CLOSED)
@@ -156,7 +156,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val reserveTooSmall = open.dustLimitSatoshis.toLong - 1
-    bob ! open.copy(channelReserveSatoshis = reserveTooSmall)
+    bob ! open.copy(channelReserveSatoshis = Satoshi(reserveTooSmall))
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
     assert(error === Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis.toLong, reserveTooSmall).getMessage))
@@ -166,12 +166,12 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   test("recv OpenChannel (toLocal + toRemote below reserve)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val fundingSatoshis = open.channelReserveSatoshis + 499
+    val fundingSatoshis = open.channelReserveSatoshis.toLong + 499
     val pushMsat = 500 * 1000
     bob ! open.copy(fundingSatoshis = Satoshi(fundingSatoshis), pushMsat = MilliSatoshi(pushMsat))
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
-    assert(error === Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, 500 * 1000, (open.channelReserveSatoshis - 1) * 1000, open.channelReserveSatoshis).getMessage))
+    assert(error === Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, 500 * 1000, (open.channelReserveSatoshis.toLong - 1) * 1000, open.channelReserveSatoshis.toLong).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 

@@ -136,10 +136,10 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     val open = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].lastSent
-    val dustTooBig = open.channelReserveSatoshis + 1
+    val dustTooBig = open.channelReserveSatoshis.toLong + 1
     alice ! accept.copy(dustLimitSatoshis = dustTooBig)
     val error = alice2bob.expectMsgType[Error]
-    assert(error === Error(accept.temporaryChannelId, DustLimitAboveOurChannelReserve(accept.temporaryChannelId, dustTooBig, open.channelReserveSatoshis).getMessage))
+    assert(error === Error(accept.temporaryChannelId, DustLimitAboveOurChannelReserve(accept.temporaryChannelId, dustTooBig, open.channelReserveSatoshis.toLong).getMessage))
     awaitCond(alice.stateName == CLOSED)
   }
 

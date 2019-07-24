@@ -102,13 +102,13 @@ object Helpers {
     if (isFeeTooSmall(open.feeratePerKw)) throw FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw)
 
     // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
-    if (open.dustLimitSatoshis.toLong > open.channelReserveSatoshis) throw DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis.toLong, open.channelReserveSatoshis)
+    if (open.dustLimitSatoshis > open.channelReserveSatoshis) throw DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis.toLong, open.channelReserveSatoshis.toLong)
 
     // BOLT #2: The receiving node MUST fail the channel if both to_local and to_remote amounts for the initial commitment
     // transaction are less than or equal to channel_reserve_satoshis (see BOLT 3).
     val (toLocalMsat, toRemoteMsat) = (open.pushMsat.toLong, open.fundingSatoshis.toLong * 1000 - open.pushMsat.toLong)
-    if (toLocalMsat < open.channelReserveSatoshis * 1000 && toRemoteMsat < open.channelReserveSatoshis * 1000) {
-      throw ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis)
+    if (toLocalMsat < open.channelReserveSatoshis.toLong * 1000 && toRemoteMsat < open.channelReserveSatoshis.toLong * 1000) {
+      throw ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis.toLong)
     }
 
     val localFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
@@ -121,8 +121,8 @@ object Helpers {
     // we don't check that the funder's amount for the initial commitment transaction is sufficient for full fee payment
     // now, but it will be done later when we receive `funding_created`
 
-    val reserveToFundingRatio = open.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
-    if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
+    val reserveToFundingRatio = open.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
+    if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis.toLong, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
   }
 
   /**
@@ -148,7 +148,7 @@ object Helpers {
 
     // if channel_reserve_satoshis from the open_channel message is less than dust_limit_satoshis:
     // MUST reject the channel. Other fields have the same requirements as their counterparts in open_channel.
-    if (open.channelReserveSatoshis < accept.dustLimitSatoshis) throw DustLimitAboveOurChannelReserve(accept.temporaryChannelId, accept.dustLimitSatoshis, open.channelReserveSatoshis)
+    if (open.channelReserveSatoshis.toLong < accept.dustLimitSatoshis) throw DustLimitAboveOurChannelReserve(accept.temporaryChannelId, accept.dustLimitSatoshis, open.channelReserveSatoshis.toLong)
 
     val reserveToFundingRatio = accept.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
