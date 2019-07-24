@@ -55,7 +55,7 @@ object LightningMessageCodecs {
       ("temporaryChannelId" | bytes32) ::
       ("fundingSatoshis" | uint64overflowSat) ::
       ("pushMsat" | uint64overflowMsat) ::
-      ("dustLimitSatoshis" | uint64overflow) ::
+      ("dustLimitSatoshis" | uint64overflowSat) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserveSatoshis" | uint64overflow) ::
       ("htlcMinimumMsat" | uint64overflow) ::
