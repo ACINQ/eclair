@@ -188,10 +188,10 @@ object NodeParams {
       .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ torAddress_opt
 
     val feeTargets = FeeTargets(
-      fundingBlockTarget = config.getInt("on-chain-fees.fee-targets.funding"),
-      commitmentBlockTarget = config.getInt("on-chain-fees.fee-targets.commitment"),
-      mutualCloseBlockTarget = config.getInt("on-chain-fees.fee-targets.mutual-close"),
-      claimMainBlockTarget = config.getInt("on-chain-fees.fee-targets.claim-main")
+      fundingBlockTarget = config.getInt("on-chain-fees.target-blocks.funding"),
+      commitmentBlockTarget = config.getInt("on-chain-fees.target-blocks.commitment"),
+      mutualCloseBlockTarget = config.getInt("on-chain-fees.target-blocks.mutual-close"),
+      claimMainBlockTarget = config.getInt("on-chain-fees.target-blocks.claim-main")
     )
 
     NodeParams(
@@ -224,7 +224,7 @@ object NodeParams {
         feeTargets = feeTargets,
         feeEstimator = feeEstimator,
         maxFeerateMismatch = config.getDouble("on-chain-fees.max-feerate-mismatch"),
-        updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee_min-diff-ratio")
+        updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio")
       ),
       autoReconnect = config.getBoolean("auto-reconnect"),
       initialRandomReconnectDelay = FiniteDuration(config.getDuration("initial-random-reconnect-delay").getSeconds, TimeUnit.SECONDS),
