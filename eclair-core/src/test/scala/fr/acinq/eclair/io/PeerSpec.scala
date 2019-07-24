@@ -251,8 +251,8 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(peer.stateData.channels.nonEmpty)
 
     val channelCreated = probe.expectMsgType[ChannelCreated]
-    assert(channelCreated.initialFeeratePerKw == feeConfOfPeer(peer).feeEstimator.getFeeratePerKw(feeConfOfPeer(peer).feeTargets.commitmentBlockTarget))
-    assert(channelCreated.fundingTxFeeratePerKw.get == feeConfOfPeer(peer).feeEstimator.getFeeratePerKw(feeConfOfPeer(peer).feeTargets.fundingBlockTarget))
+    assert(channelCreated.initialFeeratePerKw == peer.feeEstimator.getFeeratePerKw(peer.feeTargets.commitmentBlockTarget))
+    assert(channelCreated.fundingTxFeeratePerKw.get == peer.feeEstimator.getFeeratePerKw(peer.feeTargets.fundingBlockTarget))
   }
 
   test("reply to ping") { f =>
