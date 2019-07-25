@@ -20,6 +20,7 @@ import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
+import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
@@ -54,8 +55,6 @@ object CommonCodecs {
 
   val uint64: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
 
-  val uint64L: Codec[UInt64] = bytes(8).xmap(b => UInt64(b.reverse), a => a.toByteVector.padLeft(8).reverse)
-
   /**
     * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be
     * re-computed correctly.
@@ -73,9 +72,9 @@ object CommonCodecs {
   // See https://bitcoin.org/en/developer-reference#compactsize-unsigned-integers for reference.
   val varint: Codec[UInt64] = discriminatorWithDefault(
     discriminated[UInt64].by(uint8L)
-      .\(0xff) { case i if i >= UInt64(0x100000000L) => i }(minimalvalue(uint64L, UInt64(0x100000000L)))
-      .\(0xfe) { case i if i >= UInt64(0x10000) => i }(minimalvalue(uint32L.xmap(UInt64(_), _.toBigInt.toLong), UInt64(0x10000)))
-      .\(0xfd) { case i if i >= UInt64(0xfd) => i }(minimalvalue(uint16L.xmap(UInt64(_), _.toBigInt.toInt), UInt64(0xfd))),
+      .\(0xff) { case i if i >= UInt64(0x100000000L) => i }(minimalvalue(uint64, UInt64(0x100000000L)))
+      .\(0xfe) { case i if i >= UInt64(0x10000) => i }(minimalvalue(uint32.xmap(UInt64(_), _.toBigInt.toLong), UInt64(0x10000)))
+      .\(0xfd) { case i if i >= UInt64(0xfd) => i }(minimalvalue(uint16.xmap(UInt64(_), _.toBigInt.toInt), UInt64(0xfd))),
     uint8L.xmap(UInt64(_), _.toBigInt.toInt)
   )
 
@@ -126,5 +125,18 @@ object CommonCodecs {
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
 
   def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(32, utf8).xmap(s => s.takeWhile(_ != '\u0000'), s => s)
+
+  /**
+    * When encoding, prepend a valid mac to the output of the given codec.
+    * When decoding, verify that a valid mac is prepended.
+    */
+  def prependmac[A](codec: Codec[A], mac: Mac32) = Codec[A](
+    (a: A) => codec.encode(a).map(bits => mac.mac(bits.toByteVector).bits ++ bits),
+    (bits: BitVector) => ("mac" | bytes32).decode(bits) match {
+      case Attempt.Successful(DecodeResult(msgMac, remainder)) if mac.verify(msgMac, remainder.toByteVector) => codec.decode(remainder)
+      case Attempt.Successful(_) => Attempt.Failure(scodec.Err("invalid mac"))
+      case Attempt.Failure(err) => Attempt.Failure(err)
+    }
+  )
 
 }

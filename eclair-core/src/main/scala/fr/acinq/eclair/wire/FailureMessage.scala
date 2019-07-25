@@ -17,10 +17,11 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.wire.CommonCodecs.{sha256, uint64overflow}
-import fr.acinq.eclair.wire.LightningMessageCodecs.channelUpdateCodec
+import fr.acinq.eclair.wire.LightningMessageCodecs.{channelUpdateCodec, lightningMessageCodec}
 import scodec.codecs._
-import scodec.Attempt
+import scodec.{Attempt, Codec}
 
 /**
   * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
@@ -41,6 +42,7 @@ case object RequiredNodeFeatureMissing extends Perm with Node { def message = "p
 case class InvalidOnionVersion(onionHash: ByteVector32) extends BadOnion with Perm { def message = "onion version was not understood by the processing node" }
 case class InvalidOnionHmac(onionHash: ByteVector32) extends BadOnion with Perm { def message = "onion HMAC was incorrect when it reached the processing node" }
 case class InvalidOnionKey(onionHash: ByteVector32) extends BadOnion with Perm { def message = "ephemeral key was unparsable by the processing node" }
+case class InvalidOnionPayload(onionHash: ByteVector32) extends BadOnion with Perm { def message = "onion per-hop payload could not be parsed" }
 case class TemporaryChannelFailure(update: ChannelUpdate) extends Update { def message = s"channel ${update.shortChannelId} is currently unavailable" }
 case object PermanentChannelFailure extends Perm { def message = "channel is permanently unavailable" }
 case object RequiredChannelFeatureMissing extends Perm { def message = "channel requires features not present in the onion" }
@@ -64,9 +66,9 @@ object FailureMessageCodecs {
   val NODE = 0x2000
   val UPDATE = 0x1000
 
-  val channelUpdateCodecWithType = LightningMessageCodecs.lightningMessageCodec.narrow[ChannelUpdate](f => Attempt.successful(f.asInstanceOf[ChannelUpdate]), g => g)
+  val channelUpdateCodecWithType = lightningMessageCodec.narrow[ChannelUpdate](f => Attempt.successful(f.asInstanceOf[ChannelUpdate]), g => g)
 
-  // NB: for historical reasons some implementations were including/ommitting the message type (258 for ChannelUpdate)
+  // NB: for historical reasons some implementations were including/omitting the message type (258 for ChannelUpdate)
   // this codec supports both versions for decoding, and will encode with the message type
   val channelUpdateWithLengthCodec = variableSizeBytes(uint16, choice(channelUpdateCodecWithType, channelUpdateCodec))
 
@@ -75,6 +77,7 @@ object FailureMessageCodecs {
     .typecase(NODE | 2, provide(TemporaryNodeFailure))
     .typecase(PERM | 2, provide(PermanentNodeFailure))
     .typecase(PERM | NODE | 3, provide(RequiredNodeFeatureMissing))
+    .typecase(BADONION | PERM, sha256.as[InvalidOnionPayload])
     .typecase(BADONION | PERM | 4, sha256.as[InvalidOnionVersion])
     .typecase(BADONION | PERM | 5, sha256.as[InvalidOnionHmac])
     .typecase(BADONION | PERM | 6, sha256.as[InvalidOnionKey])
@@ -93,4 +96,24 @@ object FailureMessageCodecs {
     .typecase(18, ("expiry" | uint32).as[FinalIncorrectCltvExpiry])
     .typecase(19, ("amountMsat" | uint64overflow).as[FinalIncorrectHtlcAmount])
     .typecase(21, provide(ExpiryTooFar))
+
+  /**
+    * Return the failure code for a given failure message. This method actually encodes the failure message, which is a
+    * bit clunky and not particularly efficient. It shouldn't be used on the application's hot path.
+    */
+  def failureCode(failure: FailureMessage): Int = failureMessageCodec.encode(failure).flatMap(uint16.decode).require.value
+
+  /**
+    * An onion-encrypted failure from an intermediate node:
+    * +----------------+----------------------------------+-----------------+----------------------+-----+
+    * | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
+    * +----------------+----------------------------------+-----------------+----------------------+-----+
+    * with failure message length + pad length = 256
+    */
+  def failureOnionCodec(mac: Mac32): Codec[FailureMessage] = CommonCodecs.prependmac(
+    paddedFixedSizeBytesDependent(
+      260,
+      "failureMessage" | variableSizeBytes(uint16, FailureMessageCodecs.failureMessageCodec),
+      nBits => "padding" | variableSizeBytes(uint16, ignore(nBits - 2 * 8)) // two bytes are used to encode the padding length
+    ).as[FailureMessage], mac)
 }

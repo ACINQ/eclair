@@ -26,8 +26,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, MilliSatoshi, Satoshi, Transaction
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelUnavailable}
-import fr.acinq.eclair.crypto.{KeyManager, Sphinx}
-import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentLifecycle._
@@ -220,7 +219,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val WaitingForComplete(_, _, cmd1, Nil, _, _, _, hops) = paymentFSM.stateData
 
     relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
-    sender.send(paymentFSM, UpdateFailMalformedHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash, FailureMessageCodecs.BADONION))
+    sender.send(paymentFSM, UpdateFailMalformedHtlc(ByteVector32.Zeroes, 0, randomBytes32, FailureMessageCodecs.BADONION))
 
     // then the payment lifecycle will ask for a new route excluding the channel
     routerForwarder.expectMsg(RouteRequest(a, d, defaultAmountMsat, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set(ChannelDesc(channelId_ab, a, b))))
@@ -252,7 +251,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val failure = TemporaryChannelFailure(channelUpdate_bc)
 
     relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
-    sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.createErrorPacket(sharedSecrets1.head._1, failure)))
+    sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))
 
     // payment lifecycle will ask the router to temporarily exclude this channel from its route calculations
     routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(channelUpdate_bc.shortChannelId, b, c)))
@@ -263,7 +262,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.expectMsg(RouteRequest(a, d, defaultAmountMsat, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
     routerForwarder.forward(router)
     // we allow 2 tries, so we send a 2nd request to the router
-    sender.expectMsg(PaymentFailed(id, request.paymentHash, RemoteFailure(hops, ErrorPacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil))
+    sender.expectMsg(PaymentFailed(id, request.paymentHash, RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil))
   }
 
   test("payment failed (Update)") { fixture =>
@@ -295,7 +294,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 42, htlcMinimumMsat = channelUpdate_bc.htlcMinimumMsat, feeBaseMsat = channelUpdate_bc.feeBaseMsat, feeProportionalMillionths = channelUpdate_bc.feeProportionalMillionths, htlcMaximumMsat = channelUpdate_bc.htlcMaximumMsat.get)
     val failure = IncorrectCltvExpiry(5, channelUpdate_bc_modified)
     // and node replies with a failure containing a new channel update
-    sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.createErrorPacket(sharedSecrets1.head._1, failure)))
+    sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))
 
     // payment lifecycle forwards the embedded channelUpdate to the router
     routerForwarder.expectMsg(channelUpdate_bc_modified)
@@ -312,7 +311,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val channelUpdate_bc_modified_2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 43, htlcMinimumMsat = channelUpdate_bc.htlcMinimumMsat, feeBaseMsat = channelUpdate_bc.feeBaseMsat, feeProportionalMillionths = channelUpdate_bc.feeProportionalMillionths, htlcMaximumMsat = channelUpdate_bc.htlcMaximumMsat.get)
     val failure2 = IncorrectCltvExpiry(5, channelUpdate_bc_modified_2)
     // and node replies with a failure containing a new channel update
-    sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.createErrorPacket(sharedSecrets2.head._1, failure2)))
+    sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets2.head._1, failure2)))
 
     // this time the payment lifecycle will ask the router to temporarily exclude this channel from its route calculations
     routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(channelUpdate_bc.shortChannelId, b, c)))
@@ -324,7 +323,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.forward(router)
 
     // this time the router can't find a route: game over
-    sender.expectMsg(PaymentFailed(id, request.paymentHash, RemoteFailure(hops, ErrorPacket(b, failure)) :: RemoteFailure(hops2, ErrorPacket(b, failure2)) :: LocalFailure(RouteNotFound) :: Nil))
+    sender.expectMsg(PaymentFailed(id, request.paymentHash, RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: RemoteFailure(hops2, Sphinx.DecryptedFailurePacket(b, failure2)) :: LocalFailure(RouteNotFound) :: Nil))
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
   }
 
@@ -355,7 +354,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val failure = PermanentChannelFailure
 
     relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
-    sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.createErrorPacket(sharedSecrets1.head._1, failure)))
+    sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))
 
     // payment lifecycle forwards the embedded channelUpdate to the router
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
@@ -363,7 +362,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.forward(router)
     // we allow 2 tries, so we send a 2nd request to the router, which won't find another route
 
-    sender.expectMsg(PaymentFailed(id, request.paymentHash, RemoteFailure(hops, ErrorPacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil))
+    sender.expectMsg(PaymentFailed(id, request.paymentHash, RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil))
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
   }
 
@@ -452,8 +451,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("filter errors properly") { _ =>
-    val failures = LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, ErrorPacket(a, TemporaryNodeFailure)) :: LocalFailure(AddHtlcFailed(ByteVector32.Zeroes, ByteVector32.Zeroes, ChannelUnavailable(ByteVector32.Zeroes), Local(UUID.randomUUID(), None), None, None)) :: LocalFailure(RouteNotFound) :: Nil
+    val failures = LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)) :: LocalFailure(AddHtlcFailed(ByteVector32.Zeroes, ByteVector32.Zeroes, ChannelUnavailable(ByteVector32.Zeroes), Local(UUID.randomUUID(), None), None, None)) :: LocalFailure(RouteNotFound) :: Nil
     val filtered = PaymentLifecycle.transformForUser(failures)
-    assert(filtered == LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, ErrorPacket(a, TemporaryNodeFailure)) :: LocalFailure(ChannelUnavailable(ByteVector32.Zeroes)) :: Nil)
+    assert(filtered == LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)) :: LocalFailure(ChannelUnavailable(ByteVector32.Zeroes)) :: Nil)
   }
 }

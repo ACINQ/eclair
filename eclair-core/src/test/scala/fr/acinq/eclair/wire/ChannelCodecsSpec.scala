@@ -26,13 +26,14 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.api.JsonSupport
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain, Sphinx}
+import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain}
 import fr.acinq.eclair.payment.{Local, Relayed}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
 import org.json4s.jackson.Serialization
+import fr.acinq.eclair.{TestConstants, UInt64, randomBytes, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits._
 import scodec.{Attempt, DecodeResult}
@@ -68,15 +69,15 @@ class ChannelCodecsSpec extends FunSuite {
     // before we had commitment version, public keys were stored first (they started with 0x02 and 0x03)
     val legacy02 = hex"02a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
     val legacy03 = hex"03d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
-    val current02 = hex"0102a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
-    val current03 = hex"0103d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
+    val current02 = hex"010000000002a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
+    val current03 = hex"010000000003d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
 
     assert(channelVersionCodec.decode(legacy02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, legacy02.bits)))
     assert(channelVersionCodec.decode(legacy03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, legacy03.bits)))
-    assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(1).bits)))
-    assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(1).bits)))
+    assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(5).bits)))
+    assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(5).bits)))
 
-    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"01".bits))
+    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000000".bits))
   }
 
   test("encode/decode localparams") {
@@ -131,7 +132,7 @@ class ChannelCodecsSpec extends FunSuite {
       amountMsat = Random.nextInt(Int.MaxValue),
       cltvExpiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes32,
-      onionRoutingPacket = randomBytes(Sphinx.PacketLength))
+      onionRoutingPacket = TestConstants.emptyOnionPacket)
     val htlc1 = DirectedHtlc(direction = IN, add = add)
     val htlc2 = DirectedHtlc(direction = OUT, add = add)
     assert(htlcCodec.decodeValue(htlcCodec.encode(htlc1).require).require === htlc1)
@@ -145,14 +146,14 @@ class ChannelCodecsSpec extends FunSuite {
       amountMsat = Random.nextInt(Int.MaxValue),
       cltvExpiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes32,
-      onionRoutingPacket = randomBytes(Sphinx.PacketLength))
+      onionRoutingPacket = TestConstants.emptyOnionPacket)
     val add2 = UpdateAddHtlc(
       channelId = randomBytes32,
       id = Random.nextInt(Int.MaxValue),
       amountMsat = Random.nextInt(Int.MaxValue),
       cltvExpiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes32,
-      onionRoutingPacket = randomBytes(Sphinx.PacketLength))
+      onionRoutingPacket = TestConstants.emptyOnionPacket)
     val htlc1 = DirectedHtlc(direction = IN, add = add1)
     val htlc2 = DirectedHtlc(direction = OUT, add = add2)
     val htlcs = Set(htlc1, htlc2)
@@ -312,8 +313,8 @@ class ChannelCodecsSpec extends FunSuite {
       // and we decode with the new codec
       val newnormal = stateDataCodec.decode(newbin.bits).require.value
       // finally we check that the actual data is the same as before (we just remove the new json field)
-      val oldjson = Serialization.write(oldnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"STANDARD",""", "")
-      val newjson = Serialization.write(newnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"STANDARD",""", "")
+      val oldjson = Serialization.write(oldnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"00000000000000000000000000000000",""", "")
+      val newjson = Serialization.write(newnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"00000000000000000000000000000000",""", "")
       assert(oldjson === refjson)
       assert(newjson === refjson)
     }
@@ -363,11 +364,11 @@ object ChannelCodecsSpec {
   )
 
   val htlcs = Seq(
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(1000000).amount, Crypto.sha256(paymentPreimages(0)), 500, ByteVector.fill(Sphinx.PacketLength)(0))),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(1)), 501, ByteVector.fill(Sphinx.PacketLength)(0))),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 30, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(2)), 502, ByteVector.fill(Sphinx.PacketLength)(0))),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 31, MilliSatoshi(3000000).amount, Crypto.sha256(paymentPreimages(3)), 503, ByteVector.fill(Sphinx.PacketLength)(0))),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi(4000000).amount, Crypto.sha256(paymentPreimages(4)), 504, ByteVector.fill(Sphinx.PacketLength)(0)))
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(1000000).amount, Crypto.sha256(paymentPreimages(0)), 500, TestConstants.emptyOnionPacket)),
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(1)), 501, TestConstants.emptyOnionPacket)),
+    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 30, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(2)), 502, TestConstants.emptyOnionPacket)),
+    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 31, MilliSatoshi(3000000).amount, Crypto.sha256(paymentPreimages(3)), 503, TestConstants.emptyOnionPacket)),
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi(4000000).amount, Crypto.sha256(paymentPreimages(4)), 504, TestConstants.emptyOnionPacket))
   )
 
   val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
