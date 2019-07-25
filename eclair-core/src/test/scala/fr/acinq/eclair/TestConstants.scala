@@ -71,6 +71,12 @@ object TestConstants {
       localFeatures = ByteVector(0),
       overrideFeatures = Map.empty,
       dustLimitSatoshis = 1100,
+      onChainFeeConf = OnChainFeeConf(
+        feeTargets = FeeTargets(6, 2, 2, 6),
+        feeEstimator = new TestFeeEstimator,
+        maxFeerateMismatch = 1.5,
+        updateFeeMinDiffRatio = 0.1
+      ),
       maxHtlcValueInFlightMsat = UInt64(150000000),
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = 144,
@@ -88,12 +94,6 @@ object TestConstants {
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
-      onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 2, 6),
-        feeEstimator = new TestFeeEstimator,
-        maxFeerateMismatch = 1.5,
-        updateFeeMinDiffRatio = 0.1
-      ),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
@@ -141,6 +141,12 @@ object TestConstants {
       localFeatures = ByteVector.empty, // no announcement
       overrideFeatures = Map.empty,
       dustLimitSatoshis = 1000,
+      onChainFeeConf = OnChainFeeConf(
+        feeTargets = FeeTargets(6, 2, 2, 6),
+        feeEstimator = new TestFeeEstimator,
+        maxFeerateMismatch = 1.0,
+        updateFeeMinDiffRatio = 0.1
+      ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
       expiryDeltaBlocks = 144,
@@ -158,12 +164,6 @@ object TestConstants {
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
-      onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 2, 6),
-        feeEstimator = new TestFeeEstimator,
-        maxFeerateMismatch = 1.0,
-        updateFeeMinDiffRatio = 0.1
-      ),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
