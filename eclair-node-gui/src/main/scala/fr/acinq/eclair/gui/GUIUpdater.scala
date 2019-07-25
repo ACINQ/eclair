@@ -75,7 +75,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
   def main(m: Map[ActorRef, ChannelPaneController]): Receive = {
 
-    case ChannelCreated(channel, peer, remoteNodeId, isFunder, temporaryChannelId) =>
+    case ChannelCreated(channel, peer, remoteNodeId, isFunder, temporaryChannelId, _, _) =>
       context.watch(channel)
       val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, temporaryChannelId)
       runInGuiThread(() => mainController.channelBox.getChildren.addAll(root))

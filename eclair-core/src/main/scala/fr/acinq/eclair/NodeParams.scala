@@ -24,7 +24,8 @@ import java.util.concurrent.TimeUnit
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
-import fr.acinq.eclair.NodeParams.WatcherType
+import fr.acinq.eclair.NodeParams.{WatcherType}
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
@@ -47,6 +48,7 @@ case class NodeParams(keyManager: KeyManager,
                       localFeatures: ByteVector,
                       overrideFeatures: Map[PublicKey, (ByteVector, ByteVector)],
                       dustLimitSatoshis: Long,
+                      onChainFeeConf: OnChainFeeConf,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
                       expiryDeltaBlocks: Int,
@@ -55,7 +57,6 @@ case class NodeParams(keyManager: KeyManager,
                       toRemoteDelayBlocks: Int,
                       maxToLocalDelayBlocks: Int,
                       minDepthBlocks: Int,
-                      smartfeeNBlocks: Int,
                       feeBaseMsat: Int,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
@@ -65,8 +66,6 @@ case class NodeParams(keyManager: KeyManager,
                       pingInterval: FiniteDuration,
                       pingTimeout: FiniteDuration,
                       pingDisconnect: Boolean,
-                      maxFeerateMismatch: Double,
-                      updateFeeMinDiffRatio: Double,
                       autoReconnect: Boolean,
                       initialRandomReconnectDelay: FiniteDuration,
                       maxReconnectInterval: FiniteDuration,
@@ -125,7 +124,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases): NodeParams = {
+  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, feeEstimator: FeeEstimator): NodeParams = {
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
@@ -181,6 +180,13 @@ object NodeParams {
       .toList
       .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ torAddress_opt
 
+    val feeTargets = FeeTargets(
+      fundingBlockTarget = config.getInt("on-chain-fees.target-blocks.funding"),
+      commitmentBlockTarget = config.getInt("on-chain-fees.target-blocks.commitment"),
+      mutualCloseBlockTarget = config.getInt("on-chain-fees.target-blocks.mutual-close"),
+      claimMainBlockTarget = config.getInt("on-chain-fees.target-blocks.claim-main")
+    )
+
     NodeParams(
       keyManager = keyManager,
       alias = nodeAlias,
@@ -190,6 +196,12 @@ object NodeParams {
       localFeatures = ByteVector.fromValidHex(config.getString("local-features")),
       overrideFeatures = overrideFeatures,
       dustLimitSatoshis = dustLimitSatoshis,
+      onChainFeeConf = OnChainFeeConf(
+        feeTargets = feeTargets,
+        feeEstimator = feeEstimator,
+        maxFeerateMismatch = config.getDouble("on-chain-fees.max-feerate-mismatch"),
+        updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio")
+      ),
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),
       maxAcceptedHtlcs = maxAcceptedHtlcs,
       expiryDeltaBlocks = expiryDeltaBlocks,
@@ -198,7 +210,6 @@ object NodeParams {
       toRemoteDelayBlocks = config.getInt("to-remote-delay-blocks"),
       maxToLocalDelayBlocks = config.getInt("max-to-local-delay-blocks"),
       minDepthBlocks = config.getInt("mindepth-blocks"),
-      smartfeeNBlocks = 3,
       feeBaseMsat = config.getInt("fee-base-msat"),
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
@@ -208,8 +219,6 @@ object NodeParams {
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
       pingDisconnect = config.getBoolean("ping-disconnect"),
-      maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
-      updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
       autoReconnect = config.getBoolean("auto-reconnect"),
       initialRandomReconnectDelay = FiniteDuration(config.getDuration("initial-random-reconnect-delay").getSeconds, TimeUnit.SECONDS),
       maxReconnectInterval = FiniteDuration(config.getDuration("max-reconnect-interval").getSeconds, TimeUnit.SECONDS),
