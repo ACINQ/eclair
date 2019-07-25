@@ -133,25 +133,25 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
   when(INITIALIZING) {
     case Event(remoteInit: wire.Init, d: InitializingData) =>
       d.transport ! TransportHandler.ReadAck(remoteInit)
-      val remoteFeatures = Features(ByteVector(remoteInit.localFeatures.toArray).toBitVector)
-
+      val remoteHasInitialRoutingSync = Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
+      val remoteHasChannelRangeQueriesOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
+      val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
       log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin} and localFeatures=${remoteInit.localFeatures.toBin}")
-
-      if (remoteFeatures.areSupported) {
+      log.info(s"$remoteNodeId has features: initialRoutingSync=$remoteHasInitialRoutingSync channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional channelRangeQueriesMandatory=$remoteHasChannelRangeQueriesMandatory")
+      if (Features.areSupported(remoteInit.localFeatures)) {
         d.origin_opt.foreach(origin => origin ! "connected")
 
-        if (remoteFeatures.hasInitialRoutingSync) {
-          if (remoteFeatures.hasChannelRangeQueriesOptional || remoteFeatures.hasChannelRangeQueriesMandatory) {
+        if (remoteHasInitialRoutingSync) {
+          if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
             // if they support channel queries we do nothing, they will send us their filters
-            log.info("peer has set initial routing sync and supports channel range queries, we do nothing (they will send us a query)")
+            log.info("{} has set initial routing sync and supports channel range queries, we do nothing (they will send us a query)", remoteNodeId)
           } else {
             // "old" nodes, do as before
             log.info("peer requested a full routing table dump")
             router ! GetRoutingState
           }
         }
-
-        if (remoteFeatures.hasChannelRangeQueriesOptional || remoteFeatures.hasChannelRangeQueriesMandatory) {
+        if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
           // NB: we always add extended info; if peer doesn't understand them it will ignore them
           router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = Some(QueryChannelRangeExtension(QueryChannelRangeExtension.WANT_ALL)))

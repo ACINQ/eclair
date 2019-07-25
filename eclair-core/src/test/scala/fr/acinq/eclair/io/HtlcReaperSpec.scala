@@ -19,10 +19,9 @@ package fr.acinq.eclair.io
 import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.randomBytes32
+import fr.acinq.eclair.{TestConstants, randomBytes32}
 import fr.acinq.eclair.wire.{ChannelCodecsSpec, TemporaryNodeFailure, UpdateAddHtlc}
 import org.scalatest.FunSuiteLike
-import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -37,11 +36,11 @@ class HtlcReaperSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val data = ChannelCodecsSpec.normal
 
     // assuming that data has incoming htlcs 0 and 1, we don't care about the amount/payment_hash/onion fields
-    val add0 = UpdateAddHtlc(data.channelId, 0, 20000, randomBytes32, 100, ByteVector.empty)
-    val add1 = UpdateAddHtlc(data.channelId, 1, 30000, randomBytes32, 100, ByteVector.empty)
+    val add0 = UpdateAddHtlc(data.channelId, 0, 20000, randomBytes32, 100, TestConstants.emptyOnionPacket)
+    val add1 = UpdateAddHtlc(data.channelId, 1, 30000, randomBytes32, 100, TestConstants.emptyOnionPacket)
 
     // unrelated htlc
-    val add99 = UpdateAddHtlc(randomBytes32, 0, 12345678, randomBytes32, 100, ByteVector.empty)
+    val add99 = UpdateAddHtlc(randomBytes32, 0, 12345678, randomBytes32, 100, TestConstants.emptyOnionPacket)
 
     val brokenHtlcs = Seq(add0, add1, add99)
     val brokenHtlcKiller = system.actorOf(Props[HtlcReaper], name = "htlc-reaper")

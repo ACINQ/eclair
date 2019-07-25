@@ -23,25 +23,26 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
+
 import scala.concurrent.duration._
 
 /**
   * Created by PM on 26/04/2016.
   */
 object TestConstants {
+
   val fundingSatoshis = 1000000L
   val pushMsat = 200000000L
   val feeratePerKw = 10000L
+  val emptyOnionPacket = wire.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
 
   def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
 
   def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.databaseByConnections(connection, connection, connection)
-
 
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))
@@ -60,6 +61,7 @@ object TestConstants {
       maxHtlcValueInFlightMsat = UInt64(150000000),
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = 144,
+      fulfillSafetyBeforeTimeoutBlocks = 6,
       htlcMinimumMsat = 0,
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
@@ -69,7 +71,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      db = inMemoryDb(sqliteInMemory),
+      db = inMemoryDb(sqliteInMemory()),
       revocationTimeout = 20 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
@@ -126,6 +128,7 @@ object TestConstants {
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
       expiryDeltaBlocks = 144,
+      fulfillSafetyBeforeTimeoutBlocks = 6,
       htlcMinimumMsat = 1000,
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
@@ -135,7 +138,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      db = inMemoryDb(sqliteInMemory),
+      db = inMemoryDb(sqliteInMemory()),
       revocationTimeout = 20 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
