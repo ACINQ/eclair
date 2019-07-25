@@ -18,6 +18,7 @@ package fr.acinq.eclair.router
 
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire._
+import ReplyChannelRangeTlv._
 import org.scalatest.FunSuite
 
 import scala.collection.immutable.SortedMap
@@ -57,7 +58,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
       cd1 -> ucd1
     )
 
-    import fr.acinq.eclair.wire.QueryFlagType._
+    import fr.acinq.eclair.wire.QueryShortChannelIdsTlv.QueryFlagType._
 
     assert(Router.getChannelDigestInfo(channels, updates)(ab.shortChannelId) == (Timestamps(now, now), Checksums(3297511804L, 3297511804L)))
 

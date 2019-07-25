@@ -216,20 +216,11 @@ object LightningMessageCodecs {
       .\(0) { case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
       .\(1) { case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
 
-  val encodedQueryFlagsCodec: Codec[EncodedQueryFlags] =
-    discriminated[EncodedQueryFlags].by(byte)
-      .\(0) { case a@EncodedQueryFlags(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(varintoverflow)).as[EncodedQueryFlags])
-      .\(1) { case a@EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(varintoverflow))).as[EncodedQueryFlags])
-
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = {
-    val extensionsCodec = TlvCodecs.tlvStream(discriminated[Tlv].by(varint)
-      .typecase(EncodedQueryFlags.`type`, variableSizeBytesLong(varintoverflow, encodedQueryFlagsCodec))
-    )
-
     Codec(
       ("chainHash" | bytes32) ::
         ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
-        ("extensions" | extensionsCodec)
+        ("tlvStream_opt" | optional(bitsRemaining, QueryShortChannelIdsTlv.codec))
     ).as[QueryShortChannelIds]
   }
 
@@ -238,57 +229,25 @@ object LightningMessageCodecs {
       ("complete" | byte)
     ).as[ReplyShortChannelIdsEnd]
 
-  val queryChannelRangeExtensionCodec: Codec[QueryChannelRangeExtension] = Codec(("flag" | varintoverflow)).as[QueryChannelRangeExtension]
-
-  val queryChannelRangeExtensionType = UInt64(1)
+ // val queryChannelRangeExtensionCodec: Codec[QueryChannelRangeExtension] = Codec(("flag" | varintoverflow)).as[QueryChannelRangeExtension]
 
   val queryChannelRangeCodec: Codec[QueryChannelRange] = {
-    val extensionsCodec = TlvCodecs.tlvStream(discriminated[Tlv].by(varint)
-      .typecase(queryChannelRangeExtensionType, variableSizeBytesLong(varintoverflow, queryChannelRangeExtensionCodec))
-    )
-
     Codec(
       ("chainHash" | bytes32) ::
         ("firstBlockNum" | uint32) ::
         ("numberOfBlocks" | uint32) ::
-        ("extensions" | extensionsCodec)
+        ("tlvStream_opt" | optional(bitsRemaining, QueryChannelRangeTlv.codec))
       ).as[QueryChannelRange]
   }
 
-  val timestampsCodec: Codec[Timestamps] = (
-    ("checksum1" | uint32) ::
-      ("checksum2" | uint32)
-    ).as[Timestamps]
-
-  val encodedTimestampsCodec: Codec[EncodedTimestamps] =
-    discriminated[EncodedTimestamps].by(byte)
-      .\(0) { case a@EncodedTimestamps(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(timestampsCodec)).as[EncodedTimestamps])
-      .\(1) { case a@EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(timestampsCodec))).as[EncodedTimestamps])
-
-  val encodedTimestampsType = UInt64(1)
-
-  val checksumsCodec: Codec[Checksums] = (
-    ("checksum1" | uint32) ::
-      ("checksum2" | uint32)
-    ).as[Checksums]
-
-  val encodedChecksumsCodec: Codec[EncodedChecksums] = Codec(("checksums" | list(checksumsCodec))).as[EncodedChecksums]
-
-  val encodedChecksumsType = UInt64(3)
-
   val replyChannelRangeCodec: Codec[ReplyChannelRange] =  {
-    val extensionsCodec = TlvCodecs.tlvStream(discriminated[Tlv].by(varint)
-      .typecase(encodedTimestampsType, variableSizeBytesLong(varintoverflow, encodedTimestampsCodec))
-      .typecase(encodedChecksumsType, variableSizeBytesLong(varintoverflow, encodedChecksumsCodec))
-    )
-
     Codec(
       ("chainHash" | bytes32) ::
         ("firstBlockNum" | uint32) ::
         ("numberOfBlocks" | uint32) ::
         ("complete" | byte) ::
         ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
-        ("extensions" | extensionsCodec)
+        ("tlvStream_opt" | optional(bitsRemaining, ReplyChannelRangeTlv.codec))
       ).as[ReplyChannelRange]
   }
 

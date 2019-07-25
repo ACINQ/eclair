@@ -321,7 +321,7 @@ class PeerSpec extends TestkitBaseClass {
     val query = QueryShortChannelIds(
       Alice.nodeParams.chainHash,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42000))),
-      TlvStream(List.empty[Tlv]))
+      None)
 
     // make sure that routing messages go through
     for (ann <- channels ++ updates) {
