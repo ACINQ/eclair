@@ -274,7 +274,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // TODO: maybe also check uniqueness of temporary channel id
           val minimumDepth = nodeParams.minDepthBlocks
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
-            dustLimitSatoshis = localParams.dustLimitSatoshis,
+            dustLimitSatoshis = Satoshi(localParams.dustLimitSatoshis),
             maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
             channelReserveSatoshis = localParams.channelReserveSatoshis,
             minimumDepth = minimumDepth,
@@ -322,7 +322,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // TODO: check equality of temporaryChannelId? or should be done upstream
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
-            dustLimitSatoshis = accept.dustLimitSatoshis,
+            dustLimitSatoshis = accept.dustLimitSatoshis.toLong,
             maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
             channelReserveSatoshis = accept.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
             htlcMinimumMsat = accept.htlcMinimumMsat,

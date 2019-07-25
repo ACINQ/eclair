@@ -72,7 +72,7 @@ object LightningMessageCodecs {
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | bytes32) ::
-      ("dustLimitSatoshis" | uint64overflow) ::
+      ("dustLimitSatoshis" | uint64overflowSat) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserveSatoshis" | uint64overflow) ::
       ("htlcMinimumMsat" | uint64overflow) ::

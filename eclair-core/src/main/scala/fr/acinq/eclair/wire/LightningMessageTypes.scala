@@ -86,7 +86,7 @@ case class OpenChannel(chainHash: ByteVector32,
                        channelFlags: Byte) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
-                         dustLimitSatoshis: Long,
+                         dustLimitSatoshis: Satoshi,
                          maxHtlcValueInFlightMsat: UInt64,
                          channelReserveSatoshis: Long,
                          htlcMinimumMsat: Long,
