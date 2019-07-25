@@ -42,7 +42,7 @@ object TestConstants {
 
   def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
 
-  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.databaseByConnections(connection, connection, connection)
+  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.databaseByConnections(connection, connection, connection, connection)
 
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))

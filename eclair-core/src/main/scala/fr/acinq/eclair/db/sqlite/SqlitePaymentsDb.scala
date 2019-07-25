@@ -29,21 +29,27 @@ import concurrent.duration._
 import scala.collection.mutable
 import scala.compat.Platform
 
-class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
+class SqlitePaymentsDb(sqlite: Connection, extSqlite: Connection) extends PaymentsDb with Logging {
 
   import SqliteUtils.ExtendedResultSet._
 
   val DB_NAME = "payments"
+  val EXT_DB_NAME = "ext"
   val CURRENT_VERSION = 3
 
   using(sqlite.createStatement()) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) <= CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // version 3 is "backward compatible" in the sense that it uses separate tables from versions 1 and 2. There is no migration though
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments_failures (id TEXT NOT NULL, failure TEXT NOT NULL)")
-    statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_payments_failures_idx ON sent_payments_failures(id)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON sent_payments(payment_hash)")
     setVersion(statement, DB_NAME, CURRENT_VERSION)
+  }
+
+  using(extSqlite.createStatement()) { statement =>
+    require(getVersion(statement, EXT_DB_NAME, CURRENT_VERSION) <= CURRENT_VERSION, s"incompatible version of $EXT_DB_NAME DB found") // version 3 is "backward compatible" in the sense that it uses separate tables from versions 1 and 2. There is no migration though
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments_failures (id TEXT NOT NULL, failure TEXT NOT NULL)")
+    statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_payments_failures_idx ON sent_payments_failures(id)")
+    setVersion(statement, EXT_DB_NAME, CURRENT_VERSION)
   }
 
   override def addOutgoingPayment(sent: OutgoingPayment): Unit = {
@@ -239,7 +245,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   private def insertFailures(id: UUID, failures: Traversable[String]): Unit = {
     failures.filter(_.nonEmpty).foreach { failure =>
-      using(sqlite.prepareStatement("INSERT INTO sent_payments_failures (id, failure) VALUES (?, ?)")) { statement =>
+      using(extSqlite.prepareStatement("INSERT INTO sent_payments_failures (id, failure) VALUES (?, ?)")) { statement =>
         statement.setString(1, id.toString)
         statement.setString(2, failure)
         val res = statement.executeUpdate()
@@ -249,7 +255,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   private def selectFailures(id: UUID): Seq[String] = {
     val res = new mutable.ListBuffer[String]
-    using(sqlite.prepareStatement("SELECT failure FROM sent_payments_failures WHERE id = ?")) { statement =>
+    using(extSqlite.prepareStatement("SELECT failure FROM sent_payments_failures WHERE id = ?")) { statement =>
       statement.setString(1, id.toString)
       val rs = statement.executeQuery()
       while (rs.next()) {

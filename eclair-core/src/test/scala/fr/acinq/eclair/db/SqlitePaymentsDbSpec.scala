@@ -34,9 +34,9 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
   test("init sqlite 2 times in a row") {
     val sqlite = TestConstants.sqliteInMemory()
-    val db1 = new SqlitePaymentsDb(sqlite)
-    val db2 = new SqlitePaymentsDb(sqlite)
-    val db3 = new SqlitePaymentsDb(sqlite)
+    val db1 = new SqlitePaymentsDb(sqlite = sqlite, extSqlite = sqlite)
+    val db2 = new SqlitePaymentsDb(sqlite = sqlite, extSqlite = sqlite)
+    val db3 = new SqlitePaymentsDb(sqlite = sqlite, extSqlite = sqlite)
   }
 
   test("handle version migration 1->2->3") {
@@ -62,7 +62,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
       statement.executeUpdate()
     }
 
-    val preMigrationDb = new SqlitePaymentsDb(connection)
+    val preMigrationDb = new SqlitePaymentsDb(sqlite = connection, extSqlite = connection)
 
     using(connection.createStatement()) { statement =>
       assert(getVersion(statement, "payments", 1) == 3) // version has changed from 1 to 3!
@@ -84,7 +84,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(preMigrationDb.listOutgoingPayments() == Seq(ps1))
     assert(preMigrationDb.listPaymentRequests(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) == Seq(i1))
 
-    val postMigrationDb = new SqlitePaymentsDb(connection)
+    val postMigrationDb = new SqlitePaymentsDb(sqlite = connection, extSqlite = connection)
 
     using(connection.createStatement()) { statement =>
       assert(getVersion(statement, "payments", 2) == 3) // version still to 2
@@ -97,7 +97,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
   test("add/list received payments/find 1 payment that exists/find 1 payment that does not exist") {
     val sqlite = TestConstants.sqliteInMemory()
-    val db = new SqlitePaymentsDb(sqlite)
+    val db = new SqlitePaymentsDb(sqlite = sqlite, extSqlite = sqlite)
 
     // can't receive a payment without an invoice associated with it
     assertThrows[IllegalArgumentException](db.addIncomingPayment(IncomingPayment(ByteVector32(hex"6e7e8018f05e169cf1d99e77dc22cb372d09f10b6a81f1eae410718c56cad188"), 12345678, 1513871928275L)))
@@ -120,7 +120,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
   test("add/retrieve/update sent payments") {
 
-    val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
+    val connection = TestConstants.sqliteInMemory()
+    val db = new SqlitePaymentsDb(sqlite = connection, extSqlite = connection)
 
     val s1 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"0f059ef9b55bb70cc09069ee4df854bf0fab650eee6f2b87ba26d1ad08ab114f"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, Seq())
     val s2 = OutgoingPayment(id = UUID.randomUUID(), paymentHash = ByteVector32(hex"08d47d5f7164d4b696e8f6b62a03094d4f1c65f16e9d7b11c4a98854707e55cf"), None, amountMsat = 12345, createdAt = 12345, None, PENDING, Seq())
@@ -156,7 +157,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
   test("add/retrieve payment requests") {
 
     val someTimestamp = 12345
-    val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
+    val connection = TestConstants.sqliteInMemory()
+    val db = new SqlitePaymentsDb(sqlite = connection, extSqlite = connection)
 
     val bob = Bob.keyManager
 
