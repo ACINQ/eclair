@@ -434,9 +434,9 @@ object Helpers {
     }
 
     def firstClosingFee(commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): Satoshi = {
+      val requestedFeerate = feeEstimator.getFeeratePerKw(feeTargets.mutualCloseBlockTarget)
       // we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
-      val blockTarget = Math.max(feeTargets.mutualCloseBlockTarget, feeTargets.commitmentBlockTarget)
-      val feeratePerKw = Math.min(feeEstimator.getFeeratePerKw(blockTarget), commitments.localCommit.spec.feeratePerKw)
+      val feeratePerKw = Math.min(requestedFeerate, commitments.localCommit.spec.feeratePerKw)
       firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, feeratePerKw)
     }
 
