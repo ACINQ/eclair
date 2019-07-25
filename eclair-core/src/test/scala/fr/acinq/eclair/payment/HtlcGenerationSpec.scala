@@ -26,15 +26,19 @@ import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, PacketAndSecrets}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, nodeFee, randomBytes32}
-import org.scalatest.FunSuite
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Globals, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, nodeFee, randomBytes32}
+import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import scodec.bits.ByteVector
 
 /**
  * Created by PM on 31/05/2016.
  */
 
-class HtlcGenerationSpec extends FunSuite {
+class HtlcGenerationSpec extends FunSuite with BeforeAndAfterAll {
+
+  override def beforeAll {
+    Globals.blockCount.set(HtlcGenerationSpec.currentBlockCount)
+  }
 
   test("compute fees") {
     val feeBaseMsat = 150000 msat
@@ -49,7 +53,7 @@ class HtlcGenerationSpec extends FunSuite {
   import HtlcGenerationSpec._
 
   test("compute payloads with fees and expiry delta") {
-    val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
+    val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(hops.drop(1), LegacyPayload(finalAmountMsat, finalExpiry))
     val expectedPayloads = Seq[OnionPerHopPayload](
       OnionForwardInfo(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc),
       OnionForwardInfo(channelUpdate_cd.shortChannelId, amount_cd, expiry_cd),
@@ -62,7 +66,7 @@ class HtlcGenerationSpec extends FunSuite {
   }
 
   test("build onion") {
-    val (_, _, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
+    val (_, _, payloads) = buildPayloads(hops.drop(1), LegacyPayload(finalAmountMsat, finalExpiry))
     val nodes = hops.map(_.nextNodeId)
     val PacketAndSecrets(packet_b, _) = buildOnion(nodes, payloads, paymentHash)
     assert(packet_b.payload.length === Sphinx.PaymentPacket.PayloadLength)
@@ -94,7 +98,7 @@ class HtlcGenerationSpec extends FunSuite {
   }
 
   test("build onion with final tlv payload") {
-    val (_, _, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1), TlvPayload)
+    val (_, _, payloads) = buildPayloads(hops.drop(1), TlvPayload(finalAmountMsat, finalExpiry))
     val nodes = hops.map(_.nextNodeId)
     val PacketAndSecrets(packet_b, _) = buildOnion(nodes, payloads, paymentHash)
     assert(packet_b.payload.length === Sphinx.PaymentPacket.PayloadLength)
@@ -123,7 +127,7 @@ class HtlcGenerationSpec extends FunSuite {
   }
 
   test("build a command including the onion") {
-    val (add, _) = buildCommand(UUID.randomUUID, finalAmountMsat, finalExpiry, paymentHash, hops)
+    val (add, _) = buildCommand(UUID.randomUUID, paymentHash, hops, LegacyPayload(finalAmountMsat, finalExpiry))
 
     assert(add.amount > finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry + channelUpdate_de.cltvExpiryDelta + channelUpdate_cd.cltvExpiryDelta + channelUpdate_bc.cltvExpiryDelta)
@@ -157,7 +161,7 @@ class HtlcGenerationSpec extends FunSuite {
   }
 
   test("build a command with no hops") {
-    val (add, _) = buildCommand(UUID.randomUUID(), finalAmountMsat, finalExpiry, paymentHash, hops.take(1))
+    val (add, _) = buildCommand(UUID.randomUUID(), paymentHash, hops.take(1), LegacyPayload(finalAmountMsat, finalExpiry))
 
     assert(add.amount === finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry)
@@ -202,12 +206,12 @@ object HtlcGenerationSpec {
       Hop(d, e, channelUpdate_de) :: Nil
 
   val finalAmountMsat = 42000000 msat
-  val currentBlockCount = 420000
+  val currentBlockCount = 400000
   val finalExpiry = CltvExpiry(currentBlockCount) + Channel.MIN_CLTV_EXPIRY_DELTA
   val paymentPreimage = randomBytes32
   val paymentHash = Crypto.sha256(paymentPreimage)
 
-  val expiry_de = CltvExpiry(currentBlockCount) + Channel.MIN_CLTV_EXPIRY_DELTA
+  val expiry_de = finalExpiry
   val amount_de = finalAmountMsat
   val fee_d = nodeFee(channelUpdate_de.feeBaseMsat, channelUpdate_de.feeProportionalMillionths, amount_de)
 
