@@ -19,7 +19,9 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import com.google.common.net.InetAddresses
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.eclair.crypto.Hmac256
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.{UInt64, randomBytes32}
 import org.scalatest.FunSuite
@@ -45,6 +47,16 @@ class CommonCodecsSpec extends FunSuite {
       val decoded = uint64.decode(encoded).require.value
       assert(uint === decoded)
     }
+  }
+
+  test("encode/decode UInt64") {
+    val refs = Seq(
+      UInt64(hex"ffffffffffffffff"),
+      UInt64(hex"fffffffffffffffe"),
+      UInt64(hex"efffffffffffffff"),
+      UInt64(hex"effffffffffffffe")
+    )
+    assert(refs.forall(value => uint64.decode(uint64.encode(value).require).require.value === value))
   }
 
   test("encode/decode with varint codec") {
@@ -222,16 +234,21 @@ class CommonCodecsSpec extends FunSuite {
     }
   }
 
-  test("encode/decode UInt64") {
-    val codec = uint64
-    Seq(
-      UInt64(hex"ffffffffffffffff"),
-      UInt64(hex"fffffffffffffffe"),
-      UInt64(hex"efffffffffffffff"),
-      UInt64(hex"effffffffffffffe")
-    ).map(value => {
-      assert(codec.decode(codec.encode(value).require).require.value === value)
-    })
+  test("encode/decode with prependmac codec") {
+    val mac = Hmac256(ByteVector32.Zeroes)
+    val testCases = Seq(
+      (uint64, UInt64(561), hex"d5b500b8843e19a34d8ab54740db76a7ea597e4ff2ada3827420f87c7e60b7c6 0000000000000231"),
+      (varint, UInt64(65535), hex"71e17e5b97deb6916f7ad97a53650769d4e4f0b1e580ff35ca332200d61e765c fdffff")
+    )
+
+    for ((codec, expected, bin) <- testCases) {
+      val macCodec = prependmac(codec, mac)
+      val decoded = macCodec.decode(bin.toBitVector).require.value
+      assert(decoded === expected)
+
+      val encoded = macCodec.encode(expected).require.toByteVector
+      assert(encoded === bin)
+    }
   }
 
 }
