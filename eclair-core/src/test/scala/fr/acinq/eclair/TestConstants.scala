@@ -21,6 +21,7 @@ import java.sql.{Connection, DriverManager}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
@@ -40,6 +41,18 @@ object TestConstants {
   val feeratePerKw = 10000L
   val emptyOnionPacket = wire.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
 
+  class TestFeeEstimator extends FeeEstimator {
+    private var currentFeerates = FeeratesPerKw.single(feeratePerKw)
+
+    override def getFeeratePerKb(target: Int): Long = feerateKw2KB(currentFeerates.feePerBlock(target))
+
+    override def getFeeratePerKw(target: Int): Long = currentFeerates.feePerBlock(target)
+
+    def setFeerate(feeratesPerKw: FeeratesPerKw): Unit = {
+      currentFeerates = feeratesPerKw
+    }
+  }
+
   def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
 
   def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.databaseByConnections(connection, connection, connection)
@@ -58,6 +71,12 @@ object TestConstants {
       localFeatures = ByteVector(0),
       overrideFeatures = Map.empty,
       dustLimitSatoshis = 1100,
+      onChainFeeConf = OnChainFeeConf(
+        feeTargets = FeeTargets(6, 2, 2, 6),
+        feeEstimator = new TestFeeEstimator,
+        maxFeerateMismatch = 1.5,
+        updateFeeMinDiffRatio = 0.1
+      ),
       maxHtlcValueInFlightMsat = UInt64(150000000),
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = 144,
@@ -66,7 +85,6 @@ object TestConstants {
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
       maxToLocalDelayBlocks = 1000,
-      smartfeeNBlocks = 3,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
@@ -76,8 +94,6 @@ object TestConstants {
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
-      maxFeerateMismatch = 1.5,
-      updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
@@ -125,6 +141,12 @@ object TestConstants {
       localFeatures = ByteVector.empty, // no announcement
       overrideFeatures = Map.empty,
       dustLimitSatoshis = 1000,
+      onChainFeeConf = OnChainFeeConf(
+        feeTargets = FeeTargets(6, 2, 2, 6),
+        feeEstimator = new TestFeeEstimator,
+        maxFeerateMismatch = 1.0,
+        updateFeeMinDiffRatio = 0.1
+      ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
       expiryDeltaBlocks = 144,
@@ -133,7 +155,6 @@ object TestConstants {
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
       maxToLocalDelayBlocks = 1000,
-      smartfeeNBlocks = 3,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
@@ -143,8 +164,6 @@ object TestConstants {
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
-      maxFeerateMismatch = 1.0,
-      updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,

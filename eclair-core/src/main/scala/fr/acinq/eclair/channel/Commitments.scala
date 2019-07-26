@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._
@@ -321,7 +322,7 @@ object Commitments {
     (commitments1, fee)
   }
 
-  def receiveFee(commitments: Commitments, fee: UpdateFee, maxFeerateMismatch: Double): Commitments = {
+  def receiveFee(commitments: Commitments, feeEstimator: FeeEstimator, feeTargets: FeeTargets, fee: UpdateFee, maxFeerateMismatch: Double): Commitments = {
     if (commitments.localParams.isFunder) {
       throw FundeeCannotSendUpdateFee(commitments.channelId)
     }
@@ -330,7 +331,7 @@ object Commitments {
       throw FeerateTooSmall(commitments.channelId, remoteFeeratePerKw = fee.feeratePerKw)
     }
 
-    val localFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
+    val localFeeratePerKw = feeEstimator.getFeeratePerKw(target = feeTargets.commitmentBlockTarget)
     if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, maxFeerateMismatch)) {
       throw FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw)
     }

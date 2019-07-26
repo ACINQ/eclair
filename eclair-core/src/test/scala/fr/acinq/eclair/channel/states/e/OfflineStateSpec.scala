@@ -474,7 +474,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val aliceCommitTx = aliceStateData.commitments.localCommit.publishableTxs.commitTx.tx
 
     val localFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
-    val tooHighFeeratePerKw = ((TestConstants.Alice.nodeParams.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
+    val tooHighFeeratePerKw = ((alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
     val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
 
     // alice is funder
@@ -496,7 +496,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val bobCommitTx = bobStateData.commitments.localCommit.publishableTxs.commitTx.tx
 
     val localFeeratePerKw = bobStateData.commitments.localCommit.spec.feeratePerKw
-    val tooHighFeeratePerKw = ((TestConstants.Bob.nodeParams.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
+    val tooHighFeeratePerKw = ((bob.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
     val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
 
     // bob is fundee
