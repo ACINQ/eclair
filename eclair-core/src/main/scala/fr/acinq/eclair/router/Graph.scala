@@ -230,8 +230,8 @@ object Graph {
           val newMinimumKnownWeight = edgeWeight(edge, currentWeight, initialWeight.length == 0 && neighbor == sourceNode, currentBlockHeight, wr)
 
           // test for ignored edges
-          if (edge.update.htlcMaximumMsat.forall(newMinimumKnownWeight.cost + amountMsat <= _) &&
-            newMinimumKnownWeight.cost + amountMsat >= edge.update.htlcMinimumMsat &&
+          if (edge.update.htlcMaximumMsat.forall(newMinimumKnownWeight.cost <= _) &&
+            newMinimumKnownWeight.cost >= edge.update.htlcMinimumMsat &&
             boundaries(newMinimumKnownWeight) && // check if this neighbor edge would break off the 'boundaries'
             !ignoredEdges.contains(edge.desc)
           ) {
