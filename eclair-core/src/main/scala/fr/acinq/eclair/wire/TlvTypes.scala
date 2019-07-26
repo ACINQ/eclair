@@ -48,6 +48,7 @@ case class GenericTlv(tag: UInt64, value: ByteVector) extends Tlv
 case class TlvStream[T <: Tlv](records: Traversable[T], unknown: Traversable[GenericTlv] = Nil)
 
 object TlvStream {
+  def empty[T <: Tlv] = TlvStream[T](Nil, Nil)
 
   def apply[T <: Tlv](records: T*): TlvStream[T] = TlvStream(records, Nil)
 

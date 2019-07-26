@@ -220,7 +220,7 @@ object LightningMessageCodecs {
     Codec(
       ("chainHash" | bytes32) ::
         ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
-        ("tlvStream_opt" | optional(bitsRemaining, QueryShortChannelIdsTlv.codec))
+        ("tlvStream_opt" | QueryShortChannelIdsTlv.codec)
     ).as[QueryShortChannelIds]
   }
 
@@ -229,14 +229,12 @@ object LightningMessageCodecs {
       ("complete" | byte)
     ).as[ReplyShortChannelIdsEnd]
 
- // val queryChannelRangeExtensionCodec: Codec[QueryChannelRangeExtension] = Codec(("flag" | varintoverflow)).as[QueryChannelRangeExtension]
-
   val queryChannelRangeCodec: Codec[QueryChannelRange] = {
     Codec(
       ("chainHash" | bytes32) ::
         ("firstBlockNum" | uint32) ::
         ("numberOfBlocks" | uint32) ::
-        ("tlvStream_opt" | optional(bitsRemaining, QueryChannelRangeTlv.codec))
+        ("tlvStream" | QueryChannelRangeTlv.codec)
       ).as[QueryChannelRange]
   }
 
@@ -247,7 +245,7 @@ object LightningMessageCodecs {
         ("numberOfBlocks" | uint32) ::
         ("complete" | byte) ::
         ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
-        ("tlvStream_opt" | optional(bitsRemaining, ReplyChannelRangeTlv.codec))
+        ("tlvStream" | ReplyChannelRangeTlv.codec)
       ).as[ReplyChannelRange]
   }
 
