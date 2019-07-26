@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,7 +63,8 @@ class EarnDotComFeeProviderSpec extends FunSuite with Logging {
       blocks_6 = 230 * 1000,
       blocks_12 = 140 * 1000,
       blocks_36 = 60 * 1000,
-      blocks_72 = 40 * 1000)
+      blocks_72 = 40 * 1000,
+      blocks_144 = 10 * 1000)
     assert(feerates === ref)
   }
 

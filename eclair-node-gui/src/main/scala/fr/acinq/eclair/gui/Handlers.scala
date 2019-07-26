@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 
 package fr.acinq.eclair.gui
+
+import java.util.UUID
 
 import akka.pattern.{AskTimeoutException, ask}
 import akka.util.Timeout
@@ -86,10 +88,10 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     (for {
       kit <- fKit
       sendPayment = req.minFinalCltvExpiry match {
-        case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo)
-        case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiry = minFinalCltvExpiry)
+        case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, maxAttempts = kit.nodeParams.maxPaymentAttempts)
+        case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiry = minFinalCltvExpiry, maxAttempts = kit.nodeParams.maxPaymentAttempts)
       }
-      res <- (kit.paymentInitiator ? sendPayment).mapTo[PaymentResult]
+      res <- (kit.paymentInitiator ? sendPayment).mapTo[UUID]
     } yield res).recover {
       // completed payment will be handled by the GUIUpdater by listening to PaymentSucceeded/PaymentFailed events
       case _: AskTimeoutException =>

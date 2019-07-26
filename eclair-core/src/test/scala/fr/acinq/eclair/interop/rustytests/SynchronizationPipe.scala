@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,12 @@
 package fr.acinq.eclair.interop.rustytests
 
 import java.io.{BufferedWriter, File, FileWriter}
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.TestUtils
+import fr.acinq.eclair.{TestConstants, TestUtils}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.{IN, OUT}
 
@@ -56,7 +57,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
 
     script match {
       case offer(x, amount, rhash) :: rest =>
-        resolve(x) ! CMD_ADD_HTLC(amount.toInt, ByteVector32.fromValidHex(rhash), 144)
+        resolve(x) ! CMD_ADD_HTLC(amount.toInt, ByteVector32.fromValidHex(rhash), 144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
         exec(rest, a, b)
       case fulfill(x, id, r) :: rest =>
         resolve(x) ! CMD_FULFILL_HTLC(id.toInt, ByteVector32.fromValidHex(r))

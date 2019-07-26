@@ -8,7 +8,7 @@ RUN apk add --no-cache curl tar bash
 
 ARG MAVEN_VERSION=3.6.0
 ARG USER_HOME_DIR="/root"
-ARG SHA=ce50b1c91364cb77efe3776f756a6d92b76d9038b0a0782f7d53acf1e997a14d
+ARG SHA=6a1b346af36a1f1a491c1c1a141667c5de69b42e6611d3687df26868bc0f4637
 ARG BASE_URL=https://apache.osuosl.org/maven/maven-3/${MAVEN_VERSION}/binaries
 
 RUN mkdir -p /usr/share/maven /usr/share/maven/ref \
@@ -44,6 +44,14 @@ RUN mvn package -pl eclair-node -am -DskipTests -Dgit.commit.id=notag -Dgit.comm
 # We currently use a debian image for runtime because of some jni-related issue with sqlite
 FROM openjdk:8u181-jre-slim
 WORKDIR /app
+
+# install jq for eclair-cli
+RUN apt-get update && apt-get install -y bash jq curl
+
+# copy and install eclair-cli executable
+COPY --from=BUILD /usr/src/eclair-core/eclair-cli .
+RUN chmod +x eclair-cli && mv eclair-cli /sbin/eclair-cli
+
 # Eclair only needs the eclair-node-*.jar to run
 COPY --from=BUILD /usr/src/eclair-node/target/eclair-node-*.jar .
 RUN ln `ls` eclair-node.jar

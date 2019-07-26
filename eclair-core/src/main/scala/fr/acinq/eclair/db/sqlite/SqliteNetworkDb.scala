@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   val CURRENT_VERSION = 1
 
   using(sqlite.createStatement()) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
+    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
     statement.execute("PRAGMA foreign_keys = ON")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, data BLOB NOT NULL, capacity_sat INTEGER NOT NULL)")
@@ -45,7 +45,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
 
   override def addNode(n: NodeAnnouncement): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO nodes VALUES (?, ?)")) { statement =>
-      statement.setBytes(1, n.nodeId.toBin.toArray)
+      statement.setBytes(1, n.nodeId.value.toArray)
       statement.setBytes(2, nodeAnnouncementCodec.encode(n).require.toByteArray)
       statement.executeUpdate()
     }
@@ -54,14 +54,22 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def updateNode(n: NodeAnnouncement): Unit = {
     using(sqlite.prepareStatement("UPDATE nodes SET data=? WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeAnnouncementCodec.encode(n).require.toByteArray)
-      statement.setBytes(2, n.nodeId.toBin.toArray)
+      statement.setBytes(2, n.nodeId.value.toArray)
       statement.executeUpdate()
+    }
+  }
+
+  override def getNode(nodeId: Crypto.PublicKey): Option[NodeAnnouncement] = {
+    using(sqlite.prepareStatement("SELECT data FROM nodes WHERE node_id=?")) { statement =>
+      statement.setBytes(1, nodeId.value.toArray)
+      val rs = statement.executeQuery()
+      codecSequence(rs, nodeAnnouncementCodec).headOption
     }
   }
 
   override def removeNode(nodeId: Crypto.PublicKey): Unit = {
     using(sqlite.prepareStatement("DELETE FROM nodes WHERE node_id=?")) { statement =>
-      statement.setBytes(1, nodeId.toBin.toArray)
+      statement.setBytes(1, nodeId.value.toArray)
       statement.executeUpdate()
     }
   }

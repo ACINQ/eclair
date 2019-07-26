@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package fr.acinq.eclair
 
 import akka.actor.{ActorNotFound, ActorSystem, PoisonPill}
 import akka.testkit.TestKit
+import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, fixture}
 
@@ -31,7 +32,6 @@ abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixtur
 
   override def beforeAll {
     Globals.blockCount.set(400000)
-    Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
   }
 
   override def afterEach() {
@@ -44,7 +44,6 @@ abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixtur
 
   override def afterAll {
     TestKit.shutdownActorSystem(system)
-    Globals.feeratesPerKw.set(FeeratesPerKw.single(1))
   }
 
 }

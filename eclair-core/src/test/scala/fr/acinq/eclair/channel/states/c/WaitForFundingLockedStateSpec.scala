@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,8 +57,10 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
       alice2blockchain.expectMsgType[WatchConfirmed]
       bob2blockchain.expectMsgType[WatchSpent]
       bob2blockchain.expectMsgType[WatchConfirmed]
-      alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
-      bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+      val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
+      alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
+      bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
       alice2blockchain.expectMsgType[WatchLost]
       bob2blockchain.expectMsgType[WatchLost]
       alice2bob.expectMsgType[FundingLocked]

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,7 +75,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
   def main(m: Map[ActorRef, ChannelPaneController]): Receive = {
 
-    case ChannelCreated(channel, peer, remoteNodeId, isFunder, temporaryChannelId) =>
+    case ChannelCreated(channel, peer, remoteNodeId, isFunder, temporaryChannelId, _, _) =>
       context.watch(channel)
       val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, temporaryChannelId)
       runInGuiThread(() => mainController.channelBox.getChildren.addAll(root))

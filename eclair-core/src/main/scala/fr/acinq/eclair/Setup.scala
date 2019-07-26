@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
-import fr.acinq.eclair.db.Databases
+import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
@@ -88,14 +88,20 @@ class Setup(datadir: File,
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
+  val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
 
   val database = db match {
     case Some(d) => d
-    case None => Databases.sqliteJDBC(new File(datadir, chain))
+    case None => Databases.sqliteJDBC(chaindir)
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database)
+  val feeEstimator = new FeeEstimator {
+    override def getFeeratePerKb(target: Int): Long = Globals.feeratesPerKB.get().feePerBlock(target)
+    override def getFeeratePerKw(target: Int): Long = Globals.feeratesPerKw.get().feePerBlock(target)
+  }
+
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database, feeEstimator)
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),
@@ -123,6 +129,7 @@ class Setup(datadir: File,
         // Make sure wallet support is enabled in bitcoind.
         _ <- bitcoinClient.invoke("getbalance").recover { case _ => throw BitcoinWalletDisabledException }
         progress = (json \ "verificationprogress").extract[Double]
+        ibd = (json \ "initialblockdownload").extract[Boolean]
         blocks = (json \ "blocks").extract[Long]
         headers = (json \ "headers").extract[Long]
         chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(s => ByteVector32.fromValidHex(s)).map(_.reverse)
@@ -132,16 +139,17 @@ class Setup(datadir: File,
             .filter(value => (value \ "spendable").extract[Boolean])
             .map(value => (value \ "address").extract[String])
         }
-      } yield (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
+      } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
       // blocking sanity checks
-      val (progress, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
+      val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
       assert(bitcoinVersion >= 170000, "Eclair requires Bitcoin Core 0.17.0 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
         assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Make sure that all your UTXOS are segwit UTXOS and not p2pkh (check out our README for more details)")
       }
-      assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress")
-      assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks")
+      assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
+      assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
+      assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       val addresses = config.hasPath("electrum") match {
@@ -178,20 +186,26 @@ class Setup(datadir: File,
       tcpBound = Promise[Done]()
       routerInitialized = Promise[Done]()
 
-      defaultFeerates = FeeratesPerKB(
-        block_1 = config.getLong("default-feerates.delay-blocks.1"),
-        blocks_2 = config.getLong("default-feerates.delay-blocks.2"),
-        blocks_6 = config.getLong("default-feerates.delay-blocks.6"),
-        blocks_12 = config.getLong("default-feerates.delay-blocks.12"),
-        blocks_36 = config.getLong("default-feerates.delay-blocks.36"),
-        blocks_72 = config.getLong("default-feerates.delay-blocks.72")
-      )
+      defaultFeerates = {
+        val confDefaultFeerates = FeeratesPerKB(
+          block_1 = config.getLong("on-chain-fees.default-feerates.1"),
+          blocks_2 = config.getLong("on-chain-fees.default-feerates.2"),
+          blocks_6 = config.getLong("on-chain-fees.default-feerates.6"),
+          blocks_12 = config.getLong("on-chain-fees.default-feerates.12"),
+          blocks_36 = config.getLong("on-chain-fees.default-feerates.36"),
+          blocks_72 = config.getLong("on-chain-fees.default-feerates.72"),
+          blocks_144 = config.getLong("on-chain-fees.default-feerates.144")
+        )
+        Globals.feeratesPerKB.set(confDefaultFeerates)
+        Globals.feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
+        confDefaultFeerates
+      }
       minFeeratePerByte = config.getLong("min-feerate")
       smoothFeerateWindow = config.getInt("smooth-feerate-window")
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case (_, Bitcoind(bitcoinClient)) =>
-          new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+          new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
         case _ =>
           new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
       }
@@ -223,8 +237,6 @@ class Setup(datadir: File,
       wallet = bitcoin match {
         case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
         case Electrum(electrumClient) =>
-          // TODO: DRY
-          val chaindir = new File(datadir, chain)
           val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
           val walletDb = new SqliteWalletDb(sqlite)
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
@@ -234,7 +246,14 @@ class Setup(datadir: File,
       _ = wallet.getFinalAddress.map {
         case address => logger.info(s"initial wallet address=$address")
       }
+      // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 
+      backupHandler = system.actorOf(SimpleSupervisor.props(
+        BackupHandler.props(
+          nodeParams.db,
+          new File(chaindir, "eclair.sqlite.bak"),
+          if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
+        ),"backuphandler", SupervisorStrategy.Resume))
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
         case "local" => LocalPaymentHandler.props(nodeParams)
@@ -245,7 +264,7 @@ class Setup(datadir: File,
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
-      paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.nodeId, router, register), "payment-initiator", SupervisorStrategy.Restart))
+      paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, register), "payment-initiator", SupervisorStrategy.Restart))
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
 
       kit = Kit(
@@ -280,22 +299,12 @@ class Setup(datadir: File,
           case "" => throw EmptyAPIPasswordException
           case valid => valid
         }
-        val apiRoute = if (!config.getBoolean("api.use-old-api")) {
-          new Service {
-            override val actorSystem = kit.system
-            override val mat = materializer
-            override val password = apiPassword
-            override val eclairApi: Eclair = new EclairImpl(kit)
-          }.route
-        } else {
-          new OldService {
-            override val scheduler = system.scheduler
-            override val password = apiPassword
-            override val getInfoResponse: Future[GetInfoResponse] = Future.successful(getInfo)
-            override val appKit: Kit = kit
-            override val socketHandler = makeSocketHandler(system)(materializer)
-          }.route
-        }
+        val apiRoute = new Service {
+          override val actorSystem = kit.system
+          override val mat = materializer
+          override val password = apiPassword
+          override val eclairApi: Eclair = new EclairImpl(kit)
+        }.route
         val httpBound = Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
           case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
         }

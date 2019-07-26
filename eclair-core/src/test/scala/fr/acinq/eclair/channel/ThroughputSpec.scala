@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel
 
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicLong
 
@@ -50,7 +51,7 @@ class ThroughputSpec extends FunSuite {
         case ('add, tgt: ActorRef) =>
           val r = randomBytes32
           val h = Crypto.sha256(r)
-          tgt ! CMD_ADD_HTLC(1, h, 1)
+          tgt ! CMD_ADD_HTLC(1, h, 1, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
           context.become(run(h2r + (h -> r)))
 
         case ('sig, tgt: ActorRef) => tgt ! CMD_SIGN

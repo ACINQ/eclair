@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -167,13 +167,11 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
         data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
         advertiseTransactions(data)
-        // tell everyone we're ready
         goto(RUNNING) using persistAndNotify(data)
       } else {
         client ! ElectrumClient.GetHeaders(data.blockchain.tip.height + 1, RETARGETING_PERIOD)
         log.info(s"syncing headers from ${data.blockchain.height} to ${height}, ready=${data.isReady(params.swipeRange)}")
-        // tell everyone we're ready while we catch up
-        goto(SYNCING) using persistAndNotify(data)
+        goto(SYNCING) using data
       }
   }
 
@@ -238,7 +236,9 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
       }
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash) == Some(status) =>
-      stay using persistAndNotify(data) // we already have it
+      val missing = data.missingTransactions(scriptHash)
+      missing.foreach(txid => client ! GetTransaction(txid))
+      stay using persistAndNotify(data.copy(pendingHistoryRequests = data.pendingTransactionRequests ++ missing))
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if !data.accountKeyMap.contains(scriptHash) && !data.changeKeyMap.contains(scriptHash) =>
       log.warning(s"received status=$status for scriptHash=$scriptHash which does not match any of our keys")
@@ -367,24 +367,31 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
           goto(DISCONNECTED) using data
       }
 
-    case Event(GetTransactionResponse(tx), data) =>
+    case Event(GetTransactionResponse(tx, context_opt), data) =>
       log.debug(s"received transaction ${tx.txid}")
       data.computeTransactionDelta(tx) match {
         case Some((received, sent, fee_opt)) =>
           log.info(s"successfully connected txid=${tx.txid}")
           context.system.eventStream.publish(TransactionReceived(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt, data.computeTimestamp(tx.txid, params.walletDb)))
           // when we have successfully processed a new tx, we retry all pending txes to see if they can be added now
-          data.pendingTransactions.foreach(self ! GetTransactionResponse(_))
+          data.pendingTransactions.foreach(self ! GetTransactionResponse(_, context_opt))
           val data1 = data.copy(transactions = data.transactions + (tx.txid -> tx), pendingTransactionRequests = data.pendingTransactionRequests - tx.txid, pendingTransactions = Nil)
           stay using persistAndNotify(data1)
         case None =>
           // missing parents
           log.info(s"couldn't connect txid=${tx.txid}")
-          val data1 = data.copy(pendingTransactions = data.pendingTransactions :+ tx)
+          val data1 = data.copy(pendingTransactionRequests = data.pendingTransactionRequests - tx.txid, pendingTransactions = data.pendingTransactions :+ tx)
           stay using persistAndNotify(data1)
       }
 
-    case Event(response@GetMerkleResponse(txid, _, height, _), data) =>
+    case Event(ServerError(GetTransaction(txid, _), error), data) if data.pendingTransactionRequests.contains(txid) =>
+      // server tells us that txid belongs to our wallet history, but cannot provide tx ?
+      log.error(s"server cannot find history tx $txid: $error")
+      sender ! PoisonPill
+      goto(DISCONNECTED) using data
+
+
+    case Event(response@GetMerkleResponse(txid, _, height, _, _), data) =>
       data.blockchain.getHeader(height).orElse(params.walletDb.getHeader(height)) match {
         case Some(header) if header.hashMerkleRoot == response.root =>
           log.info(s"transaction $txid has been verified")
@@ -448,23 +455,10 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 
     case Event(IsDoubleSpent(tx), data) =>
       // detect if one of our transaction (i.e a transaction that spends from our wallet) has been double-spent
-      val isDoubleSpent = data.heights.get(tx.txid) match {
-        case Some(_) =>
-          // this tx is either in the mempool or has been confirmed, which means that it hasn't been confirmed
-          false
-        case None =>
-          // tx has not been published and is not in the mempool
-
-          // list all our utxos that have been used
-          val ourSpentUtxos = data.transactions.values.flatMap(_.txIn).map(_.outPoint).toSet
-
-          // list the tx utxos
-          val utxos = tx.txIn.map(_.outPoint).toSet
-
-          // check if one of our transactions spends the same inputs as our tx, if this is the case, then the tx
-          // has been double spent
-          utxos.exists(utxo => ourSpentUtxos.contains(utxo))
-      }
+      val isDoubleSpent = data.heights
+        .filter { case (_, height) => computeDepth(data.blockchain.height, height) >= 2 } // we only consider tx that have been confirmed
+        .flatMap { case (txid, _) => data.transactions.get(txid) } // we get the full tx
+        .exists(spendingTx => spendingTx.txIn.map(_.outPoint).toSet.intersect(tx.txIn.map(_.outPoint).toSet).nonEmpty && spendingTx.txid != tx.txid) // look for a tx that spend the same utxos and has a different txid
       stay() replying IsDoubleSpentResponse(tx, isDoubleSpent)
 
     case Event(ElectrumClient.ElectrumDisconnected, data) =>
@@ -665,7 +659,13 @@ object ElectrumWallet {
     } getOrElse None
   }
 
-  def computeDepth(currentHeight: Long, txHeight: Long): Long = currentHeight - txHeight + 1
+  def computeDepth(currentHeight: Long, txHeight: Long): Long =
+    if (txHeight <= 0) {
+      // txHeight is 0 if tx in unconfirmed, and -1 if one of its inputs is unconfirmed
+      0
+    } else {
+      currentHeight - txHeight + 1
+    }
 
   case class Utxo(key: ExtendedPrivateKey, item: ElectrumClient.UnspentItem) {
     def outPoint: OutPoint = item.outPoint
@@ -729,6 +729,16 @@ object ElectrumWallet {
     def readyMessage: WalletReady = {
       val (confirmed, unconfirmed) = balance
       WalletReady(confirmed, unconfirmed, blockchain.tip.height, blockchain.tip.header.time)
+    }
+
+    /**
+      *
+      * @return the ids of transactions that belong to our wallet history for this script hash but that we don't have
+      *         and have no pending requests for.
+      */
+    def missingTransactions(scriptHash: ByteVector32): Set[ByteVector32] = {
+      val txids = history.getOrElse(scriptHash, List()).map(_.tx_hash).filterNot(txhash => transactions.contains(txhash)).toSet
+      txids -- pendingTransactionRequests
     }
 
     /**
@@ -913,7 +923,7 @@ object ElectrumWallet {
         // we use dummy signature here, because the result is only used to estimate fees
         val sig = ByteVector.fill(71)(1)
         val sigScript = Script.write(OP_PUSHDATA(Script.write(Script.pay2wpkh(utxo.key.publicKey))) :: Nil)
-        val witness = ScriptWitness(sig :: utxo.key.publicKey.toBin :: Nil)
+        val witness = ScriptWitness(sig :: utxo.key.publicKey.value :: Nil)
         TxIn(utxo.outPoint, signatureScript = sigScript, sequence = TxIn.SEQUENCE_FINAL, witness = witness)
       })
 
@@ -997,7 +1007,7 @@ object ElectrumWallet {
         val key = utxo.key
         val sig = Transaction.signInput(tx, i, Script.pay2pkh(key.publicKey), SIGHASH_ALL, Satoshi(utxo.item.value), SigVersion.SIGVERSION_WITNESS_V0, key.privateKey)
         val sigScript = Script.write(OP_PUSHDATA(Script.write(Script.pay2wpkh(key.publicKey))) :: Nil)
-        val witness = ScriptWitness(sig :: key.publicKey.toBin :: Nil)
+        val witness = ScriptWitness(sig :: key.publicKey.value :: Nil)
         txIn.copy(signatureScript = sigScript, witness = witness)
       })
     }

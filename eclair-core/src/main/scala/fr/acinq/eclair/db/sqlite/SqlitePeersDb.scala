@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,18 +33,18 @@ import SqliteUtils.ExtendedResultSet._
   val CURRENT_VERSION = 1
 
   using(sqlite.createStatement()) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
+    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
   }
 
   override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeaddress: NodeAddress): Unit = {
-    val data = LightningMessageCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
+    val data = CommonCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
     using(sqlite.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
       update.setBytes(1, data)
-      update.setBytes(2, nodeId.toBin.toArray)
+      update.setBytes(2, nodeId.value.toArray)
       if (update.executeUpdate() == 0) {
         using(sqlite.prepareStatement("INSERT INTO peers VALUES (?, ?)")) { statement =>
-          statement.setBytes(1, nodeId.toBin.toArray)
+          statement.setBytes(1, nodeId.value.toArray)
           statement.setBytes(2, data)
           statement.executeUpdate()
         }
@@ -54,7 +54,7 @@ import SqliteUtils.ExtendedResultSet._
 
   override def removePeer(nodeId: Crypto.PublicKey): Unit = {
     using(sqlite.prepareStatement("DELETE FROM peers WHERE node_id=?")) { statement =>
-      statement.setBytes(1, nodeId.toBin.toArray)
+      statement.setBytes(1, nodeId.value.toArray)
       statement.executeUpdate()
     }
   }
@@ -65,7 +65,7 @@ import SqliteUtils.ExtendedResultSet._
       var m: Map[PublicKey, NodeAddress] = Map()
       while (rs.next()) {
         val nodeid = PublicKey(rs.getByteVector("node_id"))
-        val nodeaddress = LightningMessageCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
+        val nodeaddress = CommonCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
         m += (nodeid -> nodeaddress)
       }
       m

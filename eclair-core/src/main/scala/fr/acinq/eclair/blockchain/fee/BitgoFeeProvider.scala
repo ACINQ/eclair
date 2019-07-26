@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -72,6 +72,7 @@ object BitgoFeeProvider {
       blocks_6 = extractFeerate(feeRanges, 6),
       blocks_12 = extractFeerate(feeRanges, 12),
       blocks_36 = extractFeerate(feeRanges, 36),
-      blocks_72 = extractFeerate(feeRanges, 72))
+      blocks_72 = extractFeerate(feeRanges, 72),
+      blocks_144 = extractFeerate(feeRanges, 144))
 
 }

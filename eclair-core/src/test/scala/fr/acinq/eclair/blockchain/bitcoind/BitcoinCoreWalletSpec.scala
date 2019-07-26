@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -271,6 +271,12 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     // let's publish tx2
     bitcoinClient.invoke("sendrawtransaction", tx2.toString).pipeTo(sender.ref)
     val JString(_) = sender.expectMsgType[JValue]
+    // tx2 hasn't been confirmed so tx1 is still not considered double-spent
+    wallet.doubleSpent(tx1).pipeTo(sender.ref)
+    sender.expectMsg(false)
+    // let's confirm tx2
+    sender.send(bitcoincli, BitcoinReq("generate", 1))
+    sender.expectMsgType[JValue](10 seconds)
     // this time tx1 has been double spent
     wallet.doubleSpent(tx1).pipeTo(sender.ref)
     sender.expectMsg(true)

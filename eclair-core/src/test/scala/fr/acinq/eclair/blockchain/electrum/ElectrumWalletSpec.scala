@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -88,7 +88,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
   }
 
   test("wait until wallet is ready") {
-    electrumClient = system.actorOf(Props(new ElectrumClientPool(Set(ElectrumServerAddress(new InetSocketAddress("localhost", 50001), SSL.OFF)))))
+    electrumClient = system.actorOf(Props(new ElectrumClientPool(Set(ElectrumServerAddress(new InetSocketAddress("localhost", electrumPort), SSL.OFF)))))
     wallet = system.actorOf(Props(new ElectrumWallet(seed, electrumClient, WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = Satoshi(5000)))), "wallet")
     val probe = TestProbe()
     awaitCond({
@@ -310,19 +310,32 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.send(wallet, IsDoubleSpent(tx2))
     probe.expectMsg(IsDoubleSpentResponse(tx2, false))
 
-    // publish and confirm tx1
+    // publish tx1
     probe.send(wallet, BroadcastTransaction(tx1))
     probe.expectMsg(BroadcastTransactionResponse(tx1, None))
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
+
+    awaitCond({
+      probe.send(wallet, GetData)
+      val data = probe.expectMsgType[GetDataResponse].state
+      data.heights.contains(tx1.txid) && data.transactions.contains(tx1.txid)
+    }, max = 30 seconds, interval = 1 second)
+
+    // as long as tx1 is unconfirmed tx2 won't be considered double-spent
+    probe.send(wallet, IsDoubleSpent(tx1))
+    probe.expectMsg(IsDoubleSpentResponse(tx1, false))
+    probe.send(wallet, IsDoubleSpent(tx2))
+    probe.expectMsg(IsDoubleSpentResponse(tx2, false))
+
+    probe.send(bitcoincli, BitcoinReq("generate", 2))
     probe.expectMsgType[JValue]
 
     awaitCond({
-      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
-      logger.info(s"current balance is $confirmed $unconfirmed")
-      confirmed1 < confirmed - Btc(1)
+      probe.send(wallet, GetData)
+      val data = probe.expectMsgType[GetDataResponse].state
+      data.heights.exists { case (txid, height) => txid == tx1.txid && data.transactions.contains(txid) && ElectrumWallet.computeDepth(data.blockchain.height, height) > 1 }
     }, max = 30 seconds, interval = 1 second)
 
-    // tx2 is double spent
+    // tx2 is double-spent
     probe.send(wallet, IsDoubleSpent(tx1))
     probe.expectMsg(IsDoubleSpentResponse(tx1, false))
     probe.send(wallet, IsDoubleSpent(tx2))

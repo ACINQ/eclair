@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package fr.acinq.eclair.crypto
 import java.math.BigInteger
 import java.nio.ByteOrder
 
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Crypto, Protocol}
 import fr.acinq.eclair.randomBytes
 import grizzled.slf4j.Logging
@@ -54,7 +55,7 @@ object Noise {
 
     override def generateKeyPair(priv: ByteVector): KeyPair = {
       require(priv.length == 32)
-      KeyPair(Crypto.publicKeyFromPrivateKey(priv :+ 1.toByte), priv)
+      KeyPair(PrivateKey(priv).publicKey.value, priv)
     }
 
     /**
@@ -82,7 +83,7 @@ object Noise {
   trait CipherFunctions {
     def name: String
 
-    //Encrypts plaintext using the cipher key k of 32 bytes and an 8-byte unsigned integer nonce n which must be unique
+    // Encrypts plaintext using the cipher key k of 32 bytes and an 8-byte unsigned integer nonce n which must be unique
     // for the key k. Returns the ciphertext. Encryption must be done with an "AEAD" encryption mode with the associated
     // data ad (using the terminology from [1]) and returns a ciphertext that is the same size as the plaintext
     // plus 16 bytes for authentication data. The entire ciphertext must be indistinguishable from random if the key is secret.
@@ -99,7 +100,7 @@ object Noise {
     // as specified in BOLT #8
     def nonce(n: Long): ByteVector = ByteVector.fill(4)(0) ++ Protocol.writeUInt64(n, ByteOrder.LITTLE_ENDIAN)
 
-    //Encrypts plaintext using the cipher key k of 32 bytes and an 8-byte unsigned integer nonce n which must be unique
+    // Encrypts plaintext using the cipher key k of 32 bytes and an 8-byte unsigned integer nonce n which must be unique.
     override def encrypt(k: ByteVector, n: Long, ad: ByteVector, plaintext: ByteVector): ByteVector = {
       val (ciphertext, mac) = ChaCha20Poly1305.encrypt(k, nonce(n), plaintext, ad)
       ciphertext ++ mac
@@ -329,7 +330,7 @@ object Noise {
       *         contain 2 cipherstates than can be used to encrypt/decrypt further communication
       */
     def write(payload: ByteVector): (HandshakeStateReader, ByteVector, Option[(CipherState, CipherState, ByteVector)]) = {
-      require(!messages.isEmpty)
+      require(messages.nonEmpty)
       logger.debug(s"write($payload)")
 
       val (writer1, buffer1) = messages.head.foldLeft(this -> ByteVector.empty) {
@@ -377,7 +378,7 @@ object Noise {
       *
       * @param message input message
       * @return a (writer, payload, Option[(cipherstate, cipherstate)] tuple.
-      *         The payload contains the original payload used be the sender and a writer that will be used to create the
+      *         The payload contains the original payload used by the sender and a writer that will be used to create the
       *         next message. When the handshake is over (i.e. there are no more handshake patterns to process) the last item will
       *         contain 2 cipherstates than can be used to encrypt/decrypt further communication
       */
@@ -433,12 +434,12 @@ object Noise {
 
     def initializeWriter(handshakePattern: HandshakePattern, prologue: ByteVector, s: KeyPair, e: KeyPair, rs: ByteVector, re: ByteVector, dh: DHFunctions, cipher: CipherFunctions, hash: HashFunctions, byteStream: ByteStream = RandomBytes): HandshakeStateWriter = {
       val symmetricState = makeSymmetricState(handshakePattern, prologue, dh, cipher, hash)
-      val symmetricState1 = (handshakePattern.initiatorPreMessages).foldLeft(symmetricState) {
+      val symmetricState1 = handshakePattern.initiatorPreMessages.foldLeft(symmetricState) {
         case (state, E) => state.mixHash(e.pub)
         case (state, S) => state.mixHash(s.pub)
         case _ => throw new RuntimeException("invalid pre-message")
       }
-      val symmetricState2 = (handshakePattern.responderPreMessages).foldLeft(symmetricState1) {
+      val symmetricState2 = handshakePattern.responderPreMessages.foldLeft(symmetricState1) {
         case (state, E) => state.mixHash(re)
         case (state, S) => state.mixHash(rs)
         case _ => throw new RuntimeException("invalid pre-message")

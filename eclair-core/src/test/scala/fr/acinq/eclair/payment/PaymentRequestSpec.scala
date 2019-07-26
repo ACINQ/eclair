@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ import scodec.bits._
 
 class PaymentRequestSpec extends FunSuite {
 
-  val priv = PrivateKey(hex"e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734", compressed = true)
+  val priv = PrivateKey(hex"e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734")
   val pub = priv.publicKey
   val nodeId = pub
   assert(nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
@@ -63,14 +63,14 @@ class PaymentRequestSpec extends FunSuite {
     assert(string2Bits("pz") === bin"0000100010")
   }
 
-  test("minimal length long") {
+  test("minimal length long, left-padded to be multiple of 5") {
     import scodec.bits._
     assert(long2bits(0) == bin"")
-    assert(long2bits(1) == bin"1")
-    assert(long2bits(42) == bin"101010")
-    assert(long2bits(255) == bin"11111111")
-    assert(long2bits(256) == bin"100000000")
-    assert(long2bits(3600) == bin"111000010000")
+    assert(long2bits(1) == bin"00001")
+    assert(long2bits(42) == bin"0000101010")
+    assert(long2bits(255) == bin"0011111111")
+    assert(long2bits(256) == bin"0100000000")
+    assert(long2bits(3600) == bin"000111000010000")
   }
 
   test("verify that padding is zero") {
@@ -218,13 +218,24 @@ class PaymentRequestSpec extends FunSuite {
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
-  test("expiry is a variable-length unsigned value") {
-    val pr = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(MilliSatoshi(100000L)), ByteVector32(hex"0001020304050607080900010203040506070809000102030405060708090102"),
-      priv, "test", fallbackAddress = None, expirySeconds = Some(21600), timestamp = System.currentTimeMillis() / 1000L)
+  test("correctly serialize/deserialize variable-length tagged fields") {
+    val number = 123456
 
-    val serialized = PaymentRequest write pr
-    val pr1 = PaymentRequest read serialized
-    assert(pr.expiry === Some(21600))
+    val codec = PaymentRequest.Codecs.dataCodec(scodec.codecs.bits).as[PaymentRequest.Expiry]
+    val field = PaymentRequest.Expiry(number)
+
+    assert(field.toLong == number)
+
+    val serializedExpiry = codec.encode(field).require
+    val field1 = codec.decodeValue(serializedExpiry).require
+    assert(field1 == field)
+
+    // Now with a payment request
+    val pr = PaymentRequest(chainHash = Block.LivenetGenesisBlock.hash, amount = Some(MilliSatoshi(123)), paymentHash = ByteVector32(ByteVector.fill(32)(1)), privateKey = priv, description = "Some invoice", expirySeconds = Some(123456), timestamp = 12345)
+
+    val serialized = PaymentRequest.write(pr)
+    val pr1 = PaymentRequest.read(serialized)
+    assert(pr == pr1)
   }
 
   test("ignore unknown tags") {
@@ -249,6 +260,12 @@ class PaymentRequestSpec extends FunSuite {
     val input = "lntb1500n1pwxx94fpp5q3xzmwuvxpkyhz6pvg3fcfxz0259kgh367qazj62af9rs0pw07dsdpa2fjkzep6yp58garswvaz7tmvd9nksarwd9hxw6n0w4kx2tnrdakj7grfwvs8wcqzysxqr23sjzv0d8794te26xhexuc26eswf9sjpv4t8sma2d9y8dmpgf0qseg8259my8tcs6zte7ex0tz4exm5pjezuxrq9u0vjewa02qhedk9x4gppweupu"
 
     assert(PaymentRequest.write(PaymentRequest.read(input.toUpperCase())) == input)
+  }
+
+  test("Pay 1 BTC without multiplier") {
+    val ref = "lnbc11pdkmqhupp5n2ees808r98m0rh4472yyth0c5fptzcxmexcjznrzmq8xald0cgqdqsf4ujqarfwqsxymmccqp2xvtsv5tc743wgctlza8k3zlpxucl7f3kvjnjptv7xz0nkaww307sdyrvgke2w8kmq7dgz4lkasfn0zvplc9aa4gp8fnhrwfjny0j59sq42x9gp"
+    val pr = PaymentRequest.read(ref)
+    assert(pr.amount.contains(MilliSatoshi(100000000000L)))
   }
 
   test("nonreg") {

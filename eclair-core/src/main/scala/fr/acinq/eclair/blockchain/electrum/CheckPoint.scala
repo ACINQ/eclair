@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ import org.json4s.jackson.JsonMethods
 /**
   *
   * @param hash block hash
-  * @param target difficulty target for the next block
+  * @param nextBits difficulty target for the next block
   */
 case class CheckPoint(hash: ByteVector32, nextBits: Long)
 

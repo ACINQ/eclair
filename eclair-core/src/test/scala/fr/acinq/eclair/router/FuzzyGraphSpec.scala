@@ -6,7 +6,7 @@ import java.sql.DriverManager
 import java.util.zip.{GZIPInputStream, GZIPOutputStream, ZipEntry, ZipOutputStream}
 
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
-import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, MilliSatoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.api._
@@ -25,7 +25,7 @@ import scala.collection.mutable
 class FuzzyGraphSpec extends FunSuite {
 
   implicit val serialization = jackson.Serialization
-  implicit val formats = org.json4s.DefaultFormats + new ByteVectorSerializer + new ByteVector32Serializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer + new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer + new PaymentRequestSerializer
+  implicit val formats = org.json4s.DefaultFormats + new ByteVectorSerializer + new ByteVector32Serializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer + new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer + new PaymentRequestSerializer
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
   val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, maxFeeBaseMsat = 21000, maxFeePct = 0.5, routeMaxCltv = 3016, routeMaxLength = 10, ratios = Some(WeightRatios(
@@ -132,7 +132,7 @@ class FuzzyGraphSpec extends FunSuite {
 
       val desc = ChannelDesc(shortChannelId, from, to)
       val update = ChannelUpdate(
-        signature = ByteVector32.Zeroes.bytes,
+        signature = ByteVector64.Zeroes,
         chainHash = ByteVector32.Zeroes,
         shortChannelId = shortChannelId,
         timestamp = 0,
@@ -221,7 +221,7 @@ class FuzzyGraphSpec extends FunSuite {
       val Array(shortChannelId, a, b, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat) = row.split(",")
       val desc = ChannelDesc(ShortChannelId(shortChannelId), PublicKey(ByteVector.fromValidHex(a)), PublicKey(ByteVector.fromValidHex(b)))
       val update = ChannelUpdate(
-        ByteVector32.Zeroes.bytes,
+        ByteVector64.Zeroes,
         ByteVector32.Zeroes,
         ShortChannelId(shortChannelId),
         0,

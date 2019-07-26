@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,19 @@
 
 package fr.acinq.eclair.payment
 
+import java.util.UUID
+
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.bitcoin.{Block, Crypto, DeterministicWallet}
-import fr.acinq.eclair.channel.Channel
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
+import fr.acinq.eclair.channel.{Channel, ChannelVersion, Commitments}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.crypto.Sphinx.{PacketAndSecrets, ParsedPacket}
+import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, PacketAndSecrets}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Hop
-import fr.acinq.eclair.wire.{ChannelUpdate, LightningMessageCodecs, PerHopPayload}
+import fr.acinq.eclair.wire.{ChannelUpdate, OnionCodecs, PerHopPayload}
 import fr.acinq.eclair.{ShortChannelId, TestConstants, nodeFee, randomBytes32}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
-
-import scala.util.Success
 
 /**
   * Created by PM on 31/05/2016.
@@ -66,81 +66,81 @@ class HtlcGenerationSpec extends FunSuite {
     val (_, _, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
     val nodes = hops.map(_.nextNodeId)
     val PacketAndSecrets(packet_b, _) = buildOnion(nodes, payloads, paymentHash)
-    assert(packet_b.serialize.size === Sphinx.PacketLength)
+    assert(packet_b.payload.length === Sphinx.PaymentPacket.PayloadLength)
 
     // let's peel the onion
-    val Success(ParsedPacket(bin_b, packet_c, _)) = Sphinx.parsePacket(priv_b.privateKey, paymentHash, packet_b.serialize)
-    val payload_b = LightningMessageCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
-    assert(packet_c.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_b, packet_c, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, packet_b)
+    val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
+    assert(packet_c.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_b.amtToForward === amount_bc)
     assert(payload_b.outgoingCltvValue === expiry_bc)
 
-    val Success(ParsedPacket(bin_c, packet_d, _)) = Sphinx.parsePacket(priv_c.privateKey, paymentHash, packet_c.serialize)
-    val payload_c = LightningMessageCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
-    assert(packet_d.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_c, packet_d, _)) = Sphinx.PaymentPacket.peel(priv_c.privateKey, paymentHash, packet_c)
+    val payload_c = OnionCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
+    assert(packet_d.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_c.amtToForward === amount_cd)
     assert(payload_c.outgoingCltvValue === expiry_cd)
 
-    val Success(ParsedPacket(bin_d, packet_e, _)) = Sphinx.parsePacket(priv_d.privateKey, paymentHash, packet_d.serialize)
-    val payload_d = LightningMessageCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
-    assert(packet_e.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_d, packet_e, _)) = Sphinx.PaymentPacket.peel(priv_d.privateKey, paymentHash, packet_d)
+    val payload_d = OnionCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
+    assert(packet_e.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_d.amtToForward === amount_de)
     assert(payload_d.outgoingCltvValue === expiry_de)
 
-    val Success(ParsedPacket(bin_e, packet_random, _)) = Sphinx.parsePacket(priv_e.privateKey, paymentHash, packet_e.serialize)
-    val payload_e = LightningMessageCodecs.perHopPayloadCodec.decode(bin_e.toBitVector).require.value
-    assert(packet_random.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_e, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_e.privateKey, paymentHash, packet_e)
+    val payload_e = OnionCodecs.perHopPayloadCodec.decode(bin_e.toBitVector).require.value
+    assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_e.amtToForward === finalAmountMsat)
     assert(payload_e.outgoingCltvValue === finalExpiry)
   }
 
   test("build a command including the onion") {
 
-    val (add, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops)
+    val (add, _) = buildCommand(UUID.randomUUID, finalAmountMsat, finalExpiry, paymentHash, hops)
 
     assert(add.amountMsat > finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry + channelUpdate_de.cltvExpiryDelta + channelUpdate_cd.cltvExpiryDelta + channelUpdate_bc.cltvExpiryDelta)
     assert(add.paymentHash === paymentHash)
-    assert(add.onion.length === Sphinx.PacketLength)
+    assert(add.onion.payload.length === Sphinx.PaymentPacket.PayloadLength)
 
     // let's peel the onion
-    val Success(ParsedPacket(bin_b, packet_c, _)) = Sphinx.parsePacket(priv_b.privateKey, paymentHash, add.onion)
-    val payload_b = LightningMessageCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
-    assert(packet_c.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_b, packet_c, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, add.onion)
+    val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
+    assert(packet_c.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_b.amtToForward === amount_bc)
     assert(payload_b.outgoingCltvValue === expiry_bc)
 
-    val Success(ParsedPacket(bin_c, packet_d, _)) = Sphinx.parsePacket(priv_c.privateKey, paymentHash, packet_c.serialize)
-    val payload_c = LightningMessageCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
-    assert(packet_d.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_c, packet_d, _)) = Sphinx.PaymentPacket.peel(priv_c.privateKey, paymentHash, packet_c)
+    val payload_c = OnionCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
+    assert(packet_d.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_c.amtToForward === amount_cd)
     assert(payload_c.outgoingCltvValue === expiry_cd)
 
-    val Success(ParsedPacket(bin_d, packet_e, _)) = Sphinx.parsePacket(priv_d.privateKey, paymentHash, packet_d.serialize)
-    val payload_d = LightningMessageCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
-    assert(packet_e.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_d, packet_e, _)) = Sphinx.PaymentPacket.peel(priv_d.privateKey, paymentHash, packet_d)
+    val payload_d = OnionCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
+    assert(packet_e.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_d.amtToForward === amount_de)
     assert(payload_d.outgoingCltvValue === expiry_de)
 
-    val Success(ParsedPacket(bin_e, packet_random, _)) = Sphinx.parsePacket(priv_e.privateKey, paymentHash, packet_e.serialize)
-    val payload_e = LightningMessageCodecs.perHopPayloadCodec.decode(bin_e.toBitVector).require.value
-    assert(packet_random.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_e, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_e.privateKey, paymentHash, packet_e)
+    val payload_e = OnionCodecs.perHopPayloadCodec.decode(bin_e.toBitVector).require.value
+    assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_e.amtToForward === finalAmountMsat)
     assert(payload_e.outgoingCltvValue === finalExpiry)
   }
 
   test("build a command with no hops") {
-    val (add, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops.take(1))
+    val (add, _) = buildCommand(UUID.randomUUID(), finalAmountMsat, finalExpiry, paymentHash, hops.take(1))
 
     assert(add.amountMsat === finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry)
     assert(add.paymentHash === paymentHash)
-    assert(add.onion.size === Sphinx.PacketLength)
+    assert(add.onion.payload.length === Sphinx.PaymentPacket.PayloadLength)
 
     // let's peel the onion
-    val Success(ParsedPacket(bin_b, packet_random, _)) = Sphinx.parsePacket(priv_b.privateKey, paymentHash, add.onion)
-    val payload_b = LightningMessageCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
-    assert(packet_random.serialize.size === Sphinx.PacketLength)
+    val Right(DecryptedPacket(bin_b, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, add.onion)
+    val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
+    assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
     assert(payload_b.amtToForward === finalAmountMsat)
     assert(payload_b.outgoingCltvValue === finalExpiry)
   }
@@ -149,11 +149,17 @@ class HtlcGenerationSpec extends FunSuite {
 
 object HtlcGenerationSpec {
 
+  def makeCommitments(channelId: ByteVector32, availableBalanceForSend: Long = 50000000L, availableBalanceForReceive: Long = 50000000L) =
+    new Commitments(ChannelVersion.STANDARD, null, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId) {
+      override lazy val availableBalanceForSendMsat: Long = availableBalanceForSend.max(0)
+      override lazy val availableBalanceForReceiveMsat: Long = availableBalanceForReceive.max(0)
+    }
+
   def randomExtendedPrivateKey: ExtendedPrivateKey = DeterministicWallet.generate(randomBytes32)
 
   val (priv_a, priv_b, priv_c, priv_d, priv_e) = (TestConstants.Alice.keyManager.nodeKey, TestConstants.Bob.keyManager.nodeKey, randomExtendedPrivateKey, randomExtendedPrivateKey, randomExtendedPrivateKey)
   val (a, b, c, d, e) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey)
-  val sig = Crypto.encodeSignature(Crypto.sign(Crypto.sha256(ByteVector.empty), priv_a.privateKey)) :+ 1.toByte
+  val sig = Crypto.sign(Crypto.sha256(ByteVector.empty), priv_a.privateKey)
   val defaultChannelUpdate = ChannelUpdate(sig, Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0, 1, 0, 0, 42000, 0, 0, Some(500000000L))
   val channelUpdate_ab = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(1), cltvExpiryDelta = 4, feeBaseMsat = 642000, feeProportionalMillionths = 7)
   val channelUpdate_bc = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(2), cltvExpiryDelta = 5, feeBaseMsat = 153000, feeProportionalMillionths = 4)

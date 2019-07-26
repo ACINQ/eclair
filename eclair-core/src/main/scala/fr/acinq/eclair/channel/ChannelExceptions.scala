@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.Crypto.Scalar
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, Transaction}
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.payment.Origin
@@ -27,6 +27,7 @@ import fr.acinq.eclair.wire.{ChannelUpdate, UpdateAddHtlc}
   */
 
 class ChannelException(val channelId: ByteVector32, message: String) extends RuntimeException(message)
+
 // @formatter:off
 case class DebugTriggeredException             (override val channelId: ByteVector32) extends ChannelException(channelId, "debug-mode triggered failure")
 case class InvalidChainHash                    (override val channelId: ByteVector32, local: ByteVector32, remote: ByteVector32) extends ChannelException(channelId, s"invalid chainHash (local=$local remote=$remote)")
@@ -49,6 +50,7 @@ case class InvalidFinalScript                  (override val channelId: ByteVect
 case class FundingTxTimedout                   (override val channelId: ByteVector32) extends ChannelException(channelId, "funding tx timed out")
 case class FundingTxSpent                      (override val channelId: ByteVector32, spendingTx: Transaction) extends ChannelException(channelId, s"funding tx has been spent by txid=${spendingTx.txid}")
 case class HtlcTimedout                        (override val channelId: ByteVector32, htlcs: Set[UpdateAddHtlc]) extends ChannelException(channelId, s"one or more htlcs timed out: ids=${htlcs.take(10).map(_.id).mkString}") // we only display the first 10 ids
+case class HtlcWillTimeoutUpstream             (override val channelId: ByteVector32, htlcs: Set[UpdateAddHtlc]) extends ChannelException(channelId, s"one or more htlcs that should be fulfilled are close to timing out upstream: ids=${htlcs.take(10).map(_.id).mkString}") // we only display the first 10 ids
 case class HtlcOverridenByLocalCommit          (override val channelId: ByteVector32) extends ChannelException(channelId, "htlc was overriden by local commit")
 case class FeerateTooSmall                     (override val channelId: ByteVector32, remoteFeeratePerKw: Long) extends ChannelException(channelId, s"remote fee rate is too small: remoteFeeratePerKw=$remoteFeeratePerKw")
 case class FeerateTooDifferent                 (override val channelId: ByteVector32, localFeeratePerKw: Long, remoteFeeratePerKw: Long) extends ChannelException(channelId, s"local/remote feerates are too different: remoteFeeratePerKw=$remoteFeeratePerKw localFeeratePerKw=$localFeeratePerKw")
@@ -74,7 +76,7 @@ case class CannotSignWithoutChanges            (override val channelId: ByteVect
 case class CannotSignBeforeRevocation          (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot sign until next revocation hash is received")
 case class UnexpectedRevocation                (override val channelId: ByteVector32) extends ChannelException(channelId, "received unexpected RevokeAndAck message")
 case class InvalidRevocation                   (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid revocation")
-case class InvalidRevokedCommitProof           (override val channelId: ByteVector32, ourCommitmentNumber: Long, theirCommitmentNumber: Long, perCommitmentSecret: Scalar) extends ChannelException(channelId, s"counterparty claimed that we have a revoked commit but their proof doesn't check out: ourCommitmentNumber=$ourCommitmentNumber theirCommitmentNumber=$theirCommitmentNumber perCommitmentSecret=$perCommitmentSecret")
+case class InvalidRevokedCommitProof           (override val channelId: ByteVector32, ourCommitmentNumber: Long, theirCommitmentNumber: Long, perCommitmentSecret: PrivateKey) extends ChannelException(channelId, s"counterparty claimed that we have a revoked commit but their proof doesn't check out: ourCommitmentNumber=$ourCommitmentNumber theirCommitmentNumber=$theirCommitmentNumber perCommitmentSecret=$perCommitmentSecret")
 case class CommitmentSyncError                 (override val channelId: ByteVector32) extends ChannelException(channelId, "commitment sync error")
 case class RevocationSyncError                 (override val channelId: ByteVector32) extends ChannelException(channelId, "revocation sync error")
 case class InvalidFailureCode                  (override val channelId: ByteVector32) extends ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
