@@ -81,7 +81,7 @@ class ExtendedQueriesCodecsSpec extends FunSuite {
       TlvStream(
         List(
           EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1, 1), Timestamps(2, 2), Timestamps(3, 3))),
-          EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3)))
+          EncodedChecksums(EncodingType.COMPRESSED_ZLIB, List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3)))
         ),
         GenericTlv(UInt64(7), ByteVector.fromValidHex("deadbeef")) :: Nil
       )
