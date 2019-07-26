@@ -21,10 +21,9 @@ import java.util.UUID
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
 
@@ -107,7 +106,7 @@ case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEven
  */
 
 sealed trait Command
-final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: ByteVector32, cltvExpiry: Long, onion: ByteVector = Sphinx.LAST_PACKET.serialize, upstream: Either[UUID, UpdateAddHtlc], commit: Boolean = false, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends Command
+final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: ByteVector32, cltvExpiry: Long, onion: OnionRoutingPacket, upstream: Either[UUID, UpdateAddHtlc], commit: Boolean = false, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends Command
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false) extends Command
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false) extends Command

@@ -16,20 +16,10 @@
 
 package fr.acinq.eclair.wire
 
-import java.net.{Inet4Address, Inet6Address, InetAddress}
-
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire
 import fr.acinq.eclair.wire.CommonCodecs._
-import scodec.bits.ByteVector
-import scodec.codecs._
-import scodec.{Attempt, Codec, Err}
-
-import scala.util.{Failure, Success, Try}
-
 import scodec.Codec
+import scodec.codecs._
 
 /**
   * Created by PM on 15/11/2016.
@@ -123,7 +113,7 @@ object LightningMessageCodecs {
       ("amountMsat" | uint64overflow) ::
       ("paymentHash" | bytes32) ::
       ("expiry" | uint32) ::
-      ("onionRoutingPacket" | bytes(Sphinx.PacketLength))).as[UpdateAddHtlc]
+      ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec)).as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
     ("channelId" | bytes32) ::
@@ -191,7 +181,7 @@ object LightningMessageCodecs {
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
     ("signature" | bytes64) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
-  
+
   val channelUpdateWitnessCodec =
     ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
@@ -269,12 +259,5 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
-
-  val perHopPayloadCodec: Codec[PerHopPayload] = (
-    ("realm" | constant(ByteVector.fromByte(0))) ::
-      ("short_channel_id" | shortchannelid) ::
-      ("amt_to_forward" | uint64overflow) ::
-      ("outgoing_cltv_value" | uint32) ::
-      ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[PerHopPayload]
 
 }

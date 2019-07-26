@@ -31,7 +31,7 @@ import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
+import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
@@ -343,7 +343,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(failed.id == paymentId)
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000L)))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000L)))
   }
 
   test("send an HTLC A->D with a lower amount than requested") {
@@ -363,7 +363,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(failed.id == paymentId)
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000L)))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000L)))
   }
 
   test("send an HTLC A->D with too much overpayment") {
@@ -383,7 +383,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentId == failed.id)
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(600000000L)))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(600000000L)))
   }
 
   test("send an HTLC A->D with a reasonable overpayment") {
@@ -651,7 +651,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(failed.id == paymentId)
     assert(failed.paymentHash === paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
     // we then generate enough blocks to confirm all delayed transactions
     sender.send(bitcoincli, BitcoinReq("generate", 150))
     sender.expectMsgType[JValue](10 seconds)
@@ -717,7 +717,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(failed.id == paymentId)
     assert(failed.paymentHash === paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
     // we then generate enough blocks to confirm all delayed transactions
     sender.send(bitcoincli, BitcoinReq("generate", 145))
     sender.expectMsgType[JValue](10 seconds)

@@ -9,7 +9,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, Init, NodeAddress, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateMessage}
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, Init, NodeAddress, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateMessage}
 import scodec.bits.{BitVector, ByteVector}
 
 object JsonSerializers {
@@ -31,6 +31,7 @@ object JsonSerializers {
     case OUT => "OUT"
     case IN => "IN"
   }, s => null)
+  implicit val onionRoutingPacketReadWriter: ReadWriter[OnionRoutingPacket] = macroRW
   implicit val updateAddHtlcReadWriter: ReadWriter[UpdateAddHtlc] = macroRW
   implicit val updateFailHtlcReadWriter: ReadWriter[UpdateFailHtlc] = macroRW
   implicit val updateFailMalformedHtlcReadWriter: ReadWriter[UpdateFailMalformedHtlc] = macroRW

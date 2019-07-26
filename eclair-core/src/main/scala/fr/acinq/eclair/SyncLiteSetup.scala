@@ -22,6 +22,7 @@ import akka.actor.{Actor, ActorLogging, ActorSystem, Props, ReceiveTimeout, Supe
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.blockchain.fee.FeeEstimator
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.Databases
@@ -55,7 +56,11 @@ class SyncLiteSetup(datadir: File,
     case Some(d) => d
     case None => Databases.sqliteJDBC(new File(datadir, chain))
   }
-  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database)
+  val feeEstimator = new FeeEstimator {
+    override def getFeeratePerKb(target: Int): Long = Globals.feeratesPerKB.get().feePerBlock(target)
+    override def getFeeratePerKw(target: Int): Long = Globals.feeratesPerKw.get().feePerBlock(target)
+  }
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database, feeEstimator)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")

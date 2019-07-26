@@ -18,15 +18,13 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, CMD_FAIL_HTLC}
-import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC}
 import fr.acinq.eclair.payment.Relayer.{OutgoingChannel, RelayFailure, RelayPayload, RelaySuccess}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.{ShortChannelId, TestConstants, randomBytes32, randomKey}
 import fr.acinq.eclair.payment.HtlcGenerationSpec.makeCommitments
 import org.scalatest.FunSuite
-import scodec.bits.ByteVector
 
 import scala.collection.mutable
 
@@ -40,9 +38,9 @@ class ChannelSelectionSpec extends FunSuite {
 
   test("convert to CMD_FAIL_HTLC/CMD_ADD_HTLC") {
     val relayPayload = RelayPayload(
-      add = UpdateAddHtlc(randomBytes32, 42, 1000000, randomBytes32, 70, ByteVector.empty),
+      add = UpdateAddHtlc(randomBytes32, 42, 1000000, randomBytes32, 70, TestConstants.emptyOnionPacket),
       payload = PerHopPayload(ShortChannelId(12345), amtToForward = 998900, outgoingCltvValue = 60),
-      nextPacket = Sphinx.LAST_PACKET // just a placeholder
+      nextPacket = TestConstants.emptyOnionPacket // just a placeholder
     )
 
     val channelUpdate = dummyUpdate(ShortChannelId(12345), 10, 100, 1000, 100, 10000000, true)
@@ -50,7 +48,7 @@ class ChannelSelectionSpec extends FunSuite {
     implicit val log = akka.event.NoLogging
 
     // nominal case
-    assert(Relayer.relayOrFail(relayPayload, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(relayPayload.payload.amtToForward, relayPayload.add.paymentHash, relayPayload.payload.outgoingCltvValue, relayPayload.nextPacket.serialize, upstream = Right(relayPayload.add), commit = true)))
+    assert(Relayer.relayOrFail(relayPayload, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(relayPayload.payload.amtToForward, relayPayload.add.paymentHash, relayPayload.payload.outgoingCltvValue, relayPayload.nextPacket, upstream = Right(relayPayload.add), commit = true)))
     // no channel_update
     assert(Relayer.relayOrFail(relayPayload, channelUpdate_opt = None) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(UnknownNextPeer), commit = true)))
     // channel disabled
@@ -67,15 +65,15 @@ class ChannelSelectionSpec extends FunSuite {
     assert(Relayer.relayOrFail(relayPayload_insufficientfee, Some(channelUpdate)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(FeeInsufficient(relayPayload_insufficientfee.add.amountMsat, channelUpdate)), commit = true)))
     // note that a generous fee is ok!
     val relayPayload_highfee = relayPayload.copy(payload = relayPayload.payload.copy(amtToForward = 900000))
-    assert(Relayer.relayOrFail(relayPayload_highfee, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(relayPayload_highfee.payload.amtToForward, relayPayload_highfee.add.paymentHash, relayPayload_highfee.payload.outgoingCltvValue, relayPayload_highfee.nextPacket.serialize, upstream = Right(relayPayload.add), commit = true)))
+    assert(Relayer.relayOrFail(relayPayload_highfee, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(relayPayload_highfee.payload.amtToForward, relayPayload_highfee.add.paymentHash, relayPayload_highfee.payload.outgoingCltvValue, relayPayload_highfee.nextPacket, upstream = Right(relayPayload.add), commit = true)))
   }
 
   test("channel selection") {
 
     val relayPayload = RelayPayload(
-      add = UpdateAddHtlc(randomBytes32, 42, 1000000, randomBytes32, 70, ByteVector.empty),
+      add = UpdateAddHtlc(randomBytes32, 42, 1000000, randomBytes32, 70, TestConstants.emptyOnionPacket),
       payload = PerHopPayload(ShortChannelId(12345), amtToForward = 998900, outgoingCltvValue = 60),
-      nextPacket = Sphinx.LAST_PACKET // just a placeholder
+      nextPacket = TestConstants.emptyOnionPacket // just a placeholder
     )
 
     val (a, b) = (randomKey.publicKey, randomKey.publicKey)

@@ -27,6 +27,7 @@ import fr.acinq.eclair.NodeParams.ELECTRUM
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{SSL, computeScriptHash}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumClientPool}
+import fr.acinq.eclair.blockchain.fee.FeeEstimator
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.Databases
@@ -57,8 +58,12 @@ class CheckElectrumSetup(datadir: File,
     case Some(d) => d
     case None => Databases.sqliteJDBC(new File(datadir, chain))
   }
+  val feeEstimator = new FeeEstimator {
+    override def getFeeratePerKb(target: Int): Long = Globals.feeratesPerKB.get().feePerBlock(target)
+    override def getFeeratePerKw(target: Int): Long = Globals.feeratesPerKw.get().feePerBlock(target)
+  }
 
-  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database)
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database, feeEstimator)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")

@@ -85,13 +85,13 @@ class JsonSerializersSpec extends FunSuite with Logging {
   }
 
   test("serialize CommitmentSpec") {
-    val spec = CommitmentSpec(Set(DirectedHtlc(IN, UpdateAddHtlc(randomBytes32, 421, 1245, randomBytes32, 1000, hex"010101"))), feeratePerKw = 1233, toLocalMsat = 100, toRemoteMsat = 200)
+    val spec = CommitmentSpec(Set(DirectedHtlc(IN, UpdateAddHtlc(randomBytes32, 421, 1245, randomBytes32, 1000, OnionRoutingPacket(0, randomKey.publicKey.value, hex"0101", randomBytes32)))), feeratePerKw = 1233, toLocalMsat = 100, toRemoteMsat = 200)
     logger.info(write(spec))
   }
 
   test("serialize LocalChanges") {
     val channelId = randomBytes32
-    val add = UpdateAddHtlc(channelId, 421, 1245, randomBytes32, 1000, hex"010101")
+    val add = UpdateAddHtlc(channelId, 421, 1245, randomBytes32, 1000, OnionRoutingPacket(0, randomKey.publicKey.value, hex"0101", randomBytes32))
     val fail = UpdateFailHtlc(channelId, 42, hex"0101")
     val failMalformed = UpdateFailMalformedHtlc(channelId, 42, randomBytes32, 1)
     val updateFee = UpdateFee(channelId, 1500)

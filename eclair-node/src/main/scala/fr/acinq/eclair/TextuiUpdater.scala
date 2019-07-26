@@ -31,7 +31,7 @@ class TextuiUpdater(textui: Textui) extends Actor {
   context.system.eventStream.subscribe(self, classOf[PaymentEvent])
 
   override def receive: Receive = {
-    case ChannelCreated(channel, _, remoteNodeId, _, temporaryChannelId) =>
+    case ChannelCreated(channel, _, remoteNodeId, _, temporaryChannelId, _, _) =>
       textui.addChannel(channel, temporaryChannelId, remoteNodeId, WAIT_FOR_INIT_INTERNAL, Satoshi(0), Satoshi(1))
 
     case ChannelRestored(channel, _, remoteNodeId, _, channelId, data) =>
