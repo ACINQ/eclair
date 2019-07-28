@@ -21,10 +21,13 @@ import java.util.UUID
 import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
+import com.typesafe.sslconfig.util.NoopLogger
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, ScriptFlags, Transaction, TxIn}
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratesPerKw}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
@@ -135,6 +138,26 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == CLOSING)
     awaitCond(bob.stateName == CLOSING)
     // both nodes are now in CLOSING state with a mutual close tx pending for confirmation
+  }
+
+  test("start fee negotiation from configured block target") { f =>
+    import f._
+
+    alice.feeEstimator.setFeerate(FeeratesPerKw(100, 250, 350, 450, 600, 800, 900))
+
+    val sender = TestProbe()
+    // alice initiates a closing
+    sender.send(alice, CMD_CLOSE(None))
+    alice2bob.expectMsgType[Shutdown]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[Shutdown]
+    bob2alice.forward(alice)
+    val closing = alice2bob.expectMsgType[ClosingSigned]
+    val aliceData = alice.stateData.asInstanceOf[DATA_NEGOTIATING]
+    val mutualClosingFeeRate = alice.feeEstimator.getFeeratePerKw(alice.feeTargets.mutualCloseBlockTarget)
+    val expectedFirstProposedFee = Closing.firstClosingFee(aliceData.commitments, aliceData.localShutdown.scriptPubKey, aliceData.remoteShutdown.scriptPubKey, mutualClosingFeeRate)(akka.event.NoLogging)
+    assert(alice.feeTargets.mutualCloseBlockTarget == 2 && mutualClosingFeeRate == 250)
+    assert(closing.feeSatoshis == expectedFirstProposedFee.amount)
   }
 
   test("recv BITCOIN_FUNDING_PUBLISH_FAILED", Tag("funding_unconfirmed")) { f =>
@@ -278,7 +301,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test starts here
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(500000000, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = 300000, upstream = Left(UUID.randomUUID()))
+    val add = CMD_ADD_HTLC(500000000, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = 300000, onion = TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), None, Some(add))))
@@ -308,7 +331,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     // agreeing on a closing fee
     val aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
-    Globals.feeratesPerKw.set(FeeratesPerKw.single(100))
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(100))
     alice2bob.forward(bob)
     val bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
     bob2alice.forward(alice)

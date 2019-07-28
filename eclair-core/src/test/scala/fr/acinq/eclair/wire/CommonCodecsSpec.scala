@@ -19,7 +19,9 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import com.google.common.net.InetAddresses
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.eclair.crypto.Hmac256
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.{UInt64, randomBytes32}
 import org.scalatest.FunSuite
@@ -47,32 +49,26 @@ class CommonCodecsSpec extends FunSuite {
     }
   }
 
-  test("encode/decode with uint64L codec") {
-    val expected = Map(
-      UInt64(0) -> hex"00 00 00 00 00 00 00 00",
-      UInt64(42) -> hex"2a 00 00 00 00 00 00 00",
-      UInt64(6211610197754262546L) -> hex"12 34 56 78 90 12 34 56",
-      UInt64(hex"ff ff ff ff ff ff ff ff") -> hex"ff ff ff ff ff ff ff ff"
-    ).mapValues(_.toBitVector)
-
-    for ((uint, ref) <- expected) {
-      val encoded = uint64L.encode(uint).require
-      assert(ref === encoded)
-      val decoded = uint64L.decode(encoded).require.value
-      assert(uint === decoded)
-    }
+  test("encode/decode UInt64") {
+    val refs = Seq(
+      UInt64(hex"ffffffffffffffff"),
+      UInt64(hex"fffffffffffffffe"),
+      UInt64(hex"efffffffffffffff"),
+      UInt64(hex"effffffffffffffe")
+    )
+    assert(refs.forall(value => uint64.decode(uint64.encode(value).require).require.value === value))
   }
 
   test("encode/decode with varint codec") {
     val expected = Map(
       UInt64(0L) -> hex"00",
       UInt64(42L) -> hex"2a",
-      UInt64(253L) -> hex"fd fd 00",
-      UInt64(254L) -> hex"fd fe 00",
-      UInt64(255L) -> hex"fd ff 00",
-      UInt64(550L) -> hex"fd 26 02",
-      UInt64(998000L) -> hex"fe 70 3a 0f 00",
-      UInt64(6211610197754262546L) -> hex"ff 12 34 56 78 90 12 34 56",
+      UInt64(253L) -> hex"fd 00 fd",
+      UInt64(254L) -> hex"fd 00 fe",
+      UInt64(255L) -> hex"fd 00 ff",
+      UInt64(550L) -> hex"fd 02 26",
+      UInt64(998000L) -> hex"fe 00 0f 3a 70",
+      UInt64(1311768467284833366L) -> hex"ff 12 34 56 78 90 12 34 56",
       UInt64.MaxValue -> hex"ff ff ff ff ff ff ff ff ff"
     ).mapValues(_.toBitVector)
 
@@ -93,12 +89,12 @@ class CommonCodecsSpec extends FunSuite {
       hex"ff", // truncated
       hex"ff 12 34 56 78", // truncated
       hex"fd 00 00", // not minimally-encoded
-      hex"fd fc 00", // not minimally-encoded
+      hex"fd 00 fc", // not minimally-encoded
       hex"fe 00 00 00 00", // not minimally-encoded
-      hex"fe ff ff 00 00", // not minimally-encoded
+      hex"fe 00 00 ff ff", // not minimally-encoded
       hex"ff 00 00 00 00 00 00 00 00", // not minimally-encoded
-      hex"ff ff ff ff 01 00 00 00 00", // not minimally-encoded
-      hex"ff ff ff ff ff 00 00 00 00" // not minimally-encoded
+      hex"ff 00 00 00 00 01 ff ff ff", // not minimally-encoded
+      hex"ff 00 00 00 00 ff ff ff ff" // not minimally-encoded
     ).map(_.toBitVector)
 
     for (testCase <- testCases) {
@@ -106,17 +102,17 @@ class CommonCodecsSpec extends FunSuite {
     }
   }
 
-  test("encode/decode with varlong codec") {
+  test("encode/decode with varintoverflow codec") {
     val expected = Map(
       0L -> hex"00",
       42L -> hex"2a",
-      253L -> hex"fd fd 00",
-      254L -> hex"fd fe 00",
-      255L -> hex"fd ff 00",
-      550L -> hex"fd 26 02",
-      998000L -> hex"fe 70 3a 0f 00",
-      6211610197754262546L -> hex"ff 12 34 56 78 90 12 34 56",
-      Long.MaxValue -> hex"ff ff ff ff ff ff ff ff 7f"
+      253L -> hex"fd 00 fd",
+      254L -> hex"fd 00 fe",
+      255L -> hex"fd 00 ff",
+      550L -> hex"fd 02 26",
+      998000L -> hex"fe 00 0f 3a 70",
+      1311768467284833366L -> hex"ff 12 34 56 78 90 12 34 56",
+      Long.MaxValue -> hex"ff 7f ff ff ff ff ff ff ff"
     ).mapValues(_.toBitVector)
 
     for ((long, ref) <- expected) {
@@ -127,9 +123,9 @@ class CommonCodecsSpec extends FunSuite {
     }
   }
 
-  test("decode invalid varlong") {
+  test("decode invalid varintoverflow") {
     val testCases = Seq(
-      hex"ff 00 00 00 00 00 00 00 80",
+      hex"ff 80 00 00 00 00 00 00 00",
       hex"ff ff ff ff ff ff ff ff ff"
     ).map(_.toBitVector)
 
@@ -238,16 +234,21 @@ class CommonCodecsSpec extends FunSuite {
     }
   }
 
-  test("encode/decode UInt64") {
-    val codec = uint64
-    Seq(
-      UInt64(hex"ffffffffffffffff"),
-      UInt64(hex"fffffffffffffffe"),
-      UInt64(hex"efffffffffffffff"),
-      UInt64(hex"effffffffffffffe")
-    ).map(value => {
-      assert(codec.decode(codec.encode(value).require).require.value === value)
-    })
+  test("encode/decode with prependmac codec") {
+    val mac = Hmac256(ByteVector32.Zeroes)
+    val testCases = Seq(
+      (uint64, UInt64(561), hex"d5b500b8843e19a34d8ab54740db76a7ea597e4ff2ada3827420f87c7e60b7c6 0000000000000231"),
+      (varint, UInt64(65535), hex"71e17e5b97deb6916f7ad97a53650769d4e4f0b1e580ff35ca332200d61e765c fdffff")
+    )
+
+    for ((codec, expected, bin) <- testCases) {
+      val macCodec = prependmac(codec, mac)
+      val decoded = macCodec.decode(bin.toBitVector).require.value
+      assert(decoded === expected)
+
+      val encoded = macCodec.encode(expected).require.toByteVector
+      assert(encoded === bin)
+    }
   }
 
 }

@@ -22,15 +22,15 @@ import akka.actor.Status.Failure
 import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
-import fr.acinq.eclair.TestConstants.Bob
+import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratesPerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment.Local
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
-import fr.acinq.eclair.{Globals, TestkitBaseClass}
+import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
@@ -52,7 +52,14 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       reachNormal(setup)
       val sender = TestProbe()
       // alice initiates a closing
-      if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4319)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(10000))
+      if (test.tags.contains("fee2")) {
+        alice.feeEstimator.setFeerate(FeeratesPerKw.single(4319))
+        bob.feeEstimator.setFeerate(FeeratesPerKw.single(4319))
+      }
+      else {
+        alice.feeEstimator.setFeerate(FeeratesPerKw.single(10000))
+        bob.feeEstimator.setFeerate(FeeratesPerKw.single(10000))
+      }
       sender.send(bob, CMD_CLOSE(None))
       bob2alice.expectMsgType[Shutdown]
       bob2alice.forward(alice)
@@ -61,7 +68,13 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       // NB: at this point, alice has already computed and sent the first ClosingSigned message
       // In order to force a fee negotiation, we will change the current fee before forwarding
       // the Shutdown message to alice, so that alice computes a different initial closing fee.
-      if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4316)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(5000))
+      if (test.tags.contains("fee2")) {
+        alice.feeEstimator.setFeerate(FeeratesPerKw.single(4316))
+        bob.feeEstimator.setFeerate(FeeratesPerKw.single(4316))
+      } else {
+        alice.feeEstimator.setFeerate(FeeratesPerKw.single(5000))
+        bob.feeEstimator.setFeerate(FeeratesPerKw.single(5000))
+      }
       alice2bob.forward(bob)
       awaitCond(bob.stateName == NEGOTIATING)
       withFixture(test.toNoArgTest(setup))
@@ -72,7 +85,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     import f._
     alice2bob.expectMsgType[ClosingSigned]
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(500000000, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = 300000, upstream = Left(UUID.randomUUID()))
+    val add = CMD_ADD_HTLC(500000000, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = 300000, onion = TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), None, Some(add))))

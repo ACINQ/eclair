@@ -20,8 +20,9 @@ import java.util.UUID
 
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.{PrivateKey}
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi, ScriptFlags, Transaction}
+import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
@@ -30,7 +31,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass, randomBytes32}
-import org.scalatest.Outcome
+import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -103,7 +104,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_ADD_HTLC") { f =>
     import f._
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(500000000, r1, cltvExpiry = 300000, upstream = Left(UUID.randomUUID()))
+    val add = CMD_ADD_HTLC(500000000, r1, cltvExpiry = 300000, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), None, Some(add))))
@@ -580,8 +581,8 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
-    // we first update the global variable so that we don't trigger a 'fee too different' error
-    Globals.feeratesPerKw.set(FeeratesPerKw.single(fee.feeratePerKw))
+    // we first update the feerates so that we don't trigger a 'fee too different' error
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
     sender.send(bob, fee)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missingSatoshis = 72120000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
@@ -645,9 +646,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val event = CurrentFeerates(FeeratesPerKw.single(20000))
+    val event = CurrentFeerates(FeeratesPerKw(100, 200, 600, 1200, 3600, 7200, 14400))
     sender.send(alice, event)
-    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.blocks_2))
+    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.feePerBlock(alice.feeTargets.commitmentBlockTarget)))
   }
 
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>

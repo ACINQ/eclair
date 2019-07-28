@@ -18,26 +18,22 @@ package fr.acinq.eclair.channel.states
 
 import java.util.UUID
 
-import akka.actor.Actor
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, TestConstants, randomBytes32}
-import scodec.bits.ByteVector
 
 /**
   * Created by PM on 23/08/2016.
   */
 trait StateTestsHelperMethods extends TestKitBase {
-
-  def defaultOnion: ByteVector = ByteVector.fill(Sphinx.PacketLength)(0)
 
   case class SetupFixture(alice: TestFSMRef[State, Data, Channel],
                    bob: TestFSMRef[State, Data, Channel],
@@ -51,7 +47,6 @@ trait StateTestsHelperMethods extends TestKitBase {
                    channelUpdateListener: TestProbe)
 
   def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: EclairWallet = new TestWallet): SetupFixture = {
-    Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alice2blockchain = TestProbe()
@@ -75,8 +70,6 @@ trait StateTestsHelperMethods extends TestKitBase {
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
-    // reset global feerates (they may have been changed by previous tests)
-    Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
     alice2bob.expectMsgType[OpenChannel]
@@ -170,4 +163,14 @@ trait StateTestsHelperMethods extends TestKitBase {
 
   def channelId(a: TestFSMRef[State, Data, Channel]) = Helpers.getChannelId(a.stateData)
 
+  implicit class ChannelWithTestFeeConf(a: TestFSMRef[State, Data, Channel]) {
+    def feeEstimator: TestFeeEstimator = a.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
+    def feeTargets: FeeTargets = a.underlyingActor.nodeParams.onChainFeeConf.feeTargets
+  }
+
+
+  implicit class PeerWithTestFeeConf(a: TestFSMRef[Peer.State, Peer.Data, Peer]) {
+    def feeEstimator: TestFeeEstimator = a.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
+    def feeTargets: FeeTargets = a.underlyingActor.nodeParams.onChainFeeConf.feeTargets
+  }
 }
