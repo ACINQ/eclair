@@ -120,8 +120,8 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     // 30% is huge, recommended ratio is 1%
-    val reserveTooHigh = (0.3 * TestConstants.fundingSatoshis).toLong
-    bob ! open.copy(channelReserveSatoshis = Satoshi(reserveTooHigh))
+    val reserveTooHigh = Satoshi((0.3 * TestConstants.fundingSatoshis).toLong)
+    bob ! open.copy(channelReserveSatoshis = reserveTooHigh)
     val error = bob2alice.expectMsgType[Error]
     assert(error === Error(open.temporaryChannelId, ChannelReserveTooHigh(open.temporaryChannelId, reserveTooHigh, 0.3, 0.05).getMessage))
     awaitCond(bob.stateName == CLOSED)
@@ -155,11 +155,11 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   test("recv OpenChannel (reserve below dust)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val reserveTooSmall = open.dustLimitSatoshis.toLong - 1
-    bob ! open.copy(channelReserveSatoshis = Satoshi(reserveTooSmall))
+    val reserveTooSmall = open.dustLimitSatoshis - Satoshi(1)
+    bob ! open.copy(channelReserveSatoshis = reserveTooSmall)
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
-    assert(error === Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis.toLong, reserveTooSmall).getMessage))
+    assert(error === Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, reserveTooSmall).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 

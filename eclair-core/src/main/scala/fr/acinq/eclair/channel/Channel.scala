@@ -276,7 +276,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = Satoshi(localParams.dustLimitSatoshis),
             maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
-            channelReserveSatoshis = localParams.channelReserveSatoshis,
+            channelReserveSatoshis = Satoshi(localParams.channelReserveSatoshis),
             minimumDepth = minimumDepth,
             htlcMinimumMsat = MilliSatoshi(localParams.htlcMinimumMsat),
             toSelfDelay = localParams.toSelfDelay,
@@ -324,7 +324,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             nodeId = remoteNodeId,
             dustLimitSatoshis = accept.dustLimitSatoshis.toLong,
             maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
-            channelReserveSatoshis = accept.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
+            channelReserveSatoshis = accept.channelReserveSatoshis.toLong, // remote requires local to keep this much satoshis as direct payment
             htlcMinimumMsat = accept.htlcMinimumMsat.toLong,
             toSelfDelay = accept.toSelfDelay,
             maxAcceptedHtlcs = accept.maxAcceptedHtlcs,

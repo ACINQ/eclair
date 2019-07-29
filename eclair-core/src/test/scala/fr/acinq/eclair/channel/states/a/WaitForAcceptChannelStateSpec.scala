@@ -83,10 +83,10 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     // we don't want their dust limit to be below 546
-    val lowDustLimitSatoshis = 545
-    alice ! accept.copy(dustLimitSatoshis = Satoshi(lowDustLimitSatoshis))
+    val lowDustLimitSatoshis = Satoshi(545)
+    alice ! accept.copy(dustLimitSatoshis = lowDustLimitSatoshis)
     val error = alice2bob.expectMsgType[Error]
-    assert(error === Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUSTLIMIT).getMessage))
+    assert(error === Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Satoshi(Channel.MIN_DUSTLIMIT)).getMessage))
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -104,7 +104,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     // 30% is huge, recommended ratio is 1%
-    val reserveTooHigh = (0.3 * TestConstants.fundingSatoshis).toLong
+    val reserveTooHigh = Satoshi((0.3 * TestConstants.fundingSatoshis).toLong)
     alice ! accept.copy(channelReserveSatoshis = reserveTooHigh)
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(accept.temporaryChannelId, ChannelReserveTooHigh(accept.temporaryChannelId, reserveTooHigh, 0.3, 0.05).getMessage))
@@ -114,10 +114,10 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
   test("recv AcceptChannel (reserve below dust limit)") { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    val reserveTooSmall = accept.dustLimitSatoshis.toLong - 1
+    val reserveTooSmall = accept.dustLimitSatoshis - Satoshi(1)
     alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
     val error = alice2bob.expectMsgType[Error]
-    assert(error === Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis.toLong, reserveTooSmall).getMessage))
+    assert(error === Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, reserveTooSmall).getMessage))
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -125,10 +125,10 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     val open = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].lastSent
-    val reserveTooSmall = open.dustLimitSatoshis.toLong - 1
+    val reserveTooSmall = open.dustLimitSatoshis - Satoshi(1)
     alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
     val error = alice2bob.expectMsgType[Error]
-    assert(error === Error(accept.temporaryChannelId, ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, reserveTooSmall, open.dustLimitSatoshis.toLong).getMessage))
+    assert(error === Error(accept.temporaryChannelId, ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, reserveTooSmall, open.dustLimitSatoshis).getMessage))
     awaitCond(alice.stateName == CLOSED)
   }
 
