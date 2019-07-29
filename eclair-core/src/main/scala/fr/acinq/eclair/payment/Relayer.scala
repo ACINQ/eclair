@@ -158,11 +158,11 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       to match {
         case Local(id, None) =>
           val feesPaid = MilliSatoshi(0)
-          context.system.eventStream.publish(PaymentSent(id, MilliSatoshi(add.amountMsat), feesPaid, add.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
+          context.system.eventStream.publish(PaymentSent(id, add.amountMsat, feesPaid, add.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
           // we sent the payment, but we probably restarted and the reference to the original sender was lost,
           // we publish the failure on the event stream and update the status in paymentDb
           nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.SUCCEEDED, Some(fulfill.paymentPreimage))
-          context.system.eventStream.publish(PaymentSucceeded(id, add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil)) //
+          context.system.eventStream.publish(PaymentSucceeded(id, add.amountMsat.toLong, add.paymentHash, fulfill.paymentPreimage, Nil)) //
         case Local(_, Some(sender)) =>
           sender ! fulfill
         case Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut) =>
@@ -215,7 +215,7 @@ object Relayer extends Logging {
   sealed trait NextPayload
   case class FinalPayload(add: UpdateAddHtlc, payload: PerHopPayload) extends NextPayload
   case class RelayPayload(add: UpdateAddHtlc, payload: PerHopPayload, nextPacket: OnionRoutingPacket) extends NextPayload {
-    val relayFeeMsat: Long = add.amountMsat - payload.amtToForward
+    val relayFeeMsat: Long = add.amountMsat.toLong - payload.amtToForward
     val expiryDelta: Long = add.cltvExpiry - payload.outgoingCltvValue
   }
   // @formatter:on
@@ -259,8 +259,8 @@ object Relayer extends Logging {
   def handleFinal(finalPayload: FinalPayload): Either[CMD_FAIL_HTLC, UpdateAddHtlc] = {
     import finalPayload.add
     finalPayload.payload match {
-      case PerHopPayload(_, finalAmountToForward, _) if finalAmountToForward > add.amountMsat =>
-        Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectHtlcAmount(add.amountMsat)), commit = true))
+      case PerHopPayload(_, finalAmountToForward, _) if finalAmountToForward > add.amountMsat.toLong =>
+        Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectHtlcAmount(add.amountMsat.toLong)), commit = true))
       case PerHopPayload(_, _, finalOutgoingCltvValue) if finalOutgoingCltvValue != add.cltvExpiry =>
         Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectCltvExpiry(add.cltvExpiry)), commit = true))
       case _ =>
@@ -372,7 +372,7 @@ object Relayer extends Logging {
       case Some(channelUpdate) if relayPayload.expiryDelta != channelUpdate.cltvExpiryDelta =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltvValue, channelUpdate)), commit = true))
       case Some(channelUpdate) if relayPayload.relayFeeMsat < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amtToForward) =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat.toLong, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
         RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket, upstream = Right(add), commit = true, previousFailures = previousFailures))
     }

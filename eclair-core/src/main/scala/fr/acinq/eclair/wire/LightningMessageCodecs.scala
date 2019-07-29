@@ -112,7 +112,7 @@ object LightningMessageCodecs {
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
       ("id" | uint64overflow) ::
-      ("amountMsat" | uint64overflow) ::
+      ("amountMsat" | uint64overflowMsat) ::
       ("paymentHash" | bytes32) ::
       ("expiry" | uint32) ::
       ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec)).as[UpdateAddHtlc]

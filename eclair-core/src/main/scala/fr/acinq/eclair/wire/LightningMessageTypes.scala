@@ -120,7 +120,7 @@ case class ClosingSigned(channelId: ByteVector32,
 
 case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long,
-                         amountMsat: Long,
+                         amountMsat: MilliSatoshi,
                          paymentHash: ByteVector32,
                          cltvExpiry: Long,
                          onionRoutingPacket: OnionRoutingPacket) extends HtlcMessage with UpdateMessage with HasChannelId
