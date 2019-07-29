@@ -27,11 +27,12 @@ where OPTIONS can be:
   -s                    Some commands can print a trimmed JSON
 
 and COMMAND is one of:
-  getinfo, connect, open, close, forceclose, updaterelayfee,
+  getinfo, connect, disconnect, open, close, forceclose, updaterelayfee,
   peers, channels, channel, allnodes, allchannels, allupdates
   findroute, findroutetonode, parseinvoice, payinvoice, sendtonode,
-  getsentinfo, createinvoice, getinvoice, listinvoices,
-  listpendinginvoices, getreceivedinfo, audit, networkfees, channelstats
+  sendtoroute, getsentinfo, createinvoice, getinvoice, listinvoices,
+  listpendinginvoices, getreceivedinfo, audit, networkfees,
+  channelstats, usablebalances
 
 Examples
 --------
