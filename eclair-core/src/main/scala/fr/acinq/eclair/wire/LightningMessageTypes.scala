@@ -225,7 +225,7 @@ case class ChannelUpdate(signature: ByteVector64,
   require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
 }
 
-// @formatter:on
+// @formatter:off
 sealed trait EncodingType
 object EncodingType {
   case object UNCOMPRESSED extends EncodingType

@@ -193,6 +193,7 @@ object LightningMessageCodecs {
           ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64overflow))
       })
 
+
   val channelUpdateWitnessCodec =
     ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
