@@ -26,11 +26,11 @@ import scala.concurrent.{Await, Future}
 class SmoothFeeProviderSpec extends FunSuite {
   test("smooth fee rates") {
     val rates = Array(
-      FeeratesPerKB(100, 200, 300, 400, 500, 600),
-      FeeratesPerKB(200, 300, 400, 500, 600, 700),
-      FeeratesPerKB(300, 400, 500, 600, 700, 800),
-      FeeratesPerKB(300, 400, 500, 600, 700, 800),
-      FeeratesPerKB(300, 400, 500, 600, 700, 800)
+      FeeratesPerKB(100, 200, 300, 400, 500, 600, 650),
+      FeeratesPerKB(200, 300, 400, 500, 600, 700, 750),
+      FeeratesPerKB(300, 400, 500, 600, 700, 800, 850),
+      FeeratesPerKB(300, 400, 500, 600, 700, 800, 850),
+      FeeratesPerKB(300, 400, 500, 600, 700, 800, 850)
     )
     val provider = new FeeProvider {
        var index = 0
@@ -55,7 +55,7 @@ class SmoothFeeProviderSpec extends FunSuite {
     assert(rate1 == rates(0))
     assert(rate2 == SmoothFeeProvider.smooth(Seq(rates(0), rates(1))))
     assert(rate3 == SmoothFeeProvider.smooth(Seq(rates(0), rates(1), rates(2))))
-    assert(rate3 ==  FeeratesPerKB(200, 300, 400, 500, 600, 700))
+    assert(rate3 ==  FeeratesPerKB(200, 300, 400, 500, 600, 700, 750))
     assert(rate4 == SmoothFeeProvider.smooth(Seq(rates(1), rates(2), rates(3))))
     assert(rate5 == rates(4)) // since the last 3 values are the same
   }

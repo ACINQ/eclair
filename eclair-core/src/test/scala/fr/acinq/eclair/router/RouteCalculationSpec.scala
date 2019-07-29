@@ -184,6 +184,48 @@ class RouteCalculationSpec extends FunSuite {
     assert(route.map(hops2Ids) === Success(4 :: Nil))
   }
 
+  test("find a route using channels with htlMaximumMsat close to the payment amount") {
+    val (f, g, h, i) = (
+      PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), // F source
+      PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), // G
+      PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), // H
+      PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c")  // I target
+    )
+
+    val updates = List(
+      makeUpdate(1L, f, g, 1, 0),
+      // the maximum htlc allowed by this channel is only 50msat greater than what we're sending
+      makeUpdate(2L, g, h, 1, 0, maxHtlcMsat = Some(DEFAULT_AMOUNT_MSAT + 50)),
+      makeUpdate(3L, h, i, 1, 0)
+    ).toMap
+
+    val graph = makeGraph(updates)
+
+    val route = Router.findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
+    assert(route.map(hops2Ids) == Success(1 :: 2 :: 3 :: Nil))
+  }
+
+  test("find a route using channels with htlMinimumMsat close to the payment amount") {
+    val (f, g, h, i) = (
+      PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), // F source
+      PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), // G
+      PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), // H
+      PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c")  // I target
+    )
+
+    val updates = List(
+      makeUpdate(1L, f, g, 1, 0),
+      // this channel requires a minimum amount that is larger than what we are sending
+      makeUpdate(2L, g, h, 1, 0, minHtlcMsat = DEFAULT_AMOUNT_MSAT + 50),
+      makeUpdate(3L, h, i, 1, 0)
+    ).toMap
+
+    val graph = makeGraph(updates)
+
+    val route = Router.findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
+    assert(route.map(hops2Ids) === Failure(RouteNotFound))
+  }
+
   test("if there are multiple channels between the same node, select the cheapest") {
 
     val (f, g, h, i) = (
