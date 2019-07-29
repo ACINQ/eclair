@@ -191,7 +191,7 @@ object LightningMessageCodecs {
       (("messageFlags" | byte) >>:~ { messageFlags =>
         ("channelFlags" | byte) ::
           ("cltvExpiryDelta" | uint16) ::
-          ("htlcMinimumMsat" | uint64overflow) ::
+          ("htlcMinimumMsat" | uint64overflowMsat) ::
           ("feeBaseMsat" | uint32) ::
           ("feeProportionalMillionths" | uint32) ::
           ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64overflow)) ::

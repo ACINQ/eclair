@@ -367,7 +367,7 @@ object Relayer extends Logging {
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
       case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.channelFlags) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)), commit = true))
-      case Some(channelUpdate) if payload.amtToForward < channelUpdate.htlcMinimumMsat =>
+      case Some(channelUpdate) if payload.amtToForward < channelUpdate.htlcMinimumMsat.toLong =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amtToForward, channelUpdate)), commit = true))
       case Some(channelUpdate) if relayPayload.expiryDelta != channelUpdate.cltvExpiryDelta =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltvValue, channelUpdate)), commit = true))

@@ -384,7 +384,7 @@ object ChannelCodecsSpec {
     remoteNextCommitInfo = Right(randomKey.publicKey),
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = ByteVector32.Zeroes)
 
-  val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), 42, 15, 575, 53, Channel.MAX_FUNDING_SATOSHIS * 1000L)
+  val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), 42, MilliSatoshi(15), 575, 53, Channel.MAX_FUNDING_SATOSHIS * 1000L)
 
   val normal = DATA_NORMAL(commitments, ShortChannelId(42), true, None, channelUpdate, None, None)
 }

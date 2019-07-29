@@ -230,7 +230,7 @@ object Graph {
 
           // test for ignored edges
           if (edge.update.htlcMaximumMsat.forall(newMinimumKnownWeight.cost <= _) &&
-            newMinimumKnownWeight.cost >= edge.update.htlcMinimumMsat &&
+            newMinimumKnownWeight.cost >= edge.update.htlcMinimumMsat.toLong &&
             boundaries(newMinimumKnownWeight) && // check if this neighbor edge would break off the 'boundaries'
             !ignoredEdges.contains(edge.desc)
           ) {

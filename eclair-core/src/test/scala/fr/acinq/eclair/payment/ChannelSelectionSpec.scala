@@ -33,7 +33,7 @@ class ChannelSelectionSpec extends FunSuite {
   /**
     * This is just a simplified helper function with random values for fields we are not using here
     */
-  def dummyUpdate(shortChannelId: ShortChannelId, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Long, enable: Boolean = true) =
+  def dummyUpdate(shortChannelId: ShortChannelId, cltvExpiryDelta: Int, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Long, enable: Boolean = true) =
     Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, shortChannelId, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat, enable)
 
   test("convert to CMD_FAIL_HTLC/CMD_ADD_HTLC") {
@@ -43,7 +43,7 @@ class ChannelSelectionSpec extends FunSuite {
       nextPacket = TestConstants.emptyOnionPacket // just a placeholder
     )
 
-    val channelUpdate = dummyUpdate(ShortChannelId(12345), 10, 100, 1000, 100, 10000000, true)
+    val channelUpdate = dummyUpdate(ShortChannelId(12345), 10, MilliSatoshi(100), 1000, 100, 10000000, true)
 
     implicit val log = akka.event.NoLogging
 
@@ -77,7 +77,7 @@ class ChannelSelectionSpec extends FunSuite {
     )
 
     val (a, b) = (randomKey.publicKey, randomKey.publicKey)
-    val channelUpdate = dummyUpdate(ShortChannelId(12345), 10, 100, 1000, 100, 10000000, true)
+    val channelUpdate = dummyUpdate(ShortChannelId(12345), 10, MilliSatoshi(100), 1000, 100, 10000000, true)
 
     val channelUpdates = Map(
       ShortChannelId(11111) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, 100000000)),
