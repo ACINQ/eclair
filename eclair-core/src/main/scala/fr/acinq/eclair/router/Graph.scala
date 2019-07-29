@@ -88,7 +88,8 @@ object Graph {
     val candidates = new mutable.PriorityQueue[WeightedPath]
 
     // find the shortest path, k = 0
-    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, amountMsat, ignoredEdges, extraEdges, RichWeight(amountMsat, 0, 0, 0), boundaries, currentBlockHeight, wr)
+    val initialWeight = RichWeight(cost = amountMsat, 0, 0, 0)
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, extraEdges, initialWeight, boundaries, currentBlockHeight, wr)
     shortestPaths += WeightedPath(shortestPath, pathWeight(shortestPath, amountMsat, isPartial = false, currentBlockHeight, wr))
 
     // avoid returning a list with an empty path
@@ -124,7 +125,7 @@ object Graph {
           val returningEdges = rootPathEdges.lastOption.map(last => graph.getEdgesBetween(last.desc.b, last.desc.a)).toSeq.flatten.map(_.desc)
 
           // find the "spur" path, a sub-path going from the spur edge to the target avoiding previously found sub-paths
-          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, amountMsat, ignoredEdges ++ edgesToIgnore.toSet ++ returningEdges.toSet, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr)
+          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, ignoredEdges ++ edgesToIgnore.toSet ++ returningEdges.toSet, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr)
 
           // if there wasn't a path the spur will be empty
           if (spurPath.nonEmpty) {
@@ -165,7 +166,6 @@ object Graph {
     * @param g                  the graph on which will be performed the search
     * @param sourceNode         the starting node of the path we're looking for
     * @param targetNode         the destination node of the path
-    * @param amountMsat         the amount (in millisatoshis) we want to transmit
     * @param ignoredEdges       a list of edges we do not want to consider
     * @param extraEdges         a list of extra edges we want to consider but are not currently in the graph
     * @param wr                 an object containing the ratios used to 'weight' edges when searching for the shortest path
@@ -177,7 +177,6 @@ object Graph {
   def dijkstraShortestPath(g: DirectedGraph,
                            sourceNode: PublicKey,
                            targetNode: PublicKey,
-                           amountMsat: Long,
                            ignoredEdges: Set[ChannelDesc],
                            extraEdges: Set[GraphEdge],
                            initialWeight: RichWeight,
@@ -230,8 +229,8 @@ object Graph {
           val newMinimumKnownWeight = edgeWeight(edge, currentWeight, initialWeight.length == 0 && neighbor == sourceNode, currentBlockHeight, wr)
 
           // test for ignored edges
-          if (edge.update.htlcMaximumMsat.forall(newMinimumKnownWeight.cost + amountMsat <= _) &&
-            newMinimumKnownWeight.cost + amountMsat >= edge.update.htlcMinimumMsat &&
+          if (edge.update.htlcMaximumMsat.forall(newMinimumKnownWeight.cost <= _) &&
+            newMinimumKnownWeight.cost >= edge.update.htlcMinimumMsat &&
             boundaries(newMinimumKnownWeight) && // check if this neighbor edge would break off the 'boundaries'
             !ignoredEdges.contains(edge.desc)
           ) {

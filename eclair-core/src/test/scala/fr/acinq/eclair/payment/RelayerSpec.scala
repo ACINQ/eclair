@@ -20,7 +20,7 @@ import java.util.UUID
 
 import akka.actor.{ActorRef, Status}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
+import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
@@ -48,7 +48,6 @@ class RelayerSpec extends TestkitBaseClass {
       val register = TestProbe()
       val paymentHandler = TestProbe()
       // we are node B in the route A -> B -> C -> ....
-      //val relayer = system.actorOf(Relayer.props(TestConstants.Bob.nodeParams.copy(nodeKey = priv_b), register.ref, paymentHandler.ref))
       val relayer = system.actorOf(Relayer.props(TestConstants.Bob.nodeParams, register.ref, paymentHandler.ref))
       withFixture(test.toNoArgTest(FixtureParam(relayer, register, paymentHandler)))
     }
@@ -192,10 +191,10 @@ class RelayerSpec extends TestkitBaseClass {
 
     val (cmd1, _) = buildCommand(UUID.randomUUID(), finalAmountMsat, finalExpiry, randomBytes32, hops)
     val add_ab1 = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd1.amountMsat, cmd1.paymentHash, cmd1.cltvExpiry, cmd1.onion)
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, ForwardAdd(add_ab1))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
-    assert(fail.id === add_ab.id)
+    assert(fail.id === add_ab1.id)
     assert(fail.reason === Right(UnknownNextPeer))
 
     register.expectNoMsg(100 millis)
@@ -229,15 +228,16 @@ class RelayerSpec extends TestkitBaseClass {
 
     // we use this to build a valid onion
     val (cmd, _) = buildCommand(UUID.randomUUID(), finalAmountMsat, finalExpiry, paymentHash, hops)
-    // and then manually build an htlc
-    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.cltvExpiry, ByteVector.fill(Sphinx.PacketLength)(0))
+    // and then manually build an htlc with an invalid onion (hmac)
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.cltvExpiry, cmd.onion.copy(hmac = cmd.onion.hmac.reverse))
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
 
     sender.send(relayer, ForwardAdd(add_ab))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
     assert(fail.id === add_ab.id)
-    assert(fail.onionHash == Crypto.sha256(add_ab.onionRoutingPacket))
+    assert(fail.onionHash == Sphinx.PaymentPacket.hash(add_ab.onionRoutingPacket))
+    assert(fail.failureCode === (FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 5))
 
     register.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)
@@ -383,7 +383,7 @@ class RelayerSpec extends TestkitBaseClass {
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
 
     // we build a fake htlc for the downstream channel
-    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000L, paymentHash = ByteVector32.Zeroes, cltvExpiry = 4200, onionRoutingPacket = ByteVector.empty)
+    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000L, paymentHash = ByteVector32.Zeroes, cltvExpiry = 4200, onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fulfill_ba = UpdateFulfillHtlc(channelId = channelId_bc, id = 42, paymentPreimage = ByteVector32.Zeroes)
     val origin = Relayed(channelId_ab, 150, 11000000L, 10000000L)
     sender.send(relayer, ForwardFulfill(fulfill_ba, origin, add_bc))
@@ -401,8 +401,8 @@ class RelayerSpec extends TestkitBaseClass {
     val sender = TestProbe()
 
     // we build a fake htlc for the downstream channel
-    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000L, paymentHash = ByteVector32.Zeroes, cltvExpiry = 4200, onionRoutingPacket = ByteVector.empty)
-    val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 42, reason = Sphinx.createErrorPacket(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
+    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000L, paymentHash = ByteVector32.Zeroes, cltvExpiry = 4200, onionRoutingPacket = TestConstants.emptyOnionPacket)
+    val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 42, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
     val origin = Relayed(channelId_ab, 150, 11000000L, 10000000L)
     sender.send(relayer, ForwardFail(fail_ba, origin, add_bc))
 

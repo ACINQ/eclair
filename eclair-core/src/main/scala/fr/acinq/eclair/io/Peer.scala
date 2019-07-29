@@ -133,25 +133,25 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
   when(INITIALIZING) {
     case Event(remoteInit: wire.Init, d: InitializingData) =>
       d.transport ! TransportHandler.ReadAck(remoteInit)
-      val remoteFeatures = Features(ByteVector(remoteInit.localFeatures.toArray).toBitVector)
-
+      val remoteHasInitialRoutingSync = Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
+      val remoteHasChannelRangeQueriesOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
+      val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
       log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin} and localFeatures=${remoteInit.localFeatures.toBin}")
-
-      if (remoteFeatures.areSupported) {
+      log.info(s"$remoteNodeId has features: initialRoutingSync=$remoteHasInitialRoutingSync channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional channelRangeQueriesMandatory=$remoteHasChannelRangeQueriesMandatory")
+      if (Features.areSupported(remoteInit.localFeatures)) {
         d.origin_opt.foreach(origin => origin ! "connected")
 
-        if (remoteFeatures.hasInitialRoutingSync) {
-          if (remoteFeatures.hasChannelRangeQueriesOptional || remoteFeatures.hasChannelRangeQueriesMandatory) {
+        if (remoteHasInitialRoutingSync) {
+          if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
             // if they support channel queries we do nothing, they will send us their filters
-            log.info("peer has set initial routing sync and supports channel range queries, we do nothing (they will send us a query)")
+            log.info("{} has set initial routing sync and supports channel range queries, we do nothing (they will send us a query)", remoteNodeId)
           } else {
             // "old" nodes, do as before
             log.info("peer requested a full routing table dump")
             router ! GetRoutingState
           }
         }
-
-        if (remoteFeatures.hasChannelRangeQueriesOptional || remoteFeatures.hasChannelRangeQueriesMandatory) {
+        if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
           // NB: we always add extended info; if peer doesn't understand them it will ignore them
           router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS))
@@ -285,8 +285,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis.toLong, origin_opt = Some(sender))
       c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
       val temporaryChannelId = randomBytes32
-      val channelFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
-      val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(Globals.feeratesPerKw.get.blocks_6)
+      val channelFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
+      val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
       log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
       channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.transport, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
       stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
