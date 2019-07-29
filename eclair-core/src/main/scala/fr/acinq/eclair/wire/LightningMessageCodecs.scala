@@ -75,7 +75,7 @@ object LightningMessageCodecs {
       ("dustLimitSatoshis" | uint64overflowSat) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserveSatoshis" | uint64overflow) ::
-      ("htlcMinimumMsat" | uint64overflow) ::
+      ("htlcMinimumMsat" | uint64overflowMsat) ::
       ("minimumDepth" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
