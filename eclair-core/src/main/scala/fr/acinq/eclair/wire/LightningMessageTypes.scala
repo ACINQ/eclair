@@ -115,7 +115,7 @@ case class Shutdown(channelId: ByteVector32,
                     scriptPubKey: ByteVector) extends ChannelMessage with HasChannelId
 
 case class ClosingSigned(channelId: ByteVector32,
-                         feeSatoshis: Long,
+                         feeSatoshis: Satoshi,
                          signature: ByteVector64) extends ChannelMessage with HasChannelId
 
 case class UpdateAddHtlc(channelId: ByteVector32,

@@ -106,7 +106,7 @@ object LightningMessageCodecs {
 
   val closingSignedCodec: Codec[ClosingSigned] = (
     ("channelId" | bytes32) ::
-      ("feeSatoshis" | uint64overflow) ::
+      ("feeSatoshis" | uint64overflowSat) ::
       ("signature" | bytes64)).as[ClosingSigned]
 
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (

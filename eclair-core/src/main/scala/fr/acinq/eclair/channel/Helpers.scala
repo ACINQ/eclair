@@ -456,7 +456,7 @@ object Helpers {
       val dustLimitSatoshis = Satoshi(Math.max(localParams.dustLimitSatoshis, remoteParams.dustLimitSatoshis))
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
       val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.channelKeyPath))
-      val closingSigned = ClosingSigned(channelId, closingFee.amount, localClosingSig)
+      val closingSigned = ClosingSigned(channelId, closingFee, localClosingSig)
       log.info(s"signed closing txid=${closingTx.tx.txid} with closingFeeSatoshis=${closingSigned.feeSatoshis}")
       log.debug(s"closingTxid=${closingTx.tx.txid} closingTx=${closingTx.tx}}")
       (closingTx, closingSigned)

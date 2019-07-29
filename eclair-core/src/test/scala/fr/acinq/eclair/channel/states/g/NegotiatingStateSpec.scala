@@ -111,7 +111,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
 
   private def testFeeConverge(f: FixtureParam) = {
     import f._
-    var aliceCloseFee, bobCloseFee = 0L
+    var aliceCloseFee, bobCloseFee = Satoshi(0)
     do {
       aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
       alice2bob.forward(bob)
@@ -135,7 +135,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
     val sender = TestProbe()
     val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
-    sender.send(bob, aliceCloseSig.copy(feeSatoshis = 99000)) // sig doesn't matter, it is checked later
+    sender.send(bob, aliceCloseSig.copy(feeSatoshis = Satoshi(99000))) // sig doesn't matter, it is checked later
   val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid close fee: fee_satoshis=99000"))
     bob2blockchain.expectMsg(PublishAsap(tx))
@@ -158,7 +158,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
 
   test("recv BITCOIN_FUNDING_SPENT (counterparty's mutual close)") { f =>
     import f._
-    var aliceCloseFee, bobCloseFee = 0L
+    var aliceCloseFee, bobCloseFee = Satoshi(0)
     do {
       aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
       alice2bob.forward(bob)
@@ -193,7 +193,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     // at this point alice and bob have not yet converged on closing fees, but bob decides to publish a mutual close with one of the previous sigs
     val d = bob.stateData.asInstanceOf[DATA_NEGOTIATING]
     implicit val log: LoggingAdapter = bob.underlyingActor.implicitLog
-    val Success(bobClosingTx) = Closing.checkClosingSignature(Bob.keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(aliceClose1.feeSatoshis), aliceClose1.signature)
+    val Success(bobClosingTx) = Closing.checkClosingSignature(Bob.keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, aliceClose1.feeSatoshis, aliceClose1.signature)
 
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobClosingTx)
     alice2blockchain.expectMsgType[PublishAsap]

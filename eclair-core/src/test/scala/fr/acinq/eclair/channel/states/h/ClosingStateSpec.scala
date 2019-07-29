@@ -22,7 +22,7 @@ import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.typesafe.sslconfig.util.NoopLogger
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, ScriptFlags, Transaction, TxIn}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, ScriptFlags, Transaction, TxIn}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
@@ -124,7 +124,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectMsgType[Shutdown]
     bob2alice.forward(alice)
     // agreeing on a closing fee
-    var aliceCloseFee, bobCloseFee = 0L
+    var aliceCloseFee, bobCloseFee = Satoshi(0)
     do {
       aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
       alice2bob.forward(bob)
@@ -157,7 +157,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val mutualClosingFeeRate = alice.feeEstimator.getFeeratePerKw(alice.feeTargets.mutualCloseBlockTarget)
     val expectedFirstProposedFee = Closing.firstClosingFee(aliceData.commitments, aliceData.localShutdown.scriptPubKey, aliceData.remoteShutdown.scriptPubKey, mutualClosingFeeRate)(akka.event.NoLogging)
     assert(alice.feeTargets.mutualCloseBlockTarget == 2 && mutualClosingFeeRate == 250)
-    assert(closing.feeSatoshis == expectedFirstProposedFee.amount)
+    assert(closing.feeSatoshis == expectedFirstProposedFee)
   }
 
   test("recv BITCOIN_FUNDING_PUBLISH_FAILED", Tag("funding_unconfirmed")) { f =>
