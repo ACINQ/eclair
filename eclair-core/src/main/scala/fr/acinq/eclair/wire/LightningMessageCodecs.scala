@@ -221,7 +221,7 @@ object LightningMessageCodecs {
     Codec(
       ("chainHash" | bytes32) ::
         ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
-        ("tlvStream_opt" | QueryShortChannelIdsTlv.codec)
+        ("tlvStream" | QueryShortChannelIdsTlv.codec)
     ).as[QueryShortChannelIds]
   }
 

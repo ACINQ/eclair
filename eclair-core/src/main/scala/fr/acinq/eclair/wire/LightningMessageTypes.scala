@@ -241,7 +241,7 @@ case class EncodedShortChannelIds(encoding: EncodingType,
 case class QueryShortChannelIds(chainHash: ByteVector32,
                                 shortChannelIds: EncodedShortChannelIds,
                                 tlvStream: TlvStream[QueryShortChannelIdsTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash {
-  val queryFlags: Option[QueryShortChannelIdsTlv.EncodedQueryFlags] = tlvStream.records.collectFirst { case flags: QueryShortChannelIdsTlv.EncodedQueryFlags => flags }
+  val queryFlags: Option[QueryShortChannelIdsTlv.EncodedQueryFlags] = tlvStream.get[QueryShortChannelIdsTlv.EncodedQueryFlags]
 }
 
 case class ReplyShortChannelIdsEnd(chainHash: ByteVector32,
@@ -252,7 +252,7 @@ case class QueryChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
                              tlvStream: TlvStream[QueryChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
-  val queryFlags: Option[QueryChannelRangeTlv.QueryFlags] = tlvStream.records.collectFirst { case flags: QueryChannelRangeTlv.QueryFlags => flags }
+  val queryFlags: Option[QueryChannelRangeTlv.QueryFlags] = tlvStream.get[QueryChannelRangeTlv.QueryFlags]
 }
 
 case class ReplyChannelRange(chainHash: ByteVector32,
@@ -261,9 +261,9 @@ case class ReplyChannelRange(chainHash: ByteVector32,
                              complete: Byte,
                              shortChannelIds: EncodedShortChannelIds,
                              tlvStream: TlvStream[ReplyChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
-  val timestamps: Option[ReplyChannelRangeTlv.EncodedTimestamps] = tlvStream.records.collectFirst { case ts: ReplyChannelRangeTlv.EncodedTimestamps => ts }
+  val timestamps: Option[ReplyChannelRangeTlv.EncodedTimestamps] = tlvStream.get[ReplyChannelRangeTlv.EncodedTimestamps]
 
-  val checksums: Option[ReplyChannelRangeTlv.EncodedChecksums] = tlvStream.records.collectFirst { case cs: ReplyChannelRangeTlv.EncodedChecksums => cs }
+  val checksums: Option[ReplyChannelRangeTlv.EncodedChecksums] = tlvStream.get[ReplyChannelRangeTlv.EncodedChecksums]
 }
 
 object ReplyChannelRange {
