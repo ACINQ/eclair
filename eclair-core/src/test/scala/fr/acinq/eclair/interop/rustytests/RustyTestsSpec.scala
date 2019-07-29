@@ -22,7 +22,7 @@ import java.util.concurrent.{CountDownLatch, TimeUnit}
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
@@ -53,13 +53,14 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val relayer = paymentHandler
     val router = TestProbe()
     val wallet = new TestWallet
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, router.ref, relayer))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, router.ref, relayer))
+    val feeEstimator = new TestFeeEstimator
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams.copy(onChainFeeConf = Alice.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator)), wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, router.ref, relayer))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams.copy(onChainFeeConf = Bob.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator)), wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, router.ref, relayer))
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     // alice and bob will both have 1 000 000 sat
-    Globals.feeratesPerKw.set(FeeratesPerKw.single(10000))
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, 2000000, 1000000000, Globals.feeratesPerKw.get.blocks_2, Globals.feeratesPerKw.get.blocks_6, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)
+    feeEstimator.setFeerate(FeeratesPerKw.single(10000))
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, 2000000, 1000000000, feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit)
     pipe ! (alice, bob)
     within(30 seconds) {
@@ -84,7 +85,6 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
   }
 
   override def afterAll {
-    Globals.feeratesPerKw.set(FeeratesPerKw.single(1))
     TestKit.shutdownActorSystem(system)
   }
 

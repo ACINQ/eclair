@@ -46,13 +46,15 @@ class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: F
     blocks_12 <- estimateSmartFee(12)
     blocks_36 <- estimateSmartFee(36)
     blocks_72 <- estimateSmartFee(72)
+    blocks_144 <- estimateSmartFee(144)
   } yield FeeratesPerKB(
     block_1 = if (block_1 > 0) block_1 else defaultFeerates.block_1,
     blocks_2 = if (blocks_2 > 0) blocks_2 else defaultFeerates.blocks_2,
     blocks_6 = if (blocks_6 > 0) blocks_6 else defaultFeerates.blocks_6,
     blocks_12 = if (blocks_12 > 0) blocks_12 else defaultFeerates.blocks_12,
     blocks_36 = if (blocks_36 > 0) blocks_36 else defaultFeerates.blocks_36,
-    blocks_72 = if (blocks_72 > 0) blocks_72 else defaultFeerates.blocks_72)
+    blocks_72 = if (blocks_72 > 0) blocks_72 else defaultFeerates.blocks_72,
+    blocks_144 = if (blocks_144 > 0) blocks_144 else defaultFeerates.blocks_144)
 }
 
 object BitcoinCoreFeeProvider {
