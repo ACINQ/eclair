@@ -54,11 +54,8 @@ object CommonCodecs {
   val uint64overflow: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
   val uint64: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
 
-  val uint64overflowSat: Codec[Satoshi] = uint64overflow.xmapc(l => Satoshi(l))(_.toLong)
-  val uint64overflowMsat: Codec[MilliSatoshi] = uint64overflow.xmapc(l => MilliSatoshi(l))(_.amount)
-
-  val uint64Sat: Codec[Satoshi] = uint64.xmapc(l => Satoshi(l.toBigInt.longValue()))(sat => UInt64(sat.toLong))
-  val uint64Msat: Codec[MilliSatoshi] = uint64.xmapc(l => MilliSatoshi(l.toBigInt.longValue()))(msat => UInt64(msat.amount))
+  val satoshi: Codec[Satoshi] = uint64overflow.xmapc(l => Satoshi(l))(_.toLong)
+  val millisatoshi: Codec[MilliSatoshi] = uint64overflow.xmapc(l => MilliSatoshi(l))(_.amount)
 
   /**
     * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be

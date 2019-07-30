@@ -53,12 +53,12 @@ object LightningMessageCodecs {
   val openChannelCodec: Codec[OpenChannel] = (
     ("chainHash" | bytes32) ::
       ("temporaryChannelId" | bytes32) ::
-      ("fundingSatoshis" | uint64overflowSat) ::
-      ("pushMsat" | uint64overflowMsat) ::
-      ("dustLimitSatoshis" | uint64overflowSat) ::
+      ("fundingSatoshis" | satoshi) ::
+      ("pushMsat" | millisatoshi) ::
+      ("dustLimitSatoshis" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
-      ("channelReserveSatoshis" | uint64overflowSat) ::
-      ("htlcMinimumMsat" | uint64overflowMsat) ::
+      ("channelReserveSatoshis" | satoshi) ::
+      ("htlcMinimumMsat" | millisatoshi) ::
       ("feeratePerKw" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
@@ -72,10 +72,10 @@ object LightningMessageCodecs {
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | bytes32) ::
-      ("dustLimitSatoshis" | uint64overflowSat) ::
+      ("dustLimitSatoshis" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
-      ("channelReserveSatoshis" | uint64overflowSat) ::
-      ("htlcMinimumMsat" | uint64overflowMsat) ::
+      ("channelReserveSatoshis" | satoshi) ::
+      ("htlcMinimumMsat" | millisatoshi) ::
       ("minimumDepth" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
@@ -106,13 +106,13 @@ object LightningMessageCodecs {
 
   val closingSignedCodec: Codec[ClosingSigned] = (
     ("channelId" | bytes32) ::
-      ("feeSatoshis" | uint64overflowSat) ::
+      ("feeSatoshis" | satoshi) ::
       ("signature" | bytes64)).as[ClosingSigned]
 
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
       ("id" | uint64overflow) ::
-      ("amountMsat" | uint64overflowMsat) ::
+      ("amountMsat" | millisatoshi) ::
       ("paymentHash" | bytes32) ::
       ("expiry" | uint32) ::
       ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec)).as[UpdateAddHtlc]
@@ -191,7 +191,7 @@ object LightningMessageCodecs {
       (("messageFlags" | byte) >>:~ { messageFlags =>
         ("channelFlags" | byte) ::
           ("cltvExpiryDelta" | uint16) ::
-          ("htlcMinimumMsat" | uint64overflowMsat) ::
+          ("htlcMinimumMsat" | millisatoshi) ::
           ("feeBaseMsat" | uint32) ::
           ("feeProportionalMillionths" | uint32) ::
           ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64overflow)) ::
