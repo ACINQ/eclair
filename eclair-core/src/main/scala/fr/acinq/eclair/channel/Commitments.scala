@@ -146,7 +146,7 @@ object Commitments {
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
     val outgoingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
-    val htlcValueInFlight = UInt64(outgoingHtlcs.map(_.add.amountMsat.toLong).sum)
+    val htlcValueInFlight = UInt64(outgoingHtlcs.map(_.add.amountMsat).sum.toLong)
     if (htlcValueInFlight > commitments1.remoteParams.maxHtlcValueInFlightMsat) {
       // TODO: this should be a specific UPDATE error
       return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
@@ -181,7 +181,7 @@ object Commitments {
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
     val incomingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
-    val htlcValueInFlight = UInt64(incomingHtlcs.map(_.add.amountMsat.toLong).sum)
+    val htlcValueInFlight = UInt64(incomingHtlcs.map(_.add.amountMsat).sum.toLong)
     if (htlcValueInFlight > commitments1.localParams.maxHtlcValueInFlightMsat) {
       throw HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
     }

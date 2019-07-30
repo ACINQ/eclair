@@ -190,4 +190,17 @@ package object eclair {
     }
   }
 
+  implicit object NumericMilliSatoshi extends Numeric[MilliSatoshi] {
+    override def plus(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = MilliSatoshi(x.amount + y.amount)
+    override def minus(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = MilliSatoshi(x.amount - y.amount)
+    override def times(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = MilliSatoshi(x.amount * y.amount)
+    override def negate(x: MilliSatoshi): MilliSatoshi = MilliSatoshi(-x.amount)
+    override def fromInt(x: Int): MilliSatoshi = MilliSatoshi(x)
+    override def toInt(x: MilliSatoshi): Int = x.toLong.toInt
+    override def toLong(x: MilliSatoshi): Long = x.toLong
+    override def toFloat(x: MilliSatoshi): Float = x.toLong
+    override def toDouble(x: MilliSatoshi): Double = x.toLong
+    override def compare(x: MilliSatoshi, y: MilliSatoshi): Int = x.compare(y)
+  }
+
 }

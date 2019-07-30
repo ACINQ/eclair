@@ -1897,8 +1897,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // assert the feerate of the claim main is what we expect
     val expectedFeeRate = alice.feeEstimator.getFeeratePerKw(alice.feeTargets.claimMainBlockTarget)
-    val expectedFee = Transactions.weight2fee(expectedFeeRate, Transactions.claimP2WPKHOutputWeight).toLong
-    val claimFee = claimMain.txIn.map(in => bobCommitTx.txOut(in.outPoint.index.toInt).amount.toLong).sum - claimMain.txOut.map(_.amount.toLong).sum
+    val expectedFee = Transactions.weight2fee(expectedFeeRate, Transactions.claimP2WPKHOutputWeight)
+    val claimFee = claimMain.txIn.map(in => bobCommitTx.txOut(in.outPoint.index.toInt).amount).sum - claimMain.txOut.map(_.amount).sum
     assert(claimFee == expectedFee)
   }
 
