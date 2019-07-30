@@ -22,7 +22,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire.{Error, Init, OpenChannel}
-import fr.acinq.eclair.{MilliSatoshi, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{MilliSatoshi, TestConstants, TestkitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.Outcome
 
 import scala.concurrent.duration._
@@ -99,10 +99,10 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   test("recv OpenChannel (invalid push_msat)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val invalidPushMsat = 100000000000L
-    bob ! open.copy(pushMsat = MilliSatoshi(invalidPushMsat))
+    val invalidPushMsat = MilliSatoshi(100000000000L)
+    bob ! open.copy(pushMsat = invalidPushMsat)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, invalidPushMsat, open.fundingSatoshis.toLong).getMessage))
+    assert(error === Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, invalidPushMsat, open.fundingSatoshis.toMilliSatoshi).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 

@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
-import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.{MilliSatoshi, UInt64}
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.wire.{ChannelUpdate, UpdateAddHtlc}
 
@@ -32,14 +32,14 @@ class ChannelException(val channelId: ByteVector32, message: String) extends Run
 case class DebugTriggeredException             (override val channelId: ByteVector32) extends ChannelException(channelId, "debug-mode triggered failure")
 case class InvalidChainHash                    (override val channelId: ByteVector32, local: ByteVector32, remote: ByteVector32) extends ChannelException(channelId, s"invalid chainHash (local=$local remote=$remote)")
 case class InvalidFundingAmount                (override val channelId: ByteVector32, fundingSatoshis: Long, min: Long, max: Long) extends ChannelException(channelId, s"invalid funding_satoshis=$fundingSatoshis (min=$min max=$max)")
-case class InvalidPushAmount                   (override val channelId: ByteVector32, pushMsat: Long, max: Long) extends ChannelException(channelId, s"invalid pushMsat=$pushMsat (max=$max)")
+case class InvalidPushAmount                   (override val channelId: ByteVector32, pushAmount: MilliSatoshi, max: MilliSatoshi) extends ChannelException(channelId, s"invalid pushAmount=$pushAmount (max=$max)")
 case class InvalidMaxAcceptedHtlcs             (override val channelId: ByteVector32, maxAcceptedHtlcs: Int, max: Int) extends ChannelException(channelId, s"invalid max_accepted_htlcs=$maxAcceptedHtlcs (max=$max)")
-case class DustLimitTooSmall                   (override val channelId: ByteVector32, dustLimitSatoshis: Satoshi, min: Satoshi) extends ChannelException(channelId, s"dustLimitSatoshis=$dustLimitSatoshis is too small (min=$min)")
-case class DustLimitTooLarge                   (override val channelId: ByteVector32, dustLimitSatoshis: Satoshi, max: Satoshi) extends ChannelException(channelId, s"dustLimitSatoshis=$dustLimitSatoshis is too large (max=$max)")
-case class DustLimitAboveOurChannelReserve     (override val channelId: ByteVector32, dustLimitSatoshis: Satoshi, channelReserveSatoshis: Satoshi) extends ChannelException(channelId, s"dustLimitSatoshis dustLimitSatoshis=$dustLimitSatoshis is above our channelReserveSatoshis=$channelReserveSatoshis")
+case class DustLimitTooSmall                   (override val channelId: ByteVector32, dustLimit: Satoshi, min: Satoshi) extends ChannelException(channelId, s"dustLimit=$dustLimit is too small (min=$min)")
+case class DustLimitTooLarge                   (override val channelId: ByteVector32, dustLimit: Satoshi, max: Satoshi) extends ChannelException(channelId, s"dustLimit=$dustLimit is too large (max=$max)")
+case class DustLimitAboveOurChannelReserve     (override val channelId: ByteVector32, dustLimit: Satoshi, channelReserve: Satoshi) extends ChannelException(channelId, s"dustLimit=$dustLimit is above our channelReserve=$channelReserve")
 case class ToSelfDelayTooHigh                  (override val channelId: ByteVector32, toSelfDelay: Int, max: Int) extends ChannelException(channelId, s"unreasonable to_self_delay=$toSelfDelay (max=$max)")
-case class ChannelReserveTooHigh               (override val channelId: ByteVector32, channelReserveSatoshis: Satoshi, reserveToFundingRatio: Double, maxReserveToFundingRatio: Double) extends ChannelException(channelId, s"channelReserveSatoshis too high: reserve=$channelReserveSatoshis fundingRatio=$reserveToFundingRatio maxFundingRatio=$maxReserveToFundingRatio")
-case class ChannelReserveBelowOurDustLimit     (override val channelId: ByteVector32, channelReserveSatoshis: Satoshi, dustLimitSatoshis: Satoshi) extends ChannelException(channelId, s"their channelReserveSatoshis=$channelReserveSatoshis is below our dustLimitSatoshis=$dustLimitSatoshis")
+case class ChannelReserveTooHigh               (override val channelId: ByteVector32, channelReserve: Satoshi, reserveToFundingRatio: Double, maxReserveToFundingRatio: Double) extends ChannelException(channelId, s"channelReserve too high: reserve=$channelReserve fundingRatio=$reserveToFundingRatio maxFundingRatio=$maxReserveToFundingRatio")
+case class ChannelReserveBelowOurDustLimit     (override val channelId: ByteVector32, channelReserve: Satoshi, dustLimit: Satoshi) extends ChannelException(channelId, s"their channelReserve=$channelReserve is below our dustLimit=$dustLimit")
 case class ChannelReserveNotMet                (override val channelId: ByteVector32, toLocalMsat: Long, toRemoteMsat: Long, reserveSatoshis: Long) extends ChannelException(channelId, s"channel reserve is not met toLocalMsat=$toLocalMsat toRemoteMsat=$toRemoteMsat reserveSat=$reserveSatoshis")
 case class ChannelFundingError                 (override val channelId: ByteVector32) extends ChannelException(channelId, "channel funding error")
 case class NoMoreHtlcsClosingInProgress        (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")
