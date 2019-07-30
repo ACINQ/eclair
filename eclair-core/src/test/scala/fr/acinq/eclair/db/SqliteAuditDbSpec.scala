@@ -18,14 +18,14 @@ package fr.acinq.eclair.db
 
 import java.util.UUID
 
-import fr.acinq.bitcoin.{MilliSatoshi, Satoshi, Transaction}
+import fr.acinq.bitcoin.{Satoshi, Transaction}
 import fr.acinq.eclair.channel.Channel.{LocalError, RemoteError}
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, ChannelErrorOccured, NetworkFeePaid}
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
-import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelCodecs, ChannelCodecsSpec}
 import fr.acinq.eclair._
+import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import org.scalatest.FunSuite
 
 import concurrent.duration._

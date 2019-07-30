@@ -18,7 +18,7 @@ package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.{Block, MilliSatoshi}
+import fr.acinq.bitcoin.{Block}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.TransportHandler

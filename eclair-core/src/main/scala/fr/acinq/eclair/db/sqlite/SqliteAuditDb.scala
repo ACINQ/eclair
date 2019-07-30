@@ -19,7 +19,7 @@ package fr.acinq.eclair.db.sqlite
 import java.sql.{Connection, Statement}
 import java.util.UUID
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, Channel, ChannelErrorOccured, NetworkFeePaid}
 import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent, NetworkFee, Stats}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}

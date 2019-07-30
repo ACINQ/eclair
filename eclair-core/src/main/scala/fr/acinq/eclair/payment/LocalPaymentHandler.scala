@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props, Status}
-import fr.acinq.bitcoin.{Crypto, MilliSatoshi}
+import fr.acinq.bitcoin.{Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment

@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, MilliSatoshi, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair._
 import fr.acinq.eclair.api.JsonSupport
 import fr.acinq.eclair.channel.Helpers.Funding

@@ -19,12 +19,12 @@ package fr.acinq.eclair.gui.controllers
 import java.lang.Boolean
 
 import com.google.common.base.Strings
-import fr.acinq.bitcoin.{Satoshi, _}
+import fr.acinq.bitcoin.{Satoshi, satoshi2millisatoshi}
 import fr.acinq.eclair.channel.{Channel, ChannelFlags}
 import fr.acinq.eclair.gui.utils.Constants
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.io.{NodeURI, Peer}
-import fr.acinq.eclair.{CoinUtils, Globals}
+import fr.acinq.eclair.{CoinUtils, Globals, MilliSatoshi}
 import grizzled.slf4j.Logging
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.event.ActionEvent

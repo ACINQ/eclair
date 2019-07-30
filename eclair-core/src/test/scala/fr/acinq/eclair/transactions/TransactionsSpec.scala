@@ -20,9 +20,10 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, Protocol, Satoshi, Script, Transaction, TxOut, millibtc2millisatoshi, millibtc2satoshi, satoshi2millisatoshi}
 import fr.acinq.eclair.channel.Helpers.Funding
-import fr.acinq.eclair.{TestConstants, randomBytes32}
+import fr.acinq.eclair.{MilliSatoshi, TestConstants, randomBytes32}
+import fr.acinq.eclair._
 import fr.acinq.eclair.transactions.Scripts.{htlcOffered, htlcReceived, toLocalDelayed}
 import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
 import fr.acinq.eclair.wire.UpdateAddHtlc
@@ -183,9 +184,9 @@ class TransactionsSpec extends FunSuite with Logging {
 
     // htlc1 and htlc2 are regular IN/OUT htlcs
     val paymentPreimage1 = randomBytes32
-    val htlc1 = UpdateAddHtlc(ByteVector32.Zeroes, 0, millibtc2millisatoshi(MilliBtc(100)), sha256(paymentPreimage1), 300, TestConstants.emptyOnionPacket)
+    val htlc1 = UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliBtc(100).toMilliSatoshi, sha256(paymentPreimage1), 300, TestConstants.emptyOnionPacket)
     val paymentPreimage2 = randomBytes32
-    val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 1, millibtc2millisatoshi(MilliBtc(200)), sha256(paymentPreimage2), 300, TestConstants.emptyOnionPacket)
+    val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliBtc(200).toMilliSatoshi, sha256(paymentPreimage2), 300, TestConstants.emptyOnionPacket)
     // htlc3 and htlc4 are dust htlcs IN/OUT htlcs, with an amount large enough to be included in the commit tx, but too small to be claimed at 2nd stage
     val paymentPreimage3 = randomBytes32
     val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi((localDustLimit + weight2fee(feeratePerKw, htlcTimeoutWeight)).amount * 1000), sha256(paymentPreimage3), 300, TestConstants.emptyOnionPacket)
@@ -320,7 +321,7 @@ class TransactionsSpec extends FunSuite with Logging {
   }
 
   def htlc(direction: Direction, amount: Satoshi): DirectedHtlc =
-    DirectedHtlc(direction, UpdateAddHtlc(ByteVector32.Zeroes, 0, satoshi2millisatoshi(amount), ByteVector32.Zeroes, 144, TestConstants.emptyOnionPacket))
+    DirectedHtlc(direction, UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, 144, TestConstants.emptyOnionPacket))
 
   test("BOLT 2 fee tests") {
 

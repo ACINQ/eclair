@@ -20,7 +20,7 @@ import java.util.UUID
 
 import akka.pattern.{AskTimeoutException, ask}
 import akka.util.Timeout
-import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.io.{NodeURI, Peer}

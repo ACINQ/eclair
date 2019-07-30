@@ -19,13 +19,13 @@ package fr.acinq.eclair.payment
 import akka.actor.Status.Failure
 import akka.actor.ActorSystem
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UpdateAddHtlc}
-import fr.acinq.eclair.{Globals, ShortChannelId, TestConstants, randomKey}
+import fr.acinq.eclair.{Globals, MilliSatoshi, ShortChannelId, TestConstants, randomKey}
 import org.scalatest.FunSuiteLike
 import scodec.bits.ByteVector
 

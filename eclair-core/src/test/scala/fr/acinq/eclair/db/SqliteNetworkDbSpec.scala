@@ -16,11 +16,11 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.{Block, Crypto, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
-import fr.acinq.eclair.{ShortChannelId, TestConstants, randomBytes32, randomKey}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 import org.sqlite.SQLiteException
 

@@ -19,14 +19,14 @@ package fr.acinq.eclair.payment
 import java.util.UUID
 
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, MilliSatoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.channel.{Channel, ChannelVersion, Commitments}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, PacketAndSecrets}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{ChannelUpdate, OnionCodecs, PerHopPayload}
-import fr.acinq.eclair.{ShortChannelId, TestConstants, nodeFee, randomBytes32}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TestConstants, nodeFee, randomBytes32}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 

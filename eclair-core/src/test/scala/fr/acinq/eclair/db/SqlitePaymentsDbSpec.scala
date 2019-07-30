@@ -17,17 +17,19 @@
 package fr.acinq.eclair.db
 
 import java.util.UUID
+
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
-import fr.acinq.bitcoin.{Block, ByteVector32, MilliSatoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.TestConstants.Bob
-import fr.acinq.eclair.{TestConstants, payment}
+import fr.acinq.eclair.{MilliSatoshi, TestConstants, payment, randomBytes32}
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.payment.PaymentRequest
 import org.scalatest.FunSuite
 import scodec.bits._
-import fr.acinq.eclair.randomBytes32
+
 import scala.compat.Platform
 import OutgoingPaymentStatus._
+
 import concurrent.duration._
 
 class SqlitePaymentsDbSpec extends FunSuite {

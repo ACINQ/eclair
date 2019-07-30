@@ -17,10 +17,8 @@
 package fr.acinq.eclair
 
 import java.text.{DecimalFormat, NumberFormat}
-
-import fr.acinq.bitcoin.{Btc, BtcAmount, MilliBtc, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{Btc, BtcAmount, MilliBtc, Satoshi}
 import grizzled.slf4j.Logging
-
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -154,7 +152,7 @@ object CoinUtils extends Logging {
   }
 
   def convertStringAmountToSat(amount: String, unit: String): Satoshi =
-    fr.acinq.bitcoin.millisatoshi2satoshi(CoinUtils.convertStringAmountToMsat(amount, unit))
+   CoinUtils.convertStringAmountToMsat(amount, unit).toSatoshi
 
   /**
     * Only BtcUnit, MBtcUnit, BitUnit, SatUnit and MSatUnit codes or label are supported.
@@ -223,6 +221,11 @@ object CoinUtils extends Logging {
     if (withUnit) s"$formatted ${unit.shortLabel}" else formatted
   }
 
+  def formatAmountInUnit(amount: MilliSatoshi, unit: CoinUnit, withUnit: Boolean): String = {
+    val formatted = COIN_FORMAT.format(rawAmountInUnit(amount, unit))
+    if (withUnit) s"$formatted ${unit.shortLabel}" else formatted
+  }
+
   /**
     * Converts the amount to the user preferred unit and returns the BigDecimal value.
     * This method is useful to feed numeric text input without formatting.
@@ -237,7 +240,10 @@ object CoinUtils extends Logging {
     case a => throw new IllegalArgumentException(s"unhandled unit $a")
   }) match {
     case Success(b) => b
-    case Failure(t) => logger.error("can not convert amount to user unit", t)
+    case Failure(t) =>
+      logger.error("can not convert amount to user unit", t)
       -1
   }
+
+  def rawAmountInUnit(msat: MilliSatoshi, unit: CoinUnit): BigDecimal = BigDecimal(msat.amount) / unit.factorToMsat
 }

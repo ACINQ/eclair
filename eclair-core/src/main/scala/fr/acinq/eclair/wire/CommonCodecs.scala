@@ -20,8 +20,8 @@ import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Mac32
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.{ShortChannelId, UInt64}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -55,10 +55,10 @@ object CommonCodecs {
   val uint64: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
 
   val uint64overflowSat: Codec[Satoshi] = uint64overflow.xmapc(l => Satoshi(l))(_.toLong)
-  val uint64overflowMsat: Codec[MilliSatoshi] = uint64overflow.xmapc(l => MilliSatoshi(l))(_.toLong)
+  val uint64overflowMsat: Codec[MilliSatoshi] = uint64overflow.xmapc(l => MilliSatoshi(l))(_.amount)
 
   val uint64Sat: Codec[Satoshi] = uint64.xmapc(l => Satoshi(l.toBigInt.longValue()))(sat => UInt64(sat.toLong))
-  val uint64Msat: Codec[MilliSatoshi] = uint64.xmapc(l => MilliSatoshi(l.toBigInt.longValue()))(msat => UInt64(msat.toLong))
+  val uint64Msat: Codec[MilliSatoshi] = uint64.xmapc(l => MilliSatoshi(l.toBigInt.longValue()))(msat => UInt64(msat.amount))
 
   /**
     * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be

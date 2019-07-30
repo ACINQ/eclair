@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, MilliSatoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Hmac256
-import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomBytes64}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, randomBytes32, randomBytes64}
 import fr.acinq.eclair.wire.FailureMessageCodecs._
 import org.scalatest.FunSuite
 import scodec.bits._

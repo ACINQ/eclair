@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.{TestConstants, randomBytes32}
 import fr.acinq.eclair.wire.{ChannelCodecsSpec, TemporaryNodeFailure, UpdateAddHtlc}

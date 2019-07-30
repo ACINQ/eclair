@@ -20,13 +20,13 @@ import java.util.UUID
 
 import akka.actor.{ActorRef, Status}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{ShortChannelId, TestConstants, TestkitBaseClass, UInt64, randomBytes32}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TestConstants, TestkitBaseClass, UInt64, randomBytes32}
 import org.scalatest.Outcome
 import scodec.bits.ByteVector
 

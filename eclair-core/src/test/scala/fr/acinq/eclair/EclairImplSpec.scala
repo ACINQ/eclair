@@ -20,14 +20,12 @@ import java.io.File
 
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.PaymentLifecycle.{ReceivePayment, SendPayment, SendPaymentToRoute}
-import org.scalatest.{Outcome, fixture}
 import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import org.scalatest.{Matchers, Outcome, fixture}

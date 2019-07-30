@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, MilliSatoshi, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptFlags, ScriptWitness, Transaction, TxIn, TxOut, millisatoshi2satoshi}
+import fr.acinq.eclair._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import scodec.bits.ByteVector
@@ -121,7 +122,7 @@ object Transactions {
     val htlcTimeoutFee = weight2fee(spec.feeratePerKw, htlcTimeoutWeight)
     spec.htlcs
       .filter(_.direction == OUT)
-      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcTimeoutFee))
+      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcTimeoutFee).toMilliSatoshi)
       .toSeq
   }
 
@@ -129,7 +130,7 @@ object Transactions {
     val htlcSuccessFee = weight2fee(spec.feeratePerKw, htlcSuccessWeight)
     spec.htlcs
       .filter(_.direction == IN)
-      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcSuccessFee))
+      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcSuccessFee).toMilliSatoshi)
       .toSeq
   }
 
@@ -199,9 +200,9 @@ object Transactions {
     val toRemoteOutput_opt = if (toRemoteAmount >= localDustLimit) Some(TxOut(toRemoteAmount, pay2wpkh(remotePaymentPubkey))) else None
 
     val htlcOfferedOutputs = trimOfferedHtlcs(localDustLimit, spec)
-      .map(htlc => TxOut(htlc.add.amountMsat, pay2wsh(htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes)))))
+      .map(htlc => TxOut(htlc.add.amountMsat.toSatoshi, pay2wsh(htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes)))))
     val htlcReceivedOutputs = trimReceivedHtlcs(localDustLimit, spec)
-      .map(htlc => TxOut(htlc.add.amountMsat, pay2wsh(htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes), htlc.add.cltvExpiry))))
+      .map(htlc => TxOut(htlc.add.amountMsat.toSatoshi, pay2wsh(htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes), htlc.add.cltvExpiry))))
 
     val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, locktime) = encodeTxNumber(txnumber)
@@ -219,7 +220,7 @@ object Transactions {
     val redeemScript = htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.paymentHash.bytes))
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(Satoshi(htlc.amountMsat.toLong / 1000)))
-    val amount = htlc.amountMsat - fee
+    val amount = htlc.amountMsat.toSatoshi - fee
     if (amount < localDustLimit) {
       throw AmountBelowDustLimit
     }
@@ -236,7 +237,7 @@ object Transactions {
     val redeemScript = htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.paymentHash.bytes), htlc.cltvExpiry)
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(Satoshi(htlc.amountMsat.toLong / 1000)))
-    val amount = htlc.amountMsat - fee
+    val amount = htlc.amountMsat.toSatoshi - fee
     if (amount < localDustLimit) {
       throw AmountBelowDustLimit
     }

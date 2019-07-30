@@ -18,7 +18,7 @@ package fr.acinq.eclair.gui.controllers
 
 import akka.actor.ActorRef
 import com.google.common.base.Strings
-import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.channel.{CMD_CLOSE, CMD_FORCECLOSE, Commitments}
 import fr.acinq.eclair.gui.FxApp
@@ -134,7 +134,7 @@ class ChannelPaneController(val channelRef: ActorRef, val peerNodeId: String) ex
   }
 
   def refreshBalance(): Unit = {
-    amountUs.setText(s"${CoinUtils.formatAmountInUnit(balance, FxApp.getUnit)} / ${CoinUtils.formatAmountInUnit(capacity, FxApp.getUnit, withUnit = true)}")
+    amountUs.setText(s"${CoinUtils.formatAmountInUnit(balance, FxApp.getUnit, false)} / ${CoinUtils.formatAmountInUnit(capacity, FxApp.getUnit, withUnit = true)}")
     balanceBar.setProgress(balance.amount.toDouble / capacity.amount)
   }
 

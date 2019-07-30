@@ -159,4 +159,35 @@ package object eclair {
     * We use this in the context of timestamp filtering, when we don't need an upper bound.
     */
   val MaxEpochSeconds = Duration.fromNanos(Long.MaxValue).toSeconds
+
+  /**
+    * One MilliSatoshi is a thousand of a Satoshi, the smallest unit usable in bitcoin
+    * @param amount
+    */
+  case class MilliSatoshi(amount: Long) {
+    // @formatter:off
+    def toLong = amount
+    def +(other: MilliSatoshi) = MilliSatoshi(amount + other.amount)
+    def -(other: MilliSatoshi) = MilliSatoshi(amount - other.amount)
+    def *(m: Long) = MilliSatoshi(amount * m)
+    def /(d: Long) = MilliSatoshi(amount / d)
+    def compare(other: MilliSatoshi): Int = if (amount == other.amount) 0 else if (amount < other.amount) -1 else 1
+    def <= (that: MilliSatoshi): Boolean = compare(that) <= 0
+    def >= (that: MilliSatoshi): Boolean = compare(that) >= 0
+    def <  (that: MilliSatoshi): Boolean = compare(that) < 0
+    def >  (that: MilliSatoshi): Boolean = compare(that) > 0
+    def unary_-() = MilliSatoshi(-amount)
+    def toSatoshi: Satoshi = Satoshi(amount / 1000)
+    // @formatter:on
+  }
+
+  implicit class ToMilliSatoshiConversion(amount: BtcAmount) {
+    def toMilliSatoshi: MilliSatoshi = amount match {
+      case fr.acinq.bitcoin.MilliSatoshi(msat) => MilliSatoshi(msat) // TODO remove this
+      case sat: Satoshi => MilliSatoshi(satoshi2millisatoshi(sat).amount)
+      case millis: MilliBtc => MilliSatoshi(millibtc2millisatoshi(millis).amount)
+      case bitcoin: Btc => MilliSatoshi(btc2millisatoshi(bitcoin).amount)
+    }
+  }
+
 }
