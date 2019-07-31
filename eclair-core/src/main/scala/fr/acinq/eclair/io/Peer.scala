@@ -629,17 +629,23 @@ object Peer {
   // @formatter:on
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
-    val entropy = new Array[Byte](16)
+    val entropy = new Array[Byte](8)
     secureRandom.nextBytes(entropy)
     val bis = new ByteArrayInputStream(entropy)
-    val channelKeyPath = DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)))
-    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelKeyPath)
+    // we make sure that funder and fundee key path end differently
+    val last = isFunder match {
+      case false => DeterministicWallet.hardened(0)
+      case true => DeterministicWallet.hardened(1)
+    }
+    val fundingKeyPath = DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), last))
+    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, fundingKeyPath)
   }
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: DeterministicWallet.KeyPath): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, fundingKeyPath: DeterministicWallet.KeyPath): LocalParams = {
     LocalParams(
+      version = 1,
       nodeParams.nodeId,
-      channelKeyPath,
+      fundingKeyPath,
       dustLimitSatoshis = nodeParams.dustLimitSatoshis,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
       channelReserveSatoshis = Math.max((nodeParams.reserveToFundingRatio * fundingSatoshis).toLong, nodeParams.dustLimitSatoshis), // BOLT #2: make sure that our reserve is above our dust limit

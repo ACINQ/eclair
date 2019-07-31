@@ -16,9 +16,12 @@
 
 package fr.acinq.eclair.crypto
 
+import java.io.ByteArrayInputStream
+import java.nio.ByteOrder
+
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, Protocol}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 import scodec.bits.ByteVector
@@ -28,7 +31,7 @@ trait KeyManager {
 
   def nodeId: PublicKey
 
-  def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
+  def fundingPublicKey(keyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
   def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
@@ -73,5 +76,36 @@ trait KeyManager {
     */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64
 
-  def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector64, ByteVector64)
+  /**
+    * Sign a channel announcement message
+    *
+    * @param fundingKeyPath BIP32 path of the funding public key
+    * @param chainHash chain hash
+    * @param shortChannelId short channel id
+    * @param remoteNodeId remote node id
+    * @param remoteFundingKey remote funding pubkey
+    * @param features channel features
+    * @return a (nodeSig, bitcoinSig) pair. nodeSig is the signature of the channel announcement with our node's
+    *         private key, bitcoinSig is the signature of the channel announcement with our funding private key
+    */
+  def signChannelAnnouncement(fundingKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector64, ByteVector64)
+
+  def signChannelAnnouncement(fundingKey: DeterministicWallet.ExtendedPublicKey, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector64, ByteVector64)
+  = signChannelAnnouncement(fundingKey.path, chainHash, shortChannelId, remoteNodeId, remoteFundingKey, features)
+}
+
+object KeyManager {
+  /**
+    * Create a BIP32 path from a public key. This path will be used to derive channel keys.
+    *
+    * @param fundingPubKey funding public key
+    * @return a BIP32 path
+    */
+  def channelKeyPath(fundingPubKey: PublicKey) : DeterministicWallet.KeyPath = {
+    val buffer = fundingPubKey.hash160.take(8)
+    val bis = new ByteArrayInputStream(buffer.toArray)
+    DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)))
+  }
+
+  def channelKeyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey) : DeterministicWallet.KeyPath = channelKeyPath(fundingPubKey.publicKey)
 }

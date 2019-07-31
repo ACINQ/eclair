@@ -19,8 +19,9 @@ package fr.acinq.eclair.channel
 import java.util.UUID
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
+import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc}
@@ -189,8 +190,9 @@ final case class DATA_CLOSING(commitments: Commitments,
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
-final case class LocalParams(nodeId: PublicKey,
-                             channelKeyPath: DeterministicWallet.KeyPath,
+final case class LocalParams(version: Int,
+                             nodeId: PublicKey,
+                             fundingKeyPath: DeterministicWallet.KeyPath,
                              dustLimitSatoshis: Long,
                              maxHtlcValueInFlightMsat: UInt64,
                              channelReserveSatoshis: Long,
@@ -200,7 +202,20 @@ final case class LocalParams(nodeId: PublicKey,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
                              globalFeatures: ByteVector,
-                             localFeatures: ByteVector)
+                             localFeatures: ByteVector) {
+
+  def fundingPubKey(keyManager: KeyManager) = keyManager.fundingPublicKey(fundingKeyPath)
+
+  def channelKeyPath(keyManager: KeyManager) = version match {
+    case 0 =>
+      // legacy mode:  we reuse the funding key path as our channel key path
+      fundingKeyPath
+    case 1 =>
+      // deterministic mode: use the funding pubkey to compute the channel key path
+      KeyManager.channelKeyPath(fundingPubKey(keyManager))
+
+  }
+}
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimitSatoshis: Long,

@@ -58,8 +58,18 @@ object ChannelCodecs extends Logging {
     fallback = provide(ChannelVersion.STANDARD)
   )
 
+  // we use the same trick here: un-versioned LocalParams instances start with a node id so the first byte cannot be 0x01
+  val localParamsVersionCodec: Codec[Int] = discriminatorWithDefault[Int](
+    discriminator = discriminated[Int].by(byte)
+      .typecase(0x01, int16)
+    // NB: 0x02 and 0x03 are *reserved* for backward compatibility reasons
+    ,
+    fallback = provide(0)
+  )
+
   val localParamsCodec: Codec[LocalParams] = (
-    ("nodeId" | publicKey) ::
+    ("version" | localParamsVersionCodec) ::
+      ("nodeId" | publicKey) ::
       ("channelPath" | keyPathCodec) ::
       ("dustLimitSatoshis" | uint64overflow) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
