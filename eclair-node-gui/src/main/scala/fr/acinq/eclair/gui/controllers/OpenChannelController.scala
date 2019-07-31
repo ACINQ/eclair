@@ -19,7 +19,8 @@ package fr.acinq.eclair.gui.controllers
 import java.lang.Boolean
 
 import com.google.common.base.Strings
-import fr.acinq.bitcoin.{Satoshi, satoshi2millisatoshi}
+import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{Channel, ChannelFlags}
 import fr.acinq.eclair.gui.utils.Constants
 import fr.acinq.eclair.gui.{FxApp, Handlers}

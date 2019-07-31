@@ -183,10 +183,9 @@ package object eclair {
 
   implicit class ToMilliSatoshiConversion(amount: BtcAmount) {
     def toMilliSatoshi: MilliSatoshi = amount match {
-      case fr.acinq.bitcoin.MilliSatoshi(msat) => MilliSatoshi(msat) // TODO remove this
       case sat: Satoshi => MilliSatoshi(satoshi2millisatoshi(sat).amount)
-      case millis: MilliBtc => MilliSatoshi(millibtc2millisatoshi(millis).amount)
-      case bitcoin: Btc => MilliSatoshi(btc2millisatoshi(bitcoin).amount)
+      case millis: MilliBtc => MilliSatoshi(satoshi2millisatoshi(millibtc2satoshi(millis)).amount)
+      case bitcoin: Btc => MilliSatoshi(satoshi2millisatoshi(btc2satoshi(bitcoin)).amount)
     }
   }
 
@@ -202,5 +201,8 @@ package object eclair {
     override def toDouble(x: MilliSatoshi): Double = x.toLong
     override def compare(x: MilliSatoshi, y: MilliSatoshi): Int = x.compare(y)
   }
+
+  def millisatoshi2satoshi(input: MilliSatoshi): Satoshi = Satoshi(input.amount / 1000L)
+  def satoshi2millisatoshi(input: Satoshi): MilliSatoshi = MilliSatoshi(input.amount * 1000L)
 
 }
