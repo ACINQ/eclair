@@ -34,6 +34,13 @@ Eclair offers a feature rich HTTP API that enables application developers to eas
 
 For more information please visit the [API documentation website](https://acinq.github.io/eclair).
 
+## Documentation
+
+Please visit our [wiki](https://github.com/acinq/eclair/wiki) to find detailed instructions on how to configure your
+node, connect to other nodes, open channels, send and receive payments and more advanced scenario.
+
+You will find detailed guides and frequently asked questions there.
+
 ## Installation
 
 ### Configuring Bitcoin Core
