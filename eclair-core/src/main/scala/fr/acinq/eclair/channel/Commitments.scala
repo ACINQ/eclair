@@ -174,8 +174,8 @@ object Commitments {
       throw UnexpectedHtlcId(commitments.channelId, expected = commitments.remoteNextHtlcId, actual = add.id)
     }
 
-    if (add.amountMsat.toLong < commitments.localParams.htlcMinimumMsat) {
-      throw HtlcValueTooSmall(commitments.channelId, minimum = commitments.localParams.htlcMinimumMsat, actual = add.amountMsat.toLong)
+    if (add.amountMsat < commitments.localParams.htlcMinimum) {
+      throw HtlcValueTooSmall(commitments.channelId, minimum = commitments.localParams.htlcMinimum.toLong, actual = add.amountMsat.toLong)
     }
 
     // let's compute the current commitment *as seen by us* including this change

@@ -21,10 +21,11 @@ import java.util.UUID
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
+import fr.acinq.eclair.api.MilliSatoshiSerializer
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc}
-import fr.acinq.eclair.{ShortChannelId, UInt64}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
 
 
@@ -194,7 +195,7 @@ final case class LocalParams(nodeId: PublicKey,
                              dustLimit: Satoshi,
                              maxHtlcValueInFlightMsat: UInt64,
                              channelReserve: Satoshi,
-                             htlcMinimumMsat: Long,
+                             htlcMinimum: MilliSatoshi,
                              toSelfDelay: Int,
                              maxAcceptedHtlcs: Int,
                              isFunder: Boolean,

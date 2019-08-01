@@ -64,7 +64,7 @@ object ChannelCodecs extends Logging {
       ("dustLimit" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserve" | satoshi) ::
-      ("htlcMinimumMsat" | uint64overflow) ::
+      ("htlcMinimum" | millisatoshi) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool) ::

@@ -87,7 +87,7 @@ class ChannelCodecsSpec extends FunSuite {
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
-      htlcMinimumMsat = Random.nextInt(Int.MaxValue),
+      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = Random.nextInt(Short.MaxValue),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
@@ -318,12 +318,14 @@ class ChannelCodecsSpec extends FunSuite {
         .replace(""""channelVersion":"00000000000000000000000000000000",""", "")
         .replace(""""dustLimit"""", """"dustLimitSatoshis"""")
         .replace(""""channelReserve"""", """"channelReserveSatoshis"""")
+        .replace(""""htlcMinimum"""", """"htlcMinimumMsat"""")
 
       val newjson = Serialization.write(newnormal)(JsonSupport.formats)
         .replace(""","unknownFields":""""", "")
         .replace(""""channelVersion":"00000000000000000000000000000000",""", "")
         .replace(""""dustLimit"""", """"dustLimitSatoshis"""")
         .replace(""""channelReserve"""", """"channelReserveSatoshis"""")
+        .replace(""""htlcMinimum"""", """"htlcMinimumMsat"""")
 
       assert(oldjson === refjson)
       assert(newjson === refjson)
@@ -341,7 +343,7 @@ object ChannelCodecsSpec {
     dustLimit = Satoshi(546),
     maxHtlcValueInFlightMsat = UInt64(50000000),
     channelReserve = Satoshi(10000),
-    htlcMinimumMsat = 10000,
+    htlcMinimum = MilliSatoshi(10000),
     toSelfDelay = 144,
     maxAcceptedHtlcs = 50,
     defaultFinalScriptPubKey = ByteVector.empty,
