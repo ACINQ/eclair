@@ -70,7 +70,7 @@ object TestConstants {
       globalFeatures = ByteVector.empty,
       localFeatures = ByteVector(0),
       overrideFeatures = Map.empty,
-      dustLimitSatoshis = 1100,
+      dustLimit = Satoshi(1100),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
@@ -81,11 +81,11 @@ object TestConstants {
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = 144,
       fulfillSafetyBeforeTimeoutBlocks = 6,
-      htlcMinimumMsat = 0,
+      htlcMinimum = MilliSatoshi(0),
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
       maxToLocalDelayBlocks = 1000,
-      feeBaseMsat = 546000,
+      feeBase = MilliSatoshi(546000),
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
@@ -101,7 +101,7 @@ object TestConstants {
       channelFlags = 1,
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
-      minFundingSatoshis = 1000L,
+      minFundingSatoshis = Satoshi(1000L),
       routerConf = RouterConf(
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
@@ -140,7 +140,7 @@ object TestConstants {
       globalFeatures = ByteVector.empty,
       localFeatures = ByteVector.empty, // no announcement
       overrideFeatures = Map.empty,
-      dustLimitSatoshis = 1000,
+      dustLimit = Satoshi(1000),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
@@ -151,11 +151,11 @@ object TestConstants {
       maxAcceptedHtlcs = 30,
       expiryDeltaBlocks = 144,
       fulfillSafetyBeforeTimeoutBlocks = 6,
-      htlcMinimumMsat = 1000,
+      htlcMinimum = MilliSatoshi(1000),
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
       maxToLocalDelayBlocks = 1000,
-      feeBaseMsat = 546000,
+      feeBase = MilliSatoshi(546000),
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
@@ -171,7 +171,7 @@ object TestConstants {
       channelFlags = 1,
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
-      minFundingSatoshis = 1000L,
+      minFundingSatoshis = Satoshi(1000L),
       routerConf = RouterConf(
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,

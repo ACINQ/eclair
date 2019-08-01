@@ -69,20 +69,20 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   test("recv OpenChannel (funding too low)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val lowFunding = 100
-    bob ! open.copy(fundingSatoshis = Satoshi(lowFunding))
+    val lowFunding = Satoshi(100)
+    bob ! open.copy(fundingSatoshis = lowFunding)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFunding, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS).getMessage))
+    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFunding, Bob.nodeParams.minFundingSatoshis, Satoshi(Channel.MAX_FUNDING_SATOSHIS)).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
   test("recv OpenChannel (funding too high)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val highFundingMsat = 100000000
-    bob ! open.copy(fundingSatoshis = Satoshi(highFundingMsat))
+    val highFundingMsat = Satoshi(100000000)
+    bob ! open.copy(fundingSatoshis = highFundingMsat)
     val error = bob2alice.expectMsgType[Error]
-    assert(error.toAscii === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS).getMessage).toAscii)
+    assert(error.toAscii === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Bob.nodeParams.minFundingSatoshis, Satoshi(Channel.MAX_FUNDING_SATOSHIS)).getMessage).toAscii)
     awaitCond(bob.stateName == CLOSED)
   }
 

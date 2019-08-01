@@ -454,34 +454,34 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     // for the test to be really useful we have constraint on parameters
-    assert(Alice.nodeParams.dustLimitSatoshis > Bob.nodeParams.dustLimitSatoshis)
+    assert(Alice.nodeParams.dustLimit > Bob.nodeParams.dustLimit)
     // we're gonna exchange two htlcs in each direction, the goal is to have bob's commitment have 4 htlcs, and alice's
     // commitment only have 3. We will then check that alice indeed persisted 4 htlcs, and bob only 3.
-    val aliceMinReceive = Alice.nodeParams.dustLimitSatoshis + weight2fee(TestConstants.feeratePerKw, htlcSuccessWeight).toLong
-    val aliceMinOffer = Alice.nodeParams.dustLimitSatoshis + weight2fee(TestConstants.feeratePerKw, htlcTimeoutWeight).toLong
-    val bobMinReceive = Bob.nodeParams.dustLimitSatoshis + weight2fee(TestConstants.feeratePerKw, htlcSuccessWeight).toLong
-    val bobMinOffer = Bob.nodeParams.dustLimitSatoshis + weight2fee(TestConstants.feeratePerKw, htlcTimeoutWeight).toLong
-    val a2b_1 = bobMinReceive + 10 // will be in alice and bob tx
-  val a2b_2 = bobMinReceive + 20 // will be in alice and bob tx
-  val b2a_1 = aliceMinReceive + 10 // will be in alice and bob tx
-  val b2a_2 = bobMinOffer + 10 // will be only be in bob tx
+    val aliceMinReceive = Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, htlcSuccessWeight)
+    val aliceMinOffer = Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, htlcTimeoutWeight)
+    val bobMinReceive = Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, htlcSuccessWeight)
+    val bobMinOffer = Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, htlcTimeoutWeight)
+    val a2b_1 = bobMinReceive + Satoshi(10) // will be in alice and bob tx
+    val a2b_2 = bobMinReceive + Satoshi(20) // will be in alice and bob tx
+    val b2a_1 = aliceMinReceive + Satoshi(10) // will be in alice and bob tx
+    val b2a_2 = bobMinOffer + Satoshi(10) // will be only be in bob tx
     assert(a2b_1 > aliceMinOffer && a2b_1 > bobMinReceive)
     assert(a2b_2 > aliceMinOffer && a2b_2 > bobMinReceive)
     assert(b2a_1 > aliceMinReceive && b2a_1 > bobMinOffer)
     assert(b2a_2 < aliceMinReceive && b2a_2 > bobMinOffer)
-    sender.send(alice, CMD_ADD_HTLC(a2b_1 * 1000, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(a2b_1.toMilliSatoshi.toLong, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     sender.expectMsg("ok")
     alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
-    sender.send(alice, CMD_ADD_HTLC(a2b_2 * 1000, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(a2b_2.toMilliSatoshi.toLong, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     sender.expectMsg("ok")
     alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
-    sender.send(bob, CMD_ADD_HTLC(b2a_1 * 1000, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(bob, CMD_ADD_HTLC(b2a_1.toMilliSatoshi.toLong, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     sender.expectMsg("ok")
     bob2alice.expectMsgType[UpdateAddHtlc]
     bob2alice.forward(alice)
-    sender.send(bob, CMD_ADD_HTLC(b2a_2 * 1000, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(bob, CMD_ADD_HTLC(b2a_2.toMilliSatoshi.toLong, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     sender.expectMsg("ok")
     bob2alice.expectMsgType[UpdateAddHtlc]
     bob2alice.forward(alice)
@@ -496,7 +496,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(alice.underlyingActor.nodeParams.db.channels.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 2).size == 4)
     assert(bob.underlyingActor.nodeParams.db.channels.listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
     assert(bob.underlyingActor.nodeParams.db.channels.listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 3)
-  }
+    }
 
   test("recv CMD_SIGN (htlcs with same pubkeyScript but different amounts)") { f =>
     import f._
@@ -1447,13 +1447,13 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_UPDATE_RELAY_FEE ") { f =>
     import f._
     val sender = TestProbe()
-    val newFeeBaseMsat = TestConstants.Alice.nodeParams.feeBaseMsat * 2
+    val newFeeBaseMsat = TestConstants.Alice.nodeParams.feeBase * 2
     val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.feeProportionalMillionth * 2
-    sender.send(alice, CMD_UPDATE_RELAY_FEE(newFeeBaseMsat, newFeeProportionalMillionth))
+    sender.send(alice, CMD_UPDATE_RELAY_FEE(newFeeBaseMsat.toLong, newFeeProportionalMillionth))
     sender.expectMsg("ok")
 
     val localUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(localUpdate.channelUpdate.feeBaseMsat == newFeeBaseMsat)
+    assert(localUpdate.channelUpdate.feeBaseMsat == newFeeBaseMsat.toLong)
     assert(localUpdate.channelUpdate.feeProportionalMillionths == newFeeProportionalMillionth)
     relayerA.expectNoMsg(1 seconds)
   }

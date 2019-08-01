@@ -26,6 +26,7 @@ import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Protocol, Satoshi}
+import fr.acinq.eclair
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
@@ -640,10 +641,10 @@ object Peer {
     LocalParams(
       nodeParams.nodeId,
       channelKeyPath,
-      dustLimit = Satoshi(nodeParams.dustLimitSatoshis),
+      dustLimit = nodeParams.dustLimit,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
-      channelReserve = Satoshi(Math.max((nodeParams.reserveToFundingRatio * fundingSatoshis).toLong, nodeParams.dustLimitSatoshis)), // BOLT #2: make sure that our reserve is above our dust limit
-      htlcMinimum = MilliSatoshi(nodeParams.htlcMinimumMsat),
+      channelReserve = eclair.maxOf(Satoshi((nodeParams.reserveToFundingRatio * fundingSatoshis).toLong), nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
+      htlcMinimum = nodeParams.htlcMinimum,
       toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
