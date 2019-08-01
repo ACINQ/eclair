@@ -640,7 +640,7 @@ object Peer {
     LocalParams(
       nodeParams.nodeId,
       channelKeyPath,
-      dustLimitSatoshis = nodeParams.dustLimitSatoshis,
+      dustLimit = Satoshi(nodeParams.dustLimitSatoshis),
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
       channelReserveSatoshis = Math.max((nodeParams.reserveToFundingRatio * fundingSatoshis).toLong, nodeParams.dustLimitSatoshis), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimumMsat = nodeParams.htlcMinimumMsat,

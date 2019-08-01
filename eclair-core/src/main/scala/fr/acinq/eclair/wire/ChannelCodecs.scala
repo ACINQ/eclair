@@ -61,7 +61,7 @@ object ChannelCodecs extends Logging {
   val localParamsCodec: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
       ("channelPath" | keyPathCodec) ::
-      ("dustLimitSatoshis" | uint64overflow) ::
+      ("dustLimit" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserveSatoshis" | uint64overflow) ::
       ("htlcMinimumMsat" | uint64overflow) ::

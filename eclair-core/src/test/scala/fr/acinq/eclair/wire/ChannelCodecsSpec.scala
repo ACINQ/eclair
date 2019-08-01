@@ -84,7 +84,7 @@ class ChannelCodecsSpec extends FunSuite {
     val o = LocalParams(
       nodeId = randomKey.publicKey,
       channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
-      dustLimitSatoshis = Random.nextInt(Int.MaxValue),
+      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserveSatoshis = Random.nextInt(Int.MaxValue),
       htlcMinimumMsat = Random.nextInt(Int.MaxValue),
@@ -313,8 +313,16 @@ class ChannelCodecsSpec extends FunSuite {
       // and we decode with the new codec
       val newnormal = stateDataCodec.decode(newbin.bits).require.value
       // finally we check that the actual data is the same as before (we just remove the new json field)
-      val oldjson = Serialization.write(oldnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"00000000000000000000000000000000",""", "")
-      val newjson = Serialization.write(newnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"00000000000000000000000000000000",""", "")
+      val oldjson = Serialization.write(oldnormal)(JsonSupport.formats)
+        .replace(""","unknownFields":""""", "")
+        .replace(""""channelVersion":"00000000000000000000000000000000",""", "")
+        .replace(""""dustLimit"""", """"dustLimitSatoshis"""")
+
+      val newjson = Serialization.write(newnormal)(JsonSupport.formats)
+        .replace(""","unknownFields":""""", "")
+        .replace(""""channelVersion":"00000000000000000000000000000000",""", "")
+        .replace(""""dustLimit"""", """"dustLimitSatoshis"""")
+
       assert(oldjson === refjson)
       assert(newjson === refjson)
     }
@@ -328,7 +336,7 @@ object ChannelCodecsSpec {
   val localParams = LocalParams(
     keyManager.nodeId,
     channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
-    dustLimitSatoshis = Satoshi(546).toLong,
+    dustLimit = Satoshi(546),
     maxHtlcValueInFlightMsat = UInt64(50000000),
     channelReserveSatoshis = 10000,
     htlcMinimumMsat = 10000,

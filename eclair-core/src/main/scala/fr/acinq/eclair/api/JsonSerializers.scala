@@ -23,7 +23,7 @@ import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.channel.{ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.OutgoingPaymentStatus
@@ -55,6 +55,10 @@ class ByteVector64Serializer extends CustomSerializer[ByteVector64](format => ({
 
 class UInt64Serializer extends CustomSerializer[UInt64](format => ({ null }, {
   case x: UInt64 => JInt(x.toBigInt)
+}))
+
+class SatoshiSerializer extends CustomSerializer[Satoshi](format => ({ null }, {
+  case x: Satoshi => JInt(x.amount)
 }))
 
 class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](format => ({ null }, {
@@ -187,6 +191,7 @@ object JsonSupport extends Json4sSupport {
     new ByteVector32Serializer +
     new ByteVector64Serializer +
     new UInt64Serializer +
+    new SatoshiSerializer +
     new MilliSatoshiSerializer +
     new ShortChannelIdSerializer +
     new StateSerializer +
