@@ -85,7 +85,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(2, e.commitments.remoteParams.nodeId.value.toArray)
       statement.setLong(3, e.localBalanceMsat)
       statement.setLong(4, e.commitments.commitInput.txOut.amount.toLong)
-      statement.setLong(5, e.commitments.remoteParams.channelReserveSatoshis) // remote decides what our reserve should be
+      statement.setLong(5, e.commitments.remoteParams.channelReserve.toLong) // remote decides what our reserve should be
       statement.setLong(6, Platform.currentTime)
       statement.executeUpdate()
     }

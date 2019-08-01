@@ -88,8 +88,8 @@ case class Commitments(channelVersion: ChannelVersion,
 
   lazy val availableBalanceForSendMsat: Long = {
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-    val feesMsat = if (localParams.isFunder) Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), reduced).amount * 1000 else 0
-    math.max(reduced.toRemoteMsat - remoteParams.channelReserveSatoshis * 1000 - feesMsat, 0)
+    val feesMsat = if (localParams.isFunder) commitTxFee(remoteParams.dustLimit, reduced).toMilliSatoshi else MilliSatoshi(0)
+    eclair.maxOf(MilliSatoshi(reduced.toRemoteMsat) - remoteParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0)).toLong
   }
 
   lazy val availableBalanceForReceiveMsat: Long = {
@@ -134,8 +134,8 @@ object Commitments {
       return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockCount))
     }
 
-    if (cmd.amountMsat < commitments.remoteParams.htlcMinimumMsat) {
-      return Left(HtlcValueTooSmall(commitments.channelId, minimum = commitments.remoteParams.htlcMinimumMsat, actual = cmd.amountMsat))
+    if (cmd.amountMsat < commitments.remoteParams.htlcMinimum.toLong) {
+      return Left(HtlcValueTooSmall(commitments.channelId, minimum = commitments.remoteParams.htlcMinimum.toLong, actual = cmd.amountMsat))
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
@@ -160,10 +160,10 @@ object Commitments {
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     // we look from remote's point of view, so if local is funder remote doesn't pay the fees
-    val fees = if (commitments1.localParams.isFunder) Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount else 0
-    val missing = reduced.toRemoteMsat / 1000 - commitments1.remoteParams.channelReserveSatoshis - fees
-    if (missing < 0) {
-      return Left(InsufficientFunds(commitments.channelId, amountMsat = cmd.amountMsat, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.remoteParams.channelReserveSatoshis, feesSatoshis = fees))
+    val fees = if (commitments1.localParams.isFunder) commitTxFee(commitments1.remoteParams.dustLimit, reduced) else Satoshi(0)
+    val missing = MilliSatoshi(reduced.toRemoteMsat).toSatoshi - commitments1.remoteParams.channelReserve - fees
+    if (missing < Satoshi(0)) {
+      return Left(InsufficientFunds(commitments.channelId, amountMsat = cmd.amountMsat, missingSatoshis = missing.toLong.abs, reserveSatoshis = commitments1.remoteParams.channelReserve.toLong, feesSatoshis = fees.toLong))
     }
 
     Right(commitments1, add)
@@ -315,10 +315,10 @@ object Commitments {
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     // we look from remote's point of view, so if local is funder remote doesn't pay the fees
-    val fees = Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount
-    val missing = reduced.toRemoteMsat / 1000 - commitments1.remoteParams.channelReserveSatoshis - fees
-    if (missing < 0) {
-      throw CannotAffordFees(commitments.channelId, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.localParams.channelReserve.toLong, feesSatoshis = fees)
+    val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
+    val missing = MilliSatoshi(reduced.toRemoteMsat).toSatoshi - commitments1.remoteParams.channelReserve - fees
+    if (missing < Satoshi(0)) {
+      throw CannotAffordFees(commitments.channelId, missingSatoshis = missing.toLong.abs, reserveSatoshis = commitments1.localParams.channelReserve.toLong, feesSatoshis = fees.toLong)
     }
 
     (commitments1, fee)
@@ -349,10 +349,10 @@ object Commitments {
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    val fees = Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount
-    val missing = reduced.toRemoteMsat / 1000 - commitments1.localParams.channelReserve.toLong - fees
-    if (missing < 0) {
-      throw CannotAffordFees(commitments.channelId, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.localParams.channelReserve.toLong, feesSatoshis = fees)
+    val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
+    val missing = MilliSatoshi(reduced.toRemoteMsat).toSatoshi - commitments1.localParams.channelReserve - fees
+    if (missing < Satoshi(0)) {
+      throw CannotAffordFees(commitments.channelId, missingSatoshis = missing.toLong.abs, reserveSatoshis = commitments1.localParams.channelReserve.toLong, feesSatoshis = fees.toLong)
     }
 
     commitments1
@@ -540,8 +540,8 @@ object Commitments {
     val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
     val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
-    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, keyManager.paymentPoint(localParams.channelKeyPath).publicKey, !localParams.isFunder, Satoshi(remoteParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, spec)
-    val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, Satoshi(remoteParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, spec)
+    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, keyManager.paymentPoint(localParams.channelKeyPath).publicKey, !localParams.isFunder, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, spec)
+    val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, spec)
     (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
   }
 

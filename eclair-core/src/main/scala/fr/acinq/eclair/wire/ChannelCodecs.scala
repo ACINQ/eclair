@@ -74,10 +74,10 @@ object ChannelCodecs extends Logging {
 
   val remoteParamsCodec: Codec[RemoteParams] = (
     ("nodeId" | publicKey) ::
-      ("dustLimitSatoshis" | uint64overflow) ::
+      ("dustLimit" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
-      ("channelReserveSatoshis" | uint64overflow) ::
-      ("htlcMinimumMsat" | uint64overflow) ::
+      ("channelReserve" | satoshi) ::
+      ("htlcMinimum" | millisatoshi) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubKey" | publicKey) ::

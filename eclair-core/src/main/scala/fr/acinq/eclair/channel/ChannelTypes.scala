@@ -204,10 +204,10 @@ final case class LocalParams(nodeId: PublicKey,
                              localFeatures: ByteVector)
 
 final case class RemoteParams(nodeId: PublicKey,
-                              dustLimitSatoshis: Long,
+                              dustLimit: Satoshi,
                               maxHtlcValueInFlightMsat: UInt64,
-                              channelReserveSatoshis: Long,
-                              htlcMinimumMsat: Long,
+                              channelReserve: Satoshi,
+                              htlcMinimum: MilliSatoshi,
                               toSelfDelay: Int,
                               maxAcceptedHtlcs: Int,
                               fundingPubKey: PublicKey,

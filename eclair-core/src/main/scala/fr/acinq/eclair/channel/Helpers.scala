@@ -20,6 +20,7 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
+import fr.acinq.eclair
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
@@ -220,10 +221,10 @@ object Helpers {
       case Left(waitingForRevocation) => waitingForRevocation.nextRemoteCommit
       case _ => commitments.remoteCommit
     }
-    val toRemoteSatoshis = remoteCommit.spec.toRemoteMsat / 1000
+    val toRemoteSatoshis = MilliSatoshi(remoteCommit.spec.toRemoteMsat).toSatoshi
     // NB: this is an approximation (we don't take network fees into account)
-    val result = toRemoteSatoshis > commitments.remoteParams.channelReserveSatoshis
-    log.debug(s"toRemoteSatoshis=$toRemoteSatoshis reserve=${commitments.remoteParams.channelReserveSatoshis} aboveReserve=$result for remoteCommitNumber=${remoteCommit.index}")
+    val result = toRemoteSatoshis > commitments.remoteParams.channelReserve
+    log.debug(s"toRemoteSatoshis=$toRemoteSatoshis reserve=${commitments.remoteParams.channelReserve} aboveReserve=$result for remoteCommitNumber=${remoteCommit.index}")
     result
   }
 
@@ -263,10 +264,10 @@ object Helpers {
       if (!localParams.isFunder) {
         // they are funder, therefore they pay the fee: we need to make sure they can afford it!
         val toRemoteMsat = remoteSpec.toLocalMsat
-        val fees = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), remoteSpec).amount
-        val missing = toRemoteMsat / 1000 - localParams.channelReserve.toLong - fees
-        if (missing < 0) {
-          throw CannotAffordFees(temporaryChannelId, missingSatoshis = -1 * missing, reserveSatoshis = localParams.channelReserve.toLong, feesSatoshis = fees)
+        val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
+        val missing = MilliSatoshi(toRemoteMsat).toSatoshi - localParams.channelReserve - fees
+        if (missing < Satoshi(0)) {
+          throw CannotAffordFees(temporaryChannelId, missingSatoshis = missing.toLong.abs, reserveSatoshis = localParams.channelReserve.toLong, feesSatoshis = fees.toLong)
         }
       }
 
@@ -454,7 +455,7 @@ object Helpers {
       require(isValidFinalScriptPubkey(remoteScriptPubkey), "invalid remoteScriptPubkey")
       log.debug(s"making closing tx with closingFee={} and commitments:\n{}", closingFee, Commitments.specs2String(commitments))
       // TODO: check that
-      val dustLimitSatoshis = Satoshi(Math.max(localParams.dustLimit.toLong, remoteParams.dustLimitSatoshis))
+      val dustLimitSatoshis = eclair.maxOf(localParams.dustLimit, remoteParams.dustLimit)
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
       val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.channelKeyPath))
       val closingSigned = ClosingSigned(channelId, closingFee, localClosingSig)

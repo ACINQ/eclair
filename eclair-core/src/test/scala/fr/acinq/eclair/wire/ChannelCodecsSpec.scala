@@ -102,10 +102,10 @@ class ChannelCodecsSpec extends FunSuite {
   test("encode/decode remoteparams") {
     val o = RemoteParams(
       nodeId = randomKey.publicKey,
-      dustLimitSatoshis = Random.nextInt(Int.MaxValue),
+      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserveSatoshis = Random.nextInt(Int.MaxValue),
-      htlcMinimumMsat = Random.nextInt(Int.MaxValue),
+      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = Random.nextInt(Short.MaxValue),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       fundingPubKey = randomKey.publicKey,
@@ -353,10 +353,10 @@ object ChannelCodecsSpec {
 
   val remoteParams = RemoteParams(
     nodeId = randomKey.publicKey,
-    dustLimitSatoshis = Satoshi(546).toLong,
+    dustLimit = Satoshi(546),
     maxHtlcValueInFlightMsat = UInt64(5000000),
-    channelReserveSatoshis = 10000,
-    htlcMinimumMsat = 5000,
+    channelReserve = Satoshi(10000),
+    htlcMinimum = MilliSatoshi(5000),
     toSelfDelay = 144,
     maxAcceptedHtlcs = 50,
     fundingPubKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)) :+ 1.toByte).publicKey,
