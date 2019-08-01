@@ -29,6 +29,7 @@ import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, TestConstants, randomBytes32}
+import fr.acinq.eclair._
 
 /**
   * Created by PM on 23/08/2016.
@@ -98,7 +99,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2blockchain.expectMsgType[WatchConfirmed] // deeply buried
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSendMsat == math.max(pushMsat - TestConstants.Alice.channelParams.channelReserveSatoshis * 1000, 0))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSendMsat == math.max(pushMsat - TestConstants.Alice.channelParams.channelReserve.toMilliSatoshi.toLong, 0))
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]

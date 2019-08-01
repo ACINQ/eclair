@@ -63,7 +63,7 @@ object ChannelCodecs extends Logging {
       ("channelPath" | keyPathCodec) ::
       ("dustLimit" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
-      ("channelReserveSatoshis" | uint64overflow) ::
+      ("channelReserve" | satoshi) ::
       ("htlcMinimumMsat" | uint64overflow) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::

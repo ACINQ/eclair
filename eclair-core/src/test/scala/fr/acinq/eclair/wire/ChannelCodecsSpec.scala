@@ -86,7 +86,7 @@ class ChannelCodecsSpec extends FunSuite {
       channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserveSatoshis = Random.nextInt(Int.MaxValue),
+      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
       htlcMinimumMsat = Random.nextInt(Int.MaxValue),
       toSelfDelay = Random.nextInt(Short.MaxValue),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
@@ -317,11 +317,13 @@ class ChannelCodecsSpec extends FunSuite {
         .replace(""","unknownFields":""""", "")
         .replace(""""channelVersion":"00000000000000000000000000000000",""", "")
         .replace(""""dustLimit"""", """"dustLimitSatoshis"""")
+        .replace(""""channelReserve"""", """"channelReserveSatoshis"""")
 
       val newjson = Serialization.write(newnormal)(JsonSupport.formats)
         .replace(""","unknownFields":""""", "")
         .replace(""""channelVersion":"00000000000000000000000000000000",""", "")
         .replace(""""dustLimit"""", """"dustLimitSatoshis"""")
+        .replace(""""channelReserve"""", """"channelReserveSatoshis"""")
 
       assert(oldjson === refjson)
       assert(newjson === refjson)
@@ -338,7 +340,7 @@ object ChannelCodecsSpec {
     channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
     dustLimit = Satoshi(546),
     maxHtlcValueInFlightMsat = UInt64(50000000),
-    channelReserveSatoshis = 10000,
+    channelReserve = Satoshi(10000),
     htlcMinimumMsat = 10000,
     toSelfDelay = 144,
     maxAcceptedHtlcs = 50,

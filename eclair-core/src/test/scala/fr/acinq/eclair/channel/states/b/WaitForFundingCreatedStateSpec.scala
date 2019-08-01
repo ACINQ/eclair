@@ -72,7 +72,7 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
   test("recv FundingCreated (funder can't pay fees)", Tag("funder_below_reserve")) { f =>
     import f._
     val fees = Transactions.commitWeight * TestConstants.feeratePerKw / 1000
-    val reserve = Bob.channelParams.channelReserveSatoshis
+    val reserve = Bob.channelParams.channelReserve.toLong
     val missing = 100 - fees - reserve
     val fundingCreated = alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)

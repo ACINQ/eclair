@@ -19,7 +19,7 @@ package fr.acinq.eclair
 import java.sql.{Connection, DriverManager}
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Script}
+import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.crypto.LocalKeyManager
@@ -124,7 +124,7 @@ object TestConstants {
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       isFunder = true,
       fundingSatoshis).copy(
-      channelReserveSatoshis = 10000 // Bob will need to keep that much satoshis as direct payment
+      channelReserve = Satoshi(10000) // Bob will need to keep that much satoshis as direct payment
     )
   }
 
@@ -194,7 +194,7 @@ object TestConstants {
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       isFunder = false,
       fundingSatoshis).copy(
-      channelReserveSatoshis = 20000 // Alice will need to keep that much satoshis as direct payment
+      channelReserve = Satoshi(20000) // Alice will need to keep that much satoshis as direct payment
     )
   }
 

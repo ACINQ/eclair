@@ -205,4 +205,9 @@ package object eclair {
   def millisatoshi2satoshi(input: MilliSatoshi): Satoshi = Satoshi(input.amount / 1000L)
   def satoshi2millisatoshi(input: Satoshi): MilliSatoshi = MilliSatoshi(input.amount * 1000L)
 
+  def maxOf(x: MilliSatoshi, y: MilliSatoshi) = MilliSatoshi(Math.max(x.amount, y.amount))
+  def minOf(x: MilliSatoshi, y: MilliSatoshi) = MilliSatoshi(Math.min(x.amount, y.amount))
+  def maxOf(x: Satoshi, y: Satoshi) = Satoshi(Math.max(x.amount, y.amount))
+  def minOf(x: Satoshi, y: Satoshi) = Satoshi(Math.min(x.amount, y.amount))
+
 }

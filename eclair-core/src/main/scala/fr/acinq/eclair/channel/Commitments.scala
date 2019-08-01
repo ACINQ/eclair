@@ -19,6 +19,8 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
+import fr.acinq.eclair
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
@@ -92,8 +94,8 @@ case class Commitments(channelVersion: ChannelVersion,
 
   lazy val availableBalanceForReceiveMsat: Long = {
     val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-    val feesMsat = if (localParams.isFunder) 0 else Transactions.commitTxFee(localParams.dustLimit, reduced).amount * 1000
-    math.max(reduced.toRemoteMsat - localParams.channelReserveSatoshis * 1000 - feesMsat, 0)
+    val feesMsat = if (localParams.isFunder) MilliSatoshi(0) else commitTxFee(localParams.dustLimit, reduced).toMilliSatoshi
+    eclair.maxOf(MilliSatoshi(reduced.toRemoteMsat) - localParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0)).toLong
   }
 }
 
@@ -192,9 +194,9 @@ object Commitments {
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     val fees = if (commitments1.localParams.isFunder) 0 else Transactions.commitTxFee(commitments1.localParams.dustLimit, reduced).amount
-    val missing = reduced.toRemoteMsat / 1000 - commitments1.localParams.channelReserveSatoshis - fees
+    val missing = reduced.toRemoteMsat / 1000 - commitments1.localParams.channelReserve.toLong - fees
     if (missing < 0) {
-      throw InsufficientFunds(commitments.channelId, amountMsat = add.amountMsat.toLong, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.localParams.channelReserveSatoshis, feesSatoshis = fees)
+      throw InsufficientFunds(commitments.channelId, amountMsat = add.amountMsat.toLong, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.localParams.channelReserve.toLong, feesSatoshis = fees)
     }
 
     commitments1
@@ -316,7 +318,7 @@ object Commitments {
     val fees = Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount
     val missing = reduced.toRemoteMsat / 1000 - commitments1.remoteParams.channelReserveSatoshis - fees
     if (missing < 0) {
-      throw CannotAffordFees(commitments.channelId, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.localParams.channelReserveSatoshis, feesSatoshis = fees)
+      throw CannotAffordFees(commitments.channelId, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.localParams.channelReserve.toLong, feesSatoshis = fees)
     }
 
     (commitments1, fee)
@@ -348,9 +350,9 @@ object Commitments {
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     val fees = Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount
-    val missing = reduced.toRemoteMsat / 1000 - commitments1.localParams.channelReserveSatoshis - fees
+    val missing = reduced.toRemoteMsat / 1000 - commitments1.localParams.channelReserve.toLong - fees
     if (missing < 0) {
-      throw CannotAffordFees(commitments.channelId, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.localParams.channelReserveSatoshis, feesSatoshis = fees)
+      throw CannotAffordFees(commitments.channelId, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.localParams.channelReserve.toLong, feesSatoshis = fees)
     }
 
     commitments1
