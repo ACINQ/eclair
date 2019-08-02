@@ -67,7 +67,7 @@ trait StateTestsHelperMethods extends TestKitBase {
                   tags: Set[String] = Set.empty): Unit = {
     import setup._
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-    val pushMsat = if (tags.contains("no_push_msat")) 0 else TestConstants.pushMsat
+    val pushMsat = if (tags.contains("no_push_msat")) MilliSatoshi(0) else TestConstants.pushMsat
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
@@ -99,7 +99,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2blockchain.expectMsgType[WatchConfirmed] // deeply buried
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSendMsat == math.max(pushMsat - TestConstants.Alice.channelParams.channelReserve.toMilliSatoshi.toLong, 0))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSendMsat == math.max(pushMsat.toLong - TestConstants.Alice.channelParams.channelReserve.toMilliSatoshi.toLong, 0))
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]

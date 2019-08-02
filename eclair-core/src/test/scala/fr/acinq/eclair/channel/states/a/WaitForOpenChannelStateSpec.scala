@@ -120,7 +120,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     // 30% is huge, recommended ratio is 1%
-    val reserveTooHigh = Satoshi((0.3 * TestConstants.fundingSatoshis).toLong)
+    val reserveTooHigh = Satoshi((0.3 * TestConstants.fundingSatoshis.toLong).toLong)
     bob ! open.copy(channelReserveSatoshis = reserveTooHigh)
     val error = bob2alice.expectMsgType[Error]
     assert(error === Error(open.temporaryChannelId, ChannelReserveTooHigh(open.temporaryChannelId, reserveTooHigh, 0.3, 0.05).getMessage))

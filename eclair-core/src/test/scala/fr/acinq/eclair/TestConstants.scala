@@ -36,8 +36,8 @@ import scala.concurrent.duration._
   */
 object TestConstants {
 
-  val fundingSatoshis = 1000000L
-  val pushMsat = 200000000L
+  val fundingSatoshis = Satoshi(1000000L)
+  val pushMsat = MilliSatoshi(200000000L)
   val feeratePerKw = 10000L
   val emptyOnionPacket = wire.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
 
@@ -123,7 +123,7 @@ object TestConstants {
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       isFunder = true,
-      fundingSatoshis).copy(
+      fundingSatoshis.toLong).copy(
       channelReserve = Satoshi(10000) // Bob will need to keep that much satoshis as direct payment
     )
   }
@@ -193,7 +193,7 @@ object TestConstants {
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       isFunder = false,
-      fundingSatoshis).copy(
+      fundingSatoshis.toLong).copy(
       channelReserve = Satoshi(20000) // Alice will need to keep that much satoshis as direct payment
     )
   }
