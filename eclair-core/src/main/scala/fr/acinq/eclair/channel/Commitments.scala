@@ -134,8 +134,8 @@ object Commitments {
       return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockCount))
     }
 
-    if (cmd.amountMsat < commitments.remoteParams.htlcMinimum.toLong) {
-      return Left(HtlcValueTooSmall(commitments.channelId, minimum = commitments.remoteParams.htlcMinimum.toLong, actual = cmd.amountMsat))
+    if (MilliSatoshi(cmd.amountMsat) < commitments.remoteParams.htlcMinimum) {
+      return Left(HtlcValueTooSmall(commitments.channelId, minimum = commitments.remoteParams.htlcMinimum, actual = MilliSatoshi(cmd.amountMsat)))
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
@@ -163,7 +163,7 @@ object Commitments {
     val fees = if (commitments1.localParams.isFunder) commitTxFee(commitments1.remoteParams.dustLimit, reduced) else Satoshi(0)
     val missing = MilliSatoshi(reduced.toRemoteMsat).toSatoshi - commitments1.remoteParams.channelReserve - fees
     if (missing < Satoshi(0)) {
-      return Left(InsufficientFunds(commitments.channelId, amountMsat = cmd.amountMsat, missingSatoshis = missing.toLong.abs, reserveSatoshis = commitments1.remoteParams.channelReserve.toLong, feesSatoshis = fees.toLong))
+      return Left(InsufficientFunds(commitments.channelId, amount = MilliSatoshi(cmd.amountMsat), missing = -missing, reserve = commitments1.remoteParams.channelReserve, fees = fees))
     }
 
     Right(commitments1, add)
@@ -175,7 +175,7 @@ object Commitments {
     }
 
     if (add.amountMsat < commitments.localParams.htlcMinimum) {
-      throw HtlcValueTooSmall(commitments.channelId, minimum = commitments.localParams.htlcMinimum.toLong, actual = add.amountMsat.toLong)
+      throw HtlcValueTooSmall(commitments.channelId, minimum = commitments.localParams.htlcMinimum, actual = add.amountMsat)
     }
 
     // let's compute the current commitment *as seen by us* including this change
@@ -193,10 +193,10 @@ object Commitments {
     }
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    val fees = if (commitments1.localParams.isFunder) 0 else Transactions.commitTxFee(commitments1.localParams.dustLimit, reduced).amount
-    val missing = reduced.toRemoteMsat / 1000 - commitments1.localParams.channelReserve.toLong - fees
-    if (missing < 0) {
-      throw InsufficientFunds(commitments.channelId, amountMsat = add.amountMsat.toLong, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.localParams.channelReserve.toLong, feesSatoshis = fees)
+    val fees = if (commitments1.localParams.isFunder) Satoshi(0) else Transactions.commitTxFee(commitments1.localParams.dustLimit, reduced)
+    val missing = MilliSatoshi(reduced.toRemoteMsat).toSatoshi - commitments1.localParams.channelReserve - fees
+    if (missing < Satoshi(0)) {
+      throw InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
     }
 
     commitments1
@@ -318,7 +318,7 @@ object Commitments {
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
     val missing = MilliSatoshi(reduced.toRemoteMsat).toSatoshi - commitments1.remoteParams.channelReserve - fees
     if (missing < Satoshi(0)) {
-      throw CannotAffordFees(commitments.channelId, missingSatoshis = missing.toLong.abs, reserveSatoshis = commitments1.localParams.channelReserve.toLong, feesSatoshis = fees.toLong)
+      throw CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
     }
 
     (commitments1, fee)
@@ -352,7 +352,7 @@ object Commitments {
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
     val missing = MilliSatoshi(reduced.toRemoteMsat).toSatoshi - commitments1.localParams.channelReserve - fees
     if (missing < Satoshi(0)) {
-      throw CannotAffordFees(commitments.channelId, missingSatoshis = missing.toLong.abs, reserveSatoshis = commitments1.localParams.channelReserve.toLong, feesSatoshis = fees.toLong)
+      throw CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
     }
 
     commitments1

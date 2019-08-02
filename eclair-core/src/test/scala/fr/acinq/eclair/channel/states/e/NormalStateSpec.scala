@@ -146,7 +146,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val add = CMD_ADD_HTLC(50, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add)
-    val error = HtlcValueTooSmall(channelId(alice), 1000, 50)
+    val error = HtlcValueTooSmall(channelId(alice), MilliSatoshi(1000), MilliSatoshi(50))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
@@ -157,7 +157,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val add = CMD_ADD_HTLC(Int.MaxValue, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add)
-    val error = InsufficientFunds(channelId(alice), amountMsat = Int.MaxValue, missingSatoshis = 1376443, reserveSatoshis = 20000, feesSatoshis = 8960)
+    val error = InsufficientFunds(channelId(alice), amount = MilliSatoshi(Int.MaxValue), missing = Satoshi(1376443), reserve = Satoshi(20000), fees = Satoshi(8960))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
@@ -177,7 +177,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[UpdateAddHtlc]
     val add = CMD_ADD_HTLC(1000000, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add)
-    val error = InsufficientFunds(channelId(alice), amountMsat = 1000000, missingSatoshis = 1000, reserveSatoshis = 20000, feesSatoshis = 12400)
+    val error = InsufficientFunds(channelId(alice), amount = MilliSatoshi(1000000), missing = Satoshi(1000), reserve = Satoshi(20000), fees = Satoshi(12400))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
@@ -194,7 +194,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[UpdateAddHtlc]
     val add = CMD_ADD_HTLC(500000000, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add)
-    val error = InsufficientFunds(channelId(alice), amountMsat = 500000000, missingSatoshis = 332400, reserveSatoshis = 20000, feesSatoshis = 12400)
+    val error = InsufficientFunds(channelId(alice), amount = MilliSatoshi(500000000), missing = Satoshi(332400), reserve = Satoshi(20000), fees = Satoshi(12400))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
@@ -241,7 +241,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // this is over channel-capacity
     val add2 = CMD_ADD_HTLC(TestConstants.fundingSatoshis * 2 / 3 * 1000, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add2)
-    val error = InsufficientFunds(channelId(alice), add2.amountMsat, 564012, 20000, 10680)
+    val error = InsufficientFunds(channelId(alice), MilliSatoshi(add2.amountMsat), Satoshi(564012), Satoshi(20000), Satoshi(10680))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Local(add2.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
     alice2bob.expectNoMsg(200 millis)
   }
@@ -319,7 +319,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(150), randomBytes32, cltvExpiry = 400144, TestConstants.emptyOnionPacket)
     alice2bob.forward(bob, htlc)
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) === HtlcValueTooSmall(channelId(bob), minimum = 1000, actual = 150).getMessage)
+    assert(new String(error.data.toArray) === HtlcValueTooSmall(channelId(bob), minimum = MilliSatoshi(1000), actual = MilliSatoshi(150)).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -334,7 +334,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(Long.MaxValue), randomBytes32, 400144, TestConstants.emptyOnionPacket)
     alice2bob.forward(bob, htlc)
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) === InsufficientFunds(channelId(bob), amountMsat = Long.MaxValue, missingSatoshis = 9223372036083735L, reserveSatoshis = 20000, feesSatoshis = 8960).getMessage)
+    assert(new String(error.data.toArray) === InsufficientFunds(channelId(bob), amount = MilliSatoshi(Long.MaxValue), missing = Satoshi(9223372036083735L), reserve = Satoshi(20000), fees = Satoshi(8960)).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -351,7 +351,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi(167600000), randomBytes32, 400144, TestConstants.emptyOnionPacket))
     alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 3, MilliSatoshi(10000000), randomBytes32, 400144, TestConstants.emptyOnionPacket))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) === InsufficientFunds(channelId(bob), amountMsat = 10000000, missingSatoshis = 11720, reserveSatoshis = 20000, feesSatoshis = 14120).getMessage)
+    assert(new String(error.data.toArray) === InsufficientFunds(channelId(bob), amount = MilliSatoshi(10000000), missing = Satoshi(11720), reserve = Satoshi(20000), fees = Satoshi(14120)).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -367,7 +367,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliSatoshi(300000000), randomBytes32, 400144, TestConstants.emptyOnionPacket))
     alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi(500000000), randomBytes32, 400144, TestConstants.emptyOnionPacket))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) === InsufficientFunds(channelId(bob), amountMsat = 500000000, missingSatoshis = 332400, reserveSatoshis = 20000, feesSatoshis = 12400).getMessage)
+    assert(new String(error.data.toArray) === InsufficientFunds(channelId(bob), amount = MilliSatoshi(500000000), missing = Satoshi(332400), reserve = Satoshi(20000), fees = Satoshi(12400)).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -1397,7 +1397,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob.feeEstimator.setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
     sender.send(bob, fee)
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missingSatoshis = 71620000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
+    assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missing = Satoshi(71620000L), reserve = Satoshi(20000L), fees = Satoshi(72400000L)).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)

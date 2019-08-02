@@ -109,9 +109,9 @@ object Helpers {
 
     // BOLT #2: The receiving node MUST fail the channel if both to_local and to_remote amounts for the initial commitment
     // transaction are less than or equal to channel_reserve_satoshis (see BOLT 3).
-    val (toLocalMsat, toRemoteMsat) = (open.pushMsat.toLong, open.fundingSatoshis.toLong * 1000 - open.pushMsat.toLong)
-    if (toLocalMsat < open.channelReserveSatoshis.toLong * 1000 && toRemoteMsat < open.channelReserveSatoshis.toLong * 1000) {
-      throw ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis.toLong)
+    val (toLocalMsat, toRemoteMsat) = (open.pushMsat, open.fundingSatoshis.toMilliSatoshi - open.pushMsat)
+    if (toLocalMsat < open.channelReserveSatoshis.toMilliSatoshi && toRemoteMsat < open.channelReserveSatoshis.toMilliSatoshi) {
+      throw ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis)
     }
 
     val localFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
@@ -267,7 +267,7 @@ object Helpers {
         val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
         val missing = MilliSatoshi(toRemoteMsat).toSatoshi - localParams.channelReserve - fees
         if (missing < Satoshi(0)) {
-          throw CannotAffordFees(temporaryChannelId, missingSatoshis = missing.toLong.abs, reserveSatoshis = localParams.channelReserve.toLong, feesSatoshis = fees.toLong)
+          throw CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.channelReserve, fees = fees)
         }
       }
 
@@ -469,7 +469,7 @@ object Helpers {
       val lastCommitFeeSatoshi = commitments.commitInput.txOut.amount.amount - commitments.localCommit.publishableTxs.commitTx.tx.txOut.map(_.amount.amount).sum
       if (remoteClosingFee.amount > lastCommitFeeSatoshi) {
         log.error(s"remote proposed a commit fee higher than the last commitment fee: remoteClosingFeeSatoshi=${remoteClosingFee.amount} lastCommitFeeSatoshi=$lastCommitFeeSatoshi")
-        throw InvalidCloseFee(commitments.channelId, remoteClosingFee.amount)
+        throw InvalidCloseFee(commitments.channelId, remoteClosingFee)
       }
       val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
       val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitments.localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
