@@ -39,7 +39,7 @@ class ChannelSelectionSpec extends FunSuite {
   test("convert to CMD_FAIL_HTLC/CMD_ADD_HTLC") {
     val relayPayload = RelayPayload(
       add = UpdateAddHtlc(randomBytes32, 42, MilliSatoshi(1000000), randomBytes32, 70, TestConstants.emptyOnionPacket),
-      payload = PerHopPayload(ShortChannelId(12345), amtToForward = 998900, outgoingCltvValue = 60),
+      payload = PerHopPayload(ShortChannelId(12345), amtToForward = MilliSatoshi(998900), outgoingCltvValue = 60),
       nextPacket = TestConstants.emptyOnionPacket // just a placeholder
     )
 
@@ -48,31 +48,31 @@ class ChannelSelectionSpec extends FunSuite {
     implicit val log = akka.event.NoLogging
 
     // nominal case
-    assert(Relayer.relayOrFail(relayPayload, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(MilliSatoshi(relayPayload.payload.amtToForward), relayPayload.add.paymentHash, relayPayload.payload.outgoingCltvValue, relayPayload.nextPacket, upstream = Right(relayPayload.add), commit = true)))
+    assert(Relayer.relayOrFail(relayPayload, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(relayPayload.payload.amtToForward, relayPayload.add.paymentHash, relayPayload.payload.outgoingCltvValue, relayPayload.nextPacket, upstream = Right(relayPayload.add), commit = true)))
     // no channel_update
     assert(Relayer.relayOrFail(relayPayload, channelUpdate_opt = None) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(UnknownNextPeer), commit = true)))
     // channel disabled
     val channelUpdate_disabled = channelUpdate.copy(channelFlags = Announcements.makeChannelFlags(true, enable = false))
     assert(Relayer.relayOrFail(relayPayload, Some(channelUpdate_disabled)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(ChannelDisabled(channelUpdate_disabled.messageFlags, channelUpdate_disabled.channelFlags, channelUpdate_disabled)), commit = true)))
     // amount too low
-    val relayPayload_toolow = relayPayload.copy(payload = relayPayload.payload.copy(amtToForward = 99))
-    assert(Relayer.relayOrFail(relayPayload_toolow, Some(channelUpdate)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(AmountBelowMinimum(relayPayload_toolow.payload.amtToForward, channelUpdate)), commit = true)))
+    val relayPayload_toolow = relayPayload.copy(payload = relayPayload.payload.copy(amtToForward = MilliSatoshi(99)))
+    assert(Relayer.relayOrFail(relayPayload_toolow, Some(channelUpdate)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(AmountBelowMinimum(relayPayload_toolow.payload.amtToForward.toLong, channelUpdate)), commit = true)))
     // incorrect cltv expiry
     val relayPayload_incorrectcltv = relayPayload.copy(payload = relayPayload.payload.copy(outgoingCltvValue = 42))
     assert(Relayer.relayOrFail(relayPayload_incorrectcltv, Some(channelUpdate)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(IncorrectCltvExpiry(relayPayload_incorrectcltv.payload.outgoingCltvValue, channelUpdate)), commit = true)))
     // insufficient fee
-    val relayPayload_insufficientfee = relayPayload.copy(payload = relayPayload.payload.copy(amtToForward = 998910))
+    val relayPayload_insufficientfee = relayPayload.copy(payload = relayPayload.payload.copy(amtToForward = MilliSatoshi(998910)))
     assert(Relayer.relayOrFail(relayPayload_insufficientfee, Some(channelUpdate)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(FeeInsufficient(relayPayload_insufficientfee.add.amountMsat.toLong, channelUpdate)), commit = true)))
     // note that a generous fee is ok!
-    val relayPayload_highfee = relayPayload.copy(payload = relayPayload.payload.copy(amtToForward = 900000))
-    assert(Relayer.relayOrFail(relayPayload_highfee, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(MilliSatoshi(relayPayload_highfee.payload.amtToForward), relayPayload_highfee.add.paymentHash, relayPayload_highfee.payload.outgoingCltvValue, relayPayload_highfee.nextPacket, upstream = Right(relayPayload.add), commit = true)))
+    val relayPayload_highfee = relayPayload.copy(payload = relayPayload.payload.copy(amtToForward = MilliSatoshi(900000)))
+    assert(Relayer.relayOrFail(relayPayload_highfee, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(relayPayload_highfee.payload.amtToForward, relayPayload_highfee.add.paymentHash, relayPayload_highfee.payload.outgoingCltvValue, relayPayload_highfee.nextPacket, upstream = Right(relayPayload.add), commit = true)))
   }
 
   test("channel selection") {
 
     val relayPayload = RelayPayload(
       add = UpdateAddHtlc(randomBytes32, 42, MilliSatoshi(1000000), randomBytes32, 70, TestConstants.emptyOnionPacket),
-      payload = PerHopPayload(ShortChannelId(12345), amtToForward = 998900, outgoingCltvValue = 60),
+      payload = PerHopPayload(ShortChannelId(12345), amtToForward = MilliSatoshi(998900), outgoingCltvValue = 60),
       nextPacket = TestConstants.emptyOnionPacket // just a placeholder
     )
 
@@ -104,11 +104,11 @@ class ChannelSelectionSpec extends FunSuite {
     // all the suitable channels have been tried
     assert(Relayer.selectPreferredChannel(relayPayload, channelUpdates, node2channels, Seq(ShortChannelId(22222), ShortChannelId(12345), ShortChannelId(11111))) === None)
     // higher amount payment (have to increased incoming htlc amount for fees to be sufficient)
-    assert(Relayer.selectPreferredChannel(relayPayload.modify(_.add.amountMsat).setTo(MilliSatoshi(60000000)).modify(_.payload.amtToForward).setTo(50000000), channelUpdates, node2channels, Seq.empty) === Some(ShortChannelId(11111)))
+    assert(Relayer.selectPreferredChannel(relayPayload.modify(_.add.amountMsat).setTo(MilliSatoshi(60000000)).modify(_.payload.amtToForward).setTo(MilliSatoshi(50000000)), channelUpdates, node2channels, Seq.empty) === Some(ShortChannelId(11111)))
     // lower amount payment
-    assert(Relayer.selectPreferredChannel(relayPayload.modify(_.payload.amtToForward).setTo(1000), channelUpdates, node2channels, Seq.empty) === Some(ShortChannelId(33333)))
+    assert(Relayer.selectPreferredChannel(relayPayload.modify(_.payload.amtToForward).setTo(MilliSatoshi(1000)), channelUpdates, node2channels, Seq.empty) === Some(ShortChannelId(33333)))
     // payment too high, no suitable channel found
-    assert(Relayer.selectPreferredChannel(relayPayload.modify(_.payload.amtToForward).setTo(1000000000), channelUpdates, node2channels, Seq.empty) === Some(ShortChannelId(12345)))
+    assert(Relayer.selectPreferredChannel(relayPayload.modify(_.payload.amtToForward).setTo(MilliSatoshi(1000000000)), channelUpdates, node2channels, Seq.empty) === Some(ShortChannelId(12345)))
     // invalid cltv expiry, no suitable channel, we keep the requested one
     assert(Relayer.selectPreferredChannel(relayPayload.modify(_.payload.outgoingCltvValue).setTo(40), channelUpdates, node2channels, Seq.empty) === Some(ShortChannelId(12345)))
 

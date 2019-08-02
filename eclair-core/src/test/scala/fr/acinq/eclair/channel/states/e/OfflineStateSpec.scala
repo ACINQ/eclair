@@ -204,11 +204,11 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    val (ra1, htlca1) = addHtlc(250000000, alice, bob, alice2bob, bob2alice)
+    val (ra1, htlca1) = addHtlc(MilliSatoshi(250000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    val (ra2, htlca2) = addHtlc(100000000, alice, bob, alice2bob, bob2alice)
+    val (ra2, htlca2) = addHtlc(MilliSatoshi(100000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    val (ra3, htlca3) = addHtlc(10000, alice, bob, alice2bob, bob2alice)
+    val (ra3, htlca3) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     val oldStateData = alice.stateData
     fulfillHtlc(htlca1.id, ra1, bob, alice, bob2alice, alice2bob)
@@ -261,7 +261,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // we start by storing the current state
     val oldStateData = alice.stateData
     // then we add an htlc and sign it
-    addHtlc(250000000, alice, bob, alice2bob, bob2alice)
+    addHtlc(MilliSatoshi(250000000), alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[CommitSig]
@@ -401,7 +401,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val register = TestProbe()
     val commandBuffer = TestActorRef(new CommandBuffer(bob.underlyingActor.nodeParams, register.ref))
-    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val listener = TestProbe()
@@ -442,7 +442,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val register = TestProbe()
     val commandBuffer = TestActorRef(new CommandBuffer(bob.underlyingActor.nodeParams, register.ref))
-    val (_, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     sender.send(alice, INPUT_DISCONNECTED)

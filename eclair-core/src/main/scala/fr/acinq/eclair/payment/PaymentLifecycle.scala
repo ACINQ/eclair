@@ -65,7 +65,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
       // we add one block in order to not have our htlc fail when a new block has just been found
       val finalExpiry = Globals.blockCount.get().toInt + c.finalCltvExpiry.toInt + 1
 
-      val (cmd, sharedSecrets) = buildCommand(id, c.amountMsat, finalExpiry, c.paymentHash, hops)
+      val (cmd, sharedSecrets) = buildCommand(id, MilliSatoshi(c.amountMsat), finalExpiry, c.paymentHash, hops)
       register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
@@ -246,7 +246,7 @@ object PaymentLifecycle {
 
   /**
     *
-    * @param finalAmountMsat the final htlc amount in millisatoshis
+    * @param finalAmount the final htlc amount in millisatoshis
     * @param finalExpiry     the final htlc expiry in number of blocks
     * @param hops            the hops as computed by the router + extra routes from payment request
     * @return a (firstAmountMsat, firstExpiry, payloads) tuple where:
@@ -254,19 +254,19 @@ object PaymentLifecycle {
     *         - firstExpiry is the cltv expiry for the first htlc in the route
     *         - a sequence of payloads that will be used to build the onion
     */
-  def buildPayloads(finalAmountMsat: Long, finalExpiry: Long, hops: Seq[Hop]): (Long, Long, Seq[PerHopPayload]) =
-    hops.reverse.foldLeft((finalAmountMsat, finalExpiry, PerHopPayload(ShortChannelId(0L), finalAmountMsat, finalExpiry) :: Nil)) {
+  def buildPayloads(finalAmount: MilliSatoshi, finalExpiry: Long, hops: Seq[Hop]): (MilliSatoshi, Long, Seq[PerHopPayload]) =
+    hops.reverse.foldLeft((finalAmount, finalExpiry, PerHopPayload(ShortChannelId(0L), finalAmount, finalExpiry) :: Nil)) {
       case ((msat, expiry, payloads), hop) =>
-        val nextFee = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, MilliSatoshi(msat)).toLong
+        val nextFee = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, msat)
         (msat + nextFee, expiry + hop.lastUpdate.cltvExpiryDelta, PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
     }
 
-  def buildCommand(id: UUID, finalAmountMsat: Long, finalExpiry: Long, paymentHash: ByteVector32, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
-    val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
+  def buildCommand(id: UUID, finalAmount: MilliSatoshi, finalExpiry: Long, paymentHash: ByteVector32, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
+    val (firstAmount, firstExpiry, payloads) = buildPayloads(finalAmount, finalExpiry, hops.drop(1))
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
     val onion = buildOnion(nodes, payloads, paymentHash)
-    CMD_ADD_HTLC(MilliSatoshi(firstAmountMsat), paymentHash, firstExpiry, onion.packet, upstream = Left(id), commit = true) -> onion.sharedSecrets
+    CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, upstream = Left(id), commit = true) -> onion.sharedSecrets
   }
 
   /**

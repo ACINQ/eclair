@@ -52,12 +52,12 @@ class HtlcGenerationSpec extends FunSuite {
 
     val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
 
-    assert(firstAmountMsat === amount_ab.toLong)
+    assert(firstAmountMsat === amount_ab)
     assert(firstExpiry === expiry_ab)
     assert(payloads ===
-      PerHopPayload(channelUpdate_bc.shortChannelId, amount_bc.toLong, expiry_bc) ::
-        PerHopPayload(channelUpdate_cd.shortChannelId, amount_cd.toLong, expiry_cd) ::
-        PerHopPayload(channelUpdate_de.shortChannelId, amount_de.toLong, expiry_de) ::
+      PerHopPayload(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc) ::
+        PerHopPayload(channelUpdate_cd.shortChannelId, amount_cd, expiry_cd) ::
+        PerHopPayload(channelUpdate_de.shortChannelId, amount_de, expiry_de) ::
         PerHopPayload(ShortChannelId(0L), finalAmountMsat, finalExpiry) :: Nil)
   }
 
@@ -72,19 +72,19 @@ class HtlcGenerationSpec extends FunSuite {
     val Right(DecryptedPacket(bin_b, packet_c, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, packet_b)
     val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
     assert(packet_c.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_b.amtToForward === amount_bc.toLong)
+    assert(payload_b.amtToForward === amount_bc)
     assert(payload_b.outgoingCltvValue === expiry_bc)
 
     val Right(DecryptedPacket(bin_c, packet_d, _)) = Sphinx.PaymentPacket.peel(priv_c.privateKey, paymentHash, packet_c)
     val payload_c = OnionCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
     assert(packet_d.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_c.amtToForward === amount_cd.toLong)
+    assert(payload_c.amtToForward === amount_cd)
     assert(payload_c.outgoingCltvValue === expiry_cd)
 
     val Right(DecryptedPacket(bin_d, packet_e, _)) = Sphinx.PaymentPacket.peel(priv_d.privateKey, paymentHash, packet_d)
     val payload_d = OnionCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
     assert(packet_e.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_d.amtToForward === amount_de.toLong)
+    assert(payload_d.amtToForward === amount_de)
     assert(payload_d.outgoingCltvValue === expiry_de)
 
     val Right(DecryptedPacket(bin_e, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_e.privateKey, paymentHash, packet_e)
@@ -98,7 +98,7 @@ class HtlcGenerationSpec extends FunSuite {
 
     val (add, _) = buildCommand(UUID.randomUUID, finalAmountMsat, finalExpiry, paymentHash, hops)
 
-    assert(add.amount > MilliSatoshi(finalAmountMsat))
+    assert(add.amount > finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry + channelUpdate_de.cltvExpiryDelta + channelUpdate_cd.cltvExpiryDelta + channelUpdate_bc.cltvExpiryDelta)
     assert(add.paymentHash === paymentHash)
     assert(add.onion.payload.length === Sphinx.PaymentPacket.PayloadLength)
@@ -107,19 +107,19 @@ class HtlcGenerationSpec extends FunSuite {
     val Right(DecryptedPacket(bin_b, packet_c, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, add.onion)
     val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
     assert(packet_c.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_b.amtToForward === amount_bc.toLong)
+    assert(payload_b.amtToForward === amount_bc)
     assert(payload_b.outgoingCltvValue === expiry_bc)
 
     val Right(DecryptedPacket(bin_c, packet_d, _)) = Sphinx.PaymentPacket.peel(priv_c.privateKey, paymentHash, packet_c)
     val payload_c = OnionCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
     assert(packet_d.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_c.amtToForward === amount_cd.toLong)
+    assert(payload_c.amtToForward === amount_cd)
     assert(payload_c.outgoingCltvValue === expiry_cd)
 
     val Right(DecryptedPacket(bin_d, packet_e, _)) = Sphinx.PaymentPacket.peel(priv_d.privateKey, paymentHash, packet_d)
     val payload_d = OnionCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
     assert(packet_e.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_d.amtToForward === amount_de.toLong)
+    assert(payload_d.amtToForward === amount_de)
     assert(payload_d.outgoingCltvValue === expiry_de)
 
     val Right(DecryptedPacket(bin_e, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_e.privateKey, paymentHash, packet_e)
@@ -132,7 +132,7 @@ class HtlcGenerationSpec extends FunSuite {
   test("build a command with no hops") {
     val (add, _) = buildCommand(UUID.randomUUID(), finalAmountMsat, finalExpiry, paymentHash, hops.take(1))
 
-    assert(add.amount === MilliSatoshi(finalAmountMsat))
+    assert(add.amount === finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry)
     assert(add.paymentHash === paymentHash)
     assert(add.onion.payload.length === Sphinx.PaymentPacket.PayloadLength)
@@ -174,14 +174,14 @@ object HtlcGenerationSpec {
       Hop(c, d, channelUpdate_cd) ::
       Hop(d, e, channelUpdate_de) :: Nil
 
-  val finalAmountMsat = 42000000L
+  val finalAmountMsat = MilliSatoshi(42000000L)
   val currentBlockCount = 420000
   val finalExpiry = currentBlockCount + Channel.MIN_CLTV_EXPIRY
   val paymentPreimage = randomBytes32
   val paymentHash = Crypto.sha256(paymentPreimage)
 
   val expiry_de = currentBlockCount + Channel.MIN_CLTV_EXPIRY
-  val amount_de = MilliSatoshi(finalAmountMsat)
+  val amount_de = finalAmountMsat
   val fee_d = nodeFee(channelUpdate_de.feeBaseMsat, channelUpdate_de.feeProportionalMillionths, amount_de)
 
   val expiry_cd = expiry_de + channelUpdate_de.cltvExpiryDelta

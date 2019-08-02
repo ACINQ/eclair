@@ -93,7 +93,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
 
     def buildCmdAdd(paymentHash: ByteVector32, dest: PublicKey) = {
       // allow overpaying (no more than 2 times the required amount)
-      val amount = requiredAmount + Random.nextInt(requiredAmount)
+      val amount = MilliSatoshi(requiredAmount + Random.nextInt(requiredAmount))
       val expiry = Globals.blockCount.get().toInt + Channel.MIN_CLTV_EXPIRY + 1
       PaymentLifecycle.buildCommand(UUID.randomUUID(), amount, expiry, paymentHash, Hop(null, dest, null) :: Nil)._1
     }

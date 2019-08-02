@@ -55,7 +55,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       // alice sends an HTLC to bob
       val h1 = Crypto.sha256(r1)
-      val amount1 = 300000000
+      val amount1 = MilliSatoshi(300000000)
       val expiry1 = 400144
       val cmd1 = PaymentLifecycle.buildCommand(UUID.randomUUID, amount1, expiry1, h1, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil)._1.copy(commit = false)
       sender.send(alice, cmd1)
@@ -65,7 +65,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.proposed == htlc1 :: Nil)
       // alice sends another HTLC to bob
       val h2 = Crypto.sha256(r2)
-      val amount2 = 200000000
+      val amount2 = MilliSatoshi(200000000)
       val expiry2 = 400144
       val cmd2 = PaymentLifecycle.buildCommand(UUID.randomUUID, amount2, expiry2, h2, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil)._1.copy(commit = false)
       sender.send(alice, cmd2)
