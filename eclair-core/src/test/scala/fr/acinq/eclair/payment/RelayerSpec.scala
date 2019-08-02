@@ -257,7 +257,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
-    assert(fail.reason == Right(AmountBelowMinimum(cmd.amount.toLong, channelUpdate_bc)))
+    assert(fail.reason == Right(AmountBelowMinimum(cmd.amount, channelUpdate_bc)))
 
     register.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)
@@ -297,7 +297,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
-    assert(fail.reason == Right(FeeInsufficient(add_ab.amountMsat.toLong, channelUpdate_bc)))
+    assert(fail.reason == Right(FeeInsufficient(add_ab.amountMsat, channelUpdate_bc)))
 
     register.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)
@@ -318,7 +318,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
-    assert(fail.reason == Right(FinalIncorrectHtlcAmount(add_ab.amountMsat.toLong)))
+    assert(fail.reason == Right(FinalIncorrectHtlcAmount(add_ab.amountMsat)))
 
     register.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)

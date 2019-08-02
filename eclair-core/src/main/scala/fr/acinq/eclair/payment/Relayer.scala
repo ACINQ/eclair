@@ -260,7 +260,7 @@ object Relayer extends Logging {
     import finalPayload.add
     finalPayload.payload match {
       case PerHopPayload(_, finalAmountToForward, _) if finalAmountToForward > add.amountMsat =>
-        Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectHtlcAmount(add.amountMsat.toLong)), commit = true))
+        Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectHtlcAmount(add.amountMsat)), commit = true))
       case PerHopPayload(_, _, finalOutgoingCltvValue) if finalOutgoingCltvValue != add.cltvExpiry =>
         Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectCltvExpiry(add.cltvExpiry)), commit = true))
       case _ =>
@@ -368,11 +368,11 @@ object Relayer extends Logging {
       case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.channelFlags) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)), commit = true))
       case Some(channelUpdate) if payload.amtToForward < channelUpdate.htlcMinimumMsat =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amtToForward.toLong, channelUpdate)), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amtToForward, channelUpdate)), commit = true))
       case Some(channelUpdate) if relayPayload.expiryDelta != channelUpdate.cltvExpiryDelta =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltvValue, channelUpdate)), commit = true))
       case Some(channelUpdate) if relayPayload.relayFeeMsat < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amtToForward) =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat.toLong, channelUpdate)), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
         RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket, upstream = Right(add), commit = true, previousFailures = previousFailures))
     }

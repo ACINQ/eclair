@@ -66,15 +66,15 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
           // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
           paymentRequest.amount match {
             case _ if paymentRequest.isExpired =>
-              sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat.toLong)), commit = true)
+              sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat)), commit = true)
             case _ if htlc.cltvExpiry < minFinalExpiry =>
               sender ! CMD_FAIL_HTLC(htlc.id, Right(FinalExpiryTooSoon), commit = true)
             case Some(amount) if htlc.amountMsat < amount =>
               log.warning(s"received payment with amount too small for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
-              sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat.toLong)), commit = true)
+              sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat)), commit = true)
             case Some(amount) if htlc.amountMsat > amount * 2 =>
               log.warning(s"received payment with amount too large for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
-              sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat.toLong)), commit = true)
+              sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat)), commit = true)
             case _ =>
               log.info(s"received payment for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
               // amount is correct or was not specified in the payment request
@@ -83,7 +83,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
               context.system.eventStream.publish(PaymentReceived(htlc.amountMsat, htlc.paymentHash, htlc.channelId))
           }
         case None =>
-          sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat.toLong)), commit = true)
+          sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat)), commit = true)
       }
   }
 
