@@ -37,9 +37,9 @@ import scodec.bits.ByteVector
 class HtlcGenerationSpec extends FunSuite {
 
   test("compute fees") {
-    val feeBaseMsat = 150000L
+    val feeBaseMsat = MilliSatoshi(150000L)
     val feeProportionalMillionth = 4L
-    val htlcAmountMsat = 42000000
+    val htlcAmountMsat = MilliSatoshi(42000000)
     // spec: fee-base-msat + htlc-amount-msat * fee-proportional-millionths / 1000000
     val ref = feeBaseMsat + htlcAmountMsat * feeProportionalMillionth / 1000000
     val fee = nodeFee(feeBaseMsat, feeProportionalMillionth, htlcAmountMsat)
@@ -52,12 +52,12 @@ class HtlcGenerationSpec extends FunSuite {
 
     val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
 
-    assert(firstAmountMsat === amount_ab)
+    assert(firstAmountMsat === amount_ab.toLong)
     assert(firstExpiry === expiry_ab)
     assert(payloads ===
-      PerHopPayload(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc) ::
-        PerHopPayload(channelUpdate_cd.shortChannelId, amount_cd, expiry_cd) ::
-        PerHopPayload(channelUpdate_de.shortChannelId, amount_de, expiry_de) ::
+      PerHopPayload(channelUpdate_bc.shortChannelId, amount_bc.toLong, expiry_bc) ::
+        PerHopPayload(channelUpdate_cd.shortChannelId, amount_cd.toLong, expiry_cd) ::
+        PerHopPayload(channelUpdate_de.shortChannelId, amount_de.toLong, expiry_de) ::
         PerHopPayload(ShortChannelId(0L), finalAmountMsat, finalExpiry) :: Nil)
   }
 
@@ -72,19 +72,19 @@ class HtlcGenerationSpec extends FunSuite {
     val Right(DecryptedPacket(bin_b, packet_c, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, packet_b)
     val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
     assert(packet_c.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_b.amtToForward === amount_bc)
+    assert(payload_b.amtToForward === amount_bc.toLong)
     assert(payload_b.outgoingCltvValue === expiry_bc)
 
     val Right(DecryptedPacket(bin_c, packet_d, _)) = Sphinx.PaymentPacket.peel(priv_c.privateKey, paymentHash, packet_c)
     val payload_c = OnionCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
     assert(packet_d.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_c.amtToForward === amount_cd)
+    assert(payload_c.amtToForward === amount_cd.toLong)
     assert(payload_c.outgoingCltvValue === expiry_cd)
 
     val Right(DecryptedPacket(bin_d, packet_e, _)) = Sphinx.PaymentPacket.peel(priv_d.privateKey, paymentHash, packet_d)
     val payload_d = OnionCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
     assert(packet_e.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_d.amtToForward === amount_de)
+    assert(payload_d.amtToForward === amount_de.toLong)
     assert(payload_d.outgoingCltvValue === expiry_de)
 
     val Right(DecryptedPacket(bin_e, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_e.privateKey, paymentHash, packet_e)
@@ -107,19 +107,19 @@ class HtlcGenerationSpec extends FunSuite {
     val Right(DecryptedPacket(bin_b, packet_c, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, add.onion)
     val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
     assert(packet_c.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_b.amtToForward === amount_bc)
+    assert(payload_b.amtToForward === amount_bc.toLong)
     assert(payload_b.outgoingCltvValue === expiry_bc)
 
     val Right(DecryptedPacket(bin_c, packet_d, _)) = Sphinx.PaymentPacket.peel(priv_c.privateKey, paymentHash, packet_c)
     val payload_c = OnionCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
     assert(packet_d.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_c.amtToForward === amount_cd)
+    assert(payload_c.amtToForward === amount_cd.toLong)
     assert(payload_c.outgoingCltvValue === expiry_cd)
 
     val Right(DecryptedPacket(bin_d, packet_e, _)) = Sphinx.PaymentPacket.peel(priv_d.privateKey, paymentHash, packet_d)
     val payload_d = OnionCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
     assert(packet_e.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_d.amtToForward === amount_de)
+    assert(payload_d.amtToForward === amount_de.toLong)
     assert(payload_d.outgoingCltvValue === expiry_de)
 
     val Right(DecryptedPacket(bin_e, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_e.privateKey, paymentHash, packet_e)
@@ -160,11 +160,11 @@ object HtlcGenerationSpec {
   val (priv_a, priv_b, priv_c, priv_d, priv_e) = (TestConstants.Alice.keyManager.nodeKey, TestConstants.Bob.keyManager.nodeKey, randomExtendedPrivateKey, randomExtendedPrivateKey, randomExtendedPrivateKey)
   val (a, b, c, d, e) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey)
   val sig = Crypto.sign(Crypto.sha256(ByteVector.empty), priv_a.privateKey)
-  val defaultChannelUpdate = ChannelUpdate(sig, Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0, 1, 0, 0, MilliSatoshi(42000), 0, 0, Some(500000000L))
-  val channelUpdate_ab = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(1), cltvExpiryDelta = 4, feeBaseMsat = 642000, feeProportionalMillionths = 7)
-  val channelUpdate_bc = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(2), cltvExpiryDelta = 5, feeBaseMsat = 153000, feeProportionalMillionths = 4)
-  val channelUpdate_cd = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(3), cltvExpiryDelta = 10, feeBaseMsat = 60000, feeProportionalMillionths = 1)
-  val channelUpdate_de = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(4), cltvExpiryDelta = 7, feeBaseMsat = 766000, feeProportionalMillionths = 10)
+  val defaultChannelUpdate = ChannelUpdate(sig, Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0, 1, 0, 0, MilliSatoshi(42000), MilliSatoshi(0), 0, Some(MilliSatoshi(500000000L)))
+  val channelUpdate_ab = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(1), cltvExpiryDelta = 4, feeBaseMsat = MilliSatoshi(642000), feeProportionalMillionths = 7)
+  val channelUpdate_bc = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(2), cltvExpiryDelta = 5, feeBaseMsat = MilliSatoshi(153000), feeProportionalMillionths = 4)
+  val channelUpdate_cd = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(3), cltvExpiryDelta = 10, feeBaseMsat = MilliSatoshi(60000), feeProportionalMillionths = 1)
+  val channelUpdate_de = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(4), cltvExpiryDelta = 7, feeBaseMsat = MilliSatoshi(766000), feeProportionalMillionths = 10)
 
   // simple route a -> b -> c -> d -> e
 
@@ -181,7 +181,7 @@ object HtlcGenerationSpec {
   val paymentHash = Crypto.sha256(paymentPreimage)
 
   val expiry_de = currentBlockCount + Channel.MIN_CLTV_EXPIRY
-  val amount_de = finalAmountMsat
+  val amount_de = MilliSatoshi(finalAmountMsat)
   val fee_d = nodeFee(channelUpdate_de.feeBaseMsat, channelUpdate_de.feeProportionalMillionths, amount_de)
 
   val expiry_cd = expiry_de + channelUpdate_de.cltvExpiryDelta

@@ -257,7 +257,7 @@ object PaymentLifecycle {
   def buildPayloads(finalAmountMsat: Long, finalExpiry: Long, hops: Seq[Hop]): (Long, Long, Seq[PerHopPayload]) =
     hops.reverse.foldLeft((finalAmountMsat, finalExpiry, PerHopPayload(ShortChannelId(0L), finalAmountMsat, finalExpiry) :: Nil)) {
       case ((msat, expiry, payloads), hop) =>
-        val nextFee = nodeFee(hop.lastUpdate.feeBaseMsat.toLong, hop.lastUpdate.feeProportionalMillionths, msat)
+        val nextFee = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, MilliSatoshi(msat)).toLong
         (msat + nextFee, expiry + hop.lastUpdate.cltvExpiryDelta, PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
     }
 

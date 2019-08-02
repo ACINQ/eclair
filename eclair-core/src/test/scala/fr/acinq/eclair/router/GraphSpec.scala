@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.wire.ChannelUpdate
@@ -211,7 +211,7 @@ class GraphSpec extends FunSuite {
     assert(mutatedGraph2.edgesOf(a).size == 3) // A --> B , A --> B , A --> D
     assert(mutatedGraph2.getEdgesBetween(a, b).size === 2)
 
-    assert(mutatedGraph2.getEdge(edgeForTheSameChannel).get.update.feeBaseMsat === 30)
+    assert(mutatedGraph2.getEdge(edgeForTheSameChannel).get.update.feeBaseMsat === MilliSatoshi(30))
   }
 
   test("remove a vertex with incoming edges and check those edges are removed too") {

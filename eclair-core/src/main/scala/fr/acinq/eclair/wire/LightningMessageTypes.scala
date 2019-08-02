@@ -218,9 +218,9 @@ case class ChannelUpdate(signature: ByteVector64,
                          channelFlags: Byte,
                          cltvExpiryDelta: Int,
                          htlcMinimumMsat: MilliSatoshi,
-                         feeBaseMsat: Long,
+                         feeBaseMsat: MilliSatoshi,
                          feeProportionalMillionths: Long,
-                         htlcMaximumMsat: Option[Long],
+                         htlcMaximumMsat: Option[MilliSatoshi],
                          unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with HasTimestamp with HasChainHash {
   require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
 }

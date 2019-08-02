@@ -187,11 +187,11 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
                 val c = mainController.networkChannelsMap.get(channelUpdate.shortChannelId)
                 if (Announcements.isNode1(channelUpdate.channelFlags)) {
                   c.isNode1Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
-                  c.feeBaseMsatNode1_opt = Some(channelUpdate.feeBaseMsat)
+                  c.feeBaseMsatNode1_opt = Some(channelUpdate.feeBaseMsat.toLong)
                   c.feeProportionalMillionthsNode1_opt = Some(channelUpdate.feeProportionalMillionths)
               } else {
                   c.isNode2Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
-                  c.feeBaseMsatNode2_opt = Some(channelUpdate.feeBaseMsat)
+                  c.feeBaseMsatNode2_opt = Some(channelUpdate.feeBaseMsat.toLong)
                   c.feeProportionalMillionthsNode2_opt = Some(channelUpdate.feeProportionalMillionths)
                 }
                 mainController.networkChannelsMap.put(channelUpdate.shortChannelId, c)

@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.CommandBuffer.CommandSend
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes32}
+import fr.acinq.eclair.{MilliSatoshi, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.Outcome
 
 import scala.concurrent.duration._
@@ -365,7 +365,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // then alice reaches NORMAL state, and after a delay she broadcasts the channel_update
     val channelUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate](20 seconds).channelUpdate
-    assert(channelUpdate.feeBaseMsat === 4200)
+    assert(channelUpdate.feeBaseMsat === MilliSatoshi(4200))
     assert(channelUpdate.feeProportionalMillionths === 123456)
     assert(Announcements.isEnabled(channelUpdate.channelFlags))
 

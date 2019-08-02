@@ -126,7 +126,7 @@ package object eclair {
     * @param msat         amount in millisatoshi
     * @return the fee (in msat) that a node should be paid to forward an HTLC of 'amount' millisatoshis
     */
-  def nodeFee(baseMsat: Long, proportional: Long, msat: Long): Long = baseMsat + (proportional * msat) / 1000000
+  def nodeFee(baseMsat: MilliSatoshi, proportional: Long, msat: MilliSatoshi): MilliSatoshi = baseMsat + (msat * proportional) / 1000000
 
   /**
     *

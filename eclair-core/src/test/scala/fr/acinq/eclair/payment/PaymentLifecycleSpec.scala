@@ -291,7 +291,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
 
     // we change the cltv expiry
-    val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 42, htlcMinimumMsat = channelUpdate_bc.htlcMinimumMsat, feeBaseMsat = MilliSatoshi(channelUpdate_bc.feeBaseMsat), feeProportionalMillionths = channelUpdate_bc.feeProportionalMillionths, htlcMaximumMsat = MilliSatoshi(channelUpdate_bc.htlcMaximumMsat.get))
+    val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 42, htlcMinimumMsat = channelUpdate_bc.htlcMinimumMsat, feeBaseMsat = channelUpdate_bc.feeBaseMsat, feeProportionalMillionths = channelUpdate_bc.feeProportionalMillionths, htlcMaximumMsat = channelUpdate_bc.htlcMaximumMsat.get)
     val failure = IncorrectCltvExpiry(5, channelUpdate_bc_modified)
     // and node replies with a failure containing a new channel update
     sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))
@@ -308,7 +308,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     relayer.expectMsg(ForwardShortId(channelId_ab, cmd2))
 
     // we change the cltv expiry one more time
-    val channelUpdate_bc_modified_2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 43, htlcMinimumMsat = channelUpdate_bc.htlcMinimumMsat, feeBaseMsat = MilliSatoshi(channelUpdate_bc.feeBaseMsat), feeProportionalMillionths = channelUpdate_bc.feeProportionalMillionths, htlcMaximumMsat = MilliSatoshi(channelUpdate_bc.htlcMaximumMsat.get))
+    val channelUpdate_bc_modified_2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 43, htlcMinimumMsat = channelUpdate_bc.htlcMinimumMsat, feeBaseMsat = channelUpdate_bc.feeBaseMsat, feeProportionalMillionths = channelUpdate_bc.feeProportionalMillionths, htlcMaximumMsat = channelUpdate_bc.htlcMaximumMsat.get)
     val failure2 = IncorrectCltvExpiry(5, channelUpdate_bc_modified_2)
     // and node replies with a failure containing a new channel update
     sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets2.head._1, failure2)))

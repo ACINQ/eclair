@@ -75,8 +75,8 @@ class RouteCalculationSpec extends FunSuite {
     // cost(AE) = 10007 -> A is source, shortest path found
     // cost(AB) = 10009
 
-    val amountMsat = 10000
-    val expectedCost = 10007
+    val amount = MilliSatoshi(10000)
+    val expectedCost = MilliSatoshi(10007)
 
     val updates = List(
       makeUpdate(1L, a, b, feeBaseMsat = 1, feeProportionalMillionth = 200, minHtlcMsat = 0),
@@ -89,9 +89,9 @@ class RouteCalculationSpec extends FunSuite {
 
     val graph = makeGraph(updates)
 
-    val Success(route) = Router.findRoute(graph, a, d, amountMsat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
+    val Success(route) = Router.findRoute(graph, a, d, amount.toLong, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
 
-    val totalCost = Graph.pathWeight(hops2Edges(route), amountMsat, false, 0, None).cost
+    val totalCost = Graph.pathWeight(hops2Edges(route), amount, false, 0, None).cost
 
     assert(hops2Ids(route) === 4 :: 5 :: 6 :: Nil)
     assert(totalCost === expectedCost)
@@ -100,7 +100,7 @@ class RouteCalculationSpec extends FunSuite {
     val (desc, update) = makeUpdate(5L, e, f, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0, maxHtlcMsat = Some(10005L))
     val graph1 = graph.addEdge(desc, update)
 
-    val Success(route1) = Router.findRoute(graph1, a, d, amountMsat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
+    val Success(route1) = Router.findRoute(graph1, a, d, amount.toLong, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
 
     assert(hops2Ids(route1) === 1 :: 2 :: 3 :: Nil)
   }
@@ -380,14 +380,14 @@ class RouteCalculationSpec extends FunSuite {
 
     val DUMMY_SIG = Transactions.PlaceHolderSig
 
-    val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 0L, 0, 0, 1, MilliSatoshi(42), 2500, 140, None)
-    val uba = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 1L, 0, 1, 1, MilliSatoshi(43), 2501, 141, None)
-    val ubc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, 0, 0, 1, MilliSatoshi(44), 2502, 142, None)
-    val ucb = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, 0, 1, 1, MilliSatoshi(45), 2503, 143, None)
-    val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, 1, 0, 1, MilliSatoshi(46), 2504, 144, Some(500000000L))
-    val udc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, 0, 1, 1, MilliSatoshi(47), 2505, 145, None)
-    val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 0, 1, MilliSatoshi(48), 2506, 146, None)
-    val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 1, 1, MilliSatoshi(49), 2507, 147, None)
+    val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 0L, 0, 0, 1, MilliSatoshi(42), MilliSatoshi(2500), 140, None)
+    val uba = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 1L, 0, 1, 1, MilliSatoshi(43), MilliSatoshi(2501), 141, None)
+    val ubc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, 0, 0, 1, MilliSatoshi(44), MilliSatoshi(2502), 142, None)
+    val ucb = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, 0, 1, 1, MilliSatoshi(45), MilliSatoshi(2503), 143, None)
+    val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, 1, 0, 1, MilliSatoshi(46), MilliSatoshi(2504), 144, Some(MilliSatoshi(500000000L)))
+    val udc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, 0, 1, 1, MilliSatoshi(47), MilliSatoshi(2505), 145, None)
+    val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 0, 1, MilliSatoshi(48), MilliSatoshi(2506), 146, None)
+    val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 1, 1, MilliSatoshi(49), MilliSatoshi(2507), 147, None)
 
     val updates = Map(
       ChannelDesc(ShortChannelId(1L), a, b) -> uab,
@@ -488,7 +488,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
-    assert(route1.get(1).lastUpdate.feeBaseMsat == 10)
+    assert(route1.get(1).lastUpdate.feeBaseMsat == MilliSatoshi(10))
 
     val (extraDesc, extraUpdate) = makeUpdate(2L, b, c, 5, 5)
 
@@ -496,7 +496,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val route2 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS)
     assert(route2.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
-    assert(route2.get(1).lastUpdate.feeBaseMsat == 5)
+    assert(route2.get(1).lastUpdate.feeBaseMsat == MilliSatoshi(5))
   }
 
   test("compute ignored channels") {
@@ -778,7 +778,7 @@ class RouteCalculationSpec extends FunSuite {
       case Failure(thr) => assert(false, thr)
       case Success(someRoute) =>
 
-        val routeCost = Graph.pathWeight(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, isPartial = false, 0, None).cost - DEFAULT_AMOUNT_MSAT
+        val routeCost = Graph.pathWeight(hops2Edges(someRoute), MilliSatoshi(DEFAULT_AMOUNT_MSAT), isPartial = false, 0, None).cost.toLong - DEFAULT_AMOUNT_MSAT
 
         // over the three routes we could only get the 2 cheapest because the third is too expensive (over 7msat of fees)
         assert(routeCost == 5 || routeCost == 6)
@@ -897,12 +897,12 @@ class RouteCalculationSpec extends FunSuite {
     // This test have a channel (542280x2156x0) that according to heuristics is very convenient but actually useless to reach the target,
     // then if the cost function is not monotonic the path-finding breaks because the result path contains a loop.
     val updates = List(
-      ChannelDesc(ShortChannelId("565643x1216x0"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565643x1216x0"), 0, 1.toByte, 1.toByte, 144, htlcMinimumMsat = MilliSatoshi(0), feeBaseMsat = 1000, 100, Some(15000000000L)),
-      ChannelDesc(ShortChannelId("565643x1216x0"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565643x1216x0"), 0, 1.toByte, 0.toByte, 14, htlcMinimumMsat = MilliSatoshi(1), 1000, 10, Some(4294967295L)),
-      ChannelDesc(ShortChannelId("542280x2156x0"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 1.toByte, 144, htlcMinimumMsat = MilliSatoshi(1000), feeBaseMsat =  1000, 100, Some(16777000000L)),
-      ChannelDesc(ShortChannelId("542280x2156x0"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 0.toByte, 144, htlcMinimumMsat = MilliSatoshi(1), 667, 1, Some(16777000000L)),
-      ChannelDesc(ShortChannelId("565779x2711x0"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565779x2711x0"), 0, 1.toByte, 3.toByte, 144, htlcMinimumMsat = MilliSatoshi(1), 1000, 100, Some(230000000L)),
-      ChannelDesc(ShortChannelId("565779x2711x0"), PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565779x2711x0"), 0, 1.toByte, 0.toByte, 144, htlcMinimumMsat = MilliSatoshi(1), 1000, 100, Some(230000000L))
+      ChannelDesc(ShortChannelId("565643x1216x0"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565643x1216x0"), 0, 1.toByte, 1.toByte, 144, htlcMinimumMsat = MilliSatoshi(0), feeBaseMsat = MilliSatoshi(1000), 100, Some(MilliSatoshi(15000000000L))),
+      ChannelDesc(ShortChannelId("565643x1216x0"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565643x1216x0"), 0, 1.toByte, 0.toByte, 14, htlcMinimumMsat = MilliSatoshi(1), MilliSatoshi(1000), 10, Some(MilliSatoshi(4294967295L))),
+      ChannelDesc(ShortChannelId("542280x2156x0"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 1.toByte, 144, htlcMinimumMsat = MilliSatoshi(1000), feeBaseMsat =  MilliSatoshi(1000), 100, Some(MilliSatoshi(16777000000L))),
+      ChannelDesc(ShortChannelId("542280x2156x0"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 0.toByte, 144, htlcMinimumMsat = MilliSatoshi(1), MilliSatoshi(667), 1, Some(MilliSatoshi(16777000000L))),
+      ChannelDesc(ShortChannelId("565779x2711x0"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565779x2711x0"), 0, 1.toByte, 3.toByte, 144, htlcMinimumMsat = MilliSatoshi(1), MilliSatoshi(1000), 100, Some(MilliSatoshi(230000000L))),
+      ChannelDesc(ShortChannelId("565779x2711x0"), PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565779x2711x0"), 0, 1.toByte, 0.toByte, 144, htlcMinimumMsat = MilliSatoshi(1), MilliSatoshi(1000), 100, Some(MilliSatoshi(230000000L)))
     ).toMap
 
     val g = DirectedGraph.makeGraph(updates)
@@ -955,9 +955,9 @@ object RouteCalculationSpec {
       channelFlags = 0,
       cltvExpiryDelta = cltvDelta,
       htlcMinimumMsat = MilliSatoshi(minHtlcMsat),
-      feeBaseMsat = feeBaseMsat,
+      feeBaseMsat = MilliSatoshi(feeBaseMsat),
       feeProportionalMillionths = feeProportionalMillionth,
-      htlcMaximumMsat = maxHtlcMsat
+      htlcMaximumMsat = maxHtlcMsat.map(MilliSatoshi)
     )
 
   def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = DirectedGraph.makeGraph(updates)

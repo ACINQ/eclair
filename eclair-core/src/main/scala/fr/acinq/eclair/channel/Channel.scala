@@ -227,7 +227,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
           // we rebuild a new channel_update with values from the configuration because they may have changed while eclair was down
           val candidateChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, normal.channelUpdate.shortChannelId, nodeParams.expiryDeltaBlocks,
-            normal.commitments.remoteParams.htlcMinimum, MilliSatoshi(normal.channelUpdate.feeBaseMsat), normal.channelUpdate.feeProportionalMillionths, MilliSatoshi(normal.commitments.localCommit.spec.totalFunds), enable = Announcements.isEnabled(normal.channelUpdate.channelFlags))
+            normal.commitments.remoteParams.htlcMinimum, normal.channelUpdate.feeBaseMsat, normal.channelUpdate.feeProportionalMillionths, MilliSatoshi(normal.commitments.localCommit.spec.totalFunds), enable = Announcements.isEnabled(normal.channelUpdate.channelFlags))
           val channelUpdate1 = if (Announcements.areSame(candidateChannelUpdate, normal.channelUpdate)) {
             // if there was no configuration change we keep the existing channel update
             normal.channelUpdate
@@ -871,7 +871,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         // we need to re-announce this shortChannelId
         context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId))
         // we re-announce the channelUpdate for the same reason
-        Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, MilliSatoshi(d.channelUpdate.feeBaseMsat), d.channelUpdate.feeProportionalMillionths, MilliSatoshi(d.commitments.localCommit.spec.totalFunds), enable = Helpers.aboveReserve(d.commitments))
+        Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, MilliSatoshi(d.commitments.localCommit.spec.totalFunds), enable = Helpers.aboveReserve(d.commitments))
       } else d.channelUpdate
       val localAnnSigs_opt = if (d.commitments.announceChannel) {
         // if channel is public we need to send our announcement_signatures in order to generate the channel_announcement
@@ -919,7 +919,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(BroadcastChannelUpdate(reason), d: DATA_NORMAL) =>
       val age = Platform.currentTime.milliseconds - d.channelUpdate.timestamp.seconds
-      val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, MilliSatoshi(d.channelUpdate.feeBaseMsat), d.channelUpdate.feeProportionalMillionths, MilliSatoshi(d.commitments.localCommit.spec.totalFunds), enable = Helpers.aboveReserve(d.commitments))
+      val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, MilliSatoshi(d.commitments.localCommit.spec.totalFunds), enable = Helpers.aboveReserve(d.commitments))
       reason match {
         case Reconnected if Announcements.areSame(channelUpdate1, d.channelUpdate) && age < REFRESH_CHANNEL_UPDATE_INTERVAL =>
           // we already sent an identical channel_update not long ago (flapping protection in case we keep being disconnected/reconnected)
@@ -943,7 +943,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // if we have pending unsigned htlcs, then we cancel them and advertise the fact that the channel is now disabled
       val d1 = if (d.commitments.localChanges.proposed.collectFirst { case add: UpdateAddHtlc => add }.isDefined) {
         log.info(s"updating channel_update announcement (reason=disabled)")
-        val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, MilliSatoshi(d.channelUpdate.feeBaseMsat), d.channelUpdate.feeProportionalMillionths, MilliSatoshi(d.commitments.localCommit.spec.totalFunds), enable = false)
+        val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, MilliSatoshi(d.commitments.localCommit.spec.totalFunds), enable = false)
         d.commitments.localChanges.proposed.collect {
           case add: UpdateAddHtlc => relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate), None))
         }
@@ -1820,7 +1820,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     if (Announcements.isEnabled(d.channelUpdate.channelFlags)) {
       // if the channel isn't disabled we generate a new channel_update
       log.info(s"updating channel_update announcement (reason=disabled)")
-      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, MilliSatoshi(d.channelUpdate.feeBaseMsat), d.channelUpdate.feeProportionalMillionths, MilliSatoshi(d.commitments.localCommit.spec.totalFunds), enable = false)
+      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, MilliSatoshi(d.commitments.localCommit.spec.totalFunds), enable = false)
       // then we update the state and replay the request
       self forward c
       // we use goto to fire transitions

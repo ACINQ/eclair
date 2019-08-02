@@ -732,7 +732,7 @@ object Router {
   def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
   // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
   // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
-    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = MilliSatoshi(0), extraHop.feeBaseMsat, extraHop.feeProportionalMillionths, None)
+    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = MilliSatoshi(0), MilliSatoshi(extraHop.feeBaseMsat), extraHop.feeProportionalMillionths, None)
 
   def toFakeUpdates(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Map[ChannelDesc, ChannelUpdate] = {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
@@ -869,7 +869,7 @@ object Router {
     val currentBlockHeight = Globals.blockCount.get()
 
     val boundaries: RichWeight => Boolean = { weight =>
-      ((weight.cost - amountMsat) < routeParams.maxFeeBaseMsat || (weight.cost - amountMsat) < (routeParams.maxFeePct * amountMsat)) &&
+      ((weight.cost - MilliSatoshi(amountMsat)) < MilliSatoshi(routeParams.maxFeeBaseMsat) || (weight.cost - MilliSatoshi(amountMsat)) < MilliSatoshi(amountMsat* routeParams.maxFeePct.toLong)) &&
         weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
         weight.cltv <= routeParams.routeMaxCltv
     }

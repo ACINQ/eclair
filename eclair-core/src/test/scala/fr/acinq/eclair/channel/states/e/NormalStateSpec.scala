@@ -1453,7 +1453,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.expectMsg("ok")
 
     val localUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(localUpdate.channelUpdate.feeBaseMsat == newFeeBaseMsat.toLong)
+    assert(localUpdate.channelUpdate.feeBaseMsat == newFeeBaseMsat)
     assert(localUpdate.channelUpdate.feeProportionalMillionths == newFeeProportionalMillionth)
     relayerA.expectNoMsg(1 seconds)
   }
