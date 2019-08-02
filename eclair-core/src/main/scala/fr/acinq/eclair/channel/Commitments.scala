@@ -134,12 +134,12 @@ object Commitments {
       return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockCount))
     }
 
-    if (MilliSatoshi(cmd.amountMsat) < commitments.remoteParams.htlcMinimum) {
-      return Left(HtlcValueTooSmall(commitments.channelId, minimum = commitments.remoteParams.htlcMinimum, actual = MilliSatoshi(cmd.amountMsat)))
+    if (cmd.amount < commitments.remoteParams.htlcMinimum) {
+      return Left(HtlcValueTooSmall(commitments.channelId, minimum = commitments.remoteParams.htlcMinimum, actual = cmd.amount))
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
-    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, MilliSatoshi(cmd.amountMsat), cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
+    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     // we increment the local htlc index and add an entry to the origins map
     val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1, originChannels = commitments.originChannels + (add.id -> origin))
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
@@ -163,7 +163,7 @@ object Commitments {
     val fees = if (commitments1.localParams.isFunder) commitTxFee(commitments1.remoteParams.dustLimit, reduced) else Satoshi(0)
     val missing = MilliSatoshi(reduced.toRemoteMsat).toSatoshi - commitments1.remoteParams.channelReserve - fees
     if (missing < Satoshi(0)) {
-      return Left(InsufficientFunds(commitments.channelId, amount = MilliSatoshi(cmd.amountMsat), missing = -missing, reserve = commitments1.remoteParams.channelReserve, fees = fees))
+      return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missing, reserve = commitments1.remoteParams.channelReserve, fees = fees))
     }
 
     Right(commitments1, add)

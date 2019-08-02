@@ -143,7 +143,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def updateRelayFee(channelIdentifier: Either[ByteVector32, ShortChannelId], feeBaseMsat: Long, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[String] = {
-    sendToChannel(channelIdentifier, CMD_UPDATE_RELAY_FEE(feeBaseMsat, feeProportionalMillionths)).mapTo[String]
+    sendToChannel(channelIdentifier, CMD_UPDATE_RELAY_FEE(MilliSatoshi(feeBaseMsat), feeProportionalMillionths)).mapTo[String]
   }
 
   override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = for {

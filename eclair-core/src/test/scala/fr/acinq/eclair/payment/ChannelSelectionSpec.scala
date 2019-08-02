@@ -48,7 +48,7 @@ class ChannelSelectionSpec extends FunSuite {
     implicit val log = akka.event.NoLogging
 
     // nominal case
-    assert(Relayer.relayOrFail(relayPayload, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(relayPayload.payload.amtToForward, relayPayload.add.paymentHash, relayPayload.payload.outgoingCltvValue, relayPayload.nextPacket, upstream = Right(relayPayload.add), commit = true)))
+    assert(Relayer.relayOrFail(relayPayload, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(MilliSatoshi(relayPayload.payload.amtToForward), relayPayload.add.paymentHash, relayPayload.payload.outgoingCltvValue, relayPayload.nextPacket, upstream = Right(relayPayload.add), commit = true)))
     // no channel_update
     assert(Relayer.relayOrFail(relayPayload, channelUpdate_opt = None) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(UnknownNextPeer), commit = true)))
     // channel disabled
@@ -65,7 +65,7 @@ class ChannelSelectionSpec extends FunSuite {
     assert(Relayer.relayOrFail(relayPayload_insufficientfee, Some(channelUpdate)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(FeeInsufficient(relayPayload_insufficientfee.add.amountMsat.toLong, channelUpdate)), commit = true)))
     // note that a generous fee is ok!
     val relayPayload_highfee = relayPayload.copy(payload = relayPayload.payload.copy(amtToForward = 900000))
-    assert(Relayer.relayOrFail(relayPayload_highfee, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(relayPayload_highfee.payload.amtToForward, relayPayload_highfee.add.paymentHash, relayPayload_highfee.payload.outgoingCltvValue, relayPayload_highfee.nextPacket, upstream = Right(relayPayload.add), commit = true)))
+    assert(Relayer.relayOrFail(relayPayload_highfee, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(MilliSatoshi(relayPayload_highfee.payload.amtToForward), relayPayload_highfee.add.paymentHash, relayPayload_highfee.payload.outgoingCltvValue, relayPayload_highfee.nextPacket, upstream = Right(relayPayload.add), commit = true)))
   }
 
   test("channel selection") {

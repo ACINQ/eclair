@@ -374,7 +374,7 @@ object Relayer extends Logging {
       case Some(channelUpdate) if MilliSatoshi(relayPayload.relayFeeMsat) < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, MilliSatoshi(payload.amtToForward)) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat.toLong, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
-        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket, upstream = Right(add), commit = true, previousFailures = previousFailures))
+        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(MilliSatoshi(payload.amtToForward), add.paymentHash, payload.outgoingCltvValue, nextPacket, upstream = Right(add), commit = true, previousFailures = previousFailures))
     }
   }
 

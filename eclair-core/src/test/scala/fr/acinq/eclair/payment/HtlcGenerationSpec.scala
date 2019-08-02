@@ -98,7 +98,7 @@ class HtlcGenerationSpec extends FunSuite {
 
     val (add, _) = buildCommand(UUID.randomUUID, finalAmountMsat, finalExpiry, paymentHash, hops)
 
-    assert(add.amountMsat > finalAmountMsat)
+    assert(add.amount > MilliSatoshi(finalAmountMsat))
     assert(add.cltvExpiry === finalExpiry + channelUpdate_de.cltvExpiryDelta + channelUpdate_cd.cltvExpiryDelta + channelUpdate_bc.cltvExpiryDelta)
     assert(add.paymentHash === paymentHash)
     assert(add.onion.payload.length === Sphinx.PaymentPacket.PayloadLength)
@@ -132,7 +132,7 @@ class HtlcGenerationSpec extends FunSuite {
   test("build a command with no hops") {
     val (add, _) = buildCommand(UUID.randomUUID(), finalAmountMsat, finalExpiry, paymentHash, hops.take(1))
 
-    assert(add.amountMsat === finalAmountMsat)
+    assert(add.amount === MilliSatoshi(finalAmountMsat))
     assert(add.cltvExpiry === finalExpiry)
     assert(add.paymentHash === paymentHash)
     assert(add.onion.payload.length === Sphinx.PaymentPacket.PayloadLength)
