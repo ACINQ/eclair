@@ -48,11 +48,11 @@ object Channel {
   val ANNOUNCEMENTS_MINCONF = 6
 
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
-  val MAX_FUNDING_SATOSHIS = 16777216L // = 2^24
+  val MAX_FUNDING = Satoshi(16777216L) // = 2^24
   val MAX_ACCEPTED_HTLCS = 483
 
   // we don't want the counterparty to use a dust limit lower than that, because they wouldn't only hurt themselves we may need them to publish their commit tx in certain cases (backup/restore)
-  val MIN_DUSTLIMIT = 546
+  val MIN_DUSTLIMIT = Satoshi(546)
 
   // we won't exchange more than this many signatures when negotiating the closing fee
   val MAX_NEGOTIATION_ITERATIONS = 20
@@ -2207,7 +2207,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   def origin(c: CMD_ADD_HTLC): Origin = c.upstream match {
     case Left(id) => Local(id, Some(sender)) // we were the origin of the payment
-    case Right(u) => Relayed(u.channelId, u.id, u.amountMsat.toLong, c.amount.toLong) // this is a relayed payment
+    case Right(u) => Relayed(u.channelId, u.id, u.amountMsat, c.amount) // this is a relayed payment
   }
 
   def feePaid(fee: Satoshi, tx: Transaction, desc: String, channelId: ByteVector32): Unit = {

@@ -100,7 +100,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd1.message.upstream === Right(add_ab))
 
     // channel returns an error
-    val origin = Relayed(channelId_ab, originHtlcId = 42, amountMsatIn = 1100000, amountMsatOut = 1000000)
+    val origin = Relayed(channelId_ab, originHtlcId = 42, amountIn = MilliSatoshi(1100000), amountOut = MilliSatoshi(1000000))
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc_1, paymentHash, HtlcValueTooHighInFlight(channelId_bc_1, UInt64(1000000000L), UInt64(1516977616L)), origin, Some(channelUpdate_bc_1), originalCommand = Some(fwd1.message))))
 
     // second try
@@ -350,7 +350,7 @@ class RelayerSpec extends TestkitBaseClass {
     val sender = TestProbe()
 
     val paymentHash = randomBytes32
-    val origin = Relayed(channelId_ab, originHtlcId = 42, amountMsatIn = 1100000, amountMsatOut = 1000000)
+    val origin = Relayed(channelId_ab, originHtlcId = 42, amountIn = MilliSatoshi(1100000), amountOut = MilliSatoshi(1000000))
 
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, ExpiryTooSmall(channelId_bc, 100, 0, 0), origin, Some(channelUpdate_bc), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(ExpiryTooSoon(channelUpdate_bc)))
@@ -358,7 +358,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, ExpiryTooBig(channelId_bc, 100, 200, 0), origin, Some(channelUpdate_bc), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(ExpiryTooFar))
 
-    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, InsufficientFunds(channelId_bc, MilliSatoshi(origin.amountMsatOut), Satoshi(100), Satoshi(0), Satoshi(0)), origin, Some(channelUpdate_bc), None)))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, InsufficientFunds(channelId_bc, origin.amountOut, Satoshi(100), Satoshi(0), Satoshi(0)), origin, Some(channelUpdate_bc), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(TemporaryChannelFailure(channelUpdate_bc)))
 
     val channelUpdate_bc_disabled = channelUpdate_bc.copy(channelFlags = 2)
@@ -385,7 +385,7 @@ class RelayerSpec extends TestkitBaseClass {
     // we build a fake htlc for the downstream channel
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = MilliSatoshi(10000000L), paymentHash = ByteVector32.Zeroes, cltvExpiry = 4200, onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fulfill_ba = UpdateFulfillHtlc(channelId = channelId_bc, id = 42, paymentPreimage = ByteVector32.Zeroes)
-    val origin = Relayed(channelId_ab, 150, 11000000L, 10000000L)
+    val origin = Relayed(channelId_ab, 150, MilliSatoshi(11000000L), MilliSatoshi(10000000L))
     sender.send(relayer, ForwardFulfill(fulfill_ba, origin, add_bc))
 
     val fwd = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
@@ -393,7 +393,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.message.id === origin.originHtlcId)
 
     val paymentRelayed = eventListener.expectMsgType[PaymentRelayed]
-    assert(paymentRelayed.copy(timestamp = 0) === PaymentRelayed(MilliSatoshi(origin.amountMsatIn), MilliSatoshi(origin.amountMsatOut), add_bc.paymentHash, channelId_ab, channelId_bc, timestamp = 0))
+    assert(paymentRelayed.copy(timestamp = 0) === PaymentRelayed(origin.amountIn, origin.amountOut, add_bc.paymentHash, channelId_ab, channelId_bc, timestamp = 0))
   }
 
   test("relay an htlc-fail") { f =>
@@ -403,7 +403,7 @@ class RelayerSpec extends TestkitBaseClass {
     // we build a fake htlc for the downstream channel
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = MilliSatoshi(10000000L), paymentHash = ByteVector32.Zeroes, cltvExpiry = 4200, onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 42, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
-    val origin = Relayed(channelId_ab, 150, 11000000L, 10000000L)
+    val origin = Relayed(channelId_ab, 150, MilliSatoshi(11000000L), MilliSatoshi(10000000L))
     sender.send(relayer, ForwardFail(fail_ba, origin, add_bc))
 
     val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
@@ -419,19 +419,19 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, GetUsableBalances)
     val usableBalances1 = sender.expectMsgType[Iterable[UsableBalances]]
     assert(usableBalances1.size === 2)
-    assert(usableBalances1.head.canSend === 0 && usableBalances1.head.canReceive === 300000 && usableBalances1.head.shortChannelId == channelUpdate_ab.shortChannelId)
-    assert(usableBalances1.last.canReceive === 0 && usableBalances1.last.canSend === 400000 && usableBalances1.last.shortChannelId == channelUpdate_bc.shortChannelId)
+    assert(usableBalances1.head.canSend === MilliSatoshi(0) && usableBalances1.head.canReceive === MilliSatoshi(300000) && usableBalances1.head.shortChannelId == channelUpdate_ab.shortChannelId)
+    assert(usableBalances1.last.canReceive === MilliSatoshi(0) && usableBalances1.last.canSend === MilliSatoshi(400000) && usableBalances1.last.shortChannelId == channelUpdate_bc.shortChannelId)
 
     relayer ! AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, MilliSatoshi(0), makeCommitments(channelId_bc, MilliSatoshi(200000), MilliSatoshi(500000)))
     sender.send(relayer, GetUsableBalances)
     val usableBalances2 = sender.expectMsgType[Iterable[UsableBalances]]
-    assert(usableBalances2.last.canReceive === 500000 && usableBalances2.last.canSend === 200000)
+    assert(usableBalances2.last.canReceive === MilliSatoshi(500000) && usableBalances2.last.canSend === MilliSatoshi(200000))
 
     relayer ! AvailableBalanceChanged(null, channelId_ab, channelUpdate_ab.shortChannelId, MilliSatoshi(0), makeCommitments(channelId_ab, MilliSatoshi(100000), MilliSatoshi(200000)))
     relayer ! LocalChannelDown(null, channelId_bc, channelUpdate_bc.shortChannelId, c)
     sender.send(relayer, GetUsableBalances)
     val usableBalances3 = sender.expectMsgType[Iterable[UsableBalances]]
-    assert(usableBalances3.size === 1 && usableBalances3.head.canSend === 100000)
+    assert(usableBalances3.size === 1 && usableBalances3.head.canSend === MilliSatoshi(100000))
 
     relayer ! LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab.copy(channelFlags = 2), makeCommitments(channelId_ab, MilliSatoshi(100000), MilliSatoshi(200000)))
     sender.send(relayer, GetUsableBalances)

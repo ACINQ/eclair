@@ -38,7 +38,7 @@ import scala.collection.mutable
 
 sealed trait Origin
 case class Local(id: UUID, sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
-case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
+case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi, amountOut: MilliSatoshi) extends Origin
 
 sealed trait ForwardMessage
 case class ForwardAdd(add: UpdateAddHtlc, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends ForwardMessage
@@ -165,10 +165,10 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           context.system.eventStream.publish(PaymentSucceeded(id, add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil)) //
         case Local(_, Some(sender)) =>
           sender ! fulfill
-        case Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut) =>
+        case Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
           val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
-          context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), add.paymentHash, fromChannelId = originChannelId, toChannelId = fulfill.channelId))
+          context.system.eventStream.publish(PaymentRelayed(amountIn, amountOut, add.paymentHash, fromChannelId = originChannelId, toChannelId = fulfill.channelId))
       }
 
     case ForwardFail(fail, to, add) =>

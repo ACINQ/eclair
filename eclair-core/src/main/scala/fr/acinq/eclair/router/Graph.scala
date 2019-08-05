@@ -291,8 +291,8 @@ object Graph {
       val ageFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_TWO_MONTHS, max = currentBlockHeight)
 
       // Every edge is weighted by channel capacity, larger channels add less weight
-      val edgeMaxCapacity = edge.update.htlcMaximumMsat.map(_.toLong).getOrElse(CAPACITY_CHANNEL_LOW_MSAT)
-      val capFactor = 1 - normalize(edgeMaxCapacity, CAPACITY_CHANNEL_LOW_MSAT, CAPACITY_CHANNEL_HIGH_MSAT)
+      val edgeMaxCapacity = edge.update.htlcMaximumMsat.getOrElse(CAPACITY_CHANNEL_LOW)
+      val capFactor = 1 - normalize(edgeMaxCapacity.toLong, CAPACITY_CHANNEL_LOW.toLong, CAPACITY_CHANNEL_HIGH.toLong)
 
       // Every edge is weighted by its clvt-delta value, normalized
       val channelCltvDelta = edge.update.cltvExpiryDelta
@@ -340,8 +340,8 @@ object Graph {
     val BLOCK_TIME_TWO_MONTHS = 8640
 
     // Low/High bound for channel capacity
-    val CAPACITY_CHANNEL_LOW_MSAT = 1000 * 1000L // 1000 sat
-    val CAPACITY_CHANNEL_HIGH_MSAT = Channel.MAX_FUNDING_SATOSHIS * 1000L
+    val CAPACITY_CHANNEL_LOW = MilliSatoshi(1000 * 1000L) // 1000 sat
+    val CAPACITY_CHANNEL_HIGH = Channel.MAX_FUNDING.toMilliSatoshi
 
     // Low/High bound for CLTV channel value
     val CLTV_LOW = 9

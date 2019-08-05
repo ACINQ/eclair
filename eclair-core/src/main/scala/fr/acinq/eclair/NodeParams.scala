@@ -138,7 +138,7 @@ object NodeParams {
 
     val dustLimitSatoshis = Satoshi(config.getLong("dust-limit-satoshis"))
     if (chainHash == Block.LivenetGenesisBlock.hash) {
-      require(dustLimitSatoshis >= Satoshi(Channel.MIN_DUSTLIMIT), s"dust limit must be greater than ${Channel.MIN_DUSTLIMIT}")
+      require(dustLimitSatoshis >= Channel.MIN_DUSTLIMIT, s"dust limit must be greater than ${Channel.MIN_DUSTLIMIT}")
     }
 
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")

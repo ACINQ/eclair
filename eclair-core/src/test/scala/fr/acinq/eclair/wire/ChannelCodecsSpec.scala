@@ -173,17 +173,17 @@ class ChannelCodecsSpec extends FunSuite {
     val id = UUID.randomUUID()
     assert(originCodec.decodeValue(originCodec.encode(Local(id, Some(ActorSystem("system").deadLetters))).require).require === Local(id, None))
     // TODO: add backward compatibility check
-    val relayed = Relayed(randomBytes32, 4324, 12000000L, 11000000L)
+    val relayed = Relayed(randomBytes32, 4324, MilliSatoshi(12000000L), MilliSatoshi(11000000L))
     assert(originCodec.decodeValue(originCodec.encode(relayed).require).require === relayed)
   }
 
   test("encode/decode map of origins") {
     val map = Map(
       1L -> Local(UUID.randomUUID(), None),
-      42L -> Relayed(randomBytes32, 4324, 12000000L, 11000000L),
-      130L -> Relayed(randomBytes32, -45, 13000000L, 12000000L),
-      1000L -> Relayed(randomBytes32, 10, 14000000L, 13000000L),
-      -32L -> Relayed(randomBytes32, 54, 15000000L, 14000000L),
+      42L -> Relayed(randomBytes32, 4324, MilliSatoshi(12000000L), MilliSatoshi(11000000L)),
+      130L -> Relayed(randomBytes32, -45, MilliSatoshi(13000000L), MilliSatoshi(12000000L)),
+      1000L -> Relayed(randomBytes32, 10, MilliSatoshi(14000000L), MilliSatoshi(13000000L)),
+      -32L -> Relayed(randomBytes32, 54, MilliSatoshi(15000000L), MilliSatoshi(14000000L)),
       -4L -> Local(UUID.randomUUID(), None))
     assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require === map)
   }
@@ -396,11 +396,11 @@ object ChannelCodecsSpec {
   val commitments = Commitments(ChannelVersion.STANDARD, localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 32L,
     remoteNextHtlcId = 4L,
-    originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000L, 10000000L)),
+    originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, MilliSatoshi(11000000L), MilliSatoshi(10000000L))),
     remoteNextCommitInfo = Right(randomKey.publicKey),
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = ByteVector32.Zeroes)
 
-  val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), 42, MilliSatoshi(15), MilliSatoshi(575), 53, MilliSatoshi(Channel.MAX_FUNDING_SATOSHIS * 1000L))
+  val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), 42, MilliSatoshi(15), MilliSatoshi(575), 53, Channel.MAX_FUNDING.toMilliSatoshi)
 
   val normal = DATA_NORMAL(commitments, ShortChannelId(42), true, None, channelUpdate, None, None)
 }

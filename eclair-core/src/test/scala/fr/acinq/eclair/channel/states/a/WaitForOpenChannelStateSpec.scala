@@ -72,7 +72,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     val lowFunding = Satoshi(100)
     bob ! open.copy(fundingSatoshis = lowFunding)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFunding, Bob.nodeParams.minFundingSatoshis, Satoshi(Channel.MAX_FUNDING_SATOSHIS)).getMessage))
+    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFunding, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -82,7 +82,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     val highFundingMsat = Satoshi(100000000)
     bob ! open.copy(fundingSatoshis = highFundingMsat)
     val error = bob2alice.expectMsgType[Error]
-    assert(error.toAscii === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Bob.nodeParams.minFundingSatoshis, Satoshi(Channel.MAX_FUNDING_SATOSHIS)).getMessage).toAscii)
+    assert(error.toAscii === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING).getMessage).toAscii)
     awaitCond(bob.stateName == CLOSED)
   }
 

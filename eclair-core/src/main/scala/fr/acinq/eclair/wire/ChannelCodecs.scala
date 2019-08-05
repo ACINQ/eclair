@@ -186,8 +186,8 @@ object ChannelCodecs extends Logging {
   val relayedCodec: Codec[Relayed] = (
     ("originChannelId" | bytes32) ::
       ("originHtlcId" | int64) ::
-      ("amountMsatIn" | uint64overflow) ::
-      ("amountMsatOut" | uint64overflow)).as[Relayed]
+      ("amountIn" | millisatoshi) ::
+      ("amountOut" | millisatoshi)).as[Relayed]
 
   // this is for backward compatibility to handle legacy payments that didn't have identifiers
   val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
