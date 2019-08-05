@@ -161,8 +161,8 @@ class ChannelCodecsSpec extends FunSuite {
     val o = CommitmentSpec(
       htlcs = Set(htlc1, htlc2),
       feeratePerKw = Random.nextInt(Int.MaxValue),
-      toLocalMsat = Random.nextInt(Int.MaxValue),
-      toRemoteMsat = Random.nextInt(Int.MaxValue)
+      toLocal = MilliSatoshi(Random.nextInt(Int.MaxValue)),
+      toRemote = MilliSatoshi(Random.nextInt(Int.MaxValue))
     )
     val encoded = commitmentSpecCodec.encode(o).require
     val decoded = commitmentSpecCodec.decode(encoded).require
@@ -319,6 +319,8 @@ class ChannelCodecsSpec extends FunSuite {
         .replace(""""dustLimit"""", """"dustLimitSatoshis"""")
         .replace(""""channelReserve"""", """"channelReserveSatoshis"""")
         .replace(""""htlcMinimum"""", """"htlcMinimumMsat"""")
+        .replace(""""toLocal"""", """"toLocalMsat"""")
+        .replace(""""toRemote"""", """"toRemoteMsat"""")
 
       val newjson = Serialization.write(newnormal)(JsonSupport.formats)
         .replace(""","unknownFields":""""", "")
@@ -326,6 +328,8 @@ class ChannelCodecsSpec extends FunSuite {
         .replace(""""dustLimit"""", """"dustLimitSatoshis"""")
         .replace(""""channelReserve"""", """"channelReserveSatoshis"""")
         .replace(""""htlcMinimum"""", """"htlcMinimumMsat"""")
+        .replace(""""toLocal"""", """"toLocalMsat"""")
+        .replace(""""toRemote"""", """"toRemoteMsat"""")
 
       assert(oldjson === refjson)
       assert(newjson === refjson)
@@ -387,8 +391,8 @@ object ChannelCodecsSpec {
   val fundingAmount = fundingTx.txOut(0).amount
   val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey)
 
-  val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000, 70000000), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
-  val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, 50000, 700000), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
+  val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, MilliSatoshi(50000000), MilliSatoshi(70000000)), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
+  val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, MilliSatoshi(50000), MilliSatoshi(700000)), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
   val commitments = Commitments(ChannelVersion.STANDARD, localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 32L,
     remoteNextHtlcId = 4L,

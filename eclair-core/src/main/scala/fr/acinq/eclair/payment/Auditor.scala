@@ -18,12 +18,10 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props}
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.Channel.{LocalError, RemoteError}
+import fr.acinq.eclair.{MilliSatoshi, NodeParams}
 import fr.acinq.eclair.channel.Helpers.Closing.{LocalClose, MutualClose, RecoveryClose, RemoteClose, RevokedClose}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent}
-
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
@@ -109,7 +107,7 @@ class BalanceEventThrottler(db: AuditDb) extends Actor with ActorLogging {
     case ProcessEvent(channelId) =>
       pending.get(channelId) match {
         case Some(BalanceUpdate(first, last)) =>
-          if (first.commitments.remoteCommit.spec.toRemoteMsat == last.localBalanceMsat) {
+          if (first.commitments.remoteCommit.spec.toRemote == MilliSatoshi(last.localBalanceMsat)) {
             // we don't log anything if the balance didn't change (e.g. it was a probe payment)
             log.info(s"ignoring balance event for channelId=$channelId (changed was discarded)")
           } else {

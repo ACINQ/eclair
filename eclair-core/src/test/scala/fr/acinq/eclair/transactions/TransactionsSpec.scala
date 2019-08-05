@@ -69,7 +69,7 @@ class TransactionsSpec extends FunSuite with Logging {
       DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(7000000), ByteVector32.Zeroes, 550, TestConstants.emptyOnionPacket)),
       DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(800000), ByteVector32.Zeroes, 551, TestConstants.emptyOnionPacket))
     )
-    val spec = CommitmentSpec(htlcs, feeratePerKw = 5000, toLocalMsat = 0, toRemoteMsat = 0)
+    val spec = CommitmentSpec(htlcs, feeratePerKw = 5000, toLocal = MilliSatoshi(0), toRemote = MilliSatoshi(0))
     val fee = Transactions.commitTxFee(Satoshi(546), spec)
     assert(fee == Satoshi(5340))
   }
@@ -200,8 +200,8 @@ class TransactionsSpec extends FunSuite with Logging {
         DirectedHtlc(IN, htlc4)
       ),
       feeratePerKw = feeratePerKw,
-      toLocalMsat = millibtc2satoshi(MilliBtc(400)).amount * 1000,
-      toRemoteMsat = millibtc2satoshi(MilliBtc(300)).amount * 1000)
+      toLocal = millibtc2satoshi(MilliBtc(400)).toMilliSatoshi,
+      toRemote = millibtc2satoshi(MilliBtc(300)).toMilliSatoshi)
 
     val commitTxNumber = 0x404142434445L
     val commitTx = {
@@ -354,7 +354,7 @@ class TransactionsSpec extends FunSuite with Logging {
           case "received" => htlc(IN, Satoshi(amount.toLong))
         }
       }).toSet
-      TestSetup(name, dustLimit, CommitmentSpec(htlcs = htlcs, feeratePerKw = feerate_per_kw.toLong, toLocalMsat = to_local_msat.toLong, toRemoteMsat = to_remote_msat.toLong), Satoshi(fee.toLong))
+      TestSetup(name, dustLimit, CommitmentSpec(htlcs = htlcs, feeratePerKw = feerate_per_kw.toLong, toLocal = MilliSatoshi(to_local_msat.toLong), toRemote = MilliSatoshi(to_remote_msat.toLong)), Satoshi(fee.toLong))
     })
 
     // simple non-reg test making sure we are not missing tests

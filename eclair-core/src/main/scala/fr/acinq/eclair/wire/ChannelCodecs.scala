@@ -105,8 +105,8 @@ object ChannelCodecs extends Logging {
   val commitmentSpecCodec: Codec[CommitmentSpec] = (
     ("htlcs" | setCodec(htlcCodec)) ::
       ("feeratePerKw" | uint32) ::
-      ("toLocalMsat" | uint64overflow) ::
-      ("toRemoteMsat" | uint64overflow)).as[CommitmentSpec]
+      ("toLocal" | millisatoshi) ::
+      ("toRemote" | millisatoshi)).as[CommitmentSpec]
 
   val outPointCodec: Codec[OutPoint] = variableSizeBytes(uint16, bytes.xmap(d => OutPoint.read(d.toArray), d => OutPoint.write(d)))
 

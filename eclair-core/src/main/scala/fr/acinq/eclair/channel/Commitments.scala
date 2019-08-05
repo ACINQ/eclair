@@ -89,13 +89,13 @@ case class Commitments(channelVersion: ChannelVersion,
   lazy val availableBalanceForSendMsat: Long = {
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
     val feesMsat = if (localParams.isFunder) commitTxFee(remoteParams.dustLimit, reduced).toMilliSatoshi else MilliSatoshi(0)
-    eclair.maxOf(MilliSatoshi(reduced.toRemoteMsat) - remoteParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0)).toLong
+    eclair.maxOf(reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0)).toLong
   }
 
   lazy val availableBalanceForReceiveMsat: Long = {
     val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
     val feesMsat = if (localParams.isFunder) MilliSatoshi(0) else commitTxFee(localParams.dustLimit, reduced).toMilliSatoshi
-    eclair.maxOf(MilliSatoshi(reduced.toRemoteMsat) - localParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0)).toLong
+    eclair.maxOf(reduced.toRemote - localParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0)).toLong
   }
 }
 
@@ -161,7 +161,7 @@ object Commitments {
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     // we look from remote's point of view, so if local is funder remote doesn't pay the fees
     val fees = if (commitments1.localParams.isFunder) commitTxFee(commitments1.remoteParams.dustLimit, reduced) else Satoshi(0)
-    val missing = MilliSatoshi(reduced.toRemoteMsat).toSatoshi - commitments1.remoteParams.channelReserve - fees
+    val missing = reduced.toRemote.toSatoshi - commitments1.remoteParams.channelReserve - fees
     if (missing < Satoshi(0)) {
       return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missing, reserve = commitments1.remoteParams.channelReserve, fees = fees))
     }
@@ -194,7 +194,7 @@ object Commitments {
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     val fees = if (commitments1.localParams.isFunder) Satoshi(0) else Transactions.commitTxFee(commitments1.localParams.dustLimit, reduced)
-    val missing = MilliSatoshi(reduced.toRemoteMsat).toSatoshi - commitments1.localParams.channelReserve - fees
+    val missing = reduced.toRemote.toSatoshi - commitments1.localParams.channelReserve - fees
     if (missing < Satoshi(0)) {
       throw InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
     }
@@ -316,7 +316,7 @@ object Commitments {
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     // we look from remote's point of view, so if local is funder remote doesn't pay the fees
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
-    val missing = MilliSatoshi(reduced.toRemoteMsat).toSatoshi - commitments1.remoteParams.channelReserve - fees
+    val missing = reduced.toRemote.toSatoshi - commitments1.remoteParams.channelReserve - fees
     if (missing < Satoshi(0)) {
       throw CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
     }
@@ -350,7 +350,7 @@ object Commitments {
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
-    val missing = MilliSatoshi(reduced.toRemoteMsat).toSatoshi - commitments1.localParams.channelReserve - fees
+    val missing = reduced.toRemote.toSatoshi - commitments1.localParams.channelReserve - fees
     if (missing < Satoshi(0)) {
       throw CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
     }
@@ -576,18 +576,18 @@ object Commitments {
   def specs2String(commitments: Commitments): String = {
     s"""specs:
        |localcommit:
-       |  toLocal: ${commitments.localCommit.spec.toLocalMsat}
-       |  toRemote: ${commitments.localCommit.spec.toRemoteMsat}
+       |  toLocal: ${commitments.localCommit.spec.toLocal}
+       |  toRemote: ${commitments.localCommit.spec.toRemote}
        |  htlcs:
        |${commitments.localCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
        |remotecommit:
-       |  toLocal: ${commitments.remoteCommit.spec.toLocalMsat}
-       |  toRemote: ${commitments.remoteCommit.spec.toRemoteMsat}
+       |  toLocal: ${commitments.remoteCommit.spec.toLocal}
+       |  toRemote: ${commitments.remoteCommit.spec.toRemote}
        |  htlcs:
        |${commitments.remoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
        |next remotecommit:
-       |  toLocal: ${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toLocalMsat).getOrElse("N/A")}
-       |  toRemote: ${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toRemoteMsat).getOrElse("N/A")}
+       |  toLocal: ${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toLocal).getOrElse("N/A")}
+       |  toRemote: ${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toRemote).getOrElse("N/A")}
        |  htlcs:
        |${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")).getOrElse("N/A")}""".stripMargin
   }

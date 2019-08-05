@@ -179,8 +179,8 @@ class TestVectorsSpec extends FunSuite with Logging {
   }
 
   def run(spec: CommitmentSpec) = {
-    logger.info(s"to_local_msat: ${spec.toLocalMsat}")
-    logger.info(s"to_remote_msat: ${spec.toRemoteMsat}")
+    logger.info(s"to_local_msat: ${spec.toLocal}")
+    logger.info(s"to_remote_msat: ${spec.toRemote}")
     logger.info(s"local_feerate_per_kw: ${spec.feeratePerKw}")
 
     val commitTx = {
@@ -287,7 +287,7 @@ class TestVectorsSpec extends FunSuite with Logging {
   test("simple commitment tx with no HTLCs") {
     val name = "simple commitment tx with no HTLCs"
     logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = 15000, toLocalMsat = 7000000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = 15000, toLocal = MilliSatoshi(7000000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 2)
@@ -298,7 +298,7 @@ class TestVectorsSpec extends FunSuite with Logging {
   test("commitment tx with all 5 htlcs untrimmed (minimum feerate)") {
     val name = "commitment tx with all 5 htlcs untrimmed (minimum feerate)"
     logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = 0, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = 0, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 7)
@@ -309,7 +309,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     val name = "commitment tx with 7 outputs untrimmed (maximum feerate)"
     logger.info(s"name: $name")
     val feeratePerKw = 454999 / Transactions.htlcSuccessWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 7)
@@ -323,7 +323,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     val name = "commitment tx with 6 outputs untrimmed (minimum feerate)"
     logger.info(s"name: $name")
     val feeratePerKw = 454999 / Transactions.htlcSuccessWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 6)
@@ -337,7 +337,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     val name = "commitment tx with 6 outputs untrimmed (maximum feerate)"
     logger.info(s"name: $name")
     val feeratePerKw = 1454999 / Transactions.htlcSuccessWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 6)
@@ -351,7 +351,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     val name = "commitment tx with 5 outputs untrimmed (minimum feerate)"
     logger.info(s"name: $name")
     val feeratePerKw = 1454999 / Transactions.htlcSuccessWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 5)
@@ -365,7 +365,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     val name = "commitment tx with 5 outputs untrimmed (maximum feerate)"
     logger.info(s"name: $name")
     val feeratePerKw = 1454999 / Transactions.htlcTimeoutWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 5)
@@ -379,7 +379,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     val name = "commitment tx with 4 outputs untrimmed (minimum feerate)"
     logger.info(s"name: $name")
     val feeratePerKw = 1454999 / Transactions.htlcTimeoutWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 4)
@@ -393,7 +393,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     val name = "commitment tx with 4 outputs untrimmed (maximum feerate)"
     logger.info(s"name: $name")
     val feeratePerKw = 2454999 / Transactions.htlcTimeoutWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 4)
@@ -407,7 +407,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     val name = "commitment tx with 3 outputs untrimmed (minimum feerate)"
     logger.info(s"name: $name")
     val feeratePerKw = 2454999 / Transactions.htlcTimeoutWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 3)
@@ -421,7 +421,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     val name = "commitment tx with 3 outputs untrimmed (maximum feerate)"
     logger.info(s"name: $name")
     val feeratePerKw = 3454999 / Transactions.htlcSuccessWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 3)
@@ -435,7 +435,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     val name = "commitment tx with 2 outputs untrimmed (minimum feerate)"
     logger.info(s"name: $name")
     val feeratePerKw = 3454999 / Transactions.htlcSuccessWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 2)
@@ -448,7 +448,7 @@ class TestVectorsSpec extends FunSuite with Logging {
   test("commitment tx with 2 outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with 2 outputs untrimmed (maximum feerate)"
     logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = 9651180, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = 9651180, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 2)
@@ -461,7 +461,7 @@ class TestVectorsSpec extends FunSuite with Logging {
   test("commitment tx with 1 output untrimmed (minimum feerate)") {
     val name = "commitment tx with 1 output untrimmed (minimum feerate)"
     logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = 9651181, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = 9651181, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 1)
@@ -474,7 +474,7 @@ class TestVectorsSpec extends FunSuite with Logging {
   test("commitment tx with fee greater than funder amount") {
     val name = "commitment tx with fee greater than funder amount"
     logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = 9651936, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = 9651936, toLocal = MilliSatoshi(6988000000L), toRemote = MilliSatoshi(3000000000L))
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 1)

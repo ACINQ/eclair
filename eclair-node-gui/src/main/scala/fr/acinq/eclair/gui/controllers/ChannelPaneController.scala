@@ -129,8 +129,8 @@ class ChannelPaneController(val channelRef: ActorRef, val peerNodeId: String) ex
   }
 
   def updateBalance(commitments: Commitments) {
-    balance = MilliSatoshi(commitments.localCommit.spec.toLocalMsat)
-    capacity = MilliSatoshi(commitments.localCommit.spec.totalFunds)
+    balance = commitments.localCommit.spec.toLocal
+    capacity = commitments.localCommit.spec.totalFunds
   }
 
   def refreshBalance(): Unit = {

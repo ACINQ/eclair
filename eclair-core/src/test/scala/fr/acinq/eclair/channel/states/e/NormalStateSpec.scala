@@ -613,7 +613,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc.id && h.direction == IN))
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.size == 1)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocalMsat == initialState.commitments.localCommit.spec.toLocalMsat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocal == initialState.commitments.localCommit.spec.toLocal)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.acked.size == 0)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.signed.size == 1)
   }
@@ -638,7 +638,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc.id && h.direction == OUT))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.size == 1)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocalMsat == initialState.commitments.localCommit.spec.toLocalMsat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocal == initialState.commitments.localCommit.spec.toLocal)
   }
 
   test("recv CommitSig (multiple htlcs in both directions)") { f =>
@@ -715,7 +715,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     crossSign(alice, bob, alice2bob, bob2alice)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc1.id && h.direction == IN))
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.size == 2)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocalMsat == initialState.commitments.localCommit.spec.toLocalMsat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocal == initialState.commitments.localCommit.spec.toLocal)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx.txOut.count(_.amount == Satoshi(50000)) == 2)
   }
 

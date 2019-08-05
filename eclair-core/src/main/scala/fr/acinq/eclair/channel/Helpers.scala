@@ -221,7 +221,7 @@ object Helpers {
       case Left(waitingForRevocation) => waitingForRevocation.nextRemoteCommit
       case _ => commitments.remoteCommit
     }
-    val toRemoteSatoshis = MilliSatoshi(remoteCommit.spec.toRemoteMsat).toSatoshi
+    val toRemoteSatoshis = remoteCommit.spec.toRemote.toSatoshi
     // NB: this is an approximation (we don't take network fees into account)
     val result = toRemoteSatoshis > commitments.remoteParams.channelReserve
     log.debug(s"toRemoteSatoshis=$toRemoteSatoshis reserve=${commitments.remoteParams.channelReserve} aboveReserve=$result for remoteCommitNumber=${remoteCommit.index}")
@@ -254,18 +254,18 @@ object Helpers {
       * @param remoteFirstPerCommitmentPoint
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
-    def makeFirstCommitTxs(keyManager: KeyManager, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
-      val toLocalMsat = if (localParams.isFunder) fundingAmount.toLong * 1000 - pushMsat else pushMsat
-      val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingAmount.toLong * 1000 - pushMsat
+    def makeFirstCommitTxs(keyManager: KeyManager, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: MilliSatoshi, initialFeeratePerKw: Long, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
+      val toLocalMsat = if (localParams.isFunder) fundingAmount.toMilliSatoshi - pushMsat else pushMsat
+      val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingAmount.toMilliSatoshi  - pushMsat
 
-      val localSpec = CommitmentSpec(Set.empty[DirectedHtlc], feeratePerKw = initialFeeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
-      val remoteSpec = CommitmentSpec(Set.empty[DirectedHtlc], feeratePerKw = initialFeeratePerKw, toLocalMsat = toRemoteMsat, toRemoteMsat = toLocalMsat)
+      val localSpec = CommitmentSpec(Set.empty[DirectedHtlc], feeratePerKw = initialFeeratePerKw, toLocal = toLocalMsat, toRemote = toRemoteMsat)
+      val remoteSpec = CommitmentSpec(Set.empty[DirectedHtlc], feeratePerKw = initialFeeratePerKw, toLocal = toRemoteMsat, toRemote = toLocalMsat)
 
       if (!localParams.isFunder) {
         // they are funder, therefore they pay the fee: we need to make sure they can afford it!
-        val toRemoteMsat = remoteSpec.toLocalMsat
+        val toRemoteMsat = remoteSpec.toLocal
         val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
-        val missing = MilliSatoshi(toRemoteMsat).toSatoshi - localParams.channelReserve - fees
+        val missing = toRemoteMsat.toSatoshi - localParams.channelReserve - fees
         if (missing < Satoshi(0)) {
           throw CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.channelReserve, fees = fees)
         }
@@ -360,9 +360,9 @@ object Helpers {
       */
     def nothingAtStake(data: HasCommitments): Boolean =
       data.commitments.localCommit.index == 0 &&
-        data.commitments.localCommit.spec.toLocalMsat == 0 &&
+        data.commitments.localCommit.spec.toLocal == MilliSatoshi(0) &&
         data.commitments.remoteCommit.index == 0 &&
-        data.commitments.remoteCommit.spec.toRemoteMsat == 0 &&
+        data.commitments.remoteCommit.spec.toRemote == MilliSatoshi(0) &&
         data.commitments.remoteNextCommitInfo.isRight
 
     /**
