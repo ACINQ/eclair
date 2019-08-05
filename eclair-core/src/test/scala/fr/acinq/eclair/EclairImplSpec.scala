@@ -185,7 +185,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     eclair.receive("some desc", Some(MilliSatoshi(123L)), Some(456), Some(fallBackAddressRaw), None)
     val receive = paymentHandler.expectMsgType[ReceivePayment]
 
-    assert(receive.amountMsat_opt == Some(MilliSatoshi(123L)))
+    assert(receive.amount_opt == Some(MilliSatoshi(123L)))
     assert(receive.expirySeconds_opt == Some(456))
     assert(receive.fallbackAddress == Some(fallBackAddressRaw))
 

@@ -51,7 +51,7 @@ class SqliteAuditDbSpec extends FunSuite {
     val e5 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32, timestamp = 0)
     val e6 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, MilliSatoshi(42000), MilliSatoshi(1000), randomBytes32, randomBytes32, randomBytes32, timestamp = (Platform.currentTime.milliseconds + 10.minutes).toMillis)
     val e7 = AvailableBalanceChanged(null, randomBytes32, ShortChannelId(500000, 42, 1), MilliSatoshi(456123000), ChannelCodecsSpec.commitments)
-    val e8 = ChannelLifecycleEvent(randomBytes32, randomKey.publicKey, 456123000, true, false, "mutual")
+    val e8 = ChannelLifecycleEvent(randomBytes32, randomKey.publicKey, Satoshi(456123000), true, false, "mutual")
     val e9 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), true)
     val e10 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), true)
 
@@ -97,9 +97,9 @@ class SqliteAuditDbSpec extends FunSuite {
     db.add(NetworkFeePaid(null, n3, c3, Transaction(0, Seq.empty, Seq.empty, 0), Satoshi(400), "funding"))
 
     assert(db.stats.toSet === Set(
-      Stats(channelId = c1, avgPaymentAmountSatoshi = 42, paymentCount = 3, relayFeeSatoshi = 4, networkFeeSatoshi = 100),
-      Stats(channelId = c2, avgPaymentAmountSatoshi = 40, paymentCount = 1, relayFeeSatoshi = 2, networkFeeSatoshi = 500),
-    Stats(channelId = c3, avgPaymentAmountSatoshi = 0, paymentCount = 0, relayFeeSatoshi = 0, networkFeeSatoshi = 400)
+      Stats(channelId = c1, avgPaymentAmount = Satoshi(42), paymentCount = 3, relayFee = Satoshi(4), networkFee = Satoshi(100)),
+      Stats(channelId = c2, avgPaymentAmount = Satoshi(40), paymentCount = 1, relayFee = Satoshi(2), networkFee = Satoshi(500)),
+    Stats(channelId = c3, avgPaymentAmount = Satoshi(0), paymentCount = 0, relayFee = Satoshi(0), networkFee = Satoshi(400))
     ))
   }
 

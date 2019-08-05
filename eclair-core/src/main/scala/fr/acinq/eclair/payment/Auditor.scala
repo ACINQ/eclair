@@ -55,7 +55,7 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
     case e: ChannelStateChanged =>
       e match {
         case ChannelStateChanged(_, _, remoteNodeId, WAIT_FOR_FUNDING_LOCKED, NORMAL, d: DATA_NORMAL) =>
-          db.add(ChannelLifecycleEvent(d.channelId, remoteNodeId, d.commitments.commitInput.txOut.amount.toLong, d.commitments.localParams.isFunder, !d.commitments.announceChannel, "created"))
+          db.add(ChannelLifecycleEvent(d.channelId, remoteNodeId, d.commitments.commitInput.txOut.amount, d.commitments.localParams.isFunder, !d.commitments.announceChannel, "created"))
         case _ => ()
       }
 
@@ -67,7 +67,7 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
         case RecoveryClose => "recovery"
         case RevokedClose => "revoked"
       }
-      db.add(ChannelLifecycleEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount.toLong, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
+      db.add(ChannelLifecycleEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
 
   }
 

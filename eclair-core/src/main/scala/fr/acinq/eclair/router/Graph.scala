@@ -62,7 +62,7 @@ object Graph {
     * @param graph
     * @param sourceNode
     * @param targetNode
-    * @param amountMsat
+    * @param amount
     * @param pathsToFind
     * @param wr                 an object containing the ratios used to 'weight' edges when searching for the shortest path
     * @param currentBlockHeight the height of the chain tip (latest block)
@@ -72,7 +72,7 @@ object Graph {
   def yenKshortestPaths(graph: DirectedGraph,
                         sourceNode: PublicKey,
                         targetNode: PublicKey,
-                        amountMsat: Long,
+                        amount: MilliSatoshi,
                         ignoredEdges: Set[ChannelDesc],
                         extraEdges: Set[GraphEdge],
                         pathsToFind: Int,
@@ -88,9 +88,9 @@ object Graph {
     val candidates = new mutable.PriorityQueue[WeightedPath]
 
     // find the shortest path, k = 0
-    val initialWeight = RichWeight(cost = MilliSatoshi(amountMsat), 0, 0, 0)
+    val initialWeight = RichWeight(cost = amount, 0, 0, 0)
     val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, extraEdges, initialWeight, boundaries, currentBlockHeight, wr)
-    shortestPaths += WeightedPath(shortestPath, pathWeight(shortestPath, MilliSatoshi(amountMsat), isPartial = false, currentBlockHeight, wr))
+    shortestPaths += WeightedPath(shortestPath, pathWeight(shortestPath, amount, isPartial = false, currentBlockHeight, wr))
 
     // avoid returning a list with an empty path
     if (shortestPath.isEmpty) return Seq.empty
@@ -110,7 +110,7 @@ object Graph {
 
           // select the sub-path from the source to the spur node of the k-th previous shortest path
           val rootPathEdges = if (i == 0) prevShortestPath.head :: Nil else prevShortestPath.take(i)
-          val rootPathWeight = pathWeight(rootPathEdges, MilliSatoshi(amountMsat), isPartial = true, currentBlockHeight, wr)
+          val rootPathWeight = pathWeight(rootPathEdges, amount, isPartial = true, currentBlockHeight, wr)
 
           // links to be removed that are part of the previous shortest path and which share the same root path
           val edgesToIgnore = shortestPaths.flatMap { weightedPath =>
@@ -136,7 +136,7 @@ object Graph {
               case false => rootPathEdges ++ spurPath
             }
 
-            val candidatePath = WeightedPath(totalPath, pathWeight(totalPath, MilliSatoshi(amountMsat), isPartial = false, currentBlockHeight, wr))
+            val candidatePath = WeightedPath(totalPath, pathWeight(totalPath, amount, isPartial = false, currentBlockHeight, wr))
 
             if (boundaries(candidatePath.weight) && !shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
               candidates.enqueue(candidatePath)
