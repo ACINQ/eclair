@@ -20,6 +20,7 @@ import java.util.UUID
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.eclair
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeTargets
@@ -99,7 +100,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2blockchain.expectMsgType[WatchConfirmed] // deeply buried
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSendMsat == math.max(pushMsat.toLong - TestConstants.Alice.channelParams.channelReserve.toMilliSatoshi.toLong, 0))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == eclair.maxOf(pushMsat - TestConstants.Alice.channelParams.channelReserve.toMilliSatoshi, MilliSatoshi(0)))
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]

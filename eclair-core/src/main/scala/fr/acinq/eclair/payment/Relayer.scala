@@ -47,7 +47,7 @@ case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) ex
 case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
 
 case object GetUsableBalances
-case class UsableBalances(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSendMsat: Long, canReceiveMsat: Long, isPublic: Boolean)
+case class UsableBalances(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
 
 // @formatter:on
 
@@ -77,8 +77,8 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         .map(o => UsableBalances(
           remoteNodeId = o.nextNodeId,
           shortChannelId = o.channelUpdate.shortChannelId,
-          canSendMsat = o.commitments.availableBalanceForSendMsat,
-          canReceiveMsat = o.commitments.availableBalanceForReceiveMsat,
+          canSend = o.commitments.availableBalanceForSend,
+          canReceive = o.commitments.availableBalanceForReceive,
           isPublic = o.commitments.announceChannel))
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
@@ -330,11 +330,11 @@ object Relayer extends Logging {
             val channelInfo_opt = channelUpdates.get(shortChannelId)
             val channelUpdate_opt = channelInfo_opt.map(_.channelUpdate)
             val relayResult = relayOrFail(relayPayload, channelUpdate_opt)
-            log.debug(s"candidate channel for htlc #${add.id} paymentHash=${add.paymentHash}: shortChannelId={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo_opt.map(_.commitments.availableBalanceForSendMsat).getOrElse(""), channelUpdate_opt.getOrElse(""), relayResult)
+            log.debug(s"candidate channel for htlc #${add.id} paymentHash=${add.paymentHash}: shortChannelId={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo_opt.map(_.commitments.availableBalanceForSend).getOrElse(""), channelUpdate_opt.getOrElse(""), relayResult)
             (shortChannelId, channelInfo_opt, relayResult)
           }
-          .collect { case (shortChannelId, Some(channelInfo), _: RelaySuccess) => (shortChannelId, channelInfo.commitments.availableBalanceForSendMsat) }
-          .filter(_._2 > relayPayload.payload.amtToForward.toLong) // we only keep channels that have enough balance to handle this payment
+          .collect { case (shortChannelId, Some(channelInfo), _: RelaySuccess) => (shortChannelId, channelInfo.commitments.availableBalanceForSend) }
+          .filter(_._2 > relayPayload.payload.amtToForward) // we only keep channels that have enough balance to handle this payment
           .toList // needed for ordering
           .sortBy(_._2) // we want to use the channel with the lowest available balance that can process the payment
           .headOption match {

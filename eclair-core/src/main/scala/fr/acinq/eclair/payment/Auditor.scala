@@ -107,11 +107,11 @@ class BalanceEventThrottler(db: AuditDb) extends Actor with ActorLogging {
     case ProcessEvent(channelId) =>
       pending.get(channelId) match {
         case Some(BalanceUpdate(first, last)) =>
-          if (first.commitments.remoteCommit.spec.toRemote == MilliSatoshi(last.localBalanceMsat)) {
+          if (first.commitments.remoteCommit.spec.toRemote == last.localBalance) {
             // we don't log anything if the balance didn't change (e.g. it was a probe payment)
             log.info(s"ignoring balance event for channelId=$channelId (changed was discarded)")
           } else {
-            log.info(s"processing balance event for channelId=$channelId balance=${first.localBalanceMsat}->${last.localBalanceMsat}")
+            log.info(s"processing balance event for channelId=$channelId balance=${first.localBalance}->${last.localBalance}")
             // we log the last event, which contains the most up to date balance
             db.add(last)
             context.become(run(pending - channelId))

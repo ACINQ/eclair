@@ -20,6 +20,7 @@ import java.util.UUID
 
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
+import fr.acinq.eclair
 import fr.acinq.eclair.channel.{Channel, ChannelVersion, Commitments}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, PacketAndSecrets}
@@ -149,10 +150,10 @@ class HtlcGenerationSpec extends FunSuite {
 
 object HtlcGenerationSpec {
 
-  def makeCommitments(channelId: ByteVector32, availableBalanceForSend: Long = 50000000L, availableBalanceForReceive: Long = 50000000L) =
+  def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = MilliSatoshi(50000000L), testAvailableBalanceForReceive: MilliSatoshi = MilliSatoshi(50000000L)) =
     new Commitments(ChannelVersion.STANDARD, null, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId) {
-      override lazy val availableBalanceForSendMsat: Long = availableBalanceForSend.max(0)
-      override lazy val availableBalanceForReceiveMsat: Long = availableBalanceForReceive.max(0)
+      override lazy val availableBalanceForSend: MilliSatoshi = eclair.maxOf(testAvailableBalanceForSend, MilliSatoshi(0))
+      override lazy val availableBalanceForReceive: MilliSatoshi = eclair.maxOf(testAvailableBalanceForReceive, MilliSatoshi(0))
     }
 
   def randomExtendedPrivateKey: ExtendedPrivateKey = DeterministicWallet.generate(randomBytes32)

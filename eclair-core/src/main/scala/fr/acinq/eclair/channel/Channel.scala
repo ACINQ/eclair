@@ -718,7 +718,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               if (nextRemoteCommit.spec.toRemote != d.commitments.remoteCommit.spec.toRemote) {
                 // we send this event only when our balance changes (note that remoteCommit.toRemote == toLocal)
-                context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, nextRemoteCommit.spec.toRemote.toLong, commitments1))
+                context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, nextRemoteCommit.spec.toRemote, commitments1))
               }
               // we expect a quick response from our peer
               setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer = context.parent), timeout = nodeParams.revocationTimeout, repeat = false)

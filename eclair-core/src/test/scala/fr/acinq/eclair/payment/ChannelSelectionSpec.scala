@@ -80,11 +80,11 @@ class ChannelSelectionSpec extends FunSuite {
     val channelUpdate = dummyUpdate(ShortChannelId(12345), 10, MilliSatoshi(100), 1000, 100, 10000000, true)
 
     val channelUpdates = Map(
-      ShortChannelId(11111) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, 100000000)),
-      ShortChannelId(12345) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, 20000000)),
-      ShortChannelId(22222) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, 10000000)),
-      ShortChannelId(33333) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, 100000)),
-      ShortChannelId(44444) -> OutgoingChannel(b, channelUpdate, makeCommitments(ByteVector32.Zeroes, 1000000))
+      ShortChannelId(11111) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, MilliSatoshi(100000000))),
+      ShortChannelId(12345) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, MilliSatoshi(20000000))),
+      ShortChannelId(22222) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, MilliSatoshi(10000000))),
+      ShortChannelId(33333) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, MilliSatoshi(100000))),
+      ShortChannelId(44444) -> OutgoingChannel(b, channelUpdate, makeCommitments(ByteVector32.Zeroes, MilliSatoshi(1000000)))
     )
 
     val node2channels = new mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]

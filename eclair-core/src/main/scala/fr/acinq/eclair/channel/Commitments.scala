@@ -86,16 +86,16 @@ case class Commitments(channelVersion: ChannelVersion,
 
   val announceChannel: Boolean = (channelFlags & 0x01) != 0
 
-  lazy val availableBalanceForSendMsat: Long = {
+  lazy val availableBalanceForSend: MilliSatoshi = {
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
     val feesMsat = if (localParams.isFunder) commitTxFee(remoteParams.dustLimit, reduced).toMilliSatoshi else MilliSatoshi(0)
-    eclair.maxOf(reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0)).toLong
+    eclair.maxOf(reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0))
   }
 
-  lazy val availableBalanceForReceiveMsat: Long = {
+  lazy val availableBalanceForReceive: MilliSatoshi = {
     val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
     val feesMsat = if (localParams.isFunder) MilliSatoshi(0) else commitTxFee(localParams.dustLimit, reduced).toMilliSatoshi
-    eclair.maxOf(reduced.toRemote - localParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0)).toLong
+    eclair.maxOf(reduced.toRemote - localParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0))
   }
 }
 
