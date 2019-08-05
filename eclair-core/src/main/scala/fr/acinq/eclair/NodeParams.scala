@@ -232,7 +232,7 @@ object NodeParams {
         randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
         searchMaxRouteLength = config.getInt("router.path-finding.max-route-length"),
         searchMaxCltv = config.getInt("router.path-finding.max-cltv"),
-        searchMaxFeeBaseSat = config.getLong("router.path-finding.fee-threshold-sat"),
+        searchMaxFeeBase = Satoshi(config.getLong("router.path-finding.fee-threshold-sat")),
         searchMaxFeePct = config.getDouble("router.path-finding.max-fee-pct"),
         searchHeuristicsEnabled = config.getBoolean("router.path-finding.heuristics-enable"),
         searchRatioCltv = config.getDouble("router.path-finding.ratio-cltv"),

@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -47,7 +47,7 @@ import scala.util.{Random, Try}
 case class RouterConf(randomizeRouteSelection: Boolean,
                       channelExcludeDuration: FiniteDuration,
                       routerBroadcastInterval: FiniteDuration,
-                      searchMaxFeeBaseSat: Long,
+                      searchMaxFeeBase: Satoshi,
                       searchMaxFeePct: Double,
                       searchMaxRouteLength: Int,
                       searchMaxCltv: Int,
@@ -58,7 +58,7 @@ case class RouterConf(randomizeRouteSelection: Boolean,
 
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteParams(randomize: Boolean, maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int, ratios: Option[WeightRatios])
+case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int, ratios: Option[WeightRatios])
 case class RouteRequest(source: PublicKey,
                         target: PublicKey,
                         amount: MilliSatoshi,
@@ -827,7 +827,7 @@ object Router {
 
   def getDefaultRouteParams(routerConf: RouterConf) = RouteParams(
     randomize = routerConf.randomizeRouteSelection,
-    maxFeeBaseMsat = routerConf.searchMaxFeeBaseSat * 1000, // converting sat -> msat
+    maxFeeBase = routerConf.searchMaxFeeBase.toMilliSatoshi,
     maxFeePct = routerConf.searchMaxFeePct,
     routeMaxLength = routerConf.searchMaxRouteLength,
     routeMaxCltv = routerConf.searchMaxCltv,
@@ -869,7 +869,7 @@ object Router {
     val currentBlockHeight = Globals.blockCount.get()
 
     val boundaries: RichWeight => Boolean = { weight =>
-      ((weight.cost - amount) < MilliSatoshi(routeParams.maxFeeBaseMsat) || (weight.cost - amount) < MilliSatoshi(amount.toLong * routeParams.maxFeePct.toLong)) &&
+      ((weight.cost - amount) < routeParams.maxFeeBase || (weight.cost - amount) < MilliSatoshi(amount.toLong * routeParams.maxFeePct.toLong)) &&
         weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
         weight.cltv <= routeParams.routeMaxCltv
     }

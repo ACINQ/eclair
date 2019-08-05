@@ -759,7 +759,7 @@ class RouteCalculationSpec extends FunSuite {
 
   test("select a random route below the requested fee") {
 
-    val strictFeeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBaseMsat = 7, maxFeePct = 0)
+    val strictFeeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBase = MilliSatoshi(7), maxFeePct = 0)
 
     // A -> B -> C -> D has total cost of 10000005
     // A -> E -> C -> D has total cost of 11080003 !!
@@ -907,7 +907,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = DirectedGraph.makeGraph(updates)
 
-    val params = RouteParams(randomize = false, maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 1008, routeMaxLength = 6, ratios = Some(
+    val params = RouteParams(randomize = false, maxFeeBase = MilliSatoshi(21000), maxFeePct = 0.03, routeMaxCltv = 1008, routeMaxLength = 6, ratios = Some(
       WeightRatios(cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5)
     ))
     val thisNode = PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96")
@@ -929,7 +929,7 @@ object RouteCalculationSpec {
 
   val DEFAULT_AMOUNT_MSAT = MilliSatoshi(10000000)
 
-  val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, maxFeeBaseMsat = 21000, maxFeePct = 0.03, routeMaxCltv = 2016, routeMaxLength = 6, ratios = None)
+  val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, maxFeeBase = MilliSatoshi(21000), maxFeePct = 0.03, routeMaxCltv = 2016, routeMaxLength = 6, ratios = None)
 
   val DUMMY_SIG = Transactions.PlaceHolderSig
 

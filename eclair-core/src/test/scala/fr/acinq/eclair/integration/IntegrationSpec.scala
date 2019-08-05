@@ -66,7 +66,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   // we override the default because these test were designed to use cost-optimized routes
   val integrationTestRouteParams = Some(RouteParams(
     randomize = false,
-    maxFeeBaseMsat = Long.MaxValue,
+    maxFeeBase = MilliSatoshi(Long.MaxValue),
     maxFeePct = Double.MaxValue,
     routeMaxCltv = Int.MaxValue,
     routeMaxLength = ROUTE_MAX_LENGTH,

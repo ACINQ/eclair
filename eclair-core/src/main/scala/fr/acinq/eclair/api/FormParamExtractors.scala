@@ -21,12 +21,13 @@ import java.util.UUID
 import JsonSupport._
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.util.Timeout
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.PaymentRequest
 import scodec.bits.ByteVector
+
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
@@ -74,5 +75,14 @@ object FormParamExtractors {
       case Failure(_) => throw new IllegalArgumentException(s"PublicKey list must be either json-encoded or comma separated list")
     }
   }
+
+  implicit val satoshiUnmarshaller: Unmarshaller[String, Satoshi] = Unmarshaller.strict { str =>
+    Satoshi(str.toLong)
+  }
+
+  implicit val millisatoshiUnmarshaller: Unmarshaller[String, MilliSatoshi] = Unmarshaller.strict { str =>
+    MilliSatoshi(str.toLong)
+  }
+
 
 }
