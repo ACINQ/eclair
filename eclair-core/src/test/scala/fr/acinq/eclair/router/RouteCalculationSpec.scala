@@ -43,10 +43,10 @@ class RouteCalculationSpec extends FunSuite {
   test("calculate simple route") {
 
     val updates = List(
-      makeUpdate(1L, a, b, 1, 10, cltvDelta = 1),
-      makeUpdate(2L, b, c, 1, 10, cltvDelta = 1),
-      makeUpdate(3L, c, d, 1, 10, cltvDelta = 1),
-      makeUpdate(4L, d, e, 1, 10, cltvDelta = 1)
+      makeUpdate(1L, a, b, MilliSatoshi(1), 10, cltvDelta = 1),
+      makeUpdate(2L, b, c, MilliSatoshi(1), 10, cltvDelta = 1),
+      makeUpdate(3L, c, d, MilliSatoshi(1), 10, cltvDelta = 1),
+      makeUpdate(4L, d, e, MilliSatoshi(1), 10, cltvDelta = 1)
     ).toMap
 
     val g = makeGraph(updates)
@@ -79,12 +79,12 @@ class RouteCalculationSpec extends FunSuite {
     val expectedCost = MilliSatoshi(10007)
 
     val updates = List(
-      makeUpdate(1L, a, b, feeBaseMsat = 1, feeProportionalMillionth = 200, minHtlcMsat = 0),
-      makeUpdate(4L, a, e, feeBaseMsat = 1, feeProportionalMillionth = 200, minHtlcMsat = 0),
-      makeUpdate(2L, b, c, feeBaseMsat = 1, feeProportionalMillionth = 300, minHtlcMsat = 0),
-      makeUpdate(3L, c, d, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0),
-      makeUpdate(5L, e, f, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0),
-      makeUpdate(6L, f, d, feeBaseMsat = 1, feeProportionalMillionth = 100, minHtlcMsat = 0)
+      makeUpdate(1L, a, b, feeBase = MilliSatoshi(1), feeProportionalMillionth = 200, minHtlc = MilliSatoshi(0)),
+      makeUpdate(4L, a, e, feeBase = MilliSatoshi(1), feeProportionalMillionth = 200, minHtlc = MilliSatoshi(0)),
+      makeUpdate(2L, b, c, feeBase = MilliSatoshi(1), feeProportionalMillionth = 300, minHtlc = MilliSatoshi(0)),
+      makeUpdate(3L, c, d, feeBase = MilliSatoshi(1), feeProportionalMillionth = 400, minHtlc = MilliSatoshi(0)),
+      makeUpdate(5L, e, f, feeBase = MilliSatoshi(1), feeProportionalMillionth = 400, minHtlc = MilliSatoshi(0)),
+      makeUpdate(6L, f, d, feeBase = MilliSatoshi(1), feeProportionalMillionth = 100, minHtlc = MilliSatoshi(0))
     ).toMap
 
     val graph = makeGraph(updates)
@@ -97,7 +97,7 @@ class RouteCalculationSpec extends FunSuite {
     assert(totalCost === expectedCost)
 
     // now channel 5 could route the amount (10000) but not the amount + fees (10007)
-    val (desc, update) = makeUpdate(5L, e, f, feeBaseMsat = 1, feeProportionalMillionth = 400, minHtlcMsat = 0, maxHtlcMsat = Some(10005L))
+    val (desc, update) = makeUpdate(5L, e, f, feeBase = MilliSatoshi(1), feeProportionalMillionth = 400, minHtlc = MilliSatoshi(0), maxHtlc = Some(MilliSatoshi(10005L)))
     val graph1 = graph.addEdge(desc, update)
 
     val Success(route1) = Router.findRoute(graph1, a, d, amount, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
@@ -107,11 +107,11 @@ class RouteCalculationSpec extends FunSuite {
 
   test("calculate route considering the direct channel pays no fees") {
     val updates = List(
-      makeUpdate(1L, a, b, 5, 0), // a -> b
-      makeUpdate(2L, a, d, 15, 0), // a -> d  this goes a bit closer to the target and asks for higher fees but is a direct channel
-      makeUpdate(3L, b, c, 5, 0), // b -> c
-      makeUpdate(4L, c, d, 5, 0), // c -> d
-      makeUpdate(5L, d, e, 5, 0) // d -> e
+      makeUpdate(1L, a, b, MilliSatoshi(5), 0), // a -> b
+      makeUpdate(2L, a, d, MilliSatoshi(15), 0), // a -> d  this goes a bit closer to the target and asks for higher fees but is a direct channel
+      makeUpdate(3L, b, c, MilliSatoshi(5), 0), // b -> c
+      makeUpdate(4L, c, d, MilliSatoshi(5), 0), // c -> d
+      makeUpdate(5L, d, e, MilliSatoshi(5), 0) // d -> e
     ).toMap
 
     val g = makeGraph(updates)
@@ -123,10 +123,10 @@ class RouteCalculationSpec extends FunSuite {
   test("calculate simple route (add and remove edges") {
 
     val updates = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, c, d, 0, 0),
-      makeUpdate(4L, d, e, 0, 0)
+      makeUpdate(1L, a, b, MilliSatoshi(0), 0),
+      makeUpdate(2L, b, c, MilliSatoshi(0), 0),
+      makeUpdate(3L, c, d, MilliSatoshi(0), 0),
+      makeUpdate(4L, d, e, MilliSatoshi(0), 0)
     ).toMap
 
     val g = makeGraph(updates)
@@ -149,10 +149,10 @@ class RouteCalculationSpec extends FunSuite {
     )
 
     val updates = List(
-      makeUpdate(1L, f, g, 0, 0),
-      makeUpdate(2L, g, h, 0, 0),
-      makeUpdate(3L, h, i, 0, 0),
-      makeUpdate(4L, f, h, 50, 0) // more expensive
+      makeUpdate(1L, f, g, MilliSatoshi(0), 0),
+      makeUpdate(2L, g, h, MilliSatoshi(0), 0),
+      makeUpdate(3L, h, i, MilliSatoshi(0), 0),
+      makeUpdate(4L, f, h, MilliSatoshi(50), 0) // more expensive
     ).toMap
 
     val graph = makeGraph(updates)
@@ -172,10 +172,10 @@ class RouteCalculationSpec extends FunSuite {
     )
 
     val updates = List(
-      makeUpdate(1L, f, g, 0, 0),
-      makeUpdate(4L, f, i, 50, 0), // our starting node F has a direct channel with I
-      makeUpdate(2L, g, h, 0, 0),
-      makeUpdate(3L, h, i, 0, 0)
+      makeUpdate(1L, f, g, MilliSatoshi(0), 0),
+      makeUpdate(4L, f, i, MilliSatoshi(50), 0), // our starting node F has a direct channel with I
+      makeUpdate(2L, g, h, MilliSatoshi(0), 0),
+      makeUpdate(3L, h, i, MilliSatoshi(0), 0)
     ).toMap
 
     val graph = makeGraph(updates)
@@ -193,10 +193,10 @@ class RouteCalculationSpec extends FunSuite {
     )
 
     val updates = List(
-      makeUpdate(1L, f, g, 1, 0),
+      makeUpdate(1L, f, g, MilliSatoshi(1), 0),
       // the maximum htlc allowed by this channel is only 50msat greater than what we're sending
-      makeUpdate(2L, g, h, 1, 0, maxHtlcMsat = Some(DEFAULT_AMOUNT_MSAT.toLong + 50)),
-      makeUpdate(3L, h, i, 1, 0)
+      makeUpdate(2L, g, h, MilliSatoshi(1), 0, maxHtlc = Some(DEFAULT_AMOUNT_MSAT + MilliSatoshi(50))),
+      makeUpdate(3L, h, i, MilliSatoshi(1), 0)
     ).toMap
 
     val graph = makeGraph(updates)
@@ -214,10 +214,10 @@ class RouteCalculationSpec extends FunSuite {
     )
 
     val updates = List(
-      makeUpdate(1L, f, g, 1, 0),
+      makeUpdate(1L, f, g, MilliSatoshi(1), 0),
       // this channel requires a minimum amount that is larger than what we are sending
-      makeUpdate(2L, g, h, 1, 0, minHtlcMsat = DEFAULT_AMOUNT_MSAT.toLong + 50),
-      makeUpdate(3L, h, i, 1, 0)
+      makeUpdate(2L, g, h, MilliSatoshi(1), 0, minHtlc = DEFAULT_AMOUNT_MSAT + MilliSatoshi(50)),
+      makeUpdate(3L, h, i, MilliSatoshi(1), 0)
     ).toMap
 
     val graph = makeGraph(updates)
@@ -236,10 +236,10 @@ class RouteCalculationSpec extends FunSuite {
     )
 
     val updates = List(
-      makeUpdate(1L, f, g, 0, 0),
-      makeUpdate(2L, g, h, 5, 5), // expensive  g -> h channel
-      makeUpdate(6L, g, h, 0, 0), // cheap      g -> h channel
-      makeUpdate(3L, h, i, 0, 0)
+      makeUpdate(1L, f, g, MilliSatoshi(0), 0),
+      makeUpdate(2L, g, h, MilliSatoshi(5), 5), // expensive  g -> h channel
+      makeUpdate(6L, g, h, MilliSatoshi(0), 0), // cheap      g -> h channel
+      makeUpdate(3L, h, i, MilliSatoshi(0), 0)
     ).toMap
 
     val graph = makeGraph(updates)
@@ -251,11 +251,11 @@ class RouteCalculationSpec extends FunSuite {
   test("calculate longer but cheaper route") {
 
     val updates = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, c, d, 0, 0),
-      makeUpdate(4L, d, e, 0, 0),
-      makeUpdate(5L, b, e, 10, 10)
+      makeUpdate(1L, a, b, MilliSatoshi(0), 0),
+      makeUpdate(2L, b, c, MilliSatoshi(0), 0),
+      makeUpdate(3L, c, d, MilliSatoshi(0), 0),
+      makeUpdate(4L, d, e, MilliSatoshi(0), 0),
+      makeUpdate(5L, b, e, MilliSatoshi(10), 10)
     ).toMap
 
     val g = makeGraph(updates)
@@ -267,8 +267,8 @@ class RouteCalculationSpec extends FunSuite {
   test("no local channels") {
 
     val updates = List(
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(4L, d, e, 0, 0)
+      makeUpdate(2L, b, c, MilliSatoshi(0), 0),
+      makeUpdate(4L, d, e, MilliSatoshi(0), 0)
     ).toMap
 
     val g = makeGraph(updates)
@@ -280,9 +280,9 @@ class RouteCalculationSpec extends FunSuite {
   test("route not found") {
 
     val updates = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(4L, d, e, 0, 0)
+      makeUpdate(1L, a, b, MilliSatoshi(0), 0),
+      makeUpdate(2L, b, c, MilliSatoshi(0), 0),
+      makeUpdate(4L, d, e, MilliSatoshi(0), 0)
     ).toMap
 
     val g = makeGraph(updates)
@@ -294,8 +294,8 @@ class RouteCalculationSpec extends FunSuite {
   test("route not found (source OR target node not connected)") {
 
     val updates = List(
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(4L, c, d, 0, 0)
+      makeUpdate(2L, b, c, MilliSatoshi(0), 0),
+      makeUpdate(4L, c, d, MilliSatoshi(0), 0)
     ).toMap
 
     val g = makeGraph(updates).addVertex(a).addVertex(e)
@@ -310,15 +310,15 @@ class RouteCalculationSpec extends FunSuite {
     val lowAmount = DEFAULT_AMOUNT_MSAT / 10
 
     val updatesHi = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0, maxHtlcMsat = Some(DEFAULT_AMOUNT_MSAT.toLong)),
-      makeUpdate(3L, c, d, 0, 0)
+      makeUpdate(1L, a, b, MilliSatoshi(0), 0),
+      makeUpdate(2L, b, c, MilliSatoshi(0), 0, maxHtlc = Some(DEFAULT_AMOUNT_MSAT)),
+      makeUpdate(3L, c, d, MilliSatoshi(0), 0)
     ).toMap
 
     val updatesLo = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0, minHtlcMsat = DEFAULT_AMOUNT_MSAT.toLong),
-      makeUpdate(3L, c, d, 0, 0)
+      makeUpdate(1L, a, b, MilliSatoshi(0), 0),
+      makeUpdate(2L, b, c, MilliSatoshi(0), 0, minHtlc = DEFAULT_AMOUNT_MSAT),
+      makeUpdate(3L, c, d, MilliSatoshi(0), 0)
     ).toMap
 
     val g = makeGraph(updatesHi)
@@ -331,9 +331,9 @@ class RouteCalculationSpec extends FunSuite {
   test("route to self") {
 
     val updates = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, c, d, 0, 0)
+      makeUpdate(1L, a, b, MilliSatoshi(0), 0),
+      makeUpdate(2L, b, c, MilliSatoshi(0), 0),
+      makeUpdate(3L, c, d, MilliSatoshi(0), 0)
     ).toMap
 
     val g = makeGraph(updates)
@@ -345,10 +345,10 @@ class RouteCalculationSpec extends FunSuite {
   test("route to immediate neighbor") {
 
     val updates = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, c, d, 0, 0),
-      makeUpdate(4L, d, e, 0, 0)
+      makeUpdate(1L, a, b, MilliSatoshi(0), 0),
+      makeUpdate(2L, b, c, MilliSatoshi(0), 0),
+      makeUpdate(3L, c, d, MilliSatoshi(0), 0),
+      makeUpdate(4L, d, e, MilliSatoshi(0), 0)
     ).toMap
 
     val g = makeGraph(updates)
@@ -359,10 +359,10 @@ class RouteCalculationSpec extends FunSuite {
 
   test("directed graph") {
     val updates = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, c, d, 0, 0),
-      makeUpdate(4L, d, e, 0, 0)
+      makeUpdate(1L, a, b, MilliSatoshi(0), 0),
+      makeUpdate(2L, b, c, MilliSatoshi(0), 0),
+      makeUpdate(3L, c, d, MilliSatoshi(0), 0),
+      makeUpdate(4L, d, e, MilliSatoshi(0), 0)
     ).toMap
 
     // a->e works, e->a fails
@@ -434,10 +434,10 @@ class RouteCalculationSpec extends FunSuite {
 
   test("blacklist routes") {
     val updates = List(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, c, d, 0, 0),
-      makeUpdate(4L, d, e, 0, 0)
+      makeUpdate(1L, a, b, MilliSatoshi(0), 0),
+      makeUpdate(2L, b, c, MilliSatoshi(0), 0),
+      makeUpdate(3L, c, d, MilliSatoshi(0), 0),
+      makeUpdate(4L, d, e, MilliSatoshi(0), 0)
     ).toMap
 
     val g = makeGraph(updates)
@@ -446,7 +446,7 @@ class RouteCalculationSpec extends FunSuite {
     assert(route1.map(hops2Ids) === Failure(RouteNotFound))
 
     // verify that we left the graph untouched
-    assert(g.containsEdge(makeUpdate(3L, c, d, 0, 0)._1)) // c -> d
+    assert(g.containsEdge(makeUpdate(3L, c, d, MilliSatoshi(0), 0)._1)) // c -> d
     assert(g.containsVertex(c))
     assert(g.containsVertex(d))
 
@@ -457,9 +457,9 @@ class RouteCalculationSpec extends FunSuite {
 
   test("route to a destination that is not in the graph (with assisted routes)") {
     val updates = List(
-      makeUpdate(1L, a, b, 10, 10),
-      makeUpdate(2L, b, c, 10, 10),
-      makeUpdate(3L, c, d, 10, 10)
+      makeUpdate(1L, a, b, MilliSatoshi(10), 10),
+      makeUpdate(2L, b, c, MilliSatoshi(10), 10),
+      makeUpdate(3L, c, d, MilliSatoshi(10), 10)
     ).toMap
 
     val g = makeGraph(updates)
@@ -468,7 +468,7 @@ class RouteCalculationSpec extends FunSuite {
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
 
     // now we add the missing edge to reach the destination
-    val (extraDesc, extraUpdate) = makeUpdate(4L, d, e, 5, 5)
+    val (extraDesc, extraUpdate) = makeUpdate(4L, d, e, MilliSatoshi(5), 5)
     val extraGraphEdges = Set(GraphEdge(extraDesc, extraUpdate))
 
     val route1 = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS)
@@ -478,10 +478,10 @@ class RouteCalculationSpec extends FunSuite {
 
   test("verify that extra hops takes precedence over known channels") {
     val updates = List(
-      makeUpdate(1L, a, b, 10, 10),
-      makeUpdate(2L, b, c, 10, 10),
-      makeUpdate(3L, c, d, 10, 10),
-      makeUpdate(4L, d, e, 10, 10)
+      makeUpdate(1L, a, b, MilliSatoshi(10), 10),
+      makeUpdate(2L, b, c, MilliSatoshi(10), 10),
+      makeUpdate(3L, c, d, MilliSatoshi(10), 10),
+      makeUpdate(4L, d, e, MilliSatoshi(10), 10)
     ).toMap
 
     val g = makeGraph(updates)
@@ -490,7 +490,7 @@ class RouteCalculationSpec extends FunSuite {
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
     assert(route1.get(1).lastUpdate.feeBaseMsat == MilliSatoshi(10))
 
-    val (extraDesc, extraUpdate) = makeUpdate(2L, b, c, 5, 5)
+    val (extraDesc, extraUpdate) = makeUpdate(2L, b, c, MilliSatoshi(5), 5)
 
     val extraGraphEdges = Set(GraphEdge(extraDesc, extraUpdate))
 
@@ -519,15 +519,15 @@ class RouteCalculationSpec extends FunSuite {
 
     )
     val updates = List(
-      makeUpdate(1L, a, b, 10, 10),
-      makeUpdate(2L, b, c, 10, 10),
-      makeUpdate(2L, c, b, 10, 10),
-      makeUpdate(3L, c, d, 10, 10),
-      makeUpdate(4L, d, e, 10, 10),
-      makeUpdate(5L, f, g, 10, 10),
-      makeUpdate(6L, f, h, 10, 10),
-      makeUpdate(7L, h, i, 10, 10),
-      makeUpdate(8L, i, j, 10, 10)
+      makeUpdate(1L, a, b, MilliSatoshi(10), 10),
+      makeUpdate(2L, b, c, MilliSatoshi(10), 10),
+      makeUpdate(2L, c, b, MilliSatoshi(10), 10),
+      makeUpdate(3L, c, d, MilliSatoshi(10), 10),
+      makeUpdate(4L, d, e, MilliSatoshi(10), 10),
+      makeUpdate(5L, f, g, MilliSatoshi(10), 10),
+      makeUpdate(6L, f, h, MilliSatoshi(10), 10),
+      makeUpdate(7L, h, i, MilliSatoshi(10), 10),
+      makeUpdate(8L, i, j, MilliSatoshi(10), 10)
     ).toMap
 
     val ignored = Router.getIgnoredChannelDesc(updates, ignoreNodes = Set(c, j, randomKey.publicKey))
@@ -547,7 +547,7 @@ class RouteCalculationSpec extends FunSuite {
     val updates = nodes
       .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
       .zipWithIndex // ((0, 1), 0) :: ((1, 2), 1) :: ...
-      .map { case ((na, nb), index) => makeUpdate(index, na, nb, 5, 0) }
+      .map { case ((na, nb), index) => makeUpdate(index, na, nb, MilliSatoshi(5), 0) }
       .toMap
 
     val g = makeGraph(updates)
@@ -565,10 +565,10 @@ class RouteCalculationSpec extends FunSuite {
     val updates = nodes
       .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
       .zipWithIndex // ((0, 1), 0) :: ((1, 2), 1) :: ...
-      .map { case ((na, nb), index) => makeUpdate(index, na, nb, 1, 0) }
+      .map { case ((na, nb), index) => makeUpdate(index, na, nb, MilliSatoshi(1), 0) }
       .toMap
 
-    val updates2 = updates + makeUpdate(99, nodes(2), nodes(48), 1000, 0) // expensive shorter route
+    val updates2 = updates + makeUpdate(99, nodes(2), nodes(48), MilliSatoshi(1000), 0) // expensive shorter route
 
     val g = makeGraph(updates2)
 
@@ -581,12 +581,12 @@ class RouteCalculationSpec extends FunSuite {
     val f = randomKey.publicKey
 
     val g = makeGraph(List(
-      makeUpdate(1, a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 50),
-      makeUpdate(2, b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 50),
-      makeUpdate(3, c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 50),
-      makeUpdate(4, a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
-      makeUpdate(5, e, f, feeBaseMsat = 5, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
-      makeUpdate(6, f, d, feeBaseMsat = 5, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9)
+      makeUpdate(1, a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 50),
+      makeUpdate(2, b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 50),
+      makeUpdate(3, c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 50),
+      makeUpdate(4, a, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
+      makeUpdate(5, e, f, feeBase = MilliSatoshi(5), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
+      makeUpdate(6, f, d, feeBase = MilliSatoshi(5), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9)
     ).toMap)
 
     val route = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxCltv = 28))
@@ -598,12 +598,12 @@ class RouteCalculationSpec extends FunSuite {
     val f = randomKey.publicKey
 
     val g = makeGraph(List(
-      makeUpdate(1, a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
-      makeUpdate(2, b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
-      makeUpdate(3, c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
-      makeUpdate(4, d, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
-      makeUpdate(5, e, f, feeBaseMsat = 5, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
-      makeUpdate(6, b, f, feeBaseMsat = 5, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9)
+      makeUpdate(1, a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
+      makeUpdate(2, b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
+      makeUpdate(3, c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
+      makeUpdate(4, d, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
+      makeUpdate(5, e, f, feeBase = MilliSatoshi(5), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
+      makeUpdate(6, b, f, feeBase = MilliSatoshi(5), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9)
     ).toMap)
 
     val route = Router.findRoute(g, a, f, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxLength = 3))
@@ -613,11 +613,11 @@ class RouteCalculationSpec extends FunSuite {
   test("ignore loops") {
 
     val updates = List(
-      makeUpdate(1L, a, b, 10, 10),
-      makeUpdate(2L, b, c, 10, 10),
-      makeUpdate(3L, c, a, 10, 10),
-      makeUpdate(4L, c, d, 10, 10),
-      makeUpdate(5L, d, e, 10, 10)
+      makeUpdate(1L, a, b, MilliSatoshi(10), 10),
+      makeUpdate(2L, b, c, MilliSatoshi(10), 10),
+      makeUpdate(3L, c, a, MilliSatoshi(10), 10),
+      makeUpdate(4L, c, d, MilliSatoshi(10), 10),
+      makeUpdate(5L, d, e, MilliSatoshi(10), 10)
     ).toMap
 
     val g = makeGraph(updates)
@@ -630,13 +630,13 @@ class RouteCalculationSpec extends FunSuite {
 
     // the graph contains a possible 0-cost path that goes back on its steps ( e -> f, f -> e )
     val updates = List(
-      makeUpdate(1L, a, b, 10, 10), // a -> b
-      makeUpdate(2L, b, c, 10, 10),
-      makeUpdate(4L, c, d, 10, 10),
-      makeUpdate(3L, b, e, 0, 0),   // b -> e
-      makeUpdate(6L, e, f, 0, 0),   // e -> f
-      makeUpdate(6L, f, e, 0, 0),   // e <- f
-      makeUpdate(5L, e, d, 0, 0)    // e -> d
+      makeUpdate(1L, a, b, MilliSatoshi(10), 10), // a -> b
+      makeUpdate(2L, b, c, MilliSatoshi(10), 10),
+      makeUpdate(4L, c, d, MilliSatoshi(10), 10),
+      makeUpdate(3L, b, e, MilliSatoshi(0), 0),   // b -> e
+      makeUpdate(6L, e, f, MilliSatoshi(0), 0),   // e -> f
+      makeUpdate(6L, f, e, MilliSatoshi(0), 0),   // e <- f
+      makeUpdate(5L, e, d, MilliSatoshi(0), 0)    // e -> d
     ).toMap
 
     val g = makeGraph(updates)
@@ -671,13 +671,13 @@ class RouteCalculationSpec extends FunSuite {
 
 
     val edges = Seq(
-      makeUpdate(1L, d, a, 1, 0),
-      makeUpdate(2L, d, e, 1, 0),
-      makeUpdate(3L, a, e, 1, 0),
-      makeUpdate(4L, e, b, 1, 0),
-      makeUpdate(5L, e, f, 1, 0),
-      makeUpdate(6L, b, c, 1, 0),
-      makeUpdate(7L, c, f, 1, 0)
+      makeUpdate(1L, d, a, MilliSatoshi(1), 0),
+      makeUpdate(2L, d, e, MilliSatoshi(1), 0),
+      makeUpdate(3L, a, e, MilliSatoshi(1), 0),
+      makeUpdate(4L, e, b, MilliSatoshi(1), 0),
+      makeUpdate(5L, e, f, MilliSatoshi(1), 0),
+      makeUpdate(6L, b, c, MilliSatoshi(1), 0),
+      makeUpdate(7L, c, f, MilliSatoshi(1), 0)
     ).toMap
 
     val graph = DirectedGraph.makeGraph(edges)
@@ -703,15 +703,15 @@ class RouteCalculationSpec extends FunSuite {
 
 
     val edges = Seq(
-      makeUpdate(10L, c, e, 2, 0),
-      makeUpdate(20L, c, d, 3, 0),
-      makeUpdate(30L, d, f, 4, 5), // D- > F has a higher cost to distinguish it from the 2nd cheapest route
-      makeUpdate(40L, e, d, 1, 0),
-      makeUpdate(50L, e, f, 2, 0),
-      makeUpdate(60L, e, g, 3, 0),
-      makeUpdate(70L, f, g, 2, 0),
-      makeUpdate(80L, f, h, 1, 0),
-      makeUpdate(90L, g, h, 2, 0)
+      makeUpdate(10L, c, e, MilliSatoshi(2), 0),
+      makeUpdate(20L, c, d, MilliSatoshi(3), 0),
+      makeUpdate(30L, d, f, MilliSatoshi(4), 5), // D- > F has a higher cost to distinguish it from the 2nd cheapest route
+      makeUpdate(40L, e, d, MilliSatoshi(1), 0),
+      makeUpdate(50L, e, f, MilliSatoshi(2), 0),
+      makeUpdate(60L, e, g, MilliSatoshi(3), 0),
+      makeUpdate(70L, f, g, MilliSatoshi(2), 0),
+      makeUpdate(80L, f, h, MilliSatoshi(1), 0),
+      makeUpdate(90L, g, h, MilliSatoshi(2), 0)
     )
 
     val graph = DirectedGraph().addEdges(edges)
@@ -732,19 +732,19 @@ class RouteCalculationSpec extends FunSuite {
 
     // simple graph with only 2 possible paths from A to F
     val edges = Seq(
-      makeUpdate(1L, a, b, 1, 0),
-      makeUpdate(1L, b, a, 1, 0),
-      makeUpdate(2L, b, c, 1, 0),
-      makeUpdate(2L, c, b, 1, 0),
-      makeUpdate(3L, c, f, 1, 0),
-      makeUpdate(3L, f, c, 1, 0),
-      makeUpdate(4L, c, d, 1, 0),
-      makeUpdate(4L, d, c, 1, 0),
-      makeUpdate(41L, d, c, 1, 0), // there is more than one D -> C channel
-      makeUpdate(5L, d, e, 1, 0),
-      makeUpdate(5L, e, d, 1, 0),
-      makeUpdate(6L, e, f, 1, 0),
-      makeUpdate(6L, f, e, 1, 0)
+      makeUpdate(1L, a, b, MilliSatoshi(1), 0),
+      makeUpdate(1L, b, a, MilliSatoshi(1), 0),
+      makeUpdate(2L, b, c, MilliSatoshi(1), 0),
+      makeUpdate(2L, c, b, MilliSatoshi(1), 0),
+      makeUpdate(3L, c, f, MilliSatoshi(1), 0),
+      makeUpdate(3L, f, c, MilliSatoshi(1), 0),
+      makeUpdate(4L, c, d, MilliSatoshi(1), 0),
+      makeUpdate(4L, d, c, MilliSatoshi(1), 0),
+      makeUpdate(41L, d, c, MilliSatoshi(1), 0), // there is more than one D -> C channel
+      makeUpdate(5L, d, e, MilliSatoshi(1), 0),
+      makeUpdate(5L, e, d, MilliSatoshi(1), 0),
+      makeUpdate(6L, e, f, MilliSatoshi(1), 0),
+      makeUpdate(6L, f, e, MilliSatoshi(1), 0)
     )
 
     val graph = DirectedGraph().addEdges(edges)
@@ -765,13 +765,13 @@ class RouteCalculationSpec extends FunSuite {
     // A -> E -> C -> D has total cost of 11080003 !!
     // A -> E -> F -> D has total cost of 10000006
     val g = makeGraph(List(
-      makeUpdate(1L, a, b, feeBaseMsat = 1, 0),
-      makeUpdate(4L, a, e, feeBaseMsat = 1, 0),
-      makeUpdate(2L, b, c, feeBaseMsat = 2, 0),
-      makeUpdate(3L, c, d, feeBaseMsat = 3, 0),
-      makeUpdate(5L, e, f, feeBaseMsat = 3, 0),
-      makeUpdate(6L, f, d, feeBaseMsat = 3, 0),
-      makeUpdate(7L, e, c, feeBaseMsat = 9, 0)
+      makeUpdate(1L, a, b, feeBase = MilliSatoshi(1), 0),
+      makeUpdate(4L, a, e, feeBase = MilliSatoshi(1), 0),
+      makeUpdate(2L, b, c, feeBase = MilliSatoshi(2), 0),
+      makeUpdate(3L, c, d, feeBase = MilliSatoshi(3), 0),
+      makeUpdate(5L, e, f, feeBase = MilliSatoshi(3), 0),
+      makeUpdate(6L, f, d, feeBase = MilliSatoshi(3), 0),
+      makeUpdate(7L, e, c, feeBase = MilliSatoshi(9), 0)
     ).toMap)
 
     (for {_ <- 0 to 10} yield Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3, routeParams = strictFeeParams)).map {
@@ -787,19 +787,19 @@ class RouteCalculationSpec extends FunSuite {
 
   test("Use weight ratios to when computing the edge weight") {
 
-    val largeCapacity = 8000000000L
+    val largeCapacity = MilliSatoshi(8000000000L)
 
     // A -> B -> C -> D is 'fee optimized', lower fees route (totFees = 2, totCltv = 4000)
     // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 3, totCltv = 18)
     // A -> E -> C -> D is 'capacity optimized', more recent channel/larger capacity route
     val updates = List(
-      makeUpdate(1L, a, b, feeBaseMsat = 0, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 13),
-      makeUpdate(4L, a, e, feeBaseMsat = 0, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdate(2L, b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 500),
-      makeUpdate(3L, c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 500),
-      makeUpdate(5L, e, f, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
-      makeUpdate(6L, f, d, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 9),
-      makeUpdate(7L, e, c, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = Some(largeCapacity), cltvDelta = 12)
+      makeUpdate(1L, a, b, feeBase = MilliSatoshi(0), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 13),
+      makeUpdate(4L, a, e, feeBase = MilliSatoshi(0), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 12),
+      makeUpdate(2L, b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 500),
+      makeUpdate(3L, c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 500),
+      makeUpdate(5L, e, f, feeBase = MilliSatoshi(2), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
+      makeUpdate(6L, f, d, feeBase = MilliSatoshi(2), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
+      makeUpdate(7L, e, c, feeBase = MilliSatoshi(2), 0, minHtlc = MilliSatoshi(0), maxHtlc = Some(largeCapacity), cltvDelta = 12)
     ).toMap
 
     val g = makeGraph(updates)
@@ -829,12 +829,12 @@ class RouteCalculationSpec extends FunSuite {
     val currentBlockHeight = 554000
 
     val g = makeGraph(List(
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight - 3000}x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144), // younger channel
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight - 3000}x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144)
+      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
+      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
+      makeUpdateShort(ShortChannelId(s"${currentBlockHeight - 3000}x0x2"), b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144), // younger channel
+      makeUpdateShort(ShortChannelId(s"${currentBlockHeight - 3000}x0x3"), c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
+      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
+      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144)
     ).toMap)
 
     Globals.blockCount.set(currentBlockHeight)
@@ -851,12 +851,12 @@ class RouteCalculationSpec extends FunSuite {
   test("prefer a route with a smaller total CLTV if fees and score are the same") {
 
     val g = makeGraph(List(
-      makeUpdateShort(ShortChannelId(s"0x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdateShort(ShortChannelId(s"0x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdateShort(ShortChannelId(s"0x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 10), // smaller CLTV
-      makeUpdateShort(ShortChannelId(s"0x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdateShort(ShortChannelId(s"0x0x5"), e, f, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdateShort(ShortChannelId(s"0x0x6"), f, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12)
+      makeUpdateShort(ShortChannelId(s"0x0x1"), a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 12),
+      makeUpdateShort(ShortChannelId(s"0x0x4"), a, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 12),
+      makeUpdateShort(ShortChannelId(s"0x0x2"), b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 10), // smaller CLTV
+      makeUpdateShort(ShortChannelId(s"0x0x3"), c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 12),
+      makeUpdateShort(ShortChannelId(s"0x0x5"), e, f, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 12),
+      makeUpdateShort(ShortChannelId(s"0x0x6"), f, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 12)
     ).toMap)
 
 
@@ -875,12 +875,12 @@ class RouteCalculationSpec extends FunSuite {
     // A -> B -> C -> D is cheaper but has a total CLTV > 2016!
     // A -> E -> F -> D is more expensive but has a total CLTV < 2016
     val g = makeGraph(List(
-      makeUpdateShort(ShortChannelId(s"0x0x1"), a, b, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"0x0x4"), a, e, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"0x0x2"), b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 1000),
-      makeUpdateShort(ShortChannelId(s"0x0x3"), c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 900),
-      makeUpdateShort(ShortChannelId(s"0x0x5"), e, f, feeBaseMsat = 10, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"0x0x6"), f, d, feeBaseMsat = 10, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 144)
+      makeUpdateShort(ShortChannelId(s"0x0x1"), a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
+      makeUpdateShort(ShortChannelId(s"0x0x4"), a, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
+      makeUpdateShort(ShortChannelId(s"0x0x2"), b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 1000),
+      makeUpdateShort(ShortChannelId(s"0x0x3"), c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 900),
+      makeUpdateShort(ShortChannelId(s"0x0x5"), e, f, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
+      makeUpdateShort(ShortChannelId(s"0x0x6"), f, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144)
     ).toMap)
 
     val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
@@ -938,26 +938,26 @@ object RouteCalculationSpec {
     ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, ByteVector.empty, Block.RegtestGenesisBlock.hash, ShortChannelId(shortChannelId), nodeId1, nodeId2, randomKey.publicKey, randomKey.publicKey)
   }
 
-  def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBaseMsat: Int, feeProportionalMillionth: Int, minHtlcMsat: Long = DEFAULT_AMOUNT_MSAT.toLong, maxHtlcMsat: Option[Long] = None, cltvDelta: Int = 0): (ChannelDesc, ChannelUpdate) = {
-    makeUpdateShort(ShortChannelId(shortChannelId), nodeId1, nodeId2, feeBaseMsat, feeProportionalMillionth, minHtlcMsat, maxHtlcMsat, cltvDelta)
+  def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: Option[MilliSatoshi] = None, cltvDelta: Int = 0): (ChannelDesc, ChannelUpdate) = {
+    makeUpdateShort(ShortChannelId(shortChannelId), nodeId1, nodeId2, feeBase, feeProportionalMillionth, minHtlc, maxHtlc, cltvDelta)
   }
 
-  def makeUpdateShort(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBaseMsat: Int, feeProportionalMillionth: Int, minHtlcMsat: Long = DEFAULT_AMOUNT_MSAT.toLong, maxHtlcMsat: Option[Long] = None, cltvDelta: Int = 0): (ChannelDesc, ChannelUpdate) =
+  def makeUpdateShort(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: Option[MilliSatoshi] = None, cltvDelta: Int = 0): (ChannelDesc, ChannelUpdate) =
     ChannelDesc(shortChannelId, nodeId1, nodeId2) -> ChannelUpdate(
       signature = DUMMY_SIG,
       chainHash = Block.RegtestGenesisBlock.hash,
       shortChannelId = shortChannelId,
       timestamp = 0L,
-      messageFlags = maxHtlcMsat match {
+      messageFlags = maxHtlc match {
         case Some(_) => 1
         case None => 0
       },
       channelFlags = 0,
       cltvExpiryDelta = cltvDelta,
-      htlcMinimumMsat = MilliSatoshi(minHtlcMsat),
-      feeBaseMsat = MilliSatoshi(feeBaseMsat),
+      htlcMinimumMsat = minHtlc,
+      feeBaseMsat = feeBase,
       feeProportionalMillionths = feeProportionalMillionth,
-      htlcMaximumMsat = maxHtlcMsat.map(MilliSatoshi)
+      htlcMaximumMsat = maxHtlc
     )
 
   def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = DirectedGraph.makeGraph(updates)

@@ -123,7 +123,7 @@ object TestConstants {
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       isFunder = true,
-      fundingSatoshis.toLong).copy(
+      fundingSatoshis).copy(
       channelReserve = Satoshi(10000) // Bob will need to keep that much satoshis as direct payment
     )
   }
@@ -193,7 +193,7 @@ object TestConstants {
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       isFunder = false,
-      fundingSatoshis.toLong).copy(
+      fundingSatoshis).copy(
       channelReserve = Satoshi(20000) // Alice will need to keep that much satoshis as direct payment
     )
   }
