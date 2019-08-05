@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.{Base58, Base58Check, Block, ByteVector32, Crypto, DeterministicWallet, Script}
+import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import org.scalatest.FunSuite
@@ -24,10 +24,6 @@ import scodec.bits._
 
 
 class LocalKeyManagerSpec extends FunSuite {
-
-
-
-
   test("generate the same node id from the same seed") {
     // if this test breaks it means that we will generate a different node id  from
     // the same seed, which could be a problem during an upgrade

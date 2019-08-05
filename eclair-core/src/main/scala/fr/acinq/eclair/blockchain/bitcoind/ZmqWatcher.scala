@@ -20,7 +20,7 @@ import java.util.concurrent.Executors
 
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction}
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
