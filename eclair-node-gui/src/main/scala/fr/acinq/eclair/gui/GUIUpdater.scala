@@ -200,7 +200,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
           }
 
     case p: PaymentSucceeded =>
-      val message = CoinUtils.formatAmountInUnit(MilliSatoshi(p.amountMsat), FxApp.getUnit, withUnit = true)
+      val message = CoinUtils.formatAmountInUnit(p.amount, FxApp.getUnit, withUnit = true)
       mainController.handlers.notification("Payment Sent", message, NOTIFICATION_SUCCESS)
 
     case p: PaymentFailed =>

@@ -42,7 +42,7 @@ import fr.acinq.eclair._
 
 class PaymentLifecycleSpec extends BaseRouterSpec {
 
-  val defaultAmountMsat = 142000000L
+  val defaultAmountMsat = MilliSatoshi(142000000L)
 
   test("send to route") { fixture =>
     import fixture._
@@ -389,9 +389,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash))
 
     val paymentOK = sender.expectMsgType[PaymentSucceeded]
-    val PaymentSent(_, MilliSatoshi(request.amountMsat), fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
+    val PaymentSent(_, request.amount, fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
     assert(fee > MilliSatoshi(0))
-    assert(fee === MilliSatoshi(paymentOK.amountMsat - request.amountMsat))
+    assert(fee === paymentOK.amount - request.amount)
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.SUCCEEDED))
   }
 
@@ -441,13 +441,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash))
 
     val paymentOK = sender.expectMsgType[PaymentSucceeded]
-    val PaymentSent(_, MilliSatoshi(request.amountMsat), fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
+    val PaymentSent(_, request.amount, fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
 
     // during the route computation the fees were treated as if they were 1msat but when sending the onion we actually put zero
     // NB: A -> B doesn't pay fees because it's our direct neighbor
     // NB: B -> G doesn't asks for fees at all
     assert(fee === MilliSatoshi(0))
-    assert(fee === MilliSatoshi(paymentOK.amountMsat - request.amountMsat))
+    assert(fee === paymentOK.amount - request.amount)
   }
 
   test("filter errors properly") { _ =>

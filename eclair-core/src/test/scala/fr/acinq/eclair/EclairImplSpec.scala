@@ -101,7 +101,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     eclair.send(recipientNodeId = nodeId, amountMsat = 123, paymentHash = ByteVector32.Zeroes, assistedRoutes = Seq.empty, minFinalCltvExpiry_opt = None)
     val send = paymentInitiator.expectMsgType[SendPayment]
     assert(send.targetNodeId == nodeId)
-    assert(send.amountMsat == 123)
+    assert(send.amount == MilliSatoshi(123))
     assert(send.paymentHash == ByteVector32.Zeroes)
     assert(send.assistedRoutes == Seq.empty)
 
@@ -110,7 +110,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     eclair.send(recipientNodeId = nodeId, amountMsat = 123, paymentHash = ByteVector32.Zeroes, assistedRoutes = hints, minFinalCltvExpiry_opt = None)
     val send1 = paymentInitiator.expectMsgType[SendPayment]
     assert(send1.targetNodeId == nodeId)
-    assert(send1.amountMsat == 123)
+    assert(send1.amount == MilliSatoshi(123))
     assert(send1.paymentHash == ByteVector32.Zeroes)
     assert(send1.assistedRoutes == hints)
 
@@ -118,7 +118,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     eclair.send(recipientNodeId = nodeId, amountMsat = 123, paymentHash = ByteVector32.Zeroes, assistedRoutes = Seq.empty, minFinalCltvExpiry_opt = Some(96))
     val send2 = paymentInitiator.expectMsgType[SendPayment]
     assert(send2.targetNodeId == nodeId)
-    assert(send2.amountMsat == 123)
+    assert(send2.amount == MilliSatoshi(123))
     assert(send2.paymentHash == ByteVector32.Zeroes)
     assert(send2.finalCltvExpiry == 96)
 
@@ -126,7 +126,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     eclair.send(recipientNodeId = nodeId, amountMsat = 123, paymentHash = ByteVector32.Zeroes, assistedRoutes = Seq.empty, minFinalCltvExpiry_opt = None, feeThresholdSat_opt = Some(123), maxFeePct_opt = Some(4.20))
     val send3 = paymentInitiator.expectMsgType[SendPayment]
     assert(send3.targetNodeId == nodeId)
-    assert(send3.amountMsat == 123)
+    assert(send3.amount == MilliSatoshi(123))
     assert(send3.paymentHash == ByteVector32.Zeroes)
     assert(send3.routeParams.get.maxFeeBaseMsat == 123 * 1000) // conversion sat -> msat
     assert(send3.routeParams.get.maxFeePct == 4.20)
@@ -255,7 +255,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     val send = paymentInitiator.expectMsgType[SendPaymentToRoute]
 
     assert(send.hops == route)
-    assert(send.amountMsat == 1234)
+    assert(send.amount == MilliSatoshi(1234))
     assert(send.finalCltvExpiry == 123)
     assert(send.paymentHash == ByteVector32.One)
   }

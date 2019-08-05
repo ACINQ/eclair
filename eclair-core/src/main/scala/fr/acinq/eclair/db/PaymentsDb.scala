@@ -17,7 +17,9 @@
 package fr.acinq.eclair.db
 
 import java.util.UUID
+
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.payment.PaymentRequest
 
 trait PaymentsDb {
@@ -60,10 +62,10 @@ trait PaymentsDb {
   * Incoming payment object stored in DB.
   *
   * @param paymentHash identifier of the payment
-  * @param amountMsat  amount of the payment, in milli-satoshis
+  * @param amount      amount of the payment, in milli-satoshis
   * @param receivedAt  absolute time in seconds since UNIX epoch when the payment was received.
   */
-case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, receivedAt: Long)
+case class IncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long)
 
 /**
   * Sent payment is every payment that is sent by this node, they may not be finalized and
@@ -72,12 +74,12 @@ case class IncomingPayment(paymentHash: ByteVector32, amountMsat: Long, received
   * @param id          internal payment identifier
   * @param paymentHash payment_hash
   * @param preimage    the preimage of the payment_hash, known if the outgoing payment was successful
-  * @param amountMsat  amount of the payment, in milli-satoshis
+  * @param amount      amount of the payment, in milli-satoshis
   * @param createdAt   absolute time in seconds since UNIX epoch when the payment was created.
   * @param completedAt absolute time in seconds since UNIX epoch when the payment succeeded.
   * @param status      current status of the payment.
   */
-case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, preimage:Option[ByteVector32], amountMsat: Long, createdAt: Long, completedAt: Option[Long], status: OutgoingPaymentStatus.Value)
+case class OutgoingPayment(id: UUID, paymentHash: ByteVector32, preimage:Option[ByteVector32], amount: MilliSatoshi, createdAt: Long, completedAt: Option[Long], status: OutgoingPaymentStatus.Value)
 
 object OutgoingPaymentStatus extends Enumeration {
   val PENDING = Value(1, "PENDING")

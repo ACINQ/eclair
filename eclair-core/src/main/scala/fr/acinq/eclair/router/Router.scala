@@ -61,7 +61,7 @@ case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpda
 case class RouteParams(randomize: Boolean, maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int, ratios: Option[WeightRatios])
 case class RouteRequest(source: PublicKey,
                         target: PublicKey,
-                        amountMsat: Long,
+                        amount: MilliSatoshi,
                         assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                         ignoreNodes: Set[PublicKey] = Set.empty,
                         ignoreChannels: Set[ChannelDesc] = Set.empty,
@@ -848,7 +848,7 @@ object Router {
     * @param g
     * @param localNodeId
     * @param targetNodeId
-    * @param amountMsat   the amount that will be sent along this route
+    * @param amount       the amount that will be sent along this route
     * @param numRoutes    the number of shortest-paths to find
     * @param extraEdges   a set of extra edges we want to CONSIDER during the search
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
@@ -858,7 +858,7 @@ object Router {
   def findRoute(g: DirectedGraph,
                 localNodeId: PublicKey,
                 targetNodeId: PublicKey,
-                amountMsat: Long,
+                amount: MilliSatoshi,
                 numRoutes: Int,
                 extraEdges: Set[GraphEdge] = Set.empty,
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
@@ -869,14 +869,14 @@ object Router {
     val currentBlockHeight = Globals.blockCount.get()
 
     val boundaries: RichWeight => Boolean = { weight =>
-      ((weight.cost - MilliSatoshi(amountMsat)) < MilliSatoshi(routeParams.maxFeeBaseMsat) || (weight.cost - MilliSatoshi(amountMsat)) < MilliSatoshi(amountMsat* routeParams.maxFeePct.toLong)) &&
+      ((weight.cost - amount) < MilliSatoshi(routeParams.maxFeeBaseMsat) || (weight.cost - amount) < MilliSatoshi(amount.toLong * routeParams.maxFeePct.toLong)) &&
         weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
         weight.cltv <= routeParams.routeMaxCltv
     }
 
-    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList match {
+    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount.toLong, ignoredEdges, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList match {
       case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
-        return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
+        return findRoute(g, localNodeId, targetNodeId, amount, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
       case Nil => throw RouteNotFound
       case routes => routes.find(_.path.size == 1) match {
         case Some(directRoute) => directRoute :: Nil

@@ -183,11 +183,11 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def findRoute(targetNodeId: PublicKey, amountMsat: Long, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse] = {
-    (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amountMsat, assistedRoutes)).mapTo[RouteResponse]
+    (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, MilliSatoshi(amountMsat), assistedRoutes)).mapTo[RouteResponse]
   }
 
   override def sendToRoute(route: Seq[PublicKey], amountMsat: Long, paymentHash: ByteVector32, finalCltvExpiry: Long)(implicit timeout: Timeout): Future[UUID] = {
-    (appKit.paymentInitiator ? SendPaymentToRoute(amountMsat, paymentHash, route, finalCltvExpiry)).mapTo[UUID]
+    (appKit.paymentInitiator ? SendPaymentToRoute(MilliSatoshi(amountMsat), paymentHash, route, finalCltvExpiry)).mapTo[UUID]
   }
 
   override def send(recipientNodeId: PublicKey, amountMsat: Long, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry_opt: Option[Long], maxAttempts_opt: Option[Int], feeThresholdSat_opt: Option[Long], maxFeePct_opt: Option[Double])(implicit timeout: Timeout): Future[UUID] = {
@@ -200,8 +200,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
     )
 
     val sendPayment = minFinalCltvExpiry_opt match {
-      case Some(minCltv) => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv, maxAttempts = maxAttempts, routeParams = Some(routeParams))
-      case None => SendPayment(amountMsat, paymentHash, recipientNodeId, assistedRoutes, maxAttempts = maxAttempts, routeParams = Some(routeParams))
+      case Some(minCltv) => SendPayment(MilliSatoshi(amountMsat), paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv, maxAttempts = maxAttempts, routeParams = Some(routeParams))
+      case None => SendPayment(MilliSatoshi(amountMsat), paymentHash, recipientNodeId, assistedRoutes, maxAttempts = maxAttempts, routeParams = Some(routeParams))
     }
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
