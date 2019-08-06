@@ -129,7 +129,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(20000 * 1000), sha256(paymentPreimage), cltvExpiry = 400144, TestConstants.emptyOnionPacket)
       val redeemScript = htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry)
       val pubKeyScript = write(pay2wsh(redeemScript))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat.toLong / 1000), pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.toSatoshi, pubKeyScript) :: Nil, lockTime = 0)
       val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx, outputsAlreadyUsed = Set.empty, Script.write(redeemScript), localDustLimit, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(htlcPenaltyTx, PlaceHolderSig, localRevocationPriv.publicKey).tx)
@@ -143,7 +143,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val paymentPreimage = randomBytes32
       val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(20000 * 1000), sha256(paymentPreimage), cltvExpiry = 400144, TestConstants.emptyOnionPacket)
       val pubKeyScript = write(pay2wsh(htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash))))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat.toLong / 1000), pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.toSatoshi, pubKeyScript) :: Nil, lockTime = 0)
       val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimHtlcSuccessTx, PlaceHolderSig, paymentPreimage).tx)
@@ -157,7 +157,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val paymentPreimage = randomBytes32
       val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(20000 * 1000), sha256(paymentPreimage), cltvExpiry = 400144, TestConstants.emptyOnionPacket)
       val pubKeyScript = write(pay2wsh(htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry)))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat.toLong / 1000), pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.toSatoshi, pubKeyScript) :: Nil, lockTime = 0)
       val claimClaimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimClaimHtlcTimeoutTx, PlaceHolderSig).tx)
@@ -189,9 +189,9 @@ class TransactionsSpec extends FunSuite with Logging {
     val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliBtc(200).toMilliSatoshi, sha256(paymentPreimage2), 300, TestConstants.emptyOnionPacket)
     // htlc3 and htlc4 are dust htlcs IN/OUT htlcs, with an amount large enough to be included in the commit tx, but too small to be claimed at 2nd stage
     val paymentPreimage3 = randomBytes32
-    val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi((localDustLimit + weight2fee(feeratePerKw, htlcTimeoutWeight)).amount * 1000), sha256(paymentPreimage3), 300, TestConstants.emptyOnionPacket)
+    val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (localDustLimit + weight2fee(feeratePerKw, htlcTimeoutWeight)).toMilliSatoshi, sha256(paymentPreimage3), 300, TestConstants.emptyOnionPacket)
     val paymentPreimage4 = randomBytes32
-    val htlc4 = UpdateAddHtlc(ByteVector32.Zeroes, 3, MilliSatoshi((localDustLimit + weight2fee(feeratePerKw, htlcSuccessWeight)).amount * 1000), sha256(paymentPreimage4), 300, TestConstants.emptyOnionPacket)
+    val htlc4 = UpdateAddHtlc(ByteVector32.Zeroes, 3, (localDustLimit + weight2fee(feeratePerKw, htlcSuccessWeight)).toMilliSatoshi, sha256(paymentPreimage4), 300, TestConstants.emptyOnionPacket)
     val spec = CommitmentSpec(
       htlcs = Set(
         DirectedHtlc(OUT, htlc1),

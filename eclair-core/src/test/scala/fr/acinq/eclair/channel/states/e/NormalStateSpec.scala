@@ -231,7 +231,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val add1 = CMD_ADD_HTLC(MilliSatoshi(TestConstants.fundingSatoshis.toLong * 2 / 3 * 1000), randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+    val add1 = CMD_ADD_HTLC(TestConstants.fundingSatoshis.toMilliSatoshi * 2 / 3, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add1)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[UpdateAddHtlc]
@@ -239,9 +239,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.expectMsg("ok")
     alice2bob.expectMsgType[CommitSig]
     // this is over channel-capacity
-    val add2 = CMD_ADD_HTLC(MilliSatoshi(TestConstants.fundingSatoshis.toLong * 2 / 3 * 1000), randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+    val add2 = CMD_ADD_HTLC(TestConstants.fundingSatoshis.toMilliSatoshi * 2 / 3, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add2)
-    val error = InsufficientFunds(channelId(alice), add2.amount, Satoshi(564012), Satoshi(20000), Satoshi(10680))
+    val error = InsufficientFunds(channelId(alice), add2.amount, Satoshi(564013), Satoshi(20000), Satoshi(10680))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Local(add2.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
     alice2bob.expectNoMsg(200 millis)
   }
