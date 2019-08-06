@@ -177,7 +177,7 @@ package object eclair {
     def <  (that: MilliSatoshi): Boolean = compare(that) < 0
     def >  (that: MilliSatoshi): Boolean = compare(that) > 0
     def unary_-() = MilliSatoshi(-amount)
-    def toSatoshi: Satoshi = Satoshi(amount / 1000)
+    def truncateToSatoshi: Satoshi = Satoshi(amount / 1000)
     // @formatter:on
   }
 

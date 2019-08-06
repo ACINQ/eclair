@@ -152,7 +152,7 @@ object CoinUtils extends Logging {
   }
 
   def convertStringAmountToSat(amount: String, unit: String): Satoshi =
-   CoinUtils.convertStringAmountToMsat(amount, unit).toSatoshi
+   CoinUtils.convertStringAmountToMsat(amount, unit).truncateToSatoshi
 
   /**
     * Only BtcUnit, MBtcUnit, BitUnit, SatUnit and MSatUnit codes or label are supported.

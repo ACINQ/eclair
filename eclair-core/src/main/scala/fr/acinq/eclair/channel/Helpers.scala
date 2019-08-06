@@ -221,7 +221,7 @@ object Helpers {
       case Left(waitingForRevocation) => waitingForRevocation.nextRemoteCommit
       case _ => commitments.remoteCommit
     }
-    val toRemoteSatoshis = remoteCommit.spec.toRemote.toSatoshi
+    val toRemoteSatoshis = remoteCommit.spec.toRemote.truncateToSatoshi
     // NB: this is an approximation (we don't take network fees into account)
     val result = toRemoteSatoshis > commitments.remoteParams.channelReserve
     log.debug(s"toRemoteSatoshis=$toRemoteSatoshis reserve=${commitments.remoteParams.channelReserve} aboveReserve=$result for remoteCommitNumber=${remoteCommit.index}")
@@ -265,7 +265,7 @@ object Helpers {
         // they are funder, therefore they pay the fee: we need to make sure they can afford it!
         val toRemoteMsat = remoteSpec.toLocal
         val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
-        val missing = toRemoteMsat.toSatoshi - localParams.channelReserve - fees
+        val missing = toRemoteMsat.truncateToSatoshi - localParams.channelReserve - fees
         if (missing < Satoshi(0)) {
           throw CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.channelReserve, fees = fees)
         }

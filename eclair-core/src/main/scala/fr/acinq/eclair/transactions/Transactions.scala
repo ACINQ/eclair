@@ -191,18 +191,18 @@ object Transactions {
     val commitFee = commitTxFee(localDustLimit, spec)
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
-      (spec.toLocal.toSatoshi - commitFee, spec.toRemote.toSatoshi)
+      (spec.toLocal.truncateToSatoshi - commitFee, spec.toRemote.truncateToSatoshi)
     } else {
-      (spec.toLocal.toSatoshi, spec.toRemote.toSatoshi - commitFee)
+      (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - commitFee)
     } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
     val toLocalDelayedOutput_opt = if (toLocalAmount >= localDustLimit) Some(TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)))) else None
     val toRemoteOutput_opt = if (toRemoteAmount >= localDustLimit) Some(TxOut(toRemoteAmount, pay2wpkh(remotePaymentPubkey))) else None
 
     val htlcOfferedOutputs = trimOfferedHtlcs(localDustLimit, spec)
-      .map(htlc => TxOut(htlc.add.amountMsat.toSatoshi, pay2wsh(htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes)))))
+      .map(htlc => TxOut(htlc.add.amountMsat.truncateToSatoshi, pay2wsh(htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes)))))
     val htlcReceivedOutputs = trimReceivedHtlcs(localDustLimit, spec)
-      .map(htlc => TxOut(htlc.add.amountMsat.toSatoshi, pay2wsh(htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes), htlc.add.cltvExpiry))))
+      .map(htlc => TxOut(htlc.add.amountMsat.truncateToSatoshi, pay2wsh(htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes), htlc.add.cltvExpiry))))
 
     val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, locktime) = encodeTxNumber(txnumber)
@@ -219,8 +219,8 @@ object Transactions {
     val fee = weight2fee(feeratePerKw, htlcTimeoutWeight)
     val redeemScript = htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.paymentHash.bytes))
     val pubkeyScript = write(pay2wsh(redeemScript))
-    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(htlc.amountMsat.toSatoshi))
-    val amount = htlc.amountMsat.toSatoshi - fee
+    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(htlc.amountMsat.truncateToSatoshi))
+    val amount = htlc.amountMsat.truncateToSatoshi - fee
     if (amount < localDustLimit) {
       throw AmountBelowDustLimit
     }
@@ -236,8 +236,8 @@ object Transactions {
     val fee = weight2fee(feeratePerKw, htlcSuccessWeight)
     val redeemScript = htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.paymentHash.bytes), htlc.cltvExpiry)
     val pubkeyScript = write(pay2wsh(redeemScript))
-    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(htlc.amountMsat.toSatoshi))
-    val amount = htlc.amountMsat.toSatoshi - fee
+    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(htlc.amountMsat.truncateToSatoshi))
+    val amount = htlc.amountMsat.truncateToSatoshi - fee
     if (amount < localDustLimit) {
       throw AmountBelowDustLimit
     }
@@ -267,7 +267,7 @@ object Transactions {
   def makeClaimHtlcSuccessTx(commitTx: Transaction, outputsAlreadyUsed: Set[Int], localDustLimit: Satoshi, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: ByteVector, htlc: UpdateAddHtlc, feeratePerKw: Long): ClaimHtlcSuccessTx = {
     val redeemScript = htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlc.paymentHash.bytes))
     val pubkeyScript = write(pay2wsh(redeemScript))
-    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(htlc.amountMsat.toSatoshi))
+    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(htlc.amountMsat.truncateToSatoshi))
     val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
 
     val tx = Transaction(
@@ -290,7 +290,7 @@ object Transactions {
   def makeClaimHtlcTimeoutTx(commitTx: Transaction, outputsAlreadyUsed: Set[Int], localDustLimit: Satoshi, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: ByteVector, htlc: UpdateAddHtlc, feeratePerKw: Long): ClaimHtlcTimeoutTx = {
     val redeemScript = htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlc.paymentHash.bytes), htlc.cltvExpiry)
     val pubkeyScript = write(pay2wsh(redeemScript))
-    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(htlc.amountMsat.toSatoshi))
+    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript, outputsAlreadyUsed, amount_opt = Some(htlc.amountMsat.truncateToSatoshi))
     val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
 
     // unsigned tx
@@ -448,9 +448,9 @@ object Transactions {
     require(spec.htlcs.isEmpty, "there shouldn't be any pending htlcs")
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
-      (spec.toLocal.toSatoshi - closingFee, spec.toRemote.toSatoshi)
+      (spec.toLocal.truncateToSatoshi - closingFee, spec.toRemote.truncateToSatoshi)
     } else {
-      (spec.toLocal.toSatoshi, spec.toRemote.toSatoshi - closingFee)
+      (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - closingFee)
     } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
     val toLocalOutput_opt = if (toLocalAmount >= dustLimit) Some(TxOut(toLocalAmount, localScriptPubKey)) else None

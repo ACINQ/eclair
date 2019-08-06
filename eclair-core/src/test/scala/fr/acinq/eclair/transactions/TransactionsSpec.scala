@@ -129,7 +129,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(20000 * 1000), sha256(paymentPreimage), cltvExpiry = 400144, TestConstants.emptyOnionPacket)
       val redeemScript = htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry)
       val pubKeyScript = write(pay2wsh(redeemScript))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.toSatoshi, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
       val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx, outputsAlreadyUsed = Set.empty, Script.write(redeemScript), localDustLimit, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(htlcPenaltyTx, PlaceHolderSig, localRevocationPriv.publicKey).tx)
@@ -143,7 +143,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val paymentPreimage = randomBytes32
       val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(20000 * 1000), sha256(paymentPreimage), cltvExpiry = 400144, TestConstants.emptyOnionPacket)
       val pubKeyScript = write(pay2wsh(htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash))))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.toSatoshi, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
       val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimHtlcSuccessTx, PlaceHolderSig, paymentPreimage).tx)
@@ -157,7 +157,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val paymentPreimage = randomBytes32
       val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(20000 * 1000), sha256(paymentPreimage), cltvExpiry = 400144, TestConstants.emptyOnionPacket)
       val pubKeyScript = write(pay2wsh(htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry)))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.toSatoshi, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
       val claimClaimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimClaimHtlcTimeoutTx, PlaceHolderSig).tx)
