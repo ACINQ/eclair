@@ -191,9 +191,9 @@ object Transactions {
     val commitFee = commitTxFee(localDustLimit, spec)
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
-      (millisatoshi2satoshi(spec.toLocal) - commitFee, millisatoshi2satoshi(spec.toRemote))
+      (spec.toLocal.toSatoshi - commitFee, spec.toRemote.toSatoshi)
     } else {
-      (millisatoshi2satoshi(spec.toLocal), millisatoshi2satoshi(spec.toRemote) - commitFee)
+      (spec.toLocal.toSatoshi, spec.toRemote.toSatoshi - commitFee)
     } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
     val toLocalDelayedOutput_opt = if (toLocalAmount >= localDustLimit) Some(TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)))) else None
@@ -448,9 +448,9 @@ object Transactions {
     require(spec.htlcs.isEmpty, "there shouldn't be any pending htlcs")
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
-      (millisatoshi2satoshi(spec.toLocal) - closingFee, millisatoshi2satoshi(spec.toRemote))
+      (spec.toLocal.toSatoshi - closingFee, spec.toRemote.toSatoshi)
     } else {
-      (millisatoshi2satoshi(spec.toLocal), millisatoshi2satoshi(spec.toRemote) - closingFee)
+      (spec.toLocal.toSatoshi, spec.toRemote.toSatoshi - closingFee)
     } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
     val toLocalOutput_opt = if (toLocalAmount >= dustLimit) Some(TxOut(toLocalAmount, localScriptPubKey)) else None

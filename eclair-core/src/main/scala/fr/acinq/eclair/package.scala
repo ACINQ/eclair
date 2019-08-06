@@ -183,9 +183,9 @@ package object eclair {
 
   implicit class ToMilliSatoshiConversion(amount: BtcAmount) {
     def toMilliSatoshi: MilliSatoshi = amount match {
-      case sat: Satoshi => MilliSatoshi(satoshi2millisatoshi(sat).amount)
-      case millis: MilliBtc => MilliSatoshi(satoshi2millisatoshi(millibtc2satoshi(millis)).amount)
-      case bitcoin: Btc => MilliSatoshi(satoshi2millisatoshi(btc2satoshi(bitcoin)).amount)
+      case sat: Satoshi => satoshi2millisatoshi(sat)
+      case millis: MilliBtc => satoshi2millisatoshi(millibtc2satoshi(millis))
+      case bitcoin: Btc => satoshi2millisatoshi(btc2satoshi(bitcoin))
     }
   }
 
@@ -202,8 +202,7 @@ package object eclair {
     override def compare(x: MilliSatoshi, y: MilliSatoshi): Int = x.compare(y)
   }
 
-  def millisatoshi2satoshi(input: MilliSatoshi): Satoshi = Satoshi(input.amount / 1000L)
-  def satoshi2millisatoshi(input: Satoshi): MilliSatoshi = MilliSatoshi(input.amount * 1000L)
+  private def satoshi2millisatoshi(input: Satoshi): MilliSatoshi = MilliSatoshi(input.amount * 1000L)
 
   def maxOf(x: MilliSatoshi, y: MilliSatoshi) = MilliSatoshi(Math.max(x.amount, y.amount))
   def minOf(x: MilliSatoshi, y: MilliSatoshi) = MilliSatoshi(Math.min(x.amount, y.amount))
