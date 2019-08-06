@@ -34,10 +34,9 @@ object ReplyChannelRangeTlv {
   /**
     * Optional checksums TLV that can be appended to ReplyChannelRange
     *
-    * @param encoding same convention as for short channel ids
     * @param checksums
     */
-  case class EncodedChecksums(encoding: EncodingType, checksums: List[Checksums]) extends ReplyChannelRangeTlv
+  case class EncodedChecksums(checksums: List[Checksums]) extends ReplyChannelRangeTlv
 
   val timestampsCodec: Codec[Timestamps] = (
     ("checksum1" | uint32) ::
@@ -55,11 +54,7 @@ object ReplyChannelRangeTlv {
       ("checksum2" | uint32)
     ).as[Checksums]
 
-  val encodedChecksumsCodec: Codec[EncodedChecksums] = variableSizeBytesLong(varintoverflow,
-    discriminated[EncodedChecksums].by(byte)
-      .\(0) { case a@EncodedChecksums(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(checksumsCodec)).as[EncodedChecksums])
-      .\(1) { case a@EncodedChecksums(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(checksumsCodec))).as[EncodedChecksums])
-  )
+  val encodedChecksumsCodec: Codec[EncodedChecksums] = variableSizeBytesLong(varintoverflow, list(checksumsCodec)).as[EncodedChecksums]
 
   val innerCodec = discriminated[ReplyChannelRangeTlv].by(varint)
     .typecase(UInt64(1), encodedTimestampsCodec)

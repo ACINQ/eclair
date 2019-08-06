@@ -514,7 +514,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
               // we always compute timestamps and checksums even if we don't need both, overhead is negligible
               val (timestamps, checksums) = chunk.shortChannelIds.map(getChannelDigestInfo(d.channels, d.updates)).unzip
               val encodedTimestamps = if (extension.wantTimestamps) Some(ReplyChannelRangeTlv.EncodedTimestamps(EncodingType.UNCOMPRESSED, timestamps)) else None
-              val encodedChecksums = if (extension.wantChecksums) Some(ReplyChannelRangeTlv.EncodedChecksums(EncodingType.UNCOMPRESSED, checksums)) else None
+              val encodedChecksums = if (extension.wantChecksums) Some(ReplyChannelRangeTlv.EncodedChecksums(checksums)) else None
               (encodedTimestamps, encodedChecksums)
             case _ => (None, None)
           }
