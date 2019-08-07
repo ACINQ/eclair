@@ -89,7 +89,7 @@ jq_filter='if type=="object" and .error != null then .error else .';
 
 # apply special jq filter if we are in "short" ouput mode -- only for specific commands such as 'channels'
 if [ "$short" = true ]; then
-  jq_channel_filter="{ nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocalMsat / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint }";
+  jq_channel_filter="{ nodeId, shortChannelId: .data.shortChannelId, channelId, state, balanceSat: (try (.data.commitments.localCommit.spec.toLocal / 1000 | floor) catch null), capacitySat: .data.commitments.commitInput.amountSatoshis, channelPoint: .data.commitments.commitInput.outPoint }";
   case $api_endpoint in
     "channels")   jq_filter="$jq_filter | map( $jq_channel_filter )" ;;
     "channel")    jq_filter="$jq_filter | $jq_channel_filter" ;;

@@ -20,13 +20,14 @@ import java.util.UUID
 
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
+import fr.acinq.eclair.maxOf
 import fr.acinq.eclair.channel.{Channel, ChannelVersion, Commitments}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, PacketAndSecrets}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{ChannelUpdate, OnionCodecs, PerHopPayload}
-import fr.acinq.eclair.{ShortChannelId, TestConstants, nodeFee, randomBytes32}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TestConstants, nodeFee, randomBytes32}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 
@@ -37,9 +38,9 @@ import scodec.bits.ByteVector
 class HtlcGenerationSpec extends FunSuite {
 
   test("compute fees") {
-    val feeBaseMsat = 150000L
+    val feeBaseMsat = MilliSatoshi(150000L)
     val feeProportionalMillionth = 4L
-    val htlcAmountMsat = 42000000
+    val htlcAmountMsat = MilliSatoshi(42000000)
     // spec: fee-base-msat + htlc-amount-msat * fee-proportional-millionths / 1000000
     val ref = feeBaseMsat + htlcAmountMsat * feeProportionalMillionth / 1000000
     val fee = nodeFee(feeBaseMsat, feeProportionalMillionth, htlcAmountMsat)
@@ -98,7 +99,7 @@ class HtlcGenerationSpec extends FunSuite {
 
     val (add, _) = buildCommand(UUID.randomUUID, finalAmountMsat, finalExpiry, paymentHash, hops)
 
-    assert(add.amountMsat > finalAmountMsat)
+    assert(add.amount > finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry + channelUpdate_de.cltvExpiryDelta + channelUpdate_cd.cltvExpiryDelta + channelUpdate_bc.cltvExpiryDelta)
     assert(add.paymentHash === paymentHash)
     assert(add.onion.payload.length === Sphinx.PaymentPacket.PayloadLength)
@@ -132,7 +133,7 @@ class HtlcGenerationSpec extends FunSuite {
   test("build a command with no hops") {
     val (add, _) = buildCommand(UUID.randomUUID(), finalAmountMsat, finalExpiry, paymentHash, hops.take(1))
 
-    assert(add.amountMsat === finalAmountMsat)
+    assert(add.amount === finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry)
     assert(add.paymentHash === paymentHash)
     assert(add.onion.payload.length === Sphinx.PaymentPacket.PayloadLength)
@@ -149,10 +150,10 @@ class HtlcGenerationSpec extends FunSuite {
 
 object HtlcGenerationSpec {
 
-  def makeCommitments(channelId: ByteVector32, availableBalanceForSend: Long = 50000000L, availableBalanceForReceive: Long = 50000000L) =
+  def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = MilliSatoshi(50000000L), testAvailableBalanceForReceive: MilliSatoshi = MilliSatoshi(50000000L)) =
     new Commitments(ChannelVersion.STANDARD, null, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId) {
-      override lazy val availableBalanceForSendMsat: Long = availableBalanceForSend.max(0)
-      override lazy val availableBalanceForReceiveMsat: Long = availableBalanceForReceive.max(0)
+      override lazy val availableBalanceForSend: MilliSatoshi = maxOf(testAvailableBalanceForSend, MilliSatoshi(0))
+      override lazy val availableBalanceForReceive: MilliSatoshi = maxOf(testAvailableBalanceForReceive, MilliSatoshi(0))
     }
 
   def randomExtendedPrivateKey: ExtendedPrivateKey = DeterministicWallet.generate(randomBytes32)
@@ -160,11 +161,11 @@ object HtlcGenerationSpec {
   val (priv_a, priv_b, priv_c, priv_d, priv_e) = (TestConstants.Alice.keyManager.nodeKey, TestConstants.Bob.keyManager.nodeKey, randomExtendedPrivateKey, randomExtendedPrivateKey, randomExtendedPrivateKey)
   val (a, b, c, d, e) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey)
   val sig = Crypto.sign(Crypto.sha256(ByteVector.empty), priv_a.privateKey)
-  val defaultChannelUpdate = ChannelUpdate(sig, Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0, 1, 0, 0, 42000, 0, 0, Some(500000000L))
-  val channelUpdate_ab = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(1), cltvExpiryDelta = 4, feeBaseMsat = 642000, feeProportionalMillionths = 7)
-  val channelUpdate_bc = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(2), cltvExpiryDelta = 5, feeBaseMsat = 153000, feeProportionalMillionths = 4)
-  val channelUpdate_cd = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(3), cltvExpiryDelta = 10, feeBaseMsat = 60000, feeProportionalMillionths = 1)
-  val channelUpdate_de = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(4), cltvExpiryDelta = 7, feeBaseMsat = 766000, feeProportionalMillionths = 10)
+  val defaultChannelUpdate = ChannelUpdate(sig, Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0, 1, 0, 0, MilliSatoshi(42000), MilliSatoshi(0), 0, Some(MilliSatoshi(500000000L)))
+  val channelUpdate_ab = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(1), cltvExpiryDelta = 4, feeBaseMsat = MilliSatoshi(642000), feeProportionalMillionths = 7)
+  val channelUpdate_bc = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(2), cltvExpiryDelta = 5, feeBaseMsat = MilliSatoshi(153000), feeProportionalMillionths = 4)
+  val channelUpdate_cd = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(3), cltvExpiryDelta = 10, feeBaseMsat = MilliSatoshi(60000), feeProportionalMillionths = 1)
+  val channelUpdate_de = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(4), cltvExpiryDelta = 7, feeBaseMsat = MilliSatoshi(766000), feeProportionalMillionths = 10)
 
   // simple route a -> b -> c -> d -> e
 
@@ -174,7 +175,7 @@ object HtlcGenerationSpec {
       Hop(c, d, channelUpdate_cd) ::
       Hop(d, e, channelUpdate_de) :: Nil
 
-  val finalAmountMsat = 42000000L
+  val finalAmountMsat = MilliSatoshi(42000000L)
   val currentBlockCount = 420000
   val finalExpiry = currentBlockCount + Channel.MIN_CLTV_EXPIRY
   val paymentPreimage = randomBytes32

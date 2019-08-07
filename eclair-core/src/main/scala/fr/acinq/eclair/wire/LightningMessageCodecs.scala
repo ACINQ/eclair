@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.{UInt64, wire}
+import fr.acinq.eclair.{MilliSatoshi, wire}
 import fr.acinq.eclair.wire.CommonCodecs._
 import scodec.Codec
 import scodec.codecs._
@@ -51,12 +51,12 @@ object LightningMessageCodecs {
   val openChannelCodec: Codec[OpenChannel] = (
     ("chainHash" | bytes32) ::
       ("temporaryChannelId" | bytes32) ::
-      ("fundingSatoshis" | uint64overflow) ::
-      ("pushMsat" | uint64overflow) ::
-      ("dustLimitSatoshis" | uint64overflow) ::
+      ("fundingSatoshis" | satoshi) ::
+      ("pushMsat" | millisatoshi) ::
+      ("dustLimitSatoshis" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
-      ("channelReserveSatoshis" | uint64overflow) ::
-      ("htlcMinimumMsat" | uint64overflow) ::
+      ("channelReserveSatoshis" | satoshi) ::
+      ("htlcMinimumMsat" | millisatoshi) ::
       ("feeratePerKw" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
@@ -70,10 +70,10 @@ object LightningMessageCodecs {
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | bytes32) ::
-      ("dustLimitSatoshis" | uint64overflow) ::
+      ("dustLimitSatoshis" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
-      ("channelReserveSatoshis" | uint64overflow) ::
-      ("htlcMinimumMsat" | uint64overflow) ::
+      ("channelReserveSatoshis" | satoshi) ::
+      ("htlcMinimumMsat" | millisatoshi) ::
       ("minimumDepth" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
@@ -104,13 +104,13 @@ object LightningMessageCodecs {
 
   val closingSignedCodec: Codec[ClosingSigned] = (
     ("channelId" | bytes32) ::
-      ("feeSatoshis" | uint64overflow) ::
+      ("feeSatoshis" | satoshi) ::
       ("signature" | bytes64)).as[ClosingSigned]
 
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
       ("id" | uint64overflow) ::
-      ("amountMsat" | uint64overflow) ::
+      ("amountMsat" | millisatoshi) ::
       ("paymentHash" | bytes32) ::
       ("expiry" | uint32) ::
       ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec)).as[UpdateAddHtlc]
@@ -187,10 +187,10 @@ object LightningMessageCodecs {
       (("messageFlags" | byte) >>:~ { messageFlags =>
         ("channelFlags" | byte) ::
           ("cltvExpiryDelta" | uint16) ::
-          ("htlcMinimumMsat" | uint64overflow) ::
-          ("feeBaseMsat" | uint32) ::
+          ("htlcMinimumMsat" | millisatoshi) ::
+          ("feeBaseMsat" | uint32.xmapc(l => MilliSatoshi(l))(_.amount)) ::
           ("feeProportionalMillionths" | uint32) ::
-          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64overflow))
+          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, millisatoshi))
       })
 
 
@@ -201,10 +201,10 @@ object LightningMessageCodecs {
       (("messageFlags" | byte) >>:~ { messageFlags =>
         ("channelFlags" | byte) ::
           ("cltvExpiryDelta" | uint16) ::
-          ("htlcMinimumMsat" | uint64overflow) ::
-          ("feeBaseMsat" | uint32) ::
+          ("htlcMinimumMsat" | millisatoshi) ::
+          ("feeBaseMsat" | uint32.xmapc(l => MilliSatoshi(l))(_.amount)) ::
           ("feeProportionalMillionths" | uint32) ::
-          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, uint64overflow)) ::
+          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, millisatoshi)) ::
           ("unknownFields" | bytes)
       })
 
