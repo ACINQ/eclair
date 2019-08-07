@@ -455,7 +455,7 @@ object Helpers {
       require(isValidFinalScriptPubkey(remoteScriptPubkey), "invalid remoteScriptPubkey")
       log.debug(s"making closing tx with closingFee={} and commitments:\n{}", closingFee, Commitments.specs2String(commitments))
       // TODO: check that
-      val dustLimitSatoshis = eclair.maxOf(localParams.dustLimit, remoteParams.dustLimit)
+      val dustLimitSatoshis = maxOf(localParams.dustLimit, remoteParams.dustLimit)
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
       val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.channelKeyPath))
       val closingSigned = ClosingSigned(channelId, closingFee, localClosingSig)

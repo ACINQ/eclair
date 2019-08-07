@@ -100,7 +100,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2blockchain.expectMsgType[WatchConfirmed] // deeply buried
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == eclair.maxOf(pushMsat - TestConstants.Alice.channelParams.channelReserve.toMilliSatoshi, MilliSatoshi(0)))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == maxOf(pushMsat - TestConstants.Alice.channelParams.channelReserve.toMilliSatoshi, MilliSatoshi(0)))
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]

@@ -643,7 +643,7 @@ object Peer {
       channelKeyPath,
       dustLimit = nodeParams.dustLimit,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
-      channelReserve = eclair.maxOf(Satoshi((nodeParams.reserveToFundingRatio * fundingAmount.toLong).toLong), nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
+      channelReserve = maxOf(Satoshi((nodeParams.reserveToFundingRatio * fundingAmount.toLong).toLong), nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimum = nodeParams.htlcMinimum,
       toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
