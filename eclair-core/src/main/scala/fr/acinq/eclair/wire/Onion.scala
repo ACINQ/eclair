@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.crypto.Sphinx
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -33,7 +33,7 @@ case class OnionRoutingPacket(version: Int,
                               hmac: ByteVector32)
 
 case class PerHopPayload(shortChannelId: ShortChannelId,
-                         amtToForward: Long,
+                         amtToForward: MilliSatoshi,
                          outgoingCltvValue: Long)
 
 object OnionCodecs {
@@ -49,7 +49,7 @@ object OnionCodecs {
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::
       ("short_channel_id" | CommonCodecs.shortchannelid) ::
-      ("amt_to_forward" | CommonCodecs.uint64overflow) ::
+      ("amt_to_forward" | CommonCodecs.millisatoshi) ::
       ("outgoing_cltv_value" | uint32) ::
       ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[PerHopPayload]
 

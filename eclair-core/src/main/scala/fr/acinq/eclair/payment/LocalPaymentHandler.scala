@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props, Status}
-import fr.acinq.bitcoin.{Crypto, MilliSatoshi}
+import fr.acinq.bitcoin.{Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
@@ -69,18 +69,18 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
               sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat)), commit = true)
             case _ if htlc.cltvExpiry < minFinalExpiry =>
               sender ! CMD_FAIL_HTLC(htlc.id, Right(FinalExpiryTooSoon), commit = true)
-            case Some(amount) if MilliSatoshi(htlc.amountMsat) < amount =>
-              log.warning(s"received payment with amount too small for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
+            case Some(amount) if htlc.amountMsat < amount =>
+              log.warning(s"received payment with amount too small for paymentHash=${htlc.paymentHash} amount=${htlc.amountMsat}")
               sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat)), commit = true)
-            case Some(amount) if MilliSatoshi(htlc.amountMsat) > amount * 2 =>
-              log.warning(s"received payment with amount too large for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
+            case Some(amount) if htlc.amountMsat > amount * 2 =>
+              log.warning(s"received payment with amount too large for paymentHash=${htlc.paymentHash} amount=${htlc.amountMsat}")
               sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat)), commit = true)
             case _ =>
-              log.info(s"received payment for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
+              log.info(s"received payment for paymentHash=${htlc.paymentHash} amount=${htlc.amountMsat}")
               // amount is correct or was not specified in the payment request
               nodeParams.db.payments.addIncomingPayment(IncomingPayment(htlc.paymentHash, htlc.amountMsat, Platform.currentTime))
               sender ! CMD_FULFILL_HTLC(htlc.id, paymentPreimage, commit = true)
-              context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash, htlc.channelId))
+              context.system.eventStream.publish(PaymentReceived(htlc.amountMsat, htlc.paymentHash, htlc.channelId))
           }
         case None =>
           sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat)), commit = true)
