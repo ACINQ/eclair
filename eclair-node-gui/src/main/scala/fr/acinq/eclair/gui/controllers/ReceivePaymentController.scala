@@ -24,7 +24,7 @@ import javafx.scene.image.{ImageView, WritableImage}
 import javafx.scene.layout.GridPane
 import javafx.stage.Stage
 
-import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.gui.utils._

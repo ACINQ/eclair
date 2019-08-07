@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, MilliSatoshi, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair._
 import fr.acinq.eclair.api.JsonSupport
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -84,10 +84,10 @@ class ChannelCodecsSpec extends FunSuite {
     val o = LocalParams(
       nodeId = randomKey.publicKey,
       channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
-      dustLimitSatoshis = Random.nextInt(Int.MaxValue),
+      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserveSatoshis = Random.nextInt(Int.MaxValue),
-      htlcMinimumMsat = Random.nextInt(Int.MaxValue),
+      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = Random.nextInt(Short.MaxValue),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
@@ -102,10 +102,10 @@ class ChannelCodecsSpec extends FunSuite {
   test("encode/decode remoteparams") {
     val o = RemoteParams(
       nodeId = randomKey.publicKey,
-      dustLimitSatoshis = Random.nextInt(Int.MaxValue),
+      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserveSatoshis = Random.nextInt(Int.MaxValue),
-      htlcMinimumMsat = Random.nextInt(Int.MaxValue),
+      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = Random.nextInt(Short.MaxValue),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       fundingPubKey = randomKey.publicKey,
@@ -129,7 +129,7 @@ class ChannelCodecsSpec extends FunSuite {
     val add = UpdateAddHtlc(
       channelId = randomBytes32,
       id = Random.nextInt(Int.MaxValue),
-      amountMsat = Random.nextInt(Int.MaxValue),
+      amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       cltvExpiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes32,
       onionRoutingPacket = TestConstants.emptyOnionPacket)
@@ -143,14 +143,14 @@ class ChannelCodecsSpec extends FunSuite {
     val add1 = UpdateAddHtlc(
       channelId = randomBytes32,
       id = Random.nextInt(Int.MaxValue),
-      amountMsat = Random.nextInt(Int.MaxValue),
+      amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       cltvExpiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes32,
       onionRoutingPacket = TestConstants.emptyOnionPacket)
     val add2 = UpdateAddHtlc(
       channelId = randomBytes32,
       id = Random.nextInt(Int.MaxValue),
-      amountMsat = Random.nextInt(Int.MaxValue),
+      amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       cltvExpiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes32,
       onionRoutingPacket = TestConstants.emptyOnionPacket)
@@ -161,8 +161,8 @@ class ChannelCodecsSpec extends FunSuite {
     val o = CommitmentSpec(
       htlcs = Set(htlc1, htlc2),
       feeratePerKw = Random.nextInt(Int.MaxValue),
-      toLocalMsat = Random.nextInt(Int.MaxValue),
-      toRemoteMsat = Random.nextInt(Int.MaxValue)
+      toLocal = MilliSatoshi(Random.nextInt(Int.MaxValue)),
+      toRemote = MilliSatoshi(Random.nextInt(Int.MaxValue))
     )
     val encoded = commitmentSpecCodec.encode(o).require
     val decoded = commitmentSpecCodec.decode(encoded).require
@@ -173,17 +173,17 @@ class ChannelCodecsSpec extends FunSuite {
     val id = UUID.randomUUID()
     assert(originCodec.decodeValue(originCodec.encode(Local(id, Some(ActorSystem("system").deadLetters))).require).require === Local(id, None))
     // TODO: add backward compatibility check
-    val relayed = Relayed(randomBytes32, 4324, 12000000L, 11000000L)
+    val relayed = Relayed(randomBytes32, 4324, MilliSatoshi(12000000L), MilliSatoshi(11000000L))
     assert(originCodec.decodeValue(originCodec.encode(relayed).require).require === relayed)
   }
 
   test("encode/decode map of origins") {
     val map = Map(
       1L -> Local(UUID.randomUUID(), None),
-      42L -> Relayed(randomBytes32, 4324, 12000000L, 11000000L),
-      130L -> Relayed(randomBytes32, -45, 13000000L, 12000000L),
-      1000L -> Relayed(randomBytes32, 10, 14000000L, 13000000L),
-      -32L -> Relayed(randomBytes32, 54, 15000000L, 14000000L),
+      42L -> Relayed(randomBytes32, 4324, MilliSatoshi(12000000L), MilliSatoshi(11000000L)),
+      130L -> Relayed(randomBytes32, -45, MilliSatoshi(13000000L), MilliSatoshi(12000000L)),
+      1000L -> Relayed(randomBytes32, 10, MilliSatoshi(14000000L), MilliSatoshi(13000000L)),
+      -32L -> Relayed(randomBytes32, 54, MilliSatoshi(15000000L), MilliSatoshi(14000000L)),
       -4L -> Local(UUID.randomUUID(), None))
     assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require === map)
   }
@@ -313,8 +313,24 @@ class ChannelCodecsSpec extends FunSuite {
       // and we decode with the new codec
       val newnormal = stateDataCodec.decode(newbin.bits).require.value
       // finally we check that the actual data is the same as before (we just remove the new json field)
-      val oldjson = Serialization.write(oldnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"00000000000000000000000000000000",""", "")
-      val newjson = Serialization.write(newnormal)(JsonSupport.formats).replace(""","unknownFields":""""", "").replace(""""channelVersion":"00000000000000000000000000000000",""", "")
+      val oldjson = Serialization.write(oldnormal)(JsonSupport.formats)
+        .replace(""","unknownFields":""""", "")
+        .replace(""""channelVersion":"00000000000000000000000000000000",""", "")
+        .replace(""""dustLimit"""", """"dustLimitSatoshis"""")
+        .replace(""""channelReserve"""", """"channelReserveSatoshis"""")
+        .replace(""""htlcMinimum"""", """"htlcMinimumMsat"""")
+        .replace(""""toLocal"""", """"toLocalMsat"""")
+        .replace(""""toRemote"""", """"toRemoteMsat"""")
+
+      val newjson = Serialization.write(newnormal)(JsonSupport.formats)
+        .replace(""","unknownFields":""""", "")
+        .replace(""""channelVersion":"00000000000000000000000000000000",""", "")
+        .replace(""""dustLimit"""", """"dustLimitSatoshis"""")
+        .replace(""""channelReserve"""", """"channelReserveSatoshis"""")
+        .replace(""""htlcMinimum"""", """"htlcMinimumMsat"""")
+        .replace(""""toLocal"""", """"toLocalMsat"""")
+        .replace(""""toRemote"""", """"toRemoteMsat"""")
+
       assert(oldjson === refjson)
       assert(newjson === refjson)
     }
@@ -328,10 +344,10 @@ object ChannelCodecsSpec {
   val localParams = LocalParams(
     keyManager.nodeId,
     channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
-    dustLimitSatoshis = Satoshi(546).toLong,
+    dustLimit = Satoshi(546),
     maxHtlcValueInFlightMsat = UInt64(50000000),
-    channelReserveSatoshis = 10000,
-    htlcMinimumMsat = 10000,
+    channelReserve = Satoshi(10000),
+    htlcMinimum = MilliSatoshi(10000),
     toSelfDelay = 144,
     maxAcceptedHtlcs = 50,
     defaultFinalScriptPubKey = ByteVector.empty,
@@ -341,10 +357,10 @@ object ChannelCodecsSpec {
 
   val remoteParams = RemoteParams(
     nodeId = randomKey.publicKey,
-    dustLimitSatoshis = Satoshi(546).toLong,
+    dustLimit = Satoshi(546),
     maxHtlcValueInFlightMsat = UInt64(5000000),
-    channelReserveSatoshis = 10000,
-    htlcMinimumMsat = 5000,
+    channelReserve = Satoshi(10000),
+    htlcMinimum = MilliSatoshi(5000),
     toSelfDelay = 144,
     maxAcceptedHtlcs = 50,
     fundingPubKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)) :+ 1.toByte).publicKey,
@@ -364,27 +380,27 @@ object ChannelCodecsSpec {
   )
 
   val htlcs = Seq(
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(1000000).amount, Crypto.sha256(paymentPreimages(0)), 500, TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(1)), 501, TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 30, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(2)), 502, TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 31, MilliSatoshi(3000000).amount, Crypto.sha256(paymentPreimages(3)), 503, TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi(4000000).amount, Crypto.sha256(paymentPreimages(4)), 504, TestConstants.emptyOnionPacket))
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(1000000), Crypto.sha256(paymentPreimages(0)), 500, TestConstants.emptyOnionPacket)),
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliSatoshi(2000000), Crypto.sha256(paymentPreimages(1)), 501, TestConstants.emptyOnionPacket)),
+    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 30, MilliSatoshi(2000000), Crypto.sha256(paymentPreimages(2)), 502, TestConstants.emptyOnionPacket)),
+    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 31, MilliSatoshi(3000000), Crypto.sha256(paymentPreimages(3)), 503, TestConstants.emptyOnionPacket)),
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi(4000000), Crypto.sha256(paymentPreimages(4)), 504, TestConstants.emptyOnionPacket))
   )
 
   val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
   val fundingAmount = fundingTx.txOut(0).amount
   val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey)
 
-  val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000, 70000000), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
-  val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, 50000, 700000), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
+  val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, MilliSatoshi(50000000), MilliSatoshi(70000000)), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
+  val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, MilliSatoshi(50000), MilliSatoshi(700000)), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
   val commitments = Commitments(ChannelVersion.STANDARD, localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 32L,
     remoteNextHtlcId = 4L,
-    originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000L, 10000000L)),
+    originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, MilliSatoshi(11000000L), MilliSatoshi(10000000L))),
     remoteNextCommitInfo = Right(randomKey.publicKey),
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = ByteVector32.Zeroes)
 
-  val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), 42, 15, 575, 53, Channel.MAX_FUNDING_SATOSHIS * 1000L)
+  val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), 42, MilliSatoshi(15), MilliSatoshi(575), 53, Channel.MAX_FUNDING.toMilliSatoshi)
 
   val normal = DATA_NORMAL(commitments, ShortChannelId(42), true, None, channelUpdate, None, None)
 }

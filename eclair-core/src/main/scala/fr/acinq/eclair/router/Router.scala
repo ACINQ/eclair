@@ -21,7 +21,7 @@ import java.util.zip.CRC32
 import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -50,7 +50,7 @@ import scala.util.{Random, Try}
 case class RouterConf(randomizeRouteSelection: Boolean,
                       channelExcludeDuration: FiniteDuration,
                       routerBroadcastInterval: FiniteDuration,
-                      searchMaxFeeBaseSat: Long,
+                      searchMaxFeeBase: Satoshi,
                       searchMaxFeePct: Double,
                       searchMaxRouteLength: Int,
                       searchMaxCltv: Int,
@@ -61,10 +61,10 @@ case class RouterConf(randomizeRouteSelection: Boolean,
 
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteParams(randomize: Boolean, maxFeeBaseMsat: Long, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int, ratios: Option[WeightRatios])
+case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int, ratios: Option[WeightRatios])
 case class RouteRequest(source: PublicKey,
                         target: PublicKey,
-                        amountMsat: Long,
+                        amount: MilliSatoshi,
                         assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                         ignoreNodes: Set[PublicKey] = Set.empty,
                         ignoreChannels: Set[ChannelDesc] = Set.empty,
@@ -775,7 +775,7 @@ object Router {
   def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
   // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
   // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
-    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0L, extraHop.feeBaseMsat, extraHop.feeProportionalMillionths, None)
+    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = MilliSatoshi(0), MilliSatoshi(extraHop.feeBaseMsat), extraHop.feeProportionalMillionths, None)
 
   def toFakeUpdates(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Map[ChannelDesc, ChannelUpdate] = {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
@@ -1010,7 +1010,7 @@ object Router {
 
   def getDefaultRouteParams(routerConf: RouterConf) = RouteParams(
     randomize = routerConf.randomizeRouteSelection,
-    maxFeeBaseMsat = routerConf.searchMaxFeeBaseSat * 1000, // converting sat -> msat
+    maxFeeBase = routerConf.searchMaxFeeBase.toMilliSatoshi,
     maxFeePct = routerConf.searchMaxFeePct,
     routeMaxLength = routerConf.searchMaxRouteLength,
     routeMaxCltv = routerConf.searchMaxCltv,
@@ -1031,7 +1031,7 @@ object Router {
     * @param g
     * @param localNodeId
     * @param targetNodeId
-    * @param amountMsat   the amount that will be sent along this route
+    * @param amount       the amount that will be sent along this route
     * @param numRoutes    the number of shortest-paths to find
     * @param extraEdges   a set of extra edges we want to CONSIDER during the search
     * @param ignoredEdges a set of extra edges we want to IGNORE during the search
@@ -1041,7 +1041,7 @@ object Router {
   def findRoute(g: DirectedGraph,
                 localNodeId: PublicKey,
                 targetNodeId: PublicKey,
-                amountMsat: Long,
+                amount: MilliSatoshi,
                 numRoutes: Int,
                 extraEdges: Set[GraphEdge] = Set.empty,
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
@@ -1052,14 +1052,14 @@ object Router {
     val currentBlockHeight = Globals.blockCount.get()
 
     val boundaries: RichWeight => Boolean = { weight =>
-      ((weight.cost - amountMsat) < routeParams.maxFeeBaseMsat || (weight.cost - amountMsat) < (routeParams.maxFeePct * amountMsat)) &&
+      ((weight.cost - amount) < routeParams.maxFeeBase || (weight.cost - amount) < amount * routeParams.maxFeePct.toLong) &&
         weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
         weight.cltv <= routeParams.routeMaxCltv
     }
 
-    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amountMsat, ignoredEdges, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList match {
+    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList match {
       case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
-        return findRoute(g, localNodeId, targetNodeId, amountMsat, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
+        return findRoute(g, localNodeId, targetNodeId, amount, numRoutes, extraEdges, ignoredEdges, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
       case Nil => throw RouteNotFound
       case routes => routes.find(_.path.size == 1) match {
         case Some(directRoute) => directRoute :: Nil

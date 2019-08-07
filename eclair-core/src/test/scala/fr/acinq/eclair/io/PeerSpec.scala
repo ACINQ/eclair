@@ -22,7 +22,7 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{Satoshi}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
