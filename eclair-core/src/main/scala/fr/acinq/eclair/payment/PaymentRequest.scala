@@ -16,13 +16,14 @@
 
 package fr.acinq.eclair.payment
 
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{MilliSatoshi, _}
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.payment.PaymentRequest._
 import scodec.Codec
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
+
 import scala.concurrent.duration._
 import scala.compat.Platform
 import scala.util.Try

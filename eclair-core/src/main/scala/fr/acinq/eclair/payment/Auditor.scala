@@ -18,12 +18,10 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props}
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.Channel.{LocalError, RemoteError}
+import fr.acinq.eclair.{MilliSatoshi, NodeParams}
 import fr.acinq.eclair.channel.Helpers.Closing.{LocalClose, MutualClose, RecoveryClose, RemoteClose, RevokedClose}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent}
-
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
@@ -57,7 +55,7 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
     case e: ChannelStateChanged =>
       e match {
         case ChannelStateChanged(_, _, remoteNodeId, WAIT_FOR_FUNDING_LOCKED, NORMAL, d: DATA_NORMAL) =>
-          db.add(ChannelLifecycleEvent(d.channelId, remoteNodeId, d.commitments.commitInput.txOut.amount.toLong, d.commitments.localParams.isFunder, !d.commitments.announceChannel, "created"))
+          db.add(ChannelLifecycleEvent(d.channelId, remoteNodeId, d.commitments.commitInput.txOut.amount, d.commitments.localParams.isFunder, !d.commitments.announceChannel, "created"))
         case _ => ()
       }
 
@@ -69,7 +67,7 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
         case RecoveryClose => "recovery"
         case RevokedClose => "revoked"
       }
-      db.add(ChannelLifecycleEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount.toLong, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
+      db.add(ChannelLifecycleEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
 
   }
 
@@ -109,11 +107,11 @@ class BalanceEventThrottler(db: AuditDb) extends Actor with ActorLogging {
     case ProcessEvent(channelId) =>
       pending.get(channelId) match {
         case Some(BalanceUpdate(first, last)) =>
-          if (first.commitments.remoteCommit.spec.toRemoteMsat == last.localBalanceMsat) {
+          if (first.commitments.remoteCommit.spec.toRemote == last.localBalance) {
             // we don't log anything if the balance didn't change (e.g. it was a probe payment)
             log.info(s"ignoring balance event for channelId=$channelId (changed was discarded)")
           } else {
-            log.info(s"processing balance event for channelId=$channelId balance=${first.localBalanceMsat}->${last.localBalanceMsat}")
+            log.info(s"processing balance event for channelId=$channelId balance=${first.localBalance}->${last.localBalance}")
             // we log the last event, which contains the most up to date balance
             db.add(last)
             context.become(run(pending - channelId))

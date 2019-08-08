@@ -17,7 +17,10 @@
 package fr.acinq.eclair.payment
 
 import java.util.UUID
-import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
+
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.MilliSatoshi
+
 import scala.compat.Platform
 
 /**
