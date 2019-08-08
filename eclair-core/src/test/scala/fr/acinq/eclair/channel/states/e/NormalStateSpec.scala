@@ -205,7 +205,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val add = CMD_ADD_HTLC(MilliSatoshi(151000000), randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(bob, add)
-    val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000, actual = 151000000)
+    val error = HtlcValueTooHighInFlight(channelId(bob), maximum = MilliSatoshi(150000000), actual = MilliSatoshi(151000000))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     bob2alice.expectNoMsg(200 millis)
   }
@@ -381,7 +381,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     alice2bob.forward(alice, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(151000000), randomBytes32, 400144, TestConstants.emptyOnionPacket))
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data.toArray) === HtlcValueTooHighInFlight(channelId(alice), maximum = 150000000, actual = 151000000).getMessage)
+    assert(new String(error.data.toArray) === HtlcValueTooHighInFlight(channelId(alice), maximum = MilliSatoshi(150000000), actual = MilliSatoshi(151000000)).getMessage)
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)

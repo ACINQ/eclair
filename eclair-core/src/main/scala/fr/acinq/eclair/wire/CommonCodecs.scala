@@ -18,6 +18,7 @@ package fr.acinq.eclair.wire
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
+import com.google.common.primitives.UnsignedLongs
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
@@ -54,8 +55,14 @@ object CommonCodecs {
   val uint64overflow: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
   val uint64: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
 
-  val satoshi: Codec[Satoshi] = uint64overflow.xmapc(l => Satoshi(l))(_.toLong)
-  val millisatoshi: Codec[MilliSatoshi] = uint64overflow.xmapc(l => MilliSatoshi(l))(_.amount)
+  val uintLong64: Codec[Long] = bytes(8).xmap(
+    b => UnsignedLongs.parseUnsignedLong(b.toHex, 16),
+    a => ByteVector.fromValidHex(UnsignedLongs.toString(a, 16)).padLeft(8)
+  )
+
+  val satoshi: Codec[Satoshi] = uint64overflow.xmapc(Satoshi)(_.toLong)
+  val millisatoshi: Codec[MilliSatoshi] = uint64overflow.xmapc(MilliSatoshi(_))(_.toLong)
+  val millisatoshi64: Codec[MilliSatoshi] = uintLong64.xmapc(MilliSatoshi(_))(_.toLong)
 
   /**
     * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be

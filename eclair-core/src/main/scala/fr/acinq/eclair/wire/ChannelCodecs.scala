@@ -62,7 +62,7 @@ object ChannelCodecs extends Logging {
     ("nodeId" | publicKey) ::
       ("channelPath" | keyPathCodec) ::
       ("dustLimit" | satoshi) ::
-      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("maxHtlcValueInFlightMsat" | millisatoshi64) ::
       ("channelReserve" | satoshi) ::
       ("htlcMinimum" | millisatoshi) ::
       ("toSelfDelay" | uint16) ::
@@ -75,7 +75,7 @@ object ChannelCodecs extends Logging {
   val remoteParamsCodec: Codec[RemoteParams] = (
     ("nodeId" | publicKey) ::
       ("dustLimit" | satoshi) ::
-      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("maxHtlcValueInFlightMsat" | millisatoshi64) ::
       ("channelReserve" | satoshi) ::
       ("htlcMinimum" | millisatoshi) ::
       ("toSelfDelay" | uint16) ::

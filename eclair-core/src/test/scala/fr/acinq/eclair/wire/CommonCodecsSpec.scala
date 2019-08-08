@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair.crypto.Hmac256
 import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.{UInt64, randomBytes32}
+import fr.acinq.eclair.{MilliSatoshi, UInt64, randomBytes32}
 import org.scalatest.FunSuite
 import scodec.bits.{BitVector, HexStringSyntax}
 
@@ -57,6 +57,24 @@ class CommonCodecsSpec extends FunSuite {
       UInt64(hex"effffffffffffffe")
     )
     assert(refs.forall(value => uint64.decode(uint64.encode(value).require).require.value === value))
+  }
+
+  test("encode/decode MilliSatoshi64 (maxHtlcValueInFlight)") {
+    val refs = Seq(
+      hex"ffffffffffffffff".toBitVector,
+      hex"fffffffffffffffe".toBitVector,
+      hex"efffffffffffffff".toBitVector,
+      hex"effffffffffffffe".toBitVector
+    )
+
+    refs.foreach { raw =>
+      val decoded:MilliSatoshi = millisatoshi64.decode(raw).require.value
+      val encoded: BitVector = millisatoshi64.encode(decoded).require
+      assert(encoded === raw)
+    }
+
+    val msat1 = MilliSatoshi(12345)
+    assert(millisatoshi64.decode(millisatoshi64.encode(msat1).require).require.value == msat1)
   }
 
   test("encode/decode with varint codec") {

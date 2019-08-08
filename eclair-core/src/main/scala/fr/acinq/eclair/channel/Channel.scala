@@ -153,7 +153,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         fundingSatoshis = fundingSatoshis,
         pushMsat = pushMsat,
         dustLimitSatoshis = localParams.dustLimit,
-        maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
+        maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlight,
         channelReserveSatoshis = localParams.channelReserve,
         htlcMinimumMsat = localParams.htlcMinimum,
         feeratePerKw = initialFeeratePerKw,
@@ -275,7 +275,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val minimumDepth = nodeParams.minDepthBlocks
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = localParams.dustLimit,
-            maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
+            maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlight,
             channelReserveSatoshis = localParams.channelReserve,
             minimumDepth = minimumDepth,
             htlcMinimumMsat = localParams.htlcMinimum,
@@ -290,7 +290,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
             dustLimit = open.dustLimitSatoshis,
-            maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
+            maxHtlcValueInFlight = open.maxHtlcValueInFlightMsat,
             channelReserve = open.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
             htlcMinimum = open.htlcMinimumMsat,
             toSelfDelay = open.toSelfDelay,
@@ -323,7 +323,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
             dustLimit = accept.dustLimitSatoshis,
-            maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
+            maxHtlcValueInFlight = accept.maxHtlcValueInFlightMsat,
             channelReserve = accept.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
             htlcMinimum = accept.htlcMinimumMsat,
             toSelfDelay = accept.toSelfDelay,

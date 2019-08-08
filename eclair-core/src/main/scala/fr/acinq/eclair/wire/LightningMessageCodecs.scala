@@ -56,7 +56,7 @@ object LightningMessageCodecs {
       ("fundingSatoshis" | satoshi) ::
       ("pushMsat" | millisatoshi) ::
       ("dustLimitSatoshis" | satoshi) ::
-      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("maxHtlcValueInFlightMsat" | millisatoshi64) ::
       ("channelReserveSatoshis" | satoshi) ::
       ("htlcMinimumMsat" | millisatoshi) ::
       ("feeratePerKw" | uint32) ::
@@ -73,7 +73,7 @@ object LightningMessageCodecs {
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | bytes32) ::
       ("dustLimitSatoshis" | satoshi) ::
-      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("maxHtlcValueInFlightMsat" | millisatoshi64) ::
       ("channelReserveSatoshis" | satoshi) ::
       ("htlcMinimumMsat" | millisatoshi) ::
       ("minimumDepth" | uint32) ::

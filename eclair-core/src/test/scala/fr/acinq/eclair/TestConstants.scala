@@ -77,7 +77,7 @@ object TestConstants {
         maxFeerateMismatch = 1.5,
         updateFeeMinDiffRatio = 0.1
       ),
-      maxHtlcValueInFlightMsat = UInt64(150000000),
+      maxHtlcValueInFlight = MilliSatoshi(150000000),
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = 144,
       fulfillSafetyBeforeTimeoutBlocks = 6,
@@ -147,7 +147,7 @@ object TestConstants {
         maxFeerateMismatch = 1.0,
         updateFeeMinDiffRatio = 0.1
       ),
-      maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
+      maxHtlcValueInFlight = MilliSatoshi(Long.MaxValue), // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
       expiryDeltaBlocks = 144,
       fulfillSafetyBeforeTimeoutBlocks = 6,

@@ -18,6 +18,7 @@ package fr.acinq
 
 import java.security.SecureRandom
 
+import com.google.common.primitives.UnsignedLongs
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin._
 import scodec.Attempt
@@ -179,6 +180,17 @@ package object eclair {
     def unary_-() = MilliSatoshi(-amount)
     def truncateToSatoshi: Satoshi = Satoshi(amount / 1000)
     // @formatter:on
+  }
+
+  object MilliSatoshi {
+    /**
+      * Compares two MilliSatoshis treating their underlying values as unsigned long
+      * @param x
+      * @param y
+      * @return a negative value if {@code x} is less than {@code y}, a positive value if {@code x} is less
+      *      than {@code y}, 0 otherwise
+      */
+    def compareUnsigned(x: MilliSatoshi, y: MilliSatoshi): Int = UnsignedLongs.compare(x.toLong, y.toLong)
   }
 
   implicit class ToMilliSatoshiConversion(amount: BtcAmount) {

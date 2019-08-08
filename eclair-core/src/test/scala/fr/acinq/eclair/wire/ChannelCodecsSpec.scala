@@ -85,7 +85,7 @@ class ChannelCodecsSpec extends FunSuite {
       nodeId = randomKey.publicKey,
       channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
-      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
+      maxHtlcValueInFlight = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = Random.nextInt(Short.MaxValue),
@@ -103,7 +103,7 @@ class ChannelCodecsSpec extends FunSuite {
     val o = RemoteParams(
       nodeId = randomKey.publicKey,
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
-      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
+      maxHtlcValueInFlight = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = Random.nextInt(Short.MaxValue),
@@ -321,6 +321,7 @@ class ChannelCodecsSpec extends FunSuite {
         .replace(""""htlcMinimum"""", """"htlcMinimumMsat"""")
         .replace(""""toLocal"""", """"toLocalMsat"""")
         .replace(""""toRemote"""", """"toRemoteMsat"""")
+        .replace(""""maxHtlcValueInFlight"""", """"maxHtlcValueInFlightMsat"""")
 
       val newjson = Serialization.write(newnormal)(JsonSupport.formats)
         .replace(""","unknownFields":""""", "")
@@ -330,6 +331,7 @@ class ChannelCodecsSpec extends FunSuite {
         .replace(""""htlcMinimum"""", """"htlcMinimumMsat"""")
         .replace(""""toLocal"""", """"toLocalMsat"""")
         .replace(""""toRemote"""", """"toRemoteMsat"""")
+        .replace(""""maxHtlcValueInFlight"""", """"maxHtlcValueInFlightMsat"""")
 
       assert(oldjson === refjson)
       assert(newjson === refjson)
@@ -345,7 +347,7 @@ object ChannelCodecsSpec {
     keyManager.nodeId,
     channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
     dustLimit = Satoshi(546),
-    maxHtlcValueInFlightMsat = UInt64(50000000),
+    maxHtlcValueInFlight = MilliSatoshi(50000000),
     channelReserve = Satoshi(10000),
     htlcMinimum = MilliSatoshi(10000),
     toSelfDelay = 144,
@@ -358,7 +360,7 @@ object ChannelCodecsSpec {
   val remoteParams = RemoteParams(
     nodeId = randomKey.publicKey,
     dustLimit = Satoshi(546),
-    maxHtlcValueInFlightMsat = UInt64(5000000),
+    maxHtlcValueInFlight = MilliSatoshi(5000000),
     channelReserve = Satoshi(10000),
     htlcMinimum = MilliSatoshi(5000),
     toSelfDelay = 144,
