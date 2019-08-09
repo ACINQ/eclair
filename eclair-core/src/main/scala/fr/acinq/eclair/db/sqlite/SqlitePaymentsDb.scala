@@ -25,6 +25,7 @@ import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 import scala.collection.immutable.Queue
 import OutgoingPaymentStatus._
+import fr.acinq.eclair.MilliSatoshi
 import concurrent.duration._
 import scala.compat.Platform
 
@@ -70,7 +71,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("INSERT INTO sent_payments (id, payment_hash, amount_msat, created_at, status) VALUES (?, ?, ?, ?, ?)")) { statement =>
       statement.setString(1, sent.id.toString)
       statement.setBytes(2, sent.paymentHash.toArray)
-      statement.setLong(3, sent.amountMsat)
+      statement.setLong(3, sent.amount.toLong)
       statement.setLong(4, sent.createdAt)
       statement.setString(5, sent.status.toString)
       val res = statement.executeUpdate()
@@ -78,14 +79,14 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value, preimage: Option[ByteVector32], feeMsat: Long): Unit = {
-    require((newStatus == SUCCEEDED && preimage.isDefined) || (newStatus != SUCCEEDED && preimage.isEmpty && feeMsat == 0L), "Wrong combination of state/preimage")
+  override def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value, preimage: Option[ByteVector32], fee: MilliSatoshi): Unit = {
+    require((newStatus == SUCCEEDED && preimage.isDefined) || (newStatus != SUCCEEDED && preimage.isEmpty && fee.amount == 0L), "Wrong combination of state/preimage")
 
     using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, preimage, status, fee_msat) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
       statement.setLong(1, Platform.currentTime)
       statement.setBytes(2, if (preimage.isEmpty) null else preimage.get.toArray)
       statement.setString(3, newStatus.toString)
-      statement.setLong(4, feeMsat)
+      statement.setLong(4, fee.amount)
       statement.setString(5, id.toString)
       if (statement.executeUpdate() == 0) throw new IllegalArgumentException(s"Tried to update an outgoing payment (id=$id) already in final status with=$newStatus")
     }
@@ -100,8 +101,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           UUID.fromString(rs.getString("id")),
           rs.getByteVector32("payment_hash"),
           rs.getByteVector32Nullable("preimage"),
-          rs.getLong("amount_msat"),
-          rs.getLong("fee_msat"),
+          MilliSatoshi(rs.getLong("amount_msat")),
+          MilliSatoshi(rs.getLong("fee_msat")),
           rs.getLong("created_at"),
           getNullableLong(rs, "completed_at"),
           OutgoingPaymentStatus.withName(rs.getString("status"))
@@ -122,8 +123,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           UUID.fromString(rs.getString("id")),
           rs.getByteVector32("payment_hash"),
           rs.getByteVector32Nullable("preimage"),
-          rs.getLong("amount_msat"),
-          rs.getLong("fee_msat"),
+          MilliSatoshi(rs.getLong("amount_msat")),
+          MilliSatoshi(rs.getLong("fee_msat")),
           rs.getLong("created_at"),
           getNullableLong(rs, "completed_at"),
           OutgoingPaymentStatus.withName(rs.getString("status"))
@@ -142,8 +143,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           UUID.fromString(rs.getString("id")),
           rs.getByteVector32("payment_hash"),
           rs.getByteVector32Nullable("preimage"),
-          rs.getLong("amount_msat"),
-          rs.getLong("fee_msat"),
+          MilliSatoshi(rs.getLong("amount_msat")),
+          MilliSatoshi(rs.getLong("fee_msat")),
           rs.getLong("created_at"),
           getNullableLong(rs, "completed_at"),
           OutgoingPaymentStatus.withName(rs.getString("status"))
@@ -221,7 +222,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def addIncomingPayment(payment: IncomingPayment): Unit = {
     using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (?, ?) WHERE payment_hash = ?")) { statement =>
-      statement.setLong(1, payment.amountMsat)
+      statement.setLong(1, payment.amount.toLong)
       statement.setLong(2, payment.receivedAt)
       statement.setBytes(3, payment.paymentHash.toArray)
       val res = statement.executeUpdate()
@@ -234,7 +235,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Some(IncomingPayment(rs.getByteVector32("payment_hash"), rs.getLong("received_msat"), rs.getLong("received_at")))
+        Some(IncomingPayment(rs.getByteVector32("payment_hash"), MilliSatoshi(rs.getLong("received_msat")), rs.getLong("received_at")))
       } else {
         None
       }
@@ -246,7 +247,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       val rs = statement.executeQuery("SELECT payment_hash, received_msat, received_at FROM received_payments WHERE received_msat > 0")
       var q: Queue[IncomingPayment] = Queue()
       while (rs.next()) {
-        q = q :+ IncomingPayment(rs.getByteVector32("payment_hash"), rs.getLong("received_msat"), rs.getLong("received_at"))
+        q = q :+ IncomingPayment(rs.getByteVector32("payment_hash"), MilliSatoshi(rs.getLong("received_msat")), rs.getLong("received_at"))
       }
       q
     }

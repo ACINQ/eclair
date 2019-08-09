@@ -17,14 +17,14 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{MilliSatoshi, TestConstants, TestkitBaseClass}
 import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration._
@@ -41,7 +41,7 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     val setup = init()
     import setup._
     val (fundingSatoshis, pushMsat) = if (test.tags.contains("funder_below_reserve")) {
-      (1000100L, 1000000000L) // toRemote = 100 satoshis
+      (Satoshi(1000100L), MilliSatoshi(1000000000L)) // toRemote = 100 satoshis
     } else {
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
@@ -71,13 +71,13 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
 
   test("recv FundingCreated (funder can't pay fees)", Tag("funder_below_reserve")) { f =>
     import f._
-    val fees = Transactions.commitWeight * TestConstants.feeratePerKw / 1000
-    val reserve = Bob.channelParams.channelReserveSatoshis
-    val missing = 100 - fees - reserve
+    val fees = Satoshi(Transactions.commitWeight * TestConstants.feeratePerKw / 1000)
+    val reserve = Bob.channelParams.channelReserve
+    val missing = Satoshi(100) - fees - reserve
     val fundingCreated = alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(fundingCreated.temporaryChannelId, s"can't pay the fee: missingSatoshis=${-1 * missing} reserveSatoshis=$reserve feesSatoshis=$fees"))
+    assert(error === Error(fundingCreated.temporaryChannelId, s"can't pay the fee: missing=${-missing} reserve=$reserve fees=$fees"))
     awaitCond(bob.stateName == CLOSED)
   }
 

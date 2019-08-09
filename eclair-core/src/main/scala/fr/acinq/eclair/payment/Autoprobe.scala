@@ -18,11 +18,11 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
+import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentResult, RemoteFailure, SendPayment}
 import fr.acinq.eclair.router.{Announcements, Data}
-import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails}
-import fr.acinq.eclair.{NodeParams, randomBytes32, secureRandom}
+import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
+import fr.acinq.eclair.{MilliSatoshi, NodeParams, randomBytes32, secureRandom}
 
 import scala.concurrent.duration._
 
@@ -62,7 +62,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
 
     case paymentResult: PaymentResult =>
       paymentResult match {
-        case PaymentFailed(_, _, _ :+ RemoteFailure(_, ErrorPacket(targetNodeId, IncorrectOrUnknownPaymentDetails(_)))) =>
+        case PaymentFailed(_, _, _ :+ RemoteFailure(_, DecryptedFailurePacket(targetNodeId, IncorrectOrUnknownPaymentDetails(_)))) =>
           log.info(s"payment probe successful to node=$targetNodeId")
         case _ =>
           log.info(s"payment probe failed with paymentResult=$paymentResult")
@@ -83,7 +83,7 @@ object Autoprobe {
 
   val PROBING_INTERVAL = 20 seconds
 
-  val PAYMENT_AMOUNT_MSAT = 100 * 1000 // this is below dust_limit so there won't be an output in the commitment tx
+  val PAYMENT_AMOUNT_MSAT = MilliSatoshi(100 * 1000) // this is below dust_limit so there won't be an output in the commitment tx
 
   object TickProbe
 
