@@ -20,7 +20,7 @@ import java.util.UUID
 
 import akka.pattern.{AskTimeoutException, ask}
 import akka.util.Timeout
-import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.io.{NodeURI, Peer}
@@ -88,8 +88,8 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     (for {
       kit <- fKit
       sendPayment = req.minFinalCltvExpiry match {
-        case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, maxAttempts = kit.nodeParams.maxPaymentAttempts)
-        case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiry = minFinalCltvExpiry, maxAttempts = kit.nodeParams.maxPaymentAttempts)
+        case None => SendPayment(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, req.routingInfo, maxAttempts = kit.nodeParams.maxPaymentAttempts)
+        case Some(minFinalCltvExpiry) => SendPayment(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiry = minFinalCltvExpiry, maxAttempts = kit.nodeParams.maxPaymentAttempts)
       }
       res <- (kit.paymentInitiator ? sendPayment).mapTo[UUID]
     } yield res).recover {

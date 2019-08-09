@@ -17,8 +17,9 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.crypto.Mac32
-import fr.acinq.eclair.wire.CommonCodecs.{sha256, uint64overflow}
+import fr.acinq.eclair.wire.CommonCodecs.{sha256, millisatoshi}
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelUpdateCodec, lightningMessageCodec}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -47,16 +48,16 @@ case class TemporaryChannelFailure(update: ChannelUpdate) extends Update { def m
 case object PermanentChannelFailure extends Perm { def message = "channel is permanently unavailable" }
 case object RequiredChannelFeatureMissing extends Perm { def message = "channel requires features not present in the onion" }
 case object UnknownNextPeer extends Perm { def message = "processing node does not know the next peer in the route" }
-case class AmountBelowMinimum(amountMsat: Long, update: ChannelUpdate) extends Update { def message = s"payment amount was below the minimum required by the channel" }
-case class FeeInsufficient(amountMsat: Long, update: ChannelUpdate) extends Update { def message = s"payment fee was below the minimum required by the channel" }
+case class AmountBelowMinimum(amount: MilliSatoshi, update: ChannelUpdate) extends Update { def message = s"payment amount was below the minimum required by the channel" }
+case class FeeInsufficient(amount: MilliSatoshi, update: ChannelUpdate) extends Update { def message = s"payment fee was below the minimum required by the channel" }
 case class ChannelDisabled(messageFlags: Byte, channelFlags: Byte, update: ChannelUpdate) extends Update { def message = "channel is currently disabled" }
 case class IncorrectCltvExpiry(expiry: Long, update: ChannelUpdate) extends Update { def message = "payment expiry doesn't match the value in the onion" }
-case class IncorrectOrUnknownPaymentDetails(amountMsat: Long) extends Perm { def message = "incorrect payment amount or unknown payment hash" }
+case class IncorrectOrUnknownPaymentDetails(amount: MilliSatoshi) extends Perm { def message = "incorrect payment amount or unknown payment hash" }
 case object IncorrectPaymentAmount extends Perm { def message = "payment amount is incorrect" }
 case class ExpiryTooSoon(update: ChannelUpdate) extends Update { def message = "payment expiry is too close to the current block height for safe handling by the relaying node" }
 case object FinalExpiryTooSoon extends FailureMessage { def message = "payment expiry is too close to the current block height for safe handling by the final node" }
 case class FinalIncorrectCltvExpiry(expiry: Long) extends FailureMessage { def message = "payment expiry doesn't match the value in the onion" }
-case class FinalIncorrectHtlcAmount(amountMsat: Long) extends FailureMessage { def message = "payment amount is incorrect in the final htlc" }
+case class FinalIncorrectHtlcAmount(amount: MilliSatoshi) extends FailureMessage { def message = "payment amount is incorrect in the final htlc" }
 case object ExpiryTooFar extends FailureMessage { def message = "payment expiry is too far in the future" }
 // @formatter:on
 
@@ -85,16 +86,16 @@ object FailureMessageCodecs {
     .typecase(PERM | 8, provide(PermanentChannelFailure))
     .typecase(PERM | 9, provide(RequiredChannelFeatureMissing))
     .typecase(PERM | 10, provide(UnknownNextPeer))
-    .typecase(UPDATE | 11, (("amountMsat" | uint64overflow) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[AmountBelowMinimum])
-    .typecase(UPDATE | 12, (("amountMsat" | uint64overflow) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[FeeInsufficient])
+    .typecase(UPDATE | 11, (("amountMsat" | millisatoshi) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[AmountBelowMinimum])
+    .typecase(UPDATE | 12, (("amountMsat" | millisatoshi) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[FeeInsufficient])
     .typecase(UPDATE | 13, (("expiry" | uint32) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[IncorrectCltvExpiry])
     .typecase(UPDATE | 14, ("channelUpdate" | channelUpdateWithLengthCodec).as[ExpiryTooSoon])
     .typecase(UPDATE | 20, (("messageFlags" | byte) :: ("channelFlags" | byte) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
-    .typecase(PERM | 15, ("amountMsat" | withDefaultValue(optional(bitsRemaining, uint64overflow), 0L)).as[IncorrectOrUnknownPaymentDetails])
+    .typecase(PERM | 15, ("amountMsat" | withDefaultValue(optional(bitsRemaining, millisatoshi), MilliSatoshi(0))).as[IncorrectOrUnknownPaymentDetails])
     .typecase(PERM | 16, provide(IncorrectPaymentAmount))
     .typecase(17, provide(FinalExpiryTooSoon))
     .typecase(18, ("expiry" | uint32).as[FinalIncorrectCltvExpiry])
-    .typecase(19, ("amountMsat" | uint64overflow).as[FinalIncorrectHtlcAmount])
+    .typecase(19, ("amountMsat" | millisatoshi).as[FinalIncorrectHtlcAmount])
     .typecase(21, provide(ExpiryTooFar))
 
   /**

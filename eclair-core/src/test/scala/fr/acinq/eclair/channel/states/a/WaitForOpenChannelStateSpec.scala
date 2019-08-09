@@ -17,12 +17,12 @@
 package fr.acinq.eclair.channel.states.a
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire.{Error, Init, OpenChannel}
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{MilliSatoshi, TestConstants, TestkitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.Outcome
 
 import scala.concurrent.duration._
@@ -69,20 +69,20 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   test("recv OpenChannel (funding too low)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val lowFundingMsat = 100
-    bob ! open.copy(fundingSatoshis = lowFundingMsat)
+    val lowFunding = Satoshi(100)
+    bob ! open.copy(fundingSatoshis = lowFunding)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFundingMsat, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS).getMessage))
+    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFunding, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
   test("recv OpenChannel (funding too high)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val highFundingMsat = 100000000
+    val highFundingMsat = Satoshi(100000000)
     bob ! open.copy(fundingSatoshis = highFundingMsat)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING_SATOSHIS).getMessage))
+    assert(error.toAscii === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Bob.nodeParams.minFundingSatoshis, Channel.MAX_FUNDING).getMessage).toAscii)
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -99,10 +99,10 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   test("recv OpenChannel (invalid push_msat)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val invalidPushMsat = 100000000000L
+    val invalidPushMsat = MilliSatoshi(100000000000L)
     bob ! open.copy(pushMsat = invalidPushMsat)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, invalidPushMsat, 1000 * open.fundingSatoshis).getMessage))
+    assert(error === Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, invalidPushMsat, open.fundingSatoshis.toMilliSatoshi).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -120,7 +120,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     // 30% is huge, recommended ratio is 1%
-    val reserveTooHigh = (0.3 * TestConstants.fundingSatoshis).toLong
+    val reserveTooHigh = Satoshi((0.3 * TestConstants.fundingSatoshis.toLong).toLong)
     bob ! open.copy(channelReserveSatoshis = reserveTooHigh)
     val error = bob2alice.expectMsgType[Error]
     assert(error === Error(open.temporaryChannelId, ChannelReserveTooHigh(open.temporaryChannelId, reserveTooHigh, 0.3, 0.05).getMessage))
@@ -155,7 +155,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   test("recv OpenChannel (reserve below dust)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val reserveTooSmall = open.dustLimitSatoshis - 1
+    val reserveTooSmall = open.dustLimitSatoshis - Satoshi(1)
     bob ! open.copy(channelReserveSatoshis = reserveTooSmall)
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
@@ -166,12 +166,12 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   test("recv OpenChannel (toLocal + toRemote below reserve)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val fundingSatoshis = open.channelReserveSatoshis + 499
+    val fundingSatoshis = open.channelReserveSatoshis.toLong + 499
     val pushMsat = 500 * 1000
-    bob ! open.copy(fundingSatoshis = fundingSatoshis, pushMsat = pushMsat)
+    bob ! open.copy(fundingSatoshis = Satoshi(fundingSatoshis), pushMsat = MilliSatoshi(pushMsat))
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
-    assert(error === Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, 500 * 1000, (open.channelReserveSatoshis - 1) * 1000, open.channelReserveSatoshis).getMessage))
+    assert(error === Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, Satoshi(500).toMilliSatoshi, (open.channelReserveSatoshis - Satoshi(1)).toMilliSatoshi, open.channelReserveSatoshis).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 

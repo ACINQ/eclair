@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{Btc, MilliBtc, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{Btc, MilliBtc, Satoshi}
 import org.scalatest.FunSuite
 
 

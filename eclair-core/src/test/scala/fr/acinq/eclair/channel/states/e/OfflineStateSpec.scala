@@ -34,7 +34,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, HtlcSuccessTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes32}
+import fr.acinq.eclair.{MilliSatoshi, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.Outcome
 
 import scala.concurrent.duration._
@@ -70,7 +70,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000, ByteVector32.Zeroes, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(MilliSatoshi(1000000), ByteVector32.Zeroes, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob)
@@ -151,7 +151,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000, randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(MilliSatoshi(1000000), randomBytes32, 400144, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob, ab_add_0)
@@ -216,11 +216,11 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    val (ra1, htlca1) = addHtlc(250000000, alice, bob, alice2bob, bob2alice)
+    val (ra1, htlca1) = addHtlc(MilliSatoshi(250000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    val (ra2, htlca2) = addHtlc(100000000, alice, bob, alice2bob, bob2alice)
+    val (ra2, htlca2) = addHtlc(MilliSatoshi(100000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    val (ra3, htlca3) = addHtlc(10000, alice, bob, alice2bob, bob2alice)
+    val (ra3, htlca3) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     val oldStateData = alice.stateData
     fulfillHtlc(htlca1.id, ra1, bob, alice, bob2alice, alice2bob)
@@ -273,7 +273,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // we start by storing the current state
     val oldStateData = alice.stateData
     // then we add an htlc and sign it
-    addHtlc(250000000, alice, bob, alice2bob, bob2alice)
+    addHtlc(MilliSatoshi(250000000), alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[CommitSig]
@@ -359,7 +359,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     channelUpdateListener.expectNoMsg(300 millis)
 
     // we make alice update here relay fee
-    sender.send(alice, CMD_UPDATE_RELAY_FEE(4200, 123456))
+    sender.send(alice, CMD_UPDATE_RELAY_FEE(MilliSatoshi(4200), 123456))
     sender.expectMsg("ok")
 
     // alice doesn't broadcast the new channel_update yet
@@ -377,7 +377,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // then alice reaches NORMAL state, and after a delay she broadcasts the channel_update
     val channelUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate](20 seconds).channelUpdate
-    assert(channelUpdate.feeBaseMsat === 4200)
+    assert(channelUpdate.feeBaseMsat === MilliSatoshi(4200))
     assert(channelUpdate.feeProportionalMillionths === 123456)
     assert(Announcements.isEnabled(channelUpdate.channelFlags))
 
@@ -399,7 +399,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     channelUpdateListener.expectNoMsg(300 millis)
 
     // we attempt to send a payment
-    sender.send(alice, CMD_ADD_HTLC(4200, randomBytes32, 123456, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(MilliSatoshi(4200), randomBytes32, 123456, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     val failure = sender.expectMsgType[Status.Failure]
     val AddHtlcFailed(_, _, ChannelUnavailable(_), _, _, _) = failure.cause
 
@@ -413,7 +413,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val register = TestProbe()
     val commandBuffer = TestActorRef(new CommandBuffer(bob.underlyingActor.nodeParams, register.ref))
-    val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val listener = TestProbe()
@@ -454,7 +454,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val register = TestProbe()
     val commandBuffer = TestActorRef(new CommandBuffer(bob.underlyingActor.nodeParams, register.ref))
-    val (_, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     sender.send(alice, INPUT_DISCONNECTED)
@@ -464,7 +464,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // We simulate a pending failure on that HTLC.
     // Even if we get close to expiring upstream we shouldn't close the channel, because we have nothing to lose.
-    sender.send(commandBuffer, CommandSend(htlc.channelId, htlc.id, CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(0)))))
+    sender.send(commandBuffer, CommandSend(htlc.channelId, htlc.id, CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(MilliSatoshi(0))))))
     sender.send(bob, CurrentBlockCount(htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks))
 
     bob2blockchain.expectNoMsg(250 millis)
@@ -478,7 +478,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // we start by storing the current state
     val oldStateData = alice.stateData
     // then we add an htlc and sign it
-    addHtlc(250000000, alice, bob, alice2bob, bob2alice)
+    addHtlc(MilliSatoshi(250000000), alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[CommitSig]
