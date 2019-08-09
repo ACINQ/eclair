@@ -1215,11 +1215,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val localCommitPublished1 = d.localCommitPublished.map(localCommitPublished => Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, commitments1, localCommitPublished.commitTx))
           val remoteCommitPublished1 = d.remoteCommitPublished.map(remoteCommitPublished => Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx))
           val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map(remoteCommitPublished => Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx))
+
           def republish(): Unit = {
             localCommitPublished1.foreach(doPublish)
             remoteCommitPublished1.foreach(doPublish)
             nextRemoteCommitPublished1.foreach(doPublish)
           }
+
           stay using d.copy(commitments = commitments1, localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1) storing() calling(republish)
         case Failure(cause) => handleCommandError(cause, c)
       }
@@ -1897,7 +1899,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case Right(closing) => closing.copy(mutualClosePublished = closing.mutualClosePublished :+ closingTx)
     }
 
-    goto(CLOSING) using nextData storing() calling doPublish(closingTx)
+    goto(CLOSING) using nextData storing() calling(doPublish(closingTx))
   }
 
   def doPublish(closingTx: Transaction): Unit = {
