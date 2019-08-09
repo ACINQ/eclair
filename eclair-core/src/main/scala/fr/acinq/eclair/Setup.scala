@@ -96,7 +96,12 @@ class Setup(datadir: File,
     case None => Databases.sqliteJDBC(chaindir)
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database)
+  val feeEstimator = new FeeEstimator {
+    override def getFeeratePerKb(target: Int): Long = Globals.feeratesPerKB.get().feePerBlock(target)
+    override def getFeeratePerKw(target: Int): Long = Globals.feeratesPerKw.get().feePerBlock(target)
+  }
+
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database, feeEstimator)
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),
@@ -183,12 +188,13 @@ class Setup(datadir: File,
 
       defaultFeerates = {
         val confDefaultFeerates = FeeratesPerKB(
-          block_1 = config.getLong("default-feerates.delay-blocks.1"),
-          blocks_2 = config.getLong("default-feerates.delay-blocks.2"),
-          blocks_6 = config.getLong("default-feerates.delay-blocks.6"),
-          blocks_12 = config.getLong("default-feerates.delay-blocks.12"),
-          blocks_36 = config.getLong("default-feerates.delay-blocks.36"),
-          blocks_72 = config.getLong("default-feerates.delay-blocks.72")
+          block_1 = config.getLong("on-chain-fees.default-feerates.1"),
+          blocks_2 = config.getLong("on-chain-fees.default-feerates.2"),
+          blocks_6 = config.getLong("on-chain-fees.default-feerates.6"),
+          blocks_12 = config.getLong("on-chain-fees.default-feerates.12"),
+          blocks_36 = config.getLong("on-chain-fees.default-feerates.36"),
+          blocks_72 = config.getLong("on-chain-fees.default-feerates.72"),
+          blocks_144 = config.getLong("on-chain-fees.default-feerates.144")
         )
         Globals.feeratesPerKB.set(confDefaultFeerates)
         Globals.feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))

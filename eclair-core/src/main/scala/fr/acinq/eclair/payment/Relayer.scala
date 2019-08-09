@@ -21,25 +21,24 @@ import java.util.UUID
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, Crypto, MilliSatoshi}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{NodeParams, ShortChannelId, nodeFee}
-import scodec.bits.BitVector
+import fr.acinq.eclair.{MilliSatoshi, NodeParams, ShortChannelId, nodeFee}
+import grizzled.slf4j.Logging
 import scodec.{Attempt, DecodeResult}
 
 import scala.collection.mutable
-import scala.util.{Failure, Success, Try}
 
 // @formatter:off
 
 sealed trait Origin
 case class Local(id: UUID, sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
-case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
+case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi, amountOut: MilliSatoshi) extends Origin
 
 sealed trait ForwardMessage
 case class ForwardAdd(add: UpdateAddHtlc, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends ForwardMessage
@@ -48,7 +47,7 @@ case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) ex
 case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
 
 case object GetUsableBalances
-case class UsableBalances(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSendMsat: Long, canReceiveMsat: Long, isPublic: Boolean)
+case class UsableBalances(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
 
 // @formatter:on
 
@@ -74,13 +73,13 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
   def main(channelUpdates: Map[ShortChannelId, OutgoingChannel], node2channels: mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]): Receive = {
     case GetUsableBalances =>
       sender ! channelUpdates.values
-          .filter(o => Announcements.isEnabled(o.channelUpdate.channelFlags))
-          .map(o => UsableBalances(
-            remoteNodeId = o.nextNodeId,
-            shortChannelId = o.channelUpdate.shortChannelId,
-            canSendMsat = o.commitments.availableBalanceForSendMsat,
-            canReceiveMsat = o.commitments.availableBalanceForReceiveMsat,
-            isPublic = o.commitments.announceChannel))
+        .filter(o => Announcements.isEnabled(o.channelUpdate.channelFlags))
+        .map(o => UsableBalances(
+          remoteNodeId = o.nextNodeId,
+          shortChannelId = o.channelUpdate.shortChannelId,
+          canSend = o.commitments.availableBalanceForSend,
+          canReceive = o.commitments.availableBalanceForReceive,
+          isPublic = o.commitments.announceChannel))
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
       log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
@@ -100,8 +99,8 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
     case ForwardAdd(add, previousFailures) =>
       log.debug(s"received forwarding request for htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId}")
-      tryParsePacket(add, nodeParams.privateKey) match {
-        case Success(p: FinalPayload) =>
+      decryptPacket(add, nodeParams.privateKey) match {
+        case Right(p: FinalPayload) =>
           handleFinal(p) match {
             case Left(cmdFail) =>
               log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} reason=${cmdFail.reason}")
@@ -110,7 +109,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
               log.debug(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} to payment-handler")
               paymentHandler forward addHtlc
           }
-        case Success(r: RelayPayload) =>
+        case Right(r: RelayPayload) =>
           handleRelay(r, channelUpdates, node2channels, previousFailures, nodeParams.chainHash) match {
             case RelayFailure(cmdFail) =>
               log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=${r.payload.shortChannelId} reason=${cmdFail.reason}")
@@ -119,9 +118,9 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
               log.info(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=$selectedShortChannelId")
               register ! Register.ForwardShortId(selectedShortChannelId, cmdAdd)
           }
-        case Failure(t) =>
-          log.warning(s"couldn't parse onion: reason=${t.getMessage}")
-          val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, Crypto.sha256(add.onionRoutingPacket), failureCode = FailureMessageCodecs.BADONION, commit = true)
+        case Left(badOnion) =>
+          log.warning(s"couldn't parse onion: reason=${badOnion.message}")
+          val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, FailureMessageCodecs.failureCode(badOnion), commit = true)
           log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} reason=malformed onionHash=${cmdFail.onionHash} failureCode=${cmdFail.failureCode}")
           commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
       }
@@ -159,17 +158,17 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       to match {
         case Local(id, None) =>
           val feesPaid = MilliSatoshi(0)
-          context.system.eventStream.publish(PaymentSent(id, MilliSatoshi(add.amountMsat), feesPaid, add.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
+          context.system.eventStream.publish(PaymentSent(id, add.amountMsat, feesPaid, add.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
           // we sent the payment, but we probably restarted and the reference to the original sender was lost,
           // we publish the failure on the event stream and update the status in paymentDb
           nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.SUCCEEDED, Some(fulfill.paymentPreimage))
           context.system.eventStream.publish(PaymentSucceeded(id, add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil)) //
         case Local(_, Some(sender)) =>
           sender ! fulfill
-        case Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut) =>
+        case Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
           val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
-          context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), add.paymentHash, fromChannelId = originChannelId, toChannelId = fulfill.channelId))
+          context.system.eventStream.publish(PaymentRelayed(amountIn, amountOut, add.paymentHash, fromChannelId = originChannelId, toChannelId = fulfill.channelId))
       }
 
     case ForwardFail(fail, to, add) =>
@@ -207,7 +206,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
 }
 
-object Relayer {
+object Relayer extends Logging {
   def props(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorRef) = Props(classOf[Relayer], nodeParams, register, paymentHandler)
 
   case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, commitments: Commitments)
@@ -215,34 +214,39 @@ object Relayer {
   // @formatter:off
   sealed trait NextPayload
   case class FinalPayload(add: UpdateAddHtlc, payload: PerHopPayload) extends NextPayload
-  case class RelayPayload(add: UpdateAddHtlc, payload: PerHopPayload, nextPacket: Sphinx.Packet) extends NextPayload {
-    val relayFeeMsat: Long = add.amountMsat - payload.amtToForward
+  case class RelayPayload(add: UpdateAddHtlc, payload: PerHopPayload, nextPacket: OnionRoutingPacket) extends NextPayload {
+    val relayFeeMsat: MilliSatoshi = add.amountMsat - payload.amtToForward
     val expiryDelta: Long = add.cltvExpiry - payload.outgoingCltvValue
   }
   // @formatter:on
 
   /**
-    * Parse and decode the onion of a received htlc, and find out if the payment is to be relayed,
+    * Decrypt the onion of a received htlc, and find out if the payment is to be relayed,
     * or if our node is the last one in the route
     *
     * @param add        incoming htlc
     * @param privateKey this node's private key
-    * @return the payload for the next hop
+    * @return the payload for the next hop or an error.
     */
-  def tryParsePacket(add: UpdateAddHtlc, privateKey: PrivateKey): Try[NextPayload] =
-    Sphinx
-      .parsePacket(privateKey, add.paymentHash, add.onionRoutingPacket)
-      .flatMap {
-        case Sphinx.ParsedPacket(payload, nextPacket, _) =>
-          LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload)) match {
-            case Attempt.Successful(DecodeResult(perHopPayload, _)) if nextPacket.isLastPacket =>
-              Success(FinalPayload(add, perHopPayload))
-            case Attempt.Successful(DecodeResult(perHopPayload, _)) =>
-              Success(RelayPayload(add, perHopPayload, nextPacket))
-            case Attempt.Failure(cause) =>
-              Failure(new RuntimeException(cause.messageWithContext))
-          }
-      }
+  def decryptPacket(add: UpdateAddHtlc, privateKey: PrivateKey): Either[BadOnion, NextPayload] =
+    Sphinx.PaymentPacket.peel(privateKey, add.paymentHash, add.onionRoutingPacket) match {
+      case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
+        OnionCodecs.perHopPayloadCodec.decode(payload.bits) match {
+          case Attempt.Successful(DecodeResult(perHopPayload, remainder)) =>
+            if (remainder.nonEmpty) {
+              logger.warn(s"${remainder.length} bits remaining after per-hop payload decoding: there might be an issue with the onion codec")
+            }
+            if (p.isLastPacket) {
+              Right(FinalPayload(add, perHopPayload))
+            } else {
+              Right(RelayPayload(add, perHopPayload, nextPacket))
+            }
+          case Attempt.Failure(_) =>
+            // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
+            Left(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add.onionRoutingPacket)))
+        }
+      case Left(badOnion) => Left(badOnion)
+    }
 
   /**
     * Handle an incoming htlc when we are the last node
@@ -326,10 +330,10 @@ object Relayer {
             val channelInfo_opt = channelUpdates.get(shortChannelId)
             val channelUpdate_opt = channelInfo_opt.map(_.channelUpdate)
             val relayResult = relayOrFail(relayPayload, channelUpdate_opt)
-            log.debug(s"candidate channel for htlc #${add.id} paymentHash=${add.paymentHash}: shortChannelId={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo_opt.map(_.commitments.availableBalanceForSendMsat).getOrElse(""), channelUpdate_opt.getOrElse(""), relayResult)
+            log.debug(s"candidate channel for htlc #${add.id} paymentHash=${add.paymentHash}: shortChannelId={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo_opt.map(_.commitments.availableBalanceForSend).getOrElse(""), channelUpdate_opt.getOrElse(""), relayResult)
             (shortChannelId, channelInfo_opt, relayResult)
           }
-          .collect { case (shortChannelId, Some(channelInfo), _: RelaySuccess) => (shortChannelId, channelInfo.commitments.availableBalanceForSendMsat) }
+          .collect { case (shortChannelId, Some(channelInfo), _: RelaySuccess) => (shortChannelId, channelInfo.commitments.availableBalanceForSend) }
           .filter(_._2 > relayPayload.payload.amtToForward) // we only keep channels that have enough balance to handle this payment
           .toList // needed for ordering
           .sortBy(_._2) // we want to use the channel with the lowest available balance that can process the payment
@@ -370,7 +374,7 @@ object Relayer {
       case Some(channelUpdate) if relayPayload.relayFeeMsat < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amtToForward) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
-        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket.serialize, upstream = Right(add), commit = true, previousFailures = previousFailures))
+        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket, upstream = Right(add), commit = true, previousFailures = previousFailures))
     }
   }
 

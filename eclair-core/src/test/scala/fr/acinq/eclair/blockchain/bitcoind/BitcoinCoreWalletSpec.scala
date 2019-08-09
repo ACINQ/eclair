@@ -257,7 +257,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val tx1 = Transaction.read(signedTx1)
     // let's then generate another tx that double spends the first one
     val inputs = tx1.txIn.map(txIn => Map("txid" -> txIn.outPoint.txid.toString, "vout" -> txIn.outPoint.index)).toArray
-    bitcoinClient.invoke("createrawtransaction", inputs, Map(address -> tx1.txOut.map(_.amount.toLong).sum * 1.0 / 1e8)).pipeTo(sender.ref)
+    bitcoinClient.invoke("createrawtransaction", inputs, Map(address -> tx1.txOut.map(_.amount).sum.toLong * 1.0 / 1e8)).pipeTo(sender.ref)
     val JString(unsignedtx2) = sender.expectMsgType[JValue]
     bitcoinClient.invoke("signrawtransactionwithwallet", unsignedtx2).pipeTo(sender.ref)
     val JString(signedTx2) = sender.expectMsgType[JValue] \ "hex"
