@@ -323,6 +323,7 @@ class ChannelCodecsSpec extends FunSuite {
         .replace(""""toLocal"""", """"toLocalMsat"""")
         .replace(""""toRemote"""", """"toRemoteMsat"""")
         .replace("fundingKeyPath", "channelKeyPath")
+        .replace(""""version":0,""", "")
 
       val newjson = Serialization.write(newnormal)(JsonSupport.formats)
         .replace(""","unknownFields":""""", "")
@@ -333,6 +334,7 @@ class ChannelCodecsSpec extends FunSuite {
         .replace(""""toLocal"""", """"toLocalMsat"""")
         .replace(""""toRemote"""", """"toRemoteMsat"""")
         .replace("fundingKeyPath", "channelKeyPath")
+        .replace(""""version":0,""", "")
 
       assert(oldjson === refjson)
       assert(newjson === refjson)
