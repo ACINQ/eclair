@@ -17,8 +17,8 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{MilliSatoshi, randomKey}
 import org.scalatest.FunSuite
 
 import scala.collection.immutable.SortedMap
@@ -34,14 +34,14 @@ class ChannelRangeQueriesSpec extends FunSuite {
     val a = randomKey.publicKey
     val b = randomKey.publicKey
     val ab = RouteCalculationSpec.makeChannel(123466L, a, b)
-    val (ab1, uab1) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId1, ab.nodeId2, 0, 0, timestamp = now)
-    val (ab2, uab2) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId2, ab.nodeId1, 0, 0, timestamp = now)
+    val (ab1, uab1) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId1, ab.nodeId2, MilliSatoshi(0), 0, timestamp = now)
+    val (ab2, uab2) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId2, ab.nodeId1, MilliSatoshi(0), 0, timestamp = now)
 
     val c = randomKey.publicKey
     val d = randomKey.publicKey
     val cd = RouteCalculationSpec.makeChannel(451312L, c, d)
-    val (cd1, ucd1) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId1, cd.nodeId2, 0, 0, timestamp = now)
-    val (_, ucd2) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId2, cd.nodeId1, 0, 0, timestamp = now)
+    val (cd1, ucd1) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId1, cd.nodeId2, MilliSatoshi(0), 0, timestamp = now)
+    val (_, ucd2) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId2, cd.nodeId1, MilliSatoshi(0), 0, timestamp = now)
 
     val e = randomKey.publicKey
     val f = randomKey.publicKey

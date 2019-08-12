@@ -27,7 +27,7 @@ import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.io.NodeURI
@@ -39,6 +39,7 @@ import org.json4s.jackson.Serialization
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.{FunSuite, Matchers}
 import scodec.bits._
+
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
@@ -147,8 +148,8 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
     eclair.usableBalances()(any[Timeout]) returns Future.successful(List(
-      UsableBalances(canSendMsat = 100000000, canReceiveMsat = 20000000, shortChannelId = ShortChannelId(1), remoteNodeId = TestConstants.Alice.keyManager.nodeKey.publicKey, isPublic = true),
-      UsableBalances(canSendMsat = 400000000, canReceiveMsat = 30000000, shortChannelId = ShortChannelId(2), remoteNodeId = TestConstants.Alice.keyManager.nodeKey.publicKey, isPublic = false)
+      UsableBalances(canSend = MilliSatoshi(100000000), canReceive = MilliSatoshi(20000000), shortChannelId = ShortChannelId(1), remoteNodeId = TestConstants.Alice.keyManager.nodeKey.publicKey, isPublic = true),
+      UsableBalances(canSend = MilliSatoshi(400000000), canReceive = MilliSatoshi(30000000), shortChannelId = ShortChannelId(2), remoteNodeId = TestConstants.Alice.keyManager.nodeKey.publicKey, isPublic = false)
     ))
 
     Post("/usablebalances") ~>
@@ -269,7 +270,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       check {
         assert(handled)
         assert(status == OK)
-        eclair.send(any, 1258000, any, any, any, any, any, any)(any[Timeout]).wasCalled(once)
+        eclair.send(any, MilliSatoshi(1258000), any, any, any, any, any, any)(any[Timeout]).wasCalled(once)
       }
 
 
@@ -279,7 +280,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       check {
         assert(handled)
         assert(status == OK)
-        eclair.send(any, 123, any, any, any, any, Some(112233), Some(2.34))(any[Timeout]).wasCalled(once)
+        eclair.send(any, MilliSatoshi(123), any, any, any, any, Some(Satoshi(112233)), Some(2.34))(any[Timeout]).wasCalled(once)
       }
 
   }
@@ -311,7 +312,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
     val jsonNodes = serialization.write(expectedRoute)
 
     val eclair = mock[Eclair]
-    eclair.sendToRoute(any[List[PublicKey]], anyLong, any[ByteVector32], anyLong)(any[Timeout]) returns Future.successful(paymentUUID)
+    eclair.sendToRoute(any[List[PublicKey]], any[MilliSatoshi], any[ByteVector32], anyLong)(any[Timeout]) returns Future.successful(paymentUUID)
     val mockService = new MockService(eclair)
 
     Post("/sendtoroute", FormData("route" -> jsonNodes, "amountMsat" -> "1234", "paymentHash" -> ByteVector32.Zeroes.toHex, "finalCltvExpiry" -> "190").toEntity) ~>
@@ -322,7 +323,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\""+rawUUID+"\"")
-        eclair.sendToRoute(expectedRoute, 1234, ByteVector32.Zeroes, 190)(any[Timeout]).wasCalled(once)
+        eclair.sendToRoute(expectedRoute, MilliSatoshi(1234), ByteVector32.Zeroes, 190)(any[Timeout]).wasCalled(once)
       }
 
     // this test uses CSV encoded route
@@ -334,7 +335,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\""+rawUUID+"\"")
-        eclair.sendToRoute(expectedRoute, 1234, ByteVector32.One, 190)(any[Timeout]).wasCalled(once)
+        eclair.sendToRoute(expectedRoute, MilliSatoshi(1234), ByteVector32.One, 190)(any[Timeout]).wasCalled(once)
       }
   }
 

@@ -19,8 +19,9 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
-import fr.acinq.eclair.{ShortChannelId, UInt64}
+import fr.acinq.eclair.crypto.Mac32
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -51,8 +52,10 @@ object CommonCodecs {
   // this codec can be safely used for values < 2^63 and will fail otherwise
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
   val uint64overflow: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
-
   val uint64: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
+
+  val satoshi: Codec[Satoshi] = uint64overflow.xmapc(l => Satoshi(l))(_.toLong)
+  val millisatoshi: Codec[MilliSatoshi] = uint64overflow.xmapc(l => MilliSatoshi(l))(_.amount)
 
   /**
     * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be
@@ -124,5 +127,18 @@ object CommonCodecs {
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
 
   def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(32, utf8).xmap(s => s.takeWhile(_ != '\u0000'), s => s)
+
+  /**
+    * When encoding, prepend a valid mac to the output of the given codec.
+    * When decoding, verify that a valid mac is prepended.
+    */
+  def prependmac[A](codec: Codec[A], mac: Mac32) = Codec[A](
+    (a: A) => codec.encode(a).map(bits => mac.mac(bits.toByteVector).bits ++ bits),
+    (bits: BitVector) => ("mac" | bytes32).decode(bits) match {
+      case Attempt.Successful(DecodeResult(msgMac, remainder)) if mac.verify(msgMac, remainder.toByteVector) => codec.decode(remainder)
+      case Attempt.Successful(_) => Attempt.Failure(scodec.Err("invalid mac"))
+      case Attempt.Failure(err) => Attempt.Failure(err)
+    }
+  )
 
 }

@@ -16,11 +16,9 @@
 
 package fr.acinq.eclair.gui.controllers
 
-import fr.acinq.bitcoin.MilliSatoshi
-import fr.acinq.eclair.CoinUtils
+import fr.acinq.eclair.{CoinUtils, MilliSatoshi}
 import fr.acinq.eclair.gui.utils._
 import fr.acinq.eclair.gui.{FxApp, Handlers}
-import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 import javafx.application.Platform
 import javafx.event.ActionEvent

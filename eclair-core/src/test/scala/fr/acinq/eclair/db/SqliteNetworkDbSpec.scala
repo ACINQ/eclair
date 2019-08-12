@@ -24,7 +24,7 @@ import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.{Announcements, PublicChannel}
 import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
-import fr.acinq.eclair.{ShortChannelId, TestConstants, randomBytes32, randomKey}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 
 import scala.collection.SortedMap
@@ -144,9 +144,9 @@ class SqliteNetworkDbSpec extends FunSuite {
       channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None),
       channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None)))
 
-    val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, a, b.publicKey, ShortChannelId(42), 5, 7000000, 50000, 100, 500000000L, true)
-    val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, a.publicKey, ShortChannelId(42), 5, 7000000, 50000, 100, 500000000L, true)
-    val channel_update_3 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, c.publicKey, ShortChannelId(44), 5, 7000000, 50000, 100, 500000000L, true)
+    val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, a, b.publicKey, ShortChannelId(42), 5, MilliSatoshi(7000000), MilliSatoshi(50000), 100, MilliSatoshi(500000000L), true)
+    val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, a.publicKey, ShortChannelId(42), 5, MilliSatoshi(7000000), MilliSatoshi(50000), 100, MilliSatoshi(500000000L), true)
+    val channel_update_3 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, c.publicKey, ShortChannelId(44), 5, MilliSatoshi(7000000), MilliSatoshi(50000), 100, MilliSatoshi(500000000L), true)
 
     db.updateChannel(channel_update_1)
     db.updateChannel(channel_update_1) // duplicate is ignored
@@ -174,7 +174,7 @@ class SqliteNetworkDbSpec extends FunSuite {
     val capacity = Satoshi(10000)
 
     val channels = shortChannelIds.map(id => Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, id, pub, pub, pub, pub, sig, sig, sig, sig))
-    val template = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv, pub, ShortChannelId(42), 5, 7000000, 50000, 100, 500000000L, true)
+    val template = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv, pub, ShortChannelId(42), 5, MilliSatoshi(7000000), MilliSatoshi(50000), 100, MilliSatoshi(500000000L), true)
     val updates = shortChannelIds.map(id => template.copy(shortChannelId = id))
     val txid = randomBytes32
     channels.foreach(ca => db.addChannel(ca, txid, capacity))

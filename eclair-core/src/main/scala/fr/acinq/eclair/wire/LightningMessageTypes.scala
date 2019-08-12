@@ -21,9 +21,9 @@ import java.nio.charset.StandardCharsets
 
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.{ShortChannelId, UInt64}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 import scala.util.Try
@@ -69,12 +69,12 @@ case class ChannelReestablish(channelId: ByteVector32,
 
 case class OpenChannel(chainHash: ByteVector32,
                        temporaryChannelId: ByteVector32,
-                       fundingSatoshis: Long,
-                       pushMsat: Long,
-                       dustLimitSatoshis: Long,
+                       fundingSatoshis: Satoshi,
+                       pushMsat: MilliSatoshi,
+                       dustLimitSatoshis: Satoshi,
                        maxHtlcValueInFlightMsat: UInt64,
-                       channelReserveSatoshis: Long,
-                       htlcMinimumMsat: Long,
+                       channelReserveSatoshis: Satoshi,
+                       htlcMinimumMsat: MilliSatoshi,
                        feeratePerKw: Long,
                        toSelfDelay: Int,
                        maxAcceptedHtlcs: Int,
@@ -87,10 +87,10 @@ case class OpenChannel(chainHash: ByteVector32,
                        channelFlags: Byte) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
-                         dustLimitSatoshis: Long,
+                         dustLimitSatoshis: Satoshi,
                          maxHtlcValueInFlightMsat: UInt64,
-                         channelReserveSatoshis: Long,
-                         htlcMinimumMsat: Long,
+                         channelReserveSatoshis: Satoshi,
+                         htlcMinimumMsat: MilliSatoshi,
                          minimumDepth: Long,
                          toSelfDelay: Int,
                          maxAcceptedHtlcs: Int,
@@ -116,15 +116,15 @@ case class Shutdown(channelId: ByteVector32,
                     scriptPubKey: ByteVector) extends ChannelMessage with HasChannelId
 
 case class ClosingSigned(channelId: ByteVector32,
-                         feeSatoshis: Long,
+                         feeSatoshis: Satoshi,
                          signature: ByteVector64) extends ChannelMessage with HasChannelId
 
 case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long,
-                         amountMsat: Long,
+                         amountMsat: MilliSatoshi,
                          paymentHash: ByteVector32,
                          cltvExpiry: Long,
-                         onionRoutingPacket: ByteVector) extends HtlcMessage with UpdateMessage with HasChannelId
+                         onionRoutingPacket: OnionRoutingPacket) extends HtlcMessage with UpdateMessage with HasChannelId
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,
                              id: Long,
@@ -218,19 +218,15 @@ case class ChannelUpdate(signature: ByteVector64,
                          messageFlags: Byte,
                          channelFlags: Byte,
                          cltvExpiryDelta: Int,
-                         htlcMinimumMsat: Long,
-                         feeBaseMsat: Long,
+                         htlcMinimumMsat: MilliSatoshi,
+                         feeBaseMsat: MilliSatoshi,
                          feeProportionalMillionths: Long,
-                         htlcMaximumMsat: Option[Long],
+                         htlcMaximumMsat: Option[MilliSatoshi],
                          unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with HasTimestamp with HasChainHash {
   require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
 
   def isNode1 = Announcements.isNode1(channelFlags)
 }
-
-case class PerHopPayload(shortChannelId: ShortChannelId,
-                         amtToForward: Long,
-                         outgoingCltvValue: Long)
 
 // @formatter:off
 sealed trait EncodingType

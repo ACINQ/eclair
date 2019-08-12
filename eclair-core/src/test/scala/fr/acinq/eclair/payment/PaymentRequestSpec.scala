@@ -17,14 +17,15 @@
 package fr.acinq.eclair.payment
 
 import java.nio.ByteOrder
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi}
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Crypto, MilliBtc, Protocol, Satoshi}
+import fr.acinq.bitcoin._
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.payment.PaymentRequest._
 import org.scalatest.FunSuite
 import scodec.DecodeResult
 import scodec.bits._
+import fr.acinq.eclair._
 
 /**
   * Created by fabrice on 15/05/17.
@@ -42,13 +43,13 @@ class PaymentRequestSpec extends FunSuite {
     assert('p' === Amount.unit(MilliSatoshi(99)))
     assert('n' === Amount.unit(MilliSatoshi(100)))
     assert('p' === Amount.unit(MilliSatoshi(101)))
-    assert('n' === Amount.unit(Satoshi(1)))
-    assert('u' === Amount.unit(Satoshi(100)))
-    assert('n' === Amount.unit(Satoshi(101)))
-    assert('u' === Amount.unit(Satoshi(1155400)))
-    assert('m' === Amount.unit(MilliBtc(1)))
-    assert('m' === Amount.unit(MilliBtc(10)))
-    assert('m' === Amount.unit(Btc(1)))
+    assert('n' === Amount.unit(Satoshi(1).toMilliSatoshi))
+    assert('u' === Amount.unit(Satoshi(100).toMilliSatoshi))
+    assert('n' === Amount.unit(Satoshi(101).toMilliSatoshi))
+    assert('u' === Amount.unit(Satoshi(1155400).toMilliSatoshi))
+    assert('m' === Amount.unit(millibtc2satoshi(MilliBtc(1)).toMilliSatoshi))
+    assert('m' === Amount.unit(millibtc2satoshi(MilliBtc(10)).toMilliSatoshi))
+    assert('m' === Amount.unit(btc2satoshi(Btc(1)).toMilliSatoshi))
   }
 
   test("check that we can still decode non-minimal amount encoding") {
