@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.{MilliSatoshi, wire}
 import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.{MilliSatoshi, wire}
 import scodec.Codec
 import scodec.codecs._
 
