@@ -163,7 +163,7 @@ object Commitments {
     val missingLocal = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
     val missingRemote = reduced.toLocal.truncateToSatoshi - commitments1.localParams.channelReserve - fees
 
-    if (commitments1.localParams.isFunder && missingLocal < Satoshi(0)) {
+    if (missingLocal < Satoshi(0)) {
       return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingLocal, reserve = commitments1.remoteParams.channelReserve, fees = fees, isLocal = true))
     } else if (!commitments1.localParams.isFunder && missingRemote < Satoshi(0)) {
       return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingRemote, reserve = commitments1.localParams.channelReserve, fees = fees, isLocal = false))
