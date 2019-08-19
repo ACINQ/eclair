@@ -78,7 +78,7 @@ trait Eclair {
 
   def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
-  def send(recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry_opt: Option[Long] = None, maxAttempts_opt: Option[Int] = None, feeThresholdSat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None)(implicit timeout: Timeout): Future[UUID]
+  def send(recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry_opt: Option[Long] = None, maxAttempts_opt: Option[Int] = None, feeThresholdSat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, userProvidedPaymentId_opt: Option[UUID] = None)(implicit timeout: Timeout): Future[UUID]
 
   def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
 
@@ -190,7 +190,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentInitiator ? SendPaymentToRoute(amount, paymentHash, route, finalCltvExpiry)).mapTo[UUID]
   }
 
-  override def send(recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry_opt: Option[Long], maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double])(implicit timeout: Timeout): Future[UUID] = {
+  override def send(recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, minFinalCltvExpiry_opt: Option[Long], maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double], userProvidedPaymentId_opt: Option[UUID])(implicit timeout: Timeout): Future[UUID] = {
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
 
     val defaultRouteParams = Router.getDefaultRouteParams(appKit.nodeParams.routerConf)
@@ -200,8 +200,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
     )
 
     val sendPayment = minFinalCltvExpiry_opt match {
-      case Some(minCltv) => SendPayment(amount, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv, maxAttempts = maxAttempts, routeParams = Some(routeParams))
-      case None => SendPayment(amount, paymentHash, recipientNodeId, assistedRoutes, maxAttempts = maxAttempts, routeParams = Some(routeParams))
+      case Some(minCltv) => SendPayment(amount, paymentHash, recipientNodeId, assistedRoutes, finalCltvExpiry = minCltv, maxAttempts = maxAttempts, routeParams = Some(routeParams), userProvidedUUID = userProvidedPaymentId_opt)
+      case None => SendPayment(amount, paymentHash, recipientNodeId, assistedRoutes, maxAttempts = maxAttempts, routeParams = Some(routeParams), userProvidedUUID = userProvidedPaymentId_opt)
     }
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }

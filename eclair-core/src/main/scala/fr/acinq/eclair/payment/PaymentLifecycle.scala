@@ -199,15 +199,23 @@ object PaymentLifecycle {
 
   // @formatter:off
   case class ReceivePayment(amount_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil, fallbackAddress: Option[String] = None, paymentPreimage: Option[ByteVector32] = None)
-  sealed trait GenericSendPayment
-  case class SendPaymentToRoute(amount: MilliSatoshi, paymentHash: ByteVector32, hops: Seq[PublicKey], finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY) extends GenericSendPayment
+  sealed trait GenericSendPayment {
+    val userProvidedUUID: Option[UUID]
+  }
+  case class SendPaymentToRoute(amount: MilliSatoshi,
+                                paymentHash: ByteVector32,
+                                hops: Seq[PublicKey],
+                                finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
+                                userProvidedUUID: Option[UUID] = None) extends GenericSendPayment
+
   case class SendPayment(amount: MilliSatoshi,
                          paymentHash: ByteVector32,
                          targetNodeId: PublicKey,
                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                          finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
                          maxAttempts: Int,
-                         routeParams: Option[RouteParams] = None) extends GenericSendPayment {
+                         routeParams: Option[RouteParams] = None,
+                         userProvidedUUID: Option[UUID] = None) extends GenericSendPayment {
     require(amount > MilliSatoshi(0), s"amountMsat must be > 0")
   }
 

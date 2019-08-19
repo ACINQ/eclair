@@ -222,17 +222,18 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("payinvoice") {
-                          formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?) {
-                            case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts, feeThresholdSat_opt, maxFeePct_opt) =>
-                              complete(eclairApi.send(nodeId, amount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
-                            case (invoice, Some(overrideAmount), maxAttempts, feeThresholdSat_opt, maxFeePct_opt) =>
-                              complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
+                          formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "userProvidedPaymentId".as[UUID].?) {
+                            case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, userProvidedPaymentId_opt) =>
+                              complete(eclairApi.send(nodeId, amount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, userProvidedPaymentId_opt))
+                            case (invoice, Some(overrideAmount), maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, userProvidedPaymentId_opt) =>
+                              complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiry, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, userProvidedPaymentId_opt))
                             case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
                           }
                         } ~
                         path("sendtonode") {
-                          formFields(amountMsatFormParam, paymentHashFormParam, nodeIdFormParam, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?) { (amountMsat, paymentHash, nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt) =>
-                            complete(eclairApi.send(nodeId, amountMsat, paymentHash, maxAttempts_opt = maxAttempts_opt, feeThresholdSat_opt = feeThresholdSat_opt, maxFeePct_opt = maxFeePct_opt))
+                          formFields(amountMsatFormParam, paymentHashFormParam, nodeIdFormParam, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "userProvidedPaymentId".as[UUID].?) {
+                            (amountMsat, paymentHash, nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, userProvidedPaymentId_opt) =>
+                              complete(eclairApi.send(nodeId, amountMsat, paymentHash, maxAttempts_opt = maxAttempts_opt, feeThresholdSat_opt = feeThresholdSat_opt, maxFeePct_opt = maxFeePct_opt, userProvidedPaymentId_opt = userProvidedPaymentId_opt))
                           }
                         } ~
                         path("sendtoroute") {

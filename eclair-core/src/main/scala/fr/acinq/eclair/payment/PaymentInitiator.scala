@@ -17,7 +17,8 @@
 package fr.acinq.eclair.payment
 
 import java.util.UUID
-import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.payment.PaymentLifecycle.GenericSendPayment
 
@@ -28,12 +29,21 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: Actor
 
   override def receive: Receive = {
     case c: GenericSendPayment =>
-      val paymentId = UUID.randomUUID()
-      val payFsm = context.actorOf(PaymentLifecycle.props(nodeParams, paymentId, router, register))
-      payFsm forward c
-      sender ! paymentId
+      c.userProvidedUUID match {
+        case Some(uuid) if nodeParams.db.payments.getOutgoingPayment(uuid).isDefined =>
+          sender ! Status.Failure(new RuntimeException(s"User provided paymentId '$uuid' already exists in a database"))
+        case Some(uuid) =>
+          onSuccess(sender, c, uuid)
+        case None =>
+          onSuccess(sender, c, UUID.randomUUID())
+      }
   }
 
+  def onSuccess(to: ActorRef, c: GenericSendPayment, paymentId: UUID): Unit = {
+    val payFsm = context.actorOf(PaymentLifecycle.props(nodeParams, paymentId, router, register))
+    payFsm forward c
+    to ! paymentId
+  }
 }
 
 object PaymentInitiator {
