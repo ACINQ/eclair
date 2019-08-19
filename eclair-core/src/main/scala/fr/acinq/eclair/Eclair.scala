@@ -38,7 +38,19 @@ import fr.acinq.eclair.payment.{GetUsableBalances, PaymentReceived, PaymentRelay
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import TimestampQueryFilters._
 
+
 case class GetInfoResponse(nodeId: PublicKey, alias: String, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
+
+case class FlagCounter(data : Map[Int,Int] = Map(0->0, 1->0, 2->0, 3->0, 4->0, 5->0, 6->0, 7->0)) {
+  def +(that: Byte) = {
+    FlagCounter((0 to 7).map{ b =>
+      (b,data.getOrElse(b,0) + ((that & (1<<b)) >> b).toInt)
+    }.toMap)
+  }
+}
+
+case class GetNetworkInfoResponse(totalChannelCount: Long, totalNodes: Long, totalUpdates:Long, avgCltvExpiryDelta: Long, avgHtlcMinimumMsat: Long,
+                           avgFeeBaseMsat: Long, avgFeeProportionalMillionths: Long, avgHtlcMaximumMsat: Long, messageFlags: FlagCounter, channelFlags: FlagCounter )
 
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 
@@ -105,6 +117,8 @@ trait Eclair {
   def allUpdates(nodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[ChannelUpdate]]
 
   def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse]
+
+  def getNetworkInfoResponse()(implicit timeout: Timeout): Future[GetNetworkInfoResponse]
 
   def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]]
 }
@@ -177,7 +191,30 @@ class EclairImpl(appKit: Kit) extends Eclair {
     case Some(pk) => (appKit.router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]].map(_.filter(e => e._1.a == pk || e._1.b == pk).values)
   }
 
+  override def getNetworkInfoResponse()(implicit timeout: Timeout): Future[GetNetworkInfoResponse] = {
+    for {
+      nodeCount <- allNodes().map{_.size}
+      channelCount <- allChannels().map{_.size}
+
+      (updateCount: Long,avgCltvExpiryDelta: Long,avgHtlcMinimumMsat: Long,avgFeeBaseMsat: Long,avgFeeProportionalMillionths: Long,avgHtlcMaximumMsat: Long, mf: FlagCounter, cf:FlagCounter ) <- allUpdates(None).map{
+        updates => updates.foldLeft(Tuple8(0L, 0L, 0L, 0L, 0L, 0L,FlagCounter(), FlagCounter())) {
+          (t, c) =>
+            Tuple8(t._1 + 1,
+              t._2 + c.cltvExpiryDelta,
+              t._3 + c.htlcMinimumMsat.amount,
+              t._4 + c.feeBaseMsat.amount,
+              t._5 + c.feeProportionalMillionths,
+              t._6 + c.htlcMaximumMsat.getOrElse(MilliSatoshi(0L)).amount,
+              t._7 + c.messageFlags,
+              t._8 + c.channelFlags
+            )
+        }
+      }.map(in => (in._1,in._2/in._1,in._3/in._1,in._4/in._1,in._5/in._1,in._6/in._1, in._7, in._8))
+    } yield new GetNetworkInfoResponse(channelCount, nodeCount, updateCount,avgCltvExpiryDelta,avgHtlcMinimumMsat,avgFeeBaseMsat,avgFeeProportionalMillionths,avgHtlcMaximumMsat,mf,cf)
+  }
+
   override def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest] = {
+
     fallbackAddress_opt.map { fa => fr.acinq.eclair.addressToPublicKeyScript(fa, appKit.nodeParams.chainHash) } // if it's not a bitcoin address throws an exception
     (appKit.paymentHandler ? ReceivePayment(description = description, amount_opt = amount_opt, expirySeconds_opt = expire_opt, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt)).mapTo[PaymentRequest]
   }

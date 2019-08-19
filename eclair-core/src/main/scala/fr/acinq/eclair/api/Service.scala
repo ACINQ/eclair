@@ -141,6 +141,9 @@ trait Service extends ExtraDirectives with Logging {
                       path("getinfo") {
                         complete(eclairApi.getInfoResponse())
                       } ~
+                        path("getnetworkinfo") {
+                          complete(eclairApi.getNetworkInfoResponse())
+                        } ~
                         path("connect") {
                           formFields("uri".as[NodeURI]) { uri =>
                             complete(eclairApi.connect(Left(uri)))

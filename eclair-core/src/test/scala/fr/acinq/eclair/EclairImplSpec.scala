@@ -18,26 +18,27 @@ package fr.acinq.eclair
 
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
+import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.TestWallet
-import fr.acinq.eclair.io.Peer.OpenChannel
-import fr.acinq.eclair.payment.PaymentLifecycle.{ReceivePayment, SendPayment, SendPaymentToRoute}
-import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
-import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import org.scalatest.{Matchers, Outcome, fixture}
-import scodec.bits._
-import TestConstants._
-import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register}
-import fr.acinq.eclair.payment.LocalPaymentHandler
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register, _}
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.io.Peer.OpenChannel
+import fr.acinq.eclair.payment.LocalPaymentHandler
+import fr.acinq.eclair.payment.PaymentLifecycle.{ReceivePayment, SendPayment, SendPaymentToRoute}
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
+import fr.acinq.eclair.wire.Color
 import org.mockito.scalatest.IdiomaticMockito
+import org.scalatest.{Outcome, fixture}
+import scodec.bits._
+
 import scala.concurrent.Await
-import scala.util.{Failure, Success}
 import scala.concurrent.duration._
+import scala.util.Success
 
 class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSuiteLike with IdiomaticMockito {
 
@@ -151,6 +152,65 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
       fResp.value match {
         // check if the response contains updates only for 'b'
         case Some(Success(res)) => res.forall { u => updates.exists(entry => entry._2.shortChannelId == u.shortChannelId && entry._1.a == b || entry._1.b == b) }
+        case _ => false
+      }
+    })
+  }
+
+  test("get network info returns overall network statistics") { f =>
+    import f._
+    val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+    val eclair = new EclairImpl(kit)
+
+    // Method call being tested
+    val fResp = eclair.getNetworkInfoResponse()
+
+    // Return dummy node announcement
+    f.router.expectMsg('nodes)
+    f.router.reply(Seq(makeNodeAnnouncement(randomKey, "node-A", Color(15, 10, -70), Nil)))
+
+    // Return dummy channel information
+    f.router.expectMsg('channels)
+    val channelId_ab = ShortChannelId(420000, 1, 0)
+    val channelId_bc = ShortChannelId(420000, 2, 0)
+    val chan_ab = fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement(channelId_ab, randomKey, randomKey, randomKey, randomKey)
+    val chan_bc = fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement(channelId_bc, randomKey, randomKey, randomKey, randomKey)
+    f.router.reply(Seq(chan_ab, chan_bc))
+
+    // Return dummy updates
+    f.router.expectMsg('updates)
+    var updates = Seq(
+      makeUpdate(1L, a, b, feeBase = MilliSatoshi(0), 100, minHtlc = MilliSatoshi(10), maxHtlc = Some(MilliSatoshi(100L)), cltvDelta = 13)._2,
+      makeUpdate(4L, a, e, feeBase = MilliSatoshi(0), 0, minHtlc = MilliSatoshi(10), maxHtlc = Some(MilliSatoshi(100L)), cltvDelta = 12)._2,
+      makeUpdate(2L, b, c, feeBase = MilliSatoshi(2), 0, minHtlc = MilliSatoshi(10), maxHtlc = None, cltvDelta = 500)._2,
+      makeUpdate(3L, c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(50), maxHtlc = None, cltvDelta = 500)._2,
+      makeUpdate(7L, e, c, feeBase = MilliSatoshi(2), 0, minHtlc = MilliSatoshi(50), maxHtlc = None, cltvDelta = 12)._2
+    )
+    val flagUpdate = makeUpdate(8L, e, b, feeBase = MilliSatoshi(2), 0, minHtlc = MilliSatoshi(50), maxHtlc = None, cltvDelta = 12)._2;
+    updates = updates :+ flagUpdate.copy(messageFlags = (-1).toByte, channelFlags = 7.toByte, htlcMaximumMsat = Some(MilliSatoshi(100L)))
+    updates = updates :+ flagUpdate.copy(messageFlags = (1).toByte, channelFlags = 1.toByte, htlcMaximumMsat = Some(MilliSatoshi(100L)))
+    f.router.reply(updates)
+
+    // Expected results
+    // 4 updates have htlcMaximumMsat set so 0 -> 4
+    // one update we set every flag to -1. So flages 1-7 are all 1
+    val messageAnswer = FlagCounter(Map(0 -> 4, 1 -> 1, 2 -> 1, 3 -> 1, 4 -> 1, 5 -> 1, 6 -> 1, 7 -> 1))
+    // one channel flag is 1 (00000001) and one is 7 (00000111) so 0->2 and 1-2 ->1
+    val channelAnswer = FlagCounter(Map(0 -> 2, 1 -> 1, 2 -> 1, 3 -> 0, 4 -> 0, 5 -> 0, 6 -> 0, 7 -> 0))
+
+    awaitCond({
+      fResp.value match {
+        case Some(Success(GetNetworkInfoResponse(totalchannelcount, totalNodes, totalUpdates, avgCltvExpiry, avgHtlcMinimumMsat, avgFeeBaseMsat, avgFeeProportionalMillionths, avgHtlcMaximumMsat, messageFlag, channelFlag))) =>
+          (totalchannelcount == 2 && // we returned 2 channels
+            totalNodes == 1 && // we returned 1 node
+            totalUpdates == 7 && // were 7 updates
+            avgCltvExpiry == 151 && // avg(13,12,500,500,12,12,12)
+            avgHtlcMinimumMsat == 32 && // avg(10,10,10,50,50,50,50)
+            avgFeeBaseMsat == 1 && // avg(0,0,2,1,2,2,2)
+            avgFeeProportionalMillionths == 14 && // avg(100,0,0,0,0,0,0)
+            avgHtlcMaximumMsat == 57 && // avg(100,100,0,0,0,100,100)
+            messageFlag == messageAnswer &&
+            channelFlag == channelAnswer)
         case _ => false
       }
     })
