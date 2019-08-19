@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.wire.OnionCodecs._
 import org.scalatest.FunSuite
 import scodec.bits.HexStringSyntax
@@ -40,7 +40,7 @@ class OnionCodecsSpec extends FunSuite {
   }
 
   test("encode/decode per-hop payload") {
-    val payload = PerHopPayload(shortChannelId = ShortChannelId(42), amtToForward = 142000, outgoingCltvValue = 500000)
+    val payload = PerHopPayload(shortChannelId = ShortChannelId(42), amtToForward = MilliSatoshi(142000), outgoingCltvValue = 500000)
     val bin = perHopPayloadCodec.encode(payload).require
     assert(bin.toByteVector.size === 33)
     val payload1 = perHopPayloadCodec.decode(bin).require.value
