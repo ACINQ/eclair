@@ -273,7 +273,6 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         eclair.send(any, MilliSatoshi(1258000), any, any, any, any, any, any, any)(any[Timeout]).wasCalled(once)
       }
 
-
     Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "123", "feeThresholdSat" -> "112233", "maxFeePct" -> "2.34").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       Route.seal(mockService.route) ~>
@@ -283,6 +282,15 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         eclair.send(any, MilliSatoshi(123), any, any, any, any, Some(Satoshi(112233)), Some(2.34), any)(any[Timeout]).wasCalled(once)
       }
 
+    val uuid = UUID.randomUUID()
+    Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "123", "feeThresholdSat" -> "112233", "maxFeePct" -> "2.34", "userProvidedPaymentId" -> uuid.toString).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.send(any, MilliSatoshi(123), any, any, any, any, Some(Satoshi(112233)), Some(2.34), Some(uuid))(any[Timeout]).wasCalled(once)
+      }
   }
 
   test("'getreceivedinfo' method should respond HTTP 404 with a JSON encoded response if the element is not found") {

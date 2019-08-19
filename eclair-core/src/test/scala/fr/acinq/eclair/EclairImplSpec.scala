@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair
 
+import java.util.UUID
+
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
@@ -35,6 +37,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
 import org.mockito.scalatest.IdiomaticMockito
+
 import scala.concurrent.Await
 import scala.util.{Failure, Success}
 import scala.concurrent.duration._
@@ -126,6 +129,15 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     assert(send3.paymentHash == ByteVector32.Zeroes)
     assert(send3.routeParams.get.maxFeeBase == Satoshi(123).toMilliSatoshi) // conversion sat -> msat
     assert(send3.routeParams.get.maxFeePct == 4.20)
+
+    // with user defined UUID
+    val uuid = UUID.randomUUID()
+    eclair.send(recipientNodeId = nodeId, amount = MilliSatoshi(123), paymentHash = ByteVector32.Zeroes, minFinalCltvExpiry_opt = None, userProvidedPaymentId_opt = Some(uuid))
+    val send4 = paymentInitiator.expectMsgType[SendPayment]
+    assert(send4.targetNodeId == nodeId)
+    assert(send4.amount == MilliSatoshi(123))
+    assert(send4.paymentHash == ByteVector32.Zeroes)
+    assert(send4.userProvidedUUID.contains(uuid))
   }
 
   test("allupdates can filter by nodeId") { f =>
