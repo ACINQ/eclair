@@ -21,7 +21,6 @@ import java.util.UUID
 import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
-import com.typesafe.sslconfig.util.NoopLogger
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, ScriptFlags, Transaction, TxIn}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._

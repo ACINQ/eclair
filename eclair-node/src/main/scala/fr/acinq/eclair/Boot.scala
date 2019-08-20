@@ -19,9 +19,13 @@ package fr.acinq.eclair
 import java.io.File
 
 import akka.actor.ActorSystem
+import akka.http.scaladsl.Http
+import akka.stream.{ActorMaterializer, BindFailedException}
+import com.typesafe.config.ConfigFactory
+import fr.acinq.eclair.api.Service
 import grizzled.slf4j.Logging
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{Await, ExecutionContext}
 import scala.util.{Failure, Success}
 
 /**
@@ -39,7 +43,29 @@ object Boot extends App with Logging {
     val setup = new Setup(datadir)
     plugins.foreach(_.onSetup(setup))
     setup.bootstrap onComplete {
-      case Success(kit) => plugins.foreach(_.onKit(kit))
+      case Success(kit) =>
+        plugins.foreach(_.onKit(kit))
+        val config = NodeParams.loadConfiguration(datadir, ConfigFactory.empty())
+        if(config.getBoolean("api.enabled")){
+          logger.info(s"json API enabled on port=${config.getInt("api.port")}")
+          implicit val materializer = ActorMaterializer()
+          val apiPassword = config.getString("api.password") match {
+            case "" => throw EmptyAPIPasswordException
+            case valid => valid
+          }
+          val apiRoute = new Service {
+            override val actorSystem = system
+            override val mat = materializer
+            override val password = apiPassword
+            override val eclairApi: Eclair = new EclairImpl(kit)
+          }.route
+         Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).onFailure {
+           case _: BindFailedException => onError(TCPBindException(config.getInt("api.port")))
+         }
+        } else {
+          logger.info("json API disabled")
+        }
+
       case Failure(t) => onError(t)
     }
   } catch {
