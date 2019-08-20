@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -52,6 +52,30 @@ class RouteCalculationSpec extends FunSuite {
     val g = makeGraph(updates)
 
     val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS)
+
+    assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+  }
+
+  test("check fee against max pct properly") {
+
+    // fee is acceptable is it is either
+    // - below our maximum fee base
+    // - below our maximum fraction of the paid amount
+
+    // here we here a maximum fee base of 1 msat, and all our updates have a base fee of 10 msat
+    // so our fee will always be above the base fee, and we will always check that is is below our maximum percentage
+    // of the amount being paid
+
+    val updates = List(
+      makeUpdate(1L, a, b, MilliSatoshi(10), 10, cltvDelta = 1),
+      makeUpdate(2L, b, c, MilliSatoshi(10), 10, cltvDelta = 1),
+      makeUpdate(3L, c, d, MilliSatoshi(10), 10, cltvDelta = 1),
+      makeUpdate(4L, d, e, MilliSatoshi(10), 10, cltvDelta = 1)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBase = MilliSatoshi(1)))
 
     assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
