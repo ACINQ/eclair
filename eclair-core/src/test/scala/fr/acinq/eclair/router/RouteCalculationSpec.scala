@@ -944,7 +944,6 @@ class RouteCalculationSpec extends FunSuite {
     assert(route.size == 2)
     assert(route.last.nextNodeId == targetNode)
   }
-
 }
 
 object RouteCalculationSpec {
