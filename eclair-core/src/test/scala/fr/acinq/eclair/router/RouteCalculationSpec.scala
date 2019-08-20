@@ -62,8 +62,8 @@ class RouteCalculationSpec extends FunSuite {
     // - below our maximum fee base
     // - below our maximum fraction of the paid amount
 
-    // here we here a maximum fee base of 1 msat, and all our updates have a base fee of 10 msat
-    // so our fee will always be above the base fee, and we will always check that is is below our maximum percentage
+    // here we have a maximum fee base of 1 msat, and all our updates have a base fee of 10 msat
+    // so our fee will always be above the base fee, and we will always check that it is below our maximum percentage
     // of the amount being paid
 
     val updates = List(
