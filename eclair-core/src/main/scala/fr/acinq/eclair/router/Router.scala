@@ -871,7 +871,7 @@ object Router {
 
     def feePctOk(fee: MilliSatoshi, amount: MilliSatoshi): Boolean = {
       val maxFee = amount * routeParams.maxFeePct
-      fee < maxFee
+      fee <= maxFee
     }
 
     def feeOk(fee: MilliSatoshi, amount: MilliSatoshi): Boolean = feeBaseOk(fee) || feePctOk(fee, amount)
