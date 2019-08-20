@@ -19,9 +19,9 @@ package fr.acinq.eclair.router
 import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -33,7 +33,6 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import scodec.bits.ByteVector
 
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.collection.{SortedSet, mutable}
@@ -868,10 +867,21 @@ object Router {
 
     val currentBlockHeight = Globals.blockCount.get()
 
+    def feeBaseOk(fee: MilliSatoshi): Boolean = fee <= routeParams.maxFeeBase
+
+    def feePctOk(fee: MilliSatoshi, amount: MilliSatoshi): Boolean = {
+      val maxFee = amount * routeParams.maxFeePct
+      fee <= maxFee
+    }
+
+    def feeOk(fee: MilliSatoshi, amount: MilliSatoshi): Boolean = feeBaseOk(fee) || feePctOk(fee, amount)
+
+    def lengthOk(length: Int): Boolean = length <= routeParams.routeMaxLength && length <= ROUTE_MAX_LENGTH
+
+    def cltvOk(cltv: Int): Boolean = cltv <= routeParams.routeMaxCltv
+
     val boundaries: RichWeight => Boolean = { weight =>
-      ((weight.cost - amount) < routeParams.maxFeeBase || (weight.cost - amount) < amount * routeParams.maxFeePct.toLong) &&
-        weight.length <= routeParams.routeMaxLength && weight.length <= ROUTE_MAX_LENGTH &&
-        weight.cltv <= routeParams.routeMaxCltv
+      feeOk(weight.cost - amount, amount) && lengthOk(weight.length) && cltvOk(weight.cltv)
     }
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList match {
