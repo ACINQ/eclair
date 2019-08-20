@@ -867,7 +867,7 @@ object Router {
 
     val currentBlockHeight = Globals.blockCount.get()
 
-    def feeBaseOk(fee: MilliSatoshi): Boolean = fee < routeParams.maxFeeBase
+    def feeBaseOk(fee: MilliSatoshi): Boolean = fee <= routeParams.maxFeeBase
 
     def feePctOk(fee: MilliSatoshi, amount: MilliSatoshi): Boolean = {
       val maxFee = amount * routeParams.maxFeePct
