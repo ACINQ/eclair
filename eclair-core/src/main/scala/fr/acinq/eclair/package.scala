@@ -165,15 +165,24 @@ package object eclair {
     // @formatter:off
     def toLong = amount
     def +(other: MilliSatoshi) = MilliSatoshi(amount + other.amount)
+    def +(other: Satoshi) = MilliSatoshi(amount + other.toMilliSatoshi.amount)
+    def +(other: Long) = MilliSatoshi(amount + other)
     def -(other: MilliSatoshi) = MilliSatoshi(amount - other.amount)
+    def -(other: Satoshi) = MilliSatoshi(amount - other.toMilliSatoshi.amount)
+    def -(other: Long) = MilliSatoshi(amount - other)
     def *(m: Long) = MilliSatoshi(amount * m)
     def *(m: Double) = MilliSatoshi((amount * m).toLong)
     def /(d: Long) = MilliSatoshi(amount / d)
     def compare(other: MilliSatoshi): Int = if (amount == other.amount) 0 else if (amount < other.amount) -1 else 1
+    def compare(other: Satoshi): Int = compare(other.toMilliSatoshi)
     def <= (that: MilliSatoshi): Boolean = compare(that) <= 0
+    def <= (that: Satoshi): Boolean = compare(that) <= 0
     def >= (that: MilliSatoshi): Boolean = compare(that) >= 0
+    def >= (that: Satoshi): Boolean = compare(that) >= 0
     def <  (that: MilliSatoshi): Boolean = compare(that) < 0
+    def <  (that: Satoshi): Boolean = compare(that) < 0
     def >  (that: MilliSatoshi): Boolean = compare(that) > 0
+    def >  (that: Satoshi): Boolean = compare(that) > 0
     def unary_-() = MilliSatoshi(-amount)
     def truncateToSatoshi: Satoshi = Satoshi(amount / 1000)
     // @formatter:on

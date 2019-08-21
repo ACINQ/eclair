@@ -17,15 +17,15 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, Script}
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, Satoshi, Script}
 import org.scalatest.FunSuite
 import scodec.bits._
 
 import scala.util.Try
 
 /**
-  * Created by PM on 27/01/2017.
-  */
+ * Created by PM on 27/01/2017.
+ */
 
 class PackageSpec extends FunSuite {
 
@@ -34,7 +34,7 @@ class PackageSpec extends FunSuite {
       (hex"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 1, hex"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE") ::
       (hex"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0000", 2, hex"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0002") ::
       (hex"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00F0", 0x0F00, hex"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0FF0") :: Nil)
-        .map(x => (ByteVector32(x._1), x._2, ByteVector32(x._3)))
+      .map(x => (ByteVector32(x._1), x._2, ByteVector32(x._3)))
 
     data.foreach(x => assert(toLongId(ByteVector32(x._1), x._2) === x._3))
   }
@@ -113,4 +113,46 @@ class PackageSpec extends FunSuite {
     assert(ShortChannelId(Long.MaxValue - 1) < ShortChannelId(Long.MaxValue))
     assert(ShortChannelId(Long.MaxValue) < ShortChannelId(Long.MaxValue + 1))
   }
+
+  test("millisatoshi numeric operations") {
+    // add
+    assert(MilliSatoshi(561) + MilliSatoshi(0) === MilliSatoshi(561))
+    assert(MilliSatoshi(561) + 0 === MilliSatoshi(561))
+    assert(MilliSatoshi(561) + MilliSatoshi(1105) === MilliSatoshi(1666))
+    assert(MilliSatoshi(561) + 1105 === MilliSatoshi(1666))
+    assert(MilliSatoshi(2000) + Satoshi(3) === MilliSatoshi(5000))
+
+    // subtract
+    assert(MilliSatoshi(561) - MilliSatoshi(0) === MilliSatoshi(561))
+    assert(MilliSatoshi(561) - 0 === MilliSatoshi(561))
+    assert(MilliSatoshi(1105) - MilliSatoshi(561) === MilliSatoshi(544))
+    assert(MilliSatoshi(1105) - 561 === MilliSatoshi(544))
+    assert(MilliSatoshi(561) - MilliSatoshi(1105) === -MilliSatoshi(544))
+    assert(MilliSatoshi(561) - 1105 === -MilliSatoshi(544))
+    assert(MilliSatoshi(1105) - Satoshi(1) === MilliSatoshi(105))
+
+    // multiply
+    assert(MilliSatoshi(561) * 1 === MilliSatoshi(561))
+    assert(MilliSatoshi(561) * 2 === MilliSatoshi(1122))
+    assert(MilliSatoshi(561) * 2.5 === MilliSatoshi(1402))
+
+    // divide
+    assert(MilliSatoshi(561) / 1 === MilliSatoshi(561))
+    assert(MilliSatoshi(561) / 2 === MilliSatoshi(280))
+
+    // compare
+    assert(MilliSatoshi(561) <= MilliSatoshi(561))
+    assert(MilliSatoshi(561) <= MilliSatoshi(1105))
+    assert(MilliSatoshi(561) < MilliSatoshi(1105))
+    assert(MilliSatoshi(561) >= MilliSatoshi(561))
+    assert(MilliSatoshi(1105) >= MilliSatoshi(561))
+    assert(MilliSatoshi(1105) > MilliSatoshi(561))
+    assert(MilliSatoshi(1000) <= Satoshi(1))
+    assert(MilliSatoshi(1000) <= Satoshi(2))
+    assert(MilliSatoshi(1000) < Satoshi(2))
+    assert(MilliSatoshi(1000) >= Satoshi(1))
+    assert(MilliSatoshi(2000) >= Satoshi(1))
+    assert(MilliSatoshi(2000) > Satoshi(1))
+  }
+
 }
