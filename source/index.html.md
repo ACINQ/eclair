@@ -121,7 +121,7 @@ Connect to another lightning node, this will perform a connection but no channel
 
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
-nodeId | The **nodeId** of the node you want to connect to | No | 32bytes-HexString (String)
+nodeId | The **nodeId** of the node you want to connect to | No | 33bytes-HexString (String)
 host | The IPv4 host address of the node | No | String
 port | The port of the node (default: 9735) | Yes | Integer
 
@@ -152,7 +152,7 @@ by the remote peer in his `node_announcement` messages.
 
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
-nodeId | The **nodeId** of the node you want to connect to | No | 32bytes-HexString (String)
+nodeId | The **nodeId** of the node you want to connect to | No | 33bytes-HexString (String)
 
 ## Disconnect
 
@@ -179,7 +179,7 @@ Disconnect from a peer.
 
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
-nodeId | The **nodeId** of the node you want to disconnect from | No | 32bytes-HexString (String)
+nodeId | The **nodeId** of the node you want to disconnect from | No | 33bytes-HexString (String)
 
 # Open
 
@@ -210,7 +210,7 @@ you can send to the remote a _pushMsat_ value and you can specify wether this sh
 
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
-nodeId | The nodeId of the node you want to connect to | No | 32bytes-HexString (String)
+nodeId | The nodeId of the node you want to connect to | No | 33bytes-HexString (String)
 fundingSatoshis | Amount of satoshis to spend in the funding of the channel | No | Satoshis (Integer)
 pushMsat | Amount of millisatoshi to unilaterally push to the counterparty | Yes | Millisatoshis (Integer)
 fundingFeerateSatByte | Feerate in sat/byte to apply to the funding transaction | Yes | Satoshis (Integer)
@@ -497,7 +497,7 @@ Returns the list of local channels, optionally filtered by remote node.
 
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
-nodeId | The remote node id to be used as filter for the channels | Yes | 32bytes-HexString (String)
+nodeId | The remote node id to be used as filter for the channels | Yes | 33bytes-HexString (String)
 
 ## Channel
 
@@ -774,7 +774,7 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | --------
-nodeId | The node id of the node to be used as filter for the updates | Yes | 32bytes-HexString (String)
+nodeId | The node id of the node to be used as filter for the updates | Yes | 33bytes-HexString (String)
 
 # Payments
 
@@ -913,7 +913,7 @@ the unique identifier for this payment attempt is immediately returned to the ca
 
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
-nodeId | The recipient of this payment | No | 32bytes-HexString (String)
+nodeId | The recipient of this payment | No | 33bytes-HexString (String)
 amountMsat | Amount in to pay | No | Millisatoshi (integer)
 paymentHash | The payment hash for this payment | No | 32bytes-HexString (String)
 maxAttempts | Max number of retries | Yes | Integer
@@ -1223,7 +1223,7 @@ Finds a route to the node.
 
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
-nodeId | The destination of the route | No | 32bytes-HexString (String)
+nodeId | The destination of the route | No | 33bytes-HexString (String)
 amountMsat | The amount that should go through the route | No | Millisatoshi (Integer)
 
 # Miscellaneous
