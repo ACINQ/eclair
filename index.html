@@ -485,7 +485,7 @@ eclair-cli connect --nodeId<span class="o">=</span>&lt;node_id&gt; --host<span c
 <td>nodeId</td>
 <td>The <strong>nodeId</strong> of the node you want to connect to</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>33bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>host</td>
@@ -528,7 +528,7 @@ by the remote peer in his <code>node_announcement</code> messages.</p>
 <td>nodeId</td>
 <td>The <strong>nodeId</strong> of the node you want to connect to</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>33bytes-HexString (String)</td>
 </tr>
 </tbody></table>
 <h2 id='disconnect'>Disconnect</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;nodeId&gt;  <span class="s2">"http://localhost:8080/disconnect"</span>
@@ -557,7 +557,7 @@ eclair-cli disconnect --nodeId<span class="o">=</span>&lt;nodeId&gt;
 <td>nodeId</td>
 <td>The <strong>nodeId</strong> of the node you want to disconnect from</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>33bytes-HexString (String)</td>
 </tr>
 </tbody></table>
 <h1 id='open'>Open</h1><h2 id='open-2'>Open</h2><pre class="highlight shell tab-shell"><code>curl -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; -F <span class="nv">fundingSatoshis</span><span class="o">=</span>&lt;funding_satoshis&gt; <span class="se">\</span>
@@ -588,7 +588,7 @@ you can send to the remote a <em>pushMsat</em> value and you can specify wether 
 <td>nodeId</td>
 <td>The nodeId of the node you want to connect to</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>33bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>fundingSatoshis</td>
@@ -922,7 +922,7 @@ eclair-cli channels
 <td>nodeId</td>
 <td>The remote node id to be used as filter for the channels</td>
 <td>Yes</td>
-<td>32bytes-HexString (String)</td>
+<td>33bytes-HexString (String)</td>
 </tr>
 </tbody></table>
 <h2 id='channel'>Channel</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt;  <span class="s2">"http://localhost:8080/channel"</span>
@@ -1189,7 +1189,7 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 <td>nodeId</td>
 <td>The node id of the node to be used as filter for the updates</td>
 <td>Yes</td>
-<td>32bytes-HexString (String)</td>
+<td>33bytes-HexString (String)</td>
 </tr>
 </tbody></table>
 <h1 id='payments'>Payments</h1>
@@ -1377,7 +1377,7 @@ the unique identifier for this payment attempt is immediately returned to the ca
 <td>nodeId</td>
 <td>The recipient of this payment</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>33bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>amountMsat</td>
@@ -1770,7 +1770,7 @@ eclair-cli --nodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span c
 <td>nodeId</td>
 <td>The destination of the route</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>33bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>amountMsat</td>
