@@ -31,7 +31,6 @@ import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
-import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.api.FormParamExtractors._
@@ -39,16 +38,18 @@ import fr.acinq.eclair.api.JsonSupport.CustomTypeHints
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRequest, _}
-import fr.acinq.eclair.{Eclair, MilliSatoshi, ShortChannelId}
+import fr.acinq.eclair.{Eclair, MilliSatoshi}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
-import JsonSupport.{formats, serialization}
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
 case class ErrorResponse(error: String)
 
-trait Service extends ExtraDirectives with Logging with Json4sSupport {
+trait Service extends ExtraDirectives with Logging {
+
+  // important! Must NOT import the unmarshaller as it is too generic...see https://github.com/akka/akka-http/issues/541
+  import JsonSupport.{formats, marshaller, serialization}
 
   // used to send typed messages over the websocket
   val formatsWithTypeHint = formats.withTypeHintFieldName("type") +

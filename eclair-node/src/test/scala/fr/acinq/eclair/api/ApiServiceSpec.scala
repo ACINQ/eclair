@@ -25,8 +25,7 @@ import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe}
 import akka.stream.ActorMaterializer
-import akka.util.Timeout
-import de.heikoseeberger.akkahttpjson4s.Json4sSupport
+import akka.util.{ByteString, Timeout}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair._
@@ -38,13 +37,13 @@ import fr.acinq.eclair.wire.NodeAddress
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.{FunSuite, Matchers}
 import scodec.bits._
-import scala.concurrent.Future
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.io.Source
 import scala.reflect.ClassTag
 import scala.util.Try
 
-class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMockito with Matchers with Json4sSupport {
+class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMockito with Matchers {
 
   implicit val formats = JsonSupport.formats
   implicit val serialization = JsonSupport.serialization
@@ -98,7 +97,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       check {
         assert(handled)
         assert(status == BadRequest)
-        val resp = entityAs[ErrorResponse](unmarshaller, ClassTag(classOf[ErrorResponse]))
+        val resp = entityAs[ErrorResponse](JsonSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
         assert(resp.error == "The form field 'channelId' was malformed:\nInvalid hexadecimal character 'h' at index 0")
       }
 
@@ -110,7 +109,6 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         assert(handled)
         assert(status == BadRequest)
       }
-
   }
 
   test("'peers' should ask the switchboard for current known peers") {
@@ -296,7 +294,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       check {
         assert(handled)
         assert(status == NotFound)
-        val resp = entityAs[ErrorResponse](unmarshaller, ClassTag(classOf[ErrorResponse]))
+        val resp = entityAs[ErrorResponse](JsonSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
         assert(resp == ErrorResponse("Not found"))
         eclair.receivedInfo(ByteVector32.Zeroes)(any[Timeout]).wasCalled(once)
       }
