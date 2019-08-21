@@ -150,6 +150,18 @@ class PackageSpec extends FunSuite {
     assert(MilliSatoshi(1000) >= Satoshi(1))
     assert(MilliSatoshi(2000) >= Satoshi(1))
     assert(MilliSatoshi(2000) > Satoshi(1))
+
+    // maxOf
+    assert(maxOf(561 msat, 1105 msat) === MilliSatoshi(1105))
+    assert(maxOf(1 sat, 1105 msat) === MilliSatoshi(1105))
+    assert(maxOf(1105 msat, 2 sat) === MilliSatoshi(2000))
+    assert(maxOf(1 sat, 2 sat) === Satoshi(2))
+
+    // minOf
+    assert(minOf(561 msat, 1105 msat) === MilliSatoshi(561))
+    assert(minOf(1 sat, 1105 msat) === MilliSatoshi(1000))
+    assert(minOf(1105 msat, 2 sat) === MilliSatoshi(1105))
+    assert(minOf(1 sat, 2 sat) === Satoshi(1))
   }
 
 }

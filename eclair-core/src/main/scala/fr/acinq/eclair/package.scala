@@ -220,8 +220,12 @@ package object eclair {
 
   // @formatter:off
   def maxOf(x: MilliSatoshi, y: MilliSatoshi) = MilliSatoshi(Math.max(x.amount, y.amount))
-  def minOf(x: MilliSatoshi, y: MilliSatoshi) = MilliSatoshi(Math.min(x.amount, y.amount))
+  def maxOf(x: MilliSatoshi, y: Satoshi) = MilliSatoshi(Math.max(x.amount, y.toMilliSatoshi.amount))
+  def maxOf(x: Satoshi, y: MilliSatoshi): MilliSatoshi = maxOf(y, x)
   def maxOf(x: Satoshi, y: Satoshi) = Satoshi(Math.max(x.amount, y.amount))
+  def minOf(x: MilliSatoshi, y: MilliSatoshi) = MilliSatoshi(Math.min(x.amount, y.amount))
+  def minOf(x: MilliSatoshi, y: Satoshi) = MilliSatoshi(Math.min(x.amount, y.toMilliSatoshi.amount))
+  def minOf(x: Satoshi, y: MilliSatoshi): MilliSatoshi = minOf(y, x)
   def minOf(x: Satoshi, y: Satoshi) = Satoshi(Math.min(x.amount, y.amount))
   // @formatter:on
 
