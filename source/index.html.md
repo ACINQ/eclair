@@ -18,7 +18,7 @@ search: true
 Welcome to the Eclair API, this website contains documentation and code examples about how to interact with the Eclair lightning node via its API. 
 Feel free to suggest improvements and fixes to this documentation by submitting a pull request to the [repo](https://github.com/ACINQ/eclair). The API
 uses [HTTP form data](https://en.wikipedia.org/wiki/POST_(HTTP)#Use_for_submitting_web_forms) and returns JSON encoded object or simple strings if no object
-is being returned, all errors are handled with a JSON response more info [here](#errors)
+is being returned, all errors are handled with a JSON response more info [here](#errors). All monetary values are in millisatoshi unless stated otherwise.
 
 # Authentication
 
@@ -381,10 +381,10 @@ eclair-cli channels
               3309856639
             ]
           },
-          "dustLimitSatoshis": 546,
-          "maxHtlcValueInFlightMsat": 5000000000,
-          "channelReserveSatoshis": 2300,
-          "htlcMinimumMsat": 1,
+          "dustLimit": 546,
+          "maxHtlcValueInFlight": 5000000000,
+          "channelReserve": 2300,
+          "htlcMinimum": 1,
           "toSelfDelay": 144,
           "maxAcceptedHtlcs": 30,
           "isFunder": true,
@@ -394,10 +394,10 @@ eclair-cli channels
         },
         "remoteParams": {
           "nodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-          "dustLimitSatoshis": 546,
-          "maxHtlcValueInFlightMsat": 5000000000,
-          "channelReserveSatoshis": 2300,
-          "htlcMinimumMsat": 1,
+          "dustLimit": 546,
+          "maxHtlcValueInFlight": 5000000000,
+          "channelReserve": 2300,
+          "htlcMinimum": 1,
           "toSelfDelay": 144,
           "maxAcceptedHtlcs": 30,
           "fundingPubKey": "030110991e6e23961f4c013fa70f76317bc75cf38df33ff7b448b510d1c7b09c94",
@@ -414,8 +414,8 @@ eclair-cli channels
           "spec": {
             "htlcs": [],
             "feeratePerKw": 2382,
-            "toLocalMsat": 227599428,
-            "toRemoteMsat": 2400572
+            "toLocal": 227599428,
+            "toRemote": 2400572
           },
           "publishableTxs": {
             "commitTx": "0200000000010156d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e0000000000ea5719800260090000000000001600148109e081865b9bc47082ebfc52fe17de92ec4fe25372030000000000220020b3e40418334e76872523d3a5cc98ae9a50399408bfe111890be710652c51937b04004830450221008894cb338bf8c7064d5bb8c08099deae980d204c4c888af2c85d6c35e3db6010022057de8f44ea1fec571461ef6517baa25d649edd583e675b2a9a80478eff635b0e01483045022100eecf61753bffeb1ba617c3085fb34fb15e9130c2b8eaf030c40d8bf9e4e7f36e0220197aebae5873b0a64a03c36d00c5108761d4f0b07f730803b3981978c672ee2d01475221030110991e6e23961f4c013fa70f76317bc75cf38df33ff7b448b510d1a7b09c942103647d13a308e012100c9e4a9512065f2c3048f8f0160c665952a8f4f077798a5d52ae2a261420",
@@ -427,8 +427,8 @@ eclair-cli channels
           "spec": {
             "htlcs": [],
             "feeratePerKw": 2382,
-            "toLocalMsat": 2400572,
-            "toRemoteMsat": 227599428
+            "toLocal": 2400572,
+            "toRemote": 227599428
           },
           "txid": "b11f1947175ce1fc05a1f60378f5cec6345d9acb04763d526c762a2c18892bf8",
           "remotePerCommitmentPoint": "03128d3be2764bf853e19732135f6f2c8b348b1317051c8ea704b25468bbf373db"
@@ -527,10 +527,10 @@ eclair-cli channel --channelId=<channel>
               3309856639
             ]
           },
-          "dustLimitSatoshis": 546,
-          "maxHtlcValueInFlightMsat": 5000000000,
-          "channelReserveSatoshis": 2300,
-          "htlcMinimumMsat": 1,
+          "dustLimit": 546,
+          "maxHtlcValueInFlight": 5000000000,
+          "channelReserve": 2300,
+          "htlcMinimum": 1,
           "toSelfDelay": 144,
           "maxAcceptedHtlcs": 30,
           "isFunder": true,
@@ -540,10 +540,10 @@ eclair-cli channel --channelId=<channel>
         },
         "remoteParams": {
           "nodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-          "dustLimitSatoshis": 546,
-          "maxHtlcValueInFlightMsat": 5000000000,
-          "channelReserveSatoshis": 2300,
-          "htlcMinimumMsat": 1,
+          "dustLimit": 546,
+          "maxHtlcValueInFlight": 5000000000,
+          "channelReserve": 2300,
+          "htlcMinimum": 1,
           "toSelfDelay": 144,
           "maxAcceptedHtlcs": 30,
           "fundingPubKey": "030110991e6e23961f4c013fa70f76317bc75cf38df33ff7b448b510d1c7b09c94",
@@ -560,8 +560,8 @@ eclair-cli channel --channelId=<channel>
           "spec": {
             "htlcs": [],
             "feeratePerKw": 2382,
-            "toLocalMsat": 227599428,
-            "toRemoteMsat": 2400572
+            "toLocal": 227599428,
+            "toRemote": 2400572
           },
           "publishableTxs": {
             "commitTx": "0200000000010156d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e0000000000ea5719800260090000000000001600148109e081865b9bc47082ebfc52fe17de92ec4fe25372030000000000220020b3e40418334e76872523d3a5cc98ae9a50399408bfe111890be710652c51937b04004830450221008894cb338bf8c7064d5bb8c08099deae980d204c4c888af2c85d6c35e3db6010022057de8f44ea1fec571461ef6517baa25d649edd583e675b2a9a80478eff635b0e01483045022100eecf61753bffeb1ba617c3085fb34fb15e9130c2b8eaf030c40d8bf9e4e7f36e0220197aebae5873b0a64a03c36d00c5108761d4f0b07f730803b3981978c672ee2d01475221030110991e6e23961f4c013fa70f76317bc75cf38df33ff7b448b510d1a7b09c942103647d13a308e012100c9e4a9512065f2c3048f8f0160c665952a8f4f077798a5d52ae2a261420",
@@ -573,8 +573,8 @@ eclair-cli channel --channelId=<channel>
           "spec": {
             "htlcs": [],
             "feeratePerKw": 2382,
-            "toLocalMsat": 2400572,
-            "toRemoteMsat": 227599428
+            "toLocal": 2400572,
+            "toRemote": 227599428
           },
           "txid": "b11f1947175ce1fc05a1f60378f5cec6345d9acb04763d526c762a2c18892bf8",
           "remotePerCommitmentPoint": "03128d3be2764bf853e19732135f6f2c8b348b1317051c8ea704b25468bbf373db"
@@ -969,7 +969,7 @@ eclair-cli getsentinfo --paymentHash=<some_hash>
     "id": "89922845-e6a7-4038-8a74-d3e4fcd625b8",
     "paymentHash": "f68cd4fcf0b62cbc22d45abcbeab9ae3d6a08aa89a8484aee23cc9835e4ab095",
     "preimage": "bac250cbbc1996e593be6e59537130fa8ff437439e98cbb746eea978f2d4815b",
-    "amountMsat": 1000001,
+    "amount": 1000001,
     "createdAt": 1560952129178,
     "completedAt": 1560952132515,
     "status": "SUCCEEDED"
@@ -977,7 +977,7 @@ eclair-cli getsentinfo --paymentHash=<some_hash>
   {
     "id": "e4227601-38b3-404e-9aa0-75a829e9bec0",
     "paymentHash": "f68cd4fcf0b62cbc22d45abcbeab9ae3d6a08aa89a8484aee23cc9835e4ab095",
-    "amountMsat": 1000001,
+    "amount": 1000001,
     "createdAt": 1560952129178,
     "completedAt": 1560952132515,
     "status": "FAILED"
@@ -1012,7 +1012,7 @@ eclair-cli getreceivedinfo --paymentHash=<some_hash>
 ```json
 {
   "paymentHash": "587593ec3511dbefda58735695d3e615aca1db671ecd79b6b89884c498fe4e4f",
-  "amountMsat": 250000,
+  "amount": 250000,
   "receivedAt": 1555407387
 }
 ```
@@ -1301,14 +1301,14 @@ eclair-cli networkfees
     "remoteNodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
     "channelId": "57d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e",
     "txId": "0e7d63ce98dbaccd9c3061509e93b45adbeaf10997c4708213804da0edd6d757",
-    "feeSat": 3382,
+    "fee": 3382,
     "txType": "funding",
     "timestamp": 1551798422110
   }
 ]
 ```
 
-Retrieves information about on-chain fees paid during channel operations.
+Retrieves information about on-chain fees paid during channel operations, currency values are in Satoshis.
 
 ### HTTP Request
 
@@ -1335,16 +1335,16 @@ eclair-cli channelstats
 [
   {
     "channelId": "57d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e",
-    "avgPaymentAmountSatoshi": 123,
+    "avgPaymentAmount": 123,
     "paymentCount": 55,
-    "relayFeeSatoshi": 3,
-    "networkFeeSatoshi": 3382
+    "relayFee": 3,
+    "networkFee": 3382
   }
 ]
 ```
 
 Retrieves information about local channels, the information is then aggregated in order to display
-statistics about the routing activity of the channels.
+statistics about the routing activity of the channels, values are in Satoshis.
 
 ### HTTP Request
 
@@ -1365,8 +1365,8 @@ eclair-cli usablebalances
   {
     "remoteNodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
     "shortChannelId": "562890x809x0",
-    "canSendMsat": 131219000,
-    "canReceiveMsat": 466000,
+    "canSend": 131219000,
+    "canReceive": 466000,
     "isPublic": true
   }
 ]
