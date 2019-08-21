@@ -318,7 +318,7 @@ object Graph {
     * @return the new amount updated with the necessary fees for this edge
     */
   private def edgeFeeCost(edge: GraphEdge, amountWithFees: MilliSatoshi):MilliSatoshi = {
-    if(edgeHasZeroFee(edge)) amountWithFees + nodeFee(baseMsat = MilliSatoshi(1), proportional = 0, amountWithFees)
+    if(edgeHasZeroFee(edge)) amountWithFees + nodeFee(baseFee = MilliSatoshi(1), proportionalFee = 0, amountWithFees)
     else amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
   }
 
