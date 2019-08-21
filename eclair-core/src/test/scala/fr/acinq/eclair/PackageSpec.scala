@@ -116,25 +116,22 @@ class PackageSpec extends FunSuite {
 
   test("millisatoshi numeric operations") {
     // add
-    assert(MilliSatoshi(561) + MilliSatoshi(0) === MilliSatoshi(561))
-    assert(MilliSatoshi(561) + 0 === MilliSatoshi(561))
-    assert(MilliSatoshi(561) + MilliSatoshi(1105) === MilliSatoshi(1666))
-    assert(MilliSatoshi(561) + 1105 === MilliSatoshi(1666))
-    assert(MilliSatoshi(2000) + Satoshi(3) === MilliSatoshi(5000))
+    assert(MilliSatoshi(561) + 0.msat === MilliSatoshi(561))
+    assert(MilliSatoshi(561) + 0.sat === MilliSatoshi(561))
+    assert(MilliSatoshi(561) + 1105.msat === MilliSatoshi(1666))
+    assert(MilliSatoshi(2000) + 3.sat === MilliSatoshi(5000))
 
     // subtract
-    assert(MilliSatoshi(561) - MilliSatoshi(0) === MilliSatoshi(561))
-    assert(MilliSatoshi(561) - 0 === MilliSatoshi(561))
-    assert(MilliSatoshi(1105) - MilliSatoshi(561) === MilliSatoshi(544))
-    assert(MilliSatoshi(1105) - 561 === MilliSatoshi(544))
-    assert(MilliSatoshi(561) - MilliSatoshi(1105) === -MilliSatoshi(544))
-    assert(MilliSatoshi(561) - 1105 === -MilliSatoshi(544))
-    assert(MilliSatoshi(1105) - Satoshi(1) === MilliSatoshi(105))
+    assert(MilliSatoshi(561) - 0.msat === MilliSatoshi(561))
+    assert(MilliSatoshi(1105) - 561.msat === MilliSatoshi(544))
+    assert(561.msat - 1105.msat === -MilliSatoshi(544))
+    assert(MilliSatoshi(561) - 1105.msat === -MilliSatoshi(544))
+    assert(MilliSatoshi(1105) - 1.sat === MilliSatoshi(105))
 
     // multiply
-    assert(MilliSatoshi(561) * 1 === MilliSatoshi(561))
-    assert(MilliSatoshi(561) * 2 === MilliSatoshi(1122))
-    assert(MilliSatoshi(561) * 2.5 === MilliSatoshi(1402))
+    assert(MilliSatoshi(561) * 1 === 561.msat)
+    assert(MilliSatoshi(561) * 2 === 1122.msat)
+    assert(MilliSatoshi(561) * 2.5 === 1402.msat)
 
     // divide
     assert(MilliSatoshi(561) / 1 === MilliSatoshi(561))
@@ -142,13 +139,13 @@ class PackageSpec extends FunSuite {
 
     // compare
     assert(MilliSatoshi(561) <= MilliSatoshi(561))
-    assert(MilliSatoshi(561) <= MilliSatoshi(1105))
+    assert(MilliSatoshi(561) <= 1105.msat)
     assert(MilliSatoshi(561) < MilliSatoshi(1105))
     assert(MilliSatoshi(561) >= MilliSatoshi(561))
     assert(MilliSatoshi(1105) >= MilliSatoshi(561))
     assert(MilliSatoshi(1105) > MilliSatoshi(561))
     assert(MilliSatoshi(1000) <= Satoshi(1))
-    assert(MilliSatoshi(1000) <= Satoshi(2))
+    assert(MilliSatoshi(1000) <= 2.sat)
     assert(MilliSatoshi(1000) < Satoshi(2))
     assert(MilliSatoshi(1000) >= Satoshi(1))
     assert(MilliSatoshi(2000) >= Satoshi(1))

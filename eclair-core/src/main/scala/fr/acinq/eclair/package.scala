@@ -166,10 +166,8 @@ package object eclair {
     def toLong = amount
     def +(other: MilliSatoshi) = MilliSatoshi(amount + other.amount)
     def +(other: Satoshi) = MilliSatoshi(amount + other.toMilliSatoshi.amount)
-    def +(other: Long) = MilliSatoshi(amount + other)
     def -(other: MilliSatoshi) = MilliSatoshi(amount - other.amount)
     def -(other: Satoshi) = MilliSatoshi(amount - other.toMilliSatoshi.amount)
-    def -(other: Long) = MilliSatoshi(amount - other)
     def *(m: Long) = MilliSatoshi(amount * m)
     def *(m: Double) = MilliSatoshi((amount * m).toLong)
     def /(d: Long) = MilliSatoshi(amount / d)
@@ -186,6 +184,13 @@ package object eclair {
     def unary_-() = MilliSatoshi(-amount)
     def truncateToSatoshi: Satoshi = Satoshi(amount / 1000)
     // @formatter:on
+  }
+
+  implicit class LongToBtcAmounts(l: Long) {
+    def msat: MilliSatoshi = MilliSatoshi(l)
+    def sat: Satoshi = Satoshi(l)
+    def mbtc: MilliBtc = MilliBtc(l)
+    def btc: Btc = Btc(l)
   }
 
   implicit class ToMilliSatoshiConversion(amount: BtcAmount) {
