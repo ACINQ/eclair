@@ -101,7 +101,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     // channel returns an error
     val origin = Relayed(channelId_ab, originHtlcId = 42, amountIn = MilliSatoshi(1100000), amountOut = MilliSatoshi(1000000))
-    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc_1, paymentHash, HtlcValueTooHighInFlight(channelId_bc_1, UInt64(1000000000L), UInt64(1516977616L)), origin, Some(channelUpdate_bc_1), originalCommand = Some(fwd1.message))))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc_1, paymentHash, HtlcValueTooHighInFlight(channelId_bc_1, UInt64(1000000000L), MilliSatoshi(1516977616L)), origin, Some(channelUpdate_bc_1), originalCommand = Some(fwd1.message))))
 
     // second try
     val fwd2 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
@@ -109,7 +109,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd2.message.upstream === Right(add_ab))
 
     // failure again
-    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcValueTooHighInFlight(channelId_bc, UInt64(1000000000L), UInt64(1516977616L)), origin, Some(channelUpdate_bc), originalCommand = Some(fwd2.message))))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcValueTooHighInFlight(channelId_bc, UInt64(1000000000L), MilliSatoshi(1516977616L)), origin, Some(channelUpdate_bc), originalCommand = Some(fwd2.message))))
 
     // the relayer should give up
     val fwdFail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]

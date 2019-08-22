@@ -71,7 +71,7 @@ case class OpenChannel(chainHash: ByteVector32,
                        fundingSatoshis: Satoshi,
                        pushMsat: MilliSatoshi,
                        dustLimitSatoshis: Satoshi,
-                       maxHtlcValueInFlightMsat: UInt64,
+                       maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
                        channelReserveSatoshis: Satoshi,
                        htlcMinimumMsat: MilliSatoshi,
                        feeratePerKw: Long,
@@ -87,7 +87,7 @@ case class OpenChannel(chainHash: ByteVector32,
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
                          dustLimitSatoshis: Satoshi,
-                         maxHtlcValueInFlightMsat: UInt64,
+                         maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
                          channelReserveSatoshis: Satoshi,
                          htlcMinimumMsat: MilliSatoshi,
                          minimumDepth: Long,

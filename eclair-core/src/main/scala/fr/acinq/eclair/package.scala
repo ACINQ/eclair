@@ -17,12 +17,11 @@
 package fr.acinq
 
 import java.security.SecureRandom
-
+import com.google.common.primitives.UnsignedLongs
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin._
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
-
 import scala.concurrent.duration.Duration
 import scala.util.{Failure, Success, Try}
 
@@ -173,6 +172,7 @@ package object eclair {
     def *(m: Double) = MilliSatoshi((amount * m).toLong)
     def /(d: Long) = MilliSatoshi(amount / d)
     def compare(other: MilliSatoshi): Int = if (amount == other.amount) 0 else if (amount < other.amount) -1 else 1
+    def compareUnsigned(other: UInt64): Int = UnsignedLongs.compare(amount, other.toBigInt.longValue())
     def <= (that: MilliSatoshi): Boolean = compare(that) <= 0
     def >= (that: MilliSatoshi): Boolean = compare(that) >= 0
     def <  (that: MilliSatoshi): Boolean = compare(that) < 0

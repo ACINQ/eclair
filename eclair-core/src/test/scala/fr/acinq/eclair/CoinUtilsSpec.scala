@@ -18,9 +18,20 @@ package fr.acinq.eclair
 
 import fr.acinq.bitcoin.{Btc, MilliBtc, Satoshi}
 import org.scalatest.FunSuite
+import scodec.bits._
 
 
 class CoinUtilsSpec  extends FunSuite {
+
+  test("use unsigned comparison when comparing millisatoshis to uint64") {
+    assert(MilliSatoshi(123).compareUnsigned(UInt64(123)) == 0)
+    assert(MilliSatoshi(1234).compareUnsigned(UInt64(123)) > 0)
+    assert(MilliSatoshi(123).compareUnsigned(UInt64(1234)) < 0)
+    assert(MilliSatoshi(123).compareUnsigned(UInt64(hex"ffffffffffffffff")) < 0)
+    assert(MilliSatoshi(-123).compareUnsigned(UInt64(hex"ffffffffffffffff")) < 0)
+    assert(MilliSatoshi(Long.MaxValue).compareUnsigned(UInt64(hex"7fffffffffffffff")) == 0) // 7fffffffffffffff == Long.MaxValue
+    assert(MilliSatoshi(Long.MaxValue).compareUnsigned(UInt64(hex"8000000000000000")) < 0)  // 8000000000000000 == Long.MaxValue + 1
+  }
 
   test("Convert string amount to the correct BtcAmount") {
     val am_btc: MilliSatoshi = CoinUtils.convertStringAmountToMsat("1", BtcUnit.code)
