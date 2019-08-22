@@ -141,12 +141,11 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
 
   test("'usablebalances' asks router for current usable balances") {
 
-    val remoteNodeId = PublicKey(hex"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0")
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
     eclair.usableBalances()(any[Timeout]) returns Future.successful(List(
-      UsableBalances(canSend = MilliSatoshi(100000000), canReceive = MilliSatoshi(20000000), shortChannelId = ShortChannelId(1), remoteNodeId = remoteNodeId, isPublic = true),
-      UsableBalances(canSend = MilliSatoshi(400000000), canReceive = MilliSatoshi(30000000), shortChannelId = ShortChannelId(2), remoteNodeId = remoteNodeId, isPublic = false)
+      UsableBalances(canSend = MilliSatoshi(100000000), canReceive = MilliSatoshi(20000000), shortChannelId = ShortChannelId(1), remoteNodeId = aliceNodeId, isPublic = true),
+      UsableBalances(canSend = MilliSatoshi(400000000), canReceive = MilliSatoshi(30000000), shortChannelId = ShortChannelId(2), remoteNodeId = aliceNodeId, isPublic = false)
     ))
 
     Post("/usablebalances") ~>

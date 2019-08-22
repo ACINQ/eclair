@@ -45,7 +45,7 @@ object Boot extends App with Logging {
     setup.bootstrap onComplete {
       case Success(kit) =>
         plugins.foreach(_.onKit(kit))
-        val config = NodeParams.loadConfiguration(datadir, ConfigFactory.empty())
+        val config = setup.config
         if(config.getBoolean("api.enabled")){
           logger.info(s"json API enabled on port=${config.getInt("api.port")}")
           implicit val materializer = ActorMaterializer()
