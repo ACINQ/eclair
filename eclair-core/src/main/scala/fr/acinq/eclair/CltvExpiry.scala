@@ -31,7 +31,7 @@ case class CltvExpiry(private val underlying: Long) extends Ordered[CltvExpiry] 
   def +(d: CltvExpiryDelta): CltvExpiry = CltvExpiry(underlying + d.toInt)
   def -(d: CltvExpiryDelta): CltvExpiry = CltvExpiry(underlying - d.toInt)
   def -(other: CltvExpiry): CltvExpiryDelta = CltvExpiryDelta((underlying - other.underlying).toInt)
-  override def compare(other: CltvExpiry): Int = if (underlying == other.underlying) 0 else if (underlying < other.underlying) -1 else 1
+  override def compare(other: CltvExpiry): Int = underlying.compareTo(other.underlying)
   def toLong: Long = underlying
   // @formatter:on
 }
@@ -54,7 +54,7 @@ case class CltvExpiryDelta(private val underlying: Int) extends Ordered[CltvExpi
   // @formatter:off
   def +(other: Int): CltvExpiryDelta = CltvExpiryDelta(underlying + other)
   def +(other: CltvExpiryDelta): CltvExpiryDelta = CltvExpiryDelta(underlying + other.underlying)
-  def compare(other: CltvExpiryDelta): Int = if (underlying == other.underlying) 0 else if (underlying < other.underlying) -1 else 1
+  def compare(other: CltvExpiryDelta): Int = underlying.compareTo(other.underlying)
   def toInt: Int = underlying
   // @formatter:on
 
