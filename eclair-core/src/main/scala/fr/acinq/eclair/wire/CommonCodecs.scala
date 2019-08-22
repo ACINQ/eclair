@@ -56,6 +56,9 @@ object CommonCodecs {
 
   val satoshi: Codec[Satoshi] = uint64overflow.xmapc(l => Satoshi(l))(_.toLong)
   val millisatoshi: Codec[MilliSatoshi] = uint64overflow.xmapc(l => MilliSatoshi(l))(_.amount)
+
+  // this is needed because some millisatoshi values are encoded on 32 bits in the BOLTs
+  // this codec will fail if the amount does not fit on 32 bits
   val millisatoshi32: Codec[MilliSatoshi] = uint32.xmapc(l => MilliSatoshi(l))(_.amount)
 
   /**

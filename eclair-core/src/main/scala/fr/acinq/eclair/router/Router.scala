@@ -35,7 +35,6 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-
 import shapeless.HNil
 
 import scala.collection.immutable.{SortedMap, TreeMap}
@@ -509,7 +508,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.info("replying with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
       split(shortChannelIds)
         .foreach(chunk => {
-          val (timestamps, checksums) = routingMessage.queryFlags match {
+          val (timestamps, checksums) = routingMessage.queryFlags_opt match {
             case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
               // we always compute timestamps and checksums even if we don't need both, overhead is negligible
               val (timestamps, checksums) = chunk.shortChannelIds.map(getChannelDigestInfo(d.channels, d.updates)).unzip
@@ -533,8 +532,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         .zipWithIndex
         .map {
           case (shortChannelId: ShortChannelId, idx) => {
-            val timestamps = routingMessage.timestamps.map(_.timestamps(idx))
-            val checksums = routingMessage.checksums.map(_.checksums(idx))
+            val timestamps = routingMessage.timestamps_opt.map(_.timestamps(idx))
+            val checksums = routingMessage.checksums_opt.map(_.checksums(idx))
             ShortChannelIdAndFlag(shortChannelId, computeFlag(d.channels, d.updates)(shortChannelId, timestamps, checksums))
           }
         }
@@ -551,7 +550,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         .grouped(SHORTID_WINDOW)
         .map(chunk => QueryShortChannelIds(chainHash,
           shortChannelIds = EncodedShortChannelIds(shortChannelIds.encoding, chunk.map(_.shortChannelId)),
-          if (routingMessage.timestamps.isDefined || routingMessage.checksums.isDefined)
+          if (routingMessage.timestamps_opt.isDefined || routingMessage.checksums_opt.isDefined)
             TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(shortChannelIds.encoding, chunk.map(_.flag)))
           else
             TlvStream.empty
@@ -571,7 +570,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           case ((c, u), (shortChannelId, idx)) =>
             var c1 = c
             var u1 = u
-            val flag = routingMessage.queryFlags.map(_.array(idx)).getOrElse(QueryShortChannelIdsTlv.QueryFlagType.INCLUDE_ALL)
+            val flag = routingMessage.queryFlags_opt.map(_.array(idx)).getOrElse(QueryShortChannelIdsTlv.QueryFlagType.INCLUDE_ALL)
             d.channels.get(shortChannelId) match {
               case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
               case Some(ca) =>

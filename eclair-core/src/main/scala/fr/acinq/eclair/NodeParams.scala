@@ -33,6 +33,7 @@ import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
+
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
 
@@ -76,7 +77,7 @@ case class NodeParams(keyManager: KeyManager,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int) {
-
+  require(feeBase <= MilliSatoshi(0xFFFFFFFFL))
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
 }

@@ -20,8 +20,8 @@ import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 import java.nio.charset.StandardCharsets
 
 import com.google.common.base.Charsets
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -241,7 +241,7 @@ case class EncodedShortChannelIds(encoding: EncodingType,
 case class QueryShortChannelIds(chainHash: ByteVector32,
                                 shortChannelIds: EncodedShortChannelIds,
                                 tlvStream: TlvStream[QueryShortChannelIdsTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash {
-  val queryFlags: Option[QueryShortChannelIdsTlv.EncodedQueryFlags] = tlvStream.get[QueryShortChannelIdsTlv.EncodedQueryFlags]
+  val queryFlags_opt: Option[QueryShortChannelIdsTlv.EncodedQueryFlags] = tlvStream.get[QueryShortChannelIdsTlv.EncodedQueryFlags]
 }
 
 case class ReplyShortChannelIdsEnd(chainHash: ByteVector32,
@@ -252,7 +252,7 @@ case class QueryChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
                              tlvStream: TlvStream[QueryChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
-  val queryFlags: Option[QueryChannelRangeTlv.QueryFlags] = tlvStream.get[QueryChannelRangeTlv.QueryFlags]
+  val queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags] = tlvStream.get[QueryChannelRangeTlv.QueryFlags]
 }
 
 case class ReplyChannelRange(chainHash: ByteVector32,
@@ -261,9 +261,9 @@ case class ReplyChannelRange(chainHash: ByteVector32,
                              complete: Byte,
                              shortChannelIds: EncodedShortChannelIds,
                              tlvStream: TlvStream[ReplyChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
-  val timestamps: Option[ReplyChannelRangeTlv.EncodedTimestamps] = tlvStream.get[ReplyChannelRangeTlv.EncodedTimestamps]
+  val timestamps_opt: Option[ReplyChannelRangeTlv.EncodedTimestamps] = tlvStream.get[ReplyChannelRangeTlv.EncodedTimestamps]
 
-  val checksums: Option[ReplyChannelRangeTlv.EncodedChecksums] = tlvStream.get[ReplyChannelRangeTlv.EncodedChecksums]
+  val checksums_opt: Option[ReplyChannelRangeTlv.EncodedChecksums] = tlvStream.get[ReplyChannelRangeTlv.EncodedChecksums]
 }
 
 object ReplyChannelRange {
