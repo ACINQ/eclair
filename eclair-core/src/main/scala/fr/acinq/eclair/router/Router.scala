@@ -536,12 +536,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           case Nil => acc.reverse
           case head :: tail =>
             val flag = computeFlag(d.channels, d.updates)(head, timestamps.headOption, checksums.headOption)
-            if (flag != 0) {
-              loop(tail, timestamps.drop(1), checksums.drop(1), ShortChannelIdAndFlag(head, flag) :: acc)
-            } else {
-              // 0 means nothing to query, just don't include it
-              loop(tail, timestamps.drop(1), checksums.drop(1), acc)
-            }
+            // 0 means nothing to query, just don't include it
+            val acc1 = if (flag != 0) ShortChannelIdAndFlag(head, flag) :: acc else acc
+            loop(tail, timestamps.drop(1), checksums.drop(1), acc1)
         }
       }
 
