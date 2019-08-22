@@ -71,7 +71,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
       case "" => createPaymentRequest(None)
       case GUIValidators.amountDecRegex(_*) =>
         Try(CoinUtils.convertStringAmountToMsat(amount.getText, unit.getValue)) match {
-          case Success(amountMsat) if amountMsat.amount < 0 =>
+          case Success(amountMsat) if amountMsat.toLong < 0 =>
             handleError("Amount must be greater than 0")
           case Failure(_) =>
             handleError("Amount is incorrect")

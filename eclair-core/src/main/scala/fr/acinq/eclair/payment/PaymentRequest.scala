@@ -16,16 +16,16 @@
 
 package fr.acinq.eclair.payment
 
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest._
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import scodec.Codec
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 
-import scala.concurrent.duration._
 import scala.compat.Platform
+import scala.concurrent.duration._
 import scala.util.Try
 
 /**
@@ -41,7 +41,7 @@ import scala.util.Try
   */
 case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.TaggedField], signature: ByteVector) {
 
-  amount.map(a => require(a.amount > 0, s"amount is not valid"))
+  amount.map(a => require(a.toLong > 0, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHash => {} }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => {} }.size == 1, "there must be exactly one description tag or one description hash tag")
 
@@ -392,7 +392,7 @@ object PaymentRequest {
       * @param amount
       * @return the unit allowing for the shortest representation possible
       */
-    def unit(amount: MilliSatoshi): Char = amount.amount * 10 match { // 1 milli-satoshis == 10 pico-bitcoin
+    def unit(amount: MilliSatoshi): Char = amount.toLong * 10 match { // 1 milli-satoshis == 10 pico-bitcoin
       case pico if pico % 1000 > 0 => 'p'
       case pico if pico % 1000000 > 0 => 'n'
       case pico if pico % 1000000000 > 0 => 'u'
@@ -412,10 +412,10 @@ object PaymentRequest {
     def encode(amount: Option[MilliSatoshi]): String = {
       amount match {
         case None => ""
-        case Some(amt) if unit(amt) == 'p' => s"${amt.amount * 10L}p" // 1 pico-bitcoin == 10 milli-satoshis
-        case Some(amt) if unit(amt) == 'n' => s"${amt.amount / 100L}n"
-        case Some(amt) if unit(amt) == 'u' => s"${amt.amount / 100000L}u"
-        case Some(amt) if unit(amt) == 'm' => s"${amt.amount / 100000000L}m"
+        case Some(amt) if unit(amt) == 'p' => s"${amt.toLong * 10L}p" // 1 pico-bitcoin == 10 milli-satoshis
+        case Some(amt) if unit(amt) == 'n' => s"${amt.toLong / 100L}n"
+        case Some(amt) if unit(amt) == 'u' => s"${amt.toLong / 100000L}u"
+        case Some(amt) if unit(amt) == 'm' => s"${amt.toLong / 100000000L}m"
       }
     }
   }

@@ -16,11 +16,9 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.{MilliSatoshi, wire}
 import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.{MilliSatoshi, wire}
 import scodec.Codec
-import scodec.bits.ByteVector
 import scodec.codecs._
 
 /**
@@ -192,7 +190,7 @@ object LightningMessageCodecs {
         ("channelFlags" | byte) ::
           ("cltvExpiryDelta" | uint16) ::
           ("htlcMinimumMsat" | millisatoshi) ::
-          ("feeBaseMsat" | uint32.xmapc(l => MilliSatoshi(l))(_.amount)) ::
+          ("feeBaseMsat" | uint32.xmapc(l => MilliSatoshi(l))(_.toLong)) ::
           ("feeProportionalMillionths" | uint32) ::
           ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, millisatoshi)) ::
           ("unknownFields" | bytes)

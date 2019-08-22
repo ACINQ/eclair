@@ -607,9 +607,9 @@ object Peer {
   case object ResumeAnnouncements
   case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) {
     require(fundingSatoshis < Channel.MAX_FUNDING, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING}")
-    require(pushMsat.amount <= 1000 * fundingSatoshis.amount, s"pushMsat must be less or equal to fundingSatoshis")
+    require(pushMsat.toLong <= 1000 * fundingSatoshis.amount, s"pushMsat must be less or equal to fundingSatoshis")
     require(fundingSatoshis.amount >= 0, s"fundingSatoshis must be positive")
-    require(pushMsat.amount >= 0, s"pushMsat must be positive")
+    require(pushMsat.toLong >= 0, s"pushMsat must be positive")
     fundingTxFeeratePerKw_opt.foreach(feeratePerKw => require(feeratePerKw >= MinimumFeeratePerKw, s"fee rate $feeratePerKw is below minimum $MinimumFeeratePerKw rate/kw"))
   }
   case object GetPeerInfo
@@ -643,7 +643,7 @@ object Peer {
       channelKeyPath,
       dustLimit = nodeParams.dustLimit,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
-      channelReserve = maxOf(Satoshi((nodeParams.reserveToFundingRatio * fundingAmount.toLong).toLong), nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
+      channelReserve = MilliSatoshi.maxOf(Satoshi((nodeParams.reserveToFundingRatio * fundingAmount.toLong).toLong), nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimum = nodeParams.htlcMinimum,
       toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
@@ -658,7 +658,7 @@ object Peer {
     *
     * @param gossipTimestampFilter_opt optional gossip timestamp range
     * @return
-    *           - true if there is a filter and msg has no timestamp, or has one that matches the filter 
+    *           - true if there is a filter and msg has no timestamp, or has one that matches the filter
     *           - false otherwise
     */
   def timestampInRange(msg: RoutingMessage, gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {

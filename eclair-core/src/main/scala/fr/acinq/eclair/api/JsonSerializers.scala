@@ -62,7 +62,7 @@ class SatoshiSerializer extends CustomSerializer[Satoshi](format => ({ null }, {
 }))
 
 class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](format => ({ null }, {
-  case x: MilliSatoshi => JInt(x.amount)
+  case x: MilliSatoshi => JInt(x.toLong)
 }))
 
 class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](format => ({ null }, {

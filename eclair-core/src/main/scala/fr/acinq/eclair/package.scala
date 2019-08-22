@@ -158,55 +158,21 @@ package object eclair {
    */
   val MaxEpochSeconds = Duration.fromNanos(Long.MaxValue).toSeconds
 
-  /**
-   * One MilliSatoshi is a thousand of a Satoshi, the smallest unit usable in bitcoin
-   */
-  case class MilliSatoshi(amount: Long) {
-    // @formatter:off
-    def toLong = amount
-    def +(other: MilliSatoshi) = MilliSatoshi(amount + other.amount)
-    def +(other: Satoshi) = MilliSatoshi(amount + other.toMilliSatoshi.amount)
-    def -(other: MilliSatoshi) = MilliSatoshi(amount - other.amount)
-    def -(other: Satoshi) = MilliSatoshi(amount - other.toMilliSatoshi.amount)
-    def *(m: Long) = MilliSatoshi(amount * m)
-    def *(m: Double) = MilliSatoshi((amount * m).toLong)
-    def /(d: Long) = MilliSatoshi(amount / d)
-    def compare(other: MilliSatoshi): Int = if (amount == other.amount) 0 else if (amount < other.amount) -1 else 1
-    def compare(other: Satoshi): Int = compare(other.toMilliSatoshi)
-    def <= (that: MilliSatoshi): Boolean = compare(that) <= 0
-    def <= (that: Satoshi): Boolean = compare(that) <= 0
-    def >= (that: MilliSatoshi): Boolean = compare(that) >= 0
-    def >= (that: Satoshi): Boolean = compare(that) >= 0
-    def <  (that: MilliSatoshi): Boolean = compare(that) < 0
-    def <  (that: Satoshi): Boolean = compare(that) < 0
-    def >  (that: MilliSatoshi): Boolean = compare(that) > 0
-    def >  (that: Satoshi): Boolean = compare(that) > 0
-    def unary_-() = MilliSatoshi(-amount)
-    def truncateToSatoshi: Satoshi = Satoshi(amount / 1000)
-    // @formatter:on
-  }
-
   implicit class LongToBtcAmounts(l: Long) {
+    // @formatter:off
     def msat: MilliSatoshi = MilliSatoshi(l)
     def sat: Satoshi = Satoshi(l)
     def mbtc: MilliBtc = MilliBtc(l)
     def btc: Btc = Btc(l)
-  }
-
-  implicit class ToMilliSatoshiConversion(amount: BtcAmount) {
-    def toMilliSatoshi: MilliSatoshi = amount match {
-      case sat: Satoshi => satoshi2millisatoshi(sat)
-      case millis: MilliBtc => satoshi2millisatoshi(millibtc2satoshi(millis))
-      case bitcoin: Btc => satoshi2millisatoshi(btc2satoshi(bitcoin))
-    }
+    // @formatter:on
   }
 
   implicit object NumericMilliSatoshi extends Numeric[MilliSatoshi] {
     // @formatter:off
-    override def plus(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = MilliSatoshi(x.amount + y.amount)
-    override def minus(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = MilliSatoshi(x.amount - y.amount)
-    override def times(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = MilliSatoshi(x.amount * y.amount)
-    override def negate(x: MilliSatoshi): MilliSatoshi = MilliSatoshi(-x.amount)
+    override def plus(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = x + y
+    override def minus(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = x - y
+    override def times(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = MilliSatoshi(x.toLong * y.toLong)
+    override def negate(x: MilliSatoshi): MilliSatoshi = -x
     override def fromInt(x: Int): MilliSatoshi = MilliSatoshi(x)
     override def toInt(x: MilliSatoshi): Int = x.toLong.toInt
     override def toLong(x: MilliSatoshi): Long = x.toLong
@@ -216,17 +182,12 @@ package object eclair {
     // @formatter:on
   }
 
-  private def satoshi2millisatoshi(input: Satoshi): MilliSatoshi = MilliSatoshi(input.amount * 1000L)
-
-  // @formatter:off
-  def maxOf(x: MilliSatoshi, y: MilliSatoshi) = MilliSatoshi(Math.max(x.amount, y.amount))
-  def maxOf(x: MilliSatoshi, y: Satoshi) = MilliSatoshi(Math.max(x.amount, y.toMilliSatoshi.amount))
-  def maxOf(x: Satoshi, y: MilliSatoshi): MilliSatoshi = maxOf(y, x)
-  def maxOf(x: Satoshi, y: Satoshi) = Satoshi(Math.max(x.amount, y.amount))
-  def minOf(x: MilliSatoshi, y: MilliSatoshi) = MilliSatoshi(Math.min(x.amount, y.amount))
-  def minOf(x: MilliSatoshi, y: Satoshi) = MilliSatoshi(Math.min(x.amount, y.toMilliSatoshi.amount))
-  def minOf(x: Satoshi, y: MilliSatoshi): MilliSatoshi = minOf(y, x)
-  def minOf(x: Satoshi, y: Satoshi) = Satoshi(Math.min(x.amount, y.amount))
-  // @formatter:on
+  implicit class ToMilliSatoshiConversion(amount: BtcAmount) {
+    // @formatter:off
+    def toMilliSatoshi: MilliSatoshi = MilliSatoshi.toMilliSatoshi(amount)
+    def +(other: MilliSatoshi): MilliSatoshi = amount.toMilliSatoshi + other
+    def -(other: MilliSatoshi): MilliSatoshi = amount.toMilliSatoshi - other
+    // @formatter:on
+  }
 
 }

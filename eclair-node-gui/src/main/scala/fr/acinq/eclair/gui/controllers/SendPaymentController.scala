@@ -16,6 +16,10 @@
 
 package fr.acinq.eclair.gui.controllers
 
+import fr.acinq.eclair.CoinUtils
+import fr.acinq.eclair.gui.{FxApp, Handlers}
+import fr.acinq.eclair.payment.PaymentRequest
+import grizzled.slf4j.Logging
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXML
@@ -23,11 +27,6 @@ import javafx.scene.control.{Button, Label, TextArea, TextField}
 import javafx.scene.input.KeyCode.{ENTER, TAB}
 import javafx.scene.input.KeyEvent
 import javafx.stage.Stage
-
-import fr.acinq.eclair.CoinUtils
-import fr.acinq.eclair.gui.{FxApp, Handlers}
-import fr.acinq.eclair.payment.PaymentRequest
-import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
 
@@ -111,7 +110,7 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage) extends Lo
     (Try(CoinUtils.convertStringAmountToMsat(amountField.getText(), FxApp.getUnit.code)), readPaymentRequest()) match {
       case (Success(amountMsat), Success(pr)) =>
         // we always override the payment request amount with the one from the UI
-        Try(handlers.send(Some(amountMsat.amount), pr)) match {
+        Try(handlers.send(Some(amountMsat.toLong), pr)) match {
           case Success(_) => stage.close()
           case Failure(f) => paymentRequestError.setText(s"Invalid Payment Request: ${f.getMessage}")
         }
