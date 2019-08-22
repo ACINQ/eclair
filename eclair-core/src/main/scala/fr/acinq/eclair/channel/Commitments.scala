@@ -19,15 +19,13 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
-import fr.acinq.eclair
-import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, MilliSatoshi, UInt64}
+import fr.acinq.eclair.{Globals, MilliSatoshi, UInt64, _}
 
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
@@ -43,13 +41,13 @@ case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig,
 // @formatter:on
 
 /**
-  * about remoteNextCommitInfo:
-  * we either:
-  * - have built and signed their next commit tx with their next revocation hash which can now be discarded
-  * - have their next per-commitment point
-  * So, when we've signed and sent a commit message and are waiting for their revocation message,
-  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
-  */
+ * about remoteNextCommitInfo:
+ * we either:
+ * - have built and signed their next commit tx with their next revocation hash which can now be discarded
+ * - have their next per-commitment point
+ * So, when we've signed and sent a commit message and are waiting for their revocation message,
+ * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
+ */
 case class Commitments(channelVersion: ChannelVersion,
                        localParams: LocalParams, remoteParams: RemoteParams,
                        channelFlags: Byte,
@@ -64,19 +62,19 @@ case class Commitments(channelVersion: ChannelVersion,
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
-    (localCommit.spec.htlcs.filter(htlc => htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry) ++
-      remoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry) ++
-      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry)).getOrElse(Set.empty[DirectedHtlc])).map(_.add)
+    (localCommit.spec.htlcs.filter(htlc => htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.get) ++
+      remoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry.get) ++
+      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry.get)).getOrElse(Set.empty[DirectedHtlc])).map(_.add)
 
   /**
-    * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
-    * HTLCs, we need to get a remote signed updated commitment that removes this HTLC.
-    * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
-    * and our HTLC success in case of a force-close.
-    */
-  def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: Int): Set[UpdateAddHtlc] = {
+   * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
+   * HTLCs, we need to get a remote signed updated commitment that removes this HTLC.
+   * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
+   * and our HTLC success in case of a force-close.
+   */
+  def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = {
     localCommit.spec.htlcs.collect {
-      case htlc if htlc.direction == IN && blockheight >= htlc.add.cltvExpiry - fulfillSafety => htlc.add
+      case htlc if htlc.direction == IN && blockheight >= (htlc.add.cltvExpiry - fulfillSafety).get => htlc.add
     }
   }
 
@@ -102,12 +100,12 @@ case class Commitments(channelVersion: ChannelVersion,
 object Commitments {
 
   /**
-    * Add a change to our proposed change list.
-    *
-    * @param commitments current commitments.
-    * @param proposal    proposed change to add.
-    * @return an updated commitment instance.
-    */
+   * Add a change to our proposed change list.
+   *
+   * @param commitments current commitments.
+   * @param proposal    proposed change to add.
+   * @return an updated commitment instance.
+   */
   private def addLocalProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
     commitments.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed :+ proposal))
 
@@ -115,20 +113,19 @@ object Commitments {
     commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
 
   /**
-    *
-    * @param commitments current commitments
-    * @param cmd         add HTLC command
-    * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
-    */
+   *
+   * @param commitments current commitments
+   * @param cmd         add HTLC command
+   * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
+   */
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
-
     val blockCount = Globals.blockCount.get()
     // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
-    val minExpiry = blockCount + Channel.MIN_CLTV_EXPIRY
+    val minExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry
     if (cmd.cltvExpiry < minExpiry) {
       return Left(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockCount = blockCount))
     }
-    val maxExpiry = blockCount + Channel.MAX_CLTV_EXPIRY
+    val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry
     // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
     if (cmd.cltvExpiry >= maxExpiry) {
       return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockCount))

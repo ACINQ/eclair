@@ -17,17 +17,17 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.crypto.Mac32
-import fr.acinq.eclair.wire.CommonCodecs.{sha256, millisatoshi}
+import fr.acinq.eclair.wire.CommonCodecs.{cltvExpiry, millisatoshi, sha256}
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelUpdateCodec, lightningMessageCodec}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
 /**
-  * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
-  * Created by fabrice on 14/03/17.
-  */
+ * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
+ * Created by fabrice on 14/03/17.
+ */
 
 // @formatter:off
 sealed trait FailureMessage { def message: String }
@@ -51,12 +51,12 @@ case object UnknownNextPeer extends Perm { def message = "processing node does n
 case class AmountBelowMinimum(amount: MilliSatoshi, update: ChannelUpdate) extends Update { def message = s"payment amount was below the minimum required by the channel" }
 case class FeeInsufficient(amount: MilliSatoshi, update: ChannelUpdate) extends Update { def message = s"payment fee was below the minimum required by the channel" }
 case class ChannelDisabled(messageFlags: Byte, channelFlags: Byte, update: ChannelUpdate) extends Update { def message = "channel is currently disabled" }
-case class IncorrectCltvExpiry(expiry: Long, update: ChannelUpdate) extends Update { def message = "payment expiry doesn't match the value in the onion" }
+case class IncorrectCltvExpiry(expiry: CltvExpiry, update: ChannelUpdate) extends Update { def message = "payment expiry doesn't match the value in the onion" }
 case class IncorrectOrUnknownPaymentDetails(amount: MilliSatoshi) extends Perm { def message = "incorrect payment amount or unknown payment hash" }
 case object IncorrectPaymentAmount extends Perm { def message = "payment amount is incorrect" }
 case class ExpiryTooSoon(update: ChannelUpdate) extends Update { def message = "payment expiry is too close to the current block height for safe handling by the relaying node" }
 case object FinalExpiryTooSoon extends FailureMessage { def message = "payment expiry is too close to the current block height for safe handling by the final node" }
-case class FinalIncorrectCltvExpiry(expiry: Long) extends FailureMessage { def message = "payment expiry doesn't match the value in the onion" }
+case class FinalIncorrectCltvExpiry(expiry: CltvExpiry) extends FailureMessage { def message = "payment expiry doesn't match the value in the onion" }
 case class FinalIncorrectHtlcAmount(amount: MilliSatoshi) extends FailureMessage { def message = "payment amount is incorrect in the final htlc" }
 case object ExpiryTooFar extends FailureMessage { def message = "payment expiry is too far in the future" }
 // @formatter:on
@@ -88,29 +88,29 @@ object FailureMessageCodecs {
     .typecase(PERM | 10, provide(UnknownNextPeer))
     .typecase(UPDATE | 11, (("amountMsat" | millisatoshi) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[AmountBelowMinimum])
     .typecase(UPDATE | 12, (("amountMsat" | millisatoshi) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[FeeInsufficient])
-    .typecase(UPDATE | 13, (("expiry" | uint32) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[IncorrectCltvExpiry])
+    .typecase(UPDATE | 13, (("expiry" | cltvExpiry) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[IncorrectCltvExpiry])
     .typecase(UPDATE | 14, ("channelUpdate" | channelUpdateWithLengthCodec).as[ExpiryTooSoon])
     .typecase(UPDATE | 20, (("messageFlags" | byte) :: ("channelFlags" | byte) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
     .typecase(PERM | 15, ("amountMsat" | withDefaultValue(optional(bitsRemaining, millisatoshi), MilliSatoshi(0))).as[IncorrectOrUnknownPaymentDetails])
     .typecase(PERM | 16, provide(IncorrectPaymentAmount))
     .typecase(17, provide(FinalExpiryTooSoon))
-    .typecase(18, ("expiry" | uint32).as[FinalIncorrectCltvExpiry])
+    .typecase(18, ("expiry" | cltvExpiry).as[FinalIncorrectCltvExpiry])
     .typecase(19, ("amountMsat" | millisatoshi).as[FinalIncorrectHtlcAmount])
     .typecase(21, provide(ExpiryTooFar))
 
   /**
-    * Return the failure code for a given failure message. This method actually encodes the failure message, which is a
-    * bit clunky and not particularly efficient. It shouldn't be used on the application's hot path.
-    */
+   * Return the failure code for a given failure message. This method actually encodes the failure message, which is a
+   * bit clunky and not particularly efficient. It shouldn't be used on the application's hot path.
+   */
   def failureCode(failure: FailureMessage): Int = failureMessageCodec.encode(failure).flatMap(uint16.decode).require.value
 
   /**
-    * An onion-encrypted failure from an intermediate node:
-    * +----------------+----------------------------------+-----------------+----------------------+-----+
-    * | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
-    * +----------------+----------------------------------+-----------------+----------------------+-----+
-    * with failure message length + pad length = 256
-    */
+   * An onion-encrypted failure from an intermediate node:
+   * +----------------+----------------------------------+-----------------+----------------------+-----+
+   * | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
+   * +----------------+----------------------------------+-----------------+----------------------+-----+
+   * with failure message length + pad length = 256
+   */
   def failureOnionCodec(mac: Mac32): Codec[FailureMessage] = CommonCodecs.prependmac(
     paddedFixedSizeBytesDependent(
       260,

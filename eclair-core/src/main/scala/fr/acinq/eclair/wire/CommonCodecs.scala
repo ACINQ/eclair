@@ -19,9 +19,9 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.crypto.Mac32
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -31,14 +31,14 @@ import scala.Ordering.Implicits._
 import scala.util.Try
 
 /**
-  * Created by t-bast on 20/06/2019.
-  */
+ * Created by t-bast on 20/06/2019.
+ */
 
 object CommonCodecs {
 
   /**
-    * Discriminator codec with a default fallback codec (of the same type).
-    */
+   * Discriminator codec with a default fallback codec (of the same type).
+   */
   def discriminatorWithDefault[A](discriminator: Codec[A], fallback: Codec[A]): Codec[A] = new Codec[A] {
     def sizeBound: SizeBound = discriminator.sizeBound | fallback.sizeBound
 
@@ -57,15 +57,18 @@ object CommonCodecs {
   val satoshi: Codec[Satoshi] = uint64overflow.xmapc(l => Satoshi(l))(_.toLong)
   val millisatoshi: Codec[MilliSatoshi] = uint64overflow.xmapc(l => MilliSatoshi(l))(_.amount)
 
+  val cltvExpiry: Codec[CltvExpiry] = uint32.xmapc(CltvExpiry)((_: CltvExpiry).get)
+  val cltvExpiryDelta: Codec[CltvExpiryDelta] = uint16.xmapc(CltvExpiryDelta)((_: CltvExpiryDelta).delta)
+
   /**
-    * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be
-    * re-computed correctly.
-    * If a value could be encoded with less bytes, it's considered invalid and results in a failed decoding attempt.
-    *
-    * @param codec the value codec (depends on the value).
-    * @param min   the minimal value that should be encoded.
-    */
-  def minimalvalue[A : Ordering](codec: Codec[A], min: A): Codec[A] = codec.exmap({
+   * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be
+   * re-computed correctly.
+   * If a value could be encoded with less bytes, it's considered invalid and results in a failed decoding attempt.
+   *
+   * @param codec the value codec (depends on the value).
+   * @param min   the minimal value that should be encoded.
+   */
+  def minimalvalue[A: Ordering](codec: Codec[A], min: A): Codec[A] = codec.exmap({
     case i if i < min => Attempt.failure(Err("value was not minimally encoded"))
     case i => Attempt.successful(i)
   }, Attempt.successful)
@@ -129,9 +132,9 @@ object CommonCodecs {
   def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(32, utf8).xmap(s => s.takeWhile(_ != '\u0000'), s => s)
 
   /**
-    * When encoding, prepend a valid mac to the output of the given codec.
-    * When decoding, verify that a valid mac is prepended.
-    */
+   * When encoding, prepend a valid mac to the output of the given codec.
+   * When decoding, verify that a valid mac is prepended.
+   */
   def prependmac[A](codec: Codec[A], mac: Mac32) = Codec[A](
     (a: A) => codec.encode(a).map(bits => mac.mac(bits.toByteVector).bits ++ bits),
     (bits: BitVector) => ("mac" | bytes32).decode(bits) match {

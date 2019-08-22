@@ -17,8 +17,8 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
-import fr.acinq.eclair.{MilliSatoshi, TestConstants, randomBytes32}
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, TestConstants, randomBytes32}
 import org.scalatest.FunSuite
 
 
@@ -28,11 +28,11 @@ class CommitmentSpecSpec extends FunSuite {
     val R = randomBytes32
     val H = Crypto.sha256(R)
 
-    val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliSatoshi(2000 * 1000), H, 400, TestConstants.emptyOnionPacket)
+    val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliSatoshi(2000 * 1000), H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec1 = CommitmentSpec.reduce(spec, add1 :: Nil, Nil)
     assert(spec1 === spec.copy(htlcs = Set(DirectedHtlc(OUT, add1)), toLocal = MilliSatoshi(3000000)))
 
-    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi(1000 * 1000), H, 400, TestConstants.emptyOnionPacket)
+    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi(1000 * 1000), H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec2 = CommitmentSpec.reduce(spec1, add2 :: Nil, Nil)
     assert(spec2 === spec1.copy(htlcs = Set(DirectedHtlc(OUT, add1), DirectedHtlc(OUT, add2)), toLocal = MilliSatoshi(2000000)))
 
@@ -50,11 +50,11 @@ class CommitmentSpecSpec extends FunSuite {
     val R = randomBytes32
     val H = Crypto.sha256(R)
 
-    val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliSatoshi(2000 * 1000), H, 400, TestConstants.emptyOnionPacket)
+    val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliSatoshi(2000 * 1000), H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec1 = CommitmentSpec.reduce(spec, Nil, add1 :: Nil)
     assert(spec1 === spec.copy(htlcs = Set(DirectedHtlc(IN, add1)), toRemote = MilliSatoshi(3000 * 1000)))
 
-    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi(1000 * 1000), H, 400, TestConstants.emptyOnionPacket)
+    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi(1000 * 1000), H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec2 = CommitmentSpec.reduce(spec1, Nil, add2 :: Nil)
     assert(spec2 === spec1.copy(htlcs = Set(DirectedHtlc(IN, add1), DirectedHtlc(IN, add2)), toRemote = MilliSatoshi(2000 * 1000)))
 

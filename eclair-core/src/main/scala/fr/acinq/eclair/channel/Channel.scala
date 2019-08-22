@@ -58,11 +58,11 @@ object Channel {
   val MAX_NEGOTIATION_ITERATIONS = 20
 
   // this is defined in BOLT 11
-  val MIN_CLTV_EXPIRY = 9L
-  val MAX_CLTV_EXPIRY = 7 * 144L // one week
+  val MIN_CLTV_EXPIRY_DELTA = CltvExpiryDelta(9)
+  val MAX_CLTV_EXPIRY_DELTA = CltvExpiryDelta(7 * 144) // one week
 
   // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx
-  val MAX_TO_SELF_DELAY = 2016
+  val MAX_TO_SELF_DELAY = CltvExpiryDelta(2016)
 
   // as a fundee, we will wait that much time for the funding tx to confirm (funder will rely on the funding tx being double-spent)
   val FUNDING_TIMEOUT_FUNDEE = 5 days
@@ -1306,7 +1306,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val revokedCommitPublished1 = d.revokedCommitPublished.map(Closing.updateRevokedCommitPublished(_, tx))
       // if the local commitment tx just got confirmed, let's send an event telling when we will get the main output refund
       if (localCommitPublished1.map(_.commitTx.txid).contains(tx.txid)) {
-        context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.remoteParams.toSelfDelay))
+        context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.remoteParams.toSelfDelay.delta))
       }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
       val timedoutHtlcs =
