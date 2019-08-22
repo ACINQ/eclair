@@ -52,9 +52,11 @@ case class AmountBelowMinimum(amount: MilliSatoshi, update: ChannelUpdate) exten
 case class FeeInsufficient(amount: MilliSatoshi, update: ChannelUpdate) extends Update { def message = s"payment fee was below the minimum required by the channel" }
 case class ChannelDisabled(messageFlags: Byte, channelFlags: Byte, update: ChannelUpdate) extends Update { def message = "channel is currently disabled" }
 case class IncorrectCltvExpiry(expiry: CltvExpiry, update: ChannelUpdate) extends Update { def message = "payment expiry doesn't match the value in the onion" }
-case class IncorrectOrUnknownPaymentDetails(amount: MilliSatoshi) extends Perm { def message = "incorrect payment amount or unknown payment hash" }
+case class IncorrectOrUnknownPaymentDetails(amount: MilliSatoshi, height: Long) extends Perm { def message = "incorrect payment details or unknown payment hash" }
+/** Deprecated: this failure code allows probing attacks: IncorrectOrUnknownPaymentDetails should be used instead. */
 case object IncorrectPaymentAmount extends Perm { def message = "payment amount is incorrect" }
 case class ExpiryTooSoon(update: ChannelUpdate) extends Update { def message = "payment expiry is too close to the current block height for safe handling by the relaying node" }
+/** Deprecated: this failure code allows probing attacks: IncorrectOrUnknownPaymentDetails should be used instead. */
 case object FinalExpiryTooSoon extends FailureMessage { def message = "payment expiry is too close to the current block height for safe handling by the final node" }
 case class FinalIncorrectCltvExpiry(expiry: CltvExpiry) extends FailureMessage { def message = "payment expiry doesn't match the value in the onion" }
 case class FinalIncorrectHtlcAmount(amount: MilliSatoshi) extends FailureMessage { def message = "payment amount is incorrect in the final htlc" }
@@ -91,7 +93,7 @@ object FailureMessageCodecs {
     .typecase(UPDATE | 13, (("expiry" | cltvExpiry) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[IncorrectCltvExpiry])
     .typecase(UPDATE | 14, ("channelUpdate" | channelUpdateWithLengthCodec).as[ExpiryTooSoon])
     .typecase(UPDATE | 20, (("messageFlags" | byte) :: ("channelFlags" | byte) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
-    .typecase(PERM | 15, ("amountMsat" | withDefaultValue(optional(bitsRemaining, millisatoshi), 0 msat)).as[IncorrectOrUnknownPaymentDetails])
+    .typecase(PERM | 15, (("amountMsat" | withDefaultValue(optional(bitsRemaining, millisatoshi), 0 msat)) :: ("height" | withDefaultValue(optional(bitsRemaining, uint32), 0L))).as[IncorrectOrUnknownPaymentDetails])
     .typecase(PERM | 16, provide(IncorrectPaymentAmount))
     .typecase(17, provide(FinalExpiryTooSoon))
     .typecase(18, ("expiry" | cltvExpiry).as[FinalIncorrectCltvExpiry])
