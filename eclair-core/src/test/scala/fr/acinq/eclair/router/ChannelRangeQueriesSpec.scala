@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.eclair.{MilliSatoshi, randomKey}
+import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{MilliSatoshi, randomKey}
 import org.scalatest.FunSuite
 
 import scala.collection.immutable.SortedMap
@@ -33,14 +34,14 @@ class ChannelRangeQueriesSpec extends FunSuite {
     val a = randomKey.publicKey
     val b = randomKey.publicKey
     val ab = RouteCalculationSpec.makeChannel(123466L, a, b)
-    val (ab1, uab1) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId1, ab.nodeId2, MilliSatoshi(0), 0, timestamp = now)
-    val (ab2, uab2) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId2, ab.nodeId1, MilliSatoshi(0), 0, timestamp = now)
+        val (ab1, uab1) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId1, ab.nodeId2, MilliSatoshi(0), 0, timestamp = now)
+        val (ab2, uab2) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId2, ab.nodeId1, MilliSatoshi(0), 0, timestamp = now)
 
     val c = randomKey.publicKey
     val d = randomKey.publicKey
     val cd = RouteCalculationSpec.makeChannel(451312L, c, d)
-    val (cd1, ucd1) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId1, cd.nodeId2, MilliSatoshi(0), 0, timestamp = now)
-    val (_, ucd2) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId2, cd.nodeId1, MilliSatoshi(0), 0, timestamp = now)
+        val (cd1, ucd1) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId1, cd.nodeId2, MilliSatoshi(0), 0, timestamp = now)
+        val (_, ucd2) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId2, cd.nodeId1, MilliSatoshi(0), 0, timestamp = now)
 
     val e = randomKey.publicKey
     val f = randomKey.publicKey
@@ -57,28 +58,28 @@ class ChannelRangeQueriesSpec extends FunSuite {
       cd1 -> ucd1
     )
 
-    import fr.acinq.eclair.wire.QueryFlagTypes._
+    import fr.acinq.eclair.wire.QueryShortChannelIdsTlv.QueryFlagType._
 
-    assert(Router.getChannelDigestInfo(channels, updates)(ab.shortChannelId) == TimestampsAndChecksums(now, 714408668, now, 714408668))
+    assert(Router.getChannelDigestInfo(channels, updates)(ab.shortChannelId) == (Timestamps(now, now), Checksums(3297511804L, 3297511804L)))
 
     // no extended info but we know the channel: we ask for the updates
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, None) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, None, None) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte)
     // same checksums, newer timestamps: we don't ask anything
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now + 1, 714408668, now + 1, 714408668))) === 0.toByte)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(3297511804L, 3297511804L))) === 0.toByte)
     // different checksums, newer timestamps: we ask for the updates
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now + 1, 154654604, now, 714408668))) === INCLUDE_CHANNEL_UPDATE_1)
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now, 714408668, now + 1, 45664546))) === INCLUDE_CHANNEL_UPDATE_2)
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now + 1, 154654604, now + 1, 45664546+6))) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now + 1, now)), Some(Checksums(154654604, 3297511804L))) === INCLUDE_CHANNEL_UPDATE_1)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now, now + 1)), Some(Checksums(3297511804L, 45664546))) === INCLUDE_CHANNEL_UPDATE_2)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(154654604, 45664546+6))) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte)
     // different checksums, older timestamps: we don't ask anything
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now - 1, 154654604, now, 714408668))) === 0.toByte)
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now, 714408668, now - 1, 45664546))) === 0.toByte)
-    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(TimestampsAndChecksums(now - 1, 154654604, now - 1, 45664546))) === 0.toByte)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now - 1, now)), Some(Checksums(154654604, 3297511804L))) === 0.toByte)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now, now - 1)), Some(Checksums(3297511804L, 45664546))) === 0.toByte)
+    assert(Router.computeFlag(channels, updates)(ab.shortChannelId, Some(Timestamps(now - 1, now - 1)), Some(Checksums(154654604, 45664546))) === 0.toByte)
 
     // missing channel update: we ask for it
-    assert(Router.computeFlag(channels, updates)(cd.shortChannelId, Some(TimestampsAndChecksums(now, 714408668, now, 714408668))) === INCLUDE_CHANNEL_UPDATE_2)
+    assert(Router.computeFlag(channels, updates)(cd.shortChannelId, Some(Timestamps(now, now)), Some(Checksums(3297511804L, 3297511804L))) === INCLUDE_CHANNEL_UPDATE_2)
 
     // unknown channel: we ask everything
-    assert(Router.computeFlag(channels, updates)(ef.shortChannelId, None) === QueryFlagTypes.INCLUDE_ALL)
+    assert(Router.computeFlag(channels, updates)(ef.shortChannelId, None, None) === INCLUDE_ALL)
 
   }
 }

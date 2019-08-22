@@ -67,7 +67,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     def counts = BasicSyncResult(ranges.size, queries.size, channels.size, updates.size)
   }
 
-  def sync(src: TestFSMRef[State, Data, Router], tgt: TestFSMRef[State, Data, Router], extendedQueryFlags_opt: Option[ExtendedQueryFlags]): SyncResult = {
+  def sync(src: TestFSMRef[State, Data, Router], tgt: TestFSMRef[State, Data, Router], extendedQueryFlags_opt: Option[QueryChannelRangeTlv]): SyncResult = {
     val sender = TestProbe()
     val pipe = TestProbe()
     pipe.ignoreMsg {
@@ -161,7 +161,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
     val charlieId = randomKey.publicKey
     val sender = TestProbe()
-    val extendedQueryFlags_opt = Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS)
+    val extendedQueryFlags_opt = Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))
 
     // tell alice to sync with bob
     assert(BasicSyncResult(ranges = 1, queries = 0, channels = 0, updates = 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
@@ -227,7 +227,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, block1))
 
     // router should ask for our first block of ids
-    assert(transport.expectMsgType[QueryShortChannelIds] === QueryShortChannelIds(chainHash, block1.shortChannelIds, None))
+    assert(transport.expectMsgType[QueryShortChannelIds] === QueryShortChannelIds(chainHash, block1.shortChannelIds, TlvStream.empty))
     // router should think that it is missing 100 channels, in one request
     val Some(sync) = router.stateData.sync.get(remoteNodeId)
     assert(sync.total == 1)
@@ -241,7 +241,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   test("sync progress") {
 
-    def req = QueryShortChannelIds(Block.RegtestGenesisBlock.hash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42))), None)
+    def req = QueryShortChannelIds(Block.RegtestGenesisBlock.hash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42))), TlvStream.empty)
 
     val nodeidA = randomKey.publicKey
     val nodeidB = randomKey.publicKey

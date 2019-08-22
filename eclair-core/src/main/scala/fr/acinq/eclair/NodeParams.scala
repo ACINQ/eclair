@@ -33,6 +33,7 @@ import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
+
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
 
@@ -76,7 +77,6 @@ case class NodeParams(keyManager: KeyManager,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int) {
-
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
 }
@@ -186,6 +186,11 @@ object NodeParams {
       claimMainBlockTarget = config.getInt("on-chain-fees.target-blocks.claim-main")
     )
 
+    val feeBase = MilliSatoshi(config.getInt("fee-base-msat"))
+    // fee base is in msat but is encoded on 32 bits and not 64 in the BOLTs, which is why it has
+    // to be below 0x100000000 msat which is about 42 mbtc
+    require(feeBase <= MilliSatoshi(0xFFFFFFFFL), "fee-base-msat must be below 42 mbtc")
+
     NodeParams(
       keyManager = keyManager,
       alias = nodeAlias,
@@ -209,7 +214,7 @@ object NodeParams {
       toRemoteDelayBlocks = config.getInt("to-remote-delay-blocks"),
       maxToLocalDelayBlocks = config.getInt("max-to-local-delay-blocks"),
       minDepthBlocks = config.getInt("mindepth-blocks"),
-      feeBase = MilliSatoshi(config.getInt("fee-base-msat")),
+      feeBase = feeBase,
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
