@@ -26,16 +26,12 @@ package fr.acinq.eclair
  *
  * @param underlying the absolute cltv expiry value (current block count + some delta).
  */
-case class CltvExpiry(private val underlying: Long) {
+case class CltvExpiry(private val underlying: Long) extends Ordered[CltvExpiry] {
   // @formatter:off
   def +(d: CltvExpiryDelta): CltvExpiry = CltvExpiry(underlying + d.toInt)
   def -(d: CltvExpiryDelta): CltvExpiry = CltvExpiry(underlying - d.toInt)
   def -(other: CltvExpiry): CltvExpiryDelta = CltvExpiryDelta((underlying - other.underlying).toInt)
-  def compare(other: CltvExpiry): Int = if (underlying == other.underlying) 0 else if (underlying < other.underlying) -1 else 1
-  def <=(that: CltvExpiry): Boolean = compare(that) <= 0
-  def >=(that: CltvExpiry): Boolean = compare(that) >= 0
-  def <(that: CltvExpiry): Boolean = compare(that) < 0
-  def >(that: CltvExpiry): Boolean = compare(that) > 0
+  override def compare(other: CltvExpiry): Int = if (underlying == other.underlying) 0 else if (underlying < other.underlying) -1 else 1
   def toLong: Long = underlying
   // @formatter:on
 }
@@ -48,7 +44,7 @@ case class CltvExpiry(private val underlying: Long) {
  *
  * @param underlying the cltv expiry delta value.
  */
-case class CltvExpiryDelta(private val underlying: Int) {
+case class CltvExpiryDelta(private val underlying: Int) extends Ordered[CltvExpiryDelta] {
 
   /**
    * Adds the current block height to the given delta to obtain an absolute expiry.
@@ -59,10 +55,6 @@ case class CltvExpiryDelta(private val underlying: Int) {
   def +(other: Int): CltvExpiryDelta = CltvExpiryDelta(underlying + other)
   def +(other: CltvExpiryDelta): CltvExpiryDelta = CltvExpiryDelta(underlying + other.underlying)
   def compare(other: CltvExpiryDelta): Int = if (underlying == other.underlying) 0 else if (underlying < other.underlying) -1 else 1
-  def <=(that: CltvExpiryDelta): Boolean = compare(that) <= 0
-  def >=(that: CltvExpiryDelta): Boolean = compare(that) >= 0
-  def <(that: CltvExpiryDelta): Boolean = compare(that) < 0
-  def >(that: CltvExpiryDelta): Boolean = compare(that) > 0
   def toInt: Int = underlying
   // @formatter:on
 
