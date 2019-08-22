@@ -1714,7 +1714,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r, commit = true))
     sender.expectMsg("ok")
     bob2alice.expectMsgType[UpdateFulfillHtlc]
-    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks).get))
+    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
 
     val ChannelErrorOccured(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccured]
     assert(isFatal)
@@ -1749,7 +1749,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r, commit = false))
     sender.expectMsg("ok")
     bob2alice.expectMsgType[UpdateFulfillHtlc]
-    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks).get))
+    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
 
     val ChannelErrorOccured(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccured]
     assert(isFatal)
@@ -1789,7 +1789,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
-    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks).get))
+    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
 
     val ChannelErrorOccured(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccured]
     assert(isFatal)

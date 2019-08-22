@@ -118,7 +118,7 @@ object Scripts {
     OP_IF ::
       OP_PUSHDATA(revocationPubkey) ::
     OP_ELSE ::
-      encodeNumber(toSelfDelay.delta) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
+      encodeNumber(toSelfDelay.toInt) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
       OP_PUSHDATA(localDelayedPaymentPubkey) ::
     OP_ENDIF ::
     OP_CHECKSIG :: Nil
@@ -184,7 +184,7 @@ object Scripts {
             OP_2 :: OP_SWAP :: OP_PUSHDATA(localHtlcPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
         OP_ELSE ::
             // To you after timeout.
-            OP_DROP :: encodeNumber(lockTime.get) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
+            OP_DROP :: encodeNumber(lockTime.toLong) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
             OP_CHECKSIG ::
         OP_ENDIF ::
     OP_ENDIF :: Nil

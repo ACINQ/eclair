@@ -66,11 +66,11 @@ class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](format => ({
 }))
 
 class CltvExpirySerializer extends CustomSerializer[CltvExpiry](format => ({ null }, {
-  case x: CltvExpiry => JLong(x.get)
+  case x: CltvExpiry => JLong(x.toLong)
 }))
 
 class CltvExpiryDeltaSerializer extends CustomSerializer[CltvExpiryDelta](format => ({ null }, {
-  case x: CltvExpiryDelta => JInt(x.delta)
+  case x: CltvExpiryDelta => JInt(x.toInt)
 }))
 
 class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](format => ({ null }, {
@@ -162,7 +162,7 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format =
 }, {
   case p: PaymentRequest => {
     val expiry = p.expiry.map(ex => JField("expiry", JLong(ex))).toSeq
-    val minFinalCltvExpiry = p.minFinalCltvExpiryDelta.map(mfce => JField("minFinalCltvExpiry", JLong(mfce.delta))).toSeq
+    val minFinalCltvExpiry = p.minFinalCltvExpiryDelta.map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
     val amount = p.amount.map(msat => JField("amount", JLong(msat.toLong))).toSeq
 
     val fieldList = List(JField("prefix", JString(p.prefix)),

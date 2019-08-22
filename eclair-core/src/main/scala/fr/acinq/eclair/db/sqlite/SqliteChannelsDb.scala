@@ -99,7 +99,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
       statement.setBytes(3, paymentHash.toArray)
-      statement.setLong(4, cltvExpiry.get)
+      statement.setLong(4, cltvExpiry.toLong)
       statement.executeUpdate()
     }
   }

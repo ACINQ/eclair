@@ -24,18 +24,19 @@ package fr.acinq.eclair
  * Bitcoin scripts (in particular HTLCs) need an absolute block expiry (greater than the current block count) to work
  * with OP_CLTV.
  *
- * @param get the absolute cltv expiry value (current block count + some delta).
+ * @param underlying the absolute cltv expiry value (current block count + some delta).
  */
-case class CltvExpiry(get: Long) {
+case class CltvExpiry(private val underlying: Long) {
   // @formatter:off
-  def +(d: CltvExpiryDelta): CltvExpiry = CltvExpiry(get + d.delta)
-  def -(d: CltvExpiryDelta): CltvExpiry = CltvExpiry(get - d.delta)
-  def -(other: CltvExpiry): CltvExpiryDelta = CltvExpiryDelta((get - other.get).toInt)
-  def compare(other: CltvExpiry): Int = if (get == other.get) 0 else if (get < other.get) -1 else 1
+  def +(d: CltvExpiryDelta): CltvExpiry = CltvExpiry(underlying + d.toInt)
+  def -(d: CltvExpiryDelta): CltvExpiry = CltvExpiry(underlying - d.toInt)
+  def -(other: CltvExpiry): CltvExpiryDelta = CltvExpiryDelta((underlying - other.underlying).toInt)
+  def compare(other: CltvExpiry): Int = if (underlying == other.underlying) 0 else if (underlying < other.underlying) -1 else 1
   def <=(that: CltvExpiry): Boolean = compare(that) <= 0
   def >=(that: CltvExpiry): Boolean = compare(that) >= 0
   def <(that: CltvExpiry): Boolean = compare(that) < 0
   def >(that: CltvExpiry): Boolean = compare(that) > 0
+  def toLong: Long = underlying
   // @formatter:on
 }
 
@@ -45,23 +46,24 @@ case class CltvExpiry(get: Long) {
  *
  * CltvExpiryDelta can also be used when working with OP_CSV which is by design a delta.
  *
- * @param delta the cltv expiry delta value.
+ * @param underlying the cltv expiry delta value.
  */
-case class CltvExpiryDelta(delta: Int) {
+case class CltvExpiryDelta(private val underlying: Int) {
 
   /**
    * Adds the current block height to the given delta to obtain an absolute expiry.
    */
-  def toCltvExpiry = CltvExpiry(Globals.blockCount.get() + delta)
+  def toCltvExpiry = CltvExpiry(Globals.blockCount.get() + underlying)
 
   // @formatter:off
-  def +(other: Int): CltvExpiryDelta = CltvExpiryDelta(delta + other)
-  def +(other: CltvExpiryDelta): CltvExpiryDelta = CltvExpiryDelta(delta + other.delta)
-  def compare(other: CltvExpiryDelta): Int = if (delta == other.delta) 0 else if (delta < other.delta) -1 else 1
+  def +(other: Int): CltvExpiryDelta = CltvExpiryDelta(underlying + other)
+  def +(other: CltvExpiryDelta): CltvExpiryDelta = CltvExpiryDelta(underlying + other.underlying)
+  def compare(other: CltvExpiryDelta): Int = if (underlying == other.underlying) 0 else if (underlying < other.underlying) -1 else 1
   def <=(that: CltvExpiryDelta): Boolean = compare(that) <= 0
   def >=(that: CltvExpiryDelta): Boolean = compare(that) >= 0
   def <(that: CltvExpiryDelta): Boolean = compare(that) < 0
   def >(that: CltvExpiryDelta): Boolean = compare(that) > 0
+  def toInt: Int = underlying
   // @formatter:on
 
 }

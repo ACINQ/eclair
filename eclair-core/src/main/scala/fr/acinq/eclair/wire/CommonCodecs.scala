@@ -57,8 +57,8 @@ object CommonCodecs {
   val satoshi: Codec[Satoshi] = uint64overflow.xmapc(l => Satoshi(l))(_.toLong)
   val millisatoshi: Codec[MilliSatoshi] = uint64overflow.xmapc(l => MilliSatoshi(l))(_.amount)
 
-  val cltvExpiry: Codec[CltvExpiry] = uint32.xmapc(CltvExpiry)((_: CltvExpiry).get)
-  val cltvExpiryDelta: Codec[CltvExpiryDelta] = uint16.xmapc(CltvExpiryDelta)((_: CltvExpiryDelta).delta)
+  val cltvExpiry: Codec[CltvExpiry] = uint32.xmapc(CltvExpiry)((_: CltvExpiry).toLong)
+  val cltvExpiryDelta: Codec[CltvExpiryDelta] = uint16.xmapc(CltvExpiryDelta)((_: CltvExpiryDelta).toInt)
 
   /**
    * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be

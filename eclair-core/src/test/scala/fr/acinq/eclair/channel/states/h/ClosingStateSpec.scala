@@ -437,7 +437,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test starts here
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 42, 0, aliceCommitTx)
-    assert(listener.expectMsgType[LocalCommitConfirmed].refundAtBlock == 42 + TestConstants.Bob.channelParams.toSelfDelay.delta)
+    assert(listener.expectMsgType[LocalCommitConfirmed].refundAtBlock == 42 + TestConstants.Bob.channelParams.toSelfDelay.toInt)
     assert(listener.expectMsgType[PaymentSettlingOnChain].paymentHash == htlca1.paymentHash)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainDelayedTx), 200, 0, claimMainDelayedTx)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(htlcTimeoutTx), 201, 0, htlcTimeoutTx)

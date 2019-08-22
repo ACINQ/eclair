@@ -26,7 +26,7 @@ class CltvExpirySpec extends FunSuite {
 
   test("cltv expiry delta") {
     val d = CltvExpiryDelta(561)
-    assert(d.delta === 561)
+    assert(d.toInt === 561)
 
     // add
     assert(d + 5 === CltvExpiryDelta(566))
@@ -47,6 +47,7 @@ class CltvExpirySpec extends FunSuite {
 
   test("cltv expiry") {
     val e = CltvExpiry(1105)
+    assert(e.toLong === 1105)
 
     // add
     assert(e + CltvExpiryDelta(561) === CltvExpiry(1666))

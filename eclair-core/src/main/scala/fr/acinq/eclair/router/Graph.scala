@@ -295,7 +295,7 @@ object Graph {
       val capFactor = 1 - normalize(edgeMaxCapacity.toLong, CAPACITY_CHANNEL_LOW.toLong, CAPACITY_CHANNEL_HIGH.toLong)
 
       // Every edge is weighted by its cltv-delta value, normalized
-      val channelCltvDelta = edge.update.cltvExpiryDelta.delta
+      val channelCltvDelta = edge.update.cltvExpiryDelta.toInt
       val cltvFactor = normalize(channelCltvDelta, CLTV_LOW, CLTV_HIGH)
 
       // NB 'edgeCost' includes the amount to be sent plus the fees that must be paid to traverse this @param edge

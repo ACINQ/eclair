@@ -229,7 +229,7 @@ object Transactions {
       version = 2,
       txIn = TxIn(input.outPoint, ByteVector.empty, 0x00000000L) :: Nil,
       txOut = TxOut(amount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey))) :: Nil,
-      lockTime = htlc.cltvExpiry.get))
+      lockTime = htlc.cltvExpiry.toLong))
   }
 
   def makeHtlcSuccessTx(commitTx: Transaction, outputsAlreadyUsed: Set[Int], localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, feeratePerKw: Long, htlc: UpdateAddHtlc): HtlcSuccessTx = {
@@ -298,7 +298,7 @@ object Transactions {
       version = 2,
       txIn = TxIn(input.outPoint, ByteVector.empty, 0x00000000L) :: Nil,
       txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-      lockTime = htlc.cltvExpiry.get)
+      lockTime = htlc.cltvExpiry.toLong)
 
     val weight = addSigs(ClaimHtlcTimeoutTx(input, tx), PlaceHolderSig).tx.weight()
     val fee = weight2fee(feeratePerKw, weight)
@@ -347,7 +347,7 @@ object Transactions {
     // unsigned transaction
     val tx = Transaction(
       version = 2,
-      txIn = TxIn(input.outPoint, ByteVector.empty, toLocalDelay.delta) :: Nil,
+      txIn = TxIn(input.outPoint, ByteVector.empty, toLocalDelay.toInt) :: Nil,
       txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
       lockTime = 0)
 

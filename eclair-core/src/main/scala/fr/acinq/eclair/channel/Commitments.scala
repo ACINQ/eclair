@@ -62,9 +62,9 @@ case class Commitments(channelVersion: ChannelVersion,
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
-    (localCommit.spec.htlcs.filter(htlc => htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.get) ++
-      remoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry.get) ++
-      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry.get)).getOrElse(Set.empty[DirectedHtlc])).map(_.add)
+    (localCommit.spec.htlcs.filter(htlc => htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong) ++
+      remoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry.toLong) ++
+      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry.toLong)).getOrElse(Set.empty[DirectedHtlc])).map(_.add)
 
   /**
    * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
@@ -74,7 +74,7 @@ case class Commitments(channelVersion: ChannelVersion,
    */
   def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = {
     localCommit.spec.htlcs.collect {
-      case htlc if htlc.direction == IN && blockheight >= (htlc.add.cltvExpiry - fulfillSafety).get => htlc.add
+      case htlc if htlc.direction == IN && blockheight >= (htlc.add.cltvExpiry - fulfillSafety).toLong => htlc.add
     }
   }
 
