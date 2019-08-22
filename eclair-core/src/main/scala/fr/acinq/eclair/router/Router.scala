@@ -37,6 +37,7 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import shapeless.HNil
 
+import scala.annotation.tailrec
 import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.collection.{SortedSet, mutable}
 import scala.compat.Platform
@@ -528,16 +529,27 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyChannelRange(chainHash, _, _, _, shortChannelIds, _)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
-      val shortChannelIdAndFlags = shortChannelIds.array
-        .zipWithIndex
-        .map {
-          case (shortChannelId: ShortChannelId, idx) => {
-            val timestamps = routingMessage.timestamps_opt.map(_.timestamps(idx))
-            val checksums = routingMessage.checksums_opt.map(_.checksums(idx))
-            ShortChannelIdAndFlag(shortChannelId, computeFlag(d.channels, d.updates)(shortChannelId, timestamps, checksums))
-          }
+
+      @tailrec
+      def loop(ids: List[ShortChannelId], timestamps: List[ReplyChannelRangeTlv.Timestamps], checksums: List[ReplyChannelRangeTlv.Checksums], acc: List[ShortChannelIdAndFlag] = List.empty[ShortChannelIdAndFlag]): List[ShortChannelIdAndFlag] = {
+        ids match {
+          case Nil => acc.reverse
+          case head :: tail =>
+            val flag = computeFlag(d.channels, d.updates)(head, timestamps.headOption, checksums.headOption)
+            if (flag != 0) {
+              loop(tail, timestamps.drop(1), checksums.drop(1), ShortChannelIdAndFlag(head, flag) :: acc)
+            } else {
+              // 0 means nothing to query, just don't include it
+              loop(tail, timestamps.drop(1), checksums.drop(1), acc)
+            }
         }
-        .filter(_.flag != 0)
+      }
+
+      val timmestamps_opt = routingMessage.timestamps_opt.map(_.timestamps).getOrElse(List.empty[ReplyChannelRangeTlv.Timestamps])
+      val checksums_opt = routingMessage.checksums_opt.map(_.checksums).getOrElse(List.empty[ReplyChannelRangeTlv.Checksums])
+
+      val shortChannelIdAndFlags = loop(shortChannelIds.array, timmestamps_opt, checksums_opt)
+
       val (channelCount, updatesCount) = shortChannelIdAndFlags.foldLeft((0, 0)) {
         case ((c, u), ShortChannelIdAndFlag(_, flag)) =>
           val c1 = c + (if (QueryShortChannelIdsTlv.QueryFlagType.includeAnnouncement(flag)) 1 else 0)
