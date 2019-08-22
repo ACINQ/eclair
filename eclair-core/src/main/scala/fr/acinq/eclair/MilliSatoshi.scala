@@ -38,10 +38,7 @@ case class MilliSatoshi(private val underlying: Long) extends Ordered[MilliSatos
   def unary_-() = MilliSatoshi(-underlying)
   override def compare(other: MilliSatoshi): Int = if (underlying == other.underlying) 0 else if (underlying < other.underlying) -1 else 1
   // Since BtcAmount is a sealed trait that MilliSatoshi cannot extend, we need to redefine comparison operators.
-  def compare(other: BtcAmount): Int = {
-    val otherMsat = other.toMilliSatoshi.underlying
-    if (underlying == otherMsat) 0 else if (underlying < otherMsat) -1 else 1
-  }
+  def compare(other: BtcAmount): Int = compare(other.toMilliSatoshi)
   def <=(that: BtcAmount): Boolean = compare(that) <= 0
   def >=(that: BtcAmount): Boolean = compare(that) >= 0
   def <(that: BtcAmount): Boolean = compare(that) < 0
