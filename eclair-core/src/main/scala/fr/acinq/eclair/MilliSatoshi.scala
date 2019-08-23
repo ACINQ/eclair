@@ -36,13 +36,20 @@ case class MilliSatoshi(private val underlying: Long) extends Ordered[MilliSatos
   def *(m: Double) = MilliSatoshi((underlying * m).toLong)
   def /(d: Long) = MilliSatoshi(underlying / d)
   def unary_-() = MilliSatoshi(-underlying)
+
   override def compare(other: MilliSatoshi): Int = underlying.compareTo(other.underlying)
   // Since BtcAmount is a sealed trait that MilliSatoshi cannot extend, we need to redefine comparison operators.
   def compare(other: BtcAmount): Int = compare(other.toMilliSatoshi)
-  def <=(that: BtcAmount): Boolean = compare(that) <= 0
-  def >=(that: BtcAmount): Boolean = compare(that) >= 0
-  def <(that: BtcAmount): Boolean = compare(that) < 0
-  def >(that: BtcAmount): Boolean = compare(that) > 0
+  def <=(other: BtcAmount): Boolean = compare(other) <= 0
+  def >=(other: BtcAmount): Boolean = compare(other) >= 0
+  def <(other: BtcAmount): Boolean = compare(other) < 0
+  def >(other: BtcAmount): Boolean = compare(other) > 0
+
+  def max(other: MilliSatoshi): MilliSatoshi = if (this > other) this else other
+  def max(other: BtcAmount): MilliSatoshi = if (this > other) this else other.toMilliSatoshi
+  def min(other: MilliSatoshi): MilliSatoshi = if (this < other) this else other
+  def min(other: BtcAmount): MilliSatoshi = if (this < other) this else other.toMilliSatoshi
+
   def truncateToSatoshi: Satoshi = Satoshi(underlying / 1000)
   def toLong: Long = underlying
   // @formatter:on
@@ -58,16 +65,5 @@ object MilliSatoshi {
     case millis: MilliBtc => satoshi2millisatoshi(millibtc2satoshi(millis))
     case bitcoin: Btc => satoshi2millisatoshi(btc2satoshi(bitcoin))
   }
-
-  // @formatter:off
-  def maxOf(x: MilliSatoshi, y: MilliSatoshi) = MilliSatoshi(Math.max(x.toLong, y.toLong))
-  def maxOf(x: MilliSatoshi, y: BtcAmount) = MilliSatoshi(Math.max(x.toLong, y.toMilliSatoshi.toLong))
-  def maxOf(x: BtcAmount, y: MilliSatoshi): MilliSatoshi = maxOf(y, x)
-  def maxOf(x: Satoshi, y: Satoshi) = Satoshi(Math.max(x.toLong, y.toLong))
-  def minOf(x: MilliSatoshi, y: MilliSatoshi) = MilliSatoshi(Math.min(x.toLong, y.toLong))
-  def minOf(x: MilliSatoshi, y: BtcAmount) = MilliSatoshi(Math.min(x.toLong, y.toMilliSatoshi.toLong))
-  def minOf(x: BtcAmount, y: MilliSatoshi): MilliSatoshi = minOf(y, x)
-  def minOf(x: Satoshi, y: Satoshi) = Satoshi(Math.min(x.toLong, y.toLong))
-  // @formatter:on
 
 }

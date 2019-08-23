@@ -27,8 +27,8 @@ public final class MilliSatoshiTest {
         MilliSatoshi msat = new MilliSatoshi(561);
         Satoshi sat = new Satoshi(1);
         msat.truncateToSatoshi();
-        MilliSatoshi.maxOf(msat, sat);
-        MilliSatoshi.minOf(sat, msat);
+        msat = msat.max(sat);
+        msat = msat.min(sat);
         MilliSatoshi.toMilliSatoshi(sat);
         msat = MilliSatoshi.toMilliSatoshi(sat).$plus(msat);
         msat = msat.$plus(msat);

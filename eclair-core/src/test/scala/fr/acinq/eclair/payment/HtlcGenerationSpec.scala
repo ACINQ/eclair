@@ -151,8 +151,8 @@ object HtlcGenerationSpec {
 
   def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = MilliSatoshi(50000000L), testAvailableBalanceForReceive: MilliSatoshi = MilliSatoshi(50000000L)) =
     new Commitments(ChannelVersion.STANDARD, null, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId) {
-      override lazy val availableBalanceForSend: MilliSatoshi = MilliSatoshi.maxOf(testAvailableBalanceForSend, MilliSatoshi(0))
-      override lazy val availableBalanceForReceive: MilliSatoshi = MilliSatoshi.maxOf(testAvailableBalanceForReceive, MilliSatoshi(0))
+      override lazy val availableBalanceForSend: MilliSatoshi = testAvailableBalanceForSend.max(MilliSatoshi(0))
+      override lazy val availableBalanceForReceive: MilliSatoshi = testAvailableBalanceForReceive.max(MilliSatoshi(0))
     }
 
   def randomExtendedPrivateKey: ExtendedPrivateKey = DeterministicWallet.generate(randomBytes32)

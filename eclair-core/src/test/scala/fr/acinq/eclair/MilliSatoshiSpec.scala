@@ -17,7 +17,6 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.eclair.MilliSatoshi.{maxOf, minOf}
 import org.scalatest.FunSuite
 
 /**
@@ -64,16 +63,16 @@ class MilliSatoshiSpec extends FunSuite {
     assert(MilliSatoshi(2000) > Satoshi(1))
 
     // maxOf
-    assert(maxOf(561 msat, 1105 msat) === MilliSatoshi(1105))
-    assert(maxOf(1 sat, 1105 msat) === MilliSatoshi(1105))
-    assert(maxOf(1105 msat, 2 sat) === MilliSatoshi(2000))
-    assert(maxOf(1 sat, 2 sat) === Satoshi(2))
+    assert((561 msat).max(1105 msat) === MilliSatoshi(1105))
+    assert((1105 msat).max(1 sat) === MilliSatoshi(1105))
+    assert((1105 msat).max(2 sat) === MilliSatoshi(2000))
+    assert((1 sat).max(2 sat) === Satoshi(2))
 
     // minOf
-    assert(minOf(561 msat, 1105 msat) === MilliSatoshi(561))
-    assert(minOf(1 sat, 1105 msat) === MilliSatoshi(1000))
-    assert(minOf(1105 msat, 2 sat) === MilliSatoshi(1105))
-    assert(minOf(1 sat, 2 sat) === Satoshi(1))
+    assert((561 msat).min(1105 msat) === MilliSatoshi(561))
+    assert((1105 msat).min(1 sat) === MilliSatoshi(1000))
+    assert((1105 msat).min(2 sat) === MilliSatoshi(1105))
+    assert((1 sat).min(2 sat) === Satoshi(1))
   }
 
 }

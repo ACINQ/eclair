@@ -190,4 +190,10 @@ package object eclair {
     // @formatter:on
   }
 
+  // TODO: we can remove that once bitcoin-lib offers it
+  implicit class MaxMinSatoshi(amount: Satoshi) {
+    def max(other: Satoshi): Satoshi = if (amount > other) amount else other
+    def min(other: Satoshi): Satoshi = if (amount < other) amount else other
+  }
+
 }

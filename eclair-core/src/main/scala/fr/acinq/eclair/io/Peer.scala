@@ -26,7 +26,6 @@ import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Protocol, Satoshi}
-import fr.acinq.eclair
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
@@ -41,8 +40,8 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 /**
-  * Created by PM on 26/08/2016.
-  */
+ * Created by PM on 26/08/2016.
+ */
 class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
@@ -349,8 +348,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(DelayedRebroadcast(rebroadcast), d: ConnectedData) =>
 
       /**
-        * Send and count in a single iteration
-        */
+       * Send and count in a single iteration
+       */
       def sendAndCount(msgs: Map[_ <: RoutingMessage, Set[ActorRef]]): Int = msgs.foldLeft(0) {
         case (count, (_, origins)) if origins.contains(self) =>
           // the announcement came from this peer, we don't send it back
@@ -511,13 +510,13 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
   }
 
   /**
-    * The transition INSTANTIATING -> DISCONNECTED happens in 2 scenarios
-    *   - Manual connection to a new peer: then when(DISCONNECTED) we expect a Peer.Connect from the switchboard
-    *   - Eclair restart: The switchboard creates the peers and sends Init and then Peer.Reconnect to trigger reconnection attempts
-    *
-    * So when we see this transition we NO-OP because we don't want to start a Reconnect timer but the peer will receive the trigger
-    * (Connect/Reconnect) messages from the switchboard.
-    */
+   * The transition INSTANTIATING -> DISCONNECTED happens in 2 scenarios
+   *   - Manual connection to a new peer: then when(DISCONNECTED) we expect a Peer.Connect from the switchboard
+   *   - Eclair restart: The switchboard creates the peers and sends Init and then Peer.Reconnect to trigger reconnection attempts
+   *
+   * So when we see this transition we NO-OP because we don't want to start a Reconnect timer but the peer will receive the trigger
+   * (Connect/Reconnect) messages from the switchboard.
+   */
   onTransition {
     case INSTANTIATING -> DISCONNECTED => ()
     case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, Random.nextInt(nodeParams.initialRandomReconnectDelay.toMillis.toInt).millis, repeat = false) // we add some randomization to not have peers reconnect to each other exactly at the same time
@@ -643,7 +642,7 @@ object Peer {
       channelKeyPath,
       dustLimit = nodeParams.dustLimit,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
-      channelReserve = MilliSatoshi.maxOf(Satoshi((nodeParams.reserveToFundingRatio * fundingAmount.toLong).toLong), nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
+      channelReserve = Satoshi((nodeParams.reserveToFundingRatio * fundingAmount.toLong).toLong).max(nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimum = nodeParams.htlcMinimum,
       toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
@@ -654,13 +653,13 @@ object Peer {
   }
 
   /**
-    * Peer may want to filter announcements based on timestamp
-    *
-    * @param gossipTimestampFilter_opt optional gossip timestamp range
-    * @return
-    *           - true if there is a filter and msg has no timestamp, or has one that matches the filter
-    *           - false otherwise
-    */
+   * Peer may want to filter announcements based on timestamp
+   *
+   * @param gossipTimestampFilter_opt optional gossip timestamp range
+   * @return
+   *           - true if there is a filter and msg has no timestamp, or has one that matches the filter
+   *           - false otherwise
+   */
   def timestampInRange(msg: RoutingMessage, gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
     // check if this message has a timestamp that matches our timestamp filter
     (msg, gossipTimestampFilter_opt) match {
@@ -673,7 +672,7 @@ object Peer {
   def hostAndPort2InetSocketAddress(hostAndPort: HostAndPort): InetSocketAddress = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
 
   /**
-    * Exponential backoff retry with a finite max
-    */
+   * Exponential backoff retry with a finite max
+   */
   def nextReconnectionDelay(currentDelay: FiniteDuration, maxReconnectInterval: FiniteDuration): FiniteDuration = (2 * currentDelay).min(maxReconnectInterval)
 }
