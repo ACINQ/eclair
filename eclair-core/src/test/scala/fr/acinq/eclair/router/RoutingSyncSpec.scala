@@ -34,6 +34,7 @@ import org.scalatest.FunSuiteLike
 import scala.collection.immutable.TreeMap
 import scala.collection.{SortedSet, immutable, mutable}
 import scala.compat.Platform
+import scala.concurrent.duration._
 
 
 class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
@@ -165,9 +166,9 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na1))
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
-    awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && bob.stateData.updates.size === 2 * fakeRoutingInfo.size)
+    awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && bob.stateData.updates.size === 2 * fakeRoutingInfo.size, max = 20 seconds)
     assert(BasicSyncResult(ranges = 2, queries = 24, channels = fakeRoutingInfo.size, updates = 2 * fakeRoutingInfo.size, nodes = 2 * fakeRoutingInfo.size) === sync(alice, bob, extendedQueryFlags_opt).counts)
-    awaitCond(alice.stateData.channels === bob.stateData.channels)
+    awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
     awaitCond(alice.stateData.updates === bob.stateData.updates)
   }
 
@@ -195,7 +196,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     }
     awaitCond(bob.stateData.channels.size === 40 && bob.stateData.updates.size === 40)
     assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 40, nodes = 80) === sync(alice, bob, extendedQueryFlags_opt).counts)
-    awaitCond(alice.stateData.channels === bob.stateData.channels)
+    awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
     awaitCond(alice.stateData.updates === bob.stateData.updates)
     awaitCond(alice.stateData.nodes === bob.stateData.nodes)
 
@@ -206,7 +207,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     }
     awaitCond(bob.stateData.channels.size === 40 && bob.stateData.updates.size === 80)
     assert(BasicSyncResult(ranges = 1, queries = 1, channels = 0, updates = 40, nodes = 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
-    awaitCond(alice.stateData.channels === bob.stateData.channels)
+    awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
     awaitCond(alice.stateData.updates === bob.stateData.updates)
 
     // add everything (duplicates will be ignored)
@@ -218,9 +219,9 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na1))
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
-    awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && bob.stateData.updates.size === 2 * fakeRoutingInfo.size)
+    awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && bob.stateData.updates.size === 2 * fakeRoutingInfo.size,  max = 20 seconds)
     assert(BasicSyncResult(ranges = 2, queries = 24, channels = fakeRoutingInfo.size - 40, updates = 2 * (fakeRoutingInfo.size - 40), nodes = 2 * (fakeRoutingInfo.size - 40)) === sync(alice, bob, extendedQueryFlags_opt).counts)
-    awaitCond(alice.stateData.channels === bob.stateData.channels)
+    awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
     awaitCond(alice.stateData.updates === bob.stateData.updates)
 
     // bump random channel_updates
@@ -232,7 +233,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val bumpedUpdates = (List(0, 42, 147, 153, 654, 834, 2301).map(touchUpdate(_, true)) ++ List(1, 42, 150, 200).map(touchUpdate(_, false))).toSet
     bumpedUpdates.foreach(c => sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, c)))
     assert(BasicSyncResult(ranges = 2, queries = 2, channels = 0, updates = bumpedUpdates.size, nodes = 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
-    awaitCond(alice.stateData.channels === bob.stateData.channels)
+    awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
     awaitCond(alice.stateData.updates === bob.stateData.updates)
     awaitCond(alice.stateData.nodes === bob.stateData.nodes)
   }
