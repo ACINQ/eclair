@@ -610,14 +610,14 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
             }
           }
           if (flag_opt.map(QueryShortChannelIdsTlv.QueryFlagType.includeNodeAnnouncement1).getOrElse(true) && !sent1.contains(ca.nodeId1)) {
-            d.nodes.get(ca.nodeId1).foreach { a =>
-              transport ! a
+            d.nodes.get(ca.nodeId1).foreach { n =>
+              transport ! n
               sent1 = sent1 + ca.nodeId1
             }
           }
           if (flag_opt.map(QueryShortChannelIdsTlv.QueryFlagType.includeNodeAnnouncement2).getOrElse(true) && !sent1.contains(ca.nodeId2)) {
-            d.nodes.get(ca.nodeId2).foreach { a =>
-              transport ! a
+            d.nodes.get(ca.nodeId2).foreach { n =>
+              transport ! n
               sent1 = sent1 + ca.nodeId2
             }
           }

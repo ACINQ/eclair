@@ -119,7 +119,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     SyncResult(rcrs, queries, channels, updates, nodes)
   }
 
-  test("handle channel range extended") {
+  test("sync with standard channel queries") {
     val watcher = system.actorOf(Props(new YesWatcher()))
     val alice = TestFSMRef(new Router(Alice.nodeParams, watcher))
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
@@ -172,9 +172,9 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     awaitCond(alice.stateData.updates === bob.stateData.updates)
   }
 
-  test("handle channel range extended (extended)") {
+  def syncWithExtendedQueries(requestChannelAnnouncements: Boolean) = {
     val watcher = system.actorOf(Props(new YesWatcher()))
-    val alice = TestFSMRef(new Router(Alice.nodeParams, watcher))
+    val alice = TestFSMRef(new Router(Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(requestNodeAnnouncements = requestChannelAnnouncements)), watcher))
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
     val charlieId = randomKey.publicKey
     val sender = TestProbe()
@@ -190,15 +190,15 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
       case (ca, cu1, cu2, na1, na2) =>
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, ca))
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, cu1))
-        //sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, cu2))
+        // we don't send channel_update #2
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na1))
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
     awaitCond(bob.stateData.channels.size === 40 && bob.stateData.updates.size === 40)
-    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 40, nodes = 80) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 40, nodes = if (requestChannelAnnouncements) 80 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
     awaitCond(alice.stateData.updates === bob.stateData.updates)
-    awaitCond(alice.stateData.nodes === bob.stateData.nodes)
+    if (requestChannelAnnouncements) awaitCond(alice.stateData.nodes === bob.stateData.nodes)
 
     // add some updates to bob and resync
     fakeRoutingInfo.take(40).values.foreach {
@@ -220,7 +220,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
     awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && bob.stateData.updates.size === 2 * fakeRoutingInfo.size,  max = 20 seconds)
-    assert(BasicSyncResult(ranges = 2, queries = 24, channels = fakeRoutingInfo.size - 40, updates = 2 * (fakeRoutingInfo.size - 40), nodes = 2 * (fakeRoutingInfo.size - 40)) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    assert(BasicSyncResult(ranges = 2, queries = 24, channels = fakeRoutingInfo.size - 40, updates = 2 * (fakeRoutingInfo.size - 40), nodes = if (requestChannelAnnouncements) 2 * (fakeRoutingInfo.size - 40) else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
     awaitCond(alice.stateData.updates === bob.stateData.updates)
 
@@ -235,7 +235,15 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     assert(BasicSyncResult(ranges = 2, queries = 2, channels = 0, updates = bumpedUpdates.size, nodes = 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
     awaitCond(alice.stateData.updates === bob.stateData.updates)
-    awaitCond(alice.stateData.nodes === bob.stateData.nodes)
+    if (requestChannelAnnouncements) awaitCond(alice.stateData.nodes === bob.stateData.nodes)
+  }
+
+  test("sync with extended channel queries (don't request node announcements)") {
+    syncWithExtendedQueries(false)
+  }
+
+  test("sync with extended channel queries (request node announcements)") {
+    syncWithExtendedQueries(true)
   }
 
   test("reset sync state on reconnection") {
