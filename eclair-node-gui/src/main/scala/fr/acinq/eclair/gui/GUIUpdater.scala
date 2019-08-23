@@ -86,7 +86,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, channelId)
       channelPaneController.updateBalance(currentData.commitments)
       val m1 = m + (channel -> channelPaneController)
-      val totalBalance = MilliSatoshi(m1.values.map(_.getBalance.toLong).sum)
+      val totalBalance = m1.values.map(_.getBalance).sum
       runInGuiThread(() => {
         channelPaneController.refreshBalance()
         mainController.refreshTotalBalance(totalBalance)

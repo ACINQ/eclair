@@ -24,18 +24,18 @@ import org.json4s.JsonAST._
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
-  * Created by PM on 09/07/2017.
-  */
+ * Created by PM on 09/07/2017.
+ */
 class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: FeeratesPerKB)(implicit ec: ExecutionContext) extends FeeProvider {
 
   implicit val formats = DefaultFormats.withBigDecimal
 
   /**
-    * We need this to keep commitment tx fees in sync with the state of the network
-    *
-    * @param nBlocks number of blocks until tx is confirmed
-    * @return the current fee estimate in Satoshi/KB
-    */
+   * We need this to keep commitment tx fees in sync with the state of the network
+   *
+   * @param nBlocks number of blocks until tx is confirmed
+   * @return the current fee estimate in Satoshi/KB
+   */
   def estimateSmartFee(nBlocks: Int): Future[Long] =
     rpcClient.invoke("estimatesmartfee", nBlocks).map(BitcoinCoreFeeProvider.parseFeeEstimate)
 
@@ -73,7 +73,7 @@ object BitcoinCoreFeeProvider {
             btc2satoshi(Btc(feerate.toLong)).toLong
         }
       case JArray(errors) =>
-        val error = errors collect { case JString(error) => error } mkString ", "
+        val error = errors.collect { case JString(error) => error }.mkString(", ")
         throw new RuntimeException(s"estimatesmartfee failed: $error")
       case _ =>
         throw new RuntimeException("estimatesmartfee failed")
