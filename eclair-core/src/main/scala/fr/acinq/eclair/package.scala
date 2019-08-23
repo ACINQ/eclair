@@ -158,7 +158,7 @@ package object eclair {
    */
   val MaxEpochSeconds = Duration.fromNanos(Long.MaxValue).toSeconds
 
-  implicit class LongToBtcAmounts(l: Long) {
+  implicit class LongToBtcAmount(l: Long) {
     // @formatter:off
     def msat: MilliSatoshi = MilliSatoshi(l)
     def sat: Satoshi = Satoshi(l)
@@ -188,12 +188,6 @@ package object eclair {
     def +(other: MilliSatoshi): MilliSatoshi = amount.toMilliSatoshi + other
     def -(other: MilliSatoshi): MilliSatoshi = amount.toMilliSatoshi - other
     // @formatter:on
-  }
-
-  // TODO: we can remove that once bitcoin-lib offers it
-  implicit class MaxMinSatoshi(amount: Satoshi) {
-    def max(other: Satoshi): Satoshi = if (amount > other) amount else other
-    def min(other: Satoshi): Satoshi = if (amount < other) amount else other
   }
 
 }

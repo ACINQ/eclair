@@ -38,17 +38,17 @@ import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 /**
-  * Created by PM on 20/05/2016.
-  */
+ * Created by PM on 20/05/2016.
+ */
 
 object Helpers {
 
   /**
-    * Depending on the state, returns the current temporaryChannelId or channelId
-    *
-    * @param stateData
-    * @return the long identifier of the channel
-    */
+   * Depending on the state, returns the current temporaryChannelId or channelId
+   *
+   * @param stateData
+   * @return the long identifier of the channel
+   */
   def getChannelId(stateData: Data): ByteVector32 = stateData match {
     case Nothing => ByteVector32.Zeroes
     case d: DATA_WAIT_FOR_OPEN_CHANNEL => d.initFundee.temporaryChannelId
@@ -60,11 +60,11 @@ object Helpers {
   }
 
   /**
-    * We update local/global features at reconnection
-    *
-    * @param data
-    * @return
-    */
+   * We update local/global features at reconnection
+   *
+   * @param data
+   * @return
+   */
   def updateFeatures(data: HasCommitments, localInit: Init, remoteInit: Init): HasCommitments = {
     val commitments1 = data.commitments.copy(
       localParams = data.commitments.localParams.copy(globalFeatures = localInit.globalFeatures, localFeatures = localInit.localFeatures),
@@ -81,8 +81,8 @@ object Helpers {
   }
 
   /**
-    * Called by the fundee
-    */
+   * Called by the fundee
+   */
   def validateParamsFundee(nodeParams: NodeParams, open: OpenChannel): Unit = {
     // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
     // MUST reject the channel.
@@ -126,8 +126,8 @@ object Helpers {
   }
 
   /**
-    * Called by the funder
-    */
+   * Called by the funder
+   */
   def validateParamsFunder(nodeParams: NodeParams, open: OpenChannel, accept: AcceptChannel): Unit = {
     if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) throw InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS)
     // only enforce dust limit check on mainnet
@@ -155,14 +155,14 @@ object Helpers {
   }
 
   /**
-    * Compute the delay until we need to refresh the channel_update for our channel not to be considered stale by
-    * other nodes.
-    *
-    * If current update more than [[Channel.REFRESH_CHANNEL_UPDATE_INTERVAL]] old then the delay will be zero.
-    *
-    * @param currentUpdateTimestamp
-    * @return the delay until the next update
-    */
+   * Compute the delay until we need to refresh the channel_update for our channel not to be considered stale by
+   * other nodes.
+   *
+   * If current update more than [[Channel.REFRESH_CHANNEL_UPDATE_INTERVAL]] old then the delay will be zero.
+   *
+   * @param currentUpdateTimestamp
+   * @return the delay until the next update
+   */
   def nextChannelUpdateRefresh(currentUpdateTimestamp: Long)(implicit log: LoggingAdapter): FiniteDuration = {
     val age = Platform.currentTime.milliseconds - currentUpdateTimestamp.seconds
     val delay = 0.days.max(REFRESH_CHANNEL_UPDATE_INTERVAL - age)
@@ -171,11 +171,11 @@ object Helpers {
   }
 
   /**
-    *
-    * @param remoteFeeratePerKw remote fee rate per kiloweight
-    * @param localFeeratePerKw  local fee rate per kiloweight
-    * @return the "normalized" difference between local and remote fee rate, i.e. |remote - local| / avg(local, remote)
-    */
+   *
+   * @param remoteFeeratePerKw remote fee rate per kiloweight
+   * @param localFeeratePerKw  local fee rate per kiloweight
+   * @return the "normalized" difference between local and remote fee rate, i.e. |remote - local| / avg(local, remote)
+   */
   def feeRateMismatch(remoteFeeratePerKw: Long, localFeeratePerKw: Long): Double =
     Math.abs((2.0 * (remoteFeeratePerKw - localFeeratePerKw)) / (localFeeratePerKw + remoteFeeratePerKw))
 
@@ -183,21 +183,21 @@ object Helpers {
     feeRateMismatch(networkFeeratePerKw, commitmentFeeratePerKw) > updateFeeMinDiffRatio
 
   /**
-    *
-    * @param remoteFeeratePerKw      remote fee rate per kiloweight
-    * @param localFeeratePerKw       local fee rate per kiloweight
-    * @param maxFeerateMismatchRatio maximum fee rate mismatch ratio
-    * @return true if the difference between local and remote fee rates is too high.
-    *         the actual check is |remote - local| / avg(local, remote) > mismatch ratio
-    */
+   *
+   * @param remoteFeeratePerKw      remote fee rate per kiloweight
+   * @param localFeeratePerKw       local fee rate per kiloweight
+   * @param maxFeerateMismatchRatio maximum fee rate mismatch ratio
+   * @return true if the difference between local and remote fee rates is too high.
+   *         the actual check is |remote - local| / avg(local, remote) > mismatch ratio
+   */
   def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long, maxFeerateMismatchRatio: Double): Boolean =
     feeRateMismatch(remoteFeeratePerKw, localFeeratePerKw) > maxFeerateMismatchRatio
 
   /**
-    *
-    * @param remoteFeeratePerKw remote fee rate per kiloweight
-    * @return true if the remote fee rate is too small
-    */
+   *
+   * @param remoteFeeratePerKw remote fee rate per kiloweight
+   * @return true if the remote fee rate is too small
+   */
   def isFeeTooSmall(remoteFeeratePerKw: Long): Boolean = {
     remoteFeeratePerKw < fr.acinq.eclair.MinimumFeeratePerKw
   }
@@ -209,10 +209,10 @@ object Helpers {
   }
 
   /**
-    * This indicates whether our side of the channel is above the reserve requested by our counterparty. In other words,
-    * this tells if we can use the channel to make a payment.
-    *
-    */
+   * This indicates whether our side of the channel is above the reserve requested by our counterparty. In other words,
+   * this tells if we can use the channel to make a payment.
+   *
+   */
   def aboveReserve(commitments: Commitments)(implicit log: LoggingAdapter): Boolean = {
     val remoteCommit = commitments.remoteNextCommitInfo match {
       case Left(waitingForRevocation) => waitingForRevocation.nextRemoteCommit
@@ -241,19 +241,19 @@ object Helpers {
     }
 
     /**
-      * Creates both sides's first commitment transaction
-      *
-      * @param localParams
-      * @param remoteParams
-      * @param pushMsat
-      * @param fundingTxHash
-      * @param fundingTxOutputIndex
-      * @param remoteFirstPerCommitmentPoint
-      * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
-      */
+     * Creates both sides's first commitment transaction
+     *
+     * @param localParams
+     * @param remoteParams
+     * @param pushMsat
+     * @param fundingTxHash
+     * @param fundingTxOutputIndex
+     * @param remoteFirstPerCommitmentPoint
+     * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
+     */
     def makeFirstCommitTxs(keyManager: KeyManager, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: MilliSatoshi, initialFeeratePerKw: Long, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
       val toLocalMsat = if (localParams.isFunder) fundingAmount.toMilliSatoshi - pushMsat else pushMsat
-      val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingAmount.toMilliSatoshi  - pushMsat
+      val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingAmount.toMilliSatoshi - pushMsat
 
       val localSpec = CommitmentSpec(Set.empty[DirectedHtlc], feeratePerKw = initialFeeratePerKw, toLocal = toLocalMsat, toRemote = toRemoteMsat)
       val remoteSpec = CommitmentSpec(Set.empty[DirectedHtlc], feeratePerKw = initialFeeratePerKw, toLocal = toRemoteMsat, toRemote = toLocalMsat)
@@ -279,14 +279,14 @@ object Helpers {
   }
 
   /**
-    * Tells whether or not their expected next remote commitment number matches with our data
-    *
-    * @param d
-    * @param nextRemoteRevocationNumber
-    * @return
-    *         - true if parties are in sync or remote is behind
-    *         - false if we are behind
-    */
+   * Tells whether or not their expected next remote commitment number matches with our data
+   *
+   * @param d
+   * @param nextRemoteRevocationNumber
+   * @return
+   *         - true if parties are in sync or remote is behind
+   *         - false if we are behind
+   */
   def checkLocalCommit(d: HasCommitments, nextRemoteRevocationNumber: Long): Boolean = {
     if (d.commitments.localCommit.index == nextRemoteRevocationNumber) {
       // they just sent a new commit_sig, we have received it but they didn't receive our revocation
@@ -304,14 +304,14 @@ object Helpers {
   }
 
   /**
-    * Tells whether or not their expected next local commitment number matches with our data
-    *
-    * @param d
-    * @param nextLocalCommitmentNumber
-    * @return
-    *         - true if parties are in sync or remote is behind
-    *         - false if we are behind
-    */
+   * Tells whether or not their expected next local commitment number matches with our data
+   *
+   * @param d
+   * @param nextLocalCommitmentNumber
+   * @return
+   *         - true if parties are in sync or remote is behind
+   *         - false if we are behind
+   */
   def checkRemoteCommit(d: HasCommitments, nextLocalCommitmentNumber: Long): Boolean = {
     d.commitments.remoteNextCommitInfo match {
       case Left(waitingForRevocation) if nextLocalCommitmentNumber == waitingForRevocation.nextRemoteCommit.index =>
@@ -350,11 +350,11 @@ object Helpers {
     // @formatter:on
 
     /**
-      * Indicates whether local has anything at stake in this channel
-      *
-      * @param data
-      * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
-      */
+     * Indicates whether local has anything at stake in this channel
+     *
+     * @param data
+     * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
+     */
     def nothingAtStake(data: HasCommitments): Boolean =
       data.commitments.localCommit.index == 0 &&
         data.commitments.localCommit.spec.toLocal == MilliSatoshi(0) &&
@@ -363,15 +363,15 @@ object Helpers {
         data.commitments.remoteNextCommitInfo.isRight
 
     /**
-      * As soon as a tx spending the funding tx has reached min_depth, we know what the closing type will be, before
-      * the whole closing process finishes(e.g. there may still be delayed or unconfirmed child transactions). It can
-      * save us from attempting to publish some transactions.
-      *
-      * Note that we can't tell for mutual close before it is already final, because only one tx needs to be confirmed.
-      *
-      * @param closing channel state data
-      * @return the channel closing type, if applicable
-      */
+     * As soon as a tx spending the funding tx has reached min_depth, we know what the closing type will be, before
+     * the whole closing process finishes(e.g. there may still be delayed or unconfirmed child transactions). It can
+     * save us from attempting to publish some transactions.
+     *
+     * Note that we can't tell for mutual close before it is already final, because only one tx needs to be confirmed.
+     *
+     * @param closing channel state data
+     * @return the channel closing type, if applicable
+     */
     def isClosingTypeAlreadyKnown(closing: DATA_CLOSING): Option[ClosingType] = closing match {
       case _ if closing.localCommitPublished.exists(lcp => lcp.irrevocablySpent.values.toSet.contains(lcp.commitTx.txid)) =>
         Some(LocalClose)
@@ -387,13 +387,13 @@ object Helpers {
     }
 
     /**
-      * Checks if a channel is closed (i.e. its closing tx has been confirmed)
-      *
-      * @param data channel state data
-      * @param additionalConfirmedTx_opt additional confirmed transaction; we need this for the mutual close scenario
-      *                                  because we don't store the closing tx in the channel state
-      * @return the channel closing type, if applicable
-      */
+     * Checks if a channel is closed (i.e. its closing tx has been confirmed)
+     *
+     * @param data                      channel state data
+     * @param additionalConfirmedTx_opt additional confirmed transaction; we need this for the mutual close scenario
+     *                                  because we don't store the closing tx in the channel state
+     * @return the channel closing type, if applicable
+     */
     def isClosed(data: HasCommitments, additionalConfirmedTx_opt: Option[Transaction]): Option[ClosingType] = data match {
       case closing: DATA_CLOSING if additionalConfirmedTx_opt.exists(closing.mutualClosePublished.contains) =>
         Some(MutualClose)
@@ -463,9 +463,9 @@ object Helpers {
 
     def checkClosingSignature(keyManager: KeyManager, commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, remoteClosingFee: Satoshi, remoteClosingSig: ByteVector64)(implicit log: LoggingAdapter): Try[Transaction] = {
       import commitments._
-      val lastCommitFeeSatoshi = commitments.commitInput.txOut.amount.amount - commitments.localCommit.publishableTxs.commitTx.tx.txOut.map(_.amount.amount).sum
-      if (remoteClosingFee.amount > lastCommitFeeSatoshi) {
-        log.error(s"remote proposed a commit fee higher than the last commitment fee: remoteClosingFeeSatoshi=${remoteClosingFee.amount} lastCommitFeeSatoshi=$lastCommitFeeSatoshi")
+      val lastCommitFeeSatoshi = commitments.commitInput.txOut.amount - commitments.localCommit.publishableTxs.commitTx.tx.txOut.map(_.amount).sum
+      if (remoteClosingFee > lastCommitFeeSatoshi) {
+        log.error(s"remote proposed a commit fee higher than the last commitment fee: remoteClosingFeeSatoshi=${remoteClosingFee.toLong} lastCommitFeeSatoshi=$lastCommitFeeSatoshi")
         throw InvalidCloseFee(commitments.channelId, remoteClosingFee)
       }
       val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
@@ -476,7 +476,7 @@ object Helpers {
     def generateTx(desc: String)(attempt: Try[TransactionWithInputInfo])(implicit log: LoggingAdapter): Option[TransactionWithInputInfo] = {
       attempt match {
         case Success(txinfo) =>
-          log.info(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount.amount).sum} tx=${txinfo.tx}")
+          log.info(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount).sum} tx=${txinfo.tx}")
           Some(txinfo)
         case Failure(t: TxGenerationSkipped) =>
           log.info(s"tx generation skipped: desc=$desc reason: ${t.getMessage}")
@@ -488,13 +488,13 @@ object Helpers {
     }
 
     /**
-      *
-      * Claim all the HTLCs that we've received from our current commit tx. This will be
-      * done using 2nd stage HTLC transactions
-      *
-      * @param commitments our commitment data, which include payment preimages
-      * @return a list of transactions (one per HTLC that we can claim)
-      */
+     *
+     * Claim all the HTLCs that we've received from our current commit tx. This will be
+     * done using 2nd stage HTLC transactions
+     *
+     * @param commitments our commitment data, which include payment preimages
+     * @return a list of transactions (one per HTLC that we can claim)
+     */
     def claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): LocalCommitPublished = {
       import commitments._
       require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
@@ -558,14 +558,14 @@ object Helpers {
     }
 
     /**
-      *
-      * Claim all the HTLCs that we've received from their current commit tx
-      *
-      * @param commitments  our commitment data, which include payment preimages
-      * @param remoteCommit the remote commitment data to use to claim outputs (it can be their current or next commitment)
-      * @param tx           the remote commitment transaction that has just been published
-      * @return a list of transactions (one per HTLC that we can claim)
-      */
+     *
+     * Claim all the HTLCs that we've received from their current commit tx
+     *
+     * @param commitments  our commitment data, which include payment preimages
+     * @param remoteCommit the remote commitment data to use to claim outputs (it can be their current or next commitment)
+     * @param tx           the remote commitment transaction that has just been published
+     * @return a list of transactions (one per HTLC that we can claim)
+     */
     def claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       import commitments.{commitInput, localParams, remoteParams}
       require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
@@ -613,16 +613,16 @@ object Helpers {
     }
 
     /**
-      *
-      * Claim our Main output only
-      *
-      * @param commitments              either our current commitment data in case of usual remote uncooperative closing
-      *                                 or our outdated commitment data in case of data loss protection procedure; in any case it is used only
-      *                                 to get some constant parameters, not commitment data
-      * @param remotePerCommitmentPoint the remote perCommitmentPoint corresponding to this commitment
-      * @param tx                       the remote commitment transaction that has just been published
-      * @return a list of transactions (one per HTLC that we can claim)
-      */
+     *
+     * Claim our Main output only
+     *
+     * @param commitments              either our current commitment data in case of usual remote uncooperative closing
+     *                                 or our outdated commitment data in case of data loss protection procedure; in any case it is used only
+     *                                 to get some constant parameters, not commitment data
+     * @param remotePerCommitmentPoint the remote perCommitmentPoint corresponding to this commitment
+     * @param tx                       the remote commitment transaction that has just been published
+     * @return a list of transactions (one per HTLC that we can claim)
+     */
     def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: PublicKey, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(commitments.localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
 
@@ -645,14 +645,14 @@ object Helpers {
     }
 
     /**
-      * When an unexpected transaction spending the funding tx is detected:
-      * 1) we find out if the published transaction is one of remote's revoked txs
-      * 2) and then:
-      * a) if it is a revoked tx we build a set of transactions that will punish them by stealing all their funds
-      * b) otherwise there is nothing we can do
-      *
-      * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
-      */
+     * When an unexpected transaction spending the funding tx is detected:
+     * 1) we find out if the published transaction is one of remote's revoked txs
+     * 2) and then:
+     * a) if it is a revoked tx we build a set of transactions that will punish them by stealing all their funds
+     * b) otherwise there is nothing we can do
+     *
+     * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
+     */
     def claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, db: ChannelsDb, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): Option[RevokedCommitPublished] = {
       import commitments._
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
@@ -702,15 +702,15 @@ object Helpers {
 
           // and finally we steal the htlc outputs
           var outputsAlreadyUsed = Set.empty[Int] // this is needed to handle cases where we have several identical htlcs
-        val htlcPenaltyTxs = tx.txOut.collect { case txOut if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
-          val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
-          generateTx("htlc-penalty")(Try {
-            val htlcPenalty = Transactions.makeHtlcPenaltyTx(tx, outputsAlreadyUsed, htlcRedeemScript, localParams.dustLimit, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
-            outputsAlreadyUsed = outputsAlreadyUsed + htlcPenalty.input.outPoint.index.toInt
-            val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret)
-            Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
-          })
-        }.toList.flatten
+          val htlcPenaltyTxs = tx.txOut.collect { case txOut if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
+            val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
+            generateTx("htlc-penalty")(Try {
+              val htlcPenalty = Transactions.makeHtlcPenaltyTx(tx, outputsAlreadyUsed, htlcRedeemScript, localParams.dustLimit, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
+              outputsAlreadyUsed = outputsAlreadyUsed + htlcPenalty.input.outPoint.index.toInt
+              val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret)
+              Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
+            })
+          }.toList.flatten
 
           RevokedCommitPublished(
             commitTx = tx,
@@ -724,21 +724,21 @@ object Helpers {
     }
 
     /**
-      * Claims the output of an [[HtlcSuccessTx]] or [[HtlcTimeoutTx]] transaction using a revocation key.
-      *
-      * In case a revoked commitment with pending HTLCs is published, there are two ways the HTLC outputs can be taken as punishment:
-      * - by spending the corresponding output of the commitment tx, using [[HtlcPenaltyTx]] that we generate as soon as we detect that a revoked commit
-      * as been spent; note that those transactions will compete with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] published by the counterparty.
-      * - by spending the delayed output of [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] if those get confirmed; because the output of these txes is protected by
-      * an OP_CSV delay, we will have time to spend them with a revocation key. In that case, we generate the spending transactions "on demand",
-      * this is the purpose of this method.
-      *
-      * @param keyManager
-      * @param commitments
-      * @param revokedCommitPublished
-      * @param htlcTx
-      * @return
-      */
+     * Claims the output of an [[HtlcSuccessTx]] or [[HtlcTimeoutTx]] transaction using a revocation key.
+     *
+     * In case a revoked commitment with pending HTLCs is published, there are two ways the HTLC outputs can be taken as punishment:
+     * - by spending the corresponding output of the commitment tx, using [[HtlcPenaltyTx]] that we generate as soon as we detect that a revoked commit
+     * as been spent; note that those transactions will compete with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] published by the counterparty.
+     * - by spending the delayed output of [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] if those get confirmed; because the output of these txes is protected by
+     * an OP_CSV delay, we will have time to spend them with a revocation key. In that case, we generate the spending transactions "on demand",
+     * this is the purpose of this method.
+     *
+     * @param keyManager
+     * @param commitments
+     * @param revokedCommitPublished
+     * @param htlcTx
+     * @return
+     */
     def claimRevokedHtlcTxOutputs(keyManager: KeyManager, commitments: Commitments, revokedCommitPublished: RevokedCommitPublished, htlcTx: Transaction, feeEstimator: FeeEstimator)(implicit log: LoggingAdapter): (RevokedCommitPublished, Option[Transaction]) = {
       if (htlcTx.txIn.map(_.outPoint.txid).contains(revokedCommitPublished.commitTx.txid) &&
         !(revokedCommitPublished.claimMainOutputTx ++ revokedCommitPublished.mainPenaltyTx ++ revokedCommitPublished.htlcPenaltyTxs).map(_.txid).toSet.contains(htlcTx.txid)) {
@@ -781,18 +781,18 @@ object Helpers {
     }
 
     /**
-      * In CLOSING state, any time we see a new transaction, we try to extract a preimage from it in order to fulfill the
-      * corresponding incoming htlc in an upstream channel.
-      *
-      * Not doing that would result in us losing money, because the downstream node would pull money from one side, and
-      * the upstream node would get refunded after a timeout.
-      *
-      * @param localCommit
-      * @param tx
-      * @return   a set of pairs (add, fulfills) if extraction was successful:
-      *           - add is the htlc in the downstream channel from which we extracted the preimage
-      *           - fulfill needs to be sent to the upstream channel
-      */
+     * In CLOSING state, any time we see a new transaction, we try to extract a preimage from it in order to fulfill the
+     * corresponding incoming htlc in an upstream channel.
+     *
+     * Not doing that would result in us losing money, because the downstream node would pull money from one side, and
+     * the upstream node would get refunded after a timeout.
+     *
+     * @param localCommit
+     * @param tx
+     * @return   a set of pairs (add, fulfills) if extraction was successful:
+     *           - add is the htlc in the downstream channel from which we extracted the preimage
+     *           - fulfill needs to be sent to the upstream channel
+     */
     def extractPreimages(localCommit: LocalCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[(UpdateAddHtlc, UpdateFulfillHtlc)] = {
       val paymentPreimages = tx.txIn.map(_.witness match {
         case ScriptWitness(Seq(localSig, paymentPreimage, htlcOfferedScript)) if paymentPreimage.size == 32 =>
@@ -818,14 +818,14 @@ object Helpers {
     }
 
     /**
-      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
-      * more htlcs have timed out and need to be failed in an upstream channel.
-      *
-      * @param localCommit
-      * @param localDustLimit
-      * @param tx a tx that has reached mindepth
-      * @return a set of htlcs that need to be failed upstream
-      */
+     * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
+     * more htlcs have timed out and need to be failed in an upstream channel.
+     *
+     * @param localCommit
+     * @param localDustLimit
+     * @param tx a tx that has reached mindepth
+     * @return a set of htlcs that need to be failed upstream
+     */
     def timedoutHtlcs(localCommit: LocalCommit, localDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (tx.txid == localCommit.publishableTxs.commitTx.tx.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
@@ -842,14 +842,14 @@ object Helpers {
       }
 
     /**
-      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
-      * more htlcs have timed out and need to be failed in an upstream channel.
-      *
-      * @param remoteCommit
-      * @param remoteDustLimit
-      * @param tx a tx that has reached mindepth
-      * @return a set of htlcs that need to be failed upstream
-      */
+     * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
+     * more htlcs have timed out and need to be failed in an upstream channel.
+     *
+     * @param remoteCommit
+     * @param remoteDustLimit
+     * @param tx a tx that has reached mindepth
+     * @return a set of htlcs that need to be failed upstream
+     */
     def timedoutHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (tx.txid == remoteCommit.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
@@ -866,14 +866,14 @@ object Helpers {
       }
 
     /**
-      * As soon as a local or remote commitment reaches min_depth, we know which htlcs will be settled on-chain (whether
-      * or not they actually have an output in the commitment tx).
-      *
-      * @param localCommit
-      * @param remoteCommit
-      * @param nextRemoteCommit_opt
-      * @param tx a transaction that is sufficiently buried in the blockchain
-      */
+     * As soon as a local or remote commitment reaches min_depth, we know which htlcs will be settled on-chain (whether
+     * or not they actually have an output in the commitment tx).
+     *
+     * @param localCommit
+     * @param remoteCommit
+     * @param nextRemoteCommit_opt
+     * @param tx a transaction that is sufficiently buried in the blockchain
+     */
     def onchainOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction): Set[UpdateAddHtlc] = {
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
         localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
@@ -887,17 +887,17 @@ object Helpers {
     }
 
     /**
-      * If a local commitment tx reaches min_depth, we need to fail the outgoing htlcs that only us had signed, because
-      * they will never reach the blockchain.
-      *
-      * Those are only present in the remote's commitment.
-      *
-      * @param localCommit
-      * @param remoteCommit
-      * @param tx
-      * @param log
-      * @return
-      */
+     * If a local commitment tx reaches min_depth, we need to fail the outgoing htlcs that only us had signed, because
+     * they will never reach the blockchain.
+     *
+     * Those are only present in the remote's commitment.
+     *
+     * @param localCommit
+     * @param remoteCommit
+     * @param tx
+     * @param log
+     * @return
+     */
     def overriddenOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
         // our commit got confirmed, so any htlc that we signed but they didn't sign will never reach the chain
@@ -921,17 +921,17 @@ object Helpers {
       } else Set.empty
 
     /**
-      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
-      * local commit scenario and keep track of it.
-      *
-      * We need to keep track of all transactions spending the outputs of the commitment tx, because some outputs can be
-      * spent both by us and our counterparty. Because of that, some of our transactions may never confirm and we don't
-      * want to wait forever before declaring that the channel is CLOSED.
-      *
-      * @param localCommitPublished
-      * @param tx a transaction that has been irrevocably confirmed
-      * @return
-      */
+     * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
+     * local commit scenario and keep track of it.
+     *
+     * We need to keep track of all transactions spending the outputs of the commitment tx, because some outputs can be
+     * spent both by us and our counterparty. Because of that, some of our transactions may never confirm and we don't
+     * want to wait forever before declaring that the channel is CLOSED.
+     *
+     * @param localCommitPublished
+     * @param tx a transaction that has been irrevocably confirmed
+     * @return
+     */
     def updateLocalCommitPublished(localCommitPublished: LocalCommitPublished, tx: Transaction) = {
       // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
       // over all of them to check if they are relevant
@@ -950,17 +950,17 @@ object Helpers {
     }
 
     /**
-      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
-      * remote commit scenario and keep track of it.
-      *
-      * We need to keep track of all transactions spending the outputs of the commitment tx, because some outputs can be
-      * spent both by us and our counterparty. Because of that, some of our transactions may never confirm and we don't
-      * want to wait forever before declaring that the channel is CLOSED.
-      *
-      * @param remoteCommitPublished
-      * @param tx a transaction that has been irrevocably confirmed
-      * @return
-      */
+     * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
+     * remote commit scenario and keep track of it.
+     *
+     * We need to keep track of all transactions spending the outputs of the commitment tx, because some outputs can be
+     * spent both by us and our counterparty. Because of that, some of our transactions may never confirm and we don't
+     * want to wait forever before declaring that the channel is CLOSED.
+     *
+     * @param remoteCommitPublished
+     * @param tx a transaction that has been irrevocably confirmed
+     * @return
+     */
     def updateRemoteCommitPublished(remoteCommitPublished: RemoteCommitPublished, tx: Transaction) = {
       // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
       // over all of them to check if they are relevant
@@ -976,17 +976,17 @@ object Helpers {
     }
 
     /**
-      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
-      * revoked commit scenario and keep track of it.
-      *
-      * We need to keep track of all transactions spending the outputs of the commitment tx, because some outputs can be
-      * spent both by us and our counterparty. Because of that, some of our transactions may never confirm and we don't
-      * want to wait forever before declaring that the channel is CLOSED.
-      *
-      * @param revokedCommitPublished
-      * @param tx a transaction that has been irrevocably confirmed
-      * @return
-      */
+     * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
+     * revoked commit scenario and keep track of it.
+     *
+     * We need to keep track of all transactions spending the outputs of the commitment tx, because some outputs can be
+     * spent both by us and our counterparty. Because of that, some of our transactions may never confirm and we don't
+     * want to wait forever before declaring that the channel is CLOSED.
+     *
+     * @param revokedCommitPublished
+     * @param tx a transaction that has been irrevocably confirmed
+     * @return
+     */
     def updateRevokedCommitPublished(revokedCommitPublished: RevokedCommitPublished, tx: Transaction) = {
       // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
       // over all of them to check if they are relevant
@@ -1005,13 +1005,13 @@ object Helpers {
     }
 
     /**
-      * A local commit is considered done when:
-      * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
-      * - all 3rd stage txes (txes spending htlc txes) have been confirmed
-      *
-      * @param localCommitPublished
-      * @return
-      */
+     * A local commit is considered done when:
+     * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
+     * - all 3rd stage txes (txes spending htlc txes) have been confirmed
+     *
+     * @param localCommitPublished
+     * @return
+     */
     def isLocalCommitDone(localCommitPublished: LocalCommitPublished) = {
       // is the commitment tx buried? (we need to check this because we may not have any outputs)
       val isCommitTxConfirmed = localCommitPublished.irrevocablySpent.values.toSet.contains(localCommitPublished.commitTx.txid)
@@ -1026,12 +1026,12 @@ object Helpers {
     }
 
     /**
-      * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
-      * (even if the spending tx was not ours).
-      *
-      * @param remoteCommitPublished
-      * @return
-      */
+     * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
+     * (even if the spending tx was not ours).
+     *
+     * @param remoteCommitPublished
+     * @return
+     */
     def isRemoteCommitDone(remoteCommitPublished: RemoteCommitPublished) = {
       // is the commitment tx buried? (we need to check this because we may not have any outputs)
       val isCommitTxConfirmed = remoteCommitPublished.irrevocablySpent.values.toSet.contains(remoteCommitPublished.commitTx.txid)
@@ -1042,12 +1042,12 @@ object Helpers {
     }
 
     /**
-      * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
-      * (even if the spending tx was not ours).
-      *
-      * @param revokedCommitPublished
-      * @return
-      */
+     * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
+     * (even if the spending tx was not ours).
+     *
+     * @param revokedCommitPublished
+     * @return
+     */
     def isRevokedCommitDone(revokedCommitPublished: RevokedCommitPublished) = {
       // is the commitment tx buried? (we need to check this because we may not have any outputs)
       val isCommitTxConfirmed = revokedCommitPublished.irrevocablySpent.values.toSet.contains(revokedCommitPublished.commitTx.txid)
@@ -1062,17 +1062,17 @@ object Helpers {
     }
 
     /**
-      * This helper function tells if the utxo consumed by the given transaction has already been irrevocably spent (possibly by this very transaction)
-      *
-      * It can be useful to:
-      *   - not attempt to publish this tx when we know this will fail
-      *   - not watch for confirmations if we know the tx is already confirmed
-      *   - not watch the corresponding utxo when we already know the final spending tx
-      *
-      * @param tx               a tx with only one input
-      * @param irrevocablySpent a map of known spent outpoints
-      * @return true if we know for sure that the utxos consumed by the tx have already irrevocably been spent, false otherwise
-      */
+     * This helper function tells if the utxo consumed by the given transaction has already been irrevocably spent (possibly by this very transaction)
+     *
+     * It can be useful to:
+     *   - not attempt to publish this tx when we know this will fail
+     *   - not watch for confirmations if we know the tx is already confirmed
+     *   - not watch the corresponding utxo when we already know the final spending tx
+     *
+     * @param tx               a tx with only one input
+     * @param irrevocablySpent a map of known spent outpoints
+     * @return true if we know for sure that the utxos consumed by the tx have already irrevocably been spent, false otherwise
+     */
     def inputsAlreadySpent(tx: Transaction, irrevocablySpent: Map[OutPoint, ByteVector32]): Boolean = {
       require(tx.txIn.size == 1, "only tx with one input is supported")
       val outPoint = tx.txIn.head.outPoint
@@ -1080,14 +1080,14 @@ object Helpers {
     }
 
     /**
-      * This helper function returns the fee paid by the given transaction.
-      *
-      * It relies on the current channel data to find the parent tx and compute the fee, and also provides a description.
-      *
-      * @param tx a tx for which we want to compute the fee
-      * @param d  current channel data
-      * @return if the parent tx is found, a tuple (fee, description)
-      */
+     * This helper function returns the fee paid by the given transaction.
+     *
+     * It relies on the current channel data to find the parent tx and compute the fee, and also provides a description.
+     *
+     * @param tx a tx for which we want to compute the fee
+     * @param d  current channel data
+     * @return if the parent tx is found, a tuple (fee, description)
+     */
     def networkFeePaid(tx: Transaction, d: DATA_CLOSING): Option[(Satoshi, String)] = {
       // only funder pays the fee
       if (d.commitments.localParams.isFunder) {

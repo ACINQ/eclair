@@ -86,7 +86,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
       statement.setLong(1, c.shortChannelId.toLong)
       statement.setString(2, txid.toHex)
       statement.setBytes(3, channelAnnouncementCodec.encode(c).require.toByteArray)
-      statement.setLong(4, capacity.amount)
+      statement.setLong(4, capacity.toLong)
       statement.executeUpdate()
     }
   }

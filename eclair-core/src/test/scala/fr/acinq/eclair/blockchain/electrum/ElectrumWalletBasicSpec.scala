@@ -29,14 +29,13 @@ import scodec.bits.ByteVector
 
 import scala.util.{Failure, Random, Success, Try}
 
-
 class ElectrumWalletBasicSpec extends FunSuite with Logging {
 
   import ElectrumWallet._
   import ElectrumWalletBasicSpec._
 
   val swipeRange = 10
-  val dustLimit = 546 satoshi
+  val dustLimit = 546 sat
   val feeRatePerKw = 20000
   val minimumFee = Satoshi(2000)
 
@@ -176,7 +175,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     val state2 = addFunds(state1, state1.accountKeys(1), 2 btc)
     val state3 = addFunds(state2, state2.changeKeys(0), 0.5 btc)
     assert(state3.utxos.length == 3)
-    assert(state3.balance == (Satoshi(350000000),Satoshi(0)))
+    assert(state3.balance == (350000000 sat, 0 sat))
 
     val (tx, fee) = state3.spendAll(Script.pay2wpkh(ByteVector.fill(20)(1)), feeRatePerKw)
     val Some((received, sent, Some(fee1))) = state3.computeTransactionDelta(tx)
@@ -209,10 +208,10 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
 
 object ElectrumWalletBasicSpec {
   /**
-    *
-    * @param actualFeeRate actual fee rate
-    * @param targetFeeRate target fee rate
-    * @return true if actual fee rate is within 10% of target
-    */
+   *
+   * @param actualFeeRate actual fee rate
+   * @param targetFeeRate target fee rate
+   * @return true if actual fee rate is within 10% of target
+   */
   def isFeerateOk(actualFeeRate: Long, targetFeeRate: Long): Boolean = Math.abs(actualFeeRate - targetFeeRate) < 0.1 * (actualFeeRate + targetFeeRate)
 }

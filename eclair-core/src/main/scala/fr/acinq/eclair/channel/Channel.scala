@@ -2211,7 +2211,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   def feePaid(fee: Satoshi, tx: Transaction, desc: String, channelId: ByteVector32): Unit = {
-    log.info(s"paid feeSatoshi=${fee.amount} for txid=${tx.txid} desc=$desc")
+    log.info(s"paid feeSatoshi=${fee.toLong} for txid=${tx.txid} desc=$desc")
     context.system.eventStream.publish(NetworkFeePaid(self, remoteNodeId, channelId, tx, fee, desc))
   }
 

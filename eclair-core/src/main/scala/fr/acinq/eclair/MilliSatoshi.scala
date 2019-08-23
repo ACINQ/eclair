@@ -58,7 +58,7 @@ case class MilliSatoshi(private val underlying: Long) extends Ordered[MilliSatos
 
 object MilliSatoshi {
 
-  private def satoshi2millisatoshi(input: Satoshi): MilliSatoshi = MilliSatoshi(input.amount * 1000L)
+  private def satoshi2millisatoshi(input: Satoshi): MilliSatoshi = MilliSatoshi(input.toLong * 1000L)
 
   def toMilliSatoshi(amount: BtcAmount): MilliSatoshi = amount match {
     case sat: Satoshi => satoshi2millisatoshi(sat)

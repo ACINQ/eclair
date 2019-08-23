@@ -606,8 +606,8 @@ object Peer {
   case object ResumeAnnouncements
   case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) {
     require(fundingSatoshis < Channel.MAX_FUNDING, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING}")
-    require(pushMsat.toLong <= 1000 * fundingSatoshis.amount, s"pushMsat must be less or equal to fundingSatoshis")
-    require(fundingSatoshis.amount >= 0, s"fundingSatoshis must be positive")
+    require(pushMsat <= fundingSatoshis, s"pushMsat must be less or equal to fundingSatoshis")
+    require(fundingSatoshis.toLong >= 0, s"fundingSatoshis must be positive")
     require(pushMsat.toLong >= 0, s"pushMsat must be positive")
     fundingTxFeeratePerKw_opt.foreach(feeratePerKw => require(feeratePerKw >= MinimumFeeratePerKw, s"fee rate $feeratePerKw is below minimum $MinimumFeeratePerKw rate/kw"))
   }

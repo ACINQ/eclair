@@ -58,7 +58,7 @@ class UInt64Serializer extends CustomSerializer[UInt64](format => ({ null }, {
 }))
 
 class SatoshiSerializer extends CustomSerializer[Satoshi](format => ({ null }, {
-  case x: Satoshi => JInt(x.amount)
+  case x: Satoshi => JInt(x.toLong)
 }))
 
 class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](format => ({ null }, {
@@ -116,7 +116,7 @@ class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ({ n
 }))
 
 class InputInfoSerializer extends CustomSerializer[InputInfo](format => ({ null }, {
-  case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.amount)))
+  case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.toLong)))
 }))
 
 class ColorSerializer extends CustomSerializer[Color](format => ({ null }, {

@@ -191,18 +191,18 @@ object CoinUtils extends Logging {
     case (a: Satoshi, BtcUnit) => GUIBtc(a.toLong * SatUnit.factorToMsat)
 
     // amount is mbtc
-    case (a: MilliBtc, MSatUnit) => GUIMSat((a.amount * MBtcUnit.factorToMsat).toLong)
-    case (a: MilliBtc, SatUnit) => GUISat((a.amount * MBtcUnit.factorToMsat).toLong)
-    case (a: MilliBtc, BitUnit) => GUIBits((a.amount * MBtcUnit.factorToMsat).toLong)
-    case (a: MilliBtc, MBtcUnit) => GUIMBtc((a.amount * MBtcUnit.factorToMsat).toLong)
-    case (a: MilliBtc, BtcUnit) => GUIBtc((a.amount * MBtcUnit.factorToMsat).toLong)
+    case (a: MilliBtc, MSatUnit) => GUIMSat((a.toBigDecimal * MBtcUnit.factorToMsat).toLong)
+    case (a: MilliBtc, SatUnit) => GUISat((a.toBigDecimal * MBtcUnit.factorToMsat).toLong)
+    case (a: MilliBtc, BitUnit) => GUIBits((a.toBigDecimal * MBtcUnit.factorToMsat).toLong)
+    case (a: MilliBtc, MBtcUnit) => GUIMBtc((a.toBigDecimal * MBtcUnit.factorToMsat).toLong)
+    case (a: MilliBtc, BtcUnit) => GUIBtc((a.toBigDecimal * MBtcUnit.factorToMsat).toLong)
 
     // amount is mbtc
-    case (a: Btc, MSatUnit) => GUIMSat((a.amount * BtcUnit.factorToMsat).toLong)
-    case (a: Btc, SatUnit) => GUISat((a.amount * BtcUnit.factorToMsat).toLong)
-    case (a: Btc, BitUnit) => GUIBits((a.amount * BtcUnit.factorToMsat).toLong)
-    case (a: Btc, MBtcUnit) => GUIMBtc((a.amount * BtcUnit.factorToMsat).toLong)
-    case (a: Btc, BtcUnit) => GUIBtc((a.amount * BtcUnit.factorToMsat).toLong)
+    case (a: Btc, MSatUnit) => GUIMSat((a.toBigDecimal * BtcUnit.factorToMsat).toLong)
+    case (a: Btc, SatUnit) => GUISat((a.toBigDecimal * BtcUnit.factorToMsat).toLong)
+    case (a: Btc, BitUnit) => GUIBits((a.toBigDecimal * BtcUnit.factorToMsat).toLong)
+    case (a: Btc, MBtcUnit) => GUIMBtc((a.toBigDecimal * BtcUnit.factorToMsat).toLong)
+    case (a: Btc, BtcUnit) => GUIBtc((a.toBigDecimal * BtcUnit.factorToMsat).toLong)
 
     case (_, _) =>
       throw new IllegalArgumentException(s"unhandled conversion from $amount to $unit")
