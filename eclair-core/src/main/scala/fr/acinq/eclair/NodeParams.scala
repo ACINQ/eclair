@@ -235,6 +235,7 @@ object NodeParams {
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
+        requestNodeAnnouncements = config.getBoolean("router.request-node-announcements"),
         searchMaxRouteLength = config.getInt("router.path-finding.max-route-length"),
         searchMaxCltv = config.getInt("router.path-finding.max-cltv"),
         searchMaxFeeBase = Satoshi(config.getLong("router.path-finding.fee-threshold-sat")),

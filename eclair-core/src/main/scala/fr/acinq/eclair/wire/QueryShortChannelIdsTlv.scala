@@ -1,7 +1,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.CommonCodecs.{shortchannelid, varint, varintoverflow}
+import fr.acinq.eclair.wire.CommonCodecs.{varint, varintoverflow}
 import scodec.Codec
 import scodec.codecs.{byte, discriminated, list, provide, variableSizeBytesLong, zlib}
 
@@ -20,13 +20,19 @@ object QueryShortChannelIdsTlv {
     val INCLUDE_CHANNEL_ANNOUNCEMENT: Long = 1
     val INCLUDE_CHANNEL_UPDATE_1: Long = 2
     val INCLUDE_CHANNEL_UPDATE_2: Long = 4
-    val INCLUDE_ALL: Long = (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2)
+    val INCLUDE_NODE_ANNOUNCEMENT_1: Long = 8
+    val INCLUDE_NODE_ANNOUNCEMENT_2: Long = 16
+    val INCLUDE_ALL: Long = (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2)
 
-    def includeAnnouncement(flag: Long) = (flag & INCLUDE_CHANNEL_ANNOUNCEMENT) != 0
+    def includeChannelAnnouncement(flag: Long) = (flag & INCLUDE_CHANNEL_ANNOUNCEMENT) != 0
 
     def includeUpdate1(flag: Long) = (flag & INCLUDE_CHANNEL_UPDATE_1) != 0
 
     def includeUpdate2(flag: Long) = (flag & INCLUDE_CHANNEL_UPDATE_2) != 0
+
+    def includeNodeAnnouncement1(flag: Long) = (flag & INCLUDE_NODE_ANNOUNCEMENT_1) != 0
+
+    def includeNodeAnnouncement2(flag: Long) = (flag & INCLUDE_NODE_ANNOUNCEMENT_2) != 0
   }
 
   val encodedQueryFlagsCodec: Codec[EncodedQueryFlags] =
