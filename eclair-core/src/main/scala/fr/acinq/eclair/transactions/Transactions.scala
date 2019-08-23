@@ -122,7 +122,7 @@ object Transactions {
     val htlcTimeoutFee = weight2fee(spec.feeratePerKw, htlcTimeoutWeight)
     spec.htlcs
       .filter(_.direction == OUT)
-      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcTimeoutFee).toMilliSatoshi)
+      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcTimeoutFee))
       .toSeq
   }
 
@@ -130,7 +130,7 @@ object Transactions {
     val htlcSuccessFee = weight2fee(spec.feeratePerKw, htlcSuccessWeight)
     spec.htlcs
       .filter(_.direction == IN)
-      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcSuccessFee).toMilliSatoshi)
+      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcSuccessFee))
       .toSeq
   }
 
