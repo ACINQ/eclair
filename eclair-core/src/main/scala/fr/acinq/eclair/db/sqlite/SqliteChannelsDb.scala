@@ -19,6 +19,7 @@ package fr.acinq.eclair.db.sqlite
 import java.sql.{Connection, Statement}
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
@@ -56,7 +57,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = {
     val data = stateDataCodec.encode(state).require.toByteArray
-    using (sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
+    using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
       update.setBytes(1, data)
       update.setBytes(2, state.channelId.toArray)
       if (update.executeUpdate() == 0) {
@@ -93,24 +94,24 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
-  def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: Long): Unit = {
+  def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
       statement.setBytes(3, paymentHash.toArray)
-      statement.setLong(4, cltvExpiry)
+      statement.setLong(4, cltvExpiry.toLong)
       statement.executeUpdate()
     }
   }
 
-  def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, Long)] = {
+  def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = {
     using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
       val rs = statement.executeQuery
-      var q: Queue[(ByteVector32, Long)] = Queue()
+      var q: Queue[(ByteVector32, CltvExpiry)] = Queue()
       while (rs.next()) {
-        q = q :+ (ByteVector32(rs.getByteVector32("payment_hash")), rs.getLong("cltv_expiry"))
+        q = q :+ (ByteVector32(rs.getByteVector32("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry")))
       }
       q
     }

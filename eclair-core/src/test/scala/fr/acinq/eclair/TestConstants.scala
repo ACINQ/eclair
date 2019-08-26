@@ -32,8 +32,8 @@ import scodec.bits.ByteVector
 import scala.concurrent.duration._
 
 /**
-  * Created by PM on 26/04/2016.
-  */
+ * Created by PM on 26/04/2016.
+ */
 object TestConstants {
 
   val fundingSatoshis = Satoshi(1000000L)
@@ -79,12 +79,12 @@ object TestConstants {
       ),
       maxHtlcValueInFlightMsat = UInt64(150000000),
       maxAcceptedHtlcs = 100,
-      expiryDeltaBlocks = 144,
-      fulfillSafetyBeforeTimeoutBlocks = 6,
+      expiryDeltaBlocks = CltvExpiryDelta(144),
+      fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
       htlcMinimum = MilliSatoshi(0),
       minDepthBlocks = 3,
-      toRemoteDelayBlocks = 144,
-      maxToLocalDelayBlocks = 1000,
+      toRemoteDelayBlocks = CltvExpiryDelta(144),
+      maxToLocalDelayBlocks = CltvExpiryDelta(1000),
       feeBase = MilliSatoshi(546000),
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
@@ -108,7 +108,7 @@ object TestConstants {
         routerBroadcastInterval = 5 seconds,
         searchMaxFeeBase = Satoshi(21),
         searchMaxFeePct = 0.03,
-        searchMaxCltv = 2016,
+        searchMaxCltv = CltvExpiryDelta(2016),
         searchMaxRouteLength = 20,
         searchHeuristicsEnabled = false,
         searchRatioCltv = 0.0,
@@ -149,12 +149,12 @@ object TestConstants {
       ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
-      expiryDeltaBlocks = 144,
-      fulfillSafetyBeforeTimeoutBlocks = 6,
+      expiryDeltaBlocks = CltvExpiryDelta(144),
+      fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
       htlcMinimum = MilliSatoshi(1000),
       minDepthBlocks = 3,
-      toRemoteDelayBlocks = 144,
-      maxToLocalDelayBlocks = 1000,
+      toRemoteDelayBlocks = CltvExpiryDelta(144),
+      maxToLocalDelayBlocks = CltvExpiryDelta(1000),
       feeBase = MilliSatoshi(546000),
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
@@ -178,7 +178,7 @@ object TestConstants {
         routerBroadcastInterval = 5 seconds,
         searchMaxFeeBase = Satoshi(21),
         searchMaxFeePct = 0.03,
-        searchMaxCltv = 2016,
+        searchMaxCltv = CltvExpiryDelta(2016),
         searchMaxRouteLength = 20,
         searchHeuristicsEnabled = false,
         searchRatioCltv = 0.0,

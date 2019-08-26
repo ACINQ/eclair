@@ -18,8 +18,7 @@ package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.{Block}
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.bitcoin.Block
 import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -126,14 +125,13 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
   }
 }
 
-
 object RoutingSyncSpec {
   def makeFakeRoutingInfo(shortChannelId: ShortChannelId): (ChannelAnnouncement, ChannelUpdate, ChannelUpdate, NodeAnnouncement, NodeAnnouncement) = {
     val (priv_a, priv_b, priv_funding_a, priv_funding_b) = (randomKey, randomKey, randomKey, randomKey)
     val channelAnn_ab = channelAnnouncement(shortChannelId, priv_a, priv_b, priv_funding_a, priv_funding_b)
     val TxCoordinates(blockHeight, _, _) = ShortChannelId.coordinates(shortChannelId)
-    val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, shortChannelId, cltvExpiryDelta = 7, MilliSatoshi(0), feeBaseMsat = MilliSatoshi(766000), feeProportionalMillionths = 10, MilliSatoshi(500000000L), timestamp = blockHeight)
-    val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, priv_a.publicKey, shortChannelId, cltvExpiryDelta = 7, MilliSatoshi(0), feeBaseMsat = MilliSatoshi(766000), feeProportionalMillionths = 10, MilliSatoshi(500000000L), timestamp = blockHeight)
+    val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, shortChannelId, CltvExpiryDelta(7), MilliSatoshi(0), feeBaseMsat = MilliSatoshi(766000), feeProportionalMillionths = 10, MilliSatoshi(500000000L), timestamp = blockHeight)
+    val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, priv_a.publicKey, shortChannelId, CltvExpiryDelta(7), MilliSatoshi(0), feeBaseMsat = MilliSatoshi(766000), feeProportionalMillionths = 10, MilliSatoshi(500000000L), timestamp = blockHeight)
     val nodeAnnouncement_a = makeNodeAnnouncement(priv_a, "a", Color(0, 0, 0), List())
     val nodeAnnouncement_b = makeNodeAnnouncement(priv_b, "b", Color(0, 0, 0), List())
     (channelAnn_ab, channelUpdate_ab, channelUpdate_ba, nodeAnnouncement_a, nodeAnnouncement_b)

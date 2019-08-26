@@ -33,12 +33,13 @@ import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
+
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
 
 /**
-  * Created by PM on 26/02/2017.
-  */
+ * Created by PM on 26/02/2017.
+ */
 case class NodeParams(keyManager: KeyManager,
                       alias: String,
                       color: Color,
@@ -50,11 +51,11 @@ case class NodeParams(keyManager: KeyManager,
                       onChainFeeConf: OnChainFeeConf,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
-                      expiryDeltaBlocks: Int,
-                      fulfillSafetyBeforeTimeoutBlocks: Int,
+                      expiryDeltaBlocks: CltvExpiryDelta,
+                      fulfillSafetyBeforeTimeoutBlocks: CltvExpiryDelta,
                       htlcMinimum: MilliSatoshi,
-                      toRemoteDelayBlocks: Int,
-                      maxToLocalDelayBlocks: Int,
+                      toRemoteDelayBlocks: CltvExpiryDelta,
+                      maxToLocalDelayBlocks: CltvExpiryDelta,
                       minDepthBlocks: Int,
                       feeBase: MilliSatoshi,
                       feeProportionalMillionth: Int,
@@ -90,12 +91,12 @@ object NodeParams {
   object ELECTRUM extends WatcherType
 
   /**
-    * Order of precedence for the configuration parameters:
-    * 1) Java environment variables (-D...)
-    * 2) Configuration file eclair.conf
-    * 3) Optionally provided config
-    * 4) Default values in reference.conf
-    */
+   * Order of precedence for the configuration parameters:
+   * 1) Java environment variables (-D...)
+   * 2) Configuration file eclair.conf
+   * 3) Optionally provided config
+   * 4) Default values in reference.conf
+   */
   def loadConfiguration(datadir: File, overrideDefaults: Config = ConfigFactory.empty()) =
     ConfigFactory.parseProperties(System.getProperties)
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
@@ -104,13 +105,13 @@ object NodeParams {
 
   def getSeed(datadir: File): ByteVector = {
     val seedPath = new File(datadir, "seed.dat")
-    seedPath.exists() match {
-      case true => ByteVector(Files.readAllBytes(seedPath.toPath))
-      case false =>
-        datadir.mkdirs()
-        val seed = randomBytes32
-        Files.write(seedPath.toPath, seed.toArray)
-        seed
+    if (seedPath.exists()) {
+      ByteVector(Files.readAllBytes(seedPath.toPath))
+    } else {
+      datadir.mkdirs()
+      val seed = randomBytes32
+      Files.write(seedPath.toPath, seed.toArray)
+      seed
     }
   }
 
@@ -144,12 +145,12 @@ object NodeParams {
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
 
-    val maxToLocalCLTV = config.getInt("max-to-local-delay-blocks")
-    val offeredCLTV = config.getInt("to-remote-delay-blocks")
+    val maxToLocalCLTV = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks"))
+    val offeredCLTV = CltvExpiryDelta(config.getInt("to-remote-delay-blocks"))
     require(maxToLocalCLTV <= Channel.MAX_TO_SELF_DELAY && offeredCLTV <= Channel.MAX_TO_SELF_DELAY, s"CLTV delay values too high, max is ${Channel.MAX_TO_SELF_DELAY}")
 
-    val expiryDeltaBlocks = config.getInt("expiry-delta-blocks")
-    val fulfillSafetyBeforeTimeoutBlocks = config.getInt("fulfill-safety-before-timeout-blocks")
+    val expiryDeltaBlocks = CltvExpiryDelta(config.getInt("expiry-delta-blocks"))
+    val fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(config.getInt("fulfill-safety-before-timeout-blocks"))
     require(fulfillSafetyBeforeTimeoutBlocks < expiryDeltaBlocks, "fulfill-safety-before-timeout-blocks must be smaller than expiry-delta-blocks")
 
     val nodeAlias = config.getString("node-alias")
@@ -206,8 +207,8 @@ object NodeParams {
       expiryDeltaBlocks = expiryDeltaBlocks,
       fulfillSafetyBeforeTimeoutBlocks = fulfillSafetyBeforeTimeoutBlocks,
       htlcMinimum = MilliSatoshi(config.getInt("htlc-minimum-msat")),
-      toRemoteDelayBlocks = config.getInt("to-remote-delay-blocks"),
-      maxToLocalDelayBlocks = config.getInt("max-to-local-delay-blocks"),
+      toRemoteDelayBlocks = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
+      maxToLocalDelayBlocks = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
       minDepthBlocks = config.getInt("mindepth-blocks"),
       feeBase = MilliSatoshi(config.getInt("fee-base-msat")),
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
@@ -231,7 +232,7 @@ object NodeParams {
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
         searchMaxRouteLength = config.getInt("router.path-finding.max-route-length"),
-        searchMaxCltv = config.getInt("router.path-finding.max-cltv"),
+        searchMaxCltv = CltvExpiryDelta(config.getInt("router.path-finding.max-cltv")),
         searchMaxFeeBase = Satoshi(config.getLong("router.path-finding.fee-threshold-sat")),
         searchMaxFeePct = config.getDouble("router.path-finding.max-fee-pct"),
         searchHeuristicsEnabled = config.getBoolean("router.path-finding.heuristics-enable"),
