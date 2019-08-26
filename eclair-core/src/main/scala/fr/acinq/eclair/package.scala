@@ -167,6 +167,7 @@ package object eclair {
     // @formatter:on
   }
 
+  // We implement Numeric to take advantage of operations such as sum, sort or min/max on iterables.
   implicit object NumericMilliSatoshi extends Numeric[MilliSatoshi] {
     // @formatter:off
     override def plus(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = x + y

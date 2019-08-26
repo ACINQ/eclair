@@ -45,6 +45,7 @@ case class MilliSatoshi(private val underlying: Long) extends Ordered[MilliSatos
   def <(other: BtcAmount): Boolean = compare(other) < 0
   def >(other: BtcAmount): Boolean = compare(other) > 0
 
+  // We provide asymmetric min/max functions to provide more control on the return type.
   def max(other: MilliSatoshi): MilliSatoshi = if (this > other) this else other
   def max(other: BtcAmount): MilliSatoshi = if (this > other) this else other.toMilliSatoshi
   def min(other: MilliSatoshi): MilliSatoshi = if (this < other) this else other
