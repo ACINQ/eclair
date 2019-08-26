@@ -865,20 +865,20 @@ object Router {
         // - it is different from ours, or it is the same but ours is about to be stale
         // - it is not stale
         val theirsIsMoreRecent = ourTimestamp < theirTimestamp
-        val theirsIsDifferent = ourChecksum != theirChecksum
+        val areDifferent = ourChecksum != theirChecksum
         val oursIsAlmostStale = isAlmostStale(ourTimestamp)
         val theirsIsStale = isStale(theirTimestamp)
-        theirsIsMoreRecent && (theirsIsDifferent || oursIsAlmostStale) && !theirsIsStale
+        theirsIsMoreRecent && (areDifferent || oursIsAlmostStale) && !theirsIsStale
       case (Some(theirTimestamp), None) =>
+        // if we only have their timestamp, we request their channel_update if theirs is more recent than ours
         val theirsIsMoreRecent = ourTimestamp < theirTimestamp
-        val theirsIsStale = isStale(theirTimestamp)
-        theirsIsMoreRecent && !theirsIsStale
+        theirsIsMoreRecent
       case (None, Some(theirChecksum)) =>
-        // this should not happen as we will not ask for checksums without asking for timestamps too
-        val theirsIsDifferent = theirChecksum != 0 && ourChecksum != theirChecksum
-        theirsIsDifferent
-      case _ =>
-        // they did not include timestamp or checksum => ask for the update
+        // if we only have their checksum, we request their channel_update if it is different from ours
+        val areDifferent = ourChecksum != theirChecksum
+        areDifferent
+      case (None, None) =>
+        // if we have neither their timestamp nor their checksum we request their channel_update
         true
     }
   }
