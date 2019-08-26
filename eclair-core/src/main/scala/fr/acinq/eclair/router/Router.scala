@@ -872,10 +872,11 @@ object Router {
       case (Some(theirTimestamp), None) =>
         // if we only have their timestamp, we request their channel_update if theirs is more recent than ours
         val theirsIsMoreRecent = ourTimestamp < theirTimestamp
-        theirsIsMoreRecent
+        val theirsIsStale = isStale(theirTimestamp)
+        theirsIsMoreRecent && !theirsIsStale
       case (None, Some(theirChecksum)) =>
         // if we only have their checksum, we request their channel_update if it is different from ours
-        val areDifferent = ourChecksum != theirChecksum
+        val areDifferent = theirChecksum != 0 && ourChecksum != theirChecksum
         areDifferent
       case (None, None) =>
         // if we have neither their timestamp nor their checksum we request their channel_update
@@ -890,24 +891,24 @@ object Router {
     includeNodeAnnouncements: Boolean): Long = {
     import QueryShortChannelIdsTlv.QueryFlagType._
 
-    val flag = channels.contains(shortChannelId) match {
-      case false if includeNodeAnnouncements =>
-        INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1  | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2
-      case false =>
-        INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1  | INCLUDE_CHANNEL_UPDATE_2
-      case true =>
-        // we already know this channel
-        val (ourTimestamps, ourChecksums) = Router.getChannelDigestInfo(channels, updates)(shortChannelId)
-        // if they don't provide timestamps or checksums, we set appropriate default values:
-        // - we assume their timestamp is more recent than ours by setting timestamp = Long.MaxValue
-        // - we assume their update is different from ours by setting checkum = Long.MaxValue (NB: our default value for checksum is 0)
-        val shouldRequestUpdate1 = shouldRequestUpdate(ourTimestamps.timestamp1, ourChecksums.checksum1, theirTimestamps_opt.map(_.timestamp1), theirChecksums_opt.map(_.checksum1))
-        val shouldRequestUpdate2 = shouldRequestUpdate(ourTimestamps.timestamp2, ourChecksums.checksum2, theirTimestamps_opt.map(_.timestamp2), theirChecksums_opt.map(_.checksum2))
-        val flagUpdate1 = if (shouldRequestUpdate1) INCLUDE_CHANNEL_UPDATE_1 else 0
-        val flagUpdate2 = if (shouldRequestUpdate2) INCLUDE_CHANNEL_UPDATE_2 else 0
-        flagUpdate1 | flagUpdate2
+    val flagsNodes = if (includeNodeAnnouncements) INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2 else 0
+
+    val flags = if (!channels.contains(shortChannelId)) {
+      INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2
+    } else {
+      // we already know this channel
+      val (ourTimestamps, ourChecksums) = Router.getChannelDigestInfo(channels, updates)(shortChannelId)
+      // if they don't provide timestamps or checksums, we set appropriate default values:
+      // - we assume their timestamp is more recent than ours by setting timestamp = Long.MaxValue
+      // - we assume their update is different from ours by setting checkum = Long.MaxValue (NB: our default value for checksum is 0)
+      val shouldRequestUpdate1 = shouldRequestUpdate(ourTimestamps.timestamp1, ourChecksums.checksum1, theirTimestamps_opt.map(_.timestamp1), theirChecksums_opt.map(_.checksum1))
+      val shouldRequestUpdate2 = shouldRequestUpdate(ourTimestamps.timestamp2, ourChecksums.checksum2, theirTimestamps_opt.map(_.timestamp2), theirChecksums_opt.map(_.checksum2))
+      val flagUpdate1 = if (shouldRequestUpdate1) INCLUDE_CHANNEL_UPDATE_1 else 0
+      val flagUpdate2 = if (shouldRequestUpdate2) INCLUDE_CHANNEL_UPDATE_2 else 0
+      flagUpdate1 | flagUpdate2
     }
-    flag
+
+    if (flags == 0) 0 else flags | flagsNodes
   }
 
   /**

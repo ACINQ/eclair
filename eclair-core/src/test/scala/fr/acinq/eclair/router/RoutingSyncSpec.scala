@@ -172,9 +172,9 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     awaitCond(alice.stateData.updates === bob.stateData.updates)
   }
 
-  def syncWithExtendedQueries(requestChannelAnnouncements: Boolean) = {
+  def syncWithExtendedQueries(requestNodeAnnouncements: Boolean) = {
     val watcher = system.actorOf(Props(new YesWatcher()))
-    val alice = TestFSMRef(new Router(Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(requestNodeAnnouncements = requestChannelAnnouncements)), watcher))
+    val alice = TestFSMRef(new Router(Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(requestNodeAnnouncements = requestNodeAnnouncements)), watcher))
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
     val charlieId = randomKey.publicKey
     val sender = TestProbe()
@@ -195,10 +195,10 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
     awaitCond(bob.stateData.channels.size === 40 && bob.stateData.updates.size === 40)
-    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 40, nodes = if (requestChannelAnnouncements) 80 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 40, nodes = if (requestNodeAnnouncements) 80 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
     awaitCond(alice.stateData.updates === bob.stateData.updates)
-    if (requestChannelAnnouncements) awaitCond(alice.stateData.nodes === bob.stateData.nodes)
+    if (requestNodeAnnouncements) awaitCond(alice.stateData.nodes === bob.stateData.nodes)
 
     // add some updates to bob and resync
     fakeRoutingInfo.take(40).values.foreach {
@@ -206,7 +206,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, cu2))
     }
     awaitCond(bob.stateData.channels.size === 40 && bob.stateData.updates.size === 80)
-    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 0, updates = 40, nodes = 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 0, updates = 40, nodes = if (requestNodeAnnouncements) 80 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
     awaitCond(alice.stateData.updates === bob.stateData.updates)
 
@@ -220,7 +220,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
     awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && bob.stateData.updates.size === 2 * fakeRoutingInfo.size,  max = 20 seconds)
-    assert(BasicSyncResult(ranges = 2, queries = 24, channels = fakeRoutingInfo.size - 40, updates = 2 * (fakeRoutingInfo.size - 40), nodes = if (requestChannelAnnouncements) 2 * (fakeRoutingInfo.size - 40) else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    assert(BasicSyncResult(ranges = 2, queries = 24, channels = fakeRoutingInfo.size - 40, updates = 2 * (fakeRoutingInfo.size - 40), nodes = if (requestNodeAnnouncements) 2 * (fakeRoutingInfo.size - 40) else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
     awaitCond(alice.stateData.updates === bob.stateData.updates)
 
@@ -232,10 +232,10 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
     val bumpedUpdates = (List(0, 42, 147, 153, 654, 834, 2301).map(touchUpdate(_, true)) ++ List(1, 42, 150, 200).map(touchUpdate(_, false))).toSet
     bumpedUpdates.foreach(c => sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, c)))
-    assert(BasicSyncResult(ranges = 2, queries = 2, channels = 0, updates = bumpedUpdates.size, nodes = 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    assert(BasicSyncResult(ranges = 2, queries = 2, channels = 0, updates = bumpedUpdates.size, nodes = if (requestNodeAnnouncements) 20 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
     awaitCond(alice.stateData.updates === bob.stateData.updates)
-    if (requestChannelAnnouncements) awaitCond(alice.stateData.nodes === bob.stateData.nodes)
+    if (requestNodeAnnouncements) awaitCond(alice.stateData.nodes === bob.stateData.nodes)
   }
 
   test("sync with extended channel queries (don't request node announcements)") {
