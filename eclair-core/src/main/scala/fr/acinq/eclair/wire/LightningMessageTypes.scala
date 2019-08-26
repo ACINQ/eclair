@@ -236,61 +236,54 @@ object EncodingType {
 }
 // @formatter:on
 
-case object QueryFlagTypes {
-  val INCLUDE_CHANNEL_ANNOUNCEMENT: Byte = 1
-  val INCLUDE_CHANNEL_UPDATE_1: Byte = 2
-  val INCLUDE_CHANNEL_UPDATE_2: Byte = 4
-  val INCLUDE_ALL: Byte = (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte
-
-  def includeAnnouncement(flag: Byte) = (flag & QueryFlagTypes.INCLUDE_CHANNEL_ANNOUNCEMENT) != 0
-
-  def includeUpdate1(flag: Byte) = (flag & QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_1) != 0
-
-  def includeUpdate2(flag: Byte) = (flag & QueryFlagTypes.INCLUDE_CHANNEL_UPDATE_2) != 0
-}
 
 case class EncodedShortChannelIds(encoding: EncodingType,
                                   array: List[ShortChannelId])
 
-case class EncodedQueryFlags(encoding: EncodingType,
-                             array: List[Byte])
 
 case class QueryShortChannelIds(chainHash: ByteVector32,
                                 shortChannelIds: EncodedShortChannelIds,
-                                queryFlags_opt: Option[EncodedQueryFlags]) extends RoutingMessage with HasChainHash
+                                tlvStream: TlvStream[QueryShortChannelIdsTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash {
+  val queryFlags_opt: Option[QueryShortChannelIdsTlv.EncodedQueryFlags] = tlvStream.get[QueryShortChannelIdsTlv.EncodedQueryFlags]
+}
 
 case class ReplyShortChannelIdsEnd(chainHash: ByteVector32,
                                    complete: Byte) extends RoutingMessage with HasChainHash
 
-// @formatter:off
-sealed trait ExtendedQueryFlags
-object ExtendedQueryFlags {
-  case object TIMESTAMPS_AND_CHECKSUMS extends ExtendedQueryFlags
-}
-// @formatter:on
 
 case class QueryChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
-                             extendedQueryFlags_opt: Option[ExtendedQueryFlags]) extends RoutingMessage with HasChainHash
+                             tlvStream: TlvStream[QueryChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
+  val queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags] = tlvStream.get[QueryChannelRangeTlv.QueryFlags]
+}
 
 case class ReplyChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
                              complete: Byte,
                              shortChannelIds: EncodedShortChannelIds,
-                             extendedQueryFlags_opt: Option[ExtendedQueryFlags],
-                             extendedInfo_opt: Option[ExtendedInfo]) extends RoutingMessage with HasChainHash {
-  extendedInfo_opt.foreach(extendedInfo => require(shortChannelIds.array.size == extendedInfo.array.size, s"shortChannelIds.size=${shortChannelIds.array.size} != extendedInfo.size=${extendedInfo.array.size}"))
+                             tlvStream: TlvStream[ReplyChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
+  val timestamps_opt: Option[ReplyChannelRangeTlv.EncodedTimestamps] = tlvStream.get[ReplyChannelRangeTlv.EncodedTimestamps]
+
+  val checksums_opt: Option[ReplyChannelRangeTlv.EncodedChecksums] = tlvStream.get[ReplyChannelRangeTlv.EncodedChecksums]
 }
+
+object ReplyChannelRange {
+  def apply(chainHash: ByteVector32,
+            firstBlockNum: Long,
+            numberOfBlocks: Long,
+            complete: Byte,
+            shortChannelIds: EncodedShortChannelIds,
+            timestamps: Option[ReplyChannelRangeTlv.EncodedTimestamps],
+            checksums: Option[ReplyChannelRangeTlv.EncodedChecksums]) = {
+    timestamps.foreach(ts => require(ts.timestamps.length == shortChannelIds.array.length))
+    checksums.foreach(cs => require(cs.checksums.length == shortChannelIds.array.length))
+    new ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, complete, shortChannelIds, TlvStream(timestamps.toList ::: checksums.toList))
+  }
+}
+
 
 case class GossipTimestampFilter(chainHash: ByteVector32,
                                  firstTimestamp: Long,
                                  timestampRange: Long) extends RoutingMessage with HasChainHash
-
-case class TimestampsAndChecksums(timestamp1: Long,
-                                  checksum1: Long,
-                                  timestamp2: Long,
-                                  checksum2: Long)
-
-case class ExtendedInfo(array: List[TimestampsAndChecksums])

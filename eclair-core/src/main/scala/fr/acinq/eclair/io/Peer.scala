@@ -25,8 +25,7 @@ import akka.event.Logging.MDC
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Protocol, Satoshi}
-import fr.acinq.eclair
+import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet, Protocol, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
@@ -155,7 +154,15 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
           // NB: we always add extended info; if peer doesn't understand them it will ignore them
-          router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = Some(ExtendedQueryFlags.TIMESTAMPS_AND_CHECKSUMS))
+
+          // README: for now we do not activate extended queries on mainnet
+          val flags_opt = nodeParams.chainHash match {
+            case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash =>
+              log.info("using extended range queries")
+              Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))
+            case _ => None
+          }
+          router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = flags_opt)
         }
 
         // let's bring existing/requested channels online

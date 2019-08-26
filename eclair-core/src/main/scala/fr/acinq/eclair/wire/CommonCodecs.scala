@@ -19,8 +19,8 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
@@ -56,6 +56,10 @@ object CommonCodecs {
 
   val satoshi: Codec[Satoshi] = uint64overflow.xmapc(l => Satoshi(l))(_.toLong)
   val millisatoshi: Codec[MilliSatoshi] = uint64overflow.xmapc(l => MilliSatoshi(l))(_.amount)
+
+  // this is needed because some millisatoshi values are encoded on 32 bits in the BOLTs
+  // this codec will fail if the amount does not fit on 32 bits
+  val millisatoshi32: Codec[MilliSatoshi] = uint32.xmapc(l => MilliSatoshi(l))(_.amount)
 
   /**
     * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be

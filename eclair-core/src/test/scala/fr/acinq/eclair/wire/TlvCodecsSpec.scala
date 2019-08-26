@@ -294,6 +294,12 @@ class TlvCodecsSpec extends FunSuite {
     }
   }
 
+  test("get optional TLV field") {
+    val stream = TlvStream[TestTlv](Seq(TestType254(42), TestType1(42)), Seq(GenericTlv(13, hex"2a"), GenericTlv(11, hex"2b")))
+    assert(stream.get[TestType254] == Some(TestType254(42)))
+    assert(stream.get[TestType1] == Some(TestType1(42)))
+    assert(stream.get[TestType2] == None)
+  }
 }
 
 object TlvCodecsSpec {

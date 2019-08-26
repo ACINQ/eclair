@@ -57,6 +57,30 @@ class RouteCalculationSpec extends FunSuite {
     assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
+  test("check fee against max pct properly") {
+
+    // fee is acceptable is it is either
+    // - below our maximum fee base
+    // - below our maximum fraction of the paid amount
+
+    // here we have a maximum fee base of 1 msat, and all our updates have a base fee of 10 msat
+    // so our fee will always be above the base fee, and we will always check that it is below our maximum percentage
+    // of the amount being paid
+
+    val updates = List(
+      makeUpdate(1L, a, b, MilliSatoshi(10), 10, cltvDelta = 1),
+      makeUpdate(2L, b, c, MilliSatoshi(10), 10, cltvDelta = 1),
+      makeUpdate(3L, c, d, MilliSatoshi(10), 10, cltvDelta = 1),
+      makeUpdate(4L, d, e, MilliSatoshi(10), 10, cltvDelta = 1)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBase = MilliSatoshi(1)))
+
+    assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+  }
+
   test("calculate the shortest path (correct fees)") {
 
     val (a, b, c, d, e, f) = (
@@ -944,7 +968,6 @@ class RouteCalculationSpec extends FunSuite {
     assert(route.size == 2)
     assert(route.last.nextNodeId == targetNode)
   }
-
 }
 
 object RouteCalculationSpec {

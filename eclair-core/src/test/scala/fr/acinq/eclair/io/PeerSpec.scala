@@ -26,14 +26,13 @@ import fr.acinq.bitcoin.{Satoshi}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
-import fr.acinq.eclair.channel.{ChannelCreated, HasCommitments}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.channel.{ChannelCreated, HasCommitments}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
-import fr.acinq.eclair.router.{Rebroadcast, RoutingSyncSpec}
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
-import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, EncodedShortChannelIds, EncodingType, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong}
-import fr.acinq.eclair.{ShortChannelId, TestkitBaseClass, randomBytes, wire, _}
+import fr.acinq.eclair.router.{Rebroadcast, RoutingSyncSpec}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, EncodedShortChannelIds, EncodingType, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong, QueryShortChannelIds, Tlv, TlvStream}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
@@ -337,7 +336,10 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
 
-    val query = wire.QueryShortChannelIds(Alice.nodeParams.chainHash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42000))), queryFlags_opt = None)
+    val query = QueryShortChannelIds(
+      Alice.nodeParams.chainHash,
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42000))),
+      TlvStream.empty)
 
     // make sure that routing messages go through
     for (ann <- channels ++ updates) {
