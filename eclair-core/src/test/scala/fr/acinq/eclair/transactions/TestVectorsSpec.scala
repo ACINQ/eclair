@@ -17,13 +17,12 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, Script, ScriptFlags, Transaction}
-import fr.acinq.eclair.{MilliSatoshi, TestConstants}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
 import fr.acinq.eclair.wire.UpdateAddHtlc
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, TestConstants}
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
 import scodec.bits._
@@ -66,7 +65,7 @@ class TestVectorsSpec extends FunSuite with Logging {
    */
   object Local {
     val commitTxNumber = 42
-    val toSelfDelay = 144
+    val toSelfDelay = CltvExpiryDelta(144)
     val dustLimit = Satoshi(546)
     val payment_basepoint_secret = PrivateKey(hex"1111111111111111111111111111111111111111111111111111111111111111")
     val payment_basepoint = payment_basepoint_secret.publicKey
@@ -108,7 +107,7 @@ class TestVectorsSpec extends FunSuite with Logging {
 
   object Remote {
     val commitTxNumber = 42
-    val toSelfDelay = 144
+    val toSelfDelay = CltvExpiryDelta(144)
     val dustLimit = Satoshi(546)
     val payment_basepoint_secret = PrivateKey(hex"4444444444444444444444444444444444444444444444444444444444444444")
     val payment_basepoint = payment_basepoint_secret.publicKey
@@ -155,11 +154,11 @@ class TestVectorsSpec extends FunSuite with Logging {
   )
 
   val htlcs = Seq(
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(1000000), Crypto.sha256(paymentPreimages(0)), 500, TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(2000000), Crypto.sha256(paymentPreimages(1)), 501, TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(2000000), Crypto.sha256(paymentPreimages(2)), 502, TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(3000000), Crypto.sha256(paymentPreimages(3)), 503, TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(4000000), Crypto.sha256(paymentPreimages(4)), 504, TestConstants.emptyOnionPacket))
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(1000000), Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(2000000), Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket)),
+    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(2000000), Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket)),
+    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(3000000), Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(4000000), Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
   )
   val htlcScripts = htlcs.map(htlc => htlc.direction match {
     case OUT => Scripts.htlcOffered(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(htlc.add.paymentHash))

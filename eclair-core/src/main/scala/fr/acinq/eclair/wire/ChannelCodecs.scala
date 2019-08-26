@@ -65,7 +65,7 @@ object ChannelCodecs extends Logging {
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserve" | satoshi) ::
       ("htlcMinimum" | millisatoshi) ::
-      ("toSelfDelay" | uint16) ::
+      ("toSelfDelay" | cltvExpiryDelta) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
@@ -78,7 +78,7 @@ object ChannelCodecs extends Logging {
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserve" | satoshi) ::
       ("htlcMinimum" | millisatoshi) ::
-      ("toSelfDelay" | uint16) ::
+      ("toSelfDelay" | cltvExpiryDelta) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubKey" | publicKey) ::
       ("revocationBasepoint" | publicKey) ::

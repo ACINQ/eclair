@@ -24,15 +24,15 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, MilliSatoshi, ShortChannelId, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Globals, MilliSatoshi, ShortChannelId, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits._
 
 import scala.util.{Failure, Success}
 
 /**
-  * Created by PM on 31/05/2016.
-  */
+ * Created by PM on 31/05/2016.
+ */
 
 class RouteCalculationSpec extends FunSuite {
 
@@ -43,10 +43,10 @@ class RouteCalculationSpec extends FunSuite {
   test("calculate simple route") {
 
     val updates = List(
-      makeUpdate(1L, a, b, MilliSatoshi(1), 10, cltvDelta = 1),
-      makeUpdate(2L, b, c, MilliSatoshi(1), 10, cltvDelta = 1),
-      makeUpdate(3L, c, d, MilliSatoshi(1), 10, cltvDelta = 1),
-      makeUpdate(4L, d, e, MilliSatoshi(1), 10, cltvDelta = 1)
+      makeUpdate(1L, a, b, MilliSatoshi(1), 10, cltvDelta = CltvExpiryDelta(1)),
+      makeUpdate(2L, b, c, MilliSatoshi(1), 10, cltvDelta = CltvExpiryDelta(1)),
+      makeUpdate(3L, c, d, MilliSatoshi(1), 10, cltvDelta = CltvExpiryDelta(1)),
+      makeUpdate(4L, d, e, MilliSatoshi(1), 10, cltvDelta = CltvExpiryDelta(1))
     ).toMap
 
     val g = makeGraph(updates)
@@ -67,10 +67,10 @@ class RouteCalculationSpec extends FunSuite {
     // of the amount being paid
 
     val updates = List(
-      makeUpdate(1L, a, b, MilliSatoshi(10), 10, cltvDelta = 1),
-      makeUpdate(2L, b, c, MilliSatoshi(10), 10, cltvDelta = 1),
-      makeUpdate(3L, c, d, MilliSatoshi(10), 10, cltvDelta = 1),
-      makeUpdate(4L, d, e, MilliSatoshi(10), 10, cltvDelta = 1)
+      makeUpdate(1L, a, b, MilliSatoshi(10), 10, cltvDelta = CltvExpiryDelta(1)),
+      makeUpdate(2L, b, c, MilliSatoshi(10), 10, cltvDelta = CltvExpiryDelta(1)),
+      makeUpdate(3L, c, d, MilliSatoshi(10), 10, cltvDelta = CltvExpiryDelta(1)),
+      makeUpdate(4L, d, e, MilliSatoshi(10), 10, cltvDelta = CltvExpiryDelta(1))
     ).toMap
 
     val g = makeGraph(updates)
@@ -213,7 +213,7 @@ class RouteCalculationSpec extends FunSuite {
       PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), // F source
       PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), // G
       PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), // H
-      PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c")  // I target
+      PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c") // I target
     )
 
     val updates = List(
@@ -234,7 +234,7 @@ class RouteCalculationSpec extends FunSuite {
       PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), // F source
       PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), // G
       PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), // H
-      PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c")  // I target
+      PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c") // I target
     )
 
     val updates = List(
@@ -404,14 +404,14 @@ class RouteCalculationSpec extends FunSuite {
 
     val DUMMY_SIG = Transactions.PlaceHolderSig
 
-    val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 0L, 0, 0, 1, MilliSatoshi(42), MilliSatoshi(2500), 140, None)
-    val uba = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 1L, 0, 1, 1, MilliSatoshi(43), MilliSatoshi(2501), 141, None)
-    val ubc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, 0, 0, 1, MilliSatoshi(44), MilliSatoshi(2502), 142, None)
-    val ucb = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, 0, 1, 1, MilliSatoshi(45), MilliSatoshi(2503), 143, None)
-    val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, 1, 0, 1, MilliSatoshi(46), MilliSatoshi(2504), 144, Some(MilliSatoshi(500000000L)))
-    val udc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, 0, 1, 1, MilliSatoshi(47), MilliSatoshi(2505), 145, None)
-    val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 0, 1, MilliSatoshi(48), MilliSatoshi(2506), 146, None)
-    val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 1, 1, MilliSatoshi(49), MilliSatoshi(2507), 147, None)
+    val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 0L, 0, 0, CltvExpiryDelta(1), MilliSatoshi(42), MilliSatoshi(2500), 140, None)
+    val uba = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 1L, 0, 1, CltvExpiryDelta(1), MilliSatoshi(43), MilliSatoshi(2501), 141, None)
+    val ubc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, 0, 0, CltvExpiryDelta(1), MilliSatoshi(44), MilliSatoshi(2502), 142, None)
+    val ucb = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, 0, 1, CltvExpiryDelta(1), MilliSatoshi(45), MilliSatoshi(2503), 143, None)
+    val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, 1, 0, CltvExpiryDelta(1), MilliSatoshi(46), MilliSatoshi(2504), 144, Some(MilliSatoshi(500000000L)))
+    val udc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, 0, 1, CltvExpiryDelta(1), MilliSatoshi(47), MilliSatoshi(2505), 145, None)
+    val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 0, CltvExpiryDelta(1), MilliSatoshi(48), MilliSatoshi(2506), 146, None)
+    val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 1, CltvExpiryDelta(1), MilliSatoshi(49), MilliSatoshi(2507), 147, None)
 
     val updates = Map(
       ChannelDesc(ShortChannelId(1L), a, b) -> uab,
@@ -438,10 +438,10 @@ class RouteCalculationSpec extends FunSuite {
     val d = randomKey.publicKey
     val e = randomKey.publicKey
 
-    val extraHop1 = ExtraHop(a, ShortChannelId(1), 10, 11, 12)
-    val extraHop2 = ExtraHop(b, ShortChannelId(2), 20, 21, 22)
-    val extraHop3 = ExtraHop(c, ShortChannelId(3), 30, 31, 32)
-    val extraHop4 = ExtraHop(d, ShortChannelId(4), 40, 41, 42)
+    val extraHop1 = ExtraHop(a, ShortChannelId(1), 10, 11, CltvExpiryDelta(12))
+    val extraHop2 = ExtraHop(b, ShortChannelId(2), 20, 21, CltvExpiryDelta(22))
+    val extraHop3 = ExtraHop(c, ShortChannelId(3), 30, 31, CltvExpiryDelta(32))
+    val extraHop4 = ExtraHop(d, ShortChannelId(4), 40, 41, CltvExpiryDelta(42))
 
     val extraHops = extraHop1 :: extraHop2 :: extraHop3 :: extraHop4 :: Nil
 
@@ -605,15 +605,15 @@ class RouteCalculationSpec extends FunSuite {
     val f = randomKey.publicKey
 
     val g = makeGraph(List(
-      makeUpdate(1, a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 50),
-      makeUpdate(2, b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 50),
-      makeUpdate(3, c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 50),
-      makeUpdate(4, a, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
-      makeUpdate(5, e, f, feeBase = MilliSatoshi(5), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
-      makeUpdate(6, f, d, feeBase = MilliSatoshi(5), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9)
+      makeUpdate(1, a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(50)),
+      makeUpdate(2, b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(50)),
+      makeUpdate(3, c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(50)),
+      makeUpdate(4, a, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(9)),
+      makeUpdate(5, e, f, feeBase = MilliSatoshi(5), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(9)),
+      makeUpdate(6, f, d, feeBase = MilliSatoshi(5), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(9))
     ).toMap)
 
-    val route = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxCltv = 28))
+    val route = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxCltv = CltvExpiryDelta(28)))
     assert(route.map(hops2Ids) === Success(4 :: 5 :: 6 :: Nil))
   }
 
@@ -622,12 +622,12 @@ class RouteCalculationSpec extends FunSuite {
     val f = randomKey.publicKey
 
     val g = makeGraph(List(
-      makeUpdate(1, a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
-      makeUpdate(2, b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
-      makeUpdate(3, c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
-      makeUpdate(4, d, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
-      makeUpdate(5, e, f, feeBase = MilliSatoshi(5), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
-      makeUpdate(6, b, f, feeBase = MilliSatoshi(5), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9)
+      makeUpdate(1, a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(9)),
+      makeUpdate(2, b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(9)),
+      makeUpdate(3, c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(9)),
+      makeUpdate(4, d, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(9)),
+      makeUpdate(5, e, f, feeBase = MilliSatoshi(5), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(9)),
+      makeUpdate(6, b, f, feeBase = MilliSatoshi(5), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(9))
     ).toMap)
 
     val route = Router.findRoute(g, a, f, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxLength = 3))
@@ -657,10 +657,10 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(1L, a, b, MilliSatoshi(10), 10), // a -> b
       makeUpdate(2L, b, c, MilliSatoshi(10), 10),
       makeUpdate(4L, c, d, MilliSatoshi(10), 10),
-      makeUpdate(3L, b, e, MilliSatoshi(0), 0),   // b -> e
-      makeUpdate(6L, e, f, MilliSatoshi(0), 0),   // e -> f
-      makeUpdate(6L, f, e, MilliSatoshi(0), 0),   // e <- f
-      makeUpdate(5L, e, d, MilliSatoshi(0), 0)    // e -> d
+      makeUpdate(3L, b, e, MilliSatoshi(0), 0), // b -> e
+      makeUpdate(6L, e, f, MilliSatoshi(0), 0), // e -> f
+      makeUpdate(6L, f, e, MilliSatoshi(0), 0), // e <- f
+      makeUpdate(5L, e, d, MilliSatoshi(0), 0) // e -> d
     ).toMap
 
     val g = makeGraph(updates)
@@ -670,18 +670,18 @@ class RouteCalculationSpec extends FunSuite {
   }
 
   /**
-    *
-    * +---+            +---+            +---+
-    * | A +-----+      | B +----------> | C |
-    * +-+-+     |      +-+-+            +-+-+
-    * ^       |        ^                |
-    * |       |        |                |
-    * |       v----> + |                |
-    * +-+-+            <-+-+            +-+-+
-    * | D +----------> | E +----------> | F |
-    * +---+            +---+            +---+
-    *
-    */
+   *
+   * +---+            +---+            +---+
+   * | A +-----+      | B +----------> | C |
+   * +-+-+     |      +-+-+            +-+-+
+   * ^       |        ^                |
+   * |       |        |                |
+   * |       v----> + |                |
+   * +-+-+            <-+-+            +-+-+
+   * | D +----------> | E +----------> | F |
+   * +---+            +---+            +---+
+   *
+   */
   test("find the k-shortest paths in a graph, k=4") {
 
     val (a, b, c, d, e, f) = (
@@ -817,13 +817,13 @@ class RouteCalculationSpec extends FunSuite {
     // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 3, totCltv = 18)
     // A -> E -> C -> D is 'capacity optimized', more recent channel/larger capacity route
     val updates = List(
-      makeUpdate(1L, a, b, feeBase = MilliSatoshi(0), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 13),
-      makeUpdate(4L, a, e, feeBase = MilliSatoshi(0), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 12),
-      makeUpdate(2L, b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 500),
-      makeUpdate(3L, c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 500),
-      makeUpdate(5L, e, f, feeBase = MilliSatoshi(2), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
-      makeUpdate(6L, f, d, feeBase = MilliSatoshi(2), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 9),
-      makeUpdate(7L, e, c, feeBase = MilliSatoshi(2), 0, minHtlc = MilliSatoshi(0), maxHtlc = Some(largeCapacity), cltvDelta = 12)
+      makeUpdate(1L, a, b, feeBase = MilliSatoshi(0), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(13)),
+      makeUpdate(4L, a, e, feeBase = MilliSatoshi(0), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(12)),
+      makeUpdate(2L, b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(500)),
+      makeUpdate(3L, c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(500)),
+      makeUpdate(5L, e, f, feeBase = MilliSatoshi(2), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(9)),
+      makeUpdate(6L, f, d, feeBase = MilliSatoshi(2), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, CltvExpiryDelta(9)),
+      makeUpdate(7L, e, c, feeBase = MilliSatoshi(2), 0, minHtlc = MilliSatoshi(0), maxHtlc = Some(largeCapacity), CltvExpiryDelta(12))
     ).toMap
 
     val g = makeGraph(updates)
@@ -853,12 +853,12 @@ class RouteCalculationSpec extends FunSuite {
     val currentBlockHeight = 554000
 
     val g = makeGraph(List(
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight - 3000}x0x2"), b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144), // younger channel
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight - 3000}x0x3"), c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144)
+      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeUpdateShort(ShortChannelId(s"${currentBlockHeight - 3000}x0x2"), b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(144)), // younger channel
+      makeUpdateShort(ShortChannelId(s"${currentBlockHeight - 3000}x0x3"), c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(144))
     ).toMap)
 
     Globals.blockCount.set(currentBlockHeight)
@@ -875,12 +875,12 @@ class RouteCalculationSpec extends FunSuite {
   test("prefer a route with a smaller total CLTV if fees and score are the same") {
 
     val g = makeGraph(List(
-      makeUpdateShort(ShortChannelId(s"0x0x1"), a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 12),
-      makeUpdateShort(ShortChannelId(s"0x0x4"), a, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 12),
-      makeUpdateShort(ShortChannelId(s"0x0x2"), b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 10), // smaller CLTV
-      makeUpdateShort(ShortChannelId(s"0x0x3"), c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 12),
-      makeUpdateShort(ShortChannelId(s"0x0x5"), e, f, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 12),
-      makeUpdateShort(ShortChannelId(s"0x0x6"), f, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 12)
+      makeUpdateShort(ShortChannelId(s"0x0x1"), a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
+      makeUpdateShort(ShortChannelId(s"0x0x4"), a, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
+      makeUpdateShort(ShortChannelId(s"0x0x2"), b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(10)), // smaller CLTV
+      makeUpdateShort(ShortChannelId(s"0x0x3"), c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
+      makeUpdateShort(ShortChannelId(s"0x0x5"), e, f, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
+      makeUpdateShort(ShortChannelId(s"0x0x6"), f, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(12))
     ).toMap)
 
 
@@ -899,12 +899,12 @@ class RouteCalculationSpec extends FunSuite {
     // A -> B -> C -> D is cheaper but has a total CLTV > 2016!
     // A -> E -> F -> D is more expensive but has a total CLTV < 2016
     val g = makeGraph(List(
-      makeUpdateShort(ShortChannelId(s"0x0x1"), a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"0x0x4"), a, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"0x0x2"), b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 1000),
-      makeUpdateShort(ShortChannelId(s"0x0x3"), c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 900),
-      makeUpdateShort(ShortChannelId(s"0x0x5"), e, f, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144),
-      makeUpdateShort(ShortChannelId(s"0x0x6"), f, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = 144)
+      makeUpdateShort(ShortChannelId(s"0x0x1"), a, b, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeUpdateShort(ShortChannelId(s"0x0x4"), a, e, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeUpdateShort(ShortChannelId(s"0x0x2"), b, c, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(1000)),
+      makeUpdateShort(ShortChannelId(s"0x0x3"), c, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(900)),
+      makeUpdateShort(ShortChannelId(s"0x0x5"), e, f, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeUpdateShort(ShortChannelId(s"0x0x6"), f, d, feeBase = MilliSatoshi(1), 0, minHtlc = MilliSatoshi(0), maxHtlc = None, cltvDelta = CltvExpiryDelta(144))
     ).toMap)
 
     val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
@@ -921,17 +921,17 @@ class RouteCalculationSpec extends FunSuite {
     // This test have a channel (542280x2156x0) that according to heuristics is very convenient but actually useless to reach the target,
     // then if the cost function is not monotonic the path-finding breaks because the result path contains a loop.
     val updates = List(
-      ChannelDesc(ShortChannelId("565643x1216x0"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565643x1216x0"), 0, 1.toByte, 1.toByte, 144, htlcMinimumMsat = MilliSatoshi(0), feeBaseMsat = MilliSatoshi(1000), 100, Some(MilliSatoshi(15000000000L))),
-      ChannelDesc(ShortChannelId("565643x1216x0"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565643x1216x0"), 0, 1.toByte, 0.toByte, 14, htlcMinimumMsat = MilliSatoshi(1), MilliSatoshi(1000), 10, Some(MilliSatoshi(4294967295L))),
-      ChannelDesc(ShortChannelId("542280x2156x0"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 1.toByte, 144, htlcMinimumMsat = MilliSatoshi(1000), feeBaseMsat =  MilliSatoshi(1000), 100, Some(MilliSatoshi(16777000000L))),
-      ChannelDesc(ShortChannelId("542280x2156x0"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 0.toByte, 144, htlcMinimumMsat = MilliSatoshi(1), MilliSatoshi(667), 1, Some(MilliSatoshi(16777000000L))),
-      ChannelDesc(ShortChannelId("565779x2711x0"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565779x2711x0"), 0, 1.toByte, 3.toByte, 144, htlcMinimumMsat = MilliSatoshi(1), MilliSatoshi(1000), 100, Some(MilliSatoshi(230000000L))),
-      ChannelDesc(ShortChannelId("565779x2711x0"), PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565779x2711x0"), 0, 1.toByte, 0.toByte, 144, htlcMinimumMsat = MilliSatoshi(1), MilliSatoshi(1000), 100, Some(MilliSatoshi(230000000L)))
+      ChannelDesc(ShortChannelId("565643x1216x0"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565643x1216x0"), 0, 1.toByte, 1.toByte, CltvExpiryDelta(144), htlcMinimumMsat = MilliSatoshi(0), feeBaseMsat = MilliSatoshi(1000), 100, Some(MilliSatoshi(15000000000L))),
+      ChannelDesc(ShortChannelId("565643x1216x0"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565643x1216x0"), 0, 1.toByte, 0.toByte, CltvExpiryDelta(14), htlcMinimumMsat = MilliSatoshi(1), MilliSatoshi(1000), 10, Some(MilliSatoshi(4294967295L))),
+      ChannelDesc(ShortChannelId("542280x2156x0"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 1.toByte, CltvExpiryDelta(144), htlcMinimumMsat = MilliSatoshi(1000), feeBaseMsat = MilliSatoshi(1000), 100, Some(MilliSatoshi(16777000000L))),
+      ChannelDesc(ShortChannelId("542280x2156x0"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 0.toByte, CltvExpiryDelta(144), htlcMinimumMsat = MilliSatoshi(1), MilliSatoshi(667), 1, Some(MilliSatoshi(16777000000L))),
+      ChannelDesc(ShortChannelId("565779x2711x0"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565779x2711x0"), 0, 1.toByte, 3.toByte, CltvExpiryDelta(144), htlcMinimumMsat = MilliSatoshi(1), MilliSatoshi(1000), 100, Some(MilliSatoshi(230000000L))),
+      ChannelDesc(ShortChannelId("565779x2711x0"), PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")) -> ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565779x2711x0"), 0, 1.toByte, 0.toByte, CltvExpiryDelta(144), htlcMinimumMsat = MilliSatoshi(1), MilliSatoshi(1000), 100, Some(MilliSatoshi(230000000L)))
     ).toMap
 
     val g = DirectedGraph.makeGraph(updates)
 
-    val params = RouteParams(randomize = false, maxFeeBase = MilliSatoshi(21000), maxFeePct = 0.03, routeMaxCltv = 1008, routeMaxLength = 6, ratios = Some(
+    val params = RouteParams(randomize = false, maxFeeBase = MilliSatoshi(21000), maxFeePct = 0.03, routeMaxCltv = CltvExpiryDelta(1008), routeMaxLength = 6, ratios = Some(
       WeightRatios(cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5)
     ))
     val thisNode = PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96")
@@ -952,7 +952,7 @@ object RouteCalculationSpec {
 
   val DEFAULT_AMOUNT_MSAT = MilliSatoshi(10000000)
 
-  val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, maxFeeBase = MilliSatoshi(21000), maxFeePct = 0.03, routeMaxCltv = 2016, routeMaxLength = 6, ratios = None)
+  val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, maxFeeBase = MilliSatoshi(21000), maxFeePct = 0.03, routeMaxCltv = CltvExpiryDelta(2016), routeMaxLength = 6, ratios = None)
 
   val DUMMY_SIG = Transactions.PlaceHolderSig
 
@@ -961,11 +961,11 @@ object RouteCalculationSpec {
     ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, ByteVector.empty, Block.RegtestGenesisBlock.hash, ShortChannelId(shortChannelId), nodeId1, nodeId2, randomKey.publicKey, randomKey.publicKey)
   }
 
-  def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: Option[MilliSatoshi] = None, cltvDelta: Int = 0): (ChannelDesc, ChannelUpdate) = {
+  def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: Option[MilliSatoshi] = None, cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0)): (ChannelDesc, ChannelUpdate) = {
     makeUpdateShort(ShortChannelId(shortChannelId), nodeId1, nodeId2, feeBase, feeProportionalMillionth, minHtlc, maxHtlc, cltvDelta)
   }
 
-  def makeUpdateShort(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: Option[MilliSatoshi] = None, cltvDelta: Int = 0, timestamp: Long = 0): (ChannelDesc, ChannelUpdate) =
+  def makeUpdateShort(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: Option[MilliSatoshi] = None, cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0), timestamp: Long = 0): (ChannelDesc, ChannelUpdate) =
     ChannelDesc(shortChannelId, nodeId1, nodeId2) -> ChannelUpdate(
       signature = DUMMY_SIG,
       chainHash = Block.RegtestGenesisBlock.hash,

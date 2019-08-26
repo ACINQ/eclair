@@ -22,8 +22,8 @@ import scodec.Codec
 import scodec.codecs._
 
 /**
-  * Created by PM on 15/11/2016.
-  */
+ * Created by PM on 15/11/2016.
+ */
 object LightningMessageCodecs {
 
   val initCodec: Codec[Init] = (
@@ -58,7 +58,7 @@ object LightningMessageCodecs {
       ("channelReserveSatoshis" | satoshi) ::
       ("htlcMinimumMsat" | millisatoshi) ::
       ("feeratePerKw" | uint32) ::
-      ("toSelfDelay" | uint16) ::
+      ("toSelfDelay" | cltvExpiryDelta) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubkey" | publicKey) ::
       ("revocationBasepoint" | publicKey) ::
@@ -75,7 +75,7 @@ object LightningMessageCodecs {
       ("channelReserveSatoshis" | satoshi) ::
       ("htlcMinimumMsat" | millisatoshi) ::
       ("minimumDepth" | uint32) ::
-      ("toSelfDelay" | uint16) ::
+      ("toSelfDelay" | cltvExpiryDelta) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubkey" | publicKey) ::
       ("revocationBasepoint" | publicKey) ::
@@ -112,7 +112,7 @@ object LightningMessageCodecs {
       ("id" | uint64overflow) ::
       ("amountMsat" | millisatoshi) ::
       ("paymentHash" | bytes32) ::
-      ("expiry" | uint32) ::
+      ("expiry" | cltvExpiry) ::
       ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec)).as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
@@ -186,7 +186,7 @@ object LightningMessageCodecs {
       ("shortChannelId" | shortchannelid) ::
       (("messageFlags" | byte) >>:~ { messageFlags =>
         ("channelFlags" | byte) ::
-          ("cltvExpiryDelta" | uint16) ::
+          ("cltvExpiryDelta" | cltvExpiryDelta) ::
           ("htlcMinimumMsat" | millisatoshi) ::
           ("feeBaseMsat" | millisatoshi32) ::
           ("feeProportionalMillionths" | uint32) ::
@@ -199,7 +199,7 @@ object LightningMessageCodecs {
       ("timestamp" | uint32) ::
       (("messageFlags" | byte) >>:~ { messageFlags =>
         ("channelFlags" | byte) ::
-          ("cltvExpiryDelta" | uint16) ::
+          ("cltvExpiryDelta" | cltvExpiryDelta) ::
           ("htlcMinimumMsat" | millisatoshi) ::
           ("feeBaseMsat" | millisatoshi32) ::
           ("feeProportionalMillionths" | uint32) ::

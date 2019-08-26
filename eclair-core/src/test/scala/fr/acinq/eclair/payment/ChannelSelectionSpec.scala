@@ -16,14 +16,14 @@
 
 package fr.acinq.eclair.payment
 
-import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC}
+import fr.acinq.eclair.payment.HtlcGenerationSpec.makeCommitments
 import fr.acinq.eclair.payment.Relayer.{OutgoingChannel, RelayFailure, RelayPayload, RelaySuccess}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TestConstants, randomBytes32, randomKey}
-import fr.acinq.eclair.payment.HtlcGenerationSpec.makeCommitments
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 
 import scala.collection.mutable
@@ -31,19 +31,19 @@ import scala.collection.mutable
 class ChannelSelectionSpec extends FunSuite {
 
   /**
-    * This is just a simplified helper function with random values for fields we are not using here
-    */
-  def dummyUpdate(shortChannelId: ShortChannelId, cltvExpiryDelta: Int, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Long, enable: Boolean = true) =
+   * This is just a simplified helper function with random values for fields we are not using here
+   */
+  def dummyUpdate(shortChannelId: ShortChannelId, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Long, enable: Boolean = true) =
     Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, shortChannelId, cltvExpiryDelta, htlcMinimumMsat, MilliSatoshi(feeBaseMsat), feeProportionalMillionths, MilliSatoshi(htlcMaximumMsat), enable)
 
   test("convert to CMD_FAIL_HTLC/CMD_ADD_HTLC") {
     val relayPayload = RelayPayload(
-      add = UpdateAddHtlc(randomBytes32, 42, MilliSatoshi(1000000), randomBytes32, 70, TestConstants.emptyOnionPacket),
-      payload = PerHopPayload(ShortChannelId(12345), amtToForward = MilliSatoshi(998900), outgoingCltvValue = 60),
+      add = UpdateAddHtlc(randomBytes32, 42, MilliSatoshi(1000000), randomBytes32, CltvExpiry(70), TestConstants.emptyOnionPacket),
+      payload = PerHopPayload(ShortChannelId(12345), amtToForward = MilliSatoshi(998900), outgoingCltvValue = CltvExpiry(60)),
       nextPacket = TestConstants.emptyOnionPacket // just a placeholder
     )
 
-    val channelUpdate = dummyUpdate(ShortChannelId(12345), 10, MilliSatoshi(100), 1000, 100, 10000000, true)
+    val channelUpdate = dummyUpdate(ShortChannelId(12345), CltvExpiryDelta(10), MilliSatoshi(100), 1000, 100, 10000000, true)
 
     implicit val log = akka.event.NoLogging
 
@@ -58,7 +58,7 @@ class ChannelSelectionSpec extends FunSuite {
     val relayPayload_toolow = relayPayload.copy(payload = relayPayload.payload.copy(amtToForward = MilliSatoshi(99)))
     assert(Relayer.relayOrFail(relayPayload_toolow, Some(channelUpdate)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(AmountBelowMinimum(relayPayload_toolow.payload.amtToForward, channelUpdate)), commit = true)))
     // incorrect cltv expiry
-    val relayPayload_incorrectcltv = relayPayload.copy(payload = relayPayload.payload.copy(outgoingCltvValue = 42))
+    val relayPayload_incorrectcltv = relayPayload.copy(payload = relayPayload.payload.copy(outgoingCltvValue = CltvExpiry(42)))
     assert(Relayer.relayOrFail(relayPayload_incorrectcltv, Some(channelUpdate)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(IncorrectCltvExpiry(relayPayload_incorrectcltv.payload.outgoingCltvValue, channelUpdate)), commit = true)))
     // insufficient fee
     val relayPayload_insufficientfee = relayPayload.copy(payload = relayPayload.payload.copy(amtToForward = MilliSatoshi(998910)))
@@ -71,13 +71,13 @@ class ChannelSelectionSpec extends FunSuite {
   test("channel selection") {
 
     val relayPayload = RelayPayload(
-      add = UpdateAddHtlc(randomBytes32, 42, MilliSatoshi(1000000), randomBytes32, 70, TestConstants.emptyOnionPacket),
-      payload = PerHopPayload(ShortChannelId(12345), amtToForward = MilliSatoshi(998900), outgoingCltvValue = 60),
+      add = UpdateAddHtlc(randomBytes32, 42, MilliSatoshi(1000000), randomBytes32, CltvExpiry(70), TestConstants.emptyOnionPacket),
+      payload = PerHopPayload(ShortChannelId(12345), amtToForward = MilliSatoshi(998900), outgoingCltvValue = CltvExpiry(60)),
       nextPacket = TestConstants.emptyOnionPacket // just a placeholder
     )
 
     val (a, b) = (randomKey.publicKey, randomKey.publicKey)
-    val channelUpdate = dummyUpdate(ShortChannelId(12345), 10, MilliSatoshi(100), 1000, 100, 10000000, true)
+    val channelUpdate = dummyUpdate(ShortChannelId(12345), CltvExpiryDelta(10), MilliSatoshi(100), 1000, 100, 10000000, true)
 
     val channelUpdates = Map(
       ShortChannelId(11111) -> OutgoingChannel(a, channelUpdate, makeCommitments(ByteVector32.Zeroes, MilliSatoshi(100000000))),
@@ -110,8 +110,7 @@ class ChannelSelectionSpec extends FunSuite {
     // payment too high, no suitable channel found
     assert(Relayer.selectPreferredChannel(relayPayload.modify(_.payload.amtToForward).setTo(MilliSatoshi(1000000000)), channelUpdates, node2channels, Seq.empty) === Some(ShortChannelId(12345)))
     // invalid cltv expiry, no suitable channel, we keep the requested one
-    assert(Relayer.selectPreferredChannel(relayPayload.modify(_.payload.outgoingCltvValue).setTo(40), channelUpdates, node2channels, Seq.empty) === Some(ShortChannelId(12345)))
-
+    assert(Relayer.selectPreferredChannel(relayPayload.modify(_.payload.outgoingCltvValue).setTo(CltvExpiry(40)), channelUpdates, node2channels, Seq.empty) === Some(ShortChannelId(12345)))
   }
 
 }

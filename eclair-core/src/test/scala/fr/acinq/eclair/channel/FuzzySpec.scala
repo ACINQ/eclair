@@ -21,8 +21,8 @@ import java.util.concurrent.CountDownLatch
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
-import org.scalatest.Tag
+import org.scalatest.{Outcome, Tag}
 
 import scala.collection.immutable.Nil
 import scala.concurrent.duration._
@@ -46,7 +46,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], pipe: ActorRef, relayerA: ActorRef, relayerB: ActorRef, paymentHandlerA: ActorRef, paymentHandlerB: ActorRef)
 
-  override def withFixture(test: OneArgTest) = {
+  override def withFixture(test: OneArgTest): Outcome = {
     val fuzzy = test.tags.contains("fuzzy")
     val pipe = system.actorOf(Props(new FuzzyPipe(fuzzy)))
     val alice2blockchain = TestProbe()
@@ -94,7 +94,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     def buildCmdAdd(paymentHash: ByteVector32, dest: PublicKey) = {
       // allow overpaying (no more than 2 times the required amount)
       val amount = MilliSatoshi(requiredAmount + Random.nextInt(requiredAmount))
-      val expiry = Globals.blockCount.get().toInt + Channel.MIN_CLTV_EXPIRY + 1
+      val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry
       PaymentLifecycle.buildCommand(UUID.randomUUID(), amount, expiry, paymentHash, Hop(null, dest, null) :: Nil)._1
     }
 
