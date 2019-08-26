@@ -21,6 +21,7 @@ import java.util.zip.CRC32
 import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
+import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
@@ -118,6 +119,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   import Router._
 
   import ExecutionContext.Implicits.global
+
+  // we pass these to helpers classes so that they have the logging context
+  implicit def implicitLog: LoggingAdapter = log
 
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
@@ -580,7 +584,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       var updateCount = 0
       var nodeCount = 0
 
-      Router.handleQuery(d.nodes, d.channels, d.updates)(
+      Router.processChannelQuery(d.nodes, d.channels, d.updates)(
         shortChannelIds.array,
         flags,
         ca => {
@@ -924,14 +928,14 @@ object Router {
     * @param onNode called when a node announcement matches
     *
     */
-  def handleQuery(nodes: Map[PublicKey, NodeAnnouncement],
-                  channels: SortedMap[ShortChannelId, ChannelAnnouncement],
-                  updates: Map[ChannelDesc, ChannelUpdate])(
+  def processChannelQuery(nodes: Map[PublicKey, NodeAnnouncement],
+                          channels: SortedMap[ShortChannelId, ChannelAnnouncement],
+                          updates: Map[ChannelDesc, ChannelUpdate])(
     ids: List[ShortChannelId],
     flags: List[Long],
     onChannel: ChannelAnnouncement => Unit,
     onUpdate: ChannelUpdate => Unit,
-    onNode: NodeAnnouncement => Unit): Unit = {
+    onNode: NodeAnnouncement => Unit)(implicit log: LoggingAdapter): Unit = {
     import QueryShortChannelIdsTlv.QueryFlagType
 
     // we loop over channel ids and query flag. We track node Ids for node announcement
@@ -940,7 +944,7 @@ object Router {
     def loop(ids: List[ShortChannelId], flags: List[Long], numca: Int = 0, numcu: Int = 0, nodesSent: Set[PublicKey] = Set.empty[PublicKey]): (Int, Int, Int) = ids match {
       case Nil => (numca, numcu, nodesSent.size)
       case head :: tail if !channels.contains(head) =>
-        //log.warning("received query for shortChannelId={} that we don't have", head)
+        log.warning("received query for shortChannelId={} that we don't have", head)
         loop(tail, flags.drop(1), numca, numcu, nodesSent)
       case head :: tail =>
         var numca1 = numca
