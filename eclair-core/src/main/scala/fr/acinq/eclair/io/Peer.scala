@@ -153,8 +153,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         }
         if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
-          // NB: we always add extended info; if peer doesn't understand them it will ignore them
-
           // README: for now we do not activate extended queries on mainnet
           val flags_opt = nodeParams.chainHash match {
             case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash =>
