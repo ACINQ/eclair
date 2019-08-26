@@ -26,6 +26,48 @@ import scala.compat.Platform
 
 class ChannelRangeQueriesSpec extends FunSuite {
 
+  test("ask for update test") {
+    // they don't provide anything => we always ask for the update
+    assert(Router.shouldRequestUpdate(0, 0, None, None))
+    assert(Router.shouldRequestUpdate(Int.MaxValue, 12345, None, None))
+
+    // their update is older => don't ask
+    val now = Platform.currentTime / 1000
+    assert(!Router.shouldRequestUpdate(now, 0, Some(now - 1), None))
+    assert(!Router.shouldRequestUpdate(now, 0, Some(now - 1), Some(12345)))
+    assert(!Router.shouldRequestUpdate(now, 12344, Some(now - 1), None))
+    assert(!Router.shouldRequestUpdate(now, 12344, Some(now - 1), Some(12345)))
+
+    // their update is newer but stale => don't ask
+    val old = now - 4 * 2016 * 24 * 3600
+    assert(!Router.shouldRequestUpdate(old - 1, 0, Some(old), None))
+    assert(!Router.shouldRequestUpdate(old - 1, 0, Some(old), Some(12345)))
+    assert(!Router.shouldRequestUpdate(old - 1, 12344, Some(old), None))
+    assert(!Router.shouldRequestUpdate(old - 1, 12344, Some(old), Some(12345)))
+
+    // their update is newer but with the same checksum, and ours is stale or about to be => ask (we want to renew our update)
+    assert(Router.shouldRequestUpdate(old, 12345, Some(now), Some(12345)))
+
+    // their update is newer but with the same checksum => don't ask
+    assert(!Router.shouldRequestUpdate(now - 1, 12345, Some(now), Some(12345)))
+
+    // their update is newer with a different checksum => always ask
+    assert(Router.shouldRequestUpdate(now - 1, 0, Some(now), None))
+    assert(Router.shouldRequestUpdate(now - 1, 0, Some(now), Some(12345)))
+    assert(Router.shouldRequestUpdate(now - 1, 12344, Some(now), None))
+    assert(Router.shouldRequestUpdate(now - 1, 12344, Some(now), Some(12345)))
+
+    // they just provided a 0 checksum => don't ask
+    assert(!Router.shouldRequestUpdate(0, 0, None, Some(0)))
+    assert(!Router.shouldRequestUpdate(now, 1234, None, Some(0)))
+
+    // they just provided a checksum that is the same as us => don't ask
+    assert(!Router.shouldRequestUpdate(now, 1234, None, Some(1234)))
+
+    // they just provided a different checksum that is the same as us => ask
+    assert(Router.shouldRequestUpdate(now, 1234, None, Some(1235)))
+  }
+
   test("compute flag tests") {
 
     val now = Platform.currentTime / 1000
