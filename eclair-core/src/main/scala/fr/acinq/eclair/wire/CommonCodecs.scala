@@ -18,11 +18,13 @@ package fr.acinq.eclair.wire
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
+import com.google.common.primitives.UnsignedLongs
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64}
 import org.apache.commons.codec.binary.Base32
+import org.graalvm.compiler.core.common.util.UnsignedLong
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}

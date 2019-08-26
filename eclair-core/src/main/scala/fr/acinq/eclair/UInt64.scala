@@ -16,34 +16,31 @@
 
 package fr.acinq.eclair
 
-import java.math.BigInteger
-
+import com.google.common.primitives.UnsignedLongs
 import scodec.bits.ByteVector
+import scodec.bits._
 
-case class UInt64(private val underlying: BigInt) extends Ordered[UInt64] {
+case class UInt64(private val underlying: Long) extends Ordered[UInt64] {
 
-  require(underlying >= 0, s"uint64 must be positive (actual=$underlying)")
-  require(underlying <= UInt64.MaxValueBigInt, s"uint64 must be < 2^64 -1 (actual=$underlying)")
+  override def compare(o: UInt64): Int = UnsignedLongs.compare(underlying, o.underlying)
 
-  override def compare(o: UInt64): Int = underlying.compare(o.underlying)
+  def toByteVector: ByteVector = ByteVector.fromValidHex(UnsignedLongs.toString(underlying, 16))
 
-  def toByteVector: ByteVector = ByteVector.view(underlying.toByteArray.takeRight(8))
+  def toBigInt: BigInt = BigInt(toString)
 
-  def toBigInt: BigInt = underlying
+  def toLong: Long = underlying
 
-  override def toString: String = underlying.toString
+  override def toString: String = UnsignedLongs.toString(underlying, 10)
 }
-
 
 object UInt64 {
 
-  private val MaxValueBigInt = BigInt(new BigInteger("ffffffffffffffff", 16))
+  val MaxValue = UInt64(hex"0xffffffffffffffff")
 
-  val MaxValue = UInt64(MaxValueBigInt)
-
-  def apply(bin: ByteVector) = new UInt64(new BigInteger(1, bin.toArray))
-
-  def apply(value: Long) = new UInt64(BigInt(value))
+  def apply(bin: ByteVector): UInt64 = bin.toHex match {
+    case hex if hex.isEmpty => UInt64(0)
+    case hex => new UInt64(UnsignedLongs.parseUnsignedLong(hex, 16))
+  }
 
   object Conversions {
 
@@ -51,5 +48,4 @@ object UInt64 {
 
     implicit def longToUint64(l: Long) = UInt64(l)
   }
-
 }

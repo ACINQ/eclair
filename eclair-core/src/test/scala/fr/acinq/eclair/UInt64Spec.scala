@@ -31,6 +31,7 @@ class UInt64Spec extends FunSuite {
     assert(b < a)
     assert(z < a && z < b && z < c)
     assert(a == a)
+    assert(a == UInt64.MaxValue)
     assert(a.toByteVector === hex"0xffffffffffffffff")
     assert(a.toString === "18446744073709551615")
     assert(b.toByteVector === hex"0xfffffffffffffffe")
