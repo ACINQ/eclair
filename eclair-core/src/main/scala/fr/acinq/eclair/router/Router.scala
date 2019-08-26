@@ -625,7 +625,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       }
 
       val (channelCount, updateCount, nodeCount) = loop(shortChannelIds.array, flags)
-      log.info("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} node announcements", shortChannelIds.array.size, channelCount, updateCount, nodeCount)
+      log.info("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", shortChannelIds.array.size, channelCount, updateCount, nodeCount)
       transport ! ReplyShortChannelIdsEnd(chainHash, 1)
       stay
 
