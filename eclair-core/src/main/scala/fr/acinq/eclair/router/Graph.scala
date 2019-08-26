@@ -29,7 +29,7 @@ object Graph {
 
   // @formatter:off
   // A compound weight for an edge, weight is obtained with (cost X factor),'cost' contains the actual amount+fees in millisatoshi, 'cltvCumulative' the total CLTV necessary to reach this edge
-  case class RichWeight(cost: MilliSatoshi, length: Int, cltv: Int, weight: Double) extends Ordered[RichWeight] {
+  case class RichWeight(cost: MilliSatoshi, length: Int, cltv: CltvExpiryDelta, weight: Double) extends Ordered[RichWeight] {
     override def compare(that:  RichWeight): Int = this.weight.compareTo(that.weight)
   }
   case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) {
@@ -40,9 +40,9 @@ object Graph {
   // @formatter:on
 
   /**
-    * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
-    * the same weight we distinguish them by their public key. See https://docs.oracle.com/javase/8/docs/api/java/util/Comparator.html
-    */
+   * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
+   * the same weight we distinguish them by their public key. See https://docs.oracle.com/javase/8/docs/api/java/util/Comparator.html
+   */
   object QueueComparator extends Ordering[WeightedNode] {
     override def compare(x: WeightedNode, y: WeightedNode): Int = {
       val weightCmp = x.weight.compareTo(y.weight)
@@ -56,19 +56,19 @@ object Graph {
   }
 
   /**
-    * Yen's algorithm to find the k-shortest (loopless) paths in a graph, uses dijkstra as search algo. Is guaranteed to terminate finding
-    * at most @pathsToFind paths sorted by cost (the cheapest is in position 0).
-    *
-    * @param graph
-    * @param sourceNode
-    * @param targetNode
-    * @param amount
-    * @param pathsToFind
-    * @param wr                 an object containing the ratios used to 'weight' edges when searching for the shortest path
-    * @param currentBlockHeight the height of the chain tip (latest block)
-    * @param boundaries         a predicate function that can be used to impose limits on the outcome of the search
-    * @return
-    */
+   * Yen's algorithm to find the k-shortest (loopless) paths in a graph, uses dijkstra as search algo. Is guaranteed to terminate finding
+   * at most @pathsToFind paths sorted by cost (the cheapest is in position 0).
+   *
+   * @param graph
+   * @param sourceNode
+   * @param targetNode
+   * @param amount
+   * @param pathsToFind
+   * @param wr                 an object containing the ratios used to 'weight' edges when searching for the shortest path
+   * @param currentBlockHeight the height of the chain tip (latest block)
+   * @param boundaries         a predicate function that can be used to impose limits on the outcome of the search
+   * @return
+   */
   def yenKshortestPaths(graph: DirectedGraph,
                         sourceNode: PublicKey,
                         targetNode: PublicKey,
@@ -88,7 +88,7 @@ object Graph {
     val candidates = new mutable.PriorityQueue[WeightedPath]
 
     // find the shortest path, k = 0
-    val initialWeight = RichWeight(cost = amount, 0, 0, 0)
+    val initialWeight = RichWeight(cost = amount, 0, CltvExpiryDelta(0), 0)
     val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, extraEdges, initialWeight, boundaries, currentBlockHeight, wr)
     shortestPaths += WeightedPath(shortestPath, pathWeight(shortestPath, amount, isPartial = false, currentBlockHeight, wr))
 
@@ -159,20 +159,20 @@ object Graph {
   }
 
   /**
-    * Finds the shortest path in the graph, uses a modified version of Dijsktra's algorithm that computes
-    * the shortest path from the target to the source (this is because we want to calculate the weight of the
-    * edges correctly). The graph @param g is optimized for querying the incoming edges given a vertex.
-    *
-    * @param g                  the graph on which will be performed the search
-    * @param sourceNode         the starting node of the path we're looking for
-    * @param targetNode         the destination node of the path
-    * @param ignoredEdges       a list of edges we do not want to consider
-    * @param extraEdges         a list of extra edges we want to consider but are not currently in the graph
-    * @param wr                 an object containing the ratios used to 'weight' edges when searching for the shortest path
-    * @param currentBlockHeight the height of the chain tip (latest block)
-    * @param boundaries         a predicate function that can be used to impose limits on the outcome of the search
-    * @return
-    */
+   * Finds the shortest path in the graph, uses a modified version of Dijsktra's algorithm that computes
+   * the shortest path from the target to the source (this is because we want to calculate the weight of the
+   * edges correctly). The graph @param g is optimized for querying the incoming edges given a vertex.
+   *
+   * @param g                  the graph on which will be performed the search
+   * @param sourceNode         the starting node of the path we're looking for
+   * @param targetNode         the destination node of the path
+   * @param ignoredEdges       a list of edges we do not want to consider
+   * @param extraEdges         a list of extra edges we want to consider but are not currently in the graph
+   * @param wr                 an object containing the ratios used to 'weight' edges when searching for the shortest path
+   * @param currentBlockHeight the height of the chain tip (latest block)
+   * @param boundaries         a predicate function that can be used to impose limits on the outcome of the search
+   * @return
+   */
 
   def dijkstraShortestPath(g: DirectedGraph,
                            sourceNode: PublicKey,
@@ -237,7 +237,7 @@ object Graph {
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
             val neighborCost = weight.containsKey(neighbor) match {
-              case false => RichWeight(MilliSatoshi(Long.MaxValue), Int.MaxValue, Int.MaxValue, Double.MaxValue)
+              case false => RichWeight(MilliSatoshi(Long.MaxValue), Int.MaxValue, CltvExpiryDelta(Int.MaxValue), Double.MaxValue)
               case true => weight.get(neighbor)
             }
 
@@ -294,8 +294,8 @@ object Graph {
       val edgeMaxCapacity = edge.update.htlcMaximumMsat.getOrElse(CAPACITY_CHANNEL_LOW)
       val capFactor = 1 - normalize(edgeMaxCapacity.toLong, CAPACITY_CHANNEL_LOW.toLong, CAPACITY_CHANNEL_HIGH.toLong)
 
-      // Every edge is weighted by its clvt-delta value, normalized
-      val channelCltvDelta = edge.update.cltvExpiryDelta
+      // Every edge is weighted by its cltv-delta value, normalized
+      val channelCltvDelta = edge.update.cltvExpiryDelta.toInt
       val cltvFactor = normalize(channelCltvDelta, CLTV_LOW, CLTV_HIGH)
 
       // NB 'edgeCost' includes the amount to be sent plus the fees that must be paid to traverse this @param edge
@@ -309,16 +309,16 @@ object Graph {
   }
 
   /**
-    * This forces channel_update(s) with fees=0 to have a minimum of 1msat for the baseFee. Note that
-    * the update is not being modified and the result of the route computation will still have the update
-    * with fees=0 which is what will be used to build the onion.
-    *
-    * @param edge           the edge for which we want to compute the weight
-    * @param amountWithFees the value that this edge will have to carry along
-    * @return the new amount updated with the necessary fees for this edge
-    */
-  private def edgeFeeCost(edge: GraphEdge, amountWithFees: MilliSatoshi):MilliSatoshi = {
-    if(edgeHasZeroFee(edge)) amountWithFees + nodeFee(baseFee = MilliSatoshi(1), proportionalFee = 0, amountWithFees)
+   * This forces channel_update(s) with fees=0 to have a minimum of 1msat for the baseFee. Note that
+   * the update is not being modified and the result of the route computation will still have the update
+   * with fees=0 which is what will be used to build the onion.
+   *
+   * @param edge           the edge for which we want to compute the weight
+   * @param amountWithFees the value that this edge will have to carry along
+   * @return the new amount updated with the necessary fees for this edge
+   */
+  private def edgeFeeCost(edge: GraphEdge, amountWithFees: MilliSatoshi): MilliSatoshi = {
+    if (edgeHasZeroFee(edge)) amountWithFees + nodeFee(baseFee = MilliSatoshi(1), proportionalFee = 0, amountWithFees)
     else amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
   }
 
@@ -328,7 +328,7 @@ object Graph {
 
   // Calculates the total cost of a path (amount + fees), direct channels with the source will have a cost of 0 (pay no fees)
   def pathWeight(path: Seq[GraphEdge], amountMsat: MilliSatoshi, isPartial: Boolean, currentBlockHeight: Long, wr: Option[WeightRatios]): RichWeight = {
-    path.drop(if (isPartial) 0 else 1).foldRight(RichWeight(amountMsat, 0, 0, 0)) { (edge, prev) =>
+    path.drop(if (isPartial) 0 else 1).foldRight(RichWeight(amountMsat, 0, CltvExpiryDelta(0), 0)) { (edge, prev) =>
       edgeWeight(edge, prev, false, currentBlockHeight, wr)
     }
   }
@@ -348,14 +348,14 @@ object Graph {
     val CLTV_HIGH = 2016
 
     /**
-      * Normalize the given value between (0, 1). If the @param value is outside the min/max window we flatten it to something very close to the
-      * extremes but always bigger than zero so it's guaranteed to never return zero
-      *
-      * @param value
-      * @param min
-      * @param max
-      * @return
-      */
+     * Normalize the given value between (0, 1). If the @param value is outside the min/max window we flatten it to something very close to the
+     * extremes but always bigger than zero so it's guaranteed to never return zero
+     *
+     * @param value
+     * @param min
+     * @param max
+     * @return
+     */
     def normalize(value: Double, min: Double, max: Double) = {
       if (value <= min) 0.00001D
       else if (value > max) 0.99999D
@@ -364,16 +364,16 @@ object Graph {
   }
 
   /**
-    * A graph data structure that uses the adjacency lists, stores the incoming edges of the neighbors
-    */
+   * A graph data structure that uses the adjacency lists, stores the incoming edges of the neighbors
+   */
   object GraphStructure {
 
     /**
-      * Representation of an edge of the graph
-      *
-      * @param desc   channel description
-      * @param update channel info
-      */
+     * Representation of an edge of the graph
+     *
+     * @param desc   channel description
+     * @param update channel info
+     */
     case class GraphEdge(desc: ChannelDesc, update: ChannelUpdate)
 
     case class DirectedGraph(private val vertices: Map[PublicKey, List[GraphEdge]]) {
@@ -385,11 +385,11 @@ object Graph {
       }
 
       /**
-        * Adds and edge to the graph, if one of the two vertices is not found, it will be created.
-        *
-        * @param edge the edge that is going to be added to the graph
-        * @return a new graph containing this edge
-        */
+       * Adds and edge to the graph, if one of the two vertices is not found, it will be created.
+       *
+       * @param edge the edge that is going to be added to the graph
+       * @return a new graph containing this edge
+       */
       def addEdge(edge: GraphEdge): DirectedGraph = {
 
         val vertexIn = edge.desc.a
@@ -405,12 +405,12 @@ object Graph {
       }
 
       /**
-        * Removes the edge corresponding to the given pair channel-desc/channel-update,
-        * NB: this operation does NOT remove any vertex
-        *
-        * @param desc the channel description associated to the edge that will be removed
-        * @return
-        */
+       * Removes the edge corresponding to the given pair channel-desc/channel-update,
+       * NB: this operation does NOT remove any vertex
+       *
+       * @param desc the channel description associated to the edge that will be removed
+       * @return
+       */
       def removeEdge(desc: ChannelDesc): DirectedGraph = {
         containsEdge(desc) match {
           case true => DirectedGraph(vertices.updated(desc.b, vertices(desc.b).filterNot(_.desc == desc)))
@@ -423,9 +423,9 @@ object Graph {
       }
 
       /**
-        * @param edge
-        * @return For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
-        */
+       * @param edge
+       * @return For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
+       */
       def getEdge(edge: GraphEdge): Option[GraphEdge] = getEdge(edge.desc)
 
       def getEdge(desc: ChannelDesc): Option[GraphEdge] = {
@@ -435,10 +435,10 @@ object Graph {
       }
 
       /**
-        * @param keyA the key associated with the starting vertex
-        * @param keyB the key associated with the ending vertex
-        * @return all the edges going from keyA --> keyB (there might be more than one if it refers to different shortChannelId)
-        */
+       * @param keyA the key associated with the starting vertex
+       * @param keyB the key associated with the ending vertex
+       * @return all the edges going from keyA --> keyB (there might be more than one if it refers to different shortChannelId)
+       */
       def getEdgesBetween(keyA: PublicKey, keyB: PublicKey): Seq[GraphEdge] = {
         vertices.get(keyB) match {
           case None => Seq.empty
@@ -447,31 +447,31 @@ object Graph {
       }
 
       /**
-        * The the incoming edges for vertex @param keyB
-        *
-        * @param keyB
-        * @return
-        */
+       * The the incoming edges for vertex @param keyB
+       *
+       * @param keyB
+       * @return
+       */
       def getIncomingEdgesOf(keyB: PublicKey): Seq[GraphEdge] = {
         vertices.getOrElse(keyB, List.empty)
       }
 
       /**
-        * Removes a vertex and all it's associated edges (both incoming and outgoing)
-        *
-        * @param key
-        * @return
-        */
+       * Removes a vertex and all it's associated edges (both incoming and outgoing)
+       *
+       * @param key
+       * @return
+       */
       def removeVertex(key: PublicKey): DirectedGraph = {
         DirectedGraph(removeEdges(getIncomingEdgesOf(key).map(_.desc)).vertices - key)
       }
 
       /**
-        * Adds a new vertex to the graph, starting with no edges
-        *
-        * @param key
-        * @return
-        */
+       * Adds a new vertex to the graph, starting with no edges
+       *
+       * @param key
+       * @return
+       */
       def addVertex(key: PublicKey): DirectedGraph = {
         vertices.get(key) match {
           case None => DirectedGraph(vertices + (key -> List.empty))
@@ -480,35 +480,35 @@ object Graph {
       }
 
       /**
-        * Note this operation will traverse all edges in the graph (expensive)
-        *
-        * @param key
-        * @return a list of the outgoing edges of vertex @param key, if the edge doesn't exists an empty list is returned
-        */
+       * Note this operation will traverse all edges in the graph (expensive)
+       *
+       * @param key
+       * @return a list of the outgoing edges of vertex @param key, if the edge doesn't exists an empty list is returned
+       */
       def edgesOf(key: PublicKey): Seq[GraphEdge] = {
         edgeSet().filter(_.desc.a == key).toSeq
       }
 
       /**
-        * @return the set of all the vertices in this graph
-        */
+       * @return the set of all the vertices in this graph
+       */
       def vertexSet(): Set[PublicKey] = vertices.keySet
 
       /**
-        * @return an iterator of all the edges in this graph
-        */
+       * @return an iterator of all the edges in this graph
+       */
       def edgeSet(): Iterable[GraphEdge] = vertices.values.flatten
 
       /**
-        * @param key
-        * @return true if this graph contain a vertex with this key, false otherwise
-        */
+       * @param key
+       * @return true if this graph contain a vertex with this key, false otherwise
+       */
       def containsVertex(key: PublicKey): Boolean = vertices.contains(key)
 
       /**
-        * @param desc
-        * @return true if this edge desc is in the graph. For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
-        */
+       * @param desc
+       * @return true if this edge desc is in the graph. For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
+       */
       def containsEdge(desc: ChannelDesc): Boolean = {
         vertices.get(desc.b) match {
           case None => false

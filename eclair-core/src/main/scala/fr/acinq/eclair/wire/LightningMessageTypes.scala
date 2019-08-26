@@ -20,16 +20,16 @@ import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 import java.nio.charset.StandardCharsets
 
 import com.google.common.base.Charsets
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 import scala.util.Try
 
 /**
-  * Created by PM on 15/11/2016.
-  */
+ * Created by PM on 15/11/2016.
+ */
 
 // @formatter:off
 sealed trait LightningMessage
@@ -75,7 +75,7 @@ case class OpenChannel(chainHash: ByteVector32,
                        channelReserveSatoshis: Satoshi,
                        htlcMinimumMsat: MilliSatoshi,
                        feeratePerKw: Long,
-                       toSelfDelay: Int,
+                       toSelfDelay: CltvExpiryDelta,
                        maxAcceptedHtlcs: Int,
                        fundingPubkey: PublicKey,
                        revocationBasepoint: PublicKey,
@@ -91,7 +91,7 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          channelReserveSatoshis: Satoshi,
                          htlcMinimumMsat: MilliSatoshi,
                          minimumDepth: Long,
-                         toSelfDelay: Int,
+                         toSelfDelay: CltvExpiryDelta,
                          maxAcceptedHtlcs: Int,
                          fundingPubkey: PublicKey,
                          revocationBasepoint: PublicKey,
@@ -122,7 +122,7 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long,
                          amountMsat: MilliSatoshi,
                          paymentHash: ByteVector32,
-                         cltvExpiry: Long,
+                         cltvExpiry: CltvExpiry,
                          onionRoutingPacket: OnionRoutingPacket) extends HtlcMessage with UpdateMessage with HasChannelId
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,
@@ -216,7 +216,7 @@ case class ChannelUpdate(signature: ByteVector64,
                          timestamp: Long,
                          messageFlags: Byte,
                          channelFlags: Byte,
-                         cltvExpiryDelta: Int,
+                         cltvExpiryDelta: CltvExpiryDelta,
                          htlcMinimumMsat: MilliSatoshi,
                          feeBaseMsat: MilliSatoshi,
                          feeProportionalMillionths: Long,

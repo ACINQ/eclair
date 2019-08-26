@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId}
 import scodec.Codec
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
@@ -74,8 +74,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case expiry: PaymentRequest.Expiry => expiry.toLong
   }
 
-  lazy val minFinalCltvExpiry: Option[Long] = tags.collectFirst {
-    case cltvExpiry: PaymentRequest.MinFinalCltvExpiry => cltvExpiry.toLong
+  lazy val minFinalCltvExpiryDelta: Option[CltvExpiryDelta] = tags.collectFirst {
+    case cltvExpiry: PaymentRequest.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta
   }
 
   def isExpired: Boolean = expiry match {
@@ -268,7 +268,7 @@ object PaymentRequest {
     * @param feeProportionalMillionths node proportional fee
     * @param cltvExpiryDelta           node cltv expiry delta
     */
-  case class ExtraHop(nodeId: PublicKey, shortChannelId: ShortChannelId, feeBaseMsat: Long, feeProportionalMillionths: Long, cltvExpiryDelta: Int)
+  case class ExtraHop(nodeId: PublicKey, shortChannelId: ShortChannelId, feeBaseMsat: Long, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta)
 
   /**
     * Routing Info
@@ -296,7 +296,7 @@ object PaymentRequest {
     *
     */
   case class MinFinalCltvExpiry(bin: BitVector) extends TaggedField {
-    def toLong: Long = bin.toLong(signed = false)
+    def toCltvExpiryDelta = CltvExpiryDelta(bin.toInt(signed = false))
   }
 
   object MinFinalCltvExpiry {
@@ -320,7 +320,7 @@ object PaymentRequest {
         ("shortChannelId" | shortchannelid) ::
         ("fee_base_msat" | uint32) ::
         ("fee_proportional_millionth" | uint32) ::
-        ("cltv_expiry_delta" | uint16)
+        ("cltv_expiry_delta" | cltvExpiryDelta)
       ).as[ExtraHop]
 
     val extraHopsLengthCodec = Codec[Int](
