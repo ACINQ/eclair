@@ -19,7 +19,7 @@ package fr.acinq.eclair.api
 import java.net.InetAddress
 import java.util.UUID
 
-import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi, OutPoint, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction}
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentSettlingOnChain}
 import fr.acinq.eclair.api.JsonSupport.CustomTypeHints

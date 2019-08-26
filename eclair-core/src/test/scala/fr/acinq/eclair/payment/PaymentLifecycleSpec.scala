@@ -22,7 +22,7 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{Block, ByteVector32, MilliSatoshi, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelUnavailable}
@@ -42,7 +42,7 @@ import fr.acinq.eclair._
 
 class PaymentLifecycleSpec extends BaseRouterSpec {
 
-  val defaultAmountMsat = 142000000L
+  val defaultAmountMsat = MilliSatoshi(142000000L)
 
   test("send to route") { fixture =>
     import fixture._
@@ -109,7 +109,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
 
-    val request = SendPayment(defaultAmountMsat, randomBytes32, d, routeParams = Some(RouteParams(randomize = false, maxFeeBaseMsat = 100, maxFeePct = 0.0, routeMaxLength = 20, routeMaxCltv = 2016, ratios = None)), maxAttempts = 5)
+    val request = SendPayment(defaultAmountMsat, randomBytes32, d, routeParams = Some(RouteParams(randomize = false, maxFeeBase = MilliSatoshi(100), maxFeePct = 0.0, routeMaxLength = 20, routeMaxCltv = 2016, ratios = None)), maxAttempts = 5)
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
@@ -389,9 +389,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash))
 
     val paymentOK = sender.expectMsgType[PaymentSucceeded]
-    val PaymentSent(_, MilliSatoshi(request.amountMsat), fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
+    val PaymentSent(_, request.amount, fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
     assert(fee > MilliSatoshi(0))
-    assert(fee === MilliSatoshi(paymentOK.amountMsat - request.amountMsat))
+    assert(fee === paymentOK.amount - request.amount)
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.SUCCEEDED))
   }
 
@@ -409,8 +409,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val ann_g = makeNodeAnnouncement(priv_g, "node-G", Color(-30, 10, -50), Nil)
     val channelId_bg = ShortChannelId(420000, 5, 0)
     val chan_bg = channelAnnouncement(channelId_bg, priv_b, priv_g, priv_funding_b, priv_funding_g)
-    val channelUpdate_bg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, g, channelId_bg, cltvExpiryDelta = 9, htlcMinimumMsat = 0, feeBaseMsat = 0, feeProportionalMillionths = 0, htlcMaximumMsat = 500000000L)
-    val channelUpdate_gb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, b, channelId_bg, cltvExpiryDelta = 9, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000L)
+    val channelUpdate_bg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, g, channelId_bg, cltvExpiryDelta = 9, htlcMinimumMsat = MilliSatoshi(0), feeBaseMsat = MilliSatoshi(0), feeProportionalMillionths = 0, htlcMaximumMsat = MilliSatoshi(500000000L))
+    val channelUpdate_gb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, b, channelId_bg, cltvExpiryDelta = 9, htlcMinimumMsat = MilliSatoshi(0), feeBaseMsat = MilliSatoshi(10), feeProportionalMillionths = 8, htlcMaximumMsat = MilliSatoshi(500000000L))
     assert(Router.getDesc(channelUpdate_bg, chan_bg) === ChannelDesc(chan_bg.shortChannelId, priv_b.publicKey, priv_g.publicKey))
     router ! PeerRoutingMessage(null, remoteNodeId, chan_bg)
     router ! PeerRoutingMessage(null, remoteNodeId, ann_g)
@@ -441,13 +441,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash))
 
     val paymentOK = sender.expectMsgType[PaymentSucceeded]
-    val PaymentSent(_, MilliSatoshi(request.amountMsat), fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
+    val PaymentSent(_, request.amount, fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
 
     // during the route computation the fees were treated as if they were 1msat but when sending the onion we actually put zero
     // NB: A -> B doesn't pay fees because it's our direct neighbor
     // NB: B -> G doesn't asks for fees at all
     assert(fee === MilliSatoshi(0))
-    assert(fee === MilliSatoshi(paymentOK.amountMsat - request.amountMsat))
+    assert(fee === paymentOK.amount - request.amount)
   }
 
   test("filter errors properly") { _ =>

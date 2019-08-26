@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Hmac256
-import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomBytes64}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, randomBytes32, randomBytes64}
 import fr.acinq.eclair.wire.FailureMessageCodecs._
 import org.scalatest.FunSuite
 import scodec.bits._
@@ -36,8 +36,8 @@ class FailureMessageCodecsSpec extends FunSuite {
     cltvExpiryDelta = 100,
     messageFlags = 0,
     channelFlags = 1,
-    htlcMinimumMsat = 1000,
-    feeBaseMsat = 12,
+    htlcMinimumMsat = MilliSatoshi(1000),
+    feeBaseMsat = MilliSatoshi(12),
     feeProportionalMillionths = 76,
     htlcMaximumMsat = None)
 
@@ -46,8 +46,8 @@ class FailureMessageCodecsSpec extends FunSuite {
       InvalidRealm :: TemporaryNodeFailure :: PermanentNodeFailure :: RequiredNodeFeatureMissing ::
         InvalidOnionVersion(randomBytes32) :: InvalidOnionHmac(randomBytes32) :: InvalidOnionKey(randomBytes32) :: InvalidOnionPayload(randomBytes32) ::
         TemporaryChannelFailure(channelUpdate) :: PermanentChannelFailure :: RequiredChannelFeatureMissing :: UnknownNextPeer ::
-        AmountBelowMinimum(123456, channelUpdate) :: FeeInsufficient(546463, channelUpdate) :: IncorrectCltvExpiry(1211, channelUpdate) :: ExpiryTooSoon(channelUpdate) ::
-        IncorrectOrUnknownPaymentDetails(123456L) :: IncorrectPaymentAmount :: FinalExpiryTooSoon :: FinalIncorrectCltvExpiry(1234) :: ChannelDisabled(0, 1, channelUpdate) :: ExpiryTooFar :: Nil
+        AmountBelowMinimum(MilliSatoshi(123456), channelUpdate) :: FeeInsufficient(MilliSatoshi(546463), channelUpdate) :: IncorrectCltvExpiry(1211, channelUpdate) :: ExpiryTooSoon(channelUpdate) ::
+        IncorrectOrUnknownPaymentDetails(MilliSatoshi(123456L)) :: IncorrectPaymentAmount :: FinalExpiryTooSoon :: FinalIncorrectCltvExpiry(1234) :: ChannelDisabled(0, 1, channelUpdate) :: ExpiryTooFar :: Nil
 
     msgs.foreach {
       msg => {
@@ -75,7 +75,7 @@ class FailureMessageCodecsSpec extends FunSuite {
     val codec = failureOnionCodec(Hmac256(ByteVector32.Zeroes))
     val testCases = Map(
       InvalidOnionKey(ByteVector32(hex"2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a")) -> hex"41a824e2d630111669fa3e52b600a518f369691909b4e89205dc624ee17ed2c1 0022 c006 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a 00de 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-      IncorrectOrUnknownPaymentDetails(42) -> hex"ba6e122b2941619e2106e8437bf525356ffc8439ac3b2245f68546e298a08cc6 000a 400f 000000000000002a 00f6 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      IncorrectOrUnknownPaymentDetails(MilliSatoshi(42)) -> hex"ba6e122b2941619e2106e8437bf525356ffc8439ac3b2245f68546e298a08cc6 000a 400f 000000000000002a 00f6 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
     )
 
     for ((expected, bin) <- testCases) {
@@ -112,7 +112,7 @@ class FailureMessageCodecsSpec extends FunSuite {
   test("support encoding of channel_update with/without type in failure messages") {
     val tmp_channel_failure_notype = hex"10070080cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f45782196fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008260500041300005b91b52f0003000e00000000000003e80000000100000001"
     val tmp_channel_failure_withtype = hex"100700820102cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f45782196fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008260500041300005b91b52f0003000e00000000000003e80000000100000001"
-    val ref = TemporaryChannelFailure(ChannelUpdate(ByteVector64(hex"cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f4578219"), Block.LivenetGenesisBlock.hash, ShortChannelId(0x826050004130000L), 1536275759, 0, 3, 14, 1000, 1, 1, None))
+    val ref = TemporaryChannelFailure(ChannelUpdate(ByteVector64(hex"cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f4578219"), Block.LivenetGenesisBlock.hash, ShortChannelId(0x826050004130000L), 1536275759, 0, 3, 14, MilliSatoshi(1000), MilliSatoshi(1), 1, None))
 
     val u = failureMessageCodec.decode(tmp_channel_failure_notype.toBitVector).require.value
     assert(u === ref)

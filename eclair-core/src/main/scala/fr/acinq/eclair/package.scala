@@ -126,7 +126,7 @@ package object eclair {
     * @param msat         amount in millisatoshi
     * @return the fee (in msat) that a node should be paid to forward an HTLC of 'amount' millisatoshis
     */
-  def nodeFee(baseMsat: Long, proportional: Long, msat: Long): Long = baseMsat + (proportional * msat) / 1000000
+  def nodeFee(baseMsat: MilliSatoshi, proportional: Long, msat: MilliSatoshi): MilliSatoshi = baseMsat + (msat * proportional) / 1000000
 
   /**
     *
@@ -159,4 +159,55 @@ package object eclair {
     * We use this in the context of timestamp filtering, when we don't need an upper bound.
     */
   val MaxEpochSeconds = Duration.fromNanos(Long.MaxValue).toSeconds
+
+  /**
+    * One MilliSatoshi is a thousand of a Satoshi, the smallest unit usable in bitcoin
+    * @param amount
+    */
+  case class MilliSatoshi(amount: Long) {
+    // @formatter:off
+    def toLong = amount
+    def +(other: MilliSatoshi) = MilliSatoshi(amount + other.amount)
+    def -(other: MilliSatoshi) = MilliSatoshi(amount - other.amount)
+    def *(m: Long) = MilliSatoshi(amount * m)
+    def *(m: Double) = MilliSatoshi((amount * m).toLong)
+    def /(d: Long) = MilliSatoshi(amount / d)
+    def compare(other: MilliSatoshi): Int = if (amount == other.amount) 0 else if (amount < other.amount) -1 else 1
+    def <= (that: MilliSatoshi): Boolean = compare(that) <= 0
+    def >= (that: MilliSatoshi): Boolean = compare(that) >= 0
+    def <  (that: MilliSatoshi): Boolean = compare(that) < 0
+    def >  (that: MilliSatoshi): Boolean = compare(that) > 0
+    def unary_-() = MilliSatoshi(-amount)
+    def truncateToSatoshi: Satoshi = Satoshi(amount / 1000)
+    // @formatter:on
+  }
+
+  implicit class ToMilliSatoshiConversion(amount: BtcAmount) {
+    def toMilliSatoshi: MilliSatoshi = amount match {
+      case sat: Satoshi => satoshi2millisatoshi(sat)
+      case millis: MilliBtc => satoshi2millisatoshi(millibtc2satoshi(millis))
+      case bitcoin: Btc => satoshi2millisatoshi(btc2satoshi(bitcoin))
+    }
+  }
+
+  implicit object NumericMilliSatoshi extends Numeric[MilliSatoshi] {
+    override def plus(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = MilliSatoshi(x.amount + y.amount)
+    override def minus(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = MilliSatoshi(x.amount - y.amount)
+    override def times(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = MilliSatoshi(x.amount * y.amount)
+    override def negate(x: MilliSatoshi): MilliSatoshi = MilliSatoshi(-x.amount)
+    override def fromInt(x: Int): MilliSatoshi = MilliSatoshi(x)
+    override def toInt(x: MilliSatoshi): Int = x.toLong.toInt
+    override def toLong(x: MilliSatoshi): Long = x.toLong
+    override def toFloat(x: MilliSatoshi): Float = x.toLong
+    override def toDouble(x: MilliSatoshi): Double = x.toLong
+    override def compare(x: MilliSatoshi, y: MilliSatoshi): Int = x.compare(y)
+  }
+
+  private def satoshi2millisatoshi(input: Satoshi): MilliSatoshi = MilliSatoshi(input.amount * 1000L)
+
+  def maxOf(x: MilliSatoshi, y: MilliSatoshi) = MilliSatoshi(Math.max(x.amount, y.amount))
+  def minOf(x: MilliSatoshi, y: MilliSatoshi) = MilliSatoshi(Math.min(x.amount, y.amount))
+  def maxOf(x: Satoshi, y: Satoshi) = Satoshi(Math.max(x.amount, y.amount))
+  def minOf(x: Satoshi, y: Satoshi) = Satoshi(Math.min(x.amount, y.amount))
+
 }

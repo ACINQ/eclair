@@ -30,13 +30,33 @@ trait FeeProvider {
 }
 
 // stores fee rate in satoshi/kb (1 kb = 1000 bytes)
-case class FeeratesPerKB(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long) {
-  require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0, "all feerates must be strictly greater than 0")
+case class FeeratesPerKB(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long, blocks_144: Long) {
+  require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0 && blocks_144 > 0, "all feerates must be strictly greater than 0")
+
+  def feePerBlock(target: Int) = target match {
+    case 1 => block_1
+    case 2 => blocks_2
+    case t if t <= 6 => blocks_6
+    case t if t <= 12 => blocks_12
+    case t if t <= 36 => blocks_36
+    case t if t <= 72 => blocks_72
+    case _ => blocks_144
+  }
 }
 
 // stores fee rate in satoshi/kw (1 kw = 1000 weight units)
-case class FeeratesPerKw(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long) {
-  require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0, "all feerates must be strictly greater than 0")
+case class FeeratesPerKw(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long, blocks_144: Long) {
+  require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0 && blocks_144 > 0, "all feerates must be strictly greater than 0")
+
+  def feePerBlock(target: Int) = target match {
+    case 1 => block_1
+    case 2 => blocks_2
+    case t if t <= 6 => blocks_6
+    case t if t <= 12 => blocks_12
+    case t if t <= 36 => blocks_36
+    case t if t <= 72 => blocks_72
+    case _ => blocks_144
+  }
 }
 
 object FeeratesPerKw {
@@ -46,7 +66,8 @@ object FeeratesPerKw {
     blocks_6 = feerateKB2Kw(feerates.blocks_6),
     blocks_12 = feerateKB2Kw(feerates.blocks_12),
     blocks_36 = feerateKB2Kw(feerates.blocks_36),
-    blocks_72 = feerateKB2Kw(feerates.blocks_72))
+    blocks_72 = feerateKB2Kw(feerates.blocks_72),
+    blocks_144 = feerateKB2Kw(feerates.blocks_144))
 
   /**
     * Used in tests
@@ -60,6 +81,7 @@ object FeeratesPerKw {
     blocks_6 = feeratePerKw,
     blocks_12 = feeratePerKw,
     blocks_36 = feeratePerKw,
-    blocks_72 = feeratePerKw)
+    blocks_72 = feeratePerKw,
+    blocks_144 = feeratePerKw)
 }
 

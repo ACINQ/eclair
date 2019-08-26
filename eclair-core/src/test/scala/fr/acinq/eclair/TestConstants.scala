@@ -19,8 +19,9 @@ package fr.acinq.eclair
 import java.sql.{Connection, DriverManager}
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Script}
+import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
@@ -35,10 +36,22 @@ import scala.concurrent.duration._
   */
 object TestConstants {
 
-  val fundingSatoshis = 1000000L
-  val pushMsat = 200000000L
+  val fundingSatoshis = Satoshi(1000000L)
+  val pushMsat = MilliSatoshi(200000000L)
   val feeratePerKw = 10000L
   val emptyOnionPacket = wire.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
+
+  class TestFeeEstimator extends FeeEstimator {
+    private var currentFeerates = FeeratesPerKw.single(feeratePerKw)
+
+    override def getFeeratePerKb(target: Int): Long = feerateKw2KB(currentFeerates.feePerBlock(target))
+
+    override def getFeeratePerKw(target: Int): Long = currentFeerates.feePerBlock(target)
+
+    def setFeerate(feeratesPerKw: FeeratesPerKw): Unit = {
+      currentFeerates = feeratesPerKw
+    }
+  }
 
   def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
 
@@ -57,17 +70,22 @@ object TestConstants {
       globalFeatures = ByteVector.empty,
       localFeatures = ByteVector(0),
       overrideFeatures = Map.empty,
-      dustLimitSatoshis = 1100,
+      dustLimit = Satoshi(1100),
+      onChainFeeConf = OnChainFeeConf(
+        feeTargets = FeeTargets(6, 2, 2, 6),
+        feeEstimator = new TestFeeEstimator,
+        maxFeerateMismatch = 1.5,
+        updateFeeMinDiffRatio = 0.1
+      ),
       maxHtlcValueInFlightMsat = UInt64(150000000),
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = 144,
       fulfillSafetyBeforeTimeoutBlocks = 6,
-      htlcMinimumMsat = 0,
+      htlcMinimum = MilliSatoshi(0),
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
       maxToLocalDelayBlocks = 1000,
-      smartfeeNBlocks = 3,
-      feeBaseMsat = 546000,
+      feeBase = MilliSatoshi(546000),
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
@@ -76,8 +94,6 @@ object TestConstants {
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
-      maxFeerateMismatch = 1.5,
-      updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
@@ -85,12 +101,12 @@ object TestConstants {
       channelFlags = 1,
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
-      minFundingSatoshis = 1000L,
+      minFundingSatoshis = Satoshi(1000L),
       routerConf = RouterConf(
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
-        searchMaxFeeBaseSat = 21,
+        searchMaxFeeBase = Satoshi(21),
         searchMaxFeePct = 0.03,
         searchMaxCltv = 2016,
         searchMaxRouteLength = 20,
@@ -108,7 +124,7 @@ object TestConstants {
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       isFunder = true,
       fundingSatoshis).copy(
-      channelReserveSatoshis = 10000 // Bob will need to keep that much satoshis as direct payment
+      channelReserve = Satoshi(10000) // Bob will need to keep that much satoshis as direct payment
     )
   }
 
@@ -124,17 +140,22 @@ object TestConstants {
       globalFeatures = ByteVector.empty,
       localFeatures = ByteVector.empty, // no announcement
       overrideFeatures = Map.empty,
-      dustLimitSatoshis = 1000,
+      dustLimit = Satoshi(1000),
+      onChainFeeConf = OnChainFeeConf(
+        feeTargets = FeeTargets(6, 2, 2, 6),
+        feeEstimator = new TestFeeEstimator,
+        maxFeerateMismatch = 1.0,
+        updateFeeMinDiffRatio = 0.1
+      ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
       expiryDeltaBlocks = 144,
       fulfillSafetyBeforeTimeoutBlocks = 6,
-      htlcMinimumMsat = 1000,
+      htlcMinimum = MilliSatoshi(1000),
       minDepthBlocks = 3,
       toRemoteDelayBlocks = 144,
       maxToLocalDelayBlocks = 1000,
-      smartfeeNBlocks = 3,
-      feeBaseMsat = 546000,
+      feeBase = MilliSatoshi(546000),
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
@@ -143,8 +164,6 @@ object TestConstants {
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
-      maxFeerateMismatch = 1.0,
-      updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
@@ -152,12 +171,12 @@ object TestConstants {
       channelFlags = 1,
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
-      minFundingSatoshis = 1000L,
+      minFundingSatoshis = Satoshi(1000L),
       routerConf = RouterConf(
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
-        searchMaxFeeBaseSat = 21,
+        searchMaxFeeBase = Satoshi(21),
         searchMaxFeePct = 0.03,
         searchMaxCltv = 2016,
         searchMaxRouteLength = 20,
@@ -175,7 +194,7 @@ object TestConstants {
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       isFunder = false,
       fundingSatoshis).copy(
-      channelReserveSatoshis = 20000 // Alice will need to keep that much satoshis as direct payment
+      channelReserve = Satoshi(20000) // Alice will need to keep that much satoshis as direct payment
     )
   }
 

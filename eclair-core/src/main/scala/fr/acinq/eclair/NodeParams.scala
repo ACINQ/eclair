@@ -23,8 +23,9 @@ import java.util.concurrent.TimeUnit
 
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
@@ -32,7 +33,6 @@ import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import scodec.bits.ByteVector
-
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
 
@@ -46,17 +46,17 @@ case class NodeParams(keyManager: KeyManager,
                       globalFeatures: ByteVector,
                       localFeatures: ByteVector,
                       overrideFeatures: Map[PublicKey, (ByteVector, ByteVector)],
-                      dustLimitSatoshis: Long,
+                      dustLimit: Satoshi,
+                      onChainFeeConf: OnChainFeeConf,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
                       expiryDeltaBlocks: Int,
                       fulfillSafetyBeforeTimeoutBlocks: Int,
-                      htlcMinimumMsat: Int,
+                      htlcMinimum: MilliSatoshi,
                       toRemoteDelayBlocks: Int,
                       maxToLocalDelayBlocks: Int,
                       minDepthBlocks: Int,
-                      smartfeeNBlocks: Int,
-                      feeBaseMsat: Int,
+                      feeBase: MilliSatoshi,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double,
@@ -65,8 +65,6 @@ case class NodeParams(keyManager: KeyManager,
                       pingInterval: FiniteDuration,
                       pingTimeout: FiniteDuration,
                       pingDisconnect: Boolean,
-                      maxFeerateMismatch: Double,
-                      updateFeeMinDiffRatio: Double,
                       autoReconnect: Boolean,
                       initialRandomReconnectDelay: FiniteDuration,
                       maxReconnectInterval: FiniteDuration,
@@ -74,7 +72,7 @@ case class NodeParams(keyManager: KeyManager,
                       channelFlags: Byte,
                       watcherType: WatcherType,
                       paymentRequestExpiry: FiniteDuration,
-                      minFundingSatoshis: Long,
+                      minFundingSatoshis: Satoshi,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int) {
@@ -125,7 +123,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases): NodeParams = {
+  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, feeEstimator: FeeEstimator): NodeParams = {
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
@@ -138,7 +136,7 @@ object NodeParams {
       case _ => BITCOIND
     }
 
-    val dustLimitSatoshis = config.getLong("dust-limit-satoshis")
+    val dustLimitSatoshis = Satoshi(config.getLong("dust-limit-satoshis"))
     if (chainHash == Block.LivenetGenesisBlock.hash) {
       require(dustLimitSatoshis >= Channel.MIN_DUSTLIMIT, s"dust limit must be greater than ${Channel.MIN_DUSTLIMIT}")
     }
@@ -181,6 +179,13 @@ object NodeParams {
       .toList
       .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ torAddress_opt
 
+    val feeTargets = FeeTargets(
+      fundingBlockTarget = config.getInt("on-chain-fees.target-blocks.funding"),
+      commitmentBlockTarget = config.getInt("on-chain-fees.target-blocks.commitment"),
+      mutualCloseBlockTarget = config.getInt("on-chain-fees.target-blocks.mutual-close"),
+      claimMainBlockTarget = config.getInt("on-chain-fees.target-blocks.claim-main")
+    )
+
     NodeParams(
       keyManager = keyManager,
       alias = nodeAlias,
@@ -189,17 +194,22 @@ object NodeParams {
       globalFeatures = ByteVector.fromValidHex(config.getString("global-features")),
       localFeatures = ByteVector.fromValidHex(config.getString("local-features")),
       overrideFeatures = overrideFeatures,
-      dustLimitSatoshis = dustLimitSatoshis,
+      dustLimit = dustLimitSatoshis,
+      onChainFeeConf = OnChainFeeConf(
+        feeTargets = feeTargets,
+        feeEstimator = feeEstimator,
+        maxFeerateMismatch = config.getDouble("on-chain-fees.max-feerate-mismatch"),
+        updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio")
+      ),
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),
       maxAcceptedHtlcs = maxAcceptedHtlcs,
       expiryDeltaBlocks = expiryDeltaBlocks,
       fulfillSafetyBeforeTimeoutBlocks = fulfillSafetyBeforeTimeoutBlocks,
-      htlcMinimumMsat = config.getInt("htlc-minimum-msat"),
+      htlcMinimum = MilliSatoshi(config.getInt("htlc-minimum-msat")),
       toRemoteDelayBlocks = config.getInt("to-remote-delay-blocks"),
       maxToLocalDelayBlocks = config.getInt("max-to-local-delay-blocks"),
       minDepthBlocks = config.getInt("mindepth-blocks"),
-      smartfeeNBlocks = 3,
-      feeBaseMsat = config.getInt("fee-base-msat"),
+      feeBase = MilliSatoshi(config.getInt("fee-base-msat")),
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
@@ -208,8 +218,6 @@ object NodeParams {
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
       pingDisconnect = config.getBoolean("ping-disconnect"),
-      maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
-      updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
       autoReconnect = config.getBoolean("auto-reconnect"),
       initialRandomReconnectDelay = FiniteDuration(config.getDuration("initial-random-reconnect-delay").getSeconds, TimeUnit.SECONDS),
       maxReconnectInterval = FiniteDuration(config.getDuration("max-reconnect-interval").getSeconds, TimeUnit.SECONDS),
@@ -217,14 +225,14 @@ object NodeParams {
       channelFlags = config.getInt("channel-flags").toByte,
       watcherType = watcherType,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
-      minFundingSatoshis = config.getLong("min-funding-satoshis"),
+      minFundingSatoshis = Satoshi(config.getLong("min-funding-satoshis")),
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
         searchMaxRouteLength = config.getInt("router.path-finding.max-route-length"),
         searchMaxCltv = config.getInt("router.path-finding.max-cltv"),
-        searchMaxFeeBaseSat = config.getLong("router.path-finding.fee-threshold-sat"),
+        searchMaxFeeBase = Satoshi(config.getLong("router.path-finding.fee-threshold-sat")),
         searchMaxFeePct = config.getDouble("router.path-finding.max-fee-pct"),
         searchHeuristicsEnabled = config.getBoolean("router.path-finding.heuristics-enable"),
         searchRatioCltv = config.getDouble("router.path-finding.ratio-cltv"),

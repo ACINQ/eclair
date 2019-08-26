@@ -19,7 +19,8 @@ package fr.acinq.eclair.db.sqlite
 import java.sql.{Connection, Statement}
 import java.util.UUID
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, Channel, ChannelErrorOccured, NetworkFeePaid}
 import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent, NetworkFee, Stats}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
@@ -83,9 +84,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     using(sqlite.prepareStatement("INSERT INTO balance_updated VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.channelId.toArray)
       statement.setBytes(2, e.commitments.remoteParams.nodeId.value.toArray)
-      statement.setLong(3, e.localBalanceMsat)
+      statement.setLong(3, e.localBalance.toLong)
       statement.setLong(4, e.commitments.commitInput.txOut.amount.toLong)
-      statement.setLong(5, e.commitments.remoteParams.channelReserveSatoshis) // remote decides what our reserve should be
+      statement.setLong(5, e.commitments.remoteParams.channelReserve.toLong) // remote decides what our reserve should be
       statement.setLong(6, Platform.currentTime)
       statement.executeUpdate()
     }
@@ -94,7 +95,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     using(sqlite.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.channelId.toArray)
       statement.setBytes(2, e.remoteNodeId.value.toArray)
-      statement.setLong(3, e.capacitySat)
+      statement.setLong(3, e.capacity.toLong)
       statement.setBoolean(4, e.isFunder)
       statement.setBoolean(5, e.isPrivate)
       statement.setString(6, e.event)
@@ -225,7 +226,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           remoteNodeId = PublicKey(rs.getByteVector("node_id")),
           channelId = rs.getByteVector32("channel_id"),
           txId = rs.getByteVector32("tx_id"),
-          feeSat = rs.getLong("fee_sat"),
+          fee = Satoshi(rs.getLong("fee_sat")),
           txType = rs.getString("tx_type"),
           timestamp = rs.getLong("timestamp"))
       }
@@ -267,10 +268,10 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       while (rs.next()) {
         q = q :+ Stats(
           channelId = rs.getByteVector32("channel_id"),
-          avgPaymentAmountSatoshi = rs.getLong("avg_payment_amount_sat"),
+          avgPaymentAmount = Satoshi(rs.getLong("avg_payment_amount_sat")),
           paymentCount = rs.getInt("payment_count"),
-          relayFeeSatoshi = rs.getLong("relay_fee_sat"),
-          networkFeeSatoshi = rs.getLong("network_fee_sat"))
+          relayFee = Satoshi(rs.getLong("relay_fee_sat")),
+          networkFee = Satoshi(rs.getLong("network_fee_sat")))
       }
       q
     }
