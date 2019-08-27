@@ -87,9 +87,9 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     logger.info(s"sending $amountMsat to ${req.paymentHash} @ ${req.nodeId}")
     (for {
       kit <- fKit
-      sendPayment = req.minFinalCltvExpiry match {
+      sendPayment = req.minFinalCltvExpiryDelta match {
         case None => SendPayment(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, req.routingInfo, maxAttempts = kit.nodeParams.maxPaymentAttempts)
-        case Some(minFinalCltvExpiry) => SendPayment(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiry = minFinalCltvExpiry, maxAttempts = kit.nodeParams.maxPaymentAttempts)
+        case Some(minFinalCltvExpiry) => SendPayment(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiryDelta = minFinalCltvExpiry, maxAttempts = kit.nodeParams.maxPaymentAttempts)
       }
       res <- (kit.paymentInitiator ? sendPayment).mapTo[UUID]
     } yield res).recover {

@@ -22,7 +22,6 @@ import akka.actor.ActorSystem
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair._
 import fr.acinq.eclair.api.JsonSupport
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
@@ -32,8 +31,8 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
+import fr.acinq.eclair.{TestConstants, UInt64, randomBytes, randomBytes32, randomKey, _}
 import org.json4s.jackson.Serialization
-import fr.acinq.eclair.{TestConstants, UInt64, randomBytes, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits._
 import scodec.{Attempt, DecodeResult}
@@ -44,8 +43,8 @@ import scala.io.Source
 import scala.util.Random
 
 /**
-  * Created by PM on 31/05/2016.
-  */
+ * Created by PM on 31/05/2016.
+ */
 
 class ChannelCodecsSpec extends FunSuite {
 
@@ -89,7 +88,7 @@ class ChannelCodecsSpec extends FunSuite {
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      toSelfDelay = Random.nextInt(Short.MaxValue),
+      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
       isFunder = Random.nextBoolean(),
@@ -107,7 +106,7 @@ class ChannelCodecsSpec extends FunSuite {
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      toSelfDelay = Random.nextInt(Short.MaxValue),
+      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       fundingPubKey = randomKey.publicKey,
       revocationBasepoint = randomKey.publicKey,
@@ -131,7 +130,7 @@ class ChannelCodecsSpec extends FunSuite {
       channelId = randomBytes32,
       id = Random.nextInt(Int.MaxValue),
       amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      cltvExpiry = Random.nextInt(Int.MaxValue),
+      cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
       paymentHash = randomBytes32,
       onionRoutingPacket = TestConstants.emptyOnionPacket)
     val htlc1 = DirectedHtlc(direction = IN, add = add)
@@ -145,14 +144,14 @@ class ChannelCodecsSpec extends FunSuite {
       channelId = randomBytes32,
       id = Random.nextInt(Int.MaxValue),
       amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      cltvExpiry = Random.nextInt(Int.MaxValue),
+      cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
       paymentHash = randomBytes32,
       onionRoutingPacket = TestConstants.emptyOnionPacket)
     val add2 = UpdateAddHtlc(
       channelId = randomBytes32,
       id = Random.nextInt(Int.MaxValue),
       amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      cltvExpiry = Random.nextInt(Int.MaxValue),
+      cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
       paymentHash = randomBytes32,
       onionRoutingPacket = TestConstants.emptyOnionPacket)
     val htlc1 = DirectedHtlc(direction = IN, add = add1)
@@ -354,7 +353,7 @@ object ChannelCodecsSpec {
     maxHtlcValueInFlightMsat = UInt64(50000000),
     channelReserve = Satoshi(10000),
     htlcMinimum = MilliSatoshi(10000),
-    toSelfDelay = 144,
+    toSelfDelay = CltvExpiryDelta(144),
     maxAcceptedHtlcs = 50,
     defaultFinalScriptPubKey = ByteVector.empty,
     isFunder = true,
@@ -367,7 +366,7 @@ object ChannelCodecsSpec {
     maxHtlcValueInFlightMsat = UInt64(5000000),
     channelReserve = Satoshi(10000),
     htlcMinimum = MilliSatoshi(5000),
-    toSelfDelay = 144,
+    toSelfDelay = CltvExpiryDelta(144),
     maxAcceptedHtlcs = 50,
     fundingPubKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)) :+ 1.toByte).publicKey,
     revocationBasepoint = PrivateKey(ByteVector.fill(32)(2)).publicKey,
@@ -386,11 +385,11 @@ object ChannelCodecsSpec {
   )
 
   val htlcs = Seq(
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(1000000), Crypto.sha256(paymentPreimages(0)), 500, TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliSatoshi(2000000), Crypto.sha256(paymentPreimages(1)), 501, TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 30, MilliSatoshi(2000000), Crypto.sha256(paymentPreimages(2)), 502, TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 31, MilliSatoshi(3000000), Crypto.sha256(paymentPreimages(3)), 503, TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi(4000000), Crypto.sha256(paymentPreimages(4)), 504, TestConstants.emptyOnionPacket))
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliSatoshi(1000000), Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliSatoshi(2000000), Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket)),
+    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 30, MilliSatoshi(2000000), Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket)),
+    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 31, MilliSatoshi(3000000), Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 2, MilliSatoshi(4000000), Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
   )
 
   val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
@@ -406,7 +405,7 @@ object ChannelCodecsSpec {
     remoteNextCommitInfo = Right(randomKey.publicKey),
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = ByteVector32.Zeroes)
 
-  val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), 42, MilliSatoshi(15), MilliSatoshi(575), 53, Channel.MAX_FUNDING.toMilliSatoshi)
+  val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), CltvExpiryDelta(42), MilliSatoshi(15), MilliSatoshi(575), 53, Channel.MAX_FUNDING.toMilliSatoshi)
 
   val normal = DATA_NORMAL(commitments, ShortChannelId(42), true, None, channelUpdate, None, None)
 }

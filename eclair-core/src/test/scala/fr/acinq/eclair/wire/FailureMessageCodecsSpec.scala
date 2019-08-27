@@ -18,14 +18,14 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Hmac256
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, randomBytes32, randomBytes64}
 import fr.acinq.eclair.wire.FailureMessageCodecs._
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, randomBytes32, randomBytes64}
 import org.scalatest.FunSuite
 import scodec.bits._
 
 /**
-  * Created by PM on 31/05/2016.
-  */
+ * Created by PM on 31/05/2016.
+ */
 
 class FailureMessageCodecsSpec extends FunSuite {
   val channelUpdate = ChannelUpdate(
@@ -33,7 +33,7 @@ class FailureMessageCodecsSpec extends FunSuite {
     chainHash = Block.RegtestGenesisBlock.hash,
     shortChannelId = ShortChannelId(12345),
     timestamp = 1234567L,
-    cltvExpiryDelta = 100,
+    cltvExpiryDelta = CltvExpiryDelta(100),
     messageFlags = 0,
     channelFlags = 1,
     htlcMinimumMsat = MilliSatoshi(1000),
@@ -46,8 +46,8 @@ class FailureMessageCodecsSpec extends FunSuite {
       InvalidRealm :: TemporaryNodeFailure :: PermanentNodeFailure :: RequiredNodeFeatureMissing ::
         InvalidOnionVersion(randomBytes32) :: InvalidOnionHmac(randomBytes32) :: InvalidOnionKey(randomBytes32) :: InvalidOnionPayload(randomBytes32) ::
         TemporaryChannelFailure(channelUpdate) :: PermanentChannelFailure :: RequiredChannelFeatureMissing :: UnknownNextPeer ::
-        AmountBelowMinimum(MilliSatoshi(123456), channelUpdate) :: FeeInsufficient(MilliSatoshi(546463), channelUpdate) :: IncorrectCltvExpiry(1211, channelUpdate) :: ExpiryTooSoon(channelUpdate) ::
-        IncorrectOrUnknownPaymentDetails(MilliSatoshi(123456L)) :: IncorrectPaymentAmount :: FinalExpiryTooSoon :: FinalIncorrectCltvExpiry(1234) :: ChannelDisabled(0, 1, channelUpdate) :: ExpiryTooFar :: Nil
+        AmountBelowMinimum(MilliSatoshi(123456), channelUpdate) :: FeeInsufficient(MilliSatoshi(546463), channelUpdate) :: IncorrectCltvExpiry(CltvExpiry(1211), channelUpdate) :: ExpiryTooSoon(channelUpdate) ::
+        IncorrectOrUnknownPaymentDetails(MilliSatoshi(123456L)) :: IncorrectPaymentAmount :: FinalExpiryTooSoon :: FinalIncorrectCltvExpiry(CltvExpiry(1234)) :: ChannelDisabled(0, 1, channelUpdate) :: ExpiryTooFar :: Nil
 
     msgs.foreach {
       msg => {
@@ -112,7 +112,7 @@ class FailureMessageCodecsSpec extends FunSuite {
   test("support encoding of channel_update with/without type in failure messages") {
     val tmp_channel_failure_notype = hex"10070080cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f45782196fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008260500041300005b91b52f0003000e00000000000003e80000000100000001"
     val tmp_channel_failure_withtype = hex"100700820102cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f45782196fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008260500041300005b91b52f0003000e00000000000003e80000000100000001"
-    val ref = TemporaryChannelFailure(ChannelUpdate(ByteVector64(hex"cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f4578219"), Block.LivenetGenesisBlock.hash, ShortChannelId(0x826050004130000L), 1536275759, 0, 3, 14, MilliSatoshi(1000), MilliSatoshi(1), 1, None))
+    val ref = TemporaryChannelFailure(ChannelUpdate(ByteVector64(hex"cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f4578219"), Block.LivenetGenesisBlock.hash, ShortChannelId(0x826050004130000L), 1536275759, 0, 3, CltvExpiryDelta(14), MilliSatoshi(1000), MilliSatoshi(1), 1, None))
 
     val u = failureMessageCodec.decode(tmp_channel_failure_notype.toBitVector).require.value
     assert(u === ref)
