@@ -28,7 +28,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.NoopPaymentHandler
 import fr.acinq.eclair.wire.Init
-import fr.acinq.eclair.{Globals, MilliSatoshi, TestUtils}
+import fr.acinq.eclair.{Globals, LongToBtcAmount, TestUtils}
 import org.scalatest.{BeforeAndAfterAll, Matchers, Outcome, fixture}
 
 import scala.concurrent.duration._
@@ -60,7 +60,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     // alice and bob will both have 1 000 000 sat
     feeEstimator.setFeerate(FeeratesPerKw.single(10000))
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, Satoshi(2000000), MilliSatoshi(1000000000), feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, 2000000 sat, 1000000000 msat, feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit)
     pipe ! (alice, bob)
     within(30 seconds) {

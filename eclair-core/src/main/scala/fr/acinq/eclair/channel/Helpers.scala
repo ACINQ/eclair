@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
-import fr.acinq.bitcoin.{OutPoint, _}
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
@@ -357,9 +357,9 @@ object Helpers {
      */
     def nothingAtStake(data: HasCommitments): Boolean =
       data.commitments.localCommit.index == 0 &&
-        data.commitments.localCommit.spec.toLocal == MilliSatoshi(0) &&
+        data.commitments.localCommit.spec.toLocal == 0.msat &&
         data.commitments.remoteCommit.index == 0 &&
-        data.commitments.remoteCommit.spec.toRemote == MilliSatoshi(0) &&
+        data.commitments.remoteCommit.spec.toRemote == 0.msat &&
         data.commitments.remoteNextCommitInfo.isRight
 
     /**

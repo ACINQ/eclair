@@ -37,7 +37,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   val swipeRange = 10
   val dustLimit = 546 sat
   val feeRatePerKw = 20000
-  val minimumFee = Satoshi(2000)
+  val minimumFee = 2000 sat
 
   val master = DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1)))
   val accountMaster = accountKey(master, Block.RegtestGenesisBlock.hash)
@@ -132,10 +132,10 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   }
 
   test("use actual transaction weight to compute fees") {
-    val state1 = addFunds(state, (state.accountKeys(0), Satoshi(5000000)) :: (state.accountKeys(1), Satoshi(6000000)) :: (state.accountKeys(2), Satoshi(4000000)) :: Nil)
+    val state1 = addFunds(state, (state.accountKeys(0), 5000000 sat) :: (state.accountKeys(1), 6000000 sat) :: (state.accountKeys(2), 4000000 sat) :: Nil)
 
     {
-      val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(5000000), Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
+      val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(5000000 sat, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
       val (state3, tx1, fee1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, true)
       val Some((_, _, Some(fee))) = state3.computeTransactionDelta(tx1)
       assert(fee == fee1)
@@ -143,7 +143,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
       assert(isFeerateOk(actualFeeRate, feeRatePerKw))
     }
     {
-      val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(5000000) - dustLimit, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
+      val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(5000000.sat - dustLimit, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
       val (state3, tx1, fee1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, true)
       val Some((_, _, Some(fee))) = state3.computeTransactionDelta(tx1)
       assert(fee == fee1)
@@ -152,7 +152,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     }
     {
       // with a huge fee rate that will force us to use an additional input when we complete our tx
-      val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(3000000), Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
+      val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(3000000 sat, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
       val (state3, tx1, fee1) = state1.completeTransaction(tx, 100 * feeRatePerKw, minimumFee, dustLimit, true)
       val Some((_, _, Some(fee))) = state3.computeTransactionDelta(tx1)
       assert(fee == fee1)
@@ -179,7 +179,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
 
     val (tx, fee) = state3.spendAll(Script.pay2wpkh(ByteVector.fill(20)(1)), feeRatePerKw)
     val Some((received, sent, Some(fee1))) = state3.computeTransactionDelta(tx)
-    assert(received == Satoshi(0))
+    assert(received === 0.sat)
     assert(fee == fee1)
     assert(tx.txOut.map(_.amount).sum + fee == state3.balance._1 + state3.balance._2)
   }
@@ -189,12 +189,12 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     (0 to 10) foreach { _ =>
       val funds = for (i <- 0 until random.nextInt(10)) yield {
         val index = random.nextInt(state.accountKeys.length)
-        val amount = dustLimit + Satoshi(random.nextInt(10000000))
+        val amount = dustLimit + random.nextInt(10000000).sat
         (state.accountKeys(index), amount)
       }
       val state1 = addFunds(state, funds)
       (0 until 30) foreach { _ =>
-        val amount = dustLimit + Satoshi(random.nextInt(10000000))
+        val amount = dustLimit + random.nextInt(10000000).sat
         val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
         Try(state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, true)) match {
           case Success((state2, tx1, fee1)) => ()

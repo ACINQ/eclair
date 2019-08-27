@@ -29,16 +29,16 @@ import scala.concurrent.duration._
 import scala.util.Try
 
 /**
-  * Lightning Payment Request
-  * see https://github.com/lightningnetwork/lightning-rfc/blob/master/11-payment-encoding.md
-  *
-  * @param prefix    currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
-  * @param amount    amount to pay (empty string means no amount is specified)
-  * @param timestamp request timestamp (UNIX format)
-  * @param nodeId    id of the node emitting the payment request
-  * @param tags      payment tags; must include a single PaymentHash tag
-  * @param signature request signature that will be checked against node id
-  */
+ * Lightning Payment Request
+ * see https://github.com/lightningnetwork/lightning-rfc/blob/master/11-payment-encoding.md
+ *
+ * @param prefix    currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
+ * @param amount    amount to pay (empty string means no amount is specified)
+ * @param timestamp request timestamp (UNIX format)
+ * @param nodeId    id of the node emitting the payment request
+ * @param tags      payment tags; must include a single PaymentHash tag
+ * @param signature request signature that will be checked against node id
+ */
 case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.TaggedField], signature: ByteVector) {
 
   amount.map(a => require(a.toLong > 0, s"amount is not valid"))
@@ -46,24 +46,24 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => {} }.size == 1, "there must be exactly one description tag or one description hash tag")
 
   /**
-    *
-    * @return the payment hash
-    */
+   *
+   * @return the payment hash
+   */
   lazy val paymentHash = tags.collectFirst { case p: PaymentRequest.PaymentHash => p }.get.hash
 
   /**
-    *
-    * @return the description of the payment, or its hash
-    */
+   *
+   * @return the description of the payment, or its hash
+   */
   lazy val description: Either[String, ByteVector32] = tags.collectFirst {
     case PaymentRequest.Description(d) => Left(d)
     case PaymentRequest.DescriptionHash(h) => Right(h)
   }.get
 
   /**
-    *
-    * @return the fallback address if any. It could be a script address, pubkey address, ..
-    */
+   *
+   * @return the fallback address if any. It could be a script address, pubkey address, ..
+   */
   def fallbackAddress(): Option[String] = tags.collectFirst {
     case f: PaymentRequest.FallbackAddress => PaymentRequest.FallbackAddress.toAddress(f, prefix)
   }
@@ -84,9 +84,9 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   }
 
   /**
-    *
-    * @return the hash of this payment request
-    */
+   *
+   * @return the hash of this payment request
+   */
   def hash: ByteVector32 = {
     val hrp = s"${prefix}${Amount.encode(amount)}".getBytes("UTF-8")
     val data = Bolt11Data(timestamp, tags, ByteVector.fill(65)(0)) // fake sig that we are going to strip next
@@ -96,10 +96,10 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   }
 
   /**
-    *
-    * @param priv private key
-    * @return a signed payment request
-    */
+   *
+   * @param priv private key
+   * @return a signed payment request
+   */
   def sign(priv: PrivateKey): PaymentRequest = {
     val sig64 = Crypto.sign(hash, priv)
     val (pub1, _) = Crypto.recoverPublicKey(sig64, hash)
@@ -175,39 +175,39 @@ object PaymentRequest {
   // @formatter:on
 
   /**
-    * Payment Hash
-    *
-    * @param hash payment hash
-    */
+   * Payment Hash
+   *
+   * @param hash payment hash
+   */
   case class PaymentHash(hash: ByteVector32) extends TaggedField
 
   /**
-    * Description
-    *
-    * @param description a free-format string that will be included in the payment request
-    */
+   * Description
+   *
+   * @param description a free-format string that will be included in the payment request
+   */
   case class Description(description: String) extends TaggedField
 
   /**
-    * Hash
-    *
-    * @param hash hash that will be included in the payment request, and can be checked against the hash of a
-    *             long description, an invoice, ...
-    */
+   * Hash
+   *
+   * @param hash hash that will be included in the payment request, and can be checked against the hash of a
+   *             long description, an invoice, ...
+   */
   case class DescriptionHash(hash: ByteVector32) extends TaggedField
 
   /**
-    * Fallback Payment that specifies a fallback payment address to be used if LN payment cannot be processed
-    *
-    */
+   * Fallback Payment that specifies a fallback payment address to be used if LN payment cannot be processed
+   *
+   */
   case class FallbackAddress(version: Byte, data: ByteVector) extends TaggedField
 
   object FallbackAddress {
     /**
-      *
-      * @param address valid base58 or bech32 address
-      * @return a FallbackAddressTag instance
-      */
+     *
+     * @param address valid base58 or bech32 address
+     * @return a FallbackAddressTag instance
+     */
     def apply(address: String): FallbackAddress = {
       Try(fromBase58Address(address)).orElse(Try(fromBech32Address(address))).get
     }
@@ -242,10 +242,11 @@ object PaymentRequest {
   }
 
   /**
-    * This returns a bitvector with the minimum size necessary to encode the long, left padded
-    * to have a length (in bits) multiples of 5
-    * @param l
-    */
+   * This returns a bitvector with the minimum size necessary to encode the long, left padded
+   * to have a length (in bits) multiples of 5
+   *
+   * @param l
+   */
   def long2bits(l: Long) = {
     val bin = BitVector.fromLong(l)
     var highest = -1
@@ -260,51 +261,51 @@ object PaymentRequest {
   }
 
   /**
-    * Extra hop contained in RoutingInfoTag
-    *
-    * @param nodeId                    start of the channel
-    * @param shortChannelId            channel id
-    * @param feeBaseMsat               node fixed fee
-    * @param feeProportionalMillionths node proportional fee
-    * @param cltvExpiryDelta           node cltv expiry delta
-    */
-  case class ExtraHop(nodeId: PublicKey, shortChannelId: ShortChannelId, feeBaseMsat: Long, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta)
+   * Extra hop contained in RoutingInfoTag
+   *
+   * @param nodeId                    start of the channel
+   * @param shortChannelId            channel id
+   * @param feeBase                   node fixed fee
+   * @param feeProportionalMillionths node proportional fee
+   * @param cltvExpiryDelta           node cltv expiry delta
+   */
+  case class ExtraHop(nodeId: PublicKey, shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta)
 
   /**
-    * Routing Info
-    *
-    * @param path one or more entries containing extra routing information for a private route
-    */
+   * Routing Info
+   *
+   * @param path one or more entries containing extra routing information for a private route
+   */
   case class RoutingInfo(path: List[ExtraHop]) extends TaggedField
 
   /**
-    * Expiry Date
-    */
+   * Expiry Date
+   */
   case class Expiry(bin: BitVector) extends TaggedField {
     def toLong: Long = bin.toLong(signed = false)
   }
 
   object Expiry {
     /**
-      * @param seconds expiry data for this payment request
-      */
+     * @param seconds expiry data for this payment request
+     */
     def apply(seconds: Long): Expiry = Expiry(long2bits(seconds))
   }
 
   /**
-    * Min final CLTV expiry
-    *
-    */
+   * Min final CLTV expiry
+   *
+   */
   case class MinFinalCltvExpiry(bin: BitVector) extends TaggedField {
     def toCltvExpiryDelta = CltvExpiryDelta(bin.toInt(signed = false))
   }
 
   object MinFinalCltvExpiry {
     /**
-      * Min final CLTV expiry
-      *
-      * @param blocks min final cltv expiry, in blocks
-      */
+     * Min final CLTV expiry
+     *
+     * @param blocks min final cltv expiry, in blocks
+     */
     def apply(blocks: Long): MinFinalCltvExpiry = MinFinalCltvExpiry(long2bits(blocks))
   }
 
@@ -318,7 +319,7 @@ object PaymentRequest {
     val extraHopCodec: Codec[ExtraHop] = (
       ("nodeId" | publicKey) ::
         ("shortChannelId" | shortchannelid) ::
-        ("fee_base_msat" | uint32) ::
+        ("fee_base_msat" | uint32.xmapc(l => MilliSatoshi(l))(_.toLong)) ::
         ("fee_proportional_millionth" | uint32) ::
         ("cltv_expiry_delta" | cltvExpiryDelta)
       ).as[ExtraHop]
@@ -389,9 +390,9 @@ object PaymentRequest {
   object Amount {
 
     /**
-      * @param amount
-      * @return the unit allowing for the shortest representation possible
-      */
+     * @param amount
+     * @return the unit allowing for the shortest representation possible
+     */
     def unit(amount: MilliSatoshi): Char = amount.toLong * 10 match { // 1 milli-satoshis == 10 pico-bitcoin
       case pico if pico % 1000 > 0 => 'p'
       case pico if pico % 1000000 > 0 => 'n'
@@ -429,10 +430,10 @@ object PaymentRequest {
   val eight2fiveCodec: Codec[List[Byte]] = list(ubyte(5))
 
   /**
-    *
-    * @param input bech32-encoded payment request
-    * @return a payment request
-    */
+   *
+   * @param input bech32-encoded payment request
+   * @return a payment request
+   */
   def read(input: String): PaymentRequest = {
     // used only for data validation
     Bech32.decode(input)
@@ -461,10 +462,10 @@ object PaymentRequest {
   }
 
   /**
-    *
-    * @param pr payment request
-    * @return a bech32-encoded payment request
-    */
+   *
+   * @param pr payment request
+   * @return a bech32-encoded payment request
+   */
   def write(pr: PaymentRequest): String = {
     // currency unit is Satoshi, but we compute amounts in Millisatoshis
     val hramount = Amount.encode(pr.amount)

@@ -20,10 +20,9 @@ import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId, TestConstants, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 import org.sqlite.SQLiteException
-
 
 class SqliteNetworkDbSpec extends FunSuite {
 
@@ -73,7 +72,7 @@ class SqliteNetworkDbSpec extends FunSuite {
     val txid_1 = randomBytes32
     val txid_2 = randomBytes32
     val txid_3 = randomBytes32
-    val capacity = Satoshi(10000)
+    val capacity = 10000 sat
 
     assert(db.listChannels().toSet === Set.empty)
     db.addChannel(channel_1, txid_1, capacity)
@@ -85,9 +84,9 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.removeChannel(channel_2.shortChannelId)
     assert(db.listChannels().toSet === Set((channel_1, (txid_1, capacity)), (channel_3, (txid_3, capacity))))
 
-    val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(42), CltvExpiryDelta(5), MilliSatoshi(7000000), MilliSatoshi(50000), 100, MilliSatoshi(500000000L), true)
-    val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(43), CltvExpiryDelta(5), MilliSatoshi(7000000), MilliSatoshi(50000), 100, MilliSatoshi(500000000L), true)
-    val channel_update_3 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(44), CltvExpiryDelta(5), MilliSatoshi(7000000), MilliSatoshi(50000), 100, MilliSatoshi(500000000L), true)
+    val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
+    val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(43), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
+    val channel_update_3 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, ShortChannelId(44), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
 
     assert(db.listChannelUpdates().toSet === Set.empty)
     db.addChannelUpdate(channel_update_1)
@@ -107,10 +106,10 @@ class SqliteNetworkDbSpec extends FunSuite {
     val sig = Crypto.sign(randomBytes32, randomKey)
     val priv = randomKey
     val pub = priv.publicKey
-    val capacity = Satoshi(10000)
+    val capacity = 10000 sat
 
     val channels = shortChannelIds.map(id => Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, id, pub, pub, pub, pub, sig, sig, sig, sig))
-    val template = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv, pub, ShortChannelId(42), CltvExpiryDelta(5), MilliSatoshi(7000000), MilliSatoshi(50000), 100, MilliSatoshi(500000000L), true)
+    val template = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv, pub, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
     val updates = shortChannelIds.map(id => template.copy(shortChannelId = id))
     val txid = randomBytes32
     channels.foreach(ca => db.addChannel(ca, txid, capacity))

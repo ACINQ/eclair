@@ -318,7 +318,7 @@ object Graph {
    * @return the new amount updated with the necessary fees for this edge
    */
   private def edgeFeeCost(edge: GraphEdge, amountWithFees: MilliSatoshi): MilliSatoshi = {
-    if (edgeHasZeroFee(edge)) amountWithFees + nodeFee(baseFee = MilliSatoshi(1), proportionalFee = 0, amountWithFees)
+    if (edgeHasZeroFee(edge)) amountWithFees + nodeFee(baseFee = 1 msat, proportionalFee = 0, amountWithFees)
     else amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
   }
 
@@ -340,7 +340,7 @@ object Graph {
     val BLOCK_TIME_TWO_MONTHS = 8640
 
     // Low/High bound for channel capacity
-    val CAPACITY_CHANNEL_LOW = MilliSatoshi(1000 * 1000L) // 1000 sat
+    val CAPACITY_CHANNEL_LOW = (1000 * 1000L) msat // 1000 sat
     val CAPACITY_CHANNEL_HIGH = Channel.MAX_FUNDING.toMilliSatoshi
 
     // Low/High bound for CLTV channel value

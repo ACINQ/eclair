@@ -128,7 +128,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.switchboard ? Peer.OpenChannel(
       remoteNodeId = nodeId,
       fundingSatoshis = fundingAmount,
-      pushMsat = pushAmount_opt.getOrElse(MilliSatoshi(0)),
+      pushMsat = pushAmount_opt.getOrElse(0 msat),
       fundingTxFeeratePerKw_opt = fundingFeerateSatByte_opt.map(feerateByte2Kw),
       channelFlags = flags_opt.map(_.toByte),
       timeout_opt = Some(openTimeout))).mapTo[String]

@@ -118,7 +118,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     case ChannelSignatureReceived(channel, commitments) if m.contains(channel) =>
       val channelPaneController = m(channel)
       channelPaneController.updateBalance(commitments)
-      val totalBalance = MilliSatoshi(m.values.map(_.getBalance.toLong).sum)
+      val totalBalance = m.values.map(_.getBalance).sum
       runInGuiThread(() => {
         channelPaneController.refreshBalance()
         mainController.refreshTotalBalance(totalBalance)
@@ -129,7 +129,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       log.debug(s"channel=${channelPaneController.channelId.getText} to be removed from gui")
       runInGuiThread(() => mainController.channelBox.getChildren.remove(channelPaneController.root))
       val m1 = m - actor
-      val totalBalance = MilliSatoshi(m1.values.map(_.getBalance.toLong).sum)
+      val totalBalance = m1.values.map(_.getBalance).sum
       runInGuiThread(() => {
         mainController.refreshTotalBalance(totalBalance)
       })
