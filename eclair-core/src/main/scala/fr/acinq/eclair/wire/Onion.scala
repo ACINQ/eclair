@@ -17,15 +17,15 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Codec, DecodeResult, Decoder}
 
 /**
-  * Created by t-bast on 05/07/2019.
-  */
+ * Created by t-bast on 05/07/2019.
+ */
 
 case class OnionRoutingPacket(version: Int,
                               publicKey: ByteVector,
@@ -34,7 +34,7 @@ case class OnionRoutingPacket(version: Int,
 
 case class PerHopPayload(shortChannelId: ShortChannelId,
                          amtToForward: MilliSatoshi,
-                         outgoingCltvValue: Long)
+                         outgoingCltvValue: CltvExpiry)
 
 object OnionCodecs {
 
@@ -50,15 +50,15 @@ object OnionCodecs {
     ("realm" | constant(ByteVector.fromByte(0))) ::
       ("short_channel_id" | CommonCodecs.shortchannelid) ::
       ("amt_to_forward" | CommonCodecs.millisatoshi) ::
-      ("outgoing_cltv_value" | uint32) ::
+      ("outgoing_cltv_value" | CommonCodecs.cltvExpiry) ::
       ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[PerHopPayload]
 
   /**
-    * The 1.1 BOLT spec changed the onion frame format to use variable-length per-hop payloads.
-    * The first bytes contain a varint encoding the length of the payload data (not including the trailing mac).
-    * That varint is considered to be part of the payload, so the payload length includes the number of bytes used by
-    * the varint prefix.
-    */
+   * The 1.1 BOLT spec changed the onion frame format to use variable-length per-hop payloads.
+   * The first bytes contain a varint encoding the length of the payload data (not including the trailing mac).
+   * That varint is considered to be part of the payload, so the payload length includes the number of bytes used by
+   * the varint prefix.
+   */
   val payloadLengthDecoder = Decoder[Long]((bits: BitVector) =>
     CommonCodecs.varintoverflow.decode(bits).map(d => DecodeResult(d.value + (bits.length - d.remainder.length) / 8, d.remainder)))
 
