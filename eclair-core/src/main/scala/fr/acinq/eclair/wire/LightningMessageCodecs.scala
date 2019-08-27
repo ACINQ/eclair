@@ -183,6 +183,7 @@ object LightningMessageCodecs {
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
   val channelUpdateChecksumCodec =
+    ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
       (("messageFlags" | byte) >>:~ { messageFlags =>
         ("channelFlags" | byte) ::
