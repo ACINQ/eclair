@@ -568,7 +568,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
             TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(shortChannelIds.encoding, chunk.map(_.flag)))
           else
             TlvStream.empty
-          ))
+        ))
         .toList
       val (sync1, replynow_opt) = updateSync(d.sync, remoteNodeId, replies)
       // we only send a rely right away if there were no pending requests
@@ -916,26 +916,26 @@ object Router {
   }
 
   /**
-    * Handle a query message, which includes a list of channel ids and flags.
-    *
-    * @param nodes node id -> node announcement
-    * @param channels channel id -> channel announcement
-    * @param updates channel description -> channel update
-    * @param ids list of channel ids
-    * @param flags list of query flags, either empty one flag per channel id
-    * @param onChannel called when a channel announcement matches (i.e. its bit is set in the query flag and we have it)
-    * @param onUpdate called when a channel update matches
-    * @param onNode called when a node announcement matches
-    *
-    */
+   * Handle a query message, which includes a list of channel ids and flags.
+   *
+   * @param nodes     node id -> node announcement
+   * @param channels  channel id -> channel announcement
+   * @param updates   channel description -> channel update
+   * @param ids       list of channel ids
+   * @param flags     list of query flags, either empty one flag per channel id
+   * @param onChannel called when a channel announcement matches (i.e. its bit is set in the query flag and we have it)
+   * @param onUpdate  called when a channel update matches
+   * @param onNode    called when a node announcement matches
+   *
+   */
   def processChannelQuery(nodes: Map[PublicKey, NodeAnnouncement],
                           channels: SortedMap[ShortChannelId, ChannelAnnouncement],
                           updates: Map[ChannelDesc, ChannelUpdate])(
-    ids: List[ShortChannelId],
-    flags: List[Long],
-    onChannel: ChannelAnnouncement => Unit,
-    onUpdate: ChannelUpdate => Unit,
-    onNode: NodeAnnouncement => Unit)(implicit log: LoggingAdapter): Unit = {
+                           ids: List[ShortChannelId],
+                           flags: List[Long],
+                           onChannel: ChannelAnnouncement => Unit,
+                           onUpdate: ChannelUpdate => Unit,
+                           onNode: NodeAnnouncement => Unit)(implicit log: LoggingAdapter): Unit = {
     import QueryShortChannelIdsTlv.QueryFlagType
 
     // we loop over channel ids and query flag. We track node Ids for node announcement
@@ -992,11 +992,11 @@ object Router {
   }
 
   /**
-    * Returns overall progress on synchronization
-    *
-    * @param sync
-    * @return a sync progress indicator (1 means fully synced)
-    */
+   * Returns overall progress on synchronization
+   *
+   * @param sync
+   * @return a sync progress indicator (1 means fully synced)
+   */
   def syncProgress(sync: Map[PublicKey, Sync]): SyncProgress = {
     //NB: progress is in terms of requests, not individual channels
     val (pending, total) = sync.foldLeft((0, 0)) {
@@ -1023,12 +1023,12 @@ object Router {
   }
 
   /**
-    *
-    * @param channels id -> announcement map
-    * @param updates  channel updates
-    * @param id       short channel id
-    * @return the timestamp of the most recent update for this channel id, 0 if we don't have any
-    */
+   *
+   * @param channels id -> announcement map
+   * @param updates  channel updates
+   * @param id       short channel id
+   * @return the timestamp of the most recent update for this channel id, 0 if we don't have any
+   */
   def getTimestamp(channels: SortedMap[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate])(id: ShortChannelId): Long = {
     val ca = channels(id)
     val opt1 = updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2))
@@ -1064,12 +1064,12 @@ object Router {
   case class ShortChannelIdsChunk(firstBlock: Long, numBlocks: Long, shortChannelIds: List[ShortChannelId])
 
   /**
-    * Have to split ids because otherwise message could be too big
-    * there could be several reply_channel_range messages for a single query
-    *
-    * @param shortChannelIds
-    * @return
-    */
+   * Have to split ids because otherwise message could be too big
+   * there could be several reply_channel_range messages for a single query
+   *
+   * @param shortChannelIds
+   * @return
+   */
   def split(shortChannelIds: SortedSet[ShortChannelId]): List[ShortChannelIdsChunk] = {
     // TODO: this is wrong because it can split blocks
     if (shortChannelIds.isEmpty) {
