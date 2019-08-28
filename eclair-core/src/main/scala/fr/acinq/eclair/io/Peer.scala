@@ -25,8 +25,7 @@ import akka.event.Logging.MDC
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Protocol, Satoshi}
-import fr.acinq.eclair
+import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet, Protocol, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
@@ -145,15 +144,23 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         if (remoteHasInitialRoutingSync) {
           if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
             // if they support channel queries we do nothing, they will send us their filters
-            log.info("{} has set initial routing sync and support channel range queries, we do nothing (they will send us a query)", remoteNodeId)
+            log.info("peer has set initial routing sync and supports channel range queries, we do nothing (they will send us a query)")
           } else {
             // "old" nodes, do as before
+            log.info("peer requested a full routing table dump")
             router ! GetRoutingState
           }
         }
         if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
-          router ! SendChannelQuery(remoteNodeId, d.transport)
+          // TODO: for now we do not activate extended queries on mainnet
+          val flags_opt = nodeParams.chainHash match {
+            case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash =>
+              Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))
+            case _ => None
+          }
+          log.info(s"sending sync channel range query with flags_opt=$flags_opt")
+          router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = flags_opt)
         }
 
         // let's bring existing/requested channels online

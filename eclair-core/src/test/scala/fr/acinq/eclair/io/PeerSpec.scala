@@ -31,8 +31,8 @@ import fr.acinq.eclair.channel.{ChannelCreated, HasCommitments}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
-import fr.acinq.eclair.router.{ChannelRangeQueries, ChannelRangeQueriesSpec, Rebroadcast}
-import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong}
+import fr.acinq.eclair.router.{Rebroadcast, RoutingSyncSpec}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, EncodedShortChannelIds, EncodingType, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong, QueryShortChannelIds, Tlv, TlvStream}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
@@ -43,7 +43,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
   def ipv4FromInet4(address: InetSocketAddress) = IPv4.apply(address.getAddress.asInstanceOf[Inet4Address], address.getPort)
 
   val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
-  val shortChannelIds = ChannelRangeQueriesSpec.shortChannelIds.take(100)
+  val shortChannelIds = RoutingSyncSpec.shortChannelIds.take(100)
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
   val channels = fakeRoutingInfo.map(_._1).toList
   val updates = (fakeRoutingInfo.map(_._2) ++ fakeRoutingInfo.map(_._3)).toList
@@ -336,7 +336,10 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
 
-    val query = wire.QueryShortChannelIds(Alice.nodeParams.chainHash, ChannelRangeQueries.encodeShortChannelIdsSingle(Seq(ShortChannelId(42000)), ChannelRangeQueries.UNCOMPRESSED_FORMAT, useGzip = false))
+    val query = QueryShortChannelIds(
+      Alice.nodeParams.chainHash,
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42000))),
+      TlvStream.empty)
 
     // make sure that routing messages go through
     for (ann <- channels ++ updates) {
