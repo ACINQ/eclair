@@ -17,6 +17,7 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props, Stash, Terminated}
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Satoshi, Script, Transaction, TxIn, TxOut}
@@ -24,13 +25,13 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{SSL, computeScriptHash}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT, BITCOIN_PARENT_TX_CONFIRMED}
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.{Globals, ShortChannelId, TxCoordinates}
+import fr.acinq.eclair.{ShortChannelId, TxCoordinates}
 
 import scala.collection.SortedMap
 import scala.collection.immutable.Queue
 
 
-class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLogging {
+class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor with Stash with ActorLogging {
 
   client ! ElectrumClient.AddStatusListener(self)
 
@@ -163,7 +164,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
     case ElectrumClient.ServerError(ElectrumClient.GetTransaction(txid, Some(origin: ActorRef)), _) => origin ! GetTxWithMetaResponse(txid, None, tip.time)
 
     case PublishAsap(tx) =>
-      val blockCount = Globals.blockCount.get()
+      val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeout = Scripts.csvTimeout(tx)
       if (csvTimeout > 0) {
@@ -184,7 +185,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
 
     case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
       log.info(s"parent tx of txid=${tx.txid} has been confirmed")
-      val blockCount = Globals.blockCount.get()
+      val blockCount = this.blockCount.get()
       val csvTimeout = Scripts.csvTimeout(tx)
       val absTimeout = blockHeight + csvTimeout
       if (absTimeout > blockCount) {
@@ -231,7 +232,7 @@ object ElectrumWatcher extends App {
     def receive = {
       case ElectrumClient.ElectrumReady(_, _, _) =>
         log.info(s"starting watcher")
-        context become running(context.actorOf(Props(new ElectrumWatcher(client)), "watcher"))
+        context become running(context.actorOf(Props(new ElectrumWatcher(new AtomicLong(0), client)), "watcher"))
     }
 
     def running(watcher: ActorRef): Receive = {

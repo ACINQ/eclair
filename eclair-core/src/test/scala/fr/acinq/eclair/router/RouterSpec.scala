@@ -30,7 +30,8 @@ import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.RouteCalculationSpec.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.QueryShortChannelIds
-import fr.acinq.eclair.{CltvExpiryDelta, Globals, MilliSatoshi, ShortChannelId, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId, randomKey}
+import org.scalatest.Tag
 import scodec.bits._
 
 import scala.compat.Platform
@@ -250,9 +251,9 @@ class RouterSpec extends BaseRouterSpec {
     assert(response.hops.map(_.lastUpdate).toList == List(channelUpdate_ab, channelUpdate_bc, channelUpdate_cd))
   }
 
-  test("ask for channels that we marked as stale for which we receive a new update") { fixture =>
+  test("ask for channels that we marked as stale for which we receive a new update", Tag("tweak_blockheight")) { fixture =>
     import fixture._
-    val blockHeight = Globals.blockCount.get().toInt - 2020
+    val blockHeight = 400000 - 2020
     val channelId = ShortChannelId(blockHeight, 5, 0)
     val announcement = channelAnnouncement(channelId, priv_a, priv_c, priv_funding_a, priv_funding_c)
     val timestamp = (Platform.currentTime.milliseconds - 14.days - 1.day).toSeconds

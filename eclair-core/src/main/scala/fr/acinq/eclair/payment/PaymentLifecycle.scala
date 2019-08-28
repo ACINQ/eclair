@@ -62,7 +62,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")} channels=${hops.map(_.lastUpdate.shortChannelId).mkString("->")}")
       val firstHop = hops.head
       // we add one block in order to not have our htlc fail when a new block has just been found
-      val finalExpiry = (c.finalCltvExpiryDelta + 1).toCltvExpiry
+      val finalExpiry = (c.finalCltvExpiryDelta + 1).toCltvExpiry(nodeParams.blockCount.get)
 
       val (cmd, sharedSecrets) = buildCommand(id, c.amount, finalExpiry, c.paymentHash, hops)
       register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)

@@ -186,7 +186,7 @@ class Setup(datadir: File,
           val stream = classOf[Setup].getResourceAsStream(addressesFile)
           ElectrumClientPool.readServerAddresses(stream, sslEnabled)
       }
-      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(addresses)), "electrum-client", SupervisorStrategy.Resume))
+      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(nodeParams.blockCount, addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
   }
 
@@ -236,11 +236,11 @@ class Setup(datadir: File,
         case Bitcoind(bitcoinClient) =>
           system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
           system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
-          system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoinClient))), "watcher", SupervisorStrategy.Resume))
+          system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(nodeParams.blockCount, new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoinClient))), "watcher", SupervisorStrategy.Resume))
         case Electrum(electrumClient) =>
           zmqBlockConnected.success(Done)
           zmqTxConnected.success(Done)
-          system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
+          system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(nodeParams.blockCount, electrumClient)), "watcher", SupervisorStrategy.Resume))
       }
 
       router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, Some(routerInitialized)), "router", SupervisorStrategy.Resume))
@@ -306,7 +306,7 @@ class Setup(datadir: File,
         val getInfo = GetInfoResponse(nodeId = nodeParams.nodeId,
           alias = nodeParams.alias,
           chainHash = nodeParams.chainHash,
-          blockHeight = Globals.blockCount.intValue(),
+          blockHeight = nodeParams.blockCount.intValue(),
           publicAddresses = nodeParams.publicAddresses)
         val apiPassword = config.getString("api.password") match {
           case "" => throw EmptyAPIPasswordException

@@ -45,7 +45,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
 
     val amountMsat = MilliSatoshi(42000)
-    val expiry = CltvExpiryDelta(12).toCltvExpiry
+    val expiry = CltvExpiryDelta(12).toCltvExpiry(nodeParams.blockCount.get())
 
     {
       sender.send(handler, ReceivePayment(Some(amountMsat), "1 coffee"))
@@ -81,7 +81,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val pr = sender.expectMsgType[PaymentRequest]
       assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
 
-      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, cltvExpiry = CltvExpiryDelta(3).toCltvExpiry, TestConstants.emptyOnionPacket)
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, cltvExpiry = CltvExpiryDelta(3).toCltvExpiry(nodeParams.blockCount.get()), TestConstants.emptyOnionPacket)
       sender.send(handler, add)
       assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(FinalExpiryTooSoon))
       eventListener.expectNoMsg(300 milliseconds)
@@ -159,7 +159,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
 
     val amountMsat = MilliSatoshi(42000)
-    val expiry = CltvExpiryDelta(12).toCltvExpiry
+    val expiry = CltvExpiryDelta(12).toCltvExpiry(nodeParams.blockCount.get())
 
     sender.send(handler, ReceivePayment(Some(amountMsat), "some desc", expirySeconds_opt = Some(0)))
     val pr = sender.expectMsgType[PaymentRequest]

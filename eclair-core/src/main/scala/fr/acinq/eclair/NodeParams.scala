@@ -20,6 +20,7 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -41,6 +42,12 @@ import scala.concurrent.duration.FiniteDuration
  * Created by PM on 26/02/2017.
  */
 case class NodeParams(keyManager: KeyManager,
+                      /**
+                       * This counter holds the current blockchain height.
+                       * It is mainly used to calculate htlc expiries.
+                       * The value is read by all actors, hence it needs to be thread-safe.
+                       */
+                      blockCount: AtomicLong,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
@@ -198,6 +205,7 @@ object NodeParams {
 
     NodeParams(
       keyManager = keyManager,
+      blockCount = new AtomicLong(0),
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,

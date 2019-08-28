@@ -265,7 +265,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     GetInfoResponse(nodeId = appKit.nodeParams.nodeId,
       alias = appKit.nodeParams.alias,
       chainHash = appKit.nodeParams.chainHash,
-      blockHeight = Globals.blockCount.intValue(),
+      blockHeight = appKit.nodeParams.blockCount.intValue(),
       publicAddresses = appKit.nodeParams.publicAddresses)
   )
 

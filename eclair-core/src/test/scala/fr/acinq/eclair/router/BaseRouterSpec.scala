@@ -16,12 +16,14 @@
 
 package fr.acinq.eclair.router
 
+import java.util.concurrent.atomic.AtomicLong
+
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, Transaction, TxOut}
-import fr.acinq.eclair.TestConstants.Alice
+import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -98,10 +100,15 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       assert(Router.getDesc(channelUpdate_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, priv_c.publicKey, priv_d.publicKey))
       assert(Router.getDesc(channelUpdate_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, priv_e.publicKey, priv_f.publicKey))
 
+      val nodeParams = if (test.tags.contains("tweak_blockheight")) {
+        Alice.nodeParams.copy(blockCount = new AtomicLong(400000 - 2020))
+      } else {
+        Alice.nodeParams
+      }
 
       // let's we set up the router
       val watcher = TestProbe()
-      val router = system.actorOf(Router.props(Alice.nodeParams, watcher.ref))
+      val router = system.actorOf(Router.props(nodeParams, watcher.ref))
       // we announce channels
       router ! PeerRoutingMessage(null, remoteNodeId, chan_ab)
       router ! PeerRoutingMessage(null, remoteNodeId, chan_bc)
