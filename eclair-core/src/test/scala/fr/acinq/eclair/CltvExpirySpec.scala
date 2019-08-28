@@ -40,7 +40,7 @@ class CltvExpirySpec extends FunSuite {
 
     // convert to cltv expiry
     assert(d.toCltvExpiry(blockHeight = 1105) === CltvExpiry(1666))
-    assert(d.toCltvExpiry(blockHeight = 1105) === CltvExpiry(1667))
+    assert(d.toCltvExpiry(blockHeight = 1106) === CltvExpiry(1667))
   }
 
   test("cltv expiry") {
