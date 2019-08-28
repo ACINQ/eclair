@@ -251,7 +251,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(response.hops.map(_.lastUpdate).toList == List(channelUpdate_ab, channelUpdate_bc, channelUpdate_cd))
   }
 
-  test("ask for channels that we marked as stale for which we receive a new update", Tag("tweak_blockheight")) { fixture =>
+  test("ask for channels that we marked as stale for which we receive a new update") { fixture =>
     import fixture._
     val blockHeight = 400000 - 2020
     val channelId = ShortChannelId(blockHeight, 5, 0)

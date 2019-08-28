@@ -217,12 +217,11 @@
                 <artifactId>scalatest-maven-plugin</artifactId>
                 <version>2.0.0</version>
                 <configuration>
-                    <parallel>false</parallel>
+                    <parallel>true</parallel>
                     <systemProperties>
                         <buildDirectory>${project.build.directory}</buildDirectory>
                     </systemProperties>
-                    <argLine>-Xmx1024m</argLine>
-                    <argLine>-Dfile.encoding=UTF-8</argLine>
+                    <argLine>-Xmx1024m -Dfile.encoding=UTF-8</argLine>
                 </configuration>
                 <executions>
                     <execution>
