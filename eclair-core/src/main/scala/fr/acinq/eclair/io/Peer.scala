@@ -144,7 +144,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         if (remoteHasInitialRoutingSync) {
           if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
             // if they support channel queries we do nothing, they will send us their filters
-            log.info("{} has set initial routing sync and supports channel range queries, we do nothing (they will send us a query)", remoteNodeId)
+            log.info("peer has set initial routing sync and supports channel range queries, we do nothing (they will send us a query)")
           } else {
             // "old" nodes, do as before
             log.info("peer requested a full routing table dump")
@@ -153,13 +153,13 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         }
         if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
-          // README: for now we do not activate extended queries on mainnet
+          // TODO: for now we do not activate extended queries on mainnet
           val flags_opt = nodeParams.chainHash match {
             case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash =>
-              log.info("using extended range queries")
               Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))
             case _ => None
           }
+          log.info(s"sending sync channel range query with flags_opt=$flags_opt")
           router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = flags_opt)
         }
 
