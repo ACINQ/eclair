@@ -145,7 +145,7 @@ class SqliteNetworkDbSpec extends FunSuite {
       channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None)))
 
     val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, a, b.publicKey, ShortChannelId(42), CltvExpiryDelta(5), MilliSatoshi(7000000), MilliSatoshi(50000), 100, MilliSatoshi(500000000L), true)
-    val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, a.publicKey, ShortChannelId(43), CltvExpiryDelta(5), MilliSatoshi(7000000), MilliSatoshi(50000), 100, MilliSatoshi(500000000L), true)
+    val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, a.publicKey, ShortChannelId(42), CltvExpiryDelta(5), MilliSatoshi(7000000), MilliSatoshi(50000), 100, MilliSatoshi(500000000L), true)
     val channel_update_3 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, c.publicKey, ShortChannelId(44), CltvExpiryDelta(5), MilliSatoshi(7000000), MilliSatoshi(50000), 100, MilliSatoshi(500000000L), true)
 
     db.updateChannel(channel_update_1)
