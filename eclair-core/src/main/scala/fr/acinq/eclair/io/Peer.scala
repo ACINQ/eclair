@@ -25,7 +25,7 @@ import akka.event.Logging.MDC
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Protocol, Satoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet, Protocol, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
@@ -144,15 +144,23 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         if (remoteHasInitialRoutingSync) {
           if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
             // if they support channel queries we do nothing, they will send us their filters
-            log.info("{} has set initial routing sync and support channel range queries, we do nothing (they will send us a query)", remoteNodeId)
+            log.info("peer has set initial routing sync and supports channel range queries, we do nothing (they will send us a query)")
           } else {
             // "old" nodes, do as before
+            log.info("peer requested a full routing table dump")
             router ! GetRoutingState
           }
         }
         if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
-          router ! SendChannelQuery(remoteNodeId, d.transport)
+          // TODO: for now we do not activate extended queries on mainnet
+          val flags_opt = nodeParams.chainHash match {
+            case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash =>
+              Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))
+            case _ => None
+          }
+          log.info(s"sending sync channel range query with flags_opt=$flags_opt")
+          router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = flags_opt)
         }
 
         // let's bring existing/requested channels online
@@ -326,7 +334,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       // we won't clean it up, but we won't remember the temporary id on channel termination
       stay using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
 
-    case Event(RoutingState(channels, updates, nodes), d: ConnectedData) =>
+    case Event(RoutingState(channels, nodes), d: ConnectedData) =>
       // let's send the messages
       def send(announcements: Iterable[_ <: LightningMessage]) = announcements.foldLeft(0) {
         case (c, ann) =>
@@ -335,9 +343,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       }
 
       log.info(s"sending all announcements to {}", remoteNodeId)
-      val channelsSent = send(channels)
+      val channelsSent = send(channels.map(_.ann))
       val nodesSent = send(nodes)
-      val updatesSent = send(updates)
+      val updatesSent = send(channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq))
       log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       stay
 

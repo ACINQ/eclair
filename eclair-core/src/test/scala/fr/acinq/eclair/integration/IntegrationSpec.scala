@@ -23,7 +23,7 @@ import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestKit, TestProbe}
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
@@ -38,11 +38,11 @@ import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
 import fr.acinq.eclair.payment.{LocalPaymentHandler, PaymentRequest}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.ROUTE_MAX_LENGTH
-import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, ChannelDesc, RouteParams}
+import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, PublicChannel, RouteParams}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, Kit, Setup, randomBytes32, _}
+import fr.acinq.eclair.{CltvExpiryDelta, Globals, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
@@ -294,12 +294,14 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val ps = sender.expectMsgType[PaymentSucceeded](5 seconds)
     assert(ps.id == paymentId)
 
+    def updateFor(n: PublicKey, pc: PublicChannel): Option[ChannelUpdate] = if (n == pc.ann.nodeId1) pc.update_1_opt else if (n == pc.ann.nodeId2) pc.update_2_opt else throw new IllegalArgumentException("this node is unrelated to this channel")
+
     awaitCond({
       // in the meantime, the router will have updated its state
-      sender.send(nodes("A").router, 'updatesMap)
+      sender.send(nodes("A").router, 'channelsMap)
       // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
-      val update = sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]](10 seconds).apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
-      update == channelUpdateBC
+      val u_opt = updateFor(nodes("B").nodeParams.nodeId, sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId))
+      u_opt.contains(channelUpdateBC)
     }, max = 30 seconds, interval = 1 seconds)
 
     // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
@@ -312,8 +314,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(channelUpdateBC_new.timestamp > channelUpdateBC.timestamp)
     assert(channelUpdateBC_new.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks)
     awaitCond({
-      sender.send(nodes("A").router, 'updatesMap)
-      val u = sender.expectMsgType[Map[ChannelDesc, ChannelUpdate]].apply(ChannelDesc(channelUpdateBC.shortChannelId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
+      sender.send(nodes("A").router, 'channelsMap)
+      val u = updateFor(nodes("B").nodeParams.nodeId, sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId)).get
       u.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks
     }, max = 30 seconds, interval = 1 second)
   }

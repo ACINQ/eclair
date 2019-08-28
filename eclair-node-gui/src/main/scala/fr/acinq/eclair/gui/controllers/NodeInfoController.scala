@@ -16,15 +16,14 @@
 
 package fr.acinq.eclair.gui.controllers
 
+import fr.acinq.eclair.gui.Handlers
+import fr.acinq.eclair.gui.utils.{ContextMenuUtils, QRCodeUtils}
+import grizzled.slf4j.Logging
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
 import javafx.scene.control._
 import javafx.scene.image.ImageView
 import javafx.stage.Stage
-
-import fr.acinq.eclair.gui.Handlers
-import fr.acinq.eclair.gui.utils.{ContextMenuUtils, QRCodeUtils}
-import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
 

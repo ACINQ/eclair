@@ -26,7 +26,7 @@ import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
-import fr.acinq.eclair.wire.{Color, NodeAddress}
+import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -106,6 +106,8 @@ object TestConstants {
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
+        requestNodeAnnouncements = true,
+        encodingType = EncodingType.COMPRESSED_ZLIB,
         searchMaxFeeBase = 21 sat,
         searchMaxFeePct = 0.03,
         searchMaxCltv = CltvExpiryDelta(2016),
@@ -176,6 +178,8 @@ object TestConstants {
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
+        requestNodeAnnouncements = true,
+        encodingType = EncodingType.UNCOMPRESSED,
         searchMaxFeeBase = 21 sat,
         searchMaxFeePct = 0.03,
         searchMaxCltv = CltvExpiryDelta(2016),

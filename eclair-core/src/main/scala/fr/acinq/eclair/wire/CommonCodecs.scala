@@ -60,6 +60,10 @@ object CommonCodecs {
   val cltvExpiry: Codec[CltvExpiry] = uint32.xmapc(CltvExpiry)((_: CltvExpiry).toLong)
   val cltvExpiryDelta: Codec[CltvExpiryDelta] = uint16.xmapc(CltvExpiryDelta)((_: CltvExpiryDelta).toInt)
 
+  // this is needed because some millisatoshi values are encoded on 32 bits in the BOLTs
+  // this codec will fail if the amount does not fit on 32 bits
+  val millisatoshi32: Codec[MilliSatoshi] = uint32.xmapc(l => MilliSatoshi(l))(_.toLong)
+
   /**
    * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be
    * re-computed correctly.

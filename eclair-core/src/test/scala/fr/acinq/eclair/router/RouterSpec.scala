@@ -33,7 +33,6 @@ import fr.acinq.eclair.wire.QueryShortChannelIds
 import fr.acinq.eclair.{CltvExpiryDelta, Globals, LongToBtcAmount, ShortChannelId, randomKey}
 import scodec.bits._
 
-import scala.collection.SortedSet
 import scala.compat.Platform
 import scala.concurrent.duration._
 
@@ -234,7 +233,7 @@ class RouterSpec extends BaseRouterSpec {
     val state = sender.expectMsgType[RoutingState]
     assert(state.channels.size == 4)
     assert(state.nodes.size == 6)
-    assert(state.updates.size == 8)
+    assert(state.channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size == 8)
   }
 
   test("given a pre-computed route add the proper channel updates") { fixture =>
@@ -276,6 +275,6 @@ class RouterSpec extends BaseRouterSpec {
     val transport = TestProbe()
     probe.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, update1))
     val query = transport.expectMsgType[QueryShortChannelIds]
-    assert(ChannelRangeQueries.decodeShortChannelIds(query.data)._2 == SortedSet(channelId))
+    assert(query.shortChannelIds.array == List(channelId))
   }
 }

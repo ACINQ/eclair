@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.wire
 
+import fr.acinq.eclair.wire
 import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.{MilliSatoshi, wire}
 import scodec.Codec
 import scodec.codecs._
 
@@ -182,6 +182,18 @@ object LightningMessageCodecs {
     ("signature" | bytes64) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
+  val channelUpdateChecksumCodec =
+    ("chainHash" | bytes32) ::
+      ("shortChannelId" | shortchannelid) ::
+      (("messageFlags" | byte) >>:~ { messageFlags =>
+        ("channelFlags" | byte) ::
+          ("cltvExpiryDelta" | cltvExpiryDelta) ::
+          ("htlcMinimumMsat" | millisatoshi) ::
+          ("feeBaseMsat" | millisatoshi32) ::
+          ("feeProportionalMillionths" | uint32) ::
+          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, millisatoshi))
+      })
+
   val channelUpdateWitnessCodec =
     ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
@@ -190,7 +202,7 @@ object LightningMessageCodecs {
         ("channelFlags" | byte) ::
           ("cltvExpiryDelta" | cltvExpiryDelta) ::
           ("htlcMinimumMsat" | millisatoshi) ::
-          ("feeBaseMsat" | uint32.xmapc(l => MilliSatoshi(l))(_.toLong)) ::
+          ("feeBaseMsat" | millisatoshi32) ::
           ("feeProportionalMillionths" | uint32) ::
           ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, millisatoshi)) ::
           ("unknownFields" | bytes)
@@ -200,29 +212,43 @@ object LightningMessageCodecs {
     ("signature" | bytes64) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
-  val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = (
-    ("chainHash" | bytes32) ::
-      ("data" | varsizebinarydata)
+  val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] =
+    discriminated[EncodedShortChannelIds].by(byte)
+      .\(0) { case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
+      .\(1) { case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+
+  val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = {
+    Codec(
+      ("chainHash" | bytes32) ::
+        ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
+        ("tlvStream" | QueryShortChannelIdsTlv.codec)
     ).as[QueryShortChannelIds]
+  }
 
   val replyShortChanelIdsEndCodec: Codec[ReplyShortChannelIdsEnd] = (
     ("chainHash" | bytes32) ::
       ("complete" | byte)
     ).as[ReplyShortChannelIdsEnd]
 
-  val queryChannelRangeCodec: Codec[QueryChannelRange] = (
-    ("chainHash" | bytes32) ::
-      ("firstBlockNum" | uint32) ::
-      ("numberOfBlocks" | uint32)
-    ).as[QueryChannelRange]
+  val queryChannelRangeCodec: Codec[QueryChannelRange] = {
+    Codec(
+      ("chainHash" | bytes32) ::
+        ("firstBlockNum" | uint32) ::
+        ("numberOfBlocks" | uint32) ::
+        ("tlvStream" | QueryChannelRangeTlv.codec)
+      ).as[QueryChannelRange]
+  }
 
-  val replyChannelRangeCodec: Codec[ReplyChannelRange] = (
-    ("chainHash" | bytes32) ::
-      ("firstBlockNum" | uint32) ::
-      ("numberOfBlocks" | uint32) ::
-      ("complete" | byte) ::
-      ("data" | varsizebinarydata)
-    ).as[ReplyChannelRange]
+  val replyChannelRangeCodec: Codec[ReplyChannelRange] =  {
+    Codec(
+      ("chainHash" | bytes32) ::
+        ("firstBlockNum" | uint32) ::
+        ("numberOfBlocks" | uint32) ::
+        ("complete" | byte) ::
+        ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
+        ("tlvStream" | ReplyChannelRangeTlv.codec)
+      ).as[ReplyChannelRange]
+  }
 
   val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
     ("chainHash" | bytes32) ::
