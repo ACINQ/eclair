@@ -45,9 +45,9 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
   val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
   val shortChannelIds = RoutingSyncSpec.shortChannelIds.take(100)
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
-  val channels = fakeRoutingInfo.map(_.ann).toList
-  val updates = (fakeRoutingInfo.flatMap(_.update_1_opt) ++ fakeRoutingInfo.flatMap(_.update_2_opt)).toList
-  val nodes = (fakeRoutingInfo.map(_.ann.nodeId1) ++ fakeRoutingInfo.map(_.ann.nodeId2)).map(RoutingSyncSpec.makeFakeNodeAnnouncement).toList
+  val channels = fakeRoutingInfo.map(_._1.ann).toList
+  val updates = (fakeRoutingInfo.flatMap(_._1.update_1_opt) ++ fakeRoutingInfo.flatMap(_._1.update_2_opt)).toList
+  val nodes = (fakeRoutingInfo.map(_._1.ann.nodeId1) ++ fakeRoutingInfo.map(_._1.ann.nodeId2)).map(RoutingSyncSpec.makeFakeNodeAnnouncement).toList
 
   case class FixtureParam(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: TestFSMRef[Peer.State, Peer.Data, Peer])
 

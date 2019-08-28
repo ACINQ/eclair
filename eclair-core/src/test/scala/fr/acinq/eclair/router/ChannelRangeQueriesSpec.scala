@@ -27,21 +27,63 @@ import scala.compat.Platform
 
 class ChannelRangeQueriesSpec extends FunSuite {
 
-    test("compute flag tests") {
+  test("ask for update test") {
+    // they don't provide anything => we always ask for the update
+    assert(Router.shouldRequestUpdate(0, 0, None, None))
+    assert(Router.shouldRequestUpdate(Int.MaxValue, 12345, None, None))
+
+    // their update is older => don't ask
+    val now = Platform.currentTime / 1000
+    assert(!Router.shouldRequestUpdate(now, 0, Some(now - 1), None))
+    assert(!Router.shouldRequestUpdate(now, 0, Some(now - 1), Some(12345)))
+    assert(!Router.shouldRequestUpdate(now, 12344, Some(now - 1), None))
+    assert(!Router.shouldRequestUpdate(now, 12344, Some(now - 1), Some(12345)))
+
+    // their update is newer but stale => don't ask
+    val old = now - 4 * 2016 * 24 * 3600
+    assert(!Router.shouldRequestUpdate(old - 1, 0, Some(old), None))
+    assert(!Router.shouldRequestUpdate(old - 1, 0, Some(old), Some(12345)))
+    assert(!Router.shouldRequestUpdate(old - 1, 12344, Some(old), None))
+    assert(!Router.shouldRequestUpdate(old - 1, 12344, Some(old), Some(12345)))
+
+    // their update is newer but with the same checksum, and ours is stale or about to be => ask (we want to renew our update)
+    assert(Router.shouldRequestUpdate(old, 12345, Some(now), Some(12345)))
+
+    // their update is newer but with the same checksum => don't ask
+    assert(!Router.shouldRequestUpdate(now - 1, 12345, Some(now), Some(12345)))
+
+    // their update is newer with a different checksum => always ask
+    assert(Router.shouldRequestUpdate(now - 1, 0, Some(now), None))
+    assert(Router.shouldRequestUpdate(now - 1, 0, Some(now), Some(12345)))
+    assert(Router.shouldRequestUpdate(now - 1, 12344, Some(now), None))
+    assert(Router.shouldRequestUpdate(now - 1, 12344, Some(now), Some(12345)))
+
+    // they just provided a 0 checksum => don't ask
+    assert(!Router.shouldRequestUpdate(0, 0, None, Some(0)))
+    assert(!Router.shouldRequestUpdate(now, 1234, None, Some(0)))
+
+    // they just provided a checksum that is the same as us => don't ask
+    assert(!Router.shouldRequestUpdate(now, 1234, None, Some(1234)))
+
+    // they just provided a different checksum that is the same as us => ask
+    assert(Router.shouldRequestUpdate(now, 1234, None, Some(1235)))
+  }
+
+  test("compute flag tests") {
 
     val now = Platform.currentTime / 1000
 
     val a = randomKey.publicKey
     val b = randomKey.publicKey
     val ab = RouteCalculationSpec.makeChannel(123466L, a, b)
-        val (ab1, uab1) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId1, ab.nodeId2, MilliSatoshi(0), 0, timestamp = now)
-        val (ab2, uab2) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId2, ab.nodeId1, MilliSatoshi(0), 0, timestamp = now)
+    val (ab1, uab1) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId1, ab.nodeId2, MilliSatoshi(0), 0, timestamp = now)
+    val (ab2, uab2) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId2, ab.nodeId1, MilliSatoshi(0), 0, timestamp = now)
 
     val c = randomKey.publicKey
     val d = randomKey.publicKey
     val cd = RouteCalculationSpec.makeChannel(451312L, c, d)
-        val (cd1, ucd1) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId1, cd.nodeId2, MilliSatoshi(0), 0, timestamp = now)
-        val (_, ucd2) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId2, cd.nodeId1, MilliSatoshi(0), 0, timestamp = now)
+    val (cd1, ucd1) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId1, cd.nodeId2, MilliSatoshi(0), 0, timestamp = now)
+    val (_, ucd2) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId2, cd.nodeId1, MilliSatoshi(0), 0, timestamp = now)
 
     val e = randomKey.publicKey
     val f = randomKey.publicKey
@@ -54,26 +96,27 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
     import fr.acinq.eclair.wire.QueryShortChannelIdsTlv.QueryFlagType._
 
-    assert(Router.getChannelDigestInfo(channels)(ab.shortChannelId) == (Timestamps(now, now), Checksums(3297511804L, 326011172L)))
+    assert(Router.getChannelDigestInfo(channels)(ab.shortChannelId) == (Timestamps(now, now), Checksums(1697591108L, 1697591108L)))
 
     // no extended info but we know the channel: we ask for the updates
-    assert(Router.computeQueryFlags(channels)(ab.shortChannelId, None, None) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte)
+    assert(Router.computeFlag(channels)(ab.shortChannelId, None, None, false) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
+    assert(Router.computeFlag(channels)(ab.shortChannelId, None, None, true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
     // same checksums, newer timestamps: we don't ask anything
-    assert(Router.computeQueryFlags(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(3297511804L, 326011172L))) === 0.toByte)
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(1697591108L, 1697591108L)), true) === 0)
     // different checksums, newer timestamps: we ask for the updates
-    assert(Router.computeQueryFlags(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now)), Some(Checksums(154654604, 326011172L))) === INCLUDE_CHANNEL_UPDATE_1)
-    assert(Router.computeQueryFlags(channels)(ab.shortChannelId, Some(Timestamps(now, now + 1)), Some(Checksums(3297511804L, 45664546))) === INCLUDE_CHANNEL_UPDATE_2)
-    assert(Router.computeQueryFlags(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(154654604, 45664546+6))) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2).toByte)
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now)), Some(Checksums(154654604, 1697591108L)), true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now + 1)), Some(Checksums(1697591108L, 45664546)), true) === (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(154654604, 45664546 + 6)), true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2| INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
     // different checksums, older timestamps: we don't ask anything
-    assert(Router.computeQueryFlags(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now)), Some(Checksums(154654604, 326011172L))) === 0.toByte)
-    assert(Router.computeQueryFlags(channels)(ab.shortChannelId, Some(Timestamps(now, now - 1)), Some(Checksums(3297511804L, 45664546))) === 0.toByte)
-    assert(Router.computeQueryFlags(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now - 1)), Some(Checksums(154654604, 45664546))) === 0.toByte)
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now)), Some(Checksums(154654604, 1697591108L)), true) === 0)
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now - 1)), Some(Checksums(1697591108L, 45664546)), true) === 0)
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now - 1)), Some(Checksums(154654604, 45664546)), true) === 0)
 
     // missing channel update: we ask for it
-    assert(Router.computeQueryFlags(channels)(cd.shortChannelId, Some(Timestamps(now, now)), Some(Checksums(3297511804L, 326011172L))) === INCLUDE_CHANNEL_UPDATE_2)
+    assert(Router.computeFlag(channels)(cd.shortChannelId, Some(Timestamps(now, now)), Some(Checksums(3297511804L, 3297511804L)), true) === (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
 
     // unknown channel: we ask everything
-    assert(Router.computeQueryFlags(channels)(ef.shortChannelId, None, None) === INCLUDE_ALL)
-
+    assert(Router.computeFlag(channels)(ef.shortChannelId, None, None, false) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
+    assert(Router.computeFlag(channels)(ef.shortChannelId, None, None, true) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
   }
 }

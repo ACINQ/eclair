@@ -34,16 +34,17 @@ import org.scalatest.FunSuiteLike
 import scala.collection.immutable.TreeMap
 import scala.collection.{SortedSet, immutable, mutable}
 import scala.compat.Platform
+import scala.concurrent.duration._
 
 
 class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   import RoutingSyncSpec._
 
-  val fakeRoutingInfo: TreeMap[ShortChannelId, PublicChannel] = RoutingSyncSpec
+  val fakeRoutingInfo: TreeMap[ShortChannelId, (PublicChannel, NodeAnnouncement, NodeAnnouncement)] = RoutingSyncSpec
     .shortChannelIds
     .take(2345)
-    .foldLeft(TreeMap.empty[ShortChannelId, PublicChannel]) {
+    .foldLeft(TreeMap.empty[ShortChannelId, (PublicChannel, NodeAnnouncement, NodeAnnouncement)]) {
       case (m, shortChannelId) => m + (shortChannelId -> makeFakeRoutingInfo(shortChannelId))
     }
 
@@ -61,10 +62,10 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     }
   }
 
-  case class BasicSyncResult(ranges: Int, queries: Int, channels: Int, updates: Int)
+  case class BasicSyncResult(ranges: Int, queries: Int, channels: Int, updates: Int, nodes: Int)
 
-  case class SyncResult(ranges: Seq[ReplyChannelRange], queries: Seq[QueryShortChannelIds], channels: Seq[ChannelAnnouncement], updates: Seq[ChannelUpdate]) {
-    def counts = BasicSyncResult(ranges.size, queries.size, channels.size, updates.size)
+  case class SyncResult(ranges: Seq[ReplyChannelRange], queries: Seq[QueryShortChannelIds], channels: Seq[ChannelAnnouncement], updates: Seq[ChannelUpdate], nodes: Seq[NodeAnnouncement]) {
+    def counts = BasicSyncResult(ranges.size, queries.size, channels.size, updates.size, nodes.size)
   }
 
   def sync(src: TestFSMRef[State, Data, Router], tgt: TestFSMRef[State, Data, Router], extendedQueryFlags_opt: Option[QueryChannelRangeTlv]): SyncResult = {
@@ -92,6 +93,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     var queries = Vector.empty[QueryShortChannelIds]
     var channels = Vector.empty[ChannelAnnouncement]
     var updates = Vector.empty[ChannelUpdate]
+    var nodes = Vector.empty[NodeAnnouncement]
     while (src.stateData.sync.nonEmpty) {
       // for each chunk, src sends a query_short_channel_id
       val query = pipe.expectMsgType[QueryShortChannelIds]
@@ -104,6 +106,9 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
         case u: ChannelUpdate =>
           updates = updates :+ u
           u
+        case n: NodeAnnouncement =>
+          nodes = nodes :+ n
+          n
       }
       // tgt replies with announcements
       announcements.foreach(ann => pipe.send(src, PeerRoutingMessage(pipe.ref, tgtId, ann)))
@@ -111,10 +116,14 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
       val rscie = pipe.expectMsgType[ReplyShortChannelIdsEnd]
       pipe.send(src, PeerRoutingMessage(pipe.ref, tgtId, rscie))
     }
-    SyncResult(rcrs, queries, channels, updates)
+    SyncResult(rcrs, queries, channels, updates, nodes)
   }
 
-  test("handle channel range extended") {
+  def countUpdates(channels: Map[ShortChannelId, PublicChannel]) = channels.values.foldLeft(0) {
+    case (count, pc) =>  count + pc.update_1_opt.map(_ => 1).getOrElse(0) + pc.update_2_opt.map(_ => 1).getOrElse(0)
+  }
+
+  test("sync with standard channel queries") {
     val watcher = system.actorOf(Props(new YesWatcher()))
     val alice = TestFSMRef(new Router(Alice.nodeParams, watcher))
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
@@ -123,80 +132,113 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val extendedQueryFlags_opt = None
 
     // tell alice to sync with bob
-    assert(BasicSyncResult(ranges = 1, queries = 0, channels = 0, updates = 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    assert(BasicSyncResult(ranges = 1, queries = 0, channels = 0, updates = 0, nodes = 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels)
+    awaitCond(alice.stateData.nodes === bob.stateData.nodes)
 
     // add some channels and updates to bob and resync
-    fakeRoutingInfo.take(40).map(_._2.ann).foreach(c => sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, c)))
-    fakeRoutingInfo.take(40).flatMap(_._2.update_1_opt).foreach(u => sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, u)))
-    awaitCond(bob.stateData.channels.size === 40)
-    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 40) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    fakeRoutingInfo.take(40).values.foreach {
+      case (pc, na1, na2) =>
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.ann))
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_1_opt.get))
+        // we don't send channel_update #2
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na1))
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
+    }
+    awaitCond(bob.stateData.channels.size === 40 && countUpdates(bob.stateData.channels) === 40)
+    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 40, nodes = 80) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels)
 
     // add some updates to bob and resync
-    fakeRoutingInfo.take(40).flatMap(_._2.update_2_opt).foreach(u => sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, u)))
-    awaitCond(bob.stateData.channels.size === 40)
-    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 80) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    fakeRoutingInfo.take(40).values.foreach {
+      case (pc, na1, na2) =>
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_2_opt.get))
+    }
+    awaitCond(bob.stateData.channels.size === 40 && countUpdates(bob.stateData.channels) === 80)
+    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 80, nodes = 80) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels)
 
     // add everything (duplicates will be ignored)
     fakeRoutingInfo.values.foreach {
-      case PublicChannel(c, _, _, Some(u1), Some(u2)) =>
-        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, c))
-        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, u1))
-        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, u2))
+      case (pc, na1, na2) =>
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.ann))
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_1_opt.get))
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_2_opt.get))
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na1))
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
-    awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size)
-    assert(BasicSyncResult(ranges = 2, queries = 24, channels = fakeRoutingInfo.size, updates = 2 * fakeRoutingInfo.size) === sync(alice, bob, extendedQueryFlags_opt).counts)
-    awaitCond(alice.stateData.channels === bob.stateData.channels)
+    awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && countUpdates(bob.stateData.channels) === 2 * fakeRoutingInfo.size, max = 20 seconds)
+    assert(BasicSyncResult(ranges = 2, queries = 24, channels = fakeRoutingInfo.size, updates = 2 * fakeRoutingInfo.size, nodes = 2 * fakeRoutingInfo.size) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
   }
 
-  test("handle channel range extended (extended)") {
+  def syncWithExtendedQueries(requestNodeAnnouncements: Boolean) = {
     val watcher = system.actorOf(Props(new YesWatcher()))
-    val alice = TestFSMRef(new Router(Alice.nodeParams, watcher))
+    val alice = TestFSMRef(new Router(Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(requestNodeAnnouncements = requestNodeAnnouncements)), watcher))
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
     val charlieId = randomKey.publicKey
     val sender = TestProbe()
     val extendedQueryFlags_opt = Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))
 
     // tell alice to sync with bob
-    assert(BasicSyncResult(ranges = 1, queries = 0, channels = 0, updates = 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    assert(BasicSyncResult(ranges = 1, queries = 0, channels = 0, updates = 0, nodes = 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels)
 
     // add some channels and updates to bob and resync
-    fakeRoutingInfo.take(40).map(_._2.ann).foreach(c => sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, c)))
-    fakeRoutingInfo.take(40).flatMap(_._2.update_1_opt).foreach(u => sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, u)))
-    awaitCond(bob.stateData.channels.size === 40)
-    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 40) === sync(alice, bob, extendedQueryFlags_opt).counts)
-    awaitCond(alice.stateData.channels === bob.stateData.channels)
+    fakeRoutingInfo.take(40).values.foreach {
+      case (pc, na1, na2) =>
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.ann))
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_1_opt.get))
+        // we don't send channel_update #2
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na1))
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
+    }
+    awaitCond(bob.stateData.channels.size === 40 && countUpdates(bob.stateData.channels) === 40)
+    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 40, nodes = if (requestNodeAnnouncements) 80 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
+    if (requestNodeAnnouncements) awaitCond(alice.stateData.nodes === bob.stateData.nodes)
 
     // add some updates to bob and resync
-    fakeRoutingInfo.take(40).flatMap(_._2.update_2_opt).foreach(u => sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, u)))
-    awaitCond(bob.stateData.channels.size === 40)
-    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 0, updates = 40) === sync(alice, bob, extendedQueryFlags_opt).counts)
-    awaitCond(alice.stateData.channels === bob.stateData.channels)
+    fakeRoutingInfo.take(40).values.foreach {
+      case (pc, na1, na2) =>
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_2_opt.get))
+    }
+    awaitCond(bob.stateData.channels.size === 40 && countUpdates(bob.stateData.channels) === 80)
+    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 0, updates = 40, nodes = if (requestNodeAnnouncements) 80 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
 
     // add everything (duplicates will be ignored)
     fakeRoutingInfo.values.foreach {
-      case PublicChannel(c, _, _, Some(u1), Some(u2)) =>
-        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, c))
-        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, u1))
-        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, u2))
+      case (pc, na1, na2) =>
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.ann))
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_1_opt.get))
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_2_opt.get))
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na1))
+        sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
-    awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size)
-    assert(BasicSyncResult(ranges = 2, queries = 24, channels = fakeRoutingInfo.size - 40, updates = 2 * (fakeRoutingInfo.size - 40)) === sync(alice, bob, extendedQueryFlags_opt).counts)
-    awaitCond(alice.stateData.channels === bob.stateData.channels)
+    awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && countUpdates(bob.stateData.channels) === 2 * fakeRoutingInfo.size,  max = 20 seconds)
+    assert(BasicSyncResult(ranges = 2, queries = 24, channels = fakeRoutingInfo.size - 40, updates = 2 * (fakeRoutingInfo.size - 40), nodes = if (requestNodeAnnouncements) 2 * (fakeRoutingInfo.size - 40) else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
 
     // bump random channel_updates
     def touchUpdate(shortChannelId: Int, side: Boolean) = {
-      val PublicChannel(c, _, _, Some(u1), Some(u2)) = fakeRoutingInfo.values.toList(shortChannelId)
+      val PublicChannel(c, _, _, Some(u1), Some(u2)) = fakeRoutingInfo.values.toList(shortChannelId)._1
       makeNewerChannelUpdate(c, if (side) u1 else u2)
     }
 
     val bumpedUpdates = (List(0, 42, 147, 153, 654, 834, 2301).map(touchUpdate(_, true)) ++ List(1, 42, 150, 200).map(touchUpdate(_, false))).toSet
     bumpedUpdates.foreach(c => sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, c)))
-    assert(BasicSyncResult(ranges = 2, queries = 2, channels = 0, updates = bumpedUpdates.size) === sync(alice, bob, extendedQueryFlags_opt).counts)
-    awaitCond(alice.stateData.channels === bob.stateData.channels)
+    assert(BasicSyncResult(ranges = 2, queries = 2, channels = 0, updates = bumpedUpdates.size, nodes = if (requestNodeAnnouncements) 20 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
+    if (requestNodeAnnouncements) awaitCond(alice.stateData.nodes === bob.stateData.nodes)
+  }
+
+  test("sync with extended channel queries (don't request node announcements)") {
+    syncWithExtendedQueries(false)
+  }
+
+  test("sync with extended channel queries (request node announcements)") {
+    syncWithExtendedQueries(true)
   }
 
   test("reset sync state on reconnection") {
@@ -237,10 +279,10 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val nodeidA = randomKey.publicKey
     val nodeidB = randomKey.publicKey
 
-    val (sync1, _) = Router.updateSync(Map.empty, nodeidA, List(req, req, req, req))
+    val (sync1, _) = Router.addToSync(Map.empty, nodeidA, List(req, req, req, req))
     assert(Router.syncProgress(sync1) == SyncProgress(0.25D))
 
-    val (sync2, _) = Router.updateSync(sync1, nodeidB, List(req, req, req, req, req, req, req, req, req, req, req, req))
+    val (sync2, _) = Router.addToSync(sync1, nodeidB, List(req, req, req, req, req, req, req, req, req, req, req, req))
     assert(Router.syncProgress(sync2) == SyncProgress(0.125D))
 
     // let's assume we made some progress
@@ -250,7 +292,6 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     assert(Router.syncProgress(sync3) == SyncProgress(0.875D))
   }
 }
-
 
 object RoutingSyncSpec {
 
@@ -265,7 +306,7 @@ object RoutingSyncSpec {
 
   val unused = randomKey
 
-  def makeFakeRoutingInfo(shortChannelId: ShortChannelId): PublicChannel = {
+  def makeFakeRoutingInfo(shortChannelId: ShortChannelId): (PublicChannel, NodeAnnouncement, NodeAnnouncement) = {
     val timestamp = Platform.currentTime / 1000
     val (priv1, priv2) = {
       val (priv_a, priv_b) = (randomKey, randomKey)
@@ -276,9 +317,12 @@ object RoutingSyncSpec {
     pub2priv += (priv1.publicKey -> priv1)
     pub2priv += (priv2.publicKey -> priv2)
     val channelAnn_12 = channelAnnouncement(shortChannelId, priv1, priv2, priv_funding1, priv_funding2)
-    val channelUpdate_12 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv1, priv2.publicKey, shortChannelId, cltvExpiryDelta = 7, MilliSatoshi(0), feeBaseMsat = MilliSatoshi(766000), feeProportionalMillionths = 10, MilliSatoshi(500000000L), timestamp = timestamp)
-    val channelUpdate_21 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv2, priv1.publicKey, shortChannelId, cltvExpiryDelta = 7, MilliSatoshi(0), feeBaseMsat = MilliSatoshi(766000), feeProportionalMillionths = 10, MilliSatoshi(500000000L), timestamp = timestamp)
-    PublicChannel(channelAnn_12, ByteVector32.Zeroes, Satoshi(0), Some(channelUpdate_12), Some(channelUpdate_21))
+    val channelUpdate_12 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv1, priv2.publicKey, shortChannelId, cltvExpiryDelta = CltvExpiryDelta(7), MilliSatoshi(0), feeBaseMsat = MilliSatoshi(766000), feeProportionalMillionths = 10, MilliSatoshi(500000000L), timestamp = timestamp)
+    val channelUpdate_21 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv2, priv1.publicKey, shortChannelId, cltvExpiryDelta = CltvExpiryDelta(7), MilliSatoshi(0), feeBaseMsat = MilliSatoshi(766000), feeProportionalMillionths = 10, MilliSatoshi(500000000L), timestamp = timestamp)
+    val nodeAnnouncement_1 = makeNodeAnnouncement(priv1, "", Color(0, 0, 0), List())
+    val nodeAnnouncement_2 = makeNodeAnnouncement(priv2, "", Color(0, 0, 0), List())
+    val publicChannel = PublicChannel(channelAnn_12, ByteVector32.Zeroes, Satoshi(0), Some(channelUpdate_12), Some(channelUpdate_21))
+    (publicChannel, nodeAnnouncement_1, nodeAnnouncement_2)
   }
 
   def makeNewerChannelUpdate(channelAnnouncement: ChannelAnnouncement, channelUpdate: ChannelUpdate): ChannelUpdate = {

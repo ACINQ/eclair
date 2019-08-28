@@ -68,7 +68,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     randomize = false,
     maxFeeBase = MilliSatoshi(Long.MaxValue),
     maxFeePct = Double.MaxValue,
-    routeMaxCltv = Int.MaxValue,
+    routeMaxCltv = CltvExpiryDelta(Int.MaxValue),
     routeMaxLength = ROUTE_MAX_LENGTH,
     ratios = Some(WeightRatios(
       cltvDeltaFactor = 0.1,

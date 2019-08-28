@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.{Block}
+import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair._
@@ -25,8 +25,8 @@ import org.scalatest.FunSuite
 import scodec.bits._
 
 /**
-  * Created by PM on 31/05/2016.
-  */
+ * Created by PM on 31/05/2016.
+ */
 
 class AnnouncementsSpec extends FunSuite {
 
@@ -66,10 +66,10 @@ class AnnouncementsSpec extends FunSuite {
     // NB: node1 < node2 (public keys)
     assert(isNode1(node1_priv.publicKey, node2_priv.publicKey))
     assert(!isNode1(node2_priv.publicKey, node1_priv.publicKey))
-    val channelUpdate1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node1_priv, node2_priv.publicKey, ShortChannelId(0), 0, MilliSatoshi(0), MilliSatoshi(0), 0, MilliSatoshi(500000000L), enable = true)
-    val channelUpdate1_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node1_priv, node2_priv.publicKey, ShortChannelId(0), 0, MilliSatoshi(0), MilliSatoshi(0), 0, MilliSatoshi(500000000L), enable = false)
-    val channelUpdate2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), 0, MilliSatoshi(0), MilliSatoshi(0), 0, MilliSatoshi(500000000L), enable = true)
-    val channelUpdate2_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), 0, MilliSatoshi(0), MilliSatoshi(0), 0, MilliSatoshi(500000000L), enable = false)
+    val channelUpdate1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node1_priv, node2_priv.publicKey, ShortChannelId(0), CltvExpiryDelta(0), MilliSatoshi(0), MilliSatoshi(0), 0, MilliSatoshi(500000000L), enable = true)
+    val channelUpdate1_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node1_priv, node2_priv.publicKey, ShortChannelId(0), CltvExpiryDelta(0), MilliSatoshi(0), MilliSatoshi(0), 0, MilliSatoshi(500000000L), enable = false)
+    val channelUpdate2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), CltvExpiryDelta(0), MilliSatoshi(0), MilliSatoshi(0), 0, MilliSatoshi(500000000L), enable = true)
+    val channelUpdate2_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), CltvExpiryDelta(0), MilliSatoshi(0), MilliSatoshi(0), 0, MilliSatoshi(500000000L), enable = false)
     assert(channelUpdate1.channelFlags == 0) // ....00
     assert(channelUpdate1_disabled.channelFlags == 2) // ....10
     assert(channelUpdate2.channelFlags == 1) // ....01

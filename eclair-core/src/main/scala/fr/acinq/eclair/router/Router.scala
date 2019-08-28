@@ -16,11 +16,12 @@
 
 package fr.acinq.eclair.router
 
-import java.util.zip.CRC32
+import java.util.zip.CRC32C
 
 import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
+import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
@@ -37,9 +38,8 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import shapeless.HNil
 
-import scala.collection.immutable.SortedMap
 import scala.annotation.tailrec
-import scala.collection.immutable.{SortedMap, TreeMap}
+import scala.collection.immutable.SortedMap
 import scala.collection.{SortedSet, mutable}
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -51,10 +51,12 @@ import scala.util.{Random, Try}
 case class RouterConf(randomizeRouteSelection: Boolean,
                       channelExcludeDuration: FiniteDuration,
                       routerBroadcastInterval: FiniteDuration,
+                      requestNodeAnnouncements: Boolean,
+                      encodingType: EncodingType,
                       searchMaxFeeBase: Satoshi,
                       searchMaxFeePct: Double,
                       searchMaxRouteLength: Int,
-                      searchMaxCltv: Int,
+                      searchMaxCltv: CltvExpiryDelta,
                       searchHeuristicsEnabled: Boolean,
                       searchRatioCltv: Double,
                       searchRatioChannelAge: Double,
@@ -80,7 +82,7 @@ case class PrivateChannel(nodeId: PublicKey, update_1_opt: Option[ChannelUpdate]
 case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey)
 
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: Int, ratios: Option[WeightRatios])
+case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: Option[WeightRatios])
 case class RouteRequest(source: PublicKey,
                         target: PublicKey,
                         amount: MilliSatoshi,
@@ -91,7 +93,7 @@ case class RouteRequest(source: PublicKey,
 
 case class FinalizeRoute(hops:Seq[PublicKey])
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
-  require(hops.size > 0, "route cannot be empty")
+  require(hops.nonEmpty, "route cannot be empty")
 }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
@@ -126,8 +128,8 @@ case object TickPruneStaleChannels
 // @formatter:on
 
 /**
-  * Created by PM on 24/05/2016.
-  */
+ * Created by PM on 24/05/2016.
+ */
 
 class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[State, Data] {
 
@@ -136,6 +138,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   implicit val np = nodeParams
 
   import ExecutionContext.Implicits.global
+
+  // we pass these to helpers classes so that they have the logging context
+  implicit def implicitLog: LoggingAdapter = log
 
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
@@ -329,10 +334,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       // let's clean the db and send the events
       log.info("pruning shortChannelId={} (spent)", shortChannelId)
       db.removeChannel(shortChannelId) // NB: this also removes channel updates
-    // we also need to remove updates from the graph
-    val graph1 = d.graph
-      .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
-      .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId2, lostChannel.nodeId1))
+      // we also need to remove updates from the graph
+      val graph1 = d.graph
+        .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
+        .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId2, lostChannel.nodeId1))
 
       context.system.eventStream.publish(ChannelLost(shortChannelId))
       lostNodes.foreach {
@@ -527,14 +532,14 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
             case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
               // we always compute timestamps and checksums even if we don't need both, overhead is negligible
               val (timestamps, checksums) = chunk.shortChannelIds.map(getChannelDigestInfo(d.channels)).unzip
-              val encodedTimestamps = if (extension.wantTimestamps) Some(ReplyChannelRangeTlv.EncodedTimestamps(EncodingType.UNCOMPRESSED, timestamps)) else None
+              val encodedTimestamps = if (extension.wantTimestamps) Some(ReplyChannelRangeTlv.EncodedTimestamps(nodeParams.routerConf.encodingType, timestamps)) else None
               val encodedChecksums = if (extension.wantChecksums) Some(ReplyChannelRangeTlv.EncodedChecksums(checksums)) else None
               (encodedTimestamps, encodedChecksums)
             case _ => (None, None)
           }
           transport ! ReplyChannelRange(chainHash, chunk.firstBlock, chunk.numBlocks,
             complete = 1,
-            shortChannelIds = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, chunk.shortChannelIds),
+            shortChannelIds = EncodedShortChannelIds(nodeParams.routerConf.encodingType, chunk.shortChannelIds),
             timestamps = timestamps,
             checksums = checksums)
         })
@@ -548,7 +553,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         ids match {
           case Nil => acc.reverse
           case head :: tail =>
-            val flag = computeQueryFlags(d.channels)(head, timestamps.headOption, checksums.headOption)
+            val flag = computeFlag(d.channels)(head, timestamps.headOption, checksums.headOption, nodeParams.routerConf.requestNodeAnnouncements)
             // 0 means nothing to query, just don't include it
             val acc1 = if (flag != 0) ShortChannelIdAndFlag(head, flag) :: acc else acc
             loop(tail, timestamps.drop(1), checksums.drop(1), acc1)
@@ -562,7 +567,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
       val (channelCount, updatesCount) = shortChannelIdAndFlags.foldLeft((0, 0)) {
         case ((c, u), ShortChannelIdAndFlag(_, flag)) =>
-          val c1 = c + (if (QueryShortChannelIdsTlv.QueryFlagType.includeAnnouncement(flag)) 1 else 0)
+          val c1 = c + (if (QueryShortChannelIdsTlv.QueryFlagType.includeChannelAnnouncement(flag)) 1 else 0)
           val u1 = u + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate1(flag)) 1 else 0) + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate2(flag)) 1 else 0)
           (c1, u1)
       }
@@ -576,9 +581,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
             TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(shortChannelIds.encoding, chunk.map(_.flag)))
           else
             TlvStream.empty
-          ))
+        ))
         .toList
-      val (sync1, replynow_opt) = updateSync(d.sync, remoteNodeId, replies)
+      val (sync1, replynow_opt) = addToSync(d.sync, remoteNodeId, replies)
       // we only send a rely right away if there were no pending requests
       replynow_opt.foreach(transport ! _)
       context.system.eventStream.publish(syncProgress(sync1))
@@ -586,26 +591,29 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     case Event(PeerRoutingMessage(transport, _, routingMessage@QueryShortChannelIds(chainHash, shortChannelIds, queryFlags_opt)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
-      val (channelCount, updatesCount) = shortChannelIds.array
-        .zipWithIndex
-        .foldLeft((0, 0)) {
-          case ((c, u), (shortChannelId, idx)) =>
-            var c1 = c
-            var u1 = u
-            val flag = routingMessage.queryFlags_opt.map(_.array(idx)).getOrElse(QueryShortChannelIdsTlv.QueryFlagType.INCLUDE_ALL)
-            d.channels.get(shortChannelId) match {
-              case None => log.warning("received query for shortChannelId={} that we don't have", shortChannelId)
-              case Some(pc) =>
-                if (QueryShortChannelIdsTlv.QueryFlagType.includeAnnouncement(flag)) {
-                  transport ! pc.ann
-                  c1 = c1 + 1
-                }
-                if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate1(flag)) pc.update_1_opt.foreach { u => transport ! u; u1 = u1 + 1 }
-                if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate2(flag)) pc.update_2_opt.foreach { u => transport ! u; u1 = u1 + 1 }
-            }
-            (c1, u1)
+      val flags = routingMessage.queryFlags_opt.map(_.array).getOrElse(List.empty[Long])
+
+      var channelCount = 0
+      var updateCount = 0
+      var nodeCount = 0
+
+      Router.processChannelQuery(d.nodes, d.channels)(
+        shortChannelIds.array,
+        flags,
+        ca => {
+          channelCount = channelCount + 1
+          transport ! ca
+        },
+        cu => {
+          updateCount = updateCount + 1
+          transport ! cu
+        },
+        na => {
+          nodeCount = nodeCount + 1
+          transport ! na
         }
-      log.info("received query_short_channel_ids with {} items, sent back {} channels and {} updates", shortChannelIds.array.size, channelCount, updatesCount)
+      )
+      log.info("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", shortChannelIds.array.size, channelCount, updateCount, nodeCount)
       transport ! ReplyShortChannelIdsEnd(chainHash, 1)
       stay
 
@@ -758,7 +766,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       // when we're sending updates to ourselves
       (transport_opt, remoteNodeId_opt) match {
         case (Some(transport), Some(remoteNodeId)) =>
-          val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(u.shortChannelId)), TlvStream.empty)
+          val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(nodeParams.routerConf.encodingType, List(u.shortChannelId)), TlvStream.empty)
           d.sync.get(remoteNodeId) match {
             case Some(sync) =>
               // we already have a pending request to that node, let's add this channel to the list and we'll get it later
@@ -831,16 +839,16 @@ object Router {
   }
 
   /**
-    * Is stale a channel that:
-    * (1) is older than 2 weeks (2*7*144 = 2016 blocks)
-    * AND
-    * (2) has no channel_update younger than 2 weeks
-    *
-    * @param channel
-    * @param update1_opt update corresponding to one side of the channel, if we have it
-    * @param update2_opt update corresponding to the other side of the channel, if we have it
-    * @return
-    */
+   * Is stale a channel that:
+   * (1) is older than 2 weeks (2*7*144 = 2016 blocks)
+   * AND
+   * (2) has no channel_update younger than 2 weeks
+   *
+   * @param channel
+   * @param update1_opt update corresponding to one side of the channel, if we have it
+   * @param update2_opt update corresponding to the other side of the channel, if we have it
+   * @return
+   */
   def isStale(channel: ChannelAnnouncement, update1_opt: Option[ChannelUpdate], update2_opt: Option[ChannelUpdate]): Boolean = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update, so we keep them as long as they are less than 2 weeks (2016 blocks) old
@@ -852,8 +860,8 @@ object Router {
   def getStaleChannels(channels: Iterable[PublicChannel]): Iterable[PublicChannel] = channels.filter(data => isStale(data.ann, data.update_1_opt, data.update_2_opt))
 
   /**
-    * Filters channels that we want to send to nodes asking for a channel range
-    */
+   * Filters channels that we want to send to nodes asking for a channel range
+   */
   def keep(firstBlockNum: Long, numberOfBlocks: Long, id: ShortChannelId): Boolean = {
     val TxCoordinates(height, _, _) = ShortChannelId.coordinates(id)
     height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
@@ -874,10 +882,12 @@ object Router {
       case (Some(theirTimestamp), None) =>
         // if we only have their timestamp, we request their channel_update if theirs is more recent than ours
         val theirsIsMoreRecent = ourTimestamp < theirTimestamp
-        theirsIsMoreRecent
+        val theirsIsStale = isStale(theirTimestamp)
+        theirsIsMoreRecent && !theirsIsStale
       case (None, Some(theirChecksum)) =>
         // if we only have their checksum, we request their channel_update if it is different from ours
-        val areDifferent = ourChecksum != theirChecksum
+        // NB: a zero checksum means that they don't have the data
+        val areDifferent = theirChecksum != 0 && ourChecksum != theirChecksum
         areDifferent
       case (None, None) =>
         // if we have neither their timestamp nor their checksum we request their channel_update
@@ -885,35 +895,113 @@ object Router {
     }
   }
 
-  def computeQueryFlags(channels: SortedMap[ShortChannelId, PublicChannel])(
+  def computeFlag(channels: SortedMap[ShortChannelId, PublicChannel])(
     shortChannelId: ShortChannelId,
     theirTimestamps_opt: Option[ReplyChannelRangeTlv.Timestamps],
-    theirChecksums_opt: Option[ReplyChannelRangeTlv.Checksums]): Long = {
-    import QueryShortChannelIdsTlv.QueryFlagType
+    theirChecksums_opt: Option[ReplyChannelRangeTlv.Checksums],
+    includeNodeAnnouncements: Boolean): Long = {
+    import QueryShortChannelIdsTlv.QueryFlagType._
 
-    val flags = if (channels.contains(shortChannelId)) {
+    val flagsNodes = if (includeNodeAnnouncements) INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2 else 0
+
+    val flags = if (!channels.contains(shortChannelId)) {
+      INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2
+    } else {
+      // we already know this channel
       val (ourTimestamps, ourChecksums) = Router.getChannelDigestInfo(channels)(shortChannelId)
       // if they don't provide timestamps or checksums, we set appropriate default values:
       // - we assume their timestamp is more recent than ours by setting timestamp = Long.MaxValue
       // - we assume their update is different from ours by setting checkum = Long.MaxValue (NB: our default value for checksum is 0)
       val shouldRequestUpdate1 = shouldRequestUpdate(ourTimestamps.timestamp1, ourChecksums.checksum1, theirTimestamps_opt.map(_.timestamp1), theirChecksums_opt.map(_.checksum1))
       val shouldRequestUpdate2 = shouldRequestUpdate(ourTimestamps.timestamp2, ourChecksums.checksum2, theirTimestamps_opt.map(_.timestamp2), theirChecksums_opt.map(_.checksum2))
-
-      val flagUpdate1 = if (shouldRequestUpdate1) QueryFlagType.INCLUDE_CHANNEL_UPDATE_1 else 0
-      val flagUpdate2 = if (shouldRequestUpdate2) QueryFlagType.INCLUDE_CHANNEL_UPDATE_2 else 0
+      val flagUpdate1 = if (shouldRequestUpdate1) INCLUDE_CHANNEL_UPDATE_1 else 0
+      val flagUpdate2 = if (shouldRequestUpdate2) INCLUDE_CHANNEL_UPDATE_2 else 0
       flagUpdate1 | flagUpdate2
-    } else {
-      QueryFlagType.INCLUDE_CHANNEL_ANNOUNCEMENT | QueryFlagType.INCLUDE_CHANNEL_UPDATE_1 | QueryFlagType.INCLUDE_CHANNEL_UPDATE_2
     }
-    flags
+
+    if (flags == 0) 0 else flags | flagsNodes
   }
 
   /**
-    * Returns overall progress on synchronization
-    *
-    * @param sync
-    * @return a sync progress indicator (1 means fully synced)
-    */
+   * Handle a query message, which includes a list of channel ids and flags.
+   *
+   * @param nodes     node id -> node announcement
+   * @param channels  channel id -> channel announcement + updates
+   * @param ids       list of channel ids
+   * @param flags     list of query flags, either empty one flag per channel id
+   * @param onChannel called when a channel announcement matches (i.e. its bit is set in the query flag and we have it)
+   * @param onUpdate  called when a channel update matches
+   * @param onNode    called when a node announcement matches
+   *
+   */
+  def processChannelQuery(nodes: Map[PublicKey, NodeAnnouncement],
+                          channels: SortedMap[ShortChannelId, PublicChannel])(
+                           ids: List[ShortChannelId],
+                           flags: List[Long],
+                           onChannel: ChannelAnnouncement => Unit,
+                           onUpdate: ChannelUpdate => Unit,
+                           onNode: NodeAnnouncement => Unit)(implicit log: LoggingAdapter): Unit = {
+    import QueryShortChannelIdsTlv.QueryFlagType
+
+    // we loop over channel ids and query flag. We track node Ids for node announcement
+    // we've already sent to avoid sending them multiple times, as requested by the BOLTs
+    @tailrec
+    def loop(ids: List[ShortChannelId], flags: List[Long], numca: Int = 0, numcu: Int = 0, nodesSent: Set[PublicKey] = Set.empty[PublicKey]): (Int, Int, Int) = ids match {
+      case Nil => (numca, numcu, nodesSent.size)
+      case head :: tail if !channels.contains(head) =>
+        log.warning("received query for shortChannelId={} that we don't have", head)
+        loop(tail, flags.drop(1), numca, numcu, nodesSent)
+      case head :: tail =>
+        var numca1 = numca
+        var numcu1 = numcu
+        var sent1 = nodesSent
+        val pc = channels(head)
+        val flag_opt = flags.headOption
+        // no flag means send everything
+
+        val includeChannel = flag_opt.forall(QueryFlagType.includeChannelAnnouncement)
+        val includeUpdate1 = flag_opt.forall(QueryFlagType.includeUpdate1)
+        val includeUpdate2 = flag_opt.forall(QueryFlagType.includeUpdate2)
+        val includeNode1 = flag_opt.forall(QueryFlagType.includeNodeAnnouncement1)
+        val includeNode2 = flag_opt.forall(QueryFlagType.includeNodeAnnouncement2)
+
+        if (includeChannel) {
+          onChannel(pc.ann)
+        }
+        if (includeUpdate1) {
+          pc.update_1_opt.foreach { u =>
+            onUpdate(u)
+          }
+        }
+        if (includeUpdate2) {
+          pc.update_2_opt.foreach { u =>
+            onUpdate(u)
+          }
+        }
+        if (includeNode1 && !sent1.contains(pc.ann.nodeId1)) {
+          nodes.get(pc.ann.nodeId1).foreach { n =>
+            onNode(n)
+            sent1 = sent1 + pc.ann.nodeId1
+          }
+        }
+        if (includeNode2 && !sent1.contains(pc.ann.nodeId2)) {
+          nodes.get(pc.ann.nodeId2).foreach { n =>
+            onNode(n)
+            sent1 = sent1 + pc.ann.nodeId2
+          }
+        }
+        loop(tail, flags.drop(1), numca1, numcu1, sent1)
+    }
+
+    loop(ids, flags)
+  }
+
+  /**
+   * Returns overall progress on synchronization
+   *
+   * @param sync
+   * @return a sync progress indicator (1 means fully synced)
+   */
   def syncProgress(sync: Map[PublicKey, Sync]): SyncProgress = {
     //NB: progress is in terms of requests, not individual channels
     val (pending, total) = sync.foldLeft((0, 0)) {
@@ -927,8 +1015,8 @@ object Router {
   }
 
   /**
-    * This method is used after a payment failed, and we want to exclude some nodes that we know are failing
-    */
+   * This method is used after a payment failed, and we want to exclude some nodes that we know are failing
+   */
   def getIgnoredChannelDesc(channels: Map[ShortChannelId, PublicChannel], ignoreNodes: Set[PublicKey]): Iterable[ChannelDesc] = {
     val desc = if (ignoreNodes.isEmpty) {
       Iterable.empty[ChannelDesc]
@@ -952,8 +1040,8 @@ object Router {
 
   def getChecksum(u: ChannelUpdate): Long = {
     import u._
-    val data = serializationResult(LightningMessageCodecs.channelUpdateChecksumCodec.encode(shortChannelId :: messageFlags :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: HNil))
-    val checksum = new CRC32()
+    val data = serializationResult(LightningMessageCodecs.channelUpdateChecksumCodec.encode(chainHash :: shortChannelId :: messageFlags :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: HNil))
+    val checksum = new CRC32C()
     checksum.update(data.toArray)
     checksum.getValue
   }
@@ -961,19 +1049,21 @@ object Router {
   case class ShortChannelIdsChunk(firstBlock: Long, numBlocks: Long, shortChannelIds: List[ShortChannelId])
 
   /**
-    * Have to split ids because otherwise message could be too big
-    * there could be several reply_channel_range messages for a single query
-    *
-    * @param shortChannelIds
-    * @return
-    */
+   * Have to split ids because otherwise message could be too big
+   * there could be several reply_channel_range messages for a single query
+   *
+   * @param shortChannelIds
+   * @return
+   */
   def split(shortChannelIds: SortedSet[ShortChannelId]): List[ShortChannelIdsChunk] = {
-    // TODO: this is wrong because it can split blocks
+    // this algorithm can split blocks (meaning that we can in theory generate several replies with the same first_block/num_blocks
+    // and a different set of short_channel_ids) but it doesn't matter
+    val SPLIT_SIZE = 3500 // we can theoretically fit 4091 uncompressed channel ids in a single lightning message (max size 65 Kb)
     if (shortChannelIds.isEmpty) {
       List(ShortChannelIdsChunk(0, 0, List.empty))
     } else {
       shortChannelIds
-        .grouped(2000) // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
+        .grouped(SPLIT_SIZE)
         .toList
         .map { group =>
           // NB: group is never empty
@@ -984,7 +1074,7 @@ object Router {
     }
   }
 
-  def updateSync(syncMap: Map[PublicKey, Sync], remoteNodeId: PublicKey, pending: List[RoutingMessage]): (Map[PublicKey, Sync], Option[RoutingMessage]) = {
+  def addToSync(syncMap: Map[PublicKey, Sync], remoteNodeId: PublicKey, pending: List[RoutingMessage]): (Map[PublicKey, Sync], Option[RoutingMessage]) = {
     pending match {
       case head +: rest =>
         // they may send back several reply_channel_range messages for a single query_channel_range query, and we must not
@@ -1004,12 +1094,12 @@ object Router {
   }
 
   /**
-    * https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
-    */
+   * https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
+   */
   val ROUTE_MAX_LENGTH = 20
 
   // Max allowed CLTV for a route
-  val DEFAULT_ROUTE_MAX_CLTV = 1008
+  val DEFAULT_ROUTE_MAX_CLTV = CltvExpiryDelta(1008)
 
   // The default amount of routes we'll search for when findRoute is called
   val DEFAULT_ROUTES_COUNT = 3
@@ -1031,19 +1121,19 @@ object Router {
   )
 
   /**
-    * Find a route in the graph between localNodeId and targetNodeId, returns the route.
-    * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result.
-    *
-    * @param g
-    * @param localNodeId
-    * @param targetNodeId
-    * @param amount       the amount that will be sent along this route
-    * @param numRoutes    the number of shortest-paths to find
-    * @param extraEdges   a set of extra edges we want to CONSIDER during the search
-    * @param ignoredEdges a set of extra edges we want to IGNORE during the search
-    * @param routeParams  a set of parameters that can restrict the route search
-    * @return the computed route to the destination @targetNodeId
-    */
+   * Find a route in the graph between localNodeId and targetNodeId, returns the route.
+   * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result.
+   *
+   * @param g
+   * @param localNodeId
+   * @param targetNodeId
+   * @param amount       the amount that will be sent along this route
+   * @param numRoutes    the number of shortest-paths to find
+   * @param extraEdges   a set of extra edges we want to CONSIDER during the search
+   * @param ignoredEdges a set of extra edges we want to IGNORE during the search
+   * @param routeParams  a set of parameters that can restrict the route search
+   * @return the computed route to the destination @targetNodeId
+   */
   def findRoute(g: DirectedGraph,
                 localNodeId: PublicKey,
                 targetNodeId: PublicKey,
@@ -1069,7 +1159,7 @@ object Router {
 
     def lengthOk(length: Int): Boolean = length <= routeParams.routeMaxLength && length <= ROUTE_MAX_LENGTH
 
-    def cltvOk(cltv: Int): Boolean = cltv <= routeParams.routeMaxCltv
+    def cltvOk(cltv: CltvExpiryDelta): Boolean = cltv <= routeParams.routeMaxCltv
 
     val boundaries: RichWeight => Boolean = { weight =>
       feeOk(weight.cost - amount, amount) && lengthOk(weight.length) && cltvOk(weight.cltv)
