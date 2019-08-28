@@ -72,8 +72,8 @@ case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, ca
   def updateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
   def updateFor(n: PublicKey): Option[ChannelUpdate] = if (n == ann.nodeId1) update_1_opt else if (n == ann.nodeId2) update_2_opt else throw new IllegalArgumentException("this node is unrelated to this channel")
 }
-case class PrivateChannel(nodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate])(implicit nodeParams: NodeParams) {
-  val (nodeId1, nodeId2) = if (Announcements.isNode1(nodeParams.nodeId, nodeId)) (nodeParams.nodeId, nodeId) else (nodeId, nodeParams.nodeId)
+case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
+  val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
   def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) nodeId1 else nodeId2
   def getSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
   def updateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
@@ -134,8 +134,6 @@ case object TickPruneStaleChannels
 class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[State, Data] {
 
   import Router._
-
-  implicit val np = nodeParams
 
   import ExecutionContext.Implicits.global
 
@@ -212,7 +210,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
               // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
               // let's create a corresponding private channel and process the channel_update
               log.info("adding unannounced local channel to remote={} shortChannelId={}", remoteNodeId, shortChannelId)
-              stay using handle(u, self, d.copy(privateChannels = d.privateChannels + (shortChannelId -> PrivateChannel(remoteNodeId, None, None))))
+              stay using handle(u, self, d.copy(privateChannels = d.privateChannels + (shortChannelId -> PrivateChannel(nodeParams.nodeId, remoteNodeId, None, None))))
           }
       }
 
@@ -584,7 +582,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         ))
         .toList
       val (sync1, replynow_opt) = addToSync(d.sync, remoteNodeId, replies)
-      // we only send a rely right away if there were no pending requests
+      // we only send a reply right away if there were no pending requests
       replynow_opt.foreach(transport ! _)
       context.system.eventStream.publish(syncProgress(sync1))
       stay using d.copy(sync = sync1)
