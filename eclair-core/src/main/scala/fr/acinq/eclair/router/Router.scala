@@ -571,7 +571,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
             TlvStream.empty
         ))
         .toList
-      val (sync1, replynow_opt) = updateSync(d.sync, remoteNodeId, replies)
+      val (sync1, replynow_opt) = addToSync(d.sync, remoteNodeId, replies)
       // we only send a rely right away if there were no pending requests
       replynow_opt.foreach(transport ! _)
       context.system.eventStream.publish(syncProgress(sync1))
@@ -1088,7 +1088,7 @@ object Router {
     }
   }
 
-  def updateSync(syncMap: Map[PublicKey, Sync], remoteNodeId: PublicKey, pending: List[RoutingMessage]): (Map[PublicKey, Sync], Option[RoutingMessage]) = {
+  def addToSync(syncMap: Map[PublicKey, Sync], remoteNodeId: PublicKey, pending: List[RoutingMessage]): (Map[PublicKey, Sync], Option[RoutingMessage]) = {
     pending match {
       case head +: rest =>
         // they may send back several reply_channel_range messages for a single query_channel_range query, and we must not

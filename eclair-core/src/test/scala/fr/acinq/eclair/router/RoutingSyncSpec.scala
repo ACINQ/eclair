@@ -284,10 +284,10 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val nodeidA = randomKey.publicKey
     val nodeidB = randomKey.publicKey
 
-    val (sync1, _) = Router.updateSync(Map.empty, nodeidA, List(req, req, req, req))
+    val (sync1, _) = Router.addToSync(Map.empty, nodeidA, List(req, req, req, req))
     assert(Router.syncProgress(sync1) == SyncProgress(0.25D))
 
-    val (sync2, _) = Router.updateSync(sync1, nodeidB, List(req, req, req, req, req, req, req, req, req, req, req, req))
+    val (sync2, _) = Router.addToSync(sync1, nodeidB, List(req, req, req, req, req, req, req, req, req, req, req, req))
     assert(Router.syncProgress(sync2) == SyncProgress(0.125D))
 
     // let's assume we made some progress
