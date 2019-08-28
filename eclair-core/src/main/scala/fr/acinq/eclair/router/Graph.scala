@@ -343,7 +343,7 @@ object Graph {
     val BLOCK_TIME_TWO_MONTHS = 8640
 
     // Low/High bound for channel capacity
-    val CAPACITY_CHANNEL_LOW = (1000 * 1000L) msat // 1000 sat
+    val CAPACITY_CHANNEL_LOW = (1000 sat).toMilliSatoshi
     val CAPACITY_CHANNEL_HIGH = Channel.MAX_FUNDING.toMilliSatoshi
 
     // Low/High bound for CLTV channel value

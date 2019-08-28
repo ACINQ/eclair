@@ -319,7 +319,7 @@ object PaymentRequest {
     val extraHopCodec: Codec[ExtraHop] = (
       ("nodeId" | publicKey) ::
         ("shortChannelId" | shortchannelid) ::
-        ("fee_base_msat" | uint32.xmapc(l => MilliSatoshi(l))(_.toLong)) ::
+        ("fee_base_msat" | millisatoshi32) ::
         ("fee_proportional_millionth" | uint32) ::
         ("cltv_expiry_delta" | cltvExpiryDelta)
       ).as[ExtraHop]

@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{LongToBtcAmount, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{LongToBtcAmount, TestConstants, TestkitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration._
@@ -41,7 +41,7 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     val setup = init()
     import setup._
     val (fundingSatoshis, pushMsat) = if (test.tags.contains("funder_below_reserve")) {
-      (1000100 sat, 1000000000L msat) // toRemote = 100 satoshis
+      (1000100 sat, (1000000 sat).toMilliSatoshi) // toLocal = 100 satoshis
     } else {
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }

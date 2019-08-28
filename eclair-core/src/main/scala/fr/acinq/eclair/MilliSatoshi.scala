@@ -53,6 +53,7 @@ case class MilliSatoshi(private val underlying: Long) extends Ordered[MilliSatos
 
   def truncateToSatoshi: Satoshi = Satoshi(underlying / 1000)
   def toLong: Long = underlying
+  override def toString = s"$underlying msat"
   // @formatter:on
 
 }
