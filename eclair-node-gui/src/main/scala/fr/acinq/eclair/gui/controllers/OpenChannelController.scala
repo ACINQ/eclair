@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.{Channel, ChannelFlags}
 import fr.acinq.eclair.gui.utils.Constants
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.io.{NodeURI, Peer}
-import fr.acinq.eclair.{CoinUtils, Globals, MilliSatoshi}
+import fr.acinq.eclair.{CoinUtils, MilliSatoshi}
 import grizzled.slf4j.Logging
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.event.ActionEvent
