@@ -52,6 +52,7 @@ case class RouterConf(randomizeRouteSelection: Boolean,
                       channelExcludeDuration: FiniteDuration,
                       routerBroadcastInterval: FiniteDuration,
                       requestNodeAnnouncements: Boolean,
+                      encodingType: EncodingType,
                       searchMaxFeeBase: Satoshi,
                       searchMaxFeePct: Double,
                       searchMaxRouteLength: Int,
@@ -518,14 +519,14 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
             case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
               // we always compute timestamps and checksums even if we don't need both, overhead is negligible
               val (timestamps, checksums) = chunk.shortChannelIds.map(getChannelDigestInfo(d.channels, d.updates)).unzip
-              val encodedTimestamps = if (extension.wantTimestamps) Some(ReplyChannelRangeTlv.EncodedTimestamps(EncodingType.UNCOMPRESSED, timestamps)) else None
+              val encodedTimestamps = if (extension.wantTimestamps) Some(ReplyChannelRangeTlv.EncodedTimestamps(nodeParams.routerConf.encodingType, timestamps)) else None
               val encodedChecksums = if (extension.wantChecksums) Some(ReplyChannelRangeTlv.EncodedChecksums(checksums)) else None
               (encodedTimestamps, encodedChecksums)
             case _ => (None, None)
           }
           val reply = ReplyChannelRange(chainHash, chunk.firstBlock, chunk.numBlocks,
             complete = 1,
-            shortChannelIds = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, chunk.shortChannelIds),
+            shortChannelIds = EncodedShortChannelIds(nodeParams.routerConf.encodingType, chunk.shortChannelIds),
             timestamps = timestamps,
             checksums = checksums)
           transport ! reply
@@ -754,7 +755,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       // when we're sending updates to ourselves
       (transport_opt, remoteNodeId_opt) match {
         case (Some(transport), Some(remoteNodeId)) =>
-          val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(u.shortChannelId)), TlvStream.empty)
+          val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(nodeParams.routerConf.encodingType, List(u.shortChannelId)), TlvStream.empty)
           d.sync.get(remoteNodeId) match {
             case Some(sync) =>
               // we already have a pending request to that node, let's add this channel to the list and we'll get it later
