@@ -225,21 +225,61 @@ case class ChannelUpdate(signature: ByteVector64,
   require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
 }
 
+// @formatter:off
+sealed trait EncodingType
+object EncodingType {
+  case object UNCOMPRESSED extends EncodingType
+  case object COMPRESSED_ZLIB extends EncodingType
+}
+// @formatter:on
+
+
+case class EncodedShortChannelIds(encoding: EncodingType,
+                                  array: List[ShortChannelId])
+
+
 case class QueryShortChannelIds(chainHash: ByteVector32,
-                                data: ByteVector) extends RoutingMessage with HasChainHash
+                                shortChannelIds: EncodedShortChannelIds,
+                                tlvStream: TlvStream[QueryShortChannelIdsTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash {
+  val queryFlags_opt: Option[QueryShortChannelIdsTlv.EncodedQueryFlags] = tlvStream.get[QueryShortChannelIdsTlv.EncodedQueryFlags]
+}
+
+case class ReplyShortChannelIdsEnd(chainHash: ByteVector32,
+                                   complete: Byte) extends RoutingMessage with HasChainHash
+
 
 case class QueryChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,
-                             numberOfBlocks: Long) extends RoutingMessage with HasChainHash
+                             numberOfBlocks: Long,
+                             tlvStream: TlvStream[QueryChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
+  val queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags] = tlvStream.get[QueryChannelRangeTlv.QueryFlags]
+}
 
 case class ReplyChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,
                              numberOfBlocks: Long,
                              complete: Byte,
-                             data: ByteVector) extends RoutingMessage with HasChainHash
+                             shortChannelIds: EncodedShortChannelIds,
+                             tlvStream: TlvStream[ReplyChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
+  val timestamps_opt: Option[ReplyChannelRangeTlv.EncodedTimestamps] = tlvStream.get[ReplyChannelRangeTlv.EncodedTimestamps]
 
-case class ReplyShortChannelIdsEnd(chainHash: ByteVector32,
-                                   complete: Byte) extends RoutingMessage with HasChainHash
+  val checksums_opt: Option[ReplyChannelRangeTlv.EncodedChecksums] = tlvStream.get[ReplyChannelRangeTlv.EncodedChecksums]
+}
+
+object ReplyChannelRange {
+  def apply(chainHash: ByteVector32,
+            firstBlockNum: Long,
+            numberOfBlocks: Long,
+            complete: Byte,
+            shortChannelIds: EncodedShortChannelIds,
+            timestamps: Option[ReplyChannelRangeTlv.EncodedTimestamps],
+            checksums: Option[ReplyChannelRangeTlv.EncodedChecksums]) = {
+    timestamps.foreach(ts => require(ts.timestamps.length == shortChannelIds.array.length))
+    checksums.foreach(cs => require(cs.checksums.length == shortChannelIds.array.length))
+    new ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, complete, shortChannelIds, TlvStream(timestamps.toList ::: checksums.toList))
+  }
+}
+
 
 case class GossipTimestampFilter(chainHash: ByteVector32,
                                  firstTimestamp: Long,

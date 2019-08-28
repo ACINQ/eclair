@@ -33,7 +33,6 @@ import fr.acinq.eclair.wire.QueryShortChannelIds
 import fr.acinq.eclair.{CltvExpiryDelta, Globals, MilliSatoshi, ShortChannelId, randomKey}
 import scodec.bits._
 
-import scala.collection.SortedSet
 import scala.compat.Platform
 import scala.concurrent.duration._
 
@@ -276,6 +275,6 @@ class RouterSpec extends BaseRouterSpec {
     val transport = TestProbe()
     probe.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, update1))
     val query = transport.expectMsgType[QueryShortChannelIds]
-    assert(ChannelRangeQueries.decodeShortChannelIds(query.data)._2 == SortedSet(channelId))
+    assert(query.shortChannelIds.array == List(channelId))
   }
 }
