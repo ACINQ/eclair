@@ -301,8 +301,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       // in the meantime, the router will have updated its state
       sender.send(nodes("A").router, 'channelsMap)
       // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
-      val u_opt = updateFor(nodes("B").nodeParams.nodeId, sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId)))
-      u_opt == Some(channelUpdateBC)
+      val u_opt = updateFor(nodes("B").nodeParams.nodeId, sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId))
+      u_opt.contains(channelUpdateBC)
     }, max = 30 seconds, interval = 1 seconds)
 
     // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former

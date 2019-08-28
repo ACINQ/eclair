@@ -236,10 +236,8 @@ object EncodingType {
 }
 // @formatter:on
 
-
 case class EncodedShortChannelIds(encoding: EncodingType,
                                   array: List[ShortChannelId])
-
 
 case class QueryShortChannelIds(chainHash: ByteVector32,
                                 shortChannelIds: EncodedShortChannelIds,

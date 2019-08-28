@@ -67,21 +67,30 @@ case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKe
 case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
   update_1_opt.foreach(u => assert(Announcements.isNode1(u.channelFlags)))
   update_2_opt.foreach(u => assert(!Announcements.isNode1(u.channelFlags)))
+
   def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) ann.nodeId1 else ann.nodeId2
+
   def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
+
   def updateChannelUpdateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
 }
+
 case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
   val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
+
   def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) nodeId1 else nodeId2
+
   def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
+
   def updateChannelUpdateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
 }
 
 case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey)
 
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
+
 case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: Option[WeightRatios])
+
 case class RouteRequest(source: PublicKey,
                         target: PublicKey,
                         amount: MilliSatoshi,
@@ -90,16 +99,23 @@ case class RouteRequest(source: PublicKey,
                         ignoreChannels: Set[ChannelDesc] = Set.empty,
                         routeParams: Option[RouteParams] = None)
 
-case class FinalizeRoute(hops:Seq[PublicKey])
+case class FinalizeRoute(hops: Seq[PublicKey])
+
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
   require(hops.nonEmpty, "route cannot be empty")
 }
+
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
+
 case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[QueryChannelRangeTlv])
+
 case object GetRoutingState
+
 case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
+
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
+
 case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
 case class ShortChannelIdAndFlag(shortChannelId: ShortChannelId, flag: Long)
@@ -119,9 +135,11 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                )
 
 sealed trait State
+
 case object NORMAL extends State
 
 case object TickBroadcast
+
 case object TickPruneStaleChannels
 
 // @formatter:on
@@ -302,24 +320,24 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
       publicChannel_opt match {
         case Some(pc) =>
-        // note: if the channel is graduating from private to public, the implementation (in the LocalChannelUpdate handler) guarantees that we will process a new channel_update
-        // right after the channel_announcement, channel_updates will be moved from private to public at that time
-        val d1 = d0.copy(
-          channels = d0.channels + (c.shortChannelId -> pc),
-          privateChannels = d0.privateChannels - c.shortChannelId, // we remove fake announcements that we may have made before
-          rebroadcast = d0.rebroadcast.copy(channels = d0.rebroadcast.channels + (c -> d0.awaiting.getOrElse(c, Nil).toSet)), // we also add the newly validated channels to the rebroadcast queue
-          stash = stash1,
-          awaiting = awaiting1)
-        // we only reprocess updates and nodes if validation succeeded
-        val d2 = reprocessUpdates.foldLeft(d1) {
-          case (d, (u, origins)) => origins.foldLeft(d) { case (d, origin) => handle(u, origin, d) } // we reprocess the same channel_update for every origin (to preserve origin information)
-        }
-        val d3 = reprocessNodes.foldLeft(d2) {
-          case (d, (n, origins)) => origins.foldLeft(d) { case (d, origin) => handle(n, origin, d) } // we reprocess the same node_announcement for every origins (to preserve origin information)
-        }
-        stay using d3
+          // note: if the channel is graduating from private to public, the implementation (in the LocalChannelUpdate handler) guarantees that we will process a new channel_update
+          // right after the channel_announcement, channel_updates will be moved from private to public at that time
+          val d1 = d0.copy(
+            channels = d0.channels + (c.shortChannelId -> pc),
+            privateChannels = d0.privateChannels - c.shortChannelId, // we remove fake announcements that we may have made before
+            rebroadcast = d0.rebroadcast.copy(channels = d0.rebroadcast.channels + (c -> d0.awaiting.getOrElse(c, Nil).toSet)), // we also add the newly validated channels to the rebroadcast queue
+            stash = stash1,
+            awaiting = awaiting1)
+          // we only reprocess updates and nodes if validation succeeded
+          val d2 = reprocessUpdates.foldLeft(d1) {
+            case (d, (u, origins)) => origins.foldLeft(d) { case (d, origin) => handle(u, origin, d) } // we reprocess the same channel_update for every origin (to preserve origin information)
+          }
+          val d3 = reprocessNodes.foldLeft(d2) {
+            case (d, (n, origins)) => origins.foldLeft(d) { case (d, origin) => handle(n, origin, d) } // we reprocess the same node_announcement for every origins (to preserve origin information)
+          }
+          stay using d3
         case None =>
-        stay using d0.copy(stash = stash1, awaiting = awaiting1)
+          stay using d0.copy(stash = stash1, awaiting = awaiting1)
       }
 
     case Event(WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)), d) if d.channels.contains(shortChannelId) =>
