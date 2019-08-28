@@ -122,7 +122,7 @@ class LightningMessageCodecsSpec extends FunSuite {
 
   case class TestItem(msg: Any, hex: String)
 
-  test("test vectors") {
+  test("test vectors for extended channel queries ") {
     import org.json4s.{CustomSerializer, ShortTypeHints}
     import org.json4s.JsonAST.JString
     import org.json4s.jackson.Serialization
@@ -150,20 +150,30 @@ class LightningMessageCodecsSpec extends FunSuite {
     val query_short_channel_id_flags = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(12232), ShortChannelId(15556), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
     val query_short_channel_id_flags_zlib = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(14200), ShortChannelId(46645), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
 
-    val refs = List(
-      query_channel_range,
-      query_channel_range_timestamps_checksums,
-      reply_channel_range,
-      reply_channel_range_zlib,
-      reply_channel_range_timestamps_checksums,
-      reply_channel_range_timestamps_checksums_zlib,
-      query_short_channel_id,
-      query_short_channel_id_zlib,
-      query_short_channel_id_flags,
-      query_short_channel_id_flags_zlib
+
+
+    val refs = Map(
+      query_channel_range -> hex"01070f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000186a0000005dc",
+      query_channel_range_timestamps_checksums -> hex"01070f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000088b800000064010103",
+      reply_channel_range -> hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000b8a06000005dc01001900000000000000008e0000000000003c69000000000045a6c4",
+      reply_channel_range_zlib -> hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000006400000006e01001601789c636000833e08659309a65878be010010a9023a",
+      reply_channel_range_timestamps_checksums -> hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e22060001ddde000005dc01001900000000000000304300000000000778d6000000000046e1c1011900000282c1000e77c5000778ad00490ab00000b57800955bff031800000457000008ae00000d050000115c000015b300001a0a",
+      reply_channel_range_timestamps_checksums_zlib -> hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e22060001ddde000005dc01001801789c63600001036730c55e710d4cbb3d3c080017c303b1012201789c63606a3ac8c0577e9481bd622d8327d7060686ad150c53a3ff0300554707db031800000457000008ae00000d050000115c000015b300001a0a",
+      query_short_channel_id -> hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001900000000000000008e0000000000003c69000000000045a6c4",
+      query_short_channel_id_zlib -> hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001801789c63600001c12b608a69e73e30edbaec0800203b040e",
+      query_short_channel_id_flags -> hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e22060019000000000000002fc80000000000003cc4000000000045a6c4010c01789c6364620100000e0008",
+      query_short_channel_id_flags_zlib -> hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001801789c63600001f30a30c5b0cd144cb92e3b020017c6034a010c01789c6364620100000e0008"
     )
 
-    class EncodingTypeSerializer extends CustomSerializer[EncodingType](format => ( {
+    val items = refs.map { case (obj, refbin) =>
+      val bin = lightningMessageCodec.encode(obj).require
+      assert(refbin.bits === bin)
+      TestItem(obj, bin.toHex)
+    }
+
+    // NB: uncomment this to update the test vectors
+
+    /*class EncodingTypeSerializer extends CustomSerializer[EncodingType](format => ( {
       null
     }, {
       case EncodingType.UNCOMPRESSED => JString("UNCOMPRESSED")
@@ -207,12 +217,8 @@ class LightningMessageCodecsSpec extends FunSuite {
         classOf[ReplyChannelRange],
         classOf[QueryShortChannelIds]))
 
-    val items = refs.map { obj =>
-      val bin = lightningMessageCodec.encode(obj).require
-      TestItem(obj, bin.toHex)
-    }
     val json = Serialization.writePretty(items)
-    println(json)
+    println(json)*/
   }
 
   test("decode channel_update with htlc_maximum_msat") {
