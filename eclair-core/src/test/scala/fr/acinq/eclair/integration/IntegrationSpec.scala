@@ -23,7 +23,7 @@ import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestKit, TestProbe}
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
@@ -295,11 +295,13 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val ps = sender.expectMsgType[PaymentSucceeded](5 seconds)
     assert(ps.id == paymentId)
 
+    def updateFor(n: PublicKey, pc: PublicChannel): Option[ChannelUpdate] = if (n == pc.ann.nodeId1) pc.update_1_opt else if (n == pc.ann.nodeId2) pc.update_2_opt else throw new IllegalArgumentException("this node is unrelated to this channel")
+
     awaitCond({
       // in the meantime, the router will have updated its state
       sender.send(nodes("A").router, 'channelsMap)
       // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
-      val u_opt = sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId).updateFor(nodes("B").nodeParams.nodeId)
+      val u_opt = updateFor(nodes("B").nodeParams.nodeId, sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId)))
       u_opt == Some(channelUpdateBC)
     }, max = 30 seconds, interval = 1 seconds)
 
@@ -314,7 +316,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(channelUpdateBC_new.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks)
     awaitCond({
       sender.send(nodes("A").router, 'channelsMap)
-      val u = sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId).updateFor(nodes("B").nodeParams.nodeId).get
+      val u = updateFor(nodes("B").nodeParams.nodeId, sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId)).get
       u.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks
     }, max = 30 seconds, interval = 1 second)
   }

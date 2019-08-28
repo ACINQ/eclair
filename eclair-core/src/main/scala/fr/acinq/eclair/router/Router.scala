@@ -68,15 +68,14 @@ case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, ca
   update_1_opt.foreach(u => assert(Announcements.isNode1(u.channelFlags)))
   update_2_opt.foreach(u => assert(!Announcements.isNode1(u.channelFlags)))
   def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) ann.nodeId1 else ann.nodeId2
-  def getSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
-  def updateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
-  def updateFor(n: PublicKey): Option[ChannelUpdate] = if (n == ann.nodeId1) update_1_opt else if (n == ann.nodeId2) update_2_opt else throw new IllegalArgumentException("this node is unrelated to this channel")
+  def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
+  def updateChannelUpdateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
 }
 case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
   val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
   def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) nodeId1 else nodeId2
-  def getSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
-  def updateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
+  def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
+  def updateChannelUpdateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
 }
 
 case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey)
@@ -689,14 +688,14 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       } else if (isStale(u)) {
         log.debug("ignoring {} (stale)", u)
         d
-      } else if (pc.getSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
+      } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
         log.debug("ignoring {} (duplicate)", u)
         d
       } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
         origin ! InvalidSignature(u)
         d
-      } else if (pc.getSameSideAs(u).isDefined) {
+      } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.updateChannel(u)
@@ -705,14 +704,14 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           case true => d.graph.removeEdge(desc).addEdge(desc, u)
           case false => d.graph.removeEdge(desc) // if the channel is now disabled, we remove it from the graph
         }
-        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateSameSideAs(u)), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
+        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.updateChannel(u)
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u)
-        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateSameSideAs(u)), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
+        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
@@ -731,25 +730,25 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       if (isStale(u)) {
         log.debug("ignoring {} (stale)", u)
         d
-      } else if (pc.getSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
+      } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
         log.debug("ignoring {} (already know same or newer)", u)
         d
       } else if (!Announcements.checkSig(u, desc.a)) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
         origin ! InvalidSignature(u)
         d
-      } else if (pc.getSameSideAs(u).isDefined) {
+      } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val graph1 = d.graph.removeEdge(desc).addEdge(desc, u)
-        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc.updateSameSideAs(u)), graph = graph1)
+        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u)
-        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc.updateSameSideAs(u)), graph = graph1)
+        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), graph = graph1)
       }
     } else if (db.isPruned(u.shortChannelId) && !isStale(u)) {
       // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
