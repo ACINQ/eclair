@@ -32,17 +32,6 @@ object Globals {
     */
   val blockCount = new AtomicLong(0)
 
-  /**
-    * This holds the current feerates, in satoshi-per-kilobytes.
-    * The value is read by all actors, hence it needs to be thread-safe.
-    */
-  val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
-
-  /**
-    * This holds the current feerates, in satoshi-per-kw.
-    * The value is read by all actors, hence it needs to be thread-safe.
-    */
-  val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
 }
 
 
