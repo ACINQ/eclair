@@ -334,7 +334,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       // we won't clean it up, but we won't remember the temporary id on channel termination
       stay using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
 
-    case Event(RoutingState(channels, updates, nodes), d: ConnectedData) =>
+    case Event(RoutingState(channels, nodes), d: ConnectedData) =>
       // let's send the messages
       def send(announcements: Iterable[_ <: LightningMessage]) = announcements.foldLeft(0) {
         case (c, ann) =>
@@ -343,9 +343,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       }
 
       log.info(s"sending all announcements to {}", remoteNodeId)
-      val channelsSent = send(channels)
+      val channelsSent = send(channels.map(_.ann))
       val nodesSent = send(nodes)
-      val updatesSent = send(updates)
+      val updatesSent = send(channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq))
       log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       stay
 
