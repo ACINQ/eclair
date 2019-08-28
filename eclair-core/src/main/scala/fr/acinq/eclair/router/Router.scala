@@ -1072,12 +1072,14 @@ object Router {
    * @return
    */
   def split(shortChannelIds: SortedSet[ShortChannelId]): List[ShortChannelIdsChunk] = {
-    // TODO: this is wrong because it can split blocks
+    // this algorithm can split blocks (meaning that we can in theory generate several replies with the same first_block/num_blocks
+    // and a different set of short_channel_ids) but it doesn't matter
+    val SPLIT_SIZE = 3500 // we can theoretically fit 4091 uncompressed channel ids in a single lightning message (max size 65 Kb)
     if (shortChannelIds.isEmpty) {
       List(ShortChannelIdsChunk(0, 0, List.empty))
     } else {
       shortChannelIds
-        .grouped(2000) // LN messages must fit in 65 Kb so we split ids into groups to make sure that the output message will be valid
+        .grouped(SPLIT_SIZE)
         .toList
         .map { group =>
           // NB: group is never empty
