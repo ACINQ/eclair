@@ -168,7 +168,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     }
     awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && bob.stateData.updates.size === 2 * fakeRoutingInfo.size, max = 20 seconds)
     assert(BasicSyncResult(ranges = 2, queries = 46, channels = fakeRoutingInfo.size, updates = 2 * fakeRoutingInfo.size, nodes = 2 * fakeRoutingInfo.size) === sync(alice, bob, extendedQueryFlags_opt).counts)
-    awaitCond(alice.stateData.channels === bob.stateData.channels, max = 20 seconds)
+    awaitCond(alice.stateData.channels === bob.stateData.channels, max = 60 seconds)
     awaitCond(alice.stateData.updates === bob.stateData.updates)
   }
 
