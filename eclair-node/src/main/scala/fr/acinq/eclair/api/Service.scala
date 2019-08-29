@@ -48,10 +48,10 @@ import scala.concurrent.duration._
 
 case class ErrorResponse(error: String)
 
-trait Service extends ExtraDirectives with Logging with Json4sSupport {
+trait Service extends ExtraDirectives with Logging {
 
   // important! Must NOT import the unmarshaller as it is too generic...see https://github.com/akka/akka-http/issues/541
-  import JsonSupport.{formats, serialization}
+  import JsonSupport.{formats, marshaller, serialization}
 
   // used to send typed messages over the websocket
   val formatsWithTypeHint = formats.withTypeHintFieldName("type") +
