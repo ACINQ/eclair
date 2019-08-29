@@ -118,4 +118,18 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
   def notification(title: String, message: String, notificationType: NotificationType = NOTIFICATION_NONE, showAppName: Boolean = true) = {
     notifsController.foreach(_.addNotification(if (showAppName) s"Eclair - $title" else title, message, notificationType))
   }
+
+  /**
+    * Retrieves on-chain fees for a funding transaction, using the funding block target set in the config file.
+    *
+    * @return Future containing a Long in satoshi per kilobyte
+    */
+  def getFundingFeeRatePerKb(): Future[Long] = {
+    for {
+      kit <- fKit
+      ratePerKw = {
+        kit.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKb(target = kit.nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
+      }
+    } yield ratePerKw
+  }
 }
