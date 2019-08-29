@@ -63,7 +63,6 @@ trait BitcoindService extends Logging {
   case class BitcoinReq(method: String, params: Any*)
 
   def startBitcoind(): Unit = {
-    println("started bitcoind...")
     Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
     if (!Files.exists(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)) {
       val is = classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf")
@@ -72,7 +71,6 @@ trait BitcoindService extends Logging {
           .replace("28332", bitcoindRpcPort.toString)
           .replace("28334", bitcoindZmqBlockPort.toString)
           .replace("28335", bitcoindZmqTxPort.toString)
-      println(conf)
       Files.writeString(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath, conf)
     }
 
@@ -85,17 +83,14 @@ trait BitcoindService extends Logging {
         case BitcoinReq(method, param1, param2) => bitcoinrpcclient.invoke(method, param1, param2) pipeTo sender
       }
     }))
-    println("...started")
   }
 
   def stopBitcoind(): Unit = {
-    println("stopping bitcoind...")
     // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging
     val sender = TestProbe()
     sender.send(bitcoincli, BitcoinReq("stop"))
     sender.expectMsgType[JValue]
-    val exit = bitcoind.exitValue()
-    println(s"...stopped (exit=$exit)")
+    bitcoind.exitValue()
   }
 
   def waitForBitcoindReady(): Unit = {
