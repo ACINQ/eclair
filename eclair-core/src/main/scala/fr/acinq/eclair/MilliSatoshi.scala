@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import com.google.common.primitives.UnsignedLongs
 import fr.acinq.bitcoin.{Btc, BtcAmount, MilliBtc, Satoshi, btc2satoshi, millibtc2satoshi}
 
 /**
@@ -40,6 +41,7 @@ case class MilliSatoshi(private val underlying: Long) extends Ordered[MilliSatos
   override def compare(other: MilliSatoshi): Int = underlying.compareTo(other.underlying)
   // Since BtcAmount is a sealed trait that MilliSatoshi cannot extend, we need to redefine comparison operators.
   def compare(other: BtcAmount): Int = compare(other.toMilliSatoshi)
+  def compareUnsigned(other: UInt64): Int = UnsignedLongs.compare(underlying, other.toBigInt.longValue())
   def <=(other: BtcAmount): Boolean = compare(other) <= 0
   def >=(other: BtcAmount): Boolean = compare(other) >= 0
   def <(other: BtcAmount): Boolean = compare(other) < 0

@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
+import com.google.common.primitives.UnsignedLongs
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
@@ -145,8 +146,9 @@ object Commitments {
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
     val outgoingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
-    val htlcValueInFlight = UInt64(outgoingHtlcs.map(_.add.amountMsat).sum.toLong)
-    if (htlcValueInFlight > commitments1.remoteParams.maxHtlcValueInFlightMsat) {
+    val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
+    // we must use unsigned comparison here because 'maxHtlcValueInFlightMsat' is effectively an uint64 and can exceed the capacity of MilliSatoshi class
+    if (htlcValueInFlight.compareUnsigned(commitments1.remoteParams.maxHtlcValueInFlightMsat) > 0) {
       // TODO: this should be a specific UPDATE error
       return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
     }
@@ -180,8 +182,9 @@ object Commitments {
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
     val incomingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
-    val htlcValueInFlight = UInt64(incomingHtlcs.map(_.add.amountMsat).sum.toLong)
-    if (htlcValueInFlight > commitments1.localParams.maxHtlcValueInFlightMsat) {
+    val htlcValueInFlight = incomingHtlcs.map(_.add.amountMsat).sum
+    // we must use unsigned comparison here because 'maxHtlcValueInFlightMsat' is effectively an uint64 and can exceed the capacity of MilliSatoshi class
+    if (htlcValueInFlight.compareUnsigned(commitments1.localParams.maxHtlcValueInFlightMsat) > 0) {
       throw HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
     }
 
