@@ -85,7 +85,9 @@ case class Commitments(channelVersion: ChannelVersion,
   val announceChannel: Boolean = (channelFlags & 0x01) != 0
 
   lazy val availableBalanceForSend: MilliSatoshi = {
-    val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
+    // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
+    val remoteCommit1 = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
+    val reduced = CommitmentSpec.reduce(remoteCommit1.spec, remoteChanges.acked, localChanges.proposed)
     val feesMsat = if (localParams.isFunder) commitTxFee(remoteParams.dustLimit, reduced).toMilliSatoshi else 0.msat
     (reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi - feesMsat).max(0 msat)
   }
