@@ -253,7 +253,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
 
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, Satoshi(12300), MilliSatoshi(0), None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 12300 sat, 0 msat, None, None, None))
     awaitCond(peer.stateData.channels.nonEmpty)
 
     val channelCreated = probe.expectMsgType[ChannelCreated]

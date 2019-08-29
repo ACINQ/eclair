@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.wire.CommonCodecs.{cltvExpiry, millisatoshi, sha256}
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelUpdateCodec, lightningMessageCodec}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi}
+import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
@@ -91,7 +91,7 @@ object FailureMessageCodecs {
     .typecase(UPDATE | 13, (("expiry" | cltvExpiry) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[IncorrectCltvExpiry])
     .typecase(UPDATE | 14, ("channelUpdate" | channelUpdateWithLengthCodec).as[ExpiryTooSoon])
     .typecase(UPDATE | 20, (("messageFlags" | byte) :: ("channelFlags" | byte) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
-    .typecase(PERM | 15, ("amountMsat" | withDefaultValue(optional(bitsRemaining, millisatoshi), MilliSatoshi(0))).as[IncorrectOrUnknownPaymentDetails])
+    .typecase(PERM | 15, ("amountMsat" | withDefaultValue(optional(bitsRemaining, millisatoshi), 0 msat)).as[IncorrectOrUnknownPaymentDetails])
     .typecase(PERM | 16, provide(IncorrectPaymentAmount))
     .typecase(17, provide(FinalExpiryTooSoon))
     .typecase(18, ("expiry" | cltvExpiry).as[FinalIncorrectCltvExpiry])

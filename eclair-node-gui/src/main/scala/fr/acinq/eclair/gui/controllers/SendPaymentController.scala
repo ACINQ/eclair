@@ -110,7 +110,7 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage) extends Lo
     (Try(CoinUtils.convertStringAmountToMsat(amountField.getText(), FxApp.getUnit.code)), readPaymentRequest()) match {
       case (Success(amountMsat), Success(pr)) =>
         // we always override the payment request amount with the one from the UI
-        Try(handlers.send(Some(amountMsat.amount), pr)) match {
+        Try(handlers.send(Some(amountMsat.toLong), pr)) match {
           case Success(_) => stage.close()
           case Failure(f) => paymentRequestError.setText(s"Invalid Payment Request: ${f.getMessage}")
         }
