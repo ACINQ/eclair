@@ -97,6 +97,11 @@
             <artifactId>akka-http-core_${scala.version.short}</artifactId>
             <version>${akka.http.version}</version>
         </dependency>
+        <dependency>
+            <groupId>de.heikoseeberger</groupId>
+            <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
+            <version>1.19.0</version>
+        </dependency>
         <!-- test dependencies -->
         <dependency>
             <groupId>com.typesafe.akka</groupId>

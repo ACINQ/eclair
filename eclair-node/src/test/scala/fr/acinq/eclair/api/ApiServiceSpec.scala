@@ -26,6 +26,7 @@ import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe}
 import akka.stream.ActorMaterializer
 import akka.util.{ByteString, Timeout}
+import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair._
@@ -97,7 +98,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       check {
         assert(handled)
         assert(status == BadRequest)
-        val resp = entityAs[ErrorResponse](JsonSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
+        val resp = entityAs[ErrorResponse](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
         assert(resp.error == "The form field 'channelId' was malformed:\nInvalid hexadecimal character 'h' at index 0")
       }
 
@@ -293,7 +294,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       check {
         assert(handled)
         assert(status == NotFound)
-        val resp = entityAs[ErrorResponse](JsonSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
+        val resp = entityAs[ErrorResponse](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
         assert(resp == ErrorResponse("Not found"))
         eclair.receivedInfo(ByteVector32.Zeroes)(any[Timeout]).wasCalled(once)
       }
