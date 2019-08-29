@@ -31,13 +31,12 @@ import scala.collection.mutable
 class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor with ActorLogging {
 
   import CommandBuffer._
-  import nodeParams.db._
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
   override def receive: Receive = {
     val pendingRelays = new mutable.HashMap[ByteVector32, mutable.Set[HasHtlcIdCommand]] with mutable.MultiMap[ByteVector32, HasHtlcIdCommand]
-    for ((chanId, cmd) <- pendingRelay.listPendingRelay()) pendingRelays.addBinding(chanId, cmd)
+    for ((chanId, cmd) <- nodeParams.db.pendingRelay.listPendingRelay()) pendingRelays.addBinding(chanId, cmd)
     main(pendingRelays)
   }
 
@@ -47,13 +46,13 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
       // save command in db
       register ! Register.Forward(channelId, cmd)
       // we also store the preimage in a db (note that this happens *after* forwarding the fulfill to the channel, so we don't add latency)
-      pendingRelay.addPendingRelay(channelId, cmd)
+      nodeParams.db.pendingRelay.addPendingRelay(channelId, cmd)
       context become main(pendingRelays.addBinding(channelId, cmd.modify(_.commit).setTo(false)))
 
     case CommandAck(channelId, htlcId) =>
       //delete from db
       log.debug(s"fulfill/fail acked for channelId=$channelId htlcId=$htlcId")
-      pendingRelay.removePendingRelay(channelId, htlcId)
+      nodeParams.db.pendingRelay.removePendingRelay(channelId, htlcId)
       pendingRelays.get(channelId).flatMap(_.find(_.id == htlcId)).foreach { cmd =>
         context become main(pendingRelays.removeBinding(channelId, cmd))
       }
