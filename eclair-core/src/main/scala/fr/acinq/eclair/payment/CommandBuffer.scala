@@ -59,15 +59,12 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
       }
 
     case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, d: HasCommitments) =>
-      import d.channelId
       // if channel is in a state where it can have pending htlcs, we send them the fulfills/fails we know of
-      pendingRelays.get(channelId) match {
-        case None => ()
-        case Some(cmds) =>
-          log.info(s"re-sending ${cmds.size} unacked fulfills/fails to channel $channelId")
-          cmds.foreach(channel ! _) // they all have commit = false
-          // better to sign once instead of after each fulfill
-          channel ! CMD_SIGN
+      pendingRelays.get(d.channelId).foreach { cmds =>
+        log.info(s"re-sending ${cmds.size} unacked fulfills/fails to channel ${d.channelId}")
+        cmds.foreach(channel ! _) // they all have commit = false
+        // better to sign once instead of after each fulfill
+        channel ! CMD_SIGN
       }
 
     case ChannelStateChanged(_, _, _, _, CLOSED, d: HasCommitments) =>
