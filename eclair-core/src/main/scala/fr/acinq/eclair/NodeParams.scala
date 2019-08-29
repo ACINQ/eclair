@@ -31,7 +31,7 @@ import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.wire.{Color, NodeAddress}
+import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
@@ -47,6 +47,7 @@ case class NodeParams(keyManager: KeyManager,
                       globalFeatures: ByteVector,
                       localFeatures: ByteVector,
                       overrideFeatures: Map[PublicKey, (ByteVector, ByteVector)],
+                      syncWhitelist: Set[PublicKey],
                       dustLimit: Satoshi,
                       onChainFeeConf: OnChainFeeConf,
                       maxHtlcValueInFlightMsat: UInt64,
@@ -77,7 +78,6 @@ case class NodeParams(keyManager: KeyManager,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int) {
-
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
 }
@@ -163,6 +163,8 @@ object NodeParams {
       p -> (gf, lf)
     }.toMap
 
+    val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
+
     val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {
       Some(Socks5ProxyParams(
         address = new InetSocketAddress(config.getString("socks5.host"), config.getInt("socks5.port")),
@@ -187,6 +189,16 @@ object NodeParams {
       claimMainBlockTarget = config.getInt("on-chain-fees.target-blocks.claim-main")
     )
 
+    val feeBase = MilliSatoshi(config.getInt("fee-base-msat"))
+    // fee base is in msat but is encoded on 32 bits and not 64 in the BOLTs, which is why it has
+    // to be below 0x100000000 msat which is about 42 mbtc
+    require(feeBase <= MilliSatoshi(0xFFFFFFFFL), "fee-base-msat must be below 42 mbtc")
+
+    val routerSyncEncodingType = config.getString("router.sync.encoding-type") match {
+      case "uncompressed" => EncodingType.UNCOMPRESSED
+      case "zlib" => EncodingType.COMPRESSED_ZLIB
+    }
+
     NodeParams(
       keyManager = keyManager,
       alias = nodeAlias,
@@ -195,6 +207,7 @@ object NodeParams {
       globalFeatures = ByteVector.fromValidHex(config.getString("global-features")),
       localFeatures = ByteVector.fromValidHex(config.getString("local-features")),
       overrideFeatures = overrideFeatures,
+      syncWhitelist = syncWhitelist,
       dustLimit = dustLimitSatoshis,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
@@ -210,7 +223,7 @@ object NodeParams {
       toRemoteDelayBlocks = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
       maxToLocalDelayBlocks = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
       minDepthBlocks = config.getInt("mindepth-blocks"),
-      feeBase = MilliSatoshi(config.getInt("fee-base-msat")),
+      feeBase = feeBase,
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
@@ -231,6 +244,8 @@ object NodeParams {
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
+        requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
+        encodingType = routerSyncEncodingType,
         searchMaxRouteLength = config.getInt("router.path-finding.max-route-length"),
         searchMaxCltv = CltvExpiryDelta(config.getInt("router.path-finding.max-cltv")),
         searchMaxFeeBase = Satoshi(config.getLong("router.path-finding.fee-threshold-sat")),

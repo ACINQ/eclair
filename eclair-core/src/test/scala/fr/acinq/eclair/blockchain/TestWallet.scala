@@ -16,15 +16,15 @@
 
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.{ByteVector32, Crypto, OP_PUSHDATA, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.LongToBtcAmount
 import scodec.bits.ByteVector
 
 import scala.concurrent.Future
-import scala.util.Try
 
 /**
-  * Created by PM on 06/07/2017.
-  */
+ * Created by PM on 06/07/2017.
+ */
 class TestWallet extends EclairWallet {
 
   var rolledback = Set.empty[Transaction]
@@ -53,6 +53,6 @@ object TestWallet {
       txIn = TxIn(OutPoint(ByteVector32(ByteVector.fill(32)(1)), 42), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
       txOut = TxOut(amount, pubkeyScript) :: Nil,
       lockTime = 0)
-    MakeFundingTxResponse(fundingTx, 0, Satoshi(420))
+    MakeFundingTxResponse(fundingTx, 0, 420 sat)
   }
 }

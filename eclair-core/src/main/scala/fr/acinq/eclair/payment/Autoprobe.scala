@@ -20,9 +20,9 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentResult, RemoteFailure, SendPayment}
-import fr.acinq.eclair.router.{Announcements, Data}
+import fr.acinq.eclair.router.{Announcements, Data, PublicChannel}
 import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
-import fr.acinq.eclair.{MilliSatoshi, NodeParams, randomBytes32, secureRandom}
+import fr.acinq.eclair.{LongToBtcAmount, NodeParams, randomBytes32, secureRandom}
 
 import scala.concurrent.duration._
 
@@ -83,15 +83,16 @@ object Autoprobe {
 
   val PROBING_INTERVAL = 20 seconds
 
-  val PAYMENT_AMOUNT_MSAT = MilliSatoshi(100 * 1000) // this is below dust_limit so there won't be an output in the commitment tx
+  val PAYMENT_AMOUNT_MSAT = (100 * 1000) msat // this is below dust_limit so there won't be an output in the commitment tx
 
   object TickProbe
 
   def pickPaymentDestination(nodeId: PublicKey, routingData: Data): Option[PublicKey] = {
     // we only pick direct peers with enabled public channels
-    val peers = routingData.updates
+    val peers = routingData.channels
       .collect {
-        case (desc, u) if desc.a == nodeId && Announcements.isEnabled(u.channelFlags) && routingData.channels.contains(u.shortChannelId) => desc.b // we only consider outgoing channels that are enabled and announced
+        case (shortChannelId, c@PublicChannel(ann, _, _, Some(u1), _))
+          if c.getNodeIdSameSideAs(u1) == nodeId && Announcements.isEnabled(u1.channelFlags) && routingData.channels.exists(_._1 == shortChannelId) => ann.nodeId2 // we only consider outgoing channels that are enabled and announced
       }
     if (peers.isEmpty) {
       None

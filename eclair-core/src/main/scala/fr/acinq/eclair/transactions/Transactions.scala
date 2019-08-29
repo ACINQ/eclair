@@ -116,13 +116,13 @@ object Transactions {
    * @param weight tx weight
    * @return the fee rate (in Satoshi/Kw) for this tx
    */
-  def fee2rate(fee: Satoshi, weight: Int) = (fee.amount * 1000L) / weight
+  def fee2rate(fee: Satoshi, weight: Int) = (fee.toLong * 1000L) / weight
 
   def trimOfferedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec): Seq[DirectedHtlc] = {
     val htlcTimeoutFee = weight2fee(spec.feeratePerKw, htlcTimeoutWeight)
     spec.htlcs
       .filter(_.direction == OUT)
-      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcTimeoutFee).toMilliSatoshi)
+      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcTimeoutFee))
       .toSeq
   }
 
@@ -130,7 +130,7 @@ object Transactions {
     val htlcSuccessFee = weight2fee(spec.feeratePerKw, htlcSuccessWeight)
     spec.htlcs
       .filter(_.direction == IN)
-      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcSuccessFee).toMilliSatoshi)
+      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcSuccessFee))
       .toSeq
   }
 

@@ -23,6 +23,7 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.ChannelUpdate
 
+import scala.collection.immutable.SortedMap
 import scala.collection.mutable
 
 object Graph {
@@ -74,6 +75,7 @@ object Graph {
                         targetNode: PublicKey,
                         amount: MilliSatoshi,
                         ignoredEdges: Set[ChannelDesc],
+                        ignoredVertices: Set[PublicKey],
                         extraEdges: Set[GraphEdge],
                         pathsToFind: Int,
                         wr: Option[WeightRatios],
@@ -89,7 +91,7 @@ object Graph {
 
     // find the shortest path, k = 0
     val initialWeight = RichWeight(cost = amount, 0, CltvExpiryDelta(0), 0)
-    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, extraEdges, initialWeight, boundaries, currentBlockHeight, wr)
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, initialWeight, boundaries, currentBlockHeight, wr)
     shortestPaths += WeightedPath(shortestPath, pathWeight(shortestPath, amount, isPartial = false, currentBlockHeight, wr))
 
     // avoid returning a list with an empty path
@@ -125,7 +127,7 @@ object Graph {
           val returningEdges = rootPathEdges.lastOption.map(last => graph.getEdgesBetween(last.desc.b, last.desc.a)).toSeq.flatten.map(_.desc)
 
           // find the "spur" path, a sub-path going from the spur edge to the target avoiding previously found sub-paths
-          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, ignoredEdges ++ edgesToIgnore.toSet ++ returningEdges.toSet, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr)
+          val spurPath = dijkstraShortestPath(graph, spurEdge.desc.a, targetNode, ignoredEdges ++ edgesToIgnore.toSet ++ returningEdges.toSet, ignoredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr)
 
           // if there wasn't a path the spur will be empty
           if (spurPath.nonEmpty) {
@@ -178,6 +180,7 @@ object Graph {
                            sourceNode: PublicKey,
                            targetNode: PublicKey,
                            ignoredEdges: Set[ChannelDesc],
+                           ignoredVertices: Set[PublicKey],
                            extraEdges: Set[GraphEdge],
                            initialWeight: RichWeight,
                            boundaries: RichWeight => Boolean,
@@ -232,7 +235,7 @@ object Graph {
           if (edge.update.htlcMaximumMsat.forall(newMinimumKnownWeight.cost <= _) &&
             newMinimumKnownWeight.cost >= edge.update.htlcMinimumMsat &&
             boundaries(newMinimumKnownWeight) && // check if this neighbor edge would break off the 'boundaries'
-            !ignoredEdges.contains(edge.desc)
+            !ignoredEdges.contains(edge.desc) && !ignoredVertices.contains(neighbor)
           ) {
 
             // we call containsKey first because "getOrDefault" is not available in JDK7
@@ -318,7 +321,7 @@ object Graph {
    * @return the new amount updated with the necessary fees for this edge
    */
   private def edgeFeeCost(edge: GraphEdge, amountWithFees: MilliSatoshi): MilliSatoshi = {
-    if (edgeHasZeroFee(edge)) amountWithFees + nodeFee(baseMsat = MilliSatoshi(1), proportional = 0, amountWithFees)
+    if (edgeHasZeroFee(edge)) amountWithFees + nodeFee(baseFee = 1 msat, proportionalFee = 0, amountWithFees)
     else amountWithFees + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountWithFees)
   }
 
@@ -340,7 +343,7 @@ object Graph {
     val BLOCK_TIME_TWO_MONTHS = 8640
 
     // Low/High bound for channel capacity
-    val CAPACITY_CHANNEL_LOW = MilliSatoshi(1000 * 1000L) // 1000 sat
+    val CAPACITY_CHANNEL_LOW = (1000 sat).toMilliSatoshi
     val CAPACITY_CHANNEL_HIGH = Channel.MAX_FUNDING.toMilliSatoshi
 
     // Low/High bound for CLTV channel value
@@ -533,21 +536,32 @@ object Graph {
       def apply(edge: GraphEdge): DirectedGraph = new DirectedGraph(Map()).addEdge(edge.desc, edge.update)
 
       def apply(edges: Seq[GraphEdge]): DirectedGraph = {
-        makeGraph(edges.map(e => e.desc -> e.update).toMap)
+        DirectedGraph().addEdges(edges.map(e => (e.desc, e.update)))
       }
 
       // optimized constructor
-      def makeGraph(descAndUpdates: Map[ChannelDesc, ChannelUpdate]): DirectedGraph = {
+      def makeGraph(channels: SortedMap[ShortChannelId, PublicChannel]): DirectedGraph = {
 
         // initialize the map with the appropriate size to avoid resizing during the graph initialization
         val mutableMap = new {} with mutable.HashMap[PublicKey, List[GraphEdge]] {
-          override def initialSize: Int = descAndUpdates.size + 1
+          override def initialSize: Int = channels.size + 1
         }
 
         // add all the vertices and edges in one go
-        descAndUpdates.foreach { case (desc, update) =>
-          // create or update vertex (desc.b) and update its neighbor
-          mutableMap.put(desc.b, GraphEdge(desc, update) +: mutableMap.getOrElse(desc.b, List.empty[GraphEdge]))
+        channels.values.foreach { channel =>
+          channel.update_1_opt.foreach { u1 =>
+            val desc1 = Router.getDesc(u1, channel.ann)
+            addDescToMap(desc1, u1)
+          }
+
+          channel.update_2_opt.foreach { u2 =>
+            val desc2 = Router.getDesc(u2, channel.ann)
+            addDescToMap(desc2, u2)
+          }
+        }
+
+        def addDescToMap(desc: ChannelDesc, u: ChannelUpdate) = {
+          mutableMap.put(desc.b, GraphEdge(desc, u) +: mutableMap.getOrElse(desc.b, List.empty[GraphEdge]))
           mutableMap.get(desc.a) match {
             case None => mutableMap += desc.a -> List.empty[GraphEdge]
             case _ =>
