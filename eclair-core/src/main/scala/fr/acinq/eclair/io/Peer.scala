@@ -159,8 +159,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
               Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))
             case _ => None
           }
-          log.info(s"sending sync channel range query with flags_opt=$flags_opt")
-          router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = flags_opt)
+          if (nodeParams.syncWhitelist.isEmpty || nodeParams.syncWhitelist.contains(remoteNodeId)) {
+            log.info(s"sending sync channel range query with flags_opt=$flags_opt")
+            router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = flags_opt)
+          } else {
+            log.info("not syncing with this peer")
+          }
         }
 
         // let's bring existing/requested channels online

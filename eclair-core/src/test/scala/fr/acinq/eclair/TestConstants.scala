@@ -70,6 +70,7 @@ object TestConstants {
       globalFeatures = ByteVector.empty,
       localFeatures = ByteVector(0),
       overrideFeatures = Map.empty,
+      syncWhitelist = Set.empty,
       dustLimit = 1100 sat,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
@@ -142,6 +143,7 @@ object TestConstants {
       globalFeatures = ByteVector.empty,
       localFeatures = ByteVector.empty, // no announcement
       overrideFeatures = Map.empty,
+      syncWhitelist = Set.empty,
       dustLimit = 1000 sat,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
