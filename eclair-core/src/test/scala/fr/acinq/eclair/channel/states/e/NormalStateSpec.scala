@@ -410,7 +410,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_SIGN") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
     val commitSig = alice2bob.expectMsgType[CommitSig]
@@ -532,7 +532,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_SIGN (while waiting for RevokeAndAck (no pending changes)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -550,7 +550,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_SIGN (while waiting for RevokeAndAck (with pending changes)") { f =>
     import f._
     val sender = TestProbe()
-    val (r1, htlc1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r1, htlc1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -560,7 +560,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(waitForRevocation.reSignAsap === false)
 
     // actual test starts here
-    val (r2, htlc2) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r2, htlc2) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
     sender.expectNoMsg(300 millis)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo === Left(waitForRevocation.copy(reSignAsap = true)))
@@ -572,7 +572,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // channel starts with all funds on alice's side, so channel will be initially disabled on bob's side
     assert(Announcements.isEnabled(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags) === false)
     // alice will send enough funds to bob to make it go above reserve
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r))
     sender.expectMsg("ok")
@@ -596,7 +596,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
     sender.send(alice, CMD_SIGN)
@@ -621,7 +621,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
     sender.send(alice, CMD_SIGN)
@@ -644,19 +644,19 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    val (r1, htlc1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight) // a->b (regular)
+    val (r1, htlc1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice) // a->b (regular)
 
-    val (r2, htlc2) = addHtlc(MilliSatoshi(8000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight) //  a->b (regular)
+    val (r2, htlc2) = addHtlc(MilliSatoshi(8000000), alice, bob, alice2bob, bob2alice) //  a->b (regular)
 
-    val (r3, htlc3) = addHtlc(MilliSatoshi(300000), bob, alice, bob2alice, alice2bob, alice.underlyingActor.nodeParams.currentBlockHeight) //   b->a (dust)
+    val (r3, htlc3) = addHtlc(MilliSatoshi(300000), bob, alice, bob2alice, alice2bob) //   b->a (dust)
 
-    val (r4, htlc4) = addHtlc(MilliSatoshi(1000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight) //  a->b (regular)
+    val (r4, htlc4) = addHtlc(MilliSatoshi(1000000), alice, bob, alice2bob, bob2alice) //  a->b (regular)
 
-    val (r5, htlc5) = addHtlc(MilliSatoshi(50000000), bob, alice, bob2alice, alice2bob, bob.underlyingActor.nodeParams.currentBlockHeight) // b->a (regular)
+    val (r5, htlc5) = addHtlc(MilliSatoshi(50000000), bob, alice, bob2alice, alice2bob) // b->a (regular)
 
-    val (r6, htlc6) = addHtlc(MilliSatoshi(500000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight) //   a->b (dust)
+    val (r6, htlc6) = addHtlc(MilliSatoshi(500000), alice, bob, alice2bob, bob2alice) //   a->b (dust)
 
-    val (r7, htlc7) = addHtlc(MilliSatoshi(4000000), bob, alice, bob2alice, alice2bob, bob.underlyingActor.nodeParams.currentBlockHeight) //  b->a (regular)
+    val (r7, htlc7) = addHtlc(MilliSatoshi(4000000), bob, alice, bob2alice, alice2bob) //  b->a (regular)
 
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -737,7 +737,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CommitSig (invalid signature)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
 
     // actual test begins
@@ -754,7 +754,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
 
     sender.send(alice, CMD_SIGN)
@@ -775,7 +775,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
 
     sender.send(alice, CMD_SIGN)
@@ -796,7 +796,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv RevokeAndAck (one htlc sent)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
 
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -814,7 +814,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv RevokeAndAck (one htlc received)") { f =>
     import f._
     val sender = TestProbe()
-    val (_, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (_, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
 
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -843,19 +843,19 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv RevokeAndAck (multiple htlcs in both directions)") { f =>
     import f._
     val sender = TestProbe()
-    val (r1, htlc1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight) // a->b (regular)
+    val (r1, htlc1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice) // a->b (regular)
 
-    val (r2, htlc2) = addHtlc(MilliSatoshi(8000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight) //  a->b (regular)
+    val (r2, htlc2) = addHtlc(MilliSatoshi(8000000), alice, bob, alice2bob, bob2alice) //  a->b (regular)
 
-    val (r3, htlc3) = addHtlc(MilliSatoshi(300000), bob, alice, bob2alice, alice2bob, bob.underlyingActor.nodeParams.currentBlockHeight) //   b->a (dust)
+    val (r3, htlc3) = addHtlc(MilliSatoshi(300000), bob, alice, bob2alice, alice2bob) //   b->a (dust)
 
-    val (r4, htlc4) = addHtlc(MilliSatoshi(1000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight) //  a->b (regular)
+    val (r4, htlc4) = addHtlc(MilliSatoshi(1000000), alice, bob, alice2bob, bob2alice) //  a->b (regular)
 
-    val (r5, htlc5) = addHtlc(MilliSatoshi(50000000), bob, alice, bob2alice, alice2bob, bob.underlyingActor.nodeParams.currentBlockHeight) // b->a (regular)
+    val (r5, htlc5) = addHtlc(MilliSatoshi(50000000), bob, alice, bob2alice, alice2bob) // b->a (regular)
 
-    val (r6, htlc6) = addHtlc(MilliSatoshi(500000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight) //   a->b (dust)
+    val (r6, htlc6) = addHtlc(MilliSatoshi(500000), alice, bob, alice2bob, bob2alice) //   a->b (dust)
 
-    val (r7, htlc7) = addHtlc(MilliSatoshi(4000000), bob, alice, bob2alice, alice2bob, bob.underlyingActor.nodeParams.currentBlockHeight) //  b->a (regular)
+    val (r7, htlc7) = addHtlc(MilliSatoshi(4000000), bob, alice, bob2alice, alice2bob) //  b->a (regular)
 
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -880,13 +880,13 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv RevokeAndAck (with reSignAsap=true)") { f =>
     import f._
     val sender = TestProbe()
-    val (r1, htlc1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r1, htlc1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
-    val (r2, htlc2) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r2, htlc2) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
     sender.expectNoMsg(300 millis)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.left.toOption.get.reSignAsap === true)
@@ -901,7 +901,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
 
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -938,7 +938,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv RevokeAndAck (forward UpdateFailHtlc)") { f =>
     import f._
     val sender = TestProbe()
-    val (_, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (_, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     sender.send(bob, CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure)))
     sender.expectMsg("ok")
@@ -967,7 +967,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv RevokeAndAck (forward UpdateFailMalformedHtlc)") { f =>
     import f._
     val sender = TestProbe()
-    val (_, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (_, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     sender.send(bob, CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.PaymentPacket.hash(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION))
     sender.expectMsg("ok")
@@ -996,7 +996,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv RevocationTimeout") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
 
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -1013,7 +1013,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_FULFILL_HTLC") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
@@ -1040,7 +1040,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_FULFILL_HTLC (invalid preimage)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
@@ -1063,7 +1063,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateFulfillHtlc") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r))
     sender.expectMsg("ok")
@@ -1083,7 +1083,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateFulfillHtlc (sender has not signed htlc)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[CommitSig]
@@ -1117,7 +1117,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateFulfillHtlc (invalid preimage)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     relayerB.expectMsgType[ForwardAdd]
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
@@ -1138,7 +1138,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_FAIL_HTLC") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
@@ -1176,7 +1176,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_FAIL_MALFORMED_HTLC") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
@@ -1221,7 +1221,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateFailHtlc") { f =>
     import f._
     val sender = TestProbe()
-    val (_, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (_, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     sender.send(bob, CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure)))
     sender.expectMsg("ok")
@@ -1241,7 +1241,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
 
     // Alice sends an HTLC to Bob, which they both sign
-    val (_, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (_, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     // Bob fails the HTLC because he cannot parse it
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -1268,7 +1268,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateFailMalformedHtlc (invalid failure_code)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
@@ -1288,7 +1288,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateFailHtlc (sender has not signed htlc)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[CommitSig]
@@ -1471,7 +1471,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_CLOSE (with unacked sent htlcs)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_CLOSE(None))
     sender.expectMsg(Failure(CannotCloseWithUnsignedOutgoingHtlcs(channelId(bob))))
   }
@@ -1486,7 +1486,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_CLOSE (with signed sent htlcs)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_CLOSE(None))
     sender.expectMsg("ok")
@@ -1511,7 +1511,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_CLOSE (while waiting for a RevokeAndAck)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[CommitSig]
@@ -1536,7 +1536,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv Shutdown (with unacked sent htlcs)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     sender.send(bob, CMD_CLOSE(None))
     bob2alice.expectMsgType[Shutdown]
     // actual test begins
@@ -1557,7 +1557,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv Shutdown (with unacked received htlcs)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     // actual test begins
     sender.send(bob, Shutdown(ByteVector32.Zeroes, TestConstants.Alice.channelParams.defaultFinalScriptPubKey))
     bob2alice.expectMsgType[Error]
@@ -1581,7 +1581,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv Shutdown (with invalid final script and signed htlcs, in response to a Shutdown)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     sender.send(bob, CMD_CLOSE(None))
     bob2alice.expectMsgType[Shutdown]
@@ -1597,7 +1597,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv Shutdown (with signed htlcs)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
@@ -1609,7 +1609,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv Shutdown (while waiting for a RevokeAndAck)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[CommitSig]
@@ -1628,14 +1628,14 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(bob, CMD_CLOSE(None))
     bob2alice.expectMsgType[Shutdown]
     // this is just so we have something to sign
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     // now we can sign
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     // adding an outgoing pending htlc
-    val (r1, htlc1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r1, htlc1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     // actual test begins
     // alice eventually gets bob's shutdown
     bob2alice.forward(alice)
@@ -1665,7 +1665,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CurrentBlockCount (no htlc timed out)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
@@ -1677,7 +1677,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CurrentBlockCount (an htlc timed out)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
@@ -1696,7 +1696,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CurrentBlockCount (fulfilled signed htlc ignored by upstream peer)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val listener = TestProbe()
@@ -1731,7 +1731,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CurrentBlockCount (fulfilled proposed htlc ignored by upstream peer)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val listener = TestProbe()
@@ -1766,7 +1766,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CurrentBlockCount (fulfilled proposed htlc acked but not committed by upstream peer)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val listener = TestProbe()
@@ -1844,11 +1844,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    val (ra1, htlca1) = addHtlc(MilliSatoshi(250000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
-    val (ra2, htlca2) = addHtlc(MilliSatoshi(100000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
-    val (ra3, htlca3) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
-    val (rb1, htlcb1) = addHtlc(MilliSatoshi(50000000), bob, alice, bob2alice, alice2bob, bob.underlyingActor.nodeParams.currentBlockHeight)
-    val (rb2, htlcb2) = addHtlc(MilliSatoshi(55000000), bob, alice, bob2alice, alice2bob, bob.underlyingActor.nodeParams.currentBlockHeight)
+    val (ra1, htlca1) = addHtlc(MilliSatoshi(250000000), alice, bob, alice2bob, bob2alice)
+    val (ra2, htlca2) = addHtlc(MilliSatoshi(100000000), alice, bob, alice2bob, bob2alice)
+    val (ra3, htlca3) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice)
+    val (rb1, htlcb1) = addHtlc(MilliSatoshi(50000000), bob, alice, bob2alice, alice2bob)
+    val (rb2, htlcb2) = addHtlc(MilliSatoshi(55000000), bob, alice, bob2alice, alice2bob)
     crossSign(alice, bob, alice2bob, bob2alice)
     fulfillHtlc(1, ra2, bob, alice, bob2alice, alice2bob)
     fulfillHtlc(0, rb1, alice, bob, alice2bob, bob2alice)
@@ -1905,11 +1905,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    val (ra1, htlca1) = addHtlc(MilliSatoshi(250000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
-    val (ra2, htlca2) = addHtlc(MilliSatoshi(100000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
-    val (ra3, htlca3) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
-    val (rb1, htlcb1) = addHtlc(MilliSatoshi(50000000), bob, alice, bob2alice, alice2bob, bob.underlyingActor.nodeParams.currentBlockHeight)
-    val (rb2, htlcb2) = addHtlc(MilliSatoshi(55000000), bob, alice, bob2alice, alice2bob, bob.underlyingActor.nodeParams.currentBlockHeight)
+    val (ra1, htlca1) = addHtlc(MilliSatoshi(250000000), alice, bob, alice2bob, bob2alice)
+    val (ra2, htlca2) = addHtlc(MilliSatoshi(100000000), alice, bob, alice2bob, bob2alice)
+    val (ra3, htlca3) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice)
+    val (rb1, htlcb1) = addHtlc(MilliSatoshi(50000000), bob, alice, bob2alice, alice2bob)
+    val (rb2, htlcb2) = addHtlc(MilliSatoshi(55000000), bob, alice, bob2alice, alice2bob)
     crossSign(alice, bob, alice2bob, bob2alice)
     fulfillHtlc(1, ra2, bob, alice, bob2alice, alice2bob)
     fulfillHtlc(0, rb1, alice, bob, alice2bob, bob2alice)
@@ -1971,7 +1971,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     //   bob = 200 000
     def send(): Transaction = {
       // alice sends 8 000 sat
-      val (r, htlc) = addHtlc(MilliSatoshi(10000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+      val (r, htlc) = addHtlc(MilliSatoshi(10000000), alice, bob, alice2bob, bob2alice)
       crossSign(alice, bob, alice2bob, bob2alice)
 
       bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
@@ -2078,11 +2078,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv Error") { f =>
     import f._
-    val (ra1, htlca1) = addHtlc(MilliSatoshi(250000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
-    val (ra2, htlca2) = addHtlc(MilliSatoshi(100000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
-    val (ra3, htlca3) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
-    val (rb1, htlcb1) = addHtlc(MilliSatoshi(50000000), bob, alice, bob2alice, alice2bob, bob.underlyingActor.nodeParams.currentBlockHeight)
-    val (rb2, htlcb2) = addHtlc(MilliSatoshi(55000000), bob, alice, bob2alice, alice2bob, bob.underlyingActor.nodeParams.currentBlockHeight)
+    val (ra1, htlca1) = addHtlc(MilliSatoshi(250000000), alice, bob, alice2bob, bob2alice)
+    val (ra2, htlca2) = addHtlc(MilliSatoshi(100000000), alice, bob, alice2bob, bob2alice)
+    val (ra3, htlca3) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice)
+    val (rb1, htlcb1) = addHtlc(MilliSatoshi(50000000), bob, alice, bob2alice, alice2bob)
+    val (rb2, htlcb2) = addHtlc(MilliSatoshi(55000000), bob, alice, bob2alice, alice2bob)
     crossSign(alice, bob, alice2bob, bob2alice)
     fulfillHtlc(1, ra2, bob, alice, bob2alice, alice2bob)
     fulfillHtlc(0, rb1, alice, bob, alice2bob, bob2alice)
@@ -2299,8 +2299,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
     val update1a = alice2bob.expectMsgType[ChannelUpdate]
     assert(Announcements.isEnabled(update1a.channelFlags) == true)
-    val (_, htlc1) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
-    val (_, htlc2) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (_, htlc1) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice)
+    val (_, htlc2) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice)
     val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
     assert(aliceData.commitments.localChanges.proposed.size == 2)
 
@@ -2343,8 +2343,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val update1a = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     val update1b = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(Announcements.isEnabled(update1a.channelUpdate.channelFlags) == true)
-    val (_, htlc1) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
-    val (_, htlc2) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
+    val (_, htlc1) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice)
+    val (_, htlc2) = addHtlc(MilliSatoshi(10000), alice, bob, alice2bob, bob2alice)
     val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
     assert(aliceData.commitments.localChanges.proposed.size == 2)
 

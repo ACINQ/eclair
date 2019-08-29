@@ -105,11 +105,12 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
   }
 
-  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe, blockHeight: Long): (ByteVector32, UpdateAddHtlc) = {
+  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (ByteVector32, UpdateAddHtlc) = {
     val R: ByteVector32 = randomBytes32
     val H: ByteVector32 = Crypto.sha256(R)
     val sender = TestProbe()
     val receiverPubkey = r.underlyingActor.nodeParams.nodeId
+    val blockHeight = s.underlyingActor.nodeParams.currentBlockHeight
     val expiry = CltvExpiryDelta(144).toCltvExpiry(blockHeight)
     val cmd = PaymentLifecycle.buildCommand(UUID.randomUUID, amount, expiry, H, Hop(null, receiverPubkey, null) :: Nil)._1.copy(commit = false)
     sender.send(s, cmd)
