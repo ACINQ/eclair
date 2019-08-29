@@ -96,7 +96,11 @@ trait KeyManager {
 
 object KeyManager {
   /**
-    * Create a BIP32 path from a public key. This path will be used to derive channel keys.
+    * Create a BIP32 path from a public key. This path will be used to derive channel keys. 
+    * Having channel keys derived from the funding public keys makes it very easy to retrieve your funds when've you've lost your data:
+    * - connect to your peer and use DLP to get them to publish their remote commit tx
+    * - retrieve the commit tx from the bitcoin network, extract your funding pubkey from its witness data
+    * - recompute your channel keys and spend your output  
     *
     * @param fundingPubKey funding public key
     * @return a BIP32 path
