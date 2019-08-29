@@ -22,7 +22,8 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, ByteVector32, Transaction, TxOut}
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelUnavailable}
@@ -34,15 +35,14 @@ import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnounce
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair._
 
 /**
-  * Created by PM on 29/08/2016.
-  */
+ * Created by PM on 29/08/2016.
+ */
 
 class PaymentLifecycleSpec extends BaseRouterSpec {
 
-  val defaultAmountMsat = MilliSatoshi(142000000L)
+  val defaultAmountMsat = 142000000 msat
 
   test("send to route") { fixture =>
     import fixture._
@@ -60,7 +60,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
 
     // pre-computed route going from A to D
-    val request = SendPaymentToRoute(defaultAmountMsat, defaultPaymentHash, Seq(a,b,c,d))
+    val request = SendPaymentToRoute(defaultAmountMsat, defaultPaymentHash, Seq(a, b, c, d))
 
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
@@ -109,7 +109,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
 
-    val request = SendPayment(defaultAmountMsat, randomBytes32, d, routeParams = Some(RouteParams(randomize = false, maxFeeBase = MilliSatoshi(100), maxFeePct = 0.0, routeMaxLength = 20, routeMaxCltv = 2016, ratios = None)), maxAttempts = 5)
+    val request = SendPayment(defaultAmountMsat, randomBytes32, d, routeParams = Some(RouteParams(randomize = false, maxFeeBase = 100 msat, maxFeePct = 0.0, routeMaxLength = 20, routeMaxCltv = CltvExpiryDelta(2016), ratios = None)), maxAttempts = 5)
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
@@ -183,7 +183,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.expectMsg(RouteRequest(nodeParams.nodeId, d, defaultAmountMsat, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
     routerForwarder.forward(router)
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
-    val WaitingForComplete(_, _, cmd1, Nil, _, _, _, hops) = paymentFSM.stateData
+    val WaitingForComplete(_, _, cmd1, Nil, _, _, _, _) = paymentFSM.stateData
 
     relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
     sender.send(paymentFSM, Status.Failure(AddHtlcFailed(ByteVector32.Zeroes, request.paymentHash, ChannelUnavailable(ByteVector32.Zeroes), Local(id, Some(paymentFSM.underlying.self)), None, None)))
@@ -216,7 +216,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.expectMsg(RouteRequest(nodeParams.nodeId, d, defaultAmountMsat, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
     routerForwarder.forward(router)
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
-    val WaitingForComplete(_, _, cmd1, Nil, _, _, _, hops) = paymentFSM.stateData
+    val WaitingForComplete(_, _, cmd1, Nil, _, _, _, _) = paymentFSM.stateData
 
     relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
     sender.send(paymentFSM, UpdateFailMalformedHtlc(ByteVector32.Zeroes, 0, randomBytes32, FailureMessageCodecs.BADONION))
@@ -291,8 +291,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
 
     // we change the cltv expiry
-    val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 42, htlcMinimumMsat = channelUpdate_bc.htlcMinimumMsat, feeBaseMsat = channelUpdate_bc.feeBaseMsat, feeProportionalMillionths = channelUpdate_bc.feeProportionalMillionths, htlcMaximumMsat = channelUpdate_bc.htlcMaximumMsat.get)
-    val failure = IncorrectCltvExpiry(5, channelUpdate_bc_modified)
+    val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, CltvExpiryDelta(42), htlcMinimumMsat = channelUpdate_bc.htlcMinimumMsat, feeBaseMsat = channelUpdate_bc.feeBaseMsat, feeProportionalMillionths = channelUpdate_bc.feeProportionalMillionths, htlcMaximumMsat = channelUpdate_bc.htlcMaximumMsat.get)
+    val failure = IncorrectCltvExpiry(CltvExpiry(5), channelUpdate_bc_modified)
     // and node replies with a failure containing a new channel update
     sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))
 
@@ -308,8 +308,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     relayer.expectMsg(ForwardShortId(channelId_ab, cmd2))
 
     // we change the cltv expiry one more time
-    val channelUpdate_bc_modified_2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 43, htlcMinimumMsat = channelUpdate_bc.htlcMinimumMsat, feeBaseMsat = channelUpdate_bc.feeBaseMsat, feeProportionalMillionths = channelUpdate_bc.feeProportionalMillionths, htlcMaximumMsat = channelUpdate_bc.htlcMaximumMsat.get)
-    val failure2 = IncorrectCltvExpiry(5, channelUpdate_bc_modified_2)
+    val channelUpdate_bc_modified_2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, CltvExpiryDelta(43), htlcMinimumMsat = channelUpdate_bc.htlcMinimumMsat, feeBaseMsat = channelUpdate_bc.feeBaseMsat, feeProportionalMillionths = channelUpdate_bc.feeProportionalMillionths, htlcMaximumMsat = channelUpdate_bc.htlcMaximumMsat.get)
+    val failure2 = IncorrectCltvExpiry(CltvExpiry(5), channelUpdate_bc_modified_2)
     // and node replies with a failure containing a new channel update
     sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets2.head._1, failure2)))
 
@@ -390,7 +390,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val paymentOK = sender.expectMsgType[PaymentSucceeded]
     val PaymentSent(_, request.amount, fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
-    assert(fee > MilliSatoshi(0))
+    assert(fee > 0.msat)
     assert(fee === paymentOK.amount - request.amount)
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.SUCCEEDED))
   }
@@ -409,15 +409,15 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val ann_g = makeNodeAnnouncement(priv_g, "node-G", Color(-30, 10, -50), Nil)
     val channelId_bg = ShortChannelId(420000, 5, 0)
     val chan_bg = channelAnnouncement(channelId_bg, priv_b, priv_g, priv_funding_b, priv_funding_g)
-    val channelUpdate_bg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, g, channelId_bg, cltvExpiryDelta = 9, htlcMinimumMsat = MilliSatoshi(0), feeBaseMsat = MilliSatoshi(0), feeProportionalMillionths = 0, htlcMaximumMsat = MilliSatoshi(500000000L))
-    val channelUpdate_gb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, b, channelId_bg, cltvExpiryDelta = 9, htlcMinimumMsat = MilliSatoshi(0), feeBaseMsat = MilliSatoshi(10), feeProportionalMillionths = 8, htlcMaximumMsat = MilliSatoshi(500000000L))
+    val channelUpdate_bg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, g, channelId_bg, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 0 msat, feeProportionalMillionths = 0, htlcMaximumMsat = 500000000 msat)
+    val channelUpdate_gb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, b, channelId_bg, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000 msat)
     assert(Router.getDesc(channelUpdate_bg, chan_bg) === ChannelDesc(chan_bg.shortChannelId, priv_b.publicKey, priv_g.publicKey))
     router ! PeerRoutingMessage(null, remoteNodeId, chan_bg)
     router ! PeerRoutingMessage(null, remoteNodeId, ann_g)
     router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_bg)
     router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_gb)
     watcher.expectMsg(ValidateRequest(chan_bg))
-    watcher.send(router, ValidateResult(chan_bg, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_g)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+    watcher.send(router, ValidateResult(chan_bg, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_g)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
     watcher.expectMsgType[WatchSpentBasic]
 
     // actual test begins
@@ -446,7 +446,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // during the route computation the fees were treated as if they were 1msat but when sending the onion we actually put zero
     // NB: A -> B doesn't pay fees because it's our direct neighbor
     // NB: B -> G doesn't asks for fees at all
-    assert(fee === MilliSatoshi(0))
+    assert(fee === 0.msat)
     assert(fee === paymentOK.amount - request.amount)
   }
 

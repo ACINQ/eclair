@@ -20,7 +20,6 @@ import java.util.UUID
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
-import fr.acinq.eclair
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeTargets
@@ -29,24 +28,23 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, NodeParams, TestConstants, randomBytes32}
-import fr.acinq.eclair._
+import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
 
 /**
-  * Created by PM on 23/08/2016.
-  */
+ * Created by PM on 23/08/2016.
+ */
 trait StateTestsHelperMethods extends TestKitBase {
 
   case class SetupFixture(alice: TestFSMRef[State, Data, Channel],
-                   bob: TestFSMRef[State, Data, Channel],
-                   alice2bob: TestProbe,
-                   bob2alice: TestProbe,
-                   alice2blockchain: TestProbe,
-                   bob2blockchain: TestProbe,
-                   router: TestProbe,
-                   relayerA: TestProbe,
-                   relayerB: TestProbe,
-                   channelUpdateListener: TestProbe)
+                          bob: TestFSMRef[State, Data, Channel],
+                          alice2bob: TestProbe,
+                          bob2alice: TestProbe,
+                          alice2blockchain: TestProbe,
+                          bob2blockchain: TestProbe,
+                          router: TestProbe,
+                          relayerA: TestProbe,
+                          relayerB: TestProbe,
+                          channelUpdateListener: TestProbe)
 
   def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: EclairWallet = new TestWallet): SetupFixture = {
     val alice2bob = TestProbe()
@@ -68,7 +66,7 @@ trait StateTestsHelperMethods extends TestKitBase {
                   tags: Set[String] = Set.empty): Unit = {
     import setup._
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-    val pushMsat = if (tags.contains("no_push_msat")) MilliSatoshi(0) else TestConstants.pushMsat
+    val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
@@ -100,7 +98,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2blockchain.expectMsgType[WatchConfirmed] // deeply buried
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == maxOf(pushMsat - TestConstants.Alice.channelParams.channelReserve.toMilliSatoshi, MilliSatoshi(0)))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == (pushMsat - TestConstants.Alice.channelParams.channelReserve).max(0 msat))
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
@@ -111,7 +109,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     val H: ByteVector32 = Crypto.sha256(R)
     val sender = TestProbe()
     val receiverPubkey = r.underlyingActor.nodeParams.nodeId
-    val expiry = 400144
+    val expiry = CltvExpiryDelta(144).toCltvExpiry
     val cmd = PaymentLifecycle.buildCommand(UUID.randomUUID, amount, expiry, H, Hop(null, receiverPubkey, null) :: Nil)._1.copy(commit = false)
     sender.send(s, cmd)
     sender.expectMsg("ok")
@@ -175,4 +173,5 @@ trait StateTestsHelperMethods extends TestKitBase {
     def feeEstimator: TestFeeEstimator = a.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
     def feeTargets: FeeTargets = a.underlyingActor.nodeParams.onChainFeeConf.feeTargets
   }
+
 }

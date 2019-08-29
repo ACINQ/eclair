@@ -19,8 +19,8 @@ package fr.acinq.eclair.payment
 import java.util.UUID
 
 import akka.actor.{ActorRef, FSM, Props, Status}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Channel, Register}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
@@ -32,13 +32,12 @@ import fr.acinq.eclair.wire._
 import scodec.Attempt
 import scodec.bits.ByteVector
 
-import concurrent.duration._
 import scala.compat.Platform
 import scala.util.{Failure, Success}
 
 /**
-  * Created by PM on 26/08/2016.
-  */
+ * Created by PM on 26/08/2016.
+ */
 class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, register: ActorRef) extends FSM[PaymentLifecycle.State, PaymentLifecycle.Data] {
 
   val paymentsDb = nodeParams.db.payments
@@ -47,7 +46,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
 
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPaymentToRoute, WaitingForRequest) =>
-      val send = SendPayment(c.amount, c.paymentHash, c.hops.last, finalCltvExpiry = c.finalCltvExpiry, maxAttempts = 1)
+      val send = SendPayment(c.amount, c.paymentHash, c.hops.last, finalCltvExpiryDelta = c.finalCltvExpiryDelta, maxAttempts = 1)
       paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.amount, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
       router ! FinalizeRoute(c.hops)
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
@@ -63,9 +62,9 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")} channels=${hops.map(_.lastUpdate.shortChannelId).mkString("->")}")
       val firstHop = hops.head
       // we add one block in order to not have our htlc fail when a new block has just been found
-      val finalExpiry = Globals.blockCount.get().toInt + c.finalCltvExpiry.toInt + 1
+      val finalExpiry = (c.finalCltvExpiryDelta + 1).toCltvExpiry
 
-      val (cmd, sharedSecrets) = buildCommand(id,c.amount, finalExpiry, c.paymentHash, hops)
+      val (cmd, sharedSecrets) = buildCommand(id, c.amount, finalExpiry, c.paymentHash, hops)
       register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
@@ -185,7 +184,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
     case Event(_: TransportHandler.ReadAck, _) => stay // ignored, router replies with this when we forward a channel_update
   }
 
-  def reply(to: ActorRef, e: PaymentResult) = {
+  def reply(to: ActorRef, e: PaymentResult): Unit = {
     to ! e
     context.system.eventStream.publish(e)
   }
@@ -200,15 +199,15 @@ object PaymentLifecycle {
   // @formatter:off
   case class ReceivePayment(amount_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil, fallbackAddress: Option[String] = None, paymentPreimage: Option[ByteVector32] = None)
   sealed trait GenericSendPayment
-  case class SendPaymentToRoute(amount: MilliSatoshi, paymentHash: ByteVector32, hops: Seq[PublicKey], finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY) extends GenericSendPayment
+  case class SendPaymentToRoute(amount: MilliSatoshi, paymentHash: ByteVector32, hops: Seq[PublicKey], finalCltvExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA) extends GenericSendPayment
   case class SendPayment(amount: MilliSatoshi,
                          paymentHash: ByteVector32,
                          targetNodeId: PublicKey,
                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                         finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY,
+                         finalCltvExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA,
                          maxAttempts: Int,
                          routeParams: Option[RouteParams] = None) extends GenericSendPayment {
-    require(amount > MilliSatoshi(0), s"amountMsat must be > 0")
+    require(amount > 0.msat, s"amountMsat must be > 0")
   }
 
   sealed trait PaymentResult
@@ -245,23 +244,23 @@ object PaymentLifecycle {
   }
 
   /**
-    *
-    * @param finalAmount the final htlc amount in millisatoshis
-    * @param finalExpiry     the final htlc expiry in number of blocks
-    * @param hops            the hops as computed by the router + extra routes from payment request
-    * @return a (firstAmountMsat, firstExpiry, payloads) tuple where:
-    *         - firstAmountMsat is the amount for the first htlc in the route
-    *         - firstExpiry is the cltv expiry for the first htlc in the route
-    *         - a sequence of payloads that will be used to build the onion
-    */
-  def buildPayloads(finalAmount: MilliSatoshi, finalExpiry: Long, hops: Seq[Hop]): (MilliSatoshi, Long, Seq[PerHopPayload]) =
+   *
+   * @param finalAmount the final htlc amount in millisatoshis
+   * @param finalExpiry the final htlc expiry in number of blocks
+   * @param hops        the hops as computed by the router + extra routes from payment request
+   * @return a (firstAmountMsat, firstExpiry, payloads) tuple where:
+   *         - firstAmountMsat is the amount for the first htlc in the route
+   *         - firstExpiry is the cltv expiry for the first htlc in the route
+   *         - a sequence of payloads that will be used to build the onion
+   */
+  def buildPayloads(finalAmount: MilliSatoshi, finalExpiry: CltvExpiry, hops: Seq[Hop]): (MilliSatoshi, CltvExpiry, Seq[PerHopPayload]) =
     hops.reverse.foldLeft((finalAmount, finalExpiry, PerHopPayload(ShortChannelId(0L), finalAmount, finalExpiry) :: Nil)) {
       case ((msat, expiry, payloads), hop) =>
         val nextFee = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, msat)
         (msat + nextFee, expiry + hop.lastUpdate.cltvExpiryDelta, PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
     }
 
-  def buildCommand(id: UUID, finalAmount: MilliSatoshi, finalExpiry: Long, paymentHash: ByteVector32, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
+  def buildCommand(id: UUID, finalAmount: MilliSatoshi, finalExpiry: CltvExpiry, paymentHash: ByteVector32, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
     val (firstAmount, firstExpiry, payloads) = buildPayloads(finalAmount, finalExpiry, hops.drop(1))
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
@@ -270,16 +269,16 @@ object PaymentLifecycle {
   }
 
   /**
-    * Rewrites a list of failures to retrieve the meaningful part.
-    * <p>
-    * If a list of failures with many elements ends up with a LocalFailure RouteNotFound, this RouteNotFound failure
-    * should be removed. This last failure is irrelevant information. In such a case only the n-1 attempts were rejected
-    * with a **significant reason** ; the final RouteNotFound error provides no meaningful insight.
-    * <p>
-    * This method should be used by the user interface to provide a non-exhaustive but more useful feedback.
-    *
-    * @param failures a list of payment failures for a payment
-    */
+   * Rewrites a list of failures to retrieve the meaningful part.
+   * <p>
+   * If a list of failures with many elements ends up with a LocalFailure RouteNotFound, this RouteNotFound failure
+   * should be removed. This last failure is irrelevant information. In such a case only the n-1 attempts were rejected
+   * with a **significant reason** ; the final RouteNotFound error provides no meaningful insight.
+   * <p>
+   * This method should be used by the user interface to provide a non-exhaustive but more useful feedback.
+   *
+   * @param failures a list of payment failures for a payment
+   */
   def transformForUser(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
     failures.map {
       case LocalFailure(AddHtlcFailed(_, _, t, _, _, _)) => LocalFailure(t) // we're interested in the error which caused the add-htlc to fail
@@ -291,24 +290,17 @@ object PaymentLifecycle {
   }
 
   /**
-    * This method retrieves the channel update that we used when we built a route.
-    *
-    * It just iterates over the hops, but there are at most 20 of them.
-    *
-    * @param nodeId
-    * @param hops
-    * @return the channel update if found
-    */
+   * This method retrieves the channel update that we used when we built a route.
+   * It just iterates over the hops, but there are at most 20 of them.
+   *
+   * @return the channel update if found
+   */
   def getChannelUpdateForNode(nodeId: PublicKey, hops: Seq[Hop]): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.lastUpdate)
 
   /**
-    * This allows us to detect if a bad node always answers with a new update (e.g. with a slightly different expiry or fee)
-    * in order to mess with us.
-    *
-    * @param nodeId
-    * @param failures
-    * @return
-    */
+   * This allows us to detect if a bad node always answers with a new update (e.g. with a slightly different expiry or fee)
+   * in order to mess with us.
+   */
   def hasAlreadyFailedOnce(nodeId: PublicKey, failures: Seq[PaymentFailure]): Boolean =
     failures
       .collectFirst { case RemoteFailure(_, Sphinx.DecryptedFailurePacket(origin, u: Update)) if origin == nodeId => u.update }
