@@ -460,7 +460,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we make sure we are in sync with current blockchain height
     sender.send(bitcoincli, BitcoinReq("getblockcount"))
     val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
-    awaitCond(nodes("A").nodeParams.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -540,7 +540,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we make sure we are in sync with current blockchain height
     sender.send(bitcoincli, BitcoinReq("getblockcount"))
     val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
-    awaitCond(nodes("A").nodeParams.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -617,7 +617,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we make sure we are in sync with current blockchain height
     sender.send(bitcoincli, BitcoinReq("getblockcount"))
     val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
-    awaitCond(nodes("A").nodeParams.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -679,7 +679,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we make sure we are in sync with current blockchain height
     sender.send(bitcoincli, BitcoinReq("getblockcount"))
     val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
-    awaitCond(nodes("A").nodeParams.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -756,7 +756,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we make sure we are in sync with current blockchain height
     sender.send(bitcoincli, BitcoinReq("getblockcount"))
     val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
-    awaitCond(nodes("A").nodeParams.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
     // first we send 3 mBTC to F so that it has a balance
     val amountMsat = MilliSatoshi(300000000L)
     sender.send(paymentHandlerF, ReceivePayment(Some(amountMsat), "1 coffee"))

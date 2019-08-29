@@ -42,12 +42,7 @@ import scala.concurrent.duration.FiniteDuration
  * Created by PM on 26/02/2017.
  */
 case class NodeParams(keyManager: KeyManager,
-                      /**
-                       * This counter holds the current blockchain height.
-                       * It is mainly used to calculate htlc expiries.
-                       * The value is read by all actors, hence it needs to be thread-safe.
-                       */
-                      blockCount: AtomicLong,
+                      private val blockCount: AtomicLong,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
@@ -86,6 +81,7 @@ case class NodeParams(keyManager: KeyManager,
                       maxPaymentAttempts: Int) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
+  def currentBlockHeight: Long = blockCount.get
 }
 
 object NodeParams {
@@ -130,7 +126,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, feeEstimator: FeeEstimator): NodeParams = {
+  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
@@ -205,7 +201,7 @@ object NodeParams {
 
     NodeParams(
       keyManager = keyManager,
-      blockCount = new AtomicLong(0),
+      blockCount = blockCount,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,

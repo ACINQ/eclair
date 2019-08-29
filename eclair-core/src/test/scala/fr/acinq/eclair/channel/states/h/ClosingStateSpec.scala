@@ -87,7 +87,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       within(30 seconds) {
         reachNormal(setup)
         val bobCommitTxes: List[PublishableTxs] = (for (amt <- List(100000000, 200000000, 300000000)) yield {
-          val (r, htlc) = addHtlc(MilliSatoshi(amt), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.blockCount.get())
+          val (r, htlc) = addHtlc(MilliSatoshi(amt), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
           crossSign(alice, bob, alice2bob, bob2alice)
           relayerB.expectMsgType[ForwardAdd]
           val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs
@@ -378,7 +378,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BITCOIN_OUTPUT_SPENT") { f =>
     import f._
     // alice sends an htlc to bob
-    val (ra1, htlca1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.blockCount.get())
+    val (ra1, htlca1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
     crossSign(alice, bob, alice2bob, bob2alice)
     relayerB.expectMsgType[ForwardAdd]
     // an error occurs and alice publishes her commit tx
@@ -418,7 +418,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     system.eventStream.subscribe(listener.ref, classOf[LocalCommitConfirmed])
     system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
     // alice sends an htlc to bob
-    val (ra1, htlca1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.blockCount.get())
+    val (ra1, htlca1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
     crossSign(alice, bob, alice2bob, bob2alice)
     // an error occurs and alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
@@ -452,7 +452,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     // alice sends an htlc
-    val (r, htlc) = addHtlc(MilliSatoshi(4200000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.blockCount.get())
+    val (r, htlc) = addHtlc(MilliSatoshi(4200000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
     // and signs it (but bob doesn't sign it)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -483,7 +483,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     // alice sends an htlc
-    val (r, htlc) = addHtlc(MilliSatoshi(4200000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.blockCount.get())
+    val (r, htlc) = addHtlc(MilliSatoshi(4200000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
     // and signs it (but bob doesn't sign it)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -544,7 +544,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val oldStateData = alice.stateData
-    val (ra1, htlca1) = addHtlc(MilliSatoshi(25000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.blockCount.get())
+    val (ra1, htlca1) = addHtlc(MilliSatoshi(25000000), alice, bob, alice2bob, bob2alice, alice.underlyingActor.nodeParams.currentBlockHeight)
     crossSign(alice, bob, alice2bob, bob2alice)
     fulfillHtlc(htlca1.id, ra1, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)

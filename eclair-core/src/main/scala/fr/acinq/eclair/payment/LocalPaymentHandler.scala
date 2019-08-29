@@ -59,7 +59,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
     case htlc: UpdateAddHtlc =>
       paymentDb.getPendingPaymentRequestAndPreimage(htlc.paymentHash) match {
         case Some((paymentPreimage, paymentRequest)) =>
-          val minFinalExpiry = paymentRequest.minFinalCltvExpiryDelta.getOrElse(Channel.MIN_CLTV_EXPIRY_DELTA).toCltvExpiry(nodeParams.blockCount.get)
+          val minFinalExpiry = paymentRequest.minFinalCltvExpiryDelta.getOrElse(Channel.MIN_CLTV_EXPIRY_DELTA).toCltvExpiry(nodeParams.currentBlockHeight)
           // The htlc amount must be equal or greater than the requested amount. A slight overpaying is permitted, however
           // it must not be greater than two times the requested amount.
           // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
