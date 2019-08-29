@@ -40,6 +40,8 @@ class UInt64Spec extends FunSuite {
     assert(c.toString === "42")
     assert(z.toByteVector === hex"0x00")
     assert(z.toString === "0")
+    assert(UInt64(hex"0xff").toByteVector == hex"0xff")
+    assert(UInt64(hex"0x800").toByteVector == hex"0x800")
   }
 
 }
