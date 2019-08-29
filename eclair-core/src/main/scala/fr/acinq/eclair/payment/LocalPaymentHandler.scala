@@ -17,25 +17,24 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props, Status}
-import fr.acinq.bitcoin.{Crypto}
+import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, NodeParams, randomBytes32}
-import concurrent.duration._
+import fr.acinq.eclair.{NodeParams, randomBytes32}
+
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 /**
-  * Simple payment handler that generates payment requests and fulfills incoming htlcs.
-  *
-  * Note that unfulfilled payment requests are kept forever if they don't have an expiry!
-  *
-  * Created by PM on 17/06/2016.
-  */
+ * Simple payment handler that generates payment requests and fulfills incoming htlcs.
+ *
+ * Note that unfulfilled payment requests are kept forever if they don't have an expiry!
+ *
+ * Created by PM on 17/06/2016.
+ */
 class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 
   implicit val ec: ExecutionContext = context.system.dispatcher
@@ -60,7 +59,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
     case htlc: UpdateAddHtlc =>
       paymentDb.getPendingPaymentRequestAndPreimage(htlc.paymentHash) match {
         case Some((paymentPreimage, paymentRequest)) =>
-          val minFinalExpiry = Globals.blockCount.get() + paymentRequest.minFinalCltvExpiry.getOrElse(Channel.MIN_CLTV_EXPIRY)
+          val minFinalExpiry = paymentRequest.minFinalCltvExpiryDelta.getOrElse(Channel.MIN_CLTV_EXPIRY_DELTA).toCltvExpiry
           // The htlc amount must be equal or greater than the requested amount. A slight overpaying is permitted, however
           // it must not be greater than two times the requested amount.
           // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
