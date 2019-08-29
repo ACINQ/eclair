@@ -109,6 +109,7 @@ sealed trait Command
 final case class CMD_ADD_HTLC(amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, upstream: Either[UUID, UpdateAddHtlc], commit: Boolean = false, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends Command
 
 sealed trait HasHtlcIdCommand extends Command {
+  val commit: Boolean
   val id: Long
 }
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false) extends HasHtlcIdCommand

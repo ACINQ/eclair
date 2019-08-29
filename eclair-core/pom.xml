@@ -221,7 +221,6 @@
             <groupId>com.softwaremill.quicklens</groupId>
             <artifactId>quicklens_${scala.version.short}</artifactId>
             <version>1.4.11</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.whisk</groupId>

@@ -20,7 +20,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel._
-
+import com.softwaremill.quicklens._
 import scala.collection.mutable
 
 /**
@@ -45,10 +45,10 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
 
     case CommandSend(channelId, cmd) =>
       // save command in db
-      register forward Register.Forward(channelId, cmd)
+      register ! Register.Forward(channelId, cmd)
       // we also store the preimage in a db (note that this happens *after* forwarding the fulfill to the channel, so we don't add latency)
       pendingRelay.addPendingRelay(channelId, cmd)
-      context become main(pendingRelays.addBinding(channelId, cmd))
+      context become main(pendingRelays.addBinding(channelId, cmd.modify(_.commit).setTo(false)))
 
     case CommandAck(channelId, htlcId) =>
       //delete from db

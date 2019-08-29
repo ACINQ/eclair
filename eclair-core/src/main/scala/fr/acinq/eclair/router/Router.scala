@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.router
 
-import java.util.zip.CRC32C
+import java.util.zip.CRC32
 
 import akka.Done
 import akka.actor.{ActorRef, Props, Status}
@@ -1057,7 +1057,7 @@ object Router {
   def getChecksum(u: ChannelUpdate): Long = {
     import u._
     val data = serializationResult(LightningMessageCodecs.channelUpdateChecksumCodec.encode(chainHash :: shortChannelId :: messageFlags :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: HNil))
-    val checksum = new CRC32C()
+    val checksum = new CRC32()
     checksum.update(data.toArray)
     checksum.getValue
   }
