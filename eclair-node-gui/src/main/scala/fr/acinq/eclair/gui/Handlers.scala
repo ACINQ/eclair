@@ -82,14 +82,14 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
 
   def send(overrideAmountMsat_opt: Option[Long], req: PaymentRequest) = {
     val amountMsat = overrideAmountMsat_opt
-      .orElse(req.amount.map(_.amount))
+      .orElse(req.amount.map(_.toLong))
       .getOrElse(throw new RuntimeException("you need to manually specify an amount for this payment request"))
     logger.info(s"sending $amountMsat to ${req.paymentHash} @ ${req.nodeId}")
     (for {
       kit <- fKit
-      sendPayment = req.minFinalCltvExpiry match {
+      sendPayment = req.minFinalCltvExpiryDelta match {
         case None => SendPayment(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, req.routingInfo, maxAttempts = kit.nodeParams.maxPaymentAttempts)
-        case Some(minFinalCltvExpiry) => SendPayment(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiry = minFinalCltvExpiry, maxAttempts = kit.nodeParams.maxPaymentAttempts)
+        case Some(minFinalCltvExpiry) => SendPayment(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiryDelta = minFinalCltvExpiry, maxAttempts = kit.nodeParams.maxPaymentAttempts)
       }
       res <- (kit.paymentInitiator ? sendPayment).mapTo[UUID]
     } yield res).recover {

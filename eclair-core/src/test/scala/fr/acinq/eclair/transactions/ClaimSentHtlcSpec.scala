@@ -77,21 +77,21 @@ class ClaimSentHtlcSpec extends FunSuite {
   val tx = Transaction(
     version = 2,
     txIn = TxIn(OutPoint(ByteVector32.Zeroes, 0), ByteVector.empty, 0xffffffffL) :: Nil,
-    txOut = TxOut(10 satoshi, Script.pay2wsh(htlcScript)) :: Nil,
+    txOut = TxOut(10 sat, Script.pay2wsh(htlcScript)) :: Nil,
     lockTime = 0)
 
   // this tx tries to spend the previous tx
   val tx1 = Transaction(
     version = 2,
     txIn = TxIn(OutPoint(tx, 0), ByteVector.empty, 0xffffffff) :: Nil,
-    txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.value)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+    txOut = TxOut(10 sat, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.value)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
     lockTime = 0)
 
   test("Alice can spend this HTLC after a delay") {
     val tx2 = Transaction(
       version = 2,
       txIn = TxIn(OutPoint(tx, 0), ByteVector.empty, sequence = reltimeout + 1) :: Nil,
-      txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.value)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+      txOut = TxOut(10 sat, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.value)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = abstimeout + 1)
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
@@ -105,7 +105,7 @@ class ClaimSentHtlcSpec extends FunSuite {
     val tx2 = Transaction(
       version = 2,
       txIn = TxIn(OutPoint(tx, 0), ByteVector.empty, sequence = reltimeout + 1) :: Nil,
-      txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.value)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+      txOut = TxOut(10 sat, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.value)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = abstimeout - 1)
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
@@ -122,7 +122,7 @@ class ClaimSentHtlcSpec extends FunSuite {
     val tx2 = Transaction(
       version = 2,
       txIn = TxIn(OutPoint(tx, 0), ByteVector.empty, sequence = reltimeout - 1) :: Nil,
-      txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.value)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+      txOut = TxOut(10 sat, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.value)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = abstimeout + 1)
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)

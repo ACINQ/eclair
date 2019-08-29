@@ -32,7 +32,7 @@ import fr.acinq.eclair.router.RouteResponse
 import fr.acinq.eclair.transactions.Direction
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
 import org.json4s.JsonAST._
 import org.json4s.{CustomKeySerializer, CustomSerializer, TypeHints, jackson}
 import scodec.bits.ByteVector
@@ -58,11 +58,19 @@ class UInt64Serializer extends CustomSerializer[UInt64](format => ({ null }, {
 }))
 
 class SatoshiSerializer extends CustomSerializer[Satoshi](format => ({ null }, {
-  case x: Satoshi => JInt(x.amount)
+  case x: Satoshi => JInt(x.toLong)
 }))
 
 class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](format => ({ null }, {
-  case x: MilliSatoshi => JInt(x.amount)
+  case x: MilliSatoshi => JInt(x.toLong)
+}))
+
+class CltvExpirySerializer extends CustomSerializer[CltvExpiry](format => ({ null }, {
+  case x: CltvExpiry => JLong(x.toLong)
+}))
+
+class CltvExpiryDeltaSerializer extends CustomSerializer[CltvExpiryDelta](format => ({ null }, {
+  case x: CltvExpiryDelta => JInt(x.toInt)
 }))
 
 class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](format => ({ null }, {
@@ -116,7 +124,7 @@ class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ({ n
 }))
 
 class InputInfoSerializer extends CustomSerializer[InputInfo](format => ({ null }, {
-  case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.amount)))
+  case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.toLong)))
 }))
 
 class ColorSerializer extends CustomSerializer[Color](format => ({ null }, {
@@ -154,7 +162,7 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format =
 }, {
   case p: PaymentRequest => {
     val expiry = p.expiry.map(ex => JField("expiry", JLong(ex))).toSeq
-    val minFinalCltvExpiry = p.minFinalCltvExpiry.map(mfce => JField("minFinalCltvExpiry", JLong(mfce))).toSeq
+    val minFinalCltvExpiry = p.minFinalCltvExpiryDelta.map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
     val amount = p.amount.map(msat => JField("amount", JLong(msat.toLong))).toSeq
 
     val fieldList = List(JField("prefix", JString(p.prefix)),
@@ -193,6 +201,8 @@ object JsonSupport extends Json4sSupport {
     new UInt64Serializer +
     new SatoshiSerializer +
     new MilliSatoshiSerializer +
+    new CltvExpirySerializer +
+    new CltvExpiryDeltaSerializer +
     new ShortChannelIdSerializer +
     new StateSerializer +
     new ShaChainSerializer +
