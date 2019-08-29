@@ -59,7 +59,6 @@ import scala.concurrent.duration._
   * Created by PM on 15/03/2017.
   */
 
-@DoNotDiscover
 class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
 
   var nodes: Map[String, Kit] = Map()
@@ -81,10 +80,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",
     "eclair.server.public-ips.1" -> "127.0.0.1",
-    "eclair.bitcoind.port" -> 28333,
-    "eclair.bitcoind.rpcport" -> 28332,
-    "eclair.bitcoind.zmqblock" -> "tcp://127.0.0.1:28334",
-    "eclair.bitcoind.zmqtx" -> "tcp://127.0.0.1:28335",
+    "eclair.bitcoind.port" -> bitcoindPort,
+    "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
+    "eclair.bitcoind.zmqblock" -> s"tcp://127.0.0.1:$bitcoindZmqBlockPort",
+    "eclair.bitcoind.zmqtx" -> s"tcp://127.0.0.1:$bitcoindZmqTxPort",
     "eclair.mindepth-blocks" -> 2,
     "eclair.max-htlc-value-in-flight-msat" -> 100000000000L,
     "eclair.router.broadcast-interval" -> "2 second",

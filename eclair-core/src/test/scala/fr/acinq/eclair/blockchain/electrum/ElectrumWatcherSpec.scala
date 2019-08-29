@@ -30,13 +30,12 @@ import fr.acinq.eclair.blockchain.{GetTxWithMeta, GetTxWithMetaResponse, WatchCo
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JArray, JString, JValue}
-import org.scalatest.{BeforeAndAfterAll, DoNotDiscover, FunSuiteLike}
+import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits._
 
 import scala.concurrent.duration._
 
 
-@DoNotDiscover
 class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService  with BeforeAndAfterAll with Logging {
 
   override def beforeAll(): Unit = {

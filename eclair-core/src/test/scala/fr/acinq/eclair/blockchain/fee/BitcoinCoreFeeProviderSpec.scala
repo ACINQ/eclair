@@ -28,7 +28,7 @@ import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST._
 import org.json4s.jackson.JsonMethods
-import org.scalatest.{BeforeAndAfterAll, DoNotDiscover, FunSuiteLike}
+import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.collection.JavaConversions._
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -36,15 +36,14 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Random
 
 
-@DoNotDiscover
 class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",
     "eclair.spv" -> false,
     "eclair.server.public-ips.1" -> "localhost",
-    "eclair.bitcoind.port" -> 28333,
-    "eclair.bitcoind.rpcport" -> 28332,
+    "eclair.bitcoind.port" -> bitcoindPort,
+    "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
     "eclair.router-broadcast-interval" -> "2 second",
     "eclair.auto-reconnect" -> false))
   val config = ConfigFactory.load(commonConfig).getConfig("eclair")

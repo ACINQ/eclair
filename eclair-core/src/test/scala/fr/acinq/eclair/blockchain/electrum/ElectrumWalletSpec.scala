@@ -32,7 +32,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddr
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JDecimal, JString, JValue}
-import org.scalatest.{BeforeAndAfterAll, DoNotDiscover, FunSuiteLike}
+import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
 import scala.concurrent.Await
@@ -40,7 +40,6 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
 
-@DoNotDiscover
 class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
 
   import ElectrumWallet._
