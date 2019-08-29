@@ -28,7 +28,7 @@ import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, NodeParams, ShortChannelId, nodeFee}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, nodeFee}
 import grizzled.slf4j.Logging
 import scodec.{Attempt, DecodeResult}
 
@@ -157,7 +157,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardFulfill(fulfill, to, add) =>
       to match {
         case Local(id, None) =>
-          val feesPaid = MilliSatoshi(0)
+          val feesPaid = 0.msat
           context.system.eventStream.publish(PaymentSent(id, add.amountMsat, feesPaid, add.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
           // we sent the payment, but we probably restarted and the reference to the original sender was lost,
           // we publish the failure on the event stream and update the status in paymentDb

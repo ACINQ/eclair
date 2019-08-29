@@ -198,7 +198,7 @@ final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Com
 final case class LocalParams(nodeId: PublicKey,
                              channelKeyPath: DeterministicWallet.KeyPath,
                              dustLimit: Satoshi,
-                             maxHtlcValueInFlightMsat: UInt64,
+                             maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
                              channelReserve: Satoshi,
                              htlcMinimum: MilliSatoshi,
                              toSelfDelay: CltvExpiryDelta,
@@ -210,7 +210,7 @@ final case class LocalParams(nodeId: PublicKey,
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimit: Satoshi,
-                              maxHtlcValueInFlightMsat: UInt64,
+                              maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
                               channelReserve: Satoshi,
                               htlcMinimum: MilliSatoshi,
                               toSelfDelay: CltvExpiryDelta,

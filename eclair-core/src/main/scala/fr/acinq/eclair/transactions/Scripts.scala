@@ -19,7 +19,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, LockTimeThreshold, OP_0, OP_1, OP_1NEGATE, OP_2, OP_CHECKLOCKTIMEVERIFY, OP_CHECKMULTISIG, OP_CHECKSEQUENCEVERIFY, OP_CHECKSIG, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHDATA, OP_SIZE, OP_SWAP, Satoshi, Script, ScriptElt, ScriptWitness, Transaction, TxIn}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount}
 import scodec.bits.ByteVector
 
 /**
@@ -67,9 +67,9 @@ object Scripts {
 
   def applyFees(amount_us: Satoshi, amount_them: Satoshi, fee: Satoshi) = {
     val (amount_us1: Satoshi, amount_them1: Satoshi) = (amount_us, amount_them) match {
-      case (Satoshi(us), Satoshi(them)) if us >= fee.toLong / 2 && them >= fee.toLong / 2 => (Satoshi(us - fee.toLong / 2), Satoshi(them - fee.toLong / 2))
-      case (Satoshi(us), Satoshi(them)) if us < fee.toLong / 2 => (Satoshi(0L), Satoshi(Math.max(0L, them - fee.toLong + us)))
-      case (Satoshi(us), Satoshi(them)) if them < fee.toLong / 2 => (Satoshi(Math.max(us - fee.toLong + them, 0L)), Satoshi(0L))
+      case (us, them) if us >= fee / 2 && them >= fee / 2 => ((us - fee) / 2, (them - fee) / 2)
+      case (us, them) if us < fee / 2 => (0 sat, (them - fee + us).max(0 sat))
+      case (us, them) if them < fee / 2 => ((us - fee + them).max(0 sat), 0 sat)
     }
     (amount_us1, amount_them1)
   }

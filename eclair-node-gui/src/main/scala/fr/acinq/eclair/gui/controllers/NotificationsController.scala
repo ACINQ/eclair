@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.gui.controllers
 
+import fr.acinq.eclair.gui.utils.ContextMenuUtils
+import grizzled.slf4j.Logging
 import javafx.animation._
 import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
@@ -24,9 +26,6 @@ import javafx.scene.Parent
 import javafx.scene.image.Image
 import javafx.scene.layout.{GridPane, VBox}
 import javafx.util.Duration
-
-import fr.acinq.eclair.gui.utils.ContextMenuUtils
-import grizzled.slf4j.Logging
 
 sealed trait NotificationType
 
