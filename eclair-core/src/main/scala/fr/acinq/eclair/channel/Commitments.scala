@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
@@ -86,14 +86,14 @@ case class Commitments(channelVersion: ChannelVersion,
 
   lazy val availableBalanceForSend: MilliSatoshi = {
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-    val feesMsat = if (localParams.isFunder) commitTxFee(remoteParams.dustLimit, reduced).toMilliSatoshi else MilliSatoshi(0)
-    maxOf(reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0))
+    val feesMsat = if (localParams.isFunder) commitTxFee(remoteParams.dustLimit, reduced).toMilliSatoshi else 0.msat
+    (reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi - feesMsat).max(0 msat)
   }
 
   lazy val availableBalanceForReceive: MilliSatoshi = {
     val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-    val feesMsat = if (localParams.isFunder) MilliSatoshi(0) else commitTxFee(localParams.dustLimit, reduced).toMilliSatoshi
-    maxOf(reduced.toRemote - localParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0))
+    val feesMsat = if (localParams.isFunder) 0.msat else commitTxFee(localParams.dustLimit, reduced).toMilliSatoshi
+    (reduced.toRemote - localParams.channelReserve.toMilliSatoshi - feesMsat).max(0 msat)
   }
 }
 
@@ -157,9 +157,9 @@ object Commitments {
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     // we look from remote's point of view, so if local is funder remote doesn't pay the fees
-    val fees = if (commitments1.localParams.isFunder) commitTxFee(commitments1.remoteParams.dustLimit, reduced) else Satoshi(0)
+    val fees = if (commitments1.localParams.isFunder) commitTxFee(commitments1.remoteParams.dustLimit, reduced) else 0.sat
     val missing = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
-    if (missing < Satoshi(0)) {
+    if (missing < 0.sat) {
       return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missing, reserve = commitments1.remoteParams.channelReserve, fees = fees))
     }
 
@@ -190,9 +190,9 @@ object Commitments {
     }
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    val fees = if (commitments1.localParams.isFunder) Satoshi(0) else Transactions.commitTxFee(commitments1.localParams.dustLimit, reduced)
+    val fees = if (commitments1.localParams.isFunder) 0.sat else Transactions.commitTxFee(commitments1.localParams.dustLimit, reduced)
     val missing = reduced.toRemote.truncateToSatoshi - commitments1.localParams.channelReserve - fees
-    if (missing < Satoshi(0)) {
+    if (missing < 0.sat) {
       throw InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
     }
 
@@ -314,7 +314,7 @@ object Commitments {
     // we look from remote's point of view, so if local is funder remote doesn't pay the fees
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
     val missing = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
-    if (missing < Satoshi(0)) {
+    if (missing < 0.sat) {
       throw CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
     }
 
@@ -348,7 +348,7 @@ object Commitments {
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
     val missing = reduced.toRemote.truncateToSatoshi - commitments1.localParams.channelReserve - fees
-    if (missing < Satoshi(0)) {
+    if (missing < 0.sat) {
       throw CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
     }
 

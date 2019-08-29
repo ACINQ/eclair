@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, ScriptFlags, Transaction, TxIn}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, ScriptFlags, Transaction, TxIn}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
@@ -31,7 +31,7 @@ import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, TestConstants, TestkitBaseClass, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
@@ -86,8 +86,8 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     } else {
       within(30 seconds) {
         reachNormal(setup)
-        val bobCommitTxes: List[PublishableTxs] = (for (amt <- List(100000000, 200000000, 300000000)) yield {
-          val (r, htlc) = addHtlc(MilliSatoshi(amt), alice, bob, alice2bob, bob2alice)
+        val bobCommitTxes: List[PublishableTxs] = (for (amt <- List(100000000 msat, 200000000 msat, 300000000 msat)) yield {
+          val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
           crossSign(alice, bob, alice2bob, bob2alice)
           relayerB.expectMsgType[ForwardAdd]
           val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs
@@ -122,7 +122,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectMsgType[Shutdown]
     bob2alice.forward(alice)
     // agreeing on a closing fee
-    var aliceCloseFee, bobCloseFee = Satoshi(0)
+    var aliceCloseFee, bobCloseFee = 0.sat
     do {
       aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
       alice2bob.forward(bob)
@@ -299,7 +299,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test starts here
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(MilliSatoshi(500000000), ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = CltvExpiry(300000), onion = TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+    val add = CMD_ADD_HTLC(500000000 msat, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = CltvExpiry(300000), onion = TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), None, Some(add))))
@@ -378,7 +378,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BITCOIN_OUTPUT_SPENT") { f =>
     import f._
     // alice sends an htlc to bob
-    val (ra1, htlca1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
+    val (ra1, htlca1) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     relayerB.expectMsgType[ForwardAdd]
     // an error occurs and alice publishes her commit tx
@@ -418,7 +418,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     system.eventStream.subscribe(listener.ref, classOf[LocalCommitConfirmed])
     system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
     // alice sends an htlc to bob
-    val (ra1, htlca1) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
+    val (ra1, htlca1) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     // an error occurs and alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
@@ -452,7 +452,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     // alice sends an htlc
-    val (r, htlc) = addHtlc(MilliSatoshi(4200000), alice, bob, alice2bob, bob2alice)
+    val (r, htlc) = addHtlc(4200000 msat, alice, bob, alice2bob, bob2alice)
     // and signs it (but bob doesn't sign it)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -483,7 +483,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     // alice sends an htlc
-    val (r, htlc) = addHtlc(MilliSatoshi(4200000), alice, bob, alice2bob, bob2alice)
+    val (r, htlc) = addHtlc(4200000 msat, alice, bob, alice2bob, bob2alice)
     // and signs it (but bob doesn't sign it)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -544,7 +544,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val oldStateData = alice.stateData
-    val (ra1, htlca1) = addHtlc(MilliSatoshi(25000000), alice, bob, alice2bob, bob2alice)
+    val (ra1, htlca1) = addHtlc(25000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     fulfillHtlc(htlca1.id, ra1, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)

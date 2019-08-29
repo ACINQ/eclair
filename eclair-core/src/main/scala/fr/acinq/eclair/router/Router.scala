@@ -440,7 +440,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     case Event(FinalizeRoute(partialHops), d) =>
       // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs, then select the largest edge between them
-      val edges = partialHops.sliding(2).map { case List(v1, v2) => d.graph.getEdgesBetween(v1, v2).maxBy(_.update.htlcMaximumMsat) }
+      val edges = partialHops.sliding(2).map { case List(v1, v2) => d.graph.getEdgesBetween(v1, v2).maxBy(_.update.htlcMaximumMsat.getOrElse(0 msat)) }
       val hops = edges.map(d => Hop(d.desc.a, d.desc.b, d.update)).toSeq
       sender ! RouteResponse(hops, Set.empty, Set.empty)
       stay
@@ -818,7 +818,7 @@ object Router {
   def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
   // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
   // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
-    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = MilliSatoshi(0), MilliSatoshi(extraHop.feeBaseMsat), extraHop.feeProportionalMillionths, None)
+    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0 msat, extraHop.feeBase, extraHop.feeProportionalMillionths, None)
 
 
   def toAssistedChannels(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Map[ShortChannelId, AssistedChannel] = {

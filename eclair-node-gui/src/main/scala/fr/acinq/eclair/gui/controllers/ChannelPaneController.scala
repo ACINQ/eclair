@@ -135,7 +135,7 @@ class ChannelPaneController(val channelRef: ActorRef, val peerNodeId: String) ex
 
   def refreshBalance(): Unit = {
     amountUs.setText(s"${CoinUtils.formatAmountInUnit(balance, FxApp.getUnit, false)} / ${CoinUtils.formatAmountInUnit(capacity, FxApp.getUnit, withUnit = true)}")
-    balanceBar.setProgress(balance.amount.toDouble / capacity.amount)
+    balanceBar.setProgress(balance.toLong.toDouble / capacity.toLong)
   }
 
   def getBalance: MilliSatoshi = balance
