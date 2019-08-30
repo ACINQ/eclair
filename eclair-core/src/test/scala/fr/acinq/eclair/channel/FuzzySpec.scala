@@ -141,7 +141,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
     awaitCond(latch.getCount == 0, max = 2 minutes)
     assert(alice.stateName == NORMAL || alice.stateName == OFFLINE)
-    assert(bob.stateName == NORMAL || alice.stateName == OFFLINE)
+    assert(bob.stateName == NORMAL || bob.stateName == OFFLINE)
   }
 
   test("fuzzy test with both parties sending HTLCs", Tag("fuzzy")) { f =>
@@ -153,7 +153,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch)))
     awaitCond(latch.getCount == 0, max = 2 minutes)
     assert(alice.stateName == NORMAL || alice.stateName == OFFLINE)
-    assert(bob.stateName == NORMAL || alice.stateName == OFFLINE)
+    assert(bob.stateName == NORMAL || bob.stateName == OFFLINE)
   }
 
   test("one party sends lots of htlcs send shutdown") { f =>
@@ -169,8 +169,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure]) == "ok"
     }, max = 30 seconds)
     senders.foreach(_ ! 'stop)
-    awaitCond(alice.stateName == CLOSING)
-    awaitCond(alice.stateName == CLOSING)
+    awaitCond(alice.stateName == CLOSING, max = 20 seconds, interval = 1 second)
+    awaitCond(bob.stateName == CLOSING, max = 20 seconds, interval = 1 second)
   }
 
   test("both parties send lots of htlcs send shutdown") { f =>
@@ -191,8 +191,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       resa == "ok" || resb == "ok"
     }, max = 30 seconds)
     senders.foreach(_ ! 'stop)
-    awaitCond(alice.stateName == CLOSING)
-    awaitCond(alice.stateName == CLOSING)
+    awaitCond(alice.stateName == CLOSING, max = 20 seconds, interval = 1 second)
+    awaitCond(bob.stateName == CLOSING, max = 20 seconds, interval = 1 second)
   }
 
 }
