@@ -134,8 +134,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val latch = new CountDownLatch(senders)
     for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch, totalMessages / senders)))
     awaitCond(latch.getCount == 0, max = 2 minutes)
-    assert(alice.stateName == NORMAL || alice.stateName == OFFLINE)
-    assert(bob.stateName == NORMAL || bob.stateName == OFFLINE)
+    assert(alice.stateName == NORMAL || alice.stateName == OFFLINE || alice.stateName == SYNCING)
+    assert(bob.stateName == NORMAL || bob.stateName == OFFLINE || bob.stateName == SYNCING)
   }
 
   test("fuzzy test with both parties sending HTLCs", Tag("fuzzy")) { f =>
@@ -146,8 +146,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch, totalMessages / senders)))
     for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch, totalMessages / senders)))
     awaitCond(latch.getCount == 0, max = 2 minutes)
-    assert(alice.stateName == NORMAL || alice.stateName == OFFLINE)
-    assert(bob.stateName == NORMAL || bob.stateName == OFFLINE)
+    assert(alice.stateName == NORMAL || alice.stateName == OFFLINE || alice.stateName == SYNCING)
+    assert(bob.stateName == NORMAL || bob.stateName == OFFLINE || bob.stateName == SYNCING)
   }
 
   test("one party sends lots of htlcs then shutdown") { f =>
