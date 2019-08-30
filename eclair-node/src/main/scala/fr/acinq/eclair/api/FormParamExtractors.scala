@@ -18,16 +18,15 @@ package fr.acinq.eclair.api
 
 import java.util.UUID
 
-import JsonSupport._
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.util.Timeout
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.eclair.api.JsonSupport._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import scodec.bits.ByteVector
-
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 

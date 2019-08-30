@@ -104,7 +104,8 @@ class FxApp extends Application with Logging {
           system.eventStream.subscribe(guiUpdater, classOf[ElectrumEvent])
           pKit.completeWith(setup.bootstrap)
           pKit.future.onComplete {
-            case Success(_) =>
+            case Success(kit) =>
+              Boot.startApiServiceIfEnabled(setup.config, kit)
               Platform.runLater(new Runnable {
                 override def run(): Unit = {
                   val scene = new Scene(mainRoot)
