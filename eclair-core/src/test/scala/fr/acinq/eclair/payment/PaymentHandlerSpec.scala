@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UpdateAddHtlc}
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId, TestConstants, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomKey}
 import org.scalatest.FunSuiteLike
 import scodec.bits.ByteVector
 
@@ -44,7 +44,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
 
-    val amountMsat = MilliSatoshi(42000)
+    val amountMsat = 42000 msat
     val expiry = CltvExpiryDelta(12).toCltvExpiry(nodeParams.currentBlockHeight)
 
     {
@@ -97,19 +97,19 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
 
     // negative amount should fail
-    sender.send(handler, ReceivePayment(Some(MilliSatoshi(-50)), "1 coffee"))
+    sender.send(handler, ReceivePayment(Some(-50 msat), "1 coffee"))
     val negativeError = sender.expectMsgType[Failure]
     assert(negativeError.cause.getMessage.contains("amount is not valid"))
 
     // amount = 0 should fail
-    sender.send(handler, ReceivePayment(Some(MilliSatoshi(0)), "1 coffee"))
+    sender.send(handler, ReceivePayment(Some(0 msat), "1 coffee"))
     val zeroError = sender.expectMsgType[Failure]
     assert(zeroError.cause.getMessage.contains("amount is not valid"))
 
     // success with 1 mBTC
-    sender.send(handler, ReceivePayment(Some(MilliSatoshi(100000000L)), "1 coffee"))
+    sender.send(handler, ReceivePayment(Some(100000000 msat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.amount.contains(MilliSatoshi(100000000L)) && pr.nodeId.toString == nodeParams.nodeId.toString)
+    assert(pr.amount.contains(100000000 msat) && pr.nodeId.toString == nodeParams.nodeId.toString)
   }
 
   test("Payment request generation should succeed when the amount is not set") {
@@ -125,10 +125,10 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     val handler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
     val sender = TestProbe()
 
-    sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee"))
+    sender.send(handler, ReceivePayment(Some(42000 msat), "1 coffee"))
     assert(sender.expectMsgType[PaymentRequest].expiry === Some(Alice.nodeParams.paymentRequestExpiry.toSeconds))
 
-    sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee with custom expiry", expirySeconds_opt = Some(60)))
+    sender.send(handler, ReceivePayment(Some(42000 msat), "1 coffee with custom expiry", expirySeconds_opt = Some(60)))
     assert(sender.expectMsgType[PaymentRequest].expiry === Some(60))
   }
 
@@ -138,16 +138,16 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
     val x = randomKey.publicKey
     val y = randomKey.publicKey
-    val extraHop_x_y = ExtraHop(x, ShortChannelId(1), 10, 11, CltvExpiryDelta(12))
-    val extraHop_y_z = ExtraHop(y, ShortChannelId(2), 20, 21, CltvExpiryDelta(22))
-    val extraHop_x_t = ExtraHop(x, ShortChannelId(3), 30, 31, CltvExpiryDelta(32))
+    val extraHop_x_y = ExtraHop(x, ShortChannelId(1), 10 msat, 11, CltvExpiryDelta(12))
+    val extraHop_y_z = ExtraHop(y, ShortChannelId(2), 20 msat, 21, CltvExpiryDelta(22))
+    val extraHop_x_t = ExtraHop(x, ShortChannelId(3), 30 msat, 31, CltvExpiryDelta(32))
     val route_x_z = extraHop_x_y :: extraHop_y_z :: Nil
     val route_x_t = extraHop_x_t :: Nil
 
-    sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee with additional routing info", extraHops = List(route_x_z, route_x_t)))
+    sender.send(handler, ReceivePayment(Some(42000 msat), "1 coffee with additional routing info", extraHops = List(route_x_z, route_x_t)))
     assert(sender.expectMsgType[PaymentRequest].routingInfo === Seq(route_x_z, route_x_t))
 
-    sender.send(handler, ReceivePayment(Some(MilliSatoshi(42000)), "1 coffee without routing info"))
+    sender.send(handler, ReceivePayment(Some(42000 msat), "1 coffee without routing info"))
     assert(sender.expectMsgType[PaymentRequest].routingInfo === Nil)
   }
 
@@ -158,7 +158,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
 
-    val amountMsat = MilliSatoshi(42000)
+    val amountMsat = 42000 msat
     val expiry = CltvExpiryDelta(12).toCltvExpiry(nodeParams.currentBlockHeight)
 
     sender.send(handler, ReceivePayment(Some(amountMsat), "some desc", expirySeconds_opt = Some(0)))

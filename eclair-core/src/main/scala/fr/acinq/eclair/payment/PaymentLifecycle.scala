@@ -207,7 +207,7 @@ object PaymentLifecycle {
                          finalCltvExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA,
                          maxAttempts: Int,
                          routeParams: Option[RouteParams] = None) extends GenericSendPayment {
-    require(amount > MilliSatoshi(0), s"amountMsat must be > 0")
+    require(amount > 0.msat, s"amountMsat must be > 0")
   }
 
   sealed trait PaymentResult

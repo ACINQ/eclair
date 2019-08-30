@@ -49,6 +49,7 @@ case class NodeParams(keyManager: KeyManager,
                       globalFeatures: ByteVector,
                       localFeatures: ByteVector,
                       overrideFeatures: Map[PublicKey, (ByteVector, ByteVector)],
+                      syncWhitelist: Set[PublicKey],
                       dustLimit: Satoshi,
                       onChainFeeConf: OnChainFeeConf,
                       maxHtlcValueInFlightMsat: UInt64,
@@ -165,6 +166,8 @@ object NodeParams {
       p -> (gf, lf)
     }.toMap
 
+    val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
+
     val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {
       Some(Socks5ProxyParams(
         address = new InetSocketAddress(config.getString("socks5.host"), config.getInt("socks5.port")),
@@ -208,6 +211,7 @@ object NodeParams {
       globalFeatures = ByteVector.fromValidHex(config.getString("global-features")),
       localFeatures = ByteVector.fromValidHex(config.getString("local-features")),
       overrideFeatures = overrideFeatures,
+      syncWhitelist = syncWhitelist,
       dustLimit = dustLimitSatoshis,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,

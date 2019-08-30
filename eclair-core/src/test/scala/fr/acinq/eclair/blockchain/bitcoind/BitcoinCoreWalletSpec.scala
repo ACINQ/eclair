@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.FundTransactionResponse
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.{addressToPublicKeyScript, randomKey}
+import fr.acinq.eclair.{LongToBtcAmount, addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, JString}
@@ -125,7 +125,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
         TxIn(OutPoint(unknownTxids(1), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL),
         TxIn(OutPoint(unknownTxids(2), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL)
       ),
-      txOut = TxOut(Satoshi(1000000), addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil,
+      txOut = TxOut(1000000 sat, addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil,
       lockTime = 0)
 
     // signing it should fail, and the error message should contain the txids of the UTXOs that could not be used
@@ -145,7 +145,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val sender = TestProbe()
 
     wallet.getBalance.pipeTo(sender.ref)
-    assert(sender.expectMsgType[Satoshi] > Satoshi(0))
+    assert(sender.expectMsgType[Satoshi] > 0.sat)
 
     wallet.getFinalAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
@@ -205,7 +205,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val sender = TestProbe()
 
     wallet.getBalance.pipeTo(sender.ref)
-    assert(sender.expectMsgType[Satoshi] > Satoshi(0))
+    assert(sender.expectMsgType[Satoshi] > 0.sat)
 
     wallet.getFinalAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
@@ -232,7 +232,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     assert(sender.expectMsgType[Boolean])
 
     wallet.getBalance.pipeTo(sender.ref)
-    assert(sender.expectMsgType[Satoshi] > Satoshi(0))
+    assert(sender.expectMsgType[Satoshi] > 0.sat)
   }
 
   test("detect if tx has been doublespent") {

@@ -21,7 +21,6 @@ import java.util.UUID
 
 import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
-import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.channel.{ChannelVersion, State}
@@ -58,11 +57,11 @@ class UInt64Serializer extends CustomSerializer[UInt64](format => ({ null }, {
 }))
 
 class SatoshiSerializer extends CustomSerializer[Satoshi](format => ({ null }, {
-  case x: Satoshi => JInt(x.amount)
+  case x: Satoshi => JInt(x.toLong)
 }))
 
 class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](format => ({ null }, {
-  case x: MilliSatoshi => JInt(x.amount)
+  case x: MilliSatoshi => JInt(x.toLong)
 }))
 
 class CltvExpirySerializer extends CustomSerializer[CltvExpiry](format => ({ null }, {
@@ -124,7 +123,7 @@ class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ({ n
 }))
 
 class InputInfoSerializer extends CustomSerializer[InputInfo](format => ({ null }, {
-  case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.amount)))
+  case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.toLong)))
 }))
 
 class ColorSerializer extends CustomSerializer[Color](format => ({ null }, {
@@ -224,8 +223,6 @@ object JsonSupport extends Json4sSupport {
     new PaymentRequestSerializer +
     new JavaUUIDSerializer +
     new OutgoingPaymentStatusSerializer
-
-  implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
   case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
     val reverse: Map[String, Class[_]] = custom.map(_.swap)

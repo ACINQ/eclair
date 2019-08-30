@@ -22,14 +22,14 @@ import java.util.concurrent.{CountDownLatch, TimeUnit}
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.NoopPaymentHandler
 import fr.acinq.eclair.wire.Init
-import fr.acinq.eclair.{MilliSatoshi, TestUtils}
+import fr.acinq.eclair.{LongToBtcAmount, TestUtils}
 import org.scalatest.{BeforeAndAfterAll, Matchers, Outcome, fixture}
 
 import scala.concurrent.duration._
@@ -61,7 +61,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     // alice and bob will both have 1 000 000 sat
     feeEstimator.setFeerate(FeeratesPerKw.single(10000))
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, Satoshi(2000000), MilliSatoshi(1000000000), feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, 2000000 sat, 1000000000 msat, feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit)
     pipe ! (alice, bob)
     within(30 seconds) {
@@ -91,7 +91,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
 
   test("01-offer1") { f => assert(f.ref === f.res) }
   test("02-offer2") { f => assert(f.ref === f.res) }
-  //test("03-fulfill1") { f => assert(f.ref === f.res) }
+  test("03-fulfill1") { f => assert(f.ref === f.res) }
   // test("04-two-commits-onedir") { f => assert(f.ref === f.res) } DOES NOT PASS : we now automatically sign back when we receive a revocation and have acked changes
   // test("05-two-commits-in-flight") { f => assert(f.ref === f.res)} DOES NOT PASS : cannot send two commit in a row (without having first revocation)
   test("10-offers-crossover") { f => assert(f.ref === f.res) }

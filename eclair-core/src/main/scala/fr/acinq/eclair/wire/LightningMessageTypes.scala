@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -71,7 +72,7 @@ case class OpenChannel(chainHash: ByteVector32,
                        fundingSatoshis: Satoshi,
                        pushMsat: MilliSatoshi,
                        dustLimitSatoshis: Satoshi,
-                       maxHtlcValueInFlightMsat: UInt64,
+                       maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
                        channelReserveSatoshis: Satoshi,
                        htlcMinimumMsat: MilliSatoshi,
                        feeratePerKw: Long,
@@ -87,7 +88,7 @@ case class OpenChannel(chainHash: ByteVector32,
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
                          dustLimitSatoshis: Satoshi,
-                         maxHtlcValueInFlightMsat: UInt64,
+                         maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
                          channelReserveSatoshis: Satoshi,
                          htlcMinimumMsat: MilliSatoshi,
                          minimumDepth: Long,
@@ -223,6 +224,8 @@ case class ChannelUpdate(signature: ByteVector64,
                          htlcMaximumMsat: Option[MilliSatoshi],
                          unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with HasTimestamp with HasChainHash {
   require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
+
+  def isNode1 = Announcements.isNode1(channelFlags)
 }
 
 // @formatter:off
@@ -233,10 +236,8 @@ object EncodingType {
 }
 // @formatter:on
 
-
 case class EncodedShortChannelIds(encoding: EncodingType,
                                   array: List[ShortChannelId])
-
 
 case class QueryShortChannelIds(chainHash: ByteVector32,
                                 shortChannelIds: EncodedShortChannelIds,

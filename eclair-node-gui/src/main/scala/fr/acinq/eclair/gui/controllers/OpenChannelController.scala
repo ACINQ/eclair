@@ -86,9 +86,9 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
     fundingSat.textProperty.addListener(new ChangeListener[String] {
       def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String): Unit = {
         Try(CoinUtils.convertStringAmountToSat(newValue, fundingUnit.getValue)) match {
-          case Success(capacitySat) if capacitySat.amount <= 0 =>
+          case Success(capacitySat) if capacitySat <= 0.sat =>
             fundingSatError.setText("Capacity must be greater than 0")
-          case Success(capacitySat) if capacitySat.amount < 50000 =>
+          case Success(capacitySat) if capacitySat < 50000.sat =>
             fundingSatError.setText("Capacity is low and the channel may not be able to open")
           case Success(capacitySat) if capacitySat >= Channel.MAX_FUNDING =>
             fundingSatError.setText(s"Capacity must be less than ${CoinUtils.formatAmountInUnit(Channel.MAX_FUNDING, FxApp.getUnit, withUnit = true)}")
@@ -109,7 +109,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
         (Try(CoinUtils.convertStringAmountToSat(fundingSat.getText, fundingUnit.getValue)),
         Try(if (Strings.isNullOrEmpty(pushMsatField.getText())) 0L else pushMsatField.getText().toLong),
         Try(if (Strings.isNullOrEmpty(feerateField.getText())) None else Some(feerateField.getText().toLong))) match {
-        case (Success(capacitySat), _, _) if capacitySat.amount <= 0 =>
+        case (Success(capacitySat), _, _) if capacitySat <= 0.sat =>
           fundingSatError.setText("Capacity must be greater than 0")
         case (Success(capacitySat), _, _) if capacitySat >= Channel.MAX_FUNDING =>
           fundingSatError.setText(s"Capacity must be less than ${CoinUtils.formatAmountInUnit(Channel.MAX_FUNDING, FxApp.getUnit, withUnit = true)}")

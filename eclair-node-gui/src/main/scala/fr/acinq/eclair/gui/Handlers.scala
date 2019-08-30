@@ -82,7 +82,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
 
   def send(overrideAmountMsat_opt: Option[Long], req: PaymentRequest) = {
     val amountMsat = overrideAmountMsat_opt
-      .orElse(req.amount.map(_.amount))
+      .orElse(req.amount.map(_.toLong))
       .getOrElse(throw new RuntimeException("you need to manually specify an amount for this payment request"))
     logger.info(s"sending $amountMsat to ${req.paymentHash} @ ${req.nodeId}")
     (for {

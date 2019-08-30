@@ -24,15 +24,12 @@ import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import akka.Done
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
-import akka.http.scaladsl.Http
 import akka.pattern.after
-import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
-import fr.acinq.eclair.api._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
@@ -72,7 +69,6 @@ class Setup(datadir: File,
             seed_opt: Option[ByteVector] = None,
             db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
-  implicit val materializer = ActorMaterializer()
   implicit val timeout = Timeout(30 seconds)
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
@@ -307,32 +303,6 @@ class Setup(datadir: File,
       _ <- Future.firstCompletedOf(zmqBlockConnected.future :: zmqBlockTimeout :: Nil)
       _ <- Future.firstCompletedOf(zmqTxConnected.future :: zmqTxTimeout :: Nil)
       _ <- Future.firstCompletedOf(tcpBound.future :: tcpTimeout :: Nil)
-      _ <- if (config.getBoolean("api.enabled")) {
-        logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
-        implicit val materializer = ActorMaterializer()
-        val getInfo = GetInfoResponse(nodeId = nodeParams.nodeId,
-          alias = nodeParams.alias,
-          chainHash = nodeParams.chainHash,
-          blockHeight = nodeParams.currentBlockHeight.toInt,
-          publicAddresses = nodeParams.publicAddresses)
-        val apiPassword = config.getString("api.password") match {
-          case "" => throw EmptyAPIPasswordException
-          case valid => valid
-        }
-        val apiRoute = new Service {
-          override val actorSystem = kit.system
-          override val mat = materializer
-          override val password = apiPassword
-          override val eclairApi: Eclair = new EclairImpl(kit)
-        }.route
-        val httpBound = Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
-          case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
-        }
-        val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("api.port"))))
-        Future.firstCompletedOf(httpBound :: httpTimeout :: Nil)
-      } else {
-        Future.successful(logger.info("json-rpc api is disabled"))
-      }
     } yield kit
 
   }
