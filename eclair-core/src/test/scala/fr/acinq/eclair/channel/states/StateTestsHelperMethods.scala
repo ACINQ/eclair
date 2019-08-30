@@ -45,7 +45,9 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
                           router: TestProbe,
                           relayerA: TestProbe,
                           relayerB: TestProbe,
-                          channelUpdateListener: TestProbe)
+                          channelUpdateListener: TestProbe) {
+    def currentBlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
+  }
 
   def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: EclairWallet = new TestWallet): SetupFixture = {
     val alice2bob = TestProbe()
@@ -164,6 +166,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
   }
 
   def channelId(a: TestFSMRef[State, Data, Channel]) = Helpers.getChannelId(a.stateData)
+
 
   implicit class ChannelWithTestFeeConf(a: TestFSMRef[State, Data, Channel]) {
     def feeEstimator: TestFeeEstimator = a.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
