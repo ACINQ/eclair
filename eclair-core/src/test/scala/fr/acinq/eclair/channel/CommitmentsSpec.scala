@@ -232,7 +232,7 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bc0.availableBalanceForSend == b)
     assert(bc0.availableBalanceForReceive == a)
 
-    val (_, cmdAdd1) = makeCmdAdd(p1, bob.underlyingActor.nodeParams.nodeId)
+    val (payment_preimage1, cmdAdd1) = makeCmdAdd(p1, bob.underlyingActor.nodeParams.nodeId)
     val Right((ac1, add1)) = sendAdd(ac0, cmdAdd1, Local(UUID.randomUUID, None))
     assert(ac1.availableBalanceForSend == a - p1 - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
@@ -242,7 +242,7 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(ac2.availableBalanceForSend == a - p1 - fee - p2 - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac2.availableBalanceForReceive == b)
 
-    val (_, cmdAdd3) = makeCmdAdd(p3, alice.underlyingActor.nodeParams.nodeId)
+    val (payment_preimage3, cmdAdd3) = makeCmdAdd(p3, alice.underlyingActor.nodeParams.nodeId)
     val Right((bc1, add3)) = sendAdd(bc0, cmdAdd3, Local(UUID.randomUUID, None))
     assert(bc1.availableBalanceForSend == b - p3) // bob doesn't pay the fee
     assert(bc1.availableBalanceForReceive == a)
@@ -294,6 +294,69 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val (ac8, _) = receiveRevocation(ac7, revocation3)
     assert(ac8.availableBalanceForSend == a - p1 - fee - p2 - fee - fee)
     assert(ac8.availableBalanceForReceive == b - p3)
+
+    val cmdFulfill1 = CMD_FULFILL_HTLC(0, payment_preimage1)
+    val (bc8, fulfill1) = sendFulfill(bc7, cmdFulfill1)
+    assert(bc8.availableBalanceForSend == b + p1 - p3) // as soon as we have the fulfill, the balance increases
+    assert(bc8.availableBalanceForReceive == a - p1 - fee - p2 - fee - fee)
+
+    val cmdFail2 = CMD_FAIL_HTLC(1, Right(IncorrectPaymentAmount))
+    val (bc9, fail2) = sendFail(bc8, cmdFail2, bob.underlyingActor.nodeParams.privateKey)
+    assert(bc9.availableBalanceForSend == b + p1 - p3)
+    assert(bc9.availableBalanceForReceive == a - p1 - fee - p2 - fee - fee) // a's balance won't return to previous before she acknowledges the fail
+
+    val cmdFulfill3 = CMD_FULFILL_HTLC(0, payment_preimage3)
+    val (ac9, fulfill3) = sendFulfill(ac8, cmdFulfill3)
+    assert(ac9.availableBalanceForSend == a - p1 - fee - p2 - fee + p3) // as soon as we have the fulfill, the balance increases
+    assert(ac9.availableBalanceForReceive == b - p3)
+
+    val Right((ac10, _, _)) = receiveFulfill(ac9, fulfill1)
+    assert(ac10.availableBalanceForSend == a - p1 - fee - p2 - fee + p3)
+    assert(ac10.availableBalanceForReceive == b + p1 - p3)
+
+    val Right((ac11, _, _)) = receiveFail(ac10, fail2)
+    assert(ac11.availableBalanceForSend == a - p1 - fee - p2 - fee + p3)
+    assert(ac11.availableBalanceForReceive == b + p1 - p3)
+
+    val Right((bc10, _, _)) = receiveFulfill(bc9, fulfill3)
+    assert(bc10.availableBalanceForSend == b + p1 - p3)
+    assert(bc10.availableBalanceForReceive == a - p1 - fee - p2 - fee + p3) // the fee for p3 disappears
+
+    val (ac12, commit4) = sendCommit(ac11, alice.underlyingActor.nodeParams.keyManager)
+    assert(ac12.availableBalanceForSend == a - p1 - fee - p2 - fee + p3)
+    assert(ac12.availableBalanceForReceive == b + p1 - p3)
+
+    val (bc11, revocation4) = receiveCommit(bc10, commit4, bob.underlyingActor.nodeParams.keyManager)
+    assert(bc11.availableBalanceForSend == b + p1 - p3)
+    assert(bc11.availableBalanceForReceive == a - p1 - fee - p2 - fee + p3)
+
+    val (ac13, _) = receiveRevocation(ac12, revocation4)
+    assert(ac13.availableBalanceForSend == a - p1 - fee - p2 - fee + p3)
+    assert(ac13.availableBalanceForReceive == b + p1 - p3)
+
+    val (bc12, commit5) = sendCommit(bc11, bob.underlyingActor.nodeParams.keyManager)
+    assert(bc12.availableBalanceForSend == b + p1 - p3)
+    assert(bc12.availableBalanceForReceive == a - p1 - fee - p2 - fee + p3)
+
+    val (ac14, revocation5) = receiveCommit(ac13, commit5, alice.underlyingActor.nodeParams.keyManager)
+    assert(ac14.availableBalanceForSend == a - p1 + p3)
+    assert(ac14.availableBalanceForReceive == b + p1 - p3)
+
+    val (bc13, _) = receiveRevocation(bc12, revocation5)
+    assert(bc13.availableBalanceForSend == b + p1 - p3)
+    assert(bc13.availableBalanceForReceive == a - p1 + p3)
+
+    val (ac15, commit6) = sendCommit(ac14, alice.underlyingActor.nodeParams.keyManager)
+    assert(ac15.availableBalanceForSend == a - p1 + p3)
+    assert(ac15.availableBalanceForReceive == b + p1 - p3)
+
+    val (bc14, revocation6) = receiveCommit(bc13, commit6, bob.underlyingActor.nodeParams.keyManager)
+    assert(bc14.availableBalanceForSend == b + p1 - p3)
+    assert(bc14.availableBalanceForReceive == a - p1 + p3)
+
+    val (ac16, _) = receiveRevocation(ac15, revocation6)
+    assert(ac16.availableBalanceForSend == a - p1 + p3)
+    assert(ac16.availableBalanceForReceive == b + p1 - p3)
   }
 
 }
