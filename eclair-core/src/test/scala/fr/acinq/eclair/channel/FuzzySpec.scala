@@ -170,10 +170,11 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     import f._
     val senders = 2
     val totalMessages = 100
-    val latch = new CountDownLatch(senders)
-    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch, totalMessages / senders)))
-    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch, totalMessages / senders)))
-    awaitCond(latch.getCount == 0, max = 2 minutes)
+    val latch1 = new CountDownLatch(senders)
+    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch1, totalMessages / senders)))
+    val latch2 = new CountDownLatch(senders)
+    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch2, totalMessages / senders)))
+    awaitCond(latch1.getCount == 0 && latch2.getCount == 0, max = 2 minutes)
     val sender = TestProbe()
     awaitCond({
       sender.send(alice, CMD_CLOSE(None))
