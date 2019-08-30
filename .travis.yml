@@ -12,6 +12,7 @@ before_install:
  - unzip -qq apache-maven-3.6.0-bin.zip
  - export M2_HOME=$PWD/apache-maven-3.6.0
  - export PATH=$M2_HOME/bin:$PATH
+ - ulimit -n 65535
 script:
  - mvn scoverage:report
 cache:
