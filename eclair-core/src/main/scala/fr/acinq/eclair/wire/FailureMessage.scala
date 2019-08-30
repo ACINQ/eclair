@@ -18,7 +18,8 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Mac32
-import fr.acinq.eclair.wire.CommonCodecs.{cltvExpiry, millisatoshi, sha256}
+import fr.acinq.eclair.wire.CommonCodecs.{cltvExpiry, discriminatorWithDefault, millisatoshi, sha256}
+import fr.acinq.eclair.wire.FailureMessageCodecs.failureMessageCodec
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelUpdateCodec, lightningMessageCodec}
 import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi}
 import scodec.codecs._
@@ -30,7 +31,12 @@ import scodec.{Attempt, Codec}
  */
 
 // @formatter:off
-sealed trait FailureMessage { def message: String }
+sealed trait FailureMessage {
+  def message: String
+  // We actually encode the failure message, which is a bit clunky and not particularly efficient.
+  // It would be nice to be able to get that value from the discriminated codec directly.
+  lazy val code: Int = failureMessageCodec.encode(this).flatMap(uint16.decode).require.value
+}
 sealed trait BadOnion extends FailureMessage { def onionHash: ByteVector32 }
 sealed trait Perm extends FailureMessage
 sealed trait Node extends FailureMessage
@@ -53,14 +59,24 @@ case class FeeInsufficient(amount: MilliSatoshi, update: ChannelUpdate) extends 
 case class ChannelDisabled(messageFlags: Byte, channelFlags: Byte, update: ChannelUpdate) extends Update { def message = "channel is currently disabled" }
 case class IncorrectCltvExpiry(expiry: CltvExpiry, update: ChannelUpdate) extends Update { def message = "payment expiry doesn't match the value in the onion" }
 case class IncorrectOrUnknownPaymentDetails(amount: MilliSatoshi, height: Long) extends Perm { def message = "incorrect payment details or unknown payment hash" }
-/** Deprecated: this failure code allows probing attacks: IncorrectOrUnknownPaymentDetails should be used instead. */
-case object IncorrectPaymentAmount extends Perm { def message = "payment amount is incorrect" }
 case class ExpiryTooSoon(update: ChannelUpdate) extends Update { def message = "payment expiry is too close to the current block height for safe handling by the relaying node" }
-/** Deprecated: this failure code allows probing attacks: IncorrectOrUnknownPaymentDetails should be used instead. */
-case object FinalExpiryTooSoon extends FailureMessage { def message = "payment expiry is too close to the current block height for safe handling by the final node" }
 case class FinalIncorrectCltvExpiry(expiry: CltvExpiry) extends FailureMessage { def message = "payment expiry doesn't match the value in the onion" }
 case class FinalIncorrectHtlcAmount(amount: MilliSatoshi) extends FailureMessage { def message = "payment amount is incorrect in the final htlc" }
 case object ExpiryTooFar extends FailureMessage { def message = "payment expiry is too far in the future" }
+
+/**
+ * We allow remote nodes to send us unknown failure codes (e.g. deprecated failure codes).
+ * By reading the PERM and NODE bits we can still extract useful information for payment retry even without knowing how
+ * to decode the failure payload (but we can't extract a channel update or onion hash).
+ */
+sealed trait UnknownFailureMessage extends FailureMessage {
+  def message = "unknown failure message"
+  override def toString = s"$message ($code)"
+  override def equals(obj: Any): Boolean = obj match {
+    case f: UnknownFailureMessage => f.code == code
+    case _ => false
+  }
+}
 // @formatter:on
 
 object FailureMessageCodecs {
@@ -75,36 +91,43 @@ object FailureMessageCodecs {
   // this codec supports both versions for decoding, and will encode with the message type
   val channelUpdateWithLengthCodec = variableSizeBytes(uint16, choice(channelUpdateCodecWithType, channelUpdateCodec))
 
-  val failureMessageCodec = discriminated[FailureMessage].by(uint16)
-    .typecase(PERM | 1, provide(InvalidRealm))
-    .typecase(NODE | 2, provide(TemporaryNodeFailure))
-    .typecase(PERM | 2, provide(PermanentNodeFailure))
-    .typecase(PERM | NODE | 3, provide(RequiredNodeFeatureMissing))
-    .typecase(BADONION | PERM, sha256.as[InvalidOnionPayload])
-    .typecase(BADONION | PERM | 4, sha256.as[InvalidOnionVersion])
-    .typecase(BADONION | PERM | 5, sha256.as[InvalidOnionHmac])
-    .typecase(BADONION | PERM | 6, sha256.as[InvalidOnionKey])
-    .typecase(UPDATE | 7, ("channelUpdate" | channelUpdateWithLengthCodec).as[TemporaryChannelFailure])
-    .typecase(PERM | 8, provide(PermanentChannelFailure))
-    .typecase(PERM | 9, provide(RequiredChannelFeatureMissing))
-    .typecase(PERM | 10, provide(UnknownNextPeer))
-    .typecase(UPDATE | 11, (("amountMsat" | millisatoshi) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[AmountBelowMinimum])
-    .typecase(UPDATE | 12, (("amountMsat" | millisatoshi) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[FeeInsufficient])
-    .typecase(UPDATE | 13, (("expiry" | cltvExpiry) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[IncorrectCltvExpiry])
-    .typecase(UPDATE | 14, ("channelUpdate" | channelUpdateWithLengthCodec).as[ExpiryTooSoon])
-    .typecase(UPDATE | 20, (("messageFlags" | byte) :: ("channelFlags" | byte) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
-    .typecase(PERM | 15, (("amountMsat" | withDefaultValue(optional(bitsRemaining, millisatoshi), 0 msat)) :: ("height" | withDefaultValue(optional(bitsRemaining, uint32), 0L))).as[IncorrectOrUnknownPaymentDetails])
-    .typecase(PERM | 16, provide(IncorrectPaymentAmount))
-    .typecase(17, provide(FinalExpiryTooSoon))
-    .typecase(18, ("expiry" | cltvExpiry).as[FinalIncorrectCltvExpiry])
-    .typecase(19, ("amountMsat" | millisatoshi).as[FinalIncorrectHtlcAmount])
-    .typecase(21, provide(ExpiryTooFar))
-
-  /**
-   * Return the failure code for a given failure message. This method actually encodes the failure message, which is a
-   * bit clunky and not particularly efficient. It shouldn't be used on the application's hot path.
-   */
-  def failureCode(failure: FailureMessage): Int = failureMessageCodec.encode(failure).flatMap(uint16.decode).require.value
+  val failureMessageCodec = discriminatorWithDefault(
+    discriminated[FailureMessage].by(uint16)
+      .typecase(PERM | 1, provide(InvalidRealm))
+      .typecase(NODE | 2, provide(TemporaryNodeFailure))
+      .typecase(PERM | NODE | 2, provide(PermanentNodeFailure))
+      .typecase(PERM | NODE | 3, provide(RequiredNodeFeatureMissing))
+      .typecase(BADONION | PERM, sha256.as[InvalidOnionPayload])
+      .typecase(BADONION | PERM | 4, sha256.as[InvalidOnionVersion])
+      .typecase(BADONION | PERM | 5, sha256.as[InvalidOnionHmac])
+      .typecase(BADONION | PERM | 6, sha256.as[InvalidOnionKey])
+      .typecase(UPDATE | 7, ("channelUpdate" | channelUpdateWithLengthCodec).as[TemporaryChannelFailure])
+      .typecase(PERM | 8, provide(PermanentChannelFailure))
+      .typecase(PERM | 9, provide(RequiredChannelFeatureMissing))
+      .typecase(PERM | 10, provide(UnknownNextPeer))
+      .typecase(UPDATE | 11, (("amountMsat" | millisatoshi) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[AmountBelowMinimum])
+      .typecase(UPDATE | 12, (("amountMsat" | millisatoshi) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[FeeInsufficient])
+      .typecase(UPDATE | 13, (("expiry" | cltvExpiry) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[IncorrectCltvExpiry])
+      .typecase(UPDATE | 14, ("channelUpdate" | channelUpdateWithLengthCodec).as[ExpiryTooSoon])
+      .typecase(UPDATE | 20, (("messageFlags" | byte) :: ("channelFlags" | byte) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
+      .typecase(PERM | 15, (("amountMsat" | withDefaultValue(optional(bitsRemaining, millisatoshi), 0 msat)) :: ("height" | withDefaultValue(optional(bitsRemaining, uint32), 0L))).as[IncorrectOrUnknownPaymentDetails])
+      // PERM | 16 (incorrect_payment_amount) has been deprecated because it allowed probing attacks: IncorrectOrUnknownPaymentDetails should be used instead.
+      // PERM | 17 (final_expiry_too_soon) has been deprecated because it allowed probing attacks: IncorrectOrUnknownPaymentDetails should be used instead.
+      .typecase(18, ("expiry" | cltvExpiry).as[FinalIncorrectCltvExpiry])
+      .typecase(19, ("amountMsat" | millisatoshi).as[FinalIncorrectHtlcAmount])
+      .typecase(21, provide(ExpiryTooFar)),
+    uint16.xmap(code => {
+      val failureMessage = code match {
+        // @formatter:off
+        case fc if (fc & PERM) != 0 && (fc & NODE) != 0 => new UnknownFailureMessage with Perm with Node { override lazy val code = fc }
+        case fc if (fc & NODE) != 0 => new UnknownFailureMessage with Node { override lazy val code = fc }
+        case fc if (fc & PERM) != 0 => new UnknownFailureMessage with Perm { override lazy val code = fc }
+        case fc => new UnknownFailureMessage { override lazy val code  = fc }
+        // @formatter:on
+      }
+      failureMessage.asInstanceOf[FailureMessage]
+    }, (_: FailureMessage).code)
+  )
 
   /**
    * An onion-encrypted failure from an intermediate node:

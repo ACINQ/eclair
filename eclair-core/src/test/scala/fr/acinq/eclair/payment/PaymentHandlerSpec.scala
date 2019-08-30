@@ -24,7 +24,7 @@ import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.wire.{FinalExpiryTooSoon, IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
 import fr.acinq.eclair.{CltvExpiryDelta, Globals, LongToBtcAmount, ShortChannelId, TestConstants, randomKey}
 import org.scalatest.FunSuiteLike
 import scodec.bits.ByteVector

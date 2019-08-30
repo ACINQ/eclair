@@ -41,13 +41,13 @@ class FailureMessageCodecsSpec extends FunSuite {
     feeProportionalMillionths = 76,
     htlcMaximumMsat = None)
 
-  test("encode/decode all channel messages") {
+  test("encode/decode all failure messages") {
     val msgs: List[FailureMessage] =
       InvalidRealm :: TemporaryNodeFailure :: PermanentNodeFailure :: RequiredNodeFeatureMissing ::
         InvalidOnionVersion(randomBytes32) :: InvalidOnionHmac(randomBytes32) :: InvalidOnionKey(randomBytes32) :: InvalidOnionPayload(randomBytes32) ::
         TemporaryChannelFailure(channelUpdate) :: PermanentChannelFailure :: RequiredChannelFeatureMissing :: UnknownNextPeer ::
         AmountBelowMinimum(123456 msat, channelUpdate) :: FeeInsufficient(546463 msat, channelUpdate) :: IncorrectCltvExpiry(CltvExpiry(1211), channelUpdate) :: ExpiryTooSoon(channelUpdate) ::
-        IncorrectOrUnknownPaymentDetails(123456 msat, 1105) :: IncorrectPaymentAmount :: FinalExpiryTooSoon :: FinalIncorrectCltvExpiry(CltvExpiry(1234)) :: ChannelDisabled(0, 1, channelUpdate) :: ExpiryTooFar :: Nil
+        IncorrectOrUnknownPaymentDetails(123456 msat, 1105) :: FinalIncorrectCltvExpiry(CltvExpiry(1234)) :: ChannelDisabled(0, 1, channelUpdate) :: ExpiryTooFar :: Nil
 
     msgs.foreach {
       msg => {
@@ -55,6 +55,27 @@ class FailureMessageCodecsSpec extends FunSuite {
         val decoded = failureMessageCodec.decode(encoded).require
         assert(msg === decoded.value)
       }
+    }
+  }
+
+  test("decode unknown failure messages") {
+    val testCases = Seq(
+      // Deprecated incorrect_payment_amount.
+      (false, true, hex"4010"),
+      // Deprecated final_expiry_too_soon.
+      (false, true, hex"4011"),
+      // Unknown failure messages.
+      (false, false, hex"00ff 42"),
+      (true, false, hex"20ff 42"),
+      (true, true, hex"60ff 42")
+    )
+
+    for ((node, perm, bin) <- testCases) {
+      val decoded = failureMessageCodec.decode(bin.bits).require.value
+      assert(decoded.isInstanceOf[FailureMessage])
+      assert(decoded.isInstanceOf[UnknownFailureMessage])
+      assert(decoded.isInstanceOf[Node] === node)
+      assert(decoded.isInstanceOf[Perm] === perm)
     }
   }
 
@@ -67,7 +88,7 @@ class FailureMessageCodecsSpec extends FunSuite {
     )
 
     for ((code, message) <- msgs) {
-      assert(failureCode(message) === code)
+      assert(message.code === code)
     }
   }
 
