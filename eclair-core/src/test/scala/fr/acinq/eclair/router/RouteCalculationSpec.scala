@@ -25,7 +25,7 @@ import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId, randomKey}
-import org.scalatest.FunSuite
+import org.scalatest.{FunSuite, ParallelTestExecution}
 import scodec.bits._
 
 import scala.util.{Failure, Success}
@@ -34,7 +34,7 @@ import scala.util.{Failure, Success}
  * Created by PM on 31/05/2016.
  */
 
-class RouteCalculationSpec extends FunSuite {
+class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
 
   import RouteCalculationSpec._
 
