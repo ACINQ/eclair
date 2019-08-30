@@ -162,9 +162,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       sender.send(alice, CMD_CLOSE(None))
       sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure]) == "ok"
     }, max = 30 seconds)
-    awaitCond( {
-      alice.stateName == CLOSING
-    }, max = 3 minutes, interval = 1 second)
+    awaitCond(alice.stateName == CLOSING, max = 3 minutes, interval = 1 second)
     awaitCond(bob.stateName == CLOSING, max = 3 minutes, interval = 1 second)
   }
 
