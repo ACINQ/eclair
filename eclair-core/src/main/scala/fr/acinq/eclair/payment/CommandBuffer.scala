@@ -27,6 +27,9 @@ import scala.collection.mutable
   * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
   * in a database because we don't want to lose preimages, or to forget to fail
   * incoming htlcs, which would lead to unwanted channel closings.
+  *
+  * Before putting into multimap a pending relay command should be updated to have `commit=false` because
+  * once channel becomes operational all pending commands are sent to it at once and then a single final CMD_SIGN
   */
 class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor with ActorLogging {
 
