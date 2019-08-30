@@ -169,8 +169,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure]) == "ok"
     }, max = 30 seconds)
     senders.foreach(_ ! 'stop)
-    awaitCond(alice.stateName == CLOSING, max = 60 seconds, interval = 1 second)
-    awaitCond(bob.stateName == CLOSING, max = 60 seconds, interval = 1 second)
+    awaitCond(alice.stateName == CLOSING, max = 3 minutes, interval = 1 second)
+    awaitCond(bob.stateName == CLOSING, max = 3 minutes, interval = 1 second)
   }
 
   test("both parties send lots of htlcs then shutdown") { f =>
@@ -191,8 +191,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       resa == "ok" || resb == "ok"
     }, max = 30 seconds)
     senders.foreach(_ ! 'stop)
-    awaitCond(alice.stateName == CLOSING, max = 60 seconds, interval = 1 second)
-    awaitCond(bob.stateName == CLOSING, max = 60 seconds, interval = 1 second)
+    awaitCond(alice.stateName == CLOSING, max = 3 minutes, interval = 1 second)
+    awaitCond(bob.stateName == CLOSING, max = 3 minutes, interval = 1 second)
   }
 
 }
