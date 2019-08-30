@@ -22,18 +22,30 @@ import scodec.bits._
 
 class UInt64Spec extends FunSuite {
 
-  test("handle values from 0 to 2^63-1") {
+  test("handle values from 0 to 2^64-1") {
     val a = UInt64(hex"0xffffffffffffffff")
     val b = UInt64(hex"0xfffffffffffffffe")
     val c = UInt64(42)
     val z = UInt64(0)
+    val l = UInt64(Long.MaxValue)
+    val l1 = UInt64(hex"8000000000000000") // Long.MaxValue + 1
+
     assert(a > b)
+    assert(a.toBigInt > b.toBigInt)
     assert(b < a)
-    assert(z < a && z < b && z < c)
+    assert(b.toBigInt < a.toBigInt)
+    assert(l.toBigInt < l1.toBigInt)
+    assert(z < a && z < b && z < c && z < l && c < l && l < l1 && l < b && l < a)
     assert(a == a)
     assert(a == UInt64.MaxValue)
+    assert(l.toByteVector == hex"7fffffffffffffff")
+    assert(l.toString == Long.MaxValue.toString)
+    assert(l.toBigInt == BigInt(Long.MaxValue))
+    assert(l1.toByteVector == hex"8000000000000000")
+    assert(l1.toString == "9223372036854775808")
+    assert(l1.toBigInt == BigInt("9223372036854775808"))
     assert(a.toByteVector === hex"0xffffffffffffffff")
-    assert(a.toString === "18446744073709551615")
+    assert(a.toString === "18446744073709551615") // 2^64 - 1
     assert(b.toByteVector === hex"0xfffffffffffffffe")
     assert(b.toString === "18446744073709551614")
     assert(c.toByteVector === hex"0x2a")

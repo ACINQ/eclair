@@ -18,26 +18,18 @@ package fr.acinq.eclair
 
 import com.google.common.primitives.UnsignedLongs
 import scodec.bits.ByteVector
-import scodec.bits._
+import scodec.bits.HexStringSyntax
 
 case class UInt64(private val underlying: Long) extends Ordered[UInt64] {
 
   override def compare(o: UInt64): Int = UnsignedLongs.compare(underlying, o.underlying)
 
-  def toByteVector: ByteVector = this match {
-    case x if x <= UInt64(255) => ByteVector.fromLong(underlying, size = 1)
-    case x if x <= UInt64(65535) => ByteVector.fromLong(underlying, size = 2)
-    case x if x <= UInt64(16777215) => ByteVector.fromLong(underlying, size = 3)
-    case x if x <= UInt64(4294967295L) => ByteVector.fromLong(underlying, size = 4)
-    case x if x <= UInt64(1099511627775L) => ByteVector.fromLong(underlying, size = 5)
-    case x if x <= UInt64(281474976710655L) => ByteVector.fromLong(underlying, size = 6)
-    case x if x <= UInt64(72057594037927935L) => ByteVector.fromLong(underlying, size = 7)
-    case _ => ByteVector.fromLong(underlying, size = 8)
+  def toByteVector: ByteVector = underlying match {
+    case 0 => hex"00"
+    case _ => ByteVector.fromLong(underlying).dropWhile(_ == 0)
   }
 
-  def toBigInt: BigInt = BigInt(toString)
-
-  def toLong: Long = underlying
+  def toBigInt: BigInt = BigInt(signum = 1, toByteVector.toArray)
 
   override def toString: String = UnsignedLongs.toString(underlying, 10)
 }
