@@ -71,7 +71,7 @@ case object ExpiryTooFar extends FailureMessage { def message = "payment expiry 
  */
 sealed trait UnknownFailureMessage extends FailureMessage {
   def message = "unknown failure message"
-  override def toString = s"$message ($code)"
+  override def toString = s"$message (${code.toHexString})"
   override def equals(obj: Any): Boolean = obj match {
     case f: UnknownFailureMessage => f.code == code
     case _ => false
