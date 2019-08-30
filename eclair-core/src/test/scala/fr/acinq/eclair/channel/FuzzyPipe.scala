@@ -43,7 +43,7 @@ class FuzzyPipe(fuzzy: Boolean) extends Actor with Stash with ActorLogging {
     if (!fuzzy) context become connected(a, b, countdown - 1) // fuzzy mode disabled, we never disconnect
     else if (countdown > 1) context become connected(a, b, countdown - 1)
     else {
-      log.debug("DISCONNECTED")
+      println("DISCONNECTED")
       a ! INPUT_DISCONNECTED
       b ! INPUT_DISCONNECTED
       context.system.scheduler.scheduleOnce(100 millis, self, 'reconnect)
@@ -53,11 +53,11 @@ class FuzzyPipe(fuzzy: Boolean) extends Actor with Stash with ActorLogging {
 
   def connected(a: ActorRef, b: ActorRef, countdown: Int): Receive = {
     case msg: LightningMessage if sender() == a =>
-      log.debug(f"A ---${msg2String(msg)}%-6s--> B")
+      println(f"A ---${msg2String(msg)}%-6s--> B")
       b forward msg
       stayOrDisconnect(a, b, countdown)
     case msg: LightningMessage if sender() == b =>
-      log.debug(f"A <--${msg2String(msg)}%-6s--- B")
+      println(f"A <--${msg2String(msg)}%-6s--- B")
       a forward msg
       stayOrDisconnect(a, b, countdown)
   }
@@ -68,9 +68,9 @@ class FuzzyPipe(fuzzy: Boolean) extends Actor with Stash with ActorLogging {
       log.info(f"A ---${msg2String(msg)}%-6s-X")
     case msg: LightningMessage if sender() == b =>
       // dropped
-      log.debug(f"  X-${msg2String(msg)}%-6s--- B")
+      println(f"  X-${msg2String(msg)}%-6s--- B")
     case 'reconnect =>
-      log.debug("RECONNECTED")
+      println("RECONNECTED")
       val dummyInit = Init(ByteVector.empty, ByteVector.empty)
       a ! INPUT_RECONNECTED(self, dummyInit, dummyInit)
       b ! INPUT_RECONNECTED(self, dummyInit, dummyInit)
