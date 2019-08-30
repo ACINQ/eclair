@@ -167,8 +167,9 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     awaitCond( {
       println(alice.stateName)
       alice.stateName == CLOSING
-    }, max = 3 minutes, interval = 1 second)
-    awaitCond(bob.stateName == CLOSING, max = 3 minutes, interval = 1 second)
+    }, max = 20 seconds, interval = 1 second)
+    awaitCond(alice.stateName == CLOSING, max = 20 seconds, interval = 1 second)
+    awaitCond(bob.stateName == CLOSING, max = 20 seconds, interval = 1 second)
   }
 
   test("both parties send lots of htlcs then shutdown") { f =>
@@ -188,8 +189,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       // we only need that one of them succeeds
       resa == "ok" || resb == "ok"
     }, max = 30 seconds)
-    awaitCond(alice.stateName == CLOSING, max = 3 minutes, interval = 1 second)
-    awaitCond(bob.stateName == CLOSING, max = 3 minutes, interval = 1 second)
+    awaitCond(alice.stateName == CLOSING, max = 20 seconds, interval = 1 second)
+    awaitCond(bob.stateName == CLOSING, max = 20 seconds, interval = 1 second)
   }
 
 }
