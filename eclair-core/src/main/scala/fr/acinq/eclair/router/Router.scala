@@ -33,7 +33,7 @@ import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidAnnouncement, InvalidSigna
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
+import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics, WeightRatios}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import shapeless.HNil
@@ -87,7 +87,7 @@ case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, updat
 }
 // @formatter:on
 
-case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey)
+case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey, htlcMaximum: MilliSatoshi)
 
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
 
@@ -445,8 +445,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, params_opt), d) =>
       // we convert extra routing info provided in the payment request to fake channel_update
       // it takes precedence over all other channel_updates we know
-      val assistedChannels: Map[ShortChannelId, AssistedChannel] = assistedRoutes.flatMap(toAssistedChannels(_, end)).toMap
-      val extraEdges = assistedChannels.values.map(ac => GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop))).toSet
+      val assistedChannels: Map[ShortChannelId, AssistedChannel] = assistedRoutes.flatMap(toAssistedChannels(_, end, amount)).toMap
+      val extraEdges = assistedChannels.values.map(ac => GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum))).toSet
       val ignoredEdges = ignoreChannels ++ d.excludedChannels
       val params = params_opt.getOrElse(defaultRouteParams)
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
@@ -812,17 +812,23 @@ object Router {
 
   def props(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
-  def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
-  // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
-  // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
-    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0 msat, extraHop.feeBase, extraHop.feeProportionalMillionths, None)
+  def toFakeUpdate(extraHop: ExtraHop, htlcMaximum: MilliSatoshi): ChannelUpdate = {
+    // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
+    // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
+    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 1, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0 msat, extraHop.feeBase, extraHop.feeProportionalMillionths, Some(htlcMaximum))
+  }
 
-  def toAssistedChannels(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Map[ShortChannelId, AssistedChannel] = {
+  def toAssistedChannels(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey, amount: MilliSatoshi): Map[ShortChannelId, AssistedChannel] = {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
+    // The invoice doesn't explicitly specify the channel's htlcMaximumMsat, but we can safely assume that the channel
+    // should be able to route the payment, so we'll compute an htlcMaximumMsat accordingly.
+    // We could also get the channel capacity from the blockchain (since we have the shortChannelId) but that's more expensive.
     val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
-    extraRoute.zip(nextNodeIds).map {
-      case (extraHop: ExtraHop, nextNodeId) => extraHop.shortChannelId -> AssistedChannel(extraHop, nextNodeId)
-    }.toMap
+    extraRoute.zip(nextNodeIds).reverse.foldLeft((amount, Map.empty[ShortChannelId, AssistedChannel])) {
+      case ((amount, acs), (extraHop: ExtraHop, nextNodeId)) =>
+        val nextAmount = amount + nodeFee(extraHop.feeBase, extraHop.feeProportionalMillionths, amount)
+        (nextAmount, acs + (extraHop.shortChannelId -> AssistedChannel(extraHop, nextNodeId, nextAmount.max(RoutingHeuristics.CAPACITY_CHANNEL_LOW))))
+    }._2
   }
 
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
