@@ -18,7 +18,6 @@ package fr.acinq.eclair.channel
 
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
@@ -118,7 +117,6 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
             }
         }
       } else {
-        println("stopped")
         context stop self
         latch.countDown()
       }
@@ -165,7 +163,6 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure]) == "ok"
     }, max = 30 seconds)
     awaitCond( {
-      println(alice.stateName)
       alice.stateName == CLOSING
     }, max = 20 seconds, interval = 1 second)
     awaitCond(alice.stateName == CLOSING, max = 20 seconds, interval = 1 second)
