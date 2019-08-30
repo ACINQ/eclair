@@ -56,4 +56,18 @@ class UInt64Spec extends FunSuite {
     assert(UInt64(hex"0x800").toByteVector == hex"0x800")
   }
 
+  test("use unsigned comparison when comparing millisatoshis to uint64") {
+    assert(UInt64(123).compareUnsigned(MilliSatoshi(123)) == 0)
+    assert(UInt64(123).compareUnsigned(MilliSatoshi(1234)) < 0)
+    assert(UInt64(1234).compareUnsigned(MilliSatoshi(123)) > 0)
+    assert(UInt64(hex"ffffffffffffffff").compareUnsigned(MilliSatoshi(123)) > 0)
+    assert(UInt64(hex"ffffffffffffffff").compareUnsigned(MilliSatoshi(-123)) > 0)
+    assert(UInt64(hex"7ffffffffffffffe").compareUnsigned(MilliSatoshi(Long.MaxValue)) < 0)  // 7ffffffffffffffe == Long.MaxValue - 1
+    assert(UInt64(hex"7fffffffffffffff").compareUnsigned(MilliSatoshi(Long.MaxValue)) == 0) // 7fffffffffffffff == Long.MaxValue
+    assert(UInt64(hex"8000000000000000").compareUnsigned(MilliSatoshi(Long.MaxValue)) > 0)  // 8000000000000000 == Long.MaxValue + 1
+    assert(UInt64(1).compareUnsigned(MilliSatoshi(-1)) > 0)
+    assert(UInt64(0).compareUnsigned(MilliSatoshi(Long.MinValue)) > 0)
+  }
+
+
 }

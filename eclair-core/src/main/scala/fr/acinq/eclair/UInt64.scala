@@ -23,6 +23,10 @@ import scodec.bits.HexStringSyntax
 case class UInt64(private val underlying: Long) extends Ordered[UInt64] {
 
   override def compare(o: UInt64): Int = UnsignedLongs.compare(underlying, o.underlying)
+  def compareUnsigned(other: MilliSatoshi) = other.toLong match {
+    case l if l < 0 => 1                          // if @param 'other' is negative then is always smaller than 'this'
+    case _ => compare(UInt64(other.toLong))
+  }
 
   def toByteVector: ByteVector = underlying match {
     case 0 => hex"00"
