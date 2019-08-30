@@ -18,6 +18,7 @@ package fr.acinq.eclair.channel
 
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
@@ -86,59 +87,54 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     withFixture(test.toNoArgTest(FixtureParam(alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB)))
   }
 
-  class SenderActor(channel: TestFSMRef[State, Data, Channel], paymentHandler: ActorRef, latch: CountDownLatch) extends Actor with ActorLogging {
+  class SenderActor(sendChannel: TestFSMRef[State, Data, Channel], paymentHandler: ActorRef, latch: CountDownLatch, count: Int) extends Actor with ActorLogging {
 
     // we don't want to be below htlcMinimumMsat
-    val requiredAmount = 1000000
+    val requiredAmount = 1000000 msat
 
     def buildCmdAdd(paymentHash: ByteVector32, dest: PublicKey) = {
       // allow overpaying (no more than 2 times the required amount)
-      val amount = MilliSatoshi(requiredAmount + Random.nextInt(requiredAmount))
+      val amount = requiredAmount + Random.nextInt(requiredAmount.toLong.toInt).msat
       val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(blockHeight = 400000)
       PaymentLifecycle.buildCommand(UUID.randomUUID(), amount, expiry, paymentHash, Hop(null, dest, null) :: Nil)._1
     }
 
-    def initiatePayment(stopping: Boolean) =
-      if (stopping) {
-        context stop self
+    def initiatePaymentOrStop(remaining: Int): Unit =
+      if (remaining > 0) {
+        paymentHandler ! ReceivePayment(Some(requiredAmount), "One coffee")
+        context become {
+          case req: PaymentRequest =>
+            sendChannel ! buildCmdAdd(req.paymentHash, req.nodeId)
+            context become {
+              case u: UpdateFulfillHtlc =>
+                log.info(s"successfully sent htlc #${u.id}")
+                initiatePaymentOrStop(remaining - 1)
+              case u: UpdateFailHtlc =>
+                log.warning(s"htlc failed: ${u.id}")
+                initiatePaymentOrStop(remaining - 1)
+              case Status.Failure(t) =>
+                log.error(s"htlc error: ${t.getMessage}")
+                initiatePaymentOrStop(remaining - 1)
+            }
+        }
       } else {
-        paymentHandler ! ReceivePayment(Some(MilliSatoshi(requiredAmount)), "One coffee")
-        context become waitingForPaymentRequest
+        println("stopped")
+        context stop self
+        latch.countDown()
       }
 
-    initiatePayment(false)
+    initiatePaymentOrStop(count)
 
     override def receive: Receive = ???
-
-    def waitingForPaymentRequest: Receive = {
-      case req: PaymentRequest =>
-        channel ! buildCmdAdd(req.paymentHash, req.nodeId)
-        context become waitingForFulfill(false)
-    }
-
-    def waitingForFulfill(stopping: Boolean): Receive = {
-      case u: UpdateFulfillHtlc =>
-        log.info(s"successfully sent htlc #${u.id}")
-        latch.countDown()
-        initiatePayment(stopping)
-      case u: UpdateFailHtlc =>
-        log.warning(s"htlc failed: ${u.id}")
-        initiatePayment(stopping)
-      case Status.Failure(t) =>
-        log.error(s"htlc error: ${t.getMessage}")
-        initiatePayment(stopping)
-      case 'stop =>
-        log.warning(s"stopping...")
-        context become waitingForFulfill(true)
-    }
 
   }
 
   test("fuzzy test with only one party sending HTLCs", Tag("fuzzy")) { f =>
     import f._
-    val latch = new CountDownLatch(100)
-    system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
-    system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
+    val senders = 2
+    val totalMessages = 100
+    val latch = new CountDownLatch(senders)
+    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch, totalMessages / senders)))
     awaitCond(latch.getCount == 0, max = 2 minutes)
     assert(alice.stateName == NORMAL || alice.stateName == OFFLINE)
     assert(bob.stateName == NORMAL || bob.stateName == OFFLINE)
@@ -146,11 +142,11 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
 
   test("fuzzy test with both parties sending HTLCs", Tag("fuzzy")) { f =>
     import f._
-    val latch = new CountDownLatch(100)
-    system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
-    system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
-    system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch)))
-    system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch)))
+    val senders = 2
+    val totalMessages = 100
+    val latch = new CountDownLatch(senders)
+    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch, totalMessages / senders)))
+    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch, totalMessages / senders)))
     awaitCond(latch.getCount == 0, max = 2 minutes)
     assert(alice.stateName == NORMAL || alice.stateName == OFFLINE)
     assert(bob.stateName == NORMAL || bob.stateName == OFFLINE)
@@ -158,28 +154,30 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
 
   test("one party sends lots of htlcs then shutdown") { f =>
     import f._
-    val latch = new CountDownLatch(20)
-    val senders = system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) ::
-      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) ::
-      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) :: Nil
+    val senders = 2
+    val totalMessages = 20
+    val latch = new CountDownLatch(senders)
+    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch, totalMessages / senders)))
     awaitCond(latch.getCount == 0, max = 2 minutes)
     val sender = TestProbe()
     awaitCond({
       sender.send(alice, CMD_CLOSE(None))
       sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure]) == "ok"
     }, max = 30 seconds)
-    senders.foreach(_ ! 'stop)
-    awaitCond(alice.stateName == CLOSING, max = 3 minutes, interval = 1 second)
+    awaitCond( {
+      println(alice.stateName)
+      alice.stateName == CLOSING
+    }, max = 3 minutes, interval = 1 second)
     awaitCond(bob.stateName == CLOSING, max = 3 minutes, interval = 1 second)
   }
 
   test("both parties send lots of htlcs then shutdown") { f =>
     import f._
-    val latch = new CountDownLatch(30)
-    val senders = system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) ::
-      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch))) ::
-      system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch))) ::
-      system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch))) :: Nil
+    val senders = 2
+    val totalMessages = 100
+    val latch = new CountDownLatch(senders)
+    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch, totalMessages / senders)))
+    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch, totalMessages / senders)))
     awaitCond(latch.getCount == 0, max = 2 minutes)
     val sender = TestProbe()
     awaitCond({
@@ -190,7 +188,6 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       // we only need that one of them succeeds
       resa == "ok" || resb == "ok"
     }, max = 30 seconds)
-    senders.foreach(_ ! 'stop)
     awaitCond(alice.stateName == CLOSING, max = 3 minutes, interval = 1 second)
     awaitCond(bob.stateName == CLOSING, max = 3 minutes, interval = 1 second)
   }
