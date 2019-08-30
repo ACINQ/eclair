@@ -10,7 +10,7 @@ import fr.acinq.eclair.payment.CommandBuffer.{CommandAck, CommandSend}
 import org.scalatest.FunSuite
 
 class CommandBufferSpec extends FunSuite {
-  test("x") {
+  test("store and relay commands using a multimap") {
     implicit val system: ActorSystem = ActorSystem("command-buffer-test")
     val nodeParams = TestConstants.Bob.nodeParams
 
@@ -31,14 +31,13 @@ class CommandBufferSpec extends FunSuite {
 
     commandBuffer1 ! ChannelStateChanged(channel.ref, null, null, SYNCING, NORMAL, normal)
     // A multimap in CommandBuffer uses Sets as keys so messages may be send to channel in a different order, but this does not matter (?)
-    channel.expectMsgType[CMD_FULFILL_HTLC]
-    // fulfill commit was set to false, no CMD_SIGN here
+    channel.expectMsg(fulfill.copy(commit = false))
     channel.expectMsgType[CMD_FAIL_HTLC]
     channel.expectMsg(CMD_SIGN)
 
     commandBuffer1 ! ChannelStateChanged(channel.ref, null, null, SYNCING, NORMAL, normal)
     // Pending relays were not cleared by channel
-    channel.expectMsgType[CMD_FULFILL_HTLC]
+    channel.expectMsg(fulfill.copy(commit = false))
     channel.expectMsgType[CMD_FAIL_HTLC]
     channel.expectMsg(CMD_SIGN)
 
@@ -52,7 +51,7 @@ class CommandBufferSpec extends FunSuite {
     commandBuffer1 ! CommandSend(channelId, fail)
     val commandBuffer2 = system.actorOf(Props(new CommandBuffer(nodeParams, TestProbe().ref)))
     commandBuffer2 ! ChannelStateChanged(channel.ref, null, null, SYNCING, NORMAL, normal)
-    channel.expectMsgType[CMD_FULFILL_HTLC]
+    channel.expectMsg(fulfill.copy(commit = false))
     channel.expectMsgType[CMD_FAIL_HTLC]
     channel.expectMsg(CMD_SIGN)
 
