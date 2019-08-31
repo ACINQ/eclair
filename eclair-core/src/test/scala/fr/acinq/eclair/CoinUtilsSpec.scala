@@ -17,11 +17,11 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.{Btc, MilliBtc, Satoshi}
-import org.scalatest.{FunSuite, ParallelTestExecution}
+import org.scalatest.FunSuite
 import scodec.bits._
 
 
-class CoinUtilsSpec  extends FunSuite with ParallelTestExecution {
+class CoinUtilsSpec  extends FunSuite {
 
   test("use unsigned comparison when comparing millisatoshis to uint64") {
     assert(MilliSatoshi(123).compareUnsigned(UInt64(123)) == 0)

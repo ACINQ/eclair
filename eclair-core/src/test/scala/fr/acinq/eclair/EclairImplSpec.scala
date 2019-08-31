@@ -31,14 +31,14 @@ import fr.acinq.eclair.payment.PaymentLifecycle.{ReceivePayment, SendPayment, Se
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
 import org.mockito.scalatest.IdiomaticMockito
-import org.scalatest.{Outcome, ParallelTestExecution, fixture}
+import org.scalatest.{Outcome, fixture}
 import scodec.bits._
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.Success
 
-class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSuiteLike with IdiomaticMockito with ParallelTestExecution {
+class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSuiteLike with IdiomaticMockito {
 
   implicit val timeout = Timeout(30 seconds)
 
