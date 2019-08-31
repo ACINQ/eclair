@@ -80,8 +80,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
       alice2blockchain.expectMsgType[WatchLost]
       bob2blockchain.expectMsgType[WatchLost]
-      awaitCond(alice.stateName == NORMAL)
-      awaitCond(bob.stateName == NORMAL)
+      awaitCond(alice.stateName == NORMAL, 1 minute)
+      awaitCond(bob.stateName == NORMAL, 1 minute)
     }
     withFixture(test.toNoArgTest(FixtureParam(alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB)))
   }
