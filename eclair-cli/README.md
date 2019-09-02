@@ -8,7 +8,7 @@ This project is a Command Line Interface for an Eclair node. It replaces the pre
 - Describe options for each command ;
 - Better user feedback and error management ;
 - Can output the raw JSON response from the node, or for some calls, format the output for better readability ;
-- Store global CLI options in `~/.eclair/cli.conf`
+- Store global CLI options in `~/.eclair/eclair-cli.conf`
 
 ## Developers
 

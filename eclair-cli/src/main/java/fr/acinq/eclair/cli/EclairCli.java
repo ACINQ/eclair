@@ -51,7 +51,7 @@ import static fr.acinq.eclair.cli.utils.Utils.printErr;
   synopsisHeading = "%nUsage: ",
   description = "%nA command line interface for an Eclair node",
 
-  optionListHeading = "%nGlobal options:%n--------------%n%nNote that these options can be saved in ~/.eclair/cli.conf for future reuse. Format is <option_name>=<option_value>.%n%n",
+  optionListHeading = "%nGlobal options:%n--------------%n%nNote that these options can be saved in ~/.eclair/eclair-cli.conf for future reuse. Format is <option_name>=<option_value>.%n%n",
   commandListHeading = "%nCommands:%n--------%n%n",
   parameterListHeading = "%nParameters:%n----------%n%n"
 )
@@ -178,7 +178,7 @@ public class EclairCli implements Runnable {
     optsFromConf = new OptsFromConf();
     final File datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"));
     if (datadir.exists() && datadir.canRead()) {
-      final File conf = new File(datadir, "cli.conf");
+      final File conf = new File(datadir, "eclair-cli.conf");
       if (conf.exists() && conf.canRead()) {
         try (Stream<String> stream = Files.lines(conf.toPath(), StandardCharsets.UTF_8)) {
           stream.forEach(line -> {
@@ -201,7 +201,7 @@ public class EclairCli implements Runnable {
             }
           });
         } catch (IOException e) {
-          print("There was an error when trying to read the cli.conf file from ~/.eclair.\nExpected format is: <option_name>=<option_value> (UTF-8 encoded).\n\n");
+          print("There was an error when trying to read the eclair-cli.conf file from ~/.eclair.\nExpected format is: <option_name>=<option_value> (UTF-8 encoded).\n\n");
           e.printStackTrace();
         }
       }
