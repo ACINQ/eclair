@@ -28,7 +28,8 @@ import java.util.concurrent.Callable;
   descriptionHeading = "%n",
   parameterListHeading = "%nParameters: %n",
   optionListHeading = "%nOptions: %n",
-  commandListHeading = "%nCommands: %n")
+  commandListHeading = "%nCommands: %n",
+  mixinStandardHelpOptions = true)
 public abstract class BaseSubCommand implements Callable<Integer> {
 
   /**

@@ -29,7 +29,7 @@ import static fr.acinq.eclair.cli.utils.Utils.print;
 @CommandLine.Command(name = "getinvoice", description = "Retrieve a stored invoice for a payment hash.", sortOptions = false)
 public class GetInvoice extends BaseSubCommand {
 
-  @CommandLine.Option(names = { "--paymentHash", "-h" }, required = true, descriptionKey = "opts.payment_hash")
+  @CommandLine.Option(names = { "--paymentHash", "-p" }, required = true, descriptionKey = "opts.payment_hash")
   private String paymentHash;
 
   @Override

@@ -35,7 +35,7 @@ public class SendToRoute extends BaseSubCommand {
   @CommandLine.Option(names = { "--amountMsat", "-a" }, required = true, descriptionKey = "opts.payment.amount_msat_send")
   private Long amountMsat;
 
-  @CommandLine.Option(names = { "--paymentHash", "-h" }, required = true, descriptionKey = "opts.payment_hash")
+  @CommandLine.Option(names = { "--paymentHash", "-p" }, required = true, descriptionKey = "opts.payment_hash")
   private String paymentHash;
 
   @CommandLine.Option(names = { "--finalCltvExpiry", "-e" }, required = true, description = "The total CLTV expiry value for this payment")

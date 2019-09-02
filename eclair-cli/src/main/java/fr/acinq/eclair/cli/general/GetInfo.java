@@ -26,7 +26,7 @@ import java.util.Arrays;
 import static fr.acinq.eclair.cli.utils.Utils.MOSHI;
 import static fr.acinq.eclair.cli.utils.Utils.print;
 
-@CommandLine.Command(name = "getinfo", description = "Displays the node information (id, label,...)")
+@CommandLine.Command(name = "getinfo", description = "Displays information about the node (id, label,...)")
 public class GetInfo extends BaseSubCommand {
   @Override
   public Integer call() throws Exception {

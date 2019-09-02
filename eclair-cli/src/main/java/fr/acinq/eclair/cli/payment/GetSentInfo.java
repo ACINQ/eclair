@@ -32,7 +32,7 @@ public class GetSentInfo extends BaseSubCommand {
   PaymentIdentifierOpts identifier;
 
   static class PaymentIdentifierOpts {
-    @CommandLine.Option(names = { "--paymentHash", "-h" }, required = true, descriptionKey = "opts.payment_hash")
+    @CommandLine.Option(names = { "--paymentHash", "-p" }, required = true, descriptionKey = "opts.payment_hash")
     private String paymentHash;
 
     @CommandLine.Option(names = { "--uuid", "-u" }, required = true, descriptionKey = "opts.payment_uuid")

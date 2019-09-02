@@ -33,7 +33,7 @@ public class GetReceivedInfo extends BaseSubCommand {
   private PaymentIdentifierOpts identifier;
 
   private static class PaymentIdentifierOpts {
-    @CommandLine.Option(names = { "--paymentHash", "-h" }, required = true, descriptionKey = "opts.payment_hash")
+    @CommandLine.Option(names = { "--paymentHash", "-p" }, required = true, descriptionKey = "opts.payment_hash")
     private String paymentHash;
 
     @CommandLine.Option(names = { "--invoice", "-i" }, required = true, descriptionKey = "opts.invoice")

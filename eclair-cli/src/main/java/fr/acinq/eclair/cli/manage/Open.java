@@ -20,8 +20,6 @@ import fr.acinq.eclair.cli.utils.BaseSubCommand;
 import okhttp3.ResponseBody;
 import picocli.CommandLine;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -29,12 +27,6 @@ import static fr.acinq.eclair.cli.utils.Utils.print;
 
 @CommandLine.Command(name = "open", description = "Open a channel to another Lightning node. You must first have a connection to this node.", sortOptions = false)
 public class Open extends BaseSubCommand {
-
-  static class ChannelsFlags extends ArrayList<String> {
-    ChannelsFlags() {
-      super(Arrays.asList("0", "1"));
-    }
-  }
 
   @CommandLine.Option(names = { "--nodeId", "-n" }, required = true, descriptionKey = "opts.node_id")
   private String nodeId;
@@ -48,7 +40,7 @@ public class Open extends BaseSubCommand {
   @CommandLine.Option(names = { "--push" }, description = "Amount to unilaterally push to the counterparty, in millisatoshi")
   private String pushMsat;
 
-  @CommandLine.Option(names = { "--flags" }, completionCandidates = ChannelsFlags.class, description = "Flags for the new channel: 0 = private, 1 = public")
+  @CommandLine.Option(names = { "--flags" }, description = "Flags for the new channel: 0 = private, 1 = public")
   private String channelFlags;
 
   @CommandLine.Option(names = { "--timeout", "-o" }, description = "Timeout for the operation to complete")
