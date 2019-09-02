@@ -29,7 +29,7 @@ import static fr.acinq.eclair.cli.utils.Utils.print;
 @CommandLine.Command(name = "sendtoroute", description = "Sends money to a node without an invoice. The payment will be retried several times if needed.", sortOptions = false)
 public class SendToRoute extends BaseSubCommand {
 
-  @CommandLine.Option(names = { "--route", "-r" }, required = true, description = "")
+  @CommandLine.Option(names = { "--route", "-r" }, required = true, description = "List of node ids")
   private List<String> route;
 
   @CommandLine.Option(names = { "--amountMsat", "-a" }, required = true, descriptionKey = "opts.payment.amount_msat_send")
