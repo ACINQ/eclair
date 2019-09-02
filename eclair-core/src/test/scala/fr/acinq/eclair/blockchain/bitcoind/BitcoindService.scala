@@ -28,7 +28,7 @@ import fr.acinq.eclair.TestUtils
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.integration.IntegrationSpec
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.JValue
+import org.json4s.JsonAST.{JArray, JDecimal, JInt, JString, JValue}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -98,11 +98,23 @@ trait BitcoindService extends Logging {
     logger.info(s"waiting for bitcoind to initialize...")
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("getnetworkinfo"))
-      sender.receiveOne(5 second).isInstanceOf[JValue]
-    }, max = 30 seconds, interval = 500 millis)
+      sender.expectMsgType[Any](5 second) match {
+        case j: JValue => j \ "version" match {
+          case JInt(_) => true
+          case _ => false
+        }
+        case _ => false
+      }
+    }, max = 3 minutes, interval = 2 seconds)
     logger.info(s"generating initial blocks...")
     sender.send(bitcoincli, BitcoinReq("generate", 150))
-    sender.expectMsgType[JValue](30 seconds)
+    val JArray(res) = sender.expectMsgType[JValue](3 minutes)
+    assert(res.size == 150)
+    awaitCond({
+      sender.send(bitcoincli, BitcoinReq("getbalance"))
+      val JDecimal(balance) = sender.expectMsgType[JDecimal](30 seconds)
+      balance > 100
+    }, max = 3 minutes, interval = 2 second)
   }
 
 }
