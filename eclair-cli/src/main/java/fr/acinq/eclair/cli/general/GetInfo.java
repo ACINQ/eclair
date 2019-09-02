@@ -17,13 +17,9 @@
 package fr.acinq.eclair.cli.general;
 
 import fr.acinq.eclair.cli.utils.BaseSubCommand;
-import fr.acinq.eclair.cli.utils.models.GetInfoRes;
 import okhttp3.ResponseBody;
 import picocli.CommandLine;
 
-import java.util.Arrays;
-
-import static fr.acinq.eclair.cli.utils.Utils.MOSHI;
 import static fr.acinq.eclair.cli.utils.Utils.print;
 
 @CommandLine.Command(name = "getinfo", description = "Displays information about the node (id, label,...)")
@@ -31,16 +27,7 @@ public class GetInfo extends BaseSubCommand {
   @Override
   public Integer call() throws Exception {
     final ResponseBody body = http("getinfo");
-    if (parent.isRawOutput()) {
-      print(body.string());
-    } else {
-      GetInfoRes res = MOSHI.adapter(GetInfoRes.class).fromJson(body.source());
-      print("node id: %s", res.nodeId);
-      print("alias: %s", res.alias);
-      print("chain hash: %s", res.chainHash);
-      print("current block height: %s", res.blockHeight);
-      print("public addresses: %s", Arrays.toString(res.publicAddresses.toArray()));
-    }
+    print(body.string());
     return 0;
   }
 }
