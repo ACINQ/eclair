@@ -115,6 +115,8 @@ case class LiftChannelExclusion(desc: ChannelDesc)
 
 case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[QueryChannelRangeTlv])
 
+case object GetNetworkStats
+
 case object GetRoutingState
 
 case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
@@ -129,6 +131,7 @@ case class Sync(pending: List[RoutingMessage], total: Int)
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                 channels: SortedMap[ShortChannelId, PublicChannel],
+                stats: Option[NetworkStats],
                 stash: Stash,
                 rebroadcast: Rebroadcast,
                 awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
@@ -145,6 +148,7 @@ case object NORMAL extends State
 
 case object TickBroadcast
 case object TickPruneStaleChannels
+case object TickNetworkStats
 // @formatter:on
 
 class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[State, Data] {
@@ -161,6 +165,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
   setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval, repeat = true)
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
+  setTimer(TickNetworkStats.toString, TickNetworkStats, 6 hour, repeat = true)
 
   val defaultRouteParams = getDefaultRouteParams(nodeParams.routerConf)
 
@@ -196,7 +201,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
-    startWith(NORMAL, Data(initNodes, initChannels, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
+    startWith(NORMAL, Data(initNodes, initChannels, None, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
   }
 
   when(NORMAL) {
@@ -249,9 +254,21 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         stay
       }
 
+    case Event(SyncProgress(progress), d: Data) =>
+      if (d.stats.isEmpty && progress == 1.0 && d.channels.nonEmpty) {
+        log.info("initial routing sync done: computing network statistics")
+        stay using d.copy(stats = NetworkStats(d.channels.values.toSeq))
+      } else {
+        stay
+      }
+
     case Event(GetRoutingState, d: Data) =>
       log.info(s"getting valid announcements for $sender")
       sender ! RoutingState(d.channels.values, d.nodes.values)
+      stay
+
+    case Event(GetNetworkStats, d: Data) =>
+      sender ! d.stats
       stay
 
     case Event(v@ValidateResult(c, _), d0) =>
@@ -369,6 +386,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         context.actorSelection(context.system / "*" / "switchboard") ! d.rebroadcast
         stay using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
+
+    case Event(TickNetworkStats, d) if d.channels.nonEmpty =>
+      log.info("re-computing network statistics")
+      stay using d.copy(stats = NetworkStats(d.channels.values.toSeq))
 
     case Event(TickPruneStaleChannels, d) =>
       // first we select channels that we will prune
@@ -598,7 +619,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       val (sync1, replynow_opt) = addToSync(d.sync, remoteNodeId, replies)
       // we only send a reply right away if there were no pending requests
       replynow_opt.foreach(transport ! _)
-      context.system.eventStream.publish(syncProgress(sync1))
+      val progress = syncProgress(sync1)
+      context.system.eventStream.publish(progress)
+      self ! progress
       stay using d.copy(sync = sync1)
 
     case Event(PeerRoutingMessage(transport, _, routingMessage@QueryShortChannelIds(chainHash, shortChannelIds, _)), d) =>
@@ -647,7 +670,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           }
         case _ => d.sync
       }
-      context.system.eventStream.publish(syncProgress(sync1))
+      val progress = syncProgress(sync1)
+      context.system.eventStream.publish(progress)
+      self ! progress
       stay using d.copy(sync = sync1)
 
   }
@@ -1018,7 +1043,7 @@ object Router {
    * @return a sync progress indicator (1 means fully synced)
    */
   def syncProgress(sync: Map[PublicKey, Sync]): SyncProgress = {
-    //NB: progress is in terms of requests, not individual channels
+    // NB: progress is in terms of requests, not individual channels
     val (pending, total) = sync.foldLeft((0, 0)) {
       case ((p, t), (_, sync)) => (p + sync.pending.size, t + sync.total)
     }
