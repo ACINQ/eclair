@@ -21,7 +21,7 @@ import java.util.UUID
 import fr.acinq.eclair.channel.Commitments._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment.Local
-import fr.acinq.eclair.wire.IncorrectPaymentAmount
+import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.{TestkitBaseClass, _}
 import org.scalatest.Outcome
 
@@ -178,7 +178,7 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bc4.availableBalanceForSend == b)
     assert(bc4.availableBalanceForReceive == a - p - fee)
 
-    val cmdFail = CMD_FAIL_HTLC(0, Right(IncorrectPaymentAmount))
+    val cmdFail = CMD_FAIL_HTLC(0, Right(IncorrectOrUnknownPaymentDetails(p, 42)))
     val (bc5, fail) = sendFail(bc4, cmdFail, bob.underlyingActor.nodeParams.privateKey)
     assert(bc5.availableBalanceForSend == b)
     assert(bc5.availableBalanceForReceive == a - p - fee) // a's balance won't return to previous before she acknowledges the fail
@@ -300,7 +300,7 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bc8.availableBalanceForSend == b + p1 - p3) // as soon as we have the fulfill, the balance increases
     assert(bc8.availableBalanceForReceive == a - p1 - fee - p2 - fee - fee)
 
-    val cmdFail2 = CMD_FAIL_HTLC(1, Right(IncorrectPaymentAmount))
+    val cmdFail2 = CMD_FAIL_HTLC(1, Right(IncorrectOrUnknownPaymentDetails(p2, 42)))
     val (bc9, fail2) = sendFail(bc8, cmdFail2, bob.underlyingActor.nodeParams.privateKey)
     assert(bc9.availableBalanceForSend == b + p1 - p3)
     assert(bc9.availableBalanceForReceive == a - p1 - fee - p2 - fee - fee) // a's balance won't return to previous before she acknowledges the fail
