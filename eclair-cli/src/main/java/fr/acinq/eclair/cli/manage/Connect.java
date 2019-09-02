@@ -14,18 +14,19 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.cli;
+package fr.acinq.eclair.cli.manage;
 
+import fr.acinq.eclair.cli.utils.BaseSubCommand;
 import okhttp3.ResponseBody;
 import picocli.CommandLine;
 
 import java.util.HashMap;
 import java.util.Map;
 
-import static fr.acinq.eclair.cli.EclairCli.print;
+import static fr.acinq.eclair.cli.utils.Utils.print;
 
 @CommandLine.Command(name = "connect", description = "Connect to a Lightning node")
-class Connect extends BaseSubCommand {
+public class Connect extends BaseSubCommand {
 
   @CommandLine.Option(names = { "--uri" }, description = "URI of the node to connect to (nodeId@host:port)")
   private String uri;
@@ -44,10 +45,9 @@ class Connect extends BaseSubCommand {
     private String port;
   }
 
-
   @Override
   public Integer call() throws Exception {
-    final Map<String, String> params = new HashMap<>();
+    final Map<String, Object> params = new HashMap<>();
     if (uri != null) {
       params.put("uri", uri);
     } else if (explicitOpts != null) {

@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.cli.exceptions;
+package fr.acinq.eclair.cli.utils.models;
 
-public class ApiException extends RuntimeException {
-  public ApiException(String message) {
-    super(message);
+public class ApiError {
+  public String error;
+
+  public ApiError(String error) {
+    this.error = error;
   }
 }

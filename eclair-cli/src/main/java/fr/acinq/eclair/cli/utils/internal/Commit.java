@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.cli.exceptions;
+package fr.acinq.eclair.cli.utils.internal;
 
-public class AuthenticationException extends ApiException {
-  public AuthenticationException(String message) {
-    super(message);
+public class Commit {
+  public Spec spec;
+
+  public Commit(Spec spec) {
+    this.spec = spec;
   }
 }

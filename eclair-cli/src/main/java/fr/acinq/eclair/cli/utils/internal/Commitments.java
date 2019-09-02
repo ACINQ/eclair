@@ -14,12 +14,16 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.cli.models;
+package fr.acinq.eclair.cli.utils.internal;
 
-public class ApiError {
-  public String error;
+public class Commitments {
+  public Commit localCommit;
+  public Commit remoteCommit;
+  public CommitInput commitInput;
 
-  public ApiError(String error) {
-    this.error = error;
+  public Commitments(Commit localCommit, Commit remoteCommit, CommitInput commitInput) {
+    this.localCommit = localCommit;
+    this.remoteCommit = remoteCommit;
+    this.commitInput = commitInput;
   }
 }

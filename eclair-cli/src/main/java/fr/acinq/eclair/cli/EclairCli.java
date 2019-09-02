@@ -17,16 +17,30 @@
 package fr.acinq.eclair.cli;
 
 import com.squareup.moshi.JsonDataException;
-import com.squareup.moshi.Moshi;
-import fr.acinq.eclair.cli.exceptions.ApiException;
-import fr.acinq.eclair.cli.exceptions.AuthenticationException;
-import fr.acinq.eclair.cli.models.ApiError;
-import okhttp3.*;
+import fr.acinq.eclair.cli.general.Audit;
+import fr.acinq.eclair.cli.general.ChannelsStats;
+import fr.acinq.eclair.cli.general.GetInfo;
+import fr.acinq.eclair.cli.general.NetworkFees;
+import fr.acinq.eclair.cli.manage.*;
+import fr.acinq.eclair.cli.network.AllChannels;
+import fr.acinq.eclair.cli.network.AllNodes;
+import fr.acinq.eclair.cli.network.AllUpdates;
+import fr.acinq.eclair.cli.payment.*;
+import fr.acinq.eclair.cli.route.FindRoute;
+import fr.acinq.eclair.cli.utils.exceptions.ApiException;
+import fr.acinq.eclair.cli.utils.exceptions.AuthenticationException;
 import picocli.CommandLine;
 
+import java.io.File;
+import java.io.IOException;
 import java.net.ConnectException;
 import java.net.UnknownHostException;
-import java.util.Map;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.stream.Stream;
+
+import static fr.acinq.eclair.cli.utils.Utils.print;
+import static fr.acinq.eclair.cli.utils.Utils.printErr;
 
 @CommandLine.Command(
   name = "eclair-cli",
@@ -35,88 +49,45 @@ import java.util.Map;
   resourceBundle = "messages",
 
   synopsisHeading = "%nUsage: ",
-  description = "A command line interface for an Eclair node",
+  description = "%nA command line interface for an Eclair node",
 
-  optionListHeading = "%nOptions:%n",
-  commandListHeading = "%nCommands:%n",
-  parameterListHeading = "%nParameters:%n"
+  optionListHeading = "%nGlobal options:%n--------------%n%nNote that these options can be saved in ~/.eclair/cli.conf for future reuse. Format is <option_name>=<option_value>.%n%n",
+  commandListHeading = "%nCommands:%n--------%n%n",
+  parameterListHeading = "%nParameters:%n----------%n%n"
 )
 public class EclairCli implements Runnable {
 
-  /* ========== STATIC GLOBALS =========== */
-
-  static final Moshi MOSHI = new Moshi.Builder().build();
-
   /* ========== GLOBAL OPTIONS =========== */
 
-  @CommandLine.Option(names = { "-r", "--raw" }, defaultValue = "false", required = true, description = "Print raw node output as JSON")
-  boolean rawOutput;
+  @CommandLine.Option(names = { "-r", "--raw" }, description = "Print raw node output as JSON.")
+  private Boolean rawOutput;
 
-  @CommandLine.Option(names = { "-p", "--password" }, defaultValue = "tata", interactive = true, description = "Your node's API password")
-  String password;
+  @CommandLine.Option(names = { "-p", "--password" }, interactive = true, description = "Your node's API password.")
+  private String password;
 
-  @CommandLine.Option(names = { "-a", "--address" }, defaultValue = "http://localhost:8081", required = true, description = "Your node's API url.%nDefaults to ${DEFAULT-VALUE}")
-  String url;
+  @CommandLine.Option(names = { "-a", "--address" }, description = "Your node's API url.")
+  private String url;
 
-  /* ========== STATIC UTILITIES METHODS =========== */
+  private OptsFromConf optsFromConf;
 
-  private static void printErr(final CommandLine cmd, final String s, final Object... o) {
-    cmd.getErr().println(String.format(s, o));
+  public boolean isRawOutput() {
+    if (rawOutput != null) return rawOutput;
+    if (optsFromConf.raw != null) return optsFromConf.raw;
+    return false;
   }
 
-  static void print(final String s, final Object... o) {
-    System.out.println(String.format(s, o));
+  public String getPassword() {
+    if (password != null) return password;
+    if (optsFromConf.password != null) return optsFromConf.password;
+    return "";
   }
 
-  static ResponseBody http(final boolean rawOutput, final String password, final String endpoint, final Map<String, String> params) throws Exception {
-
-    // 1 - setup okhttp client with auth
-    final OkHttpClient client = new OkHttpClient.Builder()
-      .authenticator((route, response) -> {
-        if (response.request().header("Authorization") != null) {
-          return null; // Give up, we've already attempted to authenticate.
-        }
-        final String credential = Credentials.basic("", password);
-        return response.request().newBuilder()
-          .header("Authorization", credential)
-          .build();
-      }).build();
-
-    // 2 - add headers
-    final Request.Builder requestBuilder = new Request.Builder()
-      .url(endpoint)
-      .header("User-Agent", "EclairCli");
-
-    // 3 - add body (empty if no params)
-    if (!params.isEmpty()) {
-      final FormBody.Builder bodyBuilder = new FormBody.Builder();
-      params.forEach((k, v) -> {
-        if (k != null && v != null) {
-          bodyBuilder.add(k, v);
-        }
-      });
-      requestBuilder.post(bodyBuilder.build());
-    } else {
-      requestBuilder
-        .method("POST", RequestBody.create(null, new byte[0]))
-        .header("Content-Length", "0");
-    }
-
-    // 4 - execute
-    final Response response = client.newCall(requestBuilder.build()).execute();
-
-    // 5 - handle error if user does not want the raw output
-    if (!rawOutput && !response.isSuccessful()) {
-      ApiError res = MOSHI.adapter(ApiError.class).fromJson(response.body().source());
-      if (response.code() == 401) {
-        throw new AuthenticationException(res.error);
-      } else {
-        throw new ApiException(res.error);
-      }
-    }
-
-    return response.body();
+  public String getAddress() {
+    if (url != null) return url;
+    if (optsFromConf.address != null) return optsFromConf.address;
+    return "http://localhost:8080";
   }
+
 
   /* ========== ERROR HANDLER =========== */
 
@@ -126,16 +97,18 @@ public class EclairCli implements Runnable {
 
       // add some hints when adequate
       if (e instanceof ConnectException || e instanceof UnknownHostException) {
-        printErr(cmd, "\nEclair-cli could not connect to your node. Use the -a or --address option to provide the address.");
-        printErr(cmd, "Make sure that you've enabled the HTTP API on your node, and that you provide the correct url to the CLI");
+        printErr(cmd, "\nEclair-cli could not connect to your node. Use the -a or --address option to provide the node's address.");
+        printErr(cmd, "Make also sure that you've enabled the HTTP API on your node (disabled by default).");
       } else if (e instanceof JsonDataException) {
         cmd.getErr().println();
-        printErr(cmd, "\neclair-cli could not read the node's response for this command. Consider using the -r option to print the raw json response instead.");
+        printErr(cmd, "\neclair-cli could not read the node's response for this command. Consider using the -r option to print the raw data instead.");
       } else if (e instanceof AuthenticationException) {
         printErr(cmd, "\nUse the -p or --password option to provide the API password.");
+      } else if (e instanceof ApiException) {
+        // nothing special
+      } else {
+        e.printStackTrace();
       }
-
-//      e.printStackTrace();
 
       printErr(cmd, "\n---");
       cmd.usage(cmd.getErr());
@@ -144,12 +117,48 @@ public class EclairCli implements Runnable {
     };
   }
 
+  /* ========== MAIN =========== */
+
   public static void main(String[] args) {
     final CommandLine cmd = new CommandLine(new EclairCli());
 
-    // 1 - add subcommands (~ the list of commands accepted by the api)
+    // 1 - add subcommands (~ the list of commands accepted by the eclair node api)
+    // general
     cmd.addSubcommand(GetInfo.class);
+    cmd.addSubcommand(Audit.class);
+    cmd.addSubcommand(NetworkFees.class);
+    cmd.addSubcommand(ChannelsStats.class);
+
+    // channel management
     cmd.addSubcommand(Connect.class);
+    cmd.addSubcommand(Disconnect.class);
+    cmd.addSubcommand(Open.class);
+    cmd.addSubcommand(Close.class);
+    cmd.addSubcommand(ForceClose.class);
+    cmd.addSubcommand(UpdateRelayFee.class);
+    cmd.addSubcommand(Peers.class);
+    cmd.addSubcommand(Channels.class);
+    cmd.addSubcommand(Channel.class);
+
+    // network
+    cmd.addSubcommand(AllNodes.class);
+    cmd.addSubcommand(AllChannels.class);
+    cmd.addSubcommand(AllUpdates.class);
+
+    // payment
+    cmd.addSubcommand(CreateInvoice.class);
+    cmd.addSubcommand(ParseInvoice.class);
+    cmd.addSubcommand(PayInvoice.class);
+    cmd.addSubcommand(SendToNode.class);
+    cmd.addSubcommand(SendToRoute.class);
+    cmd.addSubcommand(GetSentInfo.class);
+    cmd.addSubcommand(GetReceivedInfo.class);
+    cmd.addSubcommand(GetInvoice.class);
+    cmd.addSubcommand(ListInvoices.class);
+    cmd.addSubcommand(ListPendingInvoices.class);
+
+    // route
+    cmd.addSubcommand(FindRoute.class);
 
     // 2 - exception handler
     cmd.setExecutionExceptionHandler(getErrorHandler());
@@ -161,12 +170,56 @@ public class EclairCli implements Runnable {
     }
   }
 
+  /**
+   * Fetches default options values from ~/.eclair/eclair-cli.conf, if any.
+   * These options are always overridden by manual input.
+   */
+  private void getOptsFromConf() {
+    optsFromConf = new OptsFromConf();
+    final File datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"));
+    if (datadir.exists() && datadir.canRead()) {
+      final File conf = new File(datadir, "cli.conf");
+      if (conf.exists() && conf.canRead()) {
+        try (Stream<String> stream = Files.lines(conf.toPath(), StandardCharsets.UTF_8)) {
+          stream.forEach(line -> {
+            final String[] arr = line.split("=");
+            if (arr.length == 2) {
+              switch (arr[0]) {
+                case "address": {
+                  this.optsFromConf.address = arr[1];
+                  break;
+                }
+                case "password": {
+                  this.optsFromConf.password = arr[1];
+                  break;
+                }
+                case "raw": {
+                  this.optsFromConf.raw = Boolean.valueOf(arr[1]);
+                  break;
+                }
+              }
+            }
+          });
+        } catch (IOException e) {
+          print("There was an error when trying to read the cli.conf file from ~/.eclair.\nExpected format is: <option_name>=<option_value> (UTF-8 encoded).\n\n");
+          e.printStackTrace();
+        }
+      }
+    }
+  }
+
+  private static class OptsFromConf {
+    String password = null;
+    String address = null;
+    Boolean raw = null;
+  }
+
   @Override
   public void run() {
   }
 
   private EclairCli() {
-    // No instances.
+    getOptsFromConf();
   }
 }
 

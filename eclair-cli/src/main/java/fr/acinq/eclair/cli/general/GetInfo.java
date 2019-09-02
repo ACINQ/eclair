@@ -14,23 +14,24 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.cli;
+package fr.acinq.eclair.cli.general;
 
-import fr.acinq.eclair.cli.models.GetInfoRes;
+import fr.acinq.eclair.cli.utils.BaseSubCommand;
+import fr.acinq.eclair.cli.utils.models.GetInfoRes;
 import okhttp3.ResponseBody;
 import picocli.CommandLine;
 
 import java.util.Arrays;
 
-import static fr.acinq.eclair.cli.EclairCli.MOSHI;
-import static fr.acinq.eclair.cli.EclairCli.print;
+import static fr.acinq.eclair.cli.utils.Utils.MOSHI;
+import static fr.acinq.eclair.cli.utils.Utils.print;
 
 @CommandLine.Command(name = "getinfo", description = "Displays the node information (id, label,...)")
-class GetInfo extends BaseSubCommand {
+public class GetInfo extends BaseSubCommand {
   @Override
   public Integer call() throws Exception {
     final ResponseBody body = http("getinfo");
-    if (parent.rawOutput) {
+    if (parent.isRawOutput()) {
       print(body.string());
     } else {
       GetInfoRes res = MOSHI.adapter(GetInfoRes.class).fromJson(body.source());

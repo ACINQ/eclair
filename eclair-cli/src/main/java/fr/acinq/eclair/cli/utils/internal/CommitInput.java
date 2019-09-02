@@ -14,23 +14,14 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.cli.models;
+package fr.acinq.eclair.cli.utils.internal;
 
-import java.util.List;
+public class CommitInput {
+  public String outPoint;
+  public Long amountSatoshis;
 
-public class GetInfoRes {
-
-  public String nodeId;
-  public String alias;
-  public String chainHash;
-  public String blockHeight;
-  public List<String> publicAddresses;
-
-  public GetInfoRes(String nodeId, String alias, String chainHash, String blockHeight, List<String> publicAddresses) {
-    this.nodeId = nodeId;
-    this.alias = alias;
-    this.chainHash = chainHash;
-    this.blockHeight = blockHeight;
-    this.publicAddresses = publicAddresses;
+  public CommitInput(String outPoint, Long amountSatoshis) {
+    this.outPoint = outPoint;
+    this.amountSatoshis = amountSatoshis;
   }
 }
