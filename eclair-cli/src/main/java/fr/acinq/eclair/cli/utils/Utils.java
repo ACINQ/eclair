@@ -43,7 +43,7 @@ public interface Utils {
     System.out.println(String.format(s, o));
   }
 
-  static ResponseBody http(final boolean rawOutput, final String password, final String endpoint, final Map<String, Object> params) throws Exception {
+  static ResponseBody http(final boolean isPrettyPrint, final String password, final String endpoint, final Map<String, Object> params) throws Exception {
 
     // 1 - setup okhttp client with auth
     final OkHttpClient client = new OkHttpClient.Builder()
@@ -81,7 +81,7 @@ public interface Utils {
     final Response response = client.newCall(requestBuilder.build()).execute();
 
     // 5 - handle error if user does not want the raw output
-    if (!rawOutput && !response.isSuccessful()) {
+    if (isPrettyPrint && !response.isSuccessful()) {
       ApiError res = MOSHI.adapter(ApiError.class).fromJson(response.body().source());
       if (response.code() == 401) {
         throw new AuthenticationException(res.error);

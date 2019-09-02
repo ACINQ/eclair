@@ -34,7 +34,7 @@ public class Peers extends BaseSubCommand {
   @Override
   public Integer call() throws Exception {
     final ResponseBody body = http("peers");
-    if (parent.isRawOutput()) {
+    if (!parent.isPrettyPrint()) {
       print(body.string());
     } else {
       JsonAdapter<List<PeersRes>> adapter = MOSHI.adapter(Types.newParameterizedType(List.class, PeersRes.class));

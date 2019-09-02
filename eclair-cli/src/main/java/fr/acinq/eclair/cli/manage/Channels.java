@@ -48,7 +48,7 @@ public class Channels extends BaseSubCommand {
     final ResponseBody body = http("channels", params);
 
     // 2 - handle response
-    if (parent.isRawOutput()) {
+    if (!parent.isPrettyPrint()) {
       print(body.string());
     } else {
       final JsonAdapter<List<ChannelsRes>> adapter = MOSHI.adapter(Types.newParameterizedType(List.class, ChannelsRes.class));

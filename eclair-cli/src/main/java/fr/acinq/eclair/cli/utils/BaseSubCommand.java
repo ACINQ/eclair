@@ -39,11 +39,11 @@ public abstract class BaseSubCommand implements Callable<Integer> {
   protected EclairCli parent;
 
   protected ResponseBody http(final String command) throws Exception {
-    return Utils.http(parent.isRawOutput(), parent.getPassword(), parent.getAddress() + "/" + command, new HashMap<>());
+    return Utils.http(parent.isPrettyPrint(), parent.getPassword(), parent.getAddress() + "/" + command, new HashMap<>());
   }
 
   protected ResponseBody http(final String command, final Map<String, Object> params) throws Exception {
-    return Utils.http(parent.isRawOutput(), parent.getPassword(), parent.getAddress() + "/" + command, params);
+    return Utils.http(parent.isPrettyPrint(), parent.getPassword(), parent.getAddress() + "/" + command, params);
   }
 
   /* ========== COMMON GROUPED ARGUMENTS =========== */

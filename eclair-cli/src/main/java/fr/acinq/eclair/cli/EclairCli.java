@@ -59,8 +59,8 @@ public class EclairCli implements Runnable {
 
   /* ========== GLOBAL OPTIONS =========== */
 
-  @CommandLine.Option(names = { "-r", "--raw" }, description = "Print raw node output as JSON.")
-  private Boolean rawOutput;
+  @CommandLine.Option(names = { "-H", "--human-readable" }, description = "Format JSON output into tables for better readability (only for the channels and peers commands).")
+  private Boolean prettyPrint;
 
   @CommandLine.Option(names = { "-p", "--password" }, interactive = true, description = "Your node's API password.")
   private String password;
@@ -70,9 +70,9 @@ public class EclairCli implements Runnable {
 
   private OptsFromConf optsFromConf;
 
-  public boolean isRawOutput() {
-    if (rawOutput != null) return rawOutput;
-    if (optsFromConf.raw != null) return optsFromConf.raw;
+  public boolean isPrettyPrint() {
+    if (prettyPrint != null) return prettyPrint;
+    if (optsFromConf.prettyPrint != null) return optsFromConf.prettyPrint;
     return false;
   }
 
@@ -101,7 +101,7 @@ public class EclairCli implements Runnable {
         printErr(cmd, "Make also sure that you've enabled the HTTP API on your node (disabled by default).");
       } else if (e instanceof JsonDataException) {
         cmd.getErr().println();
-        printErr(cmd, "\neclair-cli could not read the node's response for this command. Consider using the -r option to print the raw data instead.");
+        printErr(cmd, "\neclair-cli could not read the node's response for this command. Consider using the -r option to print the prettyPrint data instead.");
       } else if (e instanceof AuthenticationException) {
         printErr(cmd, "\nUse the -p or --password option to provide the API password.");
       } else if (e instanceof ApiException) {
@@ -193,8 +193,8 @@ public class EclairCli implements Runnable {
                   this.optsFromConf.password = arr[1];
                   break;
                 }
-                case "raw": {
-                  this.optsFromConf.raw = Boolean.valueOf(arr[1]);
+                case "human-readable": {
+                  this.optsFromConf.prettyPrint = Boolean.valueOf(arr[1]);
                   break;
                 }
               }
@@ -211,7 +211,7 @@ public class EclairCli implements Runnable {
   private static class OptsFromConf {
     String password = null;
     String address = null;
-    Boolean raw = null;
+    Boolean prettyPrint = null;
   }
 
   @Override
