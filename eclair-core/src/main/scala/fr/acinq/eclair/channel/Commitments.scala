@@ -147,8 +147,7 @@ object Commitments {
     val outgoingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
     val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
-    // we must use unsigned comparison here because 'maxHtlcValueInFlightMsat' is effectively an uint64 and can exceed the capacity of MilliSatoshi class
-    if (commitments1.remoteParams.maxHtlcValueInFlightMsat.compareUnsigned(htlcValueInFlight) < 0) {
+    if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       // TODO: this should be a specific UPDATE error
       return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
     }
@@ -183,8 +182,7 @@ object Commitments {
     val incomingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
     val htlcValueInFlight = incomingHtlcs.map(_.add.amountMsat).sum
-    // we must use unsigned comparison here because 'maxHtlcValueInFlightMsat' is effectively an uint64 and can exceed the capacity of MilliSatoshi class
-    if (commitments1.localParams.maxHtlcValueInFlightMsat.compareUnsigned(htlcValueInFlight) < 0) {
+    if (commitments1.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       throw HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
     }
 
