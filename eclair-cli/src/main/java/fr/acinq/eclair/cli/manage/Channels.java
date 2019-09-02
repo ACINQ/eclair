@@ -56,7 +56,7 @@ public class Channels extends BaseSubCommand {
 
       if (nodeId == null) { // print summary only if user does not filter by nodeId
         final Long totalSat = channelsRaw.stream().mapToLong(ChannelsRes::getBalanceSat).sum();
-        print("You have %d channels with a total balance of %,d sat (%f BTC)", channelsRaw.size(), totalSat, totalSat / 1e8);
+        print("You have %d channels with a total balance of %,d sat", channelsRaw.size(), totalSat);
         print("");
       }
 
@@ -67,7 +67,7 @@ public class Channels extends BaseSubCommand {
       channelsByNode.forEach((nodeId, channels) -> {
         final Long totalNodeBalance = channels.stream().mapToLong(ChannelsRes::getBalanceSat).sum();
         print("▸ Peer:    %s (%d channels)", nodeId, channels.size());
-        print("  Balance: %,d sat (%f BTC)", totalNodeBalance, totalNodeBalance / 1e8);
+        print("  Balance: %,d sat", totalNodeBalance);
         print("");
         print("  %15s | %14s | %14s | %16s | %64s | %s", "STATE", "BALANCE", "CAPACITY", "SHORT ID", "CHANNEL ID",  "CHANNEL POINT");
         for (ChannelsRes c : channels) {
