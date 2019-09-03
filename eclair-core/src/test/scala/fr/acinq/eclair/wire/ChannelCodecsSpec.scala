@@ -16,22 +16,25 @@
 
 package fr.acinq.eclair.wire
 
+import java.net.InetSocketAddress
 import java.util.UUID
 
 import akka.actor.ActorSystem
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import com.google.common.net.HostAndPort
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.api.JsonSupport
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain}
 import fr.acinq.eclair.payment.{Local, Relayed}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.CommitTx
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
 import fr.acinq.eclair.{TestConstants, UInt64, randomBytes, randomBytes32, randomKey, _}
+import org.json4s.{CustomKeySerializer, CustomSerializer}
+import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
 import org.scalatest.FunSuite
 import scodec.bits._
@@ -43,8 +46,8 @@ import scala.io.Source
 import scala.util.Random
 
 /**
- * Created by PM on 31/05/2016.
- */
+  * Created by PM on 31/05/2016.
+  */
 
 class ChannelCodecsSpec extends FunSuite {
 
@@ -333,9 +336,7 @@ class ChannelCodecsSpec extends FunSuite {
       assert(oldjson === refjson)
       assert(newjson === refjson)
     }
-
   }
-
 }
 
 object ChannelCodecsSpec {
@@ -402,4 +403,155 @@ object ChannelCodecsSpec {
   val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), CltvExpiryDelta(42), 15 msat, 575 msat, 53, Channel.MAX_FUNDING.toMilliSatoshi)
 
   val normal = DATA_NORMAL(commitments, ShortChannelId(42), true, None, channelUpdate, None, None)
+
+  object JsonSupport {
+
+    class ByteVectorSerializer extends CustomSerializer[ByteVector](format => ( {
+      null
+    }, {
+      case x: ByteVector => JString(x.toHex)
+    }))
+
+    class ByteVector32Serializer extends CustomSerializer[ByteVector32](format => ( {
+      null
+    }, {
+      case x: ByteVector32 => JString(x.toHex)
+    }))
+
+    class ByteVector64Serializer extends CustomSerializer[ByteVector64](format => ( {
+      null
+    }, {
+      case x: ByteVector64 => JString(x.toHex)
+    }))
+
+    class UInt64Serializer extends CustomSerializer[UInt64](format => ( {
+      null
+    }, {
+      case x: UInt64 => JInt(x.toBigInt)
+    }))
+
+    class SatoshiSerializer extends CustomSerializer[Satoshi](format => ( {
+      null
+    }, {
+      case x: Satoshi => JInt(x.toLong)
+    }))
+
+    class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](format => ( {
+      null
+    }, {
+      case x: MilliSatoshi => JInt(x.toLong)
+    }))
+
+    class CltvExpirySerializer extends CustomSerializer[CltvExpiry](format => ( {
+      null
+    }, {
+      case x: CltvExpiry => JLong(x.toLong)
+    }))
+
+    class CltvExpiryDeltaSerializer extends CustomSerializer[CltvExpiryDelta](format => ( {
+      null
+    }, {
+      case x: CltvExpiryDelta => JInt(x.toInt)
+    }))
+
+    class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](format => ( {
+      null
+    }, {
+      case x: ShortChannelId => JString(x.toString())
+    }))
+
+    class StateSerializer extends CustomSerializer[State](format => ( {
+      null
+    }, {
+      case x: State => JString(x.toString())
+    }))
+
+    class ShaChainSerializer extends CustomSerializer[ShaChain](format => ( {
+      null
+    }, {
+      case x: ShaChain => JNull
+    }))
+
+    class PublicKeySerializer extends CustomSerializer[PublicKey](format => ( {
+      null
+    }, {
+      case x: PublicKey => JString(x.toString())
+    }))
+
+    class PrivateKeySerializer extends CustomSerializer[PrivateKey](format => ( {
+      null
+    }, {
+      case x: PrivateKey => JString("XXX")
+    }))
+
+    class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](format => ( {
+      null
+    }, {
+      case x: ChannelVersion => JString(x.bits.toBin)
+    }))
+
+    class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ( {
+      null
+    }, {
+      case x: Transaction => JObject(List(
+        JField("txid", JString(x.txid.toHex)),
+        JField("tx", JString(x.toString()))
+      ))
+    }))
+
+    class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ( {
+      null
+    }, {
+      case x: TransactionWithInputInfo => JObject(List(
+        JField("txid", JString(x.tx.txid.toHex)),
+        JField("tx", JString(x.tx.toString()))
+      ))
+    }))
+
+    class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](format => ( {
+      null
+    }, {
+      case address: InetSocketAddress => JString(HostAndPort.fromParts(address.getHostString, address.getPort).toString)
+    }))
+
+    class OutPointSerializer extends CustomSerializer[OutPoint](format => ( {
+      null
+    }, {
+      case x: OutPoint => JString(s"${x.txid}:${x.index}")
+    }))
+
+    class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ( {
+      null
+    }, {
+      case x: OutPoint => s"${x.txid}:${x.index}"
+    }))
+
+    class InputInfoSerializer extends CustomSerializer[InputInfo](format => ( {
+      null
+    }, {
+      case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.toLong)))
+    }))
+
+    implicit val formats = org.json4s.DefaultFormats +
+      new ByteVectorSerializer +
+      new ByteVector32Serializer +
+      new ByteVector64Serializer +
+      new UInt64Serializer +
+      new SatoshiSerializer +
+      new MilliSatoshiSerializer +
+      new CltvExpirySerializer +
+      new CltvExpiryDeltaSerializer +
+      new ShortChannelIdSerializer +
+      new StateSerializer +
+      new ShaChainSerializer +
+      new PublicKeySerializer +
+      new PrivateKeySerializer +
+      new TransactionSerializer +
+      new TransactionWithInputInfoSerializer +
+      new InetSocketAddressSerializer +
+      new OutPointSerializer +
+      new OutPointKeySerializer +
+      new ChannelVersionSerializer +
+      new InputInfoSerializer
+  }
 }

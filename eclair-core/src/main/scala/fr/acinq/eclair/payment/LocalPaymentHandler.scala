@@ -22,7 +22,7 @@ import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{NodeParams, randomBytes32}
+import fr.acinq.eclair.{Globals, NodeParams, randomBytes32}
 
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
@@ -65,15 +65,15 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
           // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
           paymentRequest.amount match {
             case _ if paymentRequest.isExpired =>
-              sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat)), commit = true)
+              sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat, Globals.blockCount.get())), commit = true)
             case _ if htlc.cltvExpiry < minFinalExpiry =>
-              sender ! CMD_FAIL_HTLC(htlc.id, Right(FinalExpiryTooSoon), commit = true)
+              sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat, Globals.blockCount.get())), commit = true)
             case Some(amount) if htlc.amountMsat < amount =>
               log.warning(s"received payment with amount too small for paymentHash=${htlc.paymentHash} amount=${htlc.amountMsat}")
-              sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat)), commit = true)
+              sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat, Globals.blockCount.get())), commit = true)
             case Some(amount) if htlc.amountMsat > amount * 2 =>
               log.warning(s"received payment with amount too large for paymentHash=${htlc.paymentHash} amount=${htlc.amountMsat}")
-              sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat)), commit = true)
+              sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat, Globals.blockCount.get())), commit = true)
             case _ =>
               log.info(s"received payment for paymentHash=${htlc.paymentHash} amount=${htlc.amountMsat}")
               // amount is correct or was not specified in the payment request
@@ -82,7 +82,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
               context.system.eventStream.publish(PaymentReceived(htlc.amountMsat, htlc.paymentHash, htlc.channelId))
           }
         case None =>
-          sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat)), commit = true)
+          sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat, Globals.blockCount.get())), commit = true)
       }
   }
 

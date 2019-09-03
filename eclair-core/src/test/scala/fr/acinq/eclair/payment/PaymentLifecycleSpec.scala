@@ -327,7 +327,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
   }
 
-  test("payment failed (PermanentChannelFailure)") { fixture =>
+  def testPermanentFailure(fixture: FixtureParam, failure: FailureMessage): Unit = {
     import fixture._
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
@@ -351,8 +351,6 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, _, cmd1, Nil, sharedSecrets1, _, _, hops) = paymentFSM.stateData
 
-    val failure = PermanentChannelFailure
-
     relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
     sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))
 
@@ -364,6 +362,16 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     sender.expectMsg(PaymentFailed(id, request.paymentHash, RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil))
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
+  }
+
+  test("payment failed (PermanentChannelFailure)") { fixture =>
+    testPermanentFailure(fixture, PermanentChannelFailure)
+  }
+
+  test("payment failed (deprecated permanent failure)") { fixture =>
+    import scodec.bits.HexStringSyntax
+    // PERM | 17 (final_expiry_too_soon) has been deprecated but older nodes might still use it.
+    testPermanentFailure(fixture, FailureMessageCodecs.failureMessageCodec.decode(hex"4011".bits).require.value)
   }
 
   test("payment succeeded") { fixture =>

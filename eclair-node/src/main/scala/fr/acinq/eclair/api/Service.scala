@@ -31,6 +31,7 @@ import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
+import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.api.FormParamExtractors._
@@ -40,7 +41,6 @@ import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRequest, _}
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
 import grizzled.slf4j.Logging
-import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
 
 import scala.concurrent.Future
@@ -103,8 +103,8 @@ trait Service extends ExtraDirectives with Logging {
       }
 
       def receive: Receive = {
-        case message: PaymentFailed => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
-        case message: PaymentEvent => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
+        case message: PaymentFailed => flowInput.offer(serialization.write(message)(formatsWithTypeHint))
+        case message: PaymentEvent => flowInput.offer(serialization.write(message)(formatsWithTypeHint))
       }
 
     }))

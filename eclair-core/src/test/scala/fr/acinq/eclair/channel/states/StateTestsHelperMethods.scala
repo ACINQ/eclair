@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel.states
 import java.util.UUID
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
@@ -104,19 +105,23 @@ trait StateTestsHelperMethods extends TestKitBase {
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
   }
 
-  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (ByteVector32, UpdateAddHtlc) = {
-    val R: ByteVector32 = randomBytes32
-    val H: ByteVector32 = Crypto.sha256(R)
-    val sender = TestProbe()
-    val receiverPubkey = r.underlyingActor.nodeParams.nodeId
+  def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey): (ByteVector32, CMD_ADD_HTLC) = {
+    val payment_preimage: ByteVector32 = randomBytes32
+    val payment_hash: ByteVector32 = Crypto.sha256(payment_preimage)
     val expiry = CltvExpiryDelta(144).toCltvExpiry
-    val cmd = PaymentLifecycle.buildCommand(UUID.randomUUID, amount, expiry, H, Hop(null, receiverPubkey, null) :: Nil)._1.copy(commit = false)
+    val cmd = PaymentLifecycle.buildCommand(UUID.randomUUID, amount, expiry, payment_hash, Hop(null, destination, null) :: Nil)._1.copy(commit = false)
+    (payment_preimage, cmd)
+  }
+
+  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (ByteVector32, UpdateAddHtlc) = {
+    val sender = TestProbe()
+    val (payment_preimage, cmd) = makeCmdAdd(amount, r.underlyingActor.nodeParams.nodeId)
     sender.send(s, cmd)
     sender.expectMsg("ok")
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(htlc))
-    (R, htlc)
+    (payment_preimage, htlc)
   }
 
   def fulfillHtlc(id: Long, R: ByteVector32, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
