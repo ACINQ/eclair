@@ -22,7 +22,7 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, ByteVector32, Transaction, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.Register.ForwardShortId
@@ -42,7 +42,7 @@ import fr.acinq.eclair.wire._
 
 class PaymentLifecycleSpec extends BaseRouterSpec {
 
-  val defaultAmountMsat = MilliSatoshi(142000000L)
+  val defaultAmountMsat = 142000000 msat
 
   test("send to route") { fixture =>
     import fixture._
@@ -109,7 +109,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
 
-    val request = SendPayment(defaultAmountMsat, randomBytes32, d, routeParams = Some(RouteParams(randomize = false, maxFeeBase = MilliSatoshi(100), maxFeePct = 0.0, routeMaxLength = 20, routeMaxCltv = CltvExpiryDelta(2016), ratios = None)), maxAttempts = 5)
+    val request = SendPayment(defaultAmountMsat, randomBytes32, d, routeParams = Some(RouteParams(randomize = false, maxFeeBase = 100 msat, maxFeePct = 0.0, routeMaxLength = 20, routeMaxCltv = CltvExpiryDelta(2016), ratios = None)), maxAttempts = 5)
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
@@ -327,7 +327,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
   }
 
-  test("payment failed (PermanentChannelFailure)") { fixture =>
+  def testPermanentFailure(fixture: FixtureParam, failure: FailureMessage): Unit = {
     import fixture._
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
@@ -351,8 +351,6 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, _, cmd1, Nil, sharedSecrets1, _, _, hops) = paymentFSM.stateData
 
-    val failure = PermanentChannelFailure
-
     relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
     sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))
 
@@ -364,6 +362,16 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     sender.expectMsg(PaymentFailed(id, request.paymentHash, RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil))
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
+  }
+
+  test("payment failed (PermanentChannelFailure)") { fixture =>
+    testPermanentFailure(fixture, PermanentChannelFailure)
+  }
+
+  test("payment failed (deprecated permanent failure)") { fixture =>
+    import scodec.bits.HexStringSyntax
+    // PERM | 17 (final_expiry_too_soon) has been deprecated but older nodes might still use it.
+    testPermanentFailure(fixture, FailureMessageCodecs.failureMessageCodec.decode(hex"4011".bits).require.value)
   }
 
   test("payment succeeded") { fixture =>
@@ -390,7 +398,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val paymentOK = sender.expectMsgType[PaymentSucceeded]
     val PaymentSent(_, request.amount, fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
-    assert(fee > MilliSatoshi(0))
+    assert(fee > 0.msat)
     assert(fee === paymentOK.amount - request.amount)
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.SUCCEEDED))
   }
@@ -409,15 +417,15 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val ann_g = makeNodeAnnouncement(priv_g, "node-G", Color(-30, 10, -50), Nil)
     val channelId_bg = ShortChannelId(420000, 5, 0)
     val chan_bg = channelAnnouncement(channelId_bg, priv_b, priv_g, priv_funding_b, priv_funding_g)
-    val channelUpdate_bg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, g, channelId_bg, CltvExpiryDelta(9), htlcMinimumMsat = MilliSatoshi(0), feeBaseMsat = MilliSatoshi(0), feeProportionalMillionths = 0, htlcMaximumMsat = MilliSatoshi(500000000L))
-    val channelUpdate_gb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, b, channelId_bg, CltvExpiryDelta(9), htlcMinimumMsat = MilliSatoshi(0), feeBaseMsat = MilliSatoshi(10), feeProportionalMillionths = 8, htlcMaximumMsat = MilliSatoshi(500000000L))
+    val channelUpdate_bg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, g, channelId_bg, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 0 msat, feeProportionalMillionths = 0, htlcMaximumMsat = 500000000 msat)
+    val channelUpdate_gb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, b, channelId_bg, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000 msat)
     assert(Router.getDesc(channelUpdate_bg, chan_bg) === ChannelDesc(chan_bg.shortChannelId, priv_b.publicKey, priv_g.publicKey))
     router ! PeerRoutingMessage(null, remoteNodeId, chan_bg)
     router ! PeerRoutingMessage(null, remoteNodeId, ann_g)
     router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_bg)
     router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_gb)
     watcher.expectMsg(ValidateRequest(chan_bg))
-    watcher.send(router, ValidateResult(chan_bg, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_g)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+    watcher.send(router, ValidateResult(chan_bg, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_g)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
     watcher.expectMsgType[WatchSpentBasic]
 
     // actual test begins
@@ -446,7 +454,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // during the route computation the fees were treated as if they were 1msat but when sending the onion we actually put zero
     // NB: A -> B doesn't pay fees because it's our direct neighbor
     // NB: B -> G doesn't asks for fees at all
-    assert(fee === MilliSatoshi(0))
+    assert(fee === 0.msat)
     assert(fee === paymentOK.amount - request.amount)
   }
 

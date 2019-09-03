@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.actor.Status.Failure
 import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
@@ -30,7 +30,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment.Local
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, TestConstants, TestkitBaseClass}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
@@ -85,7 +85,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     import f._
     alice2bob.expectMsgType[ClosingSigned]
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(MilliSatoshi(5000000000L), ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = CltvExpiry(300000), onion = TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+    val add = CMD_ADD_HTLC(5000000000L msat, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = CltvExpiry(300000), onion = TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), None, Some(add))))
@@ -111,7 +111,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
 
   private def testFeeConverge(f: FixtureParam) = {
     import f._
-    var aliceCloseFee, bobCloseFee = Satoshi(0)
+    var aliceCloseFee, bobCloseFee = 0.sat
     do {
       aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
       alice2bob.forward(bob)
@@ -135,7 +135,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
     val sender = TestProbe()
     val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
-    sender.send(bob, aliceCloseSig.copy(feeSatoshis = Satoshi(99000))) // sig doesn't matter, it is checked later
+    sender.send(bob, aliceCloseSig.copy(feeSatoshis = 99000 sat)) // sig doesn't matter, it is checked later
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid close fee: fee_satoshis=Satoshi(99000)"))
     bob2blockchain.expectMsg(PublishAsap(tx))
@@ -158,7 +158,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
 
   test("recv BITCOIN_FUNDING_SPENT (counterparty's mutual close)") { f =>
     import f._
-    var aliceCloseFee, bobCloseFee = Satoshi(0)
+    var aliceCloseFee, bobCloseFee = 0.sat
     do {
       aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
       alice2bob.forward(bob)

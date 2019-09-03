@@ -51,8 +51,8 @@ case class TlvStream[T <: Tlv](records: Traversable[T], unknown: Traversable[Gen
   /**
     *
     * @tparam R input type parameter, must be a subtype of the main TLV type
-    * @return the TLV record of of type that matches the input type parameter if any (there can be at most one, since BOLTs specify
-    *         that TLV records are supposed to be unique
+    * @return the TLV record of type that matches the input type parameter if any (there can be at most one, since BOLTs specify
+    *         that TLV records are supposed to be unique)
     */
   def get[R <: T : ClassTag]: Option[R] = records.collectFirst { case r: R => r }
 }

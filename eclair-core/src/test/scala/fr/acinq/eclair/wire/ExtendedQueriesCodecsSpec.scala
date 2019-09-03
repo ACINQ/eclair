@@ -1,10 +1,26 @@
+/*
+ * Copyright 2019 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, UInt64}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 
@@ -102,9 +118,9 @@ class ExtendedQueriesCodecsSpec extends FunSuite {
       messageFlags = 0,
       channelFlags = 0,
       cltvExpiryDelta = CltvExpiryDelta(144),
-      htlcMinimumMsat = MilliSatoshi(0),
+      htlcMinimumMsat = 0 msat,
       htlcMaximumMsat = None,
-      feeBaseMsat = MilliSatoshi(1000),
+      feeBaseMsat = 1000 msat,
       feeProportionalMillionths = 10
     )
     val check = ByteVector.fromValidHex("010276df7e70c63cc2b63ef1c062b99c6d934a80ef2fd4dae9e1d86d277f47674af3255a97fa52ade7f129263f591ed784996eba6383135896cc117a438c8029328206226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00006700000100005d50f933000000900000000000000000000003e80000000a")
@@ -123,9 +139,9 @@ class ExtendedQueriesCodecsSpec extends FunSuite {
       messageFlags = 1,
       channelFlags = 0,
       cltvExpiryDelta = CltvExpiryDelta(48),
-      htlcMinimumMsat = MilliSatoshi(0),
-      htlcMaximumMsat = Some(MilliSatoshi(100000)),
-      feeBaseMsat = MilliSatoshi(100),
+      htlcMinimumMsat = 0 msat,
+      htlcMaximumMsat = Some(100000 msat),
+      feeBaseMsat = 100 msat,
       feeProportionalMillionths = 11
     )
     val check = ByteVector.fromValidHex("010206737e9e18d3e4d0ab4066ccaecdcc10e648c5f1c5413f1610747e0d463fa7fa39c1b02ea2fd694275ecfefe4fe9631f24afd182ab75b805e16cd550941f858c06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00006d00000100005d50f935010000300000000000000000000000640000000b00000000000186a0")

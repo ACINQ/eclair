@@ -20,7 +20,7 @@ import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.{ChannelCodecsSpec, TemporaryNodeFailure, UpdateAddHtlc}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, TestConstants, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, TestConstants, randomBytes32}
 import org.scalatest.FunSuiteLike
 
 import scala.concurrent.duration._
@@ -36,11 +36,11 @@ class HtlcReaperSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val data = ChannelCodecsSpec.normal
 
     // assuming that data has incoming htlcs 0 and 1, we don't care about the amount/payment_hash/onion fields
-    val add0 = UpdateAddHtlc(data.channelId, 0, MilliSatoshi(20000), randomBytes32, CltvExpiry(100), TestConstants.emptyOnionPacket)
-    val add1 = UpdateAddHtlc(data.channelId, 1, MilliSatoshi(30000), randomBytes32, CltvExpiry(100), TestConstants.emptyOnionPacket)
+    val add0 = UpdateAddHtlc(data.channelId, 0, 20000 msat, randomBytes32, CltvExpiry(100), TestConstants.emptyOnionPacket)
+    val add1 = UpdateAddHtlc(data.channelId, 1, 30000 msat, randomBytes32, CltvExpiry(100), TestConstants.emptyOnionPacket)
 
     // unrelated htlc
-    val add99 = UpdateAddHtlc(randomBytes32, 0, MilliSatoshi(12345678), randomBytes32, CltvExpiry(100), TestConstants.emptyOnionPacket)
+    val add99 = UpdateAddHtlc(randomBytes32, 0, 12345678 msat, randomBytes32, CltvExpiry(100), TestConstants.emptyOnionPacket)
 
     val brokenHtlcs = Seq(add0, add1, add99)
     val brokenHtlcKiller = system.actorOf(Props[HtlcReaper], name = "htlc-reaper")
