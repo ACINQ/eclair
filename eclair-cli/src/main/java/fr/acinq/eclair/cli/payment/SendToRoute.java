@@ -26,7 +26,7 @@ import java.util.Map;
 
 import static fr.acinq.eclair.cli.utils.Utils.print;
 
-@CommandLine.Command(name = "sendtoroute", description = "Sends money to a node without an invoice. The payment will be retried several times if needed.", sortOptions = false)
+@CommandLine.Command(name = "sendtoroute", description = "Sends money to a user-defined route without an invoice. The payment will be retried several times if needed.", sortOptions = false)
 public class SendToRoute extends BaseSubCommand {
 
   @CommandLine.Option(names = { "--route", "-r" }, required = true, description = "List of node ids")

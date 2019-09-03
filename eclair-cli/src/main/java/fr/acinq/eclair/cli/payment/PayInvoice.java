@@ -25,7 +25,7 @@ import java.util.Map;
 
 import static fr.acinq.eclair.cli.utils.Utils.print;
 
-@CommandLine.Command(name = "payinvoice", description = "Deserialize a BOLT-11 invoice into human readable data.", sortOptions = false)
+@CommandLine.Command(name = "payinvoice", description = "Pay a BOLT-11 invoice. If the invoice has a predefined amount, it can be be overridden by using the --amountMsat option.", sortOptions = false)
 public class PayInvoice extends BaseSubCommand {
 
   @CommandLine.Option(names = { "--invoice", "-i" }, required = true, descriptionKey = "opts.invoice")

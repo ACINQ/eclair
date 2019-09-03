@@ -101,7 +101,7 @@ public class EclairCli implements Runnable {
         printErr(cmd, "Make also sure that you've enabled the HTTP API on your node (disabled by default).");
       } else if (e instanceof JsonDataException) {
         cmd.getErr().println();
-        printErr(cmd, "\neclair-cli could not read the node's response for this command. Consider using the -r option to print the prettyPrint data instead.");
+        printErr(cmd, "\neclair-cli could not read the node's response for this command. Consider removing the --human-readable option to print the raw data instead.");
       } else if (e instanceof AuthenticationException) {
         printErr(cmd, "\nUse the -p or --password option to provide the API password.");
       } else if (e instanceof ApiException) {
