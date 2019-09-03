@@ -35,10 +35,12 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: Actor
   override def receive: Receive = {
     case p: PaymentInitiator.SendPaymentRequest =>
       val paymentId = UUID.randomUUID()
+      // We add one block in order to not have our htlc fail when a new block has just been found.
+      val finalExpiry = (p.finalExpiryDelta + 1).toCltvExpiry
       val payFsm = context.actorOf(PaymentLifecycle.props(nodeParams, paymentId, router, register))
       p.predefinedRoute match {
-        case Nil => payFsm forward SendPayment(p.paymentHash, p.targetNodeId, LegacyPayload(p.amount, p.finalExpiryDelta.toCltvExpiry), p.maxAttempts, p.assistedRoutes, p.routeParams)
-        case hops => payFsm forward SendPaymentToRoute(p.paymentHash, hops, LegacyPayload(p.amount, p.finalExpiryDelta.toCltvExpiry))
+        case Nil => payFsm forward SendPayment(p.paymentHash, p.targetNodeId, LegacyPayload(p.amount, finalExpiry), p.maxAttempts, p.assistedRoutes, p.routeParams)
+        case hops => payFsm forward SendPaymentToRoute(p.paymentHash, hops, LegacyPayload(p.amount, finalExpiry))
       }
       sender ! paymentId
   }
