@@ -28,7 +28,7 @@ import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, nodeFee}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, UInt64, nodeFee}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
@@ -245,18 +245,19 @@ object Relayer extends Logging {
             }
             if (p.isLastPacket) {
               perHopPayload.paymentInfo match {
-                case Some(_) => Right(FinalPayload(add, perHopPayload))
-                case None => Left(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add.onionRoutingPacket)))
+                case Right(_) => Right(FinalPayload(add, perHopPayload))
+                case Left(err) => Left(err)
               }
             } else {
               perHopPayload.forwardInfo match {
-                case Some(forwardInfo) => Right(RelayPayload(add, forwardInfo, nextPacket))
-                case None => Left(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add.onionRoutingPacket)))
+                case Right(forwardInfo) => Right(RelayPayload(add, forwardInfo, nextPacket))
+                case Left(err) => Left(err)
               }
             }
           case Attempt.Failure(_) =>
             // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
-            Left(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add.onionRoutingPacket)))
+            // It's hard to provide tag and offset information from scodec failures, so we currently don't do it.
+            Left(InvalidOnionPayload(UInt64(0), 0))
         }
       case Left(badOnion) => Left(badOnion)
     }
@@ -272,12 +273,12 @@ object Relayer extends Logging {
   def handleFinal(finalPayload: FinalPayload): Either[CMD_FAIL_HTLC, UpdateAddHtlc] = {
     import finalPayload.add
     finalPayload.payload.paymentInfo match {
-      case Some(OnionPaymentInfo(amountMsat, _)) if amountMsat > add.amountMsat =>
+      case Right(OnionPaymentInfo(amountMsat, _)) if amountMsat > add.amountMsat =>
         Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectHtlcAmount(add.amountMsat)), commit = true))
-      case Some(OnionPaymentInfo(_, cltvExpiry)) if cltvExpiry != add.cltvExpiry =>
+      case Right(OnionPaymentInfo(_, cltvExpiry)) if cltvExpiry != add.cltvExpiry =>
         Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectCltvExpiry(add.cltvExpiry)), commit = true))
-      case None =>
-        Left(CMD_FAIL_HTLC(add.id, Right(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add.onionRoutingPacket))), commit = true))
+      case Left(err) =>
+        Left(CMD_FAIL_HTLC(add.id, Right(err), commit = true))
       case _ =>
         Right(add)
     }

@@ -48,21 +48,35 @@ case class OnionPaymentInfo(amount: MilliSatoshi, cltvExpiry: CltvExpiry)
 
 case class OnionPerHopPayload(payload: Either[TlvStream[OnionTlv], OnionForwardInfo]) {
 
-  lazy val paymentInfo: Option[OnionPaymentInfo] = payload match {
-    case Right(OnionForwardInfo(_, amount, cltv)) => Some(OnionPaymentInfo(amount, cltv))
-    case Left(tlv) => for {
-      amount <- tlv.get[AmountToForward].map(_.amount)
-      cltv <- tlv.get[OutgoingCltv].map(_.cltv)
-    } yield OnionPaymentInfo(amount, cltv)
+  lazy val paymentInfo: Either[InvalidOnionPayload, OnionPaymentInfo] = payload match {
+    case Right(OnionForwardInfo(_, amount, cltv)) => Right(OnionPaymentInfo(amount, cltv))
+    case Left(tlv) =>
+      val amount = tlv.get[AmountToForward].map(_.amount)
+      val cltv = tlv.get[OutgoingCltv].map(_.cltv)
+      if (amount.isEmpty) {
+        Left(InvalidOnionPayload(UInt64(2), 0))
+      } else if (cltv.isEmpty) {
+        Left(InvalidOnionPayload(UInt64(4), 0))
+      } else {
+        Right(OnionPaymentInfo(amount.get, cltv.get))
+      }
   }
 
-  lazy val forwardInfo: Option[OnionForwardInfo] = payload match {
-    case Right(onionForwardInfo) => Some(onionForwardInfo)
-    case Left(tlv) => for {
-      shortChannelId <- tlv.get[OutgoingChannelId].map(_.shortChannelId)
-      amount <- tlv.get[AmountToForward].map(_.amount)
-      cltv <- tlv.get[OutgoingCltv].map(_.cltv)
-    } yield OnionForwardInfo(shortChannelId, amount, cltv)
+  lazy val forwardInfo: Either[InvalidOnionPayload, OnionForwardInfo] = payload match {
+    case Right(onionForwardInfo) => Right(onionForwardInfo)
+    case Left(tlv) =>
+      val shortChannelId = tlv.get[OutgoingChannelId].map(_.shortChannelId)
+      val amount = tlv.get[AmountToForward].map(_.amount)
+      val cltv = tlv.get[OutgoingCltv].map(_.cltv)
+      if (amount.isEmpty) {
+        Left(InvalidOnionPayload(UInt64(2), 0))
+      } else if (cltv.isEmpty) {
+        Left(InvalidOnionPayload(UInt64(4), 0))
+      } else if (shortChannelId.isEmpty) {
+        Left(InvalidOnionPayload(UInt64(6), 0))
+      } else {
+        Right(OnionForwardInfo(shortChannelId.get, amount.get, cltv.get))
+      }
   }
 
 }

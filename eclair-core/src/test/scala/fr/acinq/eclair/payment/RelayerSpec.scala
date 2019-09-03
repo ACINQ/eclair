@@ -295,20 +295,20 @@ class RelayerSpec extends TestkitBaseClass {
 
     // B is not the last hop and receives an onion missing some routing information.
     val invalidPayloads_bc = Seq(
-      TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_bc.shortChannelId), AmountToForward(amount_bc)), // Missing cltv expiry.
-      TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_bc.shortChannelId), OutgoingCltv(expiry_bc)), // Missing forwarding amount.
-      TlvStream[OnionTlv](AmountToForward(amount_bc), OutgoingCltv(expiry_bc))) // Missing channel id.
+      (InvalidOnionPayload(UInt64(2), 0), TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_bc.shortChannelId), OutgoingCltv(expiry_bc))), // Missing forwarding amount.
+      (InvalidOnionPayload(UInt64(4), 0), TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_bc.shortChannelId), AmountToForward(amount_bc))), // Missing cltv expiry.
+      (InvalidOnionPayload(UInt64(6), 0), TlvStream[OnionTlv](AmountToForward(amount_bc), OutgoingCltv(expiry_bc)))) // Missing channel id.
     val payload_cd = TlvStream[OnionTlv](OutgoingChannelId(channelUpdate_cd.shortChannelId), AmountToForward(amount_cd), OutgoingCltv(expiry_cd))
 
     val sender = TestProbe()
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
 
-    for (invalidPayload_bc <- invalidPayloads_bc) {
+    for ((expectedErr, invalidPayload_bc) <- invalidPayloads_bc) {
       val Sphinx.PacketAndSecrets(onion, _) = buildOnion(Seq(b, c), Seq(invalidPayload_bc, payload_cd), paymentHash)
       val add_ab = UpdateAddHtlc(channelId_ab, 123456, amount_ab, paymentHash, expiry_ab, onion)
       sender.send(relayer, ForwardAdd(add_ab))
 
-      register.expectMsg(Register.Forward(channelId_ab, CMD_FAIL_HTLC(add_ab.id, Right(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add_ab.onionRoutingPacket))), commit = true)))
+      register.expectMsg(Register.Forward(channelId_ab, CMD_FAIL_HTLC(add_ab.id, Right(expectedErr), commit = true)))
       register.expectNoMsg(100 millis)
       paymentHandler.expectNoMsg(100 millis)
     }
@@ -444,17 +444,17 @@ class RelayerSpec extends TestkitBaseClass {
 
     // B is the last hop and receives an onion missing some payment information.
     val invalidFinalPayloads = Seq(
-      TlvStream[OnionTlv](AmountToForward(amount_bc)), // Missing cltv expiry.
-      TlvStream[OnionTlv](OutgoingCltv(expiry_bc))) // Missing forwarding amount.
+      (InvalidOnionPayload(UInt64(2), 0), TlvStream[OnionTlv](OutgoingCltv(expiry_bc))), // Missing forwarding amount.
+      (InvalidOnionPayload(UInt64(4), 0), TlvStream[OnionTlv](AmountToForward(amount_bc)))) // Missing cltv expiry.
 
     val sender = TestProbe()
 
-    for (invalidFinalPayload <- invalidFinalPayloads) {
+    for ((expectedErr, invalidFinalPayload) <- invalidFinalPayloads) {
       val Sphinx.PacketAndSecrets(onion, _) = buildOnion(Seq(b), Seq(invalidFinalPayload), paymentHash)
       val add_ab = UpdateAddHtlc(channelId_ab, 123456, amount_ab, paymentHash, expiry_ab, onion)
       sender.send(relayer, ForwardAdd(add_ab))
 
-      register.expectMsg(Register.Forward(channelId_ab, CMD_FAIL_HTLC(add_ab.id, Right(InvalidOnionPayload(Sphinx.PaymentPacket.hash(add_ab.onionRoutingPacket))), commit = true)))
+      register.expectMsg(Register.Forward(channelId_ab, CMD_FAIL_HTLC(add_ab.id, Right(expectedErr), commit = true)))
       register.expectNoMsg(100 millis)
       paymentHandler.expectNoMsg(100 millis)
     }

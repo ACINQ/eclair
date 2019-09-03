@@ -18,10 +18,10 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Mac32
-import fr.acinq.eclair.wire.CommonCodecs.{cltvExpiry, discriminatorWithDefault, millisatoshi, sha256}
+import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.FailureMessageCodecs.failureMessageCodec
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelUpdateCodec, lightningMessageCodec}
-import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi}
+import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi, UInt64}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
@@ -62,7 +62,7 @@ case class ExpiryTooSoon(update: ChannelUpdate) extends Update { def message = "
 case class FinalIncorrectCltvExpiry(expiry: CltvExpiry) extends FailureMessage { def message = "payment expiry doesn't match the value in the onion" }
 case class FinalIncorrectHtlcAmount(amount: MilliSatoshi) extends FailureMessage { def message = "payment amount is incorrect in the final htlc" }
 case object ExpiryTooFar extends FailureMessage { def message = "payment expiry is too far in the future" }
-case class InvalidOnionPayload(onionHash: ByteVector32) extends Perm { def message = "onion per-hop payload is invalid" }
+case class InvalidOnionPayload(tag: UInt64, offset: Int) extends Perm { def message = "onion per-hop payload is invalid" }
 
 /**
  * We allow remote nodes to send us unknown failure codes (e.g. deprecated failure codes).
@@ -115,7 +115,7 @@ object FailureMessageCodecs {
       .typecase(18, ("expiry" | cltvExpiry).as[FinalIncorrectCltvExpiry])
       .typecase(19, ("amountMsat" | millisatoshi).as[FinalIncorrectHtlcAmount])
       .typecase(21, provide(ExpiryTooFar))
-      .typecase(PERM, sha256.as[InvalidOnionPayload]),
+      .typecase(PERM | 22, (("tag" | varint) :: ("offset" | uint16)).as[InvalidOnionPayload]),
     uint16.xmap(code => {
       val failureMessage = code match {
         // @formatter:off

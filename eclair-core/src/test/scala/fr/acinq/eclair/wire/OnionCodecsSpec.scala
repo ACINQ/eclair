@@ -21,7 +21,7 @@ import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.wire.OnionCodecs._
 import fr.acinq.eclair.wire.OnionPerHopPayload._
 import fr.acinq.eclair.wire.OnionTlv._
-import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, ShortChannelId}
+import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, ShortChannelId, UInt64}
 import org.scalatest.FunSuite
 import scodec.bits.HexStringSyntax
 
@@ -110,39 +110,39 @@ class OnionCodecsSpec extends FunSuite {
 
   test("get payment info") {
     val legacyPayload: OnionPerHopPayload = OnionForwardInfo(ShortChannelId(550), 561 msat, CltvExpiry(1105))
-    assert(legacyPayload.paymentInfo === Some(OnionPaymentInfo(561 msat, CltvExpiry(1105))))
+    assert(legacyPayload.paymentInfo === Right(OnionPaymentInfo(561 msat, CltvExpiry(1105))))
 
     val tlvPayload: OnionPerHopPayload = TlvStream[OnionTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(1105)))
-    assert(tlvPayload.paymentInfo === Some(OnionPaymentInfo(561 msat, CltvExpiry(1105))))
+    assert(tlvPayload.paymentInfo === Right(OnionPaymentInfo(561 msat, CltvExpiry(1105))))
 
     val tlvPayloadUnknown: OnionPerHopPayload = TlvStream[OnionTlv](Seq(AmountToForward(561 msat), OutgoingCltv(CltvExpiry(1105))), Seq(GenericTlv(13, hex"2a")))
-    assert(tlvPayloadUnknown.paymentInfo === Some(OnionPaymentInfo(561 msat, CltvExpiry(1105))))
+    assert(tlvPayloadUnknown.paymentInfo === Right(OnionPaymentInfo(561 msat, CltvExpiry(1105))))
 
     val tlvPayloadNoCltv: OnionPerHopPayload = TlvStream[OnionTlv](AmountToForward(561 msat))
-    assert(tlvPayloadNoCltv.paymentInfo === None)
+    assert(tlvPayloadNoCltv.paymentInfo === Left(InvalidOnionPayload(UInt64(4), 0)))
 
     val tlvPayloadNoAmount: OnionPerHopPayload = TlvStream[OnionTlv](OutgoingCltv(CltvExpiry(1105)))
-    assert(tlvPayloadNoAmount.paymentInfo === None)
+    assert(tlvPayloadNoAmount.paymentInfo === Left(InvalidOnionPayload(UInt64(2), 0)))
   }
 
   test("get forward info") {
     val legacyPayload: OnionPerHopPayload = OnionForwardInfo(ShortChannelId(550), 561 msat, CltvExpiry(1105))
-    assert(legacyPayload.forwardInfo === Some(OnionForwardInfo(ShortChannelId(550), 561 msat, CltvExpiry(1105))))
+    assert(legacyPayload.forwardInfo === Right(OnionForwardInfo(ShortChannelId(550), 561 msat, CltvExpiry(1105))))
 
     val tlvPayload: OnionPerHopPayload = TlvStream[OnionTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(1105)), OutgoingChannelId(ShortChannelId(550)))
-    assert(tlvPayload.forwardInfo === Some(OnionForwardInfo(ShortChannelId(550), 561 msat, CltvExpiry(1105))))
+    assert(tlvPayload.forwardInfo === Right(OnionForwardInfo(ShortChannelId(550), 561 msat, CltvExpiry(1105))))
 
     val tlvPayloadUnknown: OnionPerHopPayload = TlvStream[OnionTlv](Seq(AmountToForward(561 msat), OutgoingCltv(CltvExpiry(1105)), OutgoingChannelId(ShortChannelId(550))), Seq(GenericTlv(13, hex"2a")))
-    assert(tlvPayloadUnknown.forwardInfo === Some(OnionForwardInfo(ShortChannelId(550), 561 msat, CltvExpiry(1105))))
+    assert(tlvPayloadUnknown.forwardInfo === Right(OnionForwardInfo(ShortChannelId(550), 561 msat, CltvExpiry(1105))))
 
     val tlvPayloadNoCltv: OnionPerHopPayload = TlvStream[OnionTlv](AmountToForward(561 msat), OutgoingChannelId(ShortChannelId(550)))
-    assert(tlvPayloadNoCltv.forwardInfo === None)
+    assert(tlvPayloadNoCltv.forwardInfo === Left(InvalidOnionPayload(UInt64(4), 0)))
 
     val tlvPayloadNoAmount: OnionPerHopPayload = TlvStream[OnionTlv](OutgoingCltv(CltvExpiry(1105)), OutgoingChannelId(ShortChannelId(550)))
-    assert(tlvPayloadNoAmount.forwardInfo === None)
+    assert(tlvPayloadNoAmount.forwardInfo === Left(InvalidOnionPayload(UInt64(2), 0)))
 
     val tlvPayloadNoChannelId: OnionPerHopPayload = TlvStream[OnionTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(1105)))
-    assert(tlvPayloadNoChannelId.forwardInfo === None)
+    assert(tlvPayloadNoChannelId.forwardInfo === Left(InvalidOnionPayload(UInt64(6), 0)))
   }
 
 }

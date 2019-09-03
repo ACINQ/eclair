@@ -123,7 +123,7 @@ class HtlcGenerationSpec extends FunSuite with BeforeAndAfterAll {
     val payload_e = OnionCodecs.tlvPerHopPayloadCodec.decode(bin_e.toBitVector).require.value
     val paymentInfo = OnionPerHopPayload(Left(payload_e)).paymentInfo
     assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(paymentInfo === Some(OnionPaymentInfo(finalAmountMsat, finalExpiry)))
+    assert(paymentInfo === Right(OnionPaymentInfo(finalAmountMsat, finalExpiry)))
   }
 
   test("build a command including the onion") {
