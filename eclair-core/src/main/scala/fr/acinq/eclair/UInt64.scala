@@ -24,8 +24,8 @@ case class UInt64(private val underlying: Long) extends Ordered[UInt64] {
 
   override def compare(o: UInt64): Int = UnsignedLongs.compare(underlying, o.underlying)
   private def compare(other: MilliSatoshi): Int = other.toLong match {
-    case l if l < 0 => 1                          // if @param 'other' is negative then is always smaller than 'this'
-    case _ => compare(UInt64(other.toLong))
+    case l if l < 0 => 1                    // if @param 'other' is negative then is always smaller than 'this'
+    case _ => compare(UInt64(other.toLong)) // we must do an unsigned comparison here because the uint64 can exceed the capacity of MilliSatoshi class
   }
 
   def <(other: MilliSatoshi): Boolean = compare(other) < 0
