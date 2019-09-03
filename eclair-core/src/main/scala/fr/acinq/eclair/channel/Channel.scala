@@ -217,7 +217,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               }
           }
           // no need to go OFFLINE, we can directly switch to CLOSING
-          goto(CLOSING) using closing
+          goto(CLOSING) using closing storing()
 
         case normal: DATA_NORMAL =>
           // TODO: should we wait for an acknowledgment from the watcher?
@@ -240,7 +240,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val periodicRefreshInitialDelay = Helpers.nextChannelUpdateRefresh(channelUpdate1.timestamp)
           context.system.scheduler.schedule(initialDelay = periodicRefreshInitialDelay, interval = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
 
-          goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate1)
+          goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate1) storing()
 
         case funding: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
           // TODO: should we wait for an acknowledgment from the watcher?
@@ -248,13 +248,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           // we make sure that the funding tx has been published
           blockchain ! GetTxWithMeta(funding.commitments.commitInput.outPoint.txid)
-          goto(OFFLINE) using data
+          goto(OFFLINE) using data storing()
 
         case _ =>
           // TODO: should we wait for an acknowledgment from the watcher?
           blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
           blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
-          goto(OFFLINE) using data
+          goto(OFFLINE) using data storing()
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED) replying "ok"
