@@ -8,9 +8,9 @@ scala:
 env:
  - export LD_LIBRARY_PATH=/usr/local/lib
 before_install:
- - wget http://apache.crihan.fr/dist/maven/maven-3/3.6.0/binaries/apache-maven-3.6.0-bin.zip
- - unzip -qq apache-maven-3.6.0-bin.zip
- - export M2_HOME=$PWD/apache-maven-3.6.0
+ - wget http://apache.osuosl.org/dist/maven/maven-3/3.6.1/binaries/apache-maven-3.6.1-bin.zip
+ - unzip -qq apache-maven-3.6.1-bin.zip
+ - export M2_HOME=$PWD/apache-maven-3.6.1
  - export PATH=$M2_HOME/bin:$PATH
 script:
  - mvn scoverage:report
