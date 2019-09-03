@@ -42,6 +42,11 @@ object Features {
 
   def hasFeature(features: ByteVector, bit: Int): Boolean = hasFeature(features.bits, bit)
 
+  /**
+   * We currently don't distinguish mandatory and optional. Interpreting VARIABLE_LENGTH_ONION_MANDATORY strictly would
+   * be very restrictive and probably fork us out of the network.
+   * We may implement this distinction later, but for now both flags are interpreted as an optional support.
+   */
   def hasVariableLengthOnion(features: ByteVector): Boolean = hasFeature(features, VARIABLE_LENGTH_ONION_MANDATORY) || hasFeature(features, VARIABLE_LENGTH_ONION_OPTIONAL)
 
   /**
